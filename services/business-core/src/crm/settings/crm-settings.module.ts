@@ -1,0 +1,5 @@
+import { Module } from "@nestjs/common";
+import { WorkspacesModule } from "../../workspaces/workspaces.module";
+import { CrmSettingsController } from "./crm-settings.controller";
+import { CrmSettingsService } from "./crm-settings.service";
+@Module({ imports: [WorkspacesModule], controllers: [CrmSettingsController], providers: [CrmSettingsService] }) export class CrmSettingsModule {}

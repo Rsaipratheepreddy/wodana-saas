@@ -1,0 +1,446 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build and publish a Wodana release to the existing native-host stack.
+# The password is read without echoing and is never written to disk or passed as
+# a command-line argument. The current web container remains available for an
+# immediate proxy rollback.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DEPLOY_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST to the production server address}"
+DEPLOY_USER="${DEPLOY_USER:-root}"
+SSH_PORT="${SSH_PORT:-22}"
+PUBLIC_URL="${PUBLIC_URL:-https://iglo.wodana.ai}"
+RELEASE_NAME="${RELEASE_NAME:-$(date -u +%Y%m%d%H%M%S)-web}"
+WEB_PORT="${WEB_PORT:-13230}"
+CORE_PORT="${CORE_PORT:-}"
+INTELLIGENCE_PORT="${INTELLIGENCE_PORT:-18006}"
+CURRENT_INTELLIGENCE_PORT="${CURRENT_INTELLIGENCE_PORT:-}"
+CURRENT_INTELLIGENCE_RELEASE_DIR="${CURRENT_INTELLIGENCE_RELEASE_DIR:-}"
+CURRENT_INTELLIGENCE_WORKER_CONTAINER="${CURRENT_INTELLIGENCE_WORKER_CONTAINER:-}"
+SKIP_LOCAL_CHECKS="${SKIP_LOCAL_CHECKS:-0}"
+IMAGE="wodana-web:${RELEASE_NAME}"
+DEPLOY_CORE="${DEPLOY_CORE:-0}"
+CORE_IMAGE="wodana-core:${RELEASE_NAME}"
+DEPLOY_INTELLIGENCE="${DEPLOY_INTELLIGENCE:-0}"
+INTELLIGENCE_IMAGE="wodana-intelligence:${RELEASE_NAME}"
+CURRENT_CORE_PORT="${CURRENT_CORE_PORT:-}"
+CURRENT_CORE_RELEASE_DIR="${CURRENT_CORE_RELEASE_DIR:-}"
+MIGRATION_FILE="${MIGRATION_FILE:-}"
+REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
+REMOTE_ARCHIVE="/tmp/${RELEASE_NAME}.web-image.tar.gz"
+
+[[ "$RELEASE_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]+$ ]] || { echo "RELEASE_NAME contains unsupported characters." >&2; exit 1; }
+[[ "$WEB_PORT" =~ ^[0-9]+$ && ( -z "$CORE_PORT" || "$CORE_PORT" =~ ^[0-9]+$ ) && "$INTELLIGENCE_PORT" =~ ^[0-9]+$ ]] || { echo "Ports must be numeric." >&2; exit 1; }
+[[ "$PUBLIC_URL" == https://* ]] || { echo "PUBLIC_URL must use HTTPS." >&2; exit 1; }
+[[ "$DEPLOY_CORE" == 0 || "$DEPLOY_CORE" == 1 ]] || exit 1
+[[ "$DEPLOY_INTELLIGENCE" == 0 || "$DEPLOY_INTELLIGENCE" == 1 ]] || exit 1
+[[ ( -z "$CURRENT_CORE_PORT" || "$CURRENT_CORE_PORT" =~ ^[0-9]+$ ) && ( -z "$CURRENT_CORE_RELEASE_DIR" || "$CURRENT_CORE_RELEASE_DIR" =~ ^/opt/wodana/releases/[a-zA-Z0-9._-]+$ ) ]] || exit 1
+[[ ( -z "$CURRENT_INTELLIGENCE_PORT" || "$CURRENT_INTELLIGENCE_PORT" =~ ^[0-9]+$ ) && ( -z "$CURRENT_INTELLIGENCE_RELEASE_DIR" || "$CURRENT_INTELLIGENCE_RELEASE_DIR" =~ ^/opt/wodana/releases/[a-zA-Z0-9._-]+$ ) && ( -z "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" || "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ ) ]] || exit 1
+[[ -z "$MIGRATION_FILE" || ( "$DEPLOY_CORE" == 1 && "$MIGRATION_FILE" == services/business-core/drizzle/0052_client_design_approval.sql ) ]] || { echo "Unrecognized migration; review its deployment procedure first." >&2; exit 1; }
+
+for command in curl docker gzip scp ssh; do
+  command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 1; }
+done
+
+SSH=(ssh -p "$SSH_PORT" -o StrictHostKeyChecking=accept-new)
+SCP=(scp -P "$SSH_PORT" -o StrictHostKeyChecking=accept-new)
+if [[ -n "${DEPLOY_PASSWORD:-}" ]]; then
+  SSHPASS="$DEPLOY_PASSWORD"
+  export SSHPASS
+elif [[ -t 0 ]]; then
+  read -r -s -p "Password for ${REMOTE}: " SSHPASS
+  printf '\n'
+  export SSHPASS
+fi
+if [[ -n "${SSHPASS:-}" ]]; then
+  command -v sshpass >/dev/null || { echo "Password deployment requires sshpass." >&2; exit 1; }
+  SSH=(sshpass -e ssh -p "$SSH_PORT" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new)
+  SCP=(sshpass -e scp -P "$SSH_PORT" -o PreferredAuthentications=password -o PubkeyAuthentication=no -o StrictHostKeyChecking=accept-new)
+fi
+
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wodana-web-release.XXXXXX")"
+cleanup() {
+  rm -rf "$TEMP_DIR"
+  unset SSHPASS DEPLOY_PASSWORD
+}
+trap cleanup EXIT
+
+CURRENT_RELEASE="$(curl -fsSI "${PUBLIC_URL}/login" | tr -d '\r' | sed -n 's/^X-Wodana-Release:[[:space:]]*//Ip' | tail -n 1)"
+[[ -n "$CURRENT_RELEASE" ]] || { echo "The live release header is missing; refusing an ambiguous deployment." >&2; exit 1; }
+[[ "$CURRENT_RELEASE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]+$ ]] || exit 1
+CURRENT_RELEASE_DIR="/opt/wodana/releases/${CURRENT_RELEASE}"
+
+echo "Preflight: ${CURRENT_RELEASE} is live."
+"${SSH[@]}" "$REMOTE" "test -f '$CURRENT_RELEASE_DIR/compose.yaml' && test -f '$CURRENT_RELEASE_DIR/web.env'"
+DETECTED_CORE_PORT="$("${SSH[@]}" "$REMOTE" "sed -n 's@.*BUSINESS_CORE_URL: http://127.0.0.1:\\([0-9]*\\)/api/v1.*@\\1@p' '$CURRENT_RELEASE_DIR/compose.yaml' | head -n 1")"
+CURRENT_CORE_PORT="${CURRENT_CORE_PORT:-$DETECTED_CORE_PORT}"
+[[ "$CURRENT_CORE_PORT" =~ ^[0-9]+$ ]] || { echo "Could not resolve the live core port." >&2; exit 1; }
+if [[ "$DEPLOY_CORE" == 1 && -z "$CORE_PORT" ]]; then echo "Set an unused CORE_PORT for a backend deployment." >&2; exit 1; fi
+CORE_PORT="${CORE_PORT:-$CURRENT_CORE_PORT}"
+CURRENT_CORE_RELEASE_DIR="${CURRENT_CORE_RELEASE_DIR:-$CURRENT_RELEASE_DIR}"
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+  [[ -n "$CURRENT_INTELLIGENCE_PORT" && -n "$CURRENT_INTELLIGENCE_RELEASE_DIR" && -n "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" ]] || {
+    echo "Set CURRENT_INTELLIGENCE_PORT, CURRENT_INTELLIGENCE_RELEASE_DIR and CURRENT_INTELLIGENCE_WORKER_CONTAINER for an Intelligence deployment." >&2
+    exit 1
+  }
+  "${SSH[@]}" "$REMOTE" "test -f '$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env' && docker inspect '$CURRENT_INTELLIGENCE_WORKER_CONTAINER' >/dev/null"
+else
+  CURRENT_INTELLIGENCE_PORT="$INTELLIGENCE_PORT"
+fi
+
+cd "$ROOT_DIR"
+if [[ "$SKIP_LOCAL_CHECKS" != 1 ]]; then
+  npm run typecheck --workspace @wodana/web
+fi
+
+echo "Building ${IMAGE} for linux/amd64..."
+docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$IMAGE" -f apps/web/Dockerfile .
+docker image inspect "$IMAGE" >/dev/null
+if [[ "$DEPLOY_CORE" == 1 ]]; then
+  npm run typecheck --workspace @wodana/business-core
+  docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$CORE_IMAGE" -f services/business-core/Dockerfile .
+fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+  (cd services/intelligence-automation && ../../.venv/bin/pytest -q)
+  docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$INTELLIGENCE_IMAGE" -f services/intelligence-automation/Dockerfile services/intelligence-automation
+fi
+if [[ "$DEPLOY_CORE" == 1 ]]; then docker image inspect "$CORE_IMAGE" >/dev/null; fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then docker image inspect "$INTELLIGENCE_IMAGE" >/dev/null; fi
+
+LOCAL_ARCHIVE="$TEMP_DIR/web-image.tar.gz"
+echo "Packaging the web image..."
+IMAGES=("$IMAGE")
+[[ "$DEPLOY_CORE" == 0 ]] || IMAGES+=("$CORE_IMAGE")
+[[ "$DEPLOY_INTELLIGENCE" == 0 ]] || IMAGES+=("$INTELLIGENCE_IMAGE")
+docker save "${IMAGES[@]}" | gzip -1 > "$LOCAL_ARCHIVE"
+sha256sum "$LOCAL_ARCHIVE" > "$TEMP_DIR/web-image.sha256"
+
+echo "Uploading the release image..."
+"${SCP[@]}" "$LOCAL_ARCHIVE" "$REMOTE:$REMOTE_ARCHIVE"
+if [[ -n "$MIGRATION_FILE" ]]; then "${SCP[@]}" "$ROOT_DIR/$MIGRATION_FILE" "$REMOTE:/tmp/${RELEASE_NAME}.migration.sql"; fi
+
+echo "Staging, backing up, and switching production traffic..."
+"${SSH[@]}" "$REMOTE" "bash -s -- '$RELEASE_NAME' '$IMAGE' '$WEB_PORT' '$CORE_PORT' '$INTELLIGENCE_PORT' '$PUBLIC_URL' '$CURRENT_RELEASE' '$CURRENT_RELEASE_DIR' '$REMOTE_ARCHIVE' '$DEPLOY_CORE' '$CORE_IMAGE' '$CURRENT_CORE_PORT' '$CURRENT_CORE_RELEASE_DIR' '$MIGRATION_FILE' '$DEPLOY_INTELLIGENCE' '$INTELLIGENCE_IMAGE' '$CURRENT_INTELLIGENCE_PORT' '$CURRENT_INTELLIGENCE_RELEASE_DIR' '$CURRENT_INTELLIGENCE_WORKER_CONTAINER'" <<'REMOTE_DEPLOY'
+set -euo pipefail
+umask 077
+
+RELEASE_NAME="$1"
+IMAGE="$2"
+WEB_PORT="$3"
+CORE_PORT="$4"
+INTELLIGENCE_PORT="$5"
+PUBLIC_URL="$6"
+CURRENT_RELEASE="$7"
+CURRENT_RELEASE_DIR="$8"
+REMOTE_ARCHIVE="$9"
+DEPLOY_CORE="${10}"
+CORE_IMAGE="${11}"
+CURRENT_CORE_PORT="${12}"
+CURRENT_CORE_RELEASE_DIR="${13}"
+MIGRATION_FILE="${14}"
+DEPLOY_INTELLIGENCE="${15}"
+INTELLIGENCE_IMAGE="${16}"
+CURRENT_INTELLIGENCE_PORT="${17}"
+CURRENT_INTELLIGENCE_RELEASE_DIR="${18}"
+CURRENT_INTELLIGENCE_WORKER_CONTAINER="${19}"
+RELEASE_DIR="/opt/wodana/releases/${RELEASE_NAME}"
+
+[[ ! -e "$RELEASE_DIR" ]] || { echo "Release directory already exists: $RELEASE_DIR" >&2; exit 1; }
+[[ -s "$REMOTE_ARCHIVE" ]] || { echo "Uploaded image archive is missing." >&2; exit 1; }
+if ss -ltn | awk '{print $4}' | grep -Eq ":${WEB_PORT}$"; then
+  echo "Web port ${WEB_PORT} is already occupied." >&2
+  exit 1
+fi
+if [[ "$DEPLOY_CORE" == 1 ]]; then
+  test -f "$CURRENT_CORE_RELEASE_DIR/core.env"
+  if ss -ltn | awk '{print $4}' | grep -Eq ":${CORE_PORT}$"; then echo "Core port is occupied." >&2; exit 1; fi
+fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+  test -f "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env"
+  docker inspect "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null
+  if ss -ltn | awk '{print $4}' | grep -Eq ":${INTELLIGENCE_PORT}$"; then echo "Intelligence port is occupied." >&2; exit 1; fi
+fi
+
+CURRENT_WEB_PORT="$(awk '$1 == "web:" { in_web=1; next } in_web && $1 == "PORT:" { print $2; exit }' "$CURRENT_RELEASE_DIR/compose.yaml")"
+[[ "$CURRENT_WEB_PORT" =~ ^[0-9]+$ ]] || { echo "Could not determine the current web port." >&2; exit 1; }
+
+mkdir -m 700 "$RELEASE_DIR"
+cp "$CURRENT_RELEASE_DIR/web.env" "$RELEASE_DIR/web.env"
+cp /etc/nginx/sites-available/wodana.ai "$RELEASE_DIR/nginx-before.conf"
+if [[ "$DEPLOY_CORE" == 1 ]]; then cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"; fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then cp "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env" "$RELEASE_DIR/intelligence.env"; fi
+
+gzip -dc "$REMOTE_ARCHIVE" | docker load >/dev/null
+rm -f "$REMOTE_ARCHIVE"
+docker image inspect "$IMAGE" >/dev/null
+if [[ "$DEPLOY_CORE" == 1 ]]; then docker image inspect "$CORE_IMAGE" >/dev/null; fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then docker image inspect "$INTELLIGENCE_IMAGE" >/dev/null; fi
+
+cat > "$RELEASE_DIR/compose.yaml" <<COMPOSE
+name: wodana-${RELEASE_NAME}
+services:
+  web:
+    image: ${IMAGE}
+    network_mode: host
+    env_file: [./web.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOSTNAME: 127.0.0.1
+      PORT: ${WEB_PORT}
+      BUSINESS_CORE_URL: http://127.0.0.1:${CORE_PORT}/api/v1
+      GEMINI_MODEL: gemini-3.5-flash
+      INTELLIGENCE_API_URL: http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1
+    init: true
+    restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:${WEB_PORT}/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 15s
+      retries: 8
+COMPOSE
+if [[ "$DEPLOY_CORE" == 1 ]]; then
+cat >> "$RELEASE_DIR/compose.yaml" <<COMPOSE
+  business-core:
+    image: ${CORE_IMAGE}
+    network_mode: host
+    env_file: [./core.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOST: 127.0.0.1
+      PORT: ${CORE_PORT}
+      WODANA_RELEASE_ID: ${RELEASE_NAME}
+      INTELLIGENCE_API_URL: http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1
+    volumes: [object_data:/app/.data]
+    init: true
+    restart: unless-stopped
+    mem_limit: 768m
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:${CORE_PORT}/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 15s
+      retries: 8
+COMPOSE
+fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+cat >> "$RELEASE_DIR/compose.yaml" <<COMPOSE
+  intelligence-api:
+    image: ${INTELLIGENCE_IMAGE}
+    network_mode: host
+    env_file: [./intelligence.env]
+    environment:
+      BUSINESS_CORE_URL: http://127.0.0.1:${CORE_PORT}/api/v1
+      PORT: ${INTELLIGENCE_PORT}
+    command: [uvicorn, "wodana_intelligence.main:app", --host, 127.0.0.1, --port, "${INTELLIGENCE_PORT}"]
+    init: true
+    restart: unless-stopped
+    mem_limit: 384m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1/health/ready')"]
+      interval: 10s
+      start_period: 15s
+      retries: 8
+  intelligence-worker:
+    image: ${INTELLIGENCE_IMAGE}
+    network_mode: host
+    env_file: [./intelligence.env]
+    environment:
+      BUSINESS_CORE_URL: http://127.0.0.1:${CORE_PORT}/api/v1
+    command: [python, -m, wodana_intelligence.worker]
+    profiles: [delivery]
+    init: true
+    restart: unless-stopped
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+COMPOSE
+fi
+if [[ "$DEPLOY_CORE" == 1 ]]; then
+cat >> "$RELEASE_DIR/compose.yaml" <<COMPOSE
+volumes:
+  object_data: {name: wodana-release-objects, external: true}
+COMPOSE
+fi
+
+cd "$RELEASE_DIR"
+docker compose -f compose.yaml config --quiet
+curl -fsS "http://127.0.0.1:${CURRENT_CORE_PORT}/api/v1/health/ready" >/dev/null
+
+# Snapshot the live state directly. The older host-wide backup script contains a
+# historical container inventory and can fail after those superseded containers
+# are intentionally retired.
+BACKUP_ROOT="/var/backups/wodana/current"
+BACKUP_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$BACKUP_ROOT"
+BACKUP_STAGING="$(mktemp -d "$BACKUP_ROOT/.incomplete-${BACKUP_STAMP}-XXXXXX")"
+backup_failed() {
+  status=$?
+  rm -rf "$BACKUP_STAGING"
+  echo "Pre-release backup failed; the incomplete snapshot was removed." >&2
+  exit "$status"
+}
+trap backup_failed ERR
+
+sudo -u postgres pg_dump -Fc wodana_release </dev/null > "$BACKUP_STAGING/postgres.dump"
+sudo -u postgres pg_restore --list < "$BACKUP_STAGING/postgres.dump" > "$BACKUP_STAGING/postgres.contents"
+sudo -u postgres pg_dumpall --globals-only </dev/null > "$BACKUP_STAGING/postgres-globals.sql"
+docker exec wodana-release-redis-1 redis-cli -p 16379 --rdb /tmp/wodana-release-backup.rdb >/dev/null
+docker cp wodana-release-redis-1:/tmp/wodana-release-backup.rdb "$BACKUP_STAGING/redis.rdb" >/dev/null
+docker exec wodana-release-redis-1 rm /tmp/wodana-release-backup.rdb >/dev/null
+OBJECT_PATH="$(docker volume inspect wodana-release-objects --format '{{.Mountpoint}}')"
+tar -C "$OBJECT_PATH" -czf "$BACKUP_STAGING/objects.tar.gz" .
+tar -C "$(dirname "$CURRENT_RELEASE_DIR")" -czf "$BACKUP_STAGING/current-release-private.tar.gz" "$(basename "$CURRENT_RELEASE_DIR")"
+tar -C /etc -czf "$BACKUP_STAGING/proxy-private.tar.gz" nginx letsencrypt
+mapfile -t RUNNING_CONTAINERS < <(docker ps --format '{{.Names}}')
+(( ${#RUNNING_CONTAINERS[@]} > 0 )) || { echo "No running containers found." >&2; false; }
+docker inspect "${RUNNING_CONTAINERS[@]}" > "$BACKUP_STAGING/running-containers-private.json"
+printf '%s\n' "$CURRENT_RELEASE" > "$BACKUP_STAGING/source-release.txt"
+(
+  cd "$BACKUP_STAGING"
+  sha256sum postgres.dump postgres.contents postgres-globals.sql redis.rdb objects.tar.gz \
+    current-release-private.tar.gz proxy-private.tar.gz running-containers-private.json source-release.txt > SHA256SUMS
+  sha256sum --status -c SHA256SUMS
+)
+BACKUP_DIR="$BACKUP_ROOT/release-${BACKUP_STAMP}"
+mv "$BACKUP_STAGING" "$BACKUP_DIR"
+trap - ERR
+printf 'Backup complete: %s\n' "$BACKUP_DIR" > pre-backup.log
+printf '%s\n' "$BACKUP_DIR" > pre-backup-path.txt
+
+if [[ -n "$MIGRATION_FILE" ]]; then
+  MIGRATION_PATH="/tmp/${RELEASE_NAME}.migration.sql"
+  test -s "$MIGRATION_PATH"
+  LAST_MIGRATION="$(sudo -u postgres psql -d wodana_release -Atc 'SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1' </dev/null)"
+  [[ "$LAST_MIGRATION" == 1788901200000 ]] || { echo "Unexpected migration state: $LAST_MIGRATION" >&2; exit 1; }
+  # Rehearse the additive schema change transactionally, leaving the database unchanged.
+  { printf 'BEGIN;\n'; cat "$MIGRATION_PATH"; printf '\nROLLBACK;\n'; } | sudo -u postgres psql -v ON_ERROR_STOP=1 -d wodana_release > migration-rehearsal.log
+  MIGRATION_HASH="$(sha256sum "$MIGRATION_PATH" | awk '{print $1}')"
+  { printf 'BEGIN;\n'; cat "$MIGRATION_PATH"; printf "\nINSERT INTO drizzle.__drizzle_migrations(hash,created_at) VALUES ('%s',1788904800000);\nCOMMIT;\n" "$MIGRATION_HASH"; } | sudo -u postgres psql -v ON_ERROR_STOP=1 -d wodana_release > migration.log
+  cp "$MIGRATION_PATH" ./migration.sql
+  rm -f "$MIGRATION_PATH"
+fi
+docker compose -f compose.yaml up -d --wait --wait-timeout 180
+curl -fsS "http://127.0.0.1:${WEB_PORT}/login" >/dev/null
+curl -fsS "http://127.0.0.1:${CORE_PORT}/api/v1/health/ready" >/dev/null
+curl -fsS "http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1/health/ready" >/dev/null
+
+python3 - "$CURRENT_WEB_PORT" "$WEB_PORT" "$CURRENT_RELEASE" "$RELEASE_NAME" "$DEPLOY_CORE" "$CURRENT_CORE_PORT" "$CORE_PORT" "$DEPLOY_INTELLIGENCE" "$CURRENT_INTELLIGENCE_PORT" "$INTELLIGENCE_PORT" <<'PY'
+from pathlib import Path
+import sys
+
+old_port, new_port, old_release, new_release, deploy_core, old_core, new_core, deploy_intelligence, old_intelligence, new_intelligence = sys.argv[1:]
+source = Path("nginx-before.conf").read_text()
+old_upstream = f"127.0.0.1:{old_port}"
+new_upstream = f"127.0.0.1:{new_port}"
+if old_upstream not in source:
+    raise SystemExit(f"Current web upstream {old_upstream} was not found")
+if old_release not in source:
+    raise SystemExit(f"Current release marker {old_release} was not found")
+updated = source.replace(old_upstream, new_upstream).replace(old_release, new_release)
+if deploy_core == '1':
+    if f'127.0.0.1:{old_core}' not in source:
+        raise SystemExit('Current API upstream was not found')
+    updated = updated.replace(f'127.0.0.1:{old_core}', f'127.0.0.1:{new_core}')
+if deploy_intelligence == '1':
+    if f'127.0.0.1:{old_intelligence}' not in source:
+        raise SystemExit('Current Intelligence API upstream was not found')
+    updated = updated.replace(
+        f'127.0.0.1:{old_intelligence}', f'127.0.0.1:{new_intelligence}'
+    )
+Path("nginx-current.conf").write_text(updated)
+PY
+
+cat > rollback.sh <<ROLLBACK
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+cp "\$DIR/nginx-before.conf" /etc/nginx/sites-available/wodana.ai
+nginx -t
+systemctl reload nginx
+curl -fsSI ${PUBLIC_URL}/login | grep -qi 'X-Wodana-Release: ${CURRENT_RELEASE}'
+ROLLBACK
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+cat >> rollback.sh <<ROLLBACK
+docker compose -f "\$DIR/compose.yaml" --profile delivery stop intelligence-worker >/dev/null 2>&1 || true
+docker start "${CURRENT_INTELLIGENCE_WORKER_CONTAINER}" >/dev/null
+ROLLBACK
+fi
+printf '%s\n' "printf '%s\\n' 'Rollback completed and the previous release is live.'" >> rollback.sh
+chmod 700 rollback.sh
+
+cutover_started=0
+worker_switched=0
+restore_proxy() {
+  status=$?
+  if [[ "$worker_switched" == 1 ]]; then
+    docker compose -f "$RELEASE_DIR/compose.yaml" --profile delivery stop intelligence-worker >/dev/null 2>&1 || true
+    docker start "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null 2>&1 || true
+    echo "Worker cutover failed; the previous worker was restarted." >&2
+  fi
+  if [[ "$cutover_started" == 1 ]]; then
+    cp "$RELEASE_DIR/nginx-before.conf" /etc/nginx/sites-available/wodana.ai
+    nginx -t >/dev/null
+    systemctl reload nginx
+    echo "Cutover failed; the previous proxy configuration was restored." >&2
+  fi
+  exit "$status"
+}
+trap restore_proxy ERR
+
+cutover_started=1
+cp nginx-current.conf /etc/nginx/sites-available/wodana.ai
+nginx -t
+systemctl reload nginx
+
+curl -fsS "${PUBLIC_URL}/login" >/dev/null
+curl -fsS "${PUBLIC_URL}/workspace/pre-projects/requirements" >/dev/null
+curl -fsS "https://api.wodana.ai/api/v1/health/ready" >/dev/null
+curl -fsSI "${PUBLIC_URL}/login" | grep -qi "X-Wodana-Release: ${RELEASE_NAME}"
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+  worker_switched=1
+  docker stop "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" >/dev/null
+  docker compose -f compose.yaml --profile delivery up -d intelligence-worker
+  sleep 3
+  NEW_WORKER="$(docker compose -f compose.yaml --profile delivery ps -q intelligence-worker)"
+  [[ -n "$NEW_WORKER" && "$(docker inspect -f '{{.State.Running}}' "$NEW_WORKER")" == true ]]
+  docker compose -f compose.yaml --profile delivery logs --no-color --tail=50 intelligence-worker > worker-startup.log
+  ! grep -q 'Traceback (most recent call last)' worker-startup.log
+fi
+cutover_started=0
+trap - ERR
+
+BUILD_ID="$(docker compose -f compose.yaml exec -T web sh -c 'cat /app/apps/web/.next/BUILD_ID' </dev/null)"
+DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+python3 - "$RELEASE_NAME" "$DEPLOYED_AT" "$BUILD_ID" "$PUBLIC_URL" "$CURRENT_RELEASE" "$WEB_PORT" "$CORE_PORT" "$INTELLIGENCE_PORT" <<'PY'
+from pathlib import Path
+import json, sys
+
+release, deployed_at, build_id, public_url, previous, port, core_port, intelligence_port = sys.argv[1:]
+Path("release.json").write_text(json.dumps({
+    "release": release,
+    "deployedAt": deployed_at,
+    "webBuildId": build_id,
+    "status": "live",
+    "publicUrl": public_url,
+    "previousRelease": previous,
+    "webPort": int(port),
+    "businessCorePort": int(core_port),
+    "intelligencePort": int(intelligence_port),
+}, indent=2) + "\n")
+PY
+
+docker compose -f compose.yaml ps
+printf 'Release %s is live at %s\n' "$RELEASE_NAME" "$PUBLIC_URL"
+REMOTE_DEPLOY
+
+echo "Deployment complete: ${PUBLIC_URL} (${RELEASE_NAME})"

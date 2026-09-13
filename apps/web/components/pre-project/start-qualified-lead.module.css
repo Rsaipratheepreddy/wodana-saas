@@ -1,0 +1,9 @@
+.provider { min-block-size: 0; background: transparent; --wd-field-focus-border: var(--wd-color-focus); --wd-field-focus-shadow: var(--wd-focus-ring); }
+.provider :global(.wd-focus-frame)::after { display: none; }
+.provider :global(.wd-select-button), .provider :global(.wd-button) { border-radius: .375rem; box-shadow: none; }
+.form { display: grid; gap: 1rem; }
+.actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.date { display: grid; gap: .5rem; font-size: var(--wd-text-sm); }
+.date input { min-inline-size: 0; inline-size: 100%; min-block-size: var(--wd-control-lg); border: 1px solid var(--wd-color-border-control); border-radius: .375rem; padding-inline: .75rem; color: var(--wd-color-text); background: var(--wd-color-surface); font: inherit; }
+.date input:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+@media (max-width: 48rem) { .date input { font-size: 1rem; min-block-size: 2.75rem; } }

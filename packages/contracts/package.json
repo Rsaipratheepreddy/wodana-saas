@@ -1,0 +1,17 @@
+{
+  "name": "@wodana/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned API and event contracts shared by Wodana services.",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "4.1.11"
+  }
+}

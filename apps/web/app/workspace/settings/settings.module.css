@@ -1,0 +1,8 @@
+.page { min-block-size: 100%; min-inline-size: 0; background: var(--wd-color-surface); color: var(--wd-color-text); }
+.page > header { padding: 1.15rem 1.5rem .5rem; }
+.page h1 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.tabs { display: flex; gap: 1.5rem; padding-inline: 1.5rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.tabs a { display: inline-flex; align-items: center; min-block-size: 2.75rem; border-block-end: 2px solid transparent; color: var(--wd-color-text-secondary); text-decoration: none; font-size: .8rem; }
+.tabs a[aria-current="page"] { border-block-end-color: currentColor; color: var(--wd-color-text); font-weight: 600; }
+.tabs a:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+@media (max-width: 48rem) { .page > header, .tabs { padding-inline: 1rem; } }

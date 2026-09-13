@@ -1,0 +1,10 @@
+.chip { display: inline-flex; align-items: center; gap: .375rem; max-inline-size: 100%; padding: .3rem .5rem; border-radius: .375rem; background: color-mix(in srgb, var(--wd-color-text-secondary) 10%, var(--wd-color-surface)); color: var(--wd-color-text); font-size: .75rem; line-height: 1.25; }
+.chip svg { inline-size: .875rem; block-size: .875rem; flex: none; }
+.chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { --chip-background: #edf0f4; --chip-ink: #465364; background: var(--chip-background); color: var(--chip-ink); font-weight: 500; }
+.chip[data-source="website"], .chip[data-source="facebook"] { --chip-background: #e5efff; --chip-ink: #285aa0; }
+.chip[data-source="referral"] { --chip-background: #eee4fc; --chip-ink: #744ca0; }
+.chip[data-source="developer"] { --chip-background: #ffedd8; --chip-ink: #97601c; }
+.chip[data-source="instagram"] { --chip-background: #ffe4ee; --chip-ink: #a43865; }
+.chip[data-source="repeat"], .chip[data-source="whatsapp"] { --chip-background: #dcf3e9; --chip-ink: #286d53; }
+:global([data-wd-theme="dark"]) .chip, :global([data-theme="dark"]) .chip { background: color-mix(in srgb, var(--chip-ink) 32%, var(--wd-color-surface)); color: var(--chip-background); }

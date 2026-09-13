@@ -1,0 +1,21 @@
+import {render,screen,waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {afterEach,describe,expect,it,vi} from 'vitest';
+import type {ReactNode} from 'react';
+import {DesignSystemProvider} from '@/design-system';
+import {blankEntry,type CaseContent,type DesignFolder,type CaseAsset} from '@/lib/pre-project/content';
+import {folderSelection,matchingFolder} from '@/lib/pre-project/design-folders';
+import {designStage} from '@/lib/pre-project/design-workflow';
+import {DesignUpload,FolderEditor} from './design-forms';
+vi.mock('./case-controls',()=>({CaseModal:({title,children,footer}:{title:string;children:ReactNode;footer:ReactNode})=><section aria-label={title}>{children}{footer}</section>,AssetFiles:()=>null,AssetUpload:({onUploaded}:{onUploaded:(a:CaseAsset)=>void})=><button onClick={()=>onUploaded({id:'asset',name:'wall.pdf',mimeType:'application/pdf',byteSize:100,hasPreview:false})}>Choose file</button>}));
+afterEach(()=>vi.unstubAllGlobals());
+const data={workspaceId:'w',caseId:'c',canEdit:true,rooms:[{id:'r',name:'Reception',version:1},{id:'m',name:'Meeting room',version:1}],entries:[{...blankEntry('r'),id:'i',title:'Counter'},{...blankEntry('m'),id:'j',title:'Wall'}]} as CaseContent;
+const folder:DesignFolder={id:'f',name:'Reception + Counter',roomId:'r',scopeEntryId:'i',description:'',version:1};
+describe('simple design forms',()=>{
+ it.each([['room','Reception','r',null],['item','Counter','r','i'],['room-item','Reception + Counter','r','i']] as const)('names %s folders from the selected context', (kind,name,roomId,scopeEntryId)=>expect(folderSelection(data,kind,'r','i')).toEqual({valid:true,name,roomId,scopeEntryId}));
+ it('does not combine an item with a different room',()=>expect(folderSelection(data,'room-item','m','i').valid).toBe(false));
+ it('detects the same item even if an existing folder has an old name',()=>expect(matchingFolder([{...folder,name:'Old custom name'}],folderSelection(data,'item',null,'i'))).toBeTruthy());
+ it('blocks duplicate creation in the form',async()=>{const user=userEvent.setup();render(<DesignSystemProvider><FolderEditor data={data} initial={{...folder,id:'new',version:0}} folders={[folder]} onClose={()=>{}} onSaved={()=>{}}/></DesignSystemProvider>);expect(screen.getByRole('button',{name:'Create folder'})).toBeDisabled();expect(screen.getByRole('status')).toHaveTextContent('already exists');await user.click(screen.getByRole('button',{name:'Room + item Folder for'}));await user.click(screen.getByRole('option',{name:'Item'}));await user.click(screen.getByRole('button',{name:'Choose an item Item'}));expect(screen.getByRole('option',{name:'Wall · Meeting room'})).toBeInTheDocument();});
+ it('uploads in one screen with inherited folder context and an individual note',async()=>{const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({items:[]})});vi.stubGlobal('fetch',fetcher);const saved=vi.fn();const user=userEvent.setup();render(<DesignSystemProvider><DesignUpload data={data} folder={folder} onClose={()=>{}} onSaved={saved}/></DesignSystemProvider>);await user.click(screen.getByRole('button',{name:'Choose file'}));await user.type(screen.getByRole('textbox',{name:'Note · optional'}),'Check the wall height');expect(screen.queryByRole('button',{name:'Continue'})).not.toBeInTheDocument();expect(screen.queryByRole('textbox',{name:'File name'})).not.toBeInTheDocument();await user.click(screen.getByRole('button',{name:'Save 1 file'}));await waitFor(()=>expect(saved).toHaveBeenCalled());expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({folderId:'f',roomId:'r',scopeEntryId:'i',files:[{assetId:'asset',title:'wall.pdf',documentType:'2D floor plan',note:'Check the wall height'}]});});
+ it.each([['draft','designs'],['changes_requested','designs'],['internal_review','internal-approval'],['internal_approved','internal-approval'],['client_review','client-approval'],['approved','approved']])('puts %s in %s', (status,tab)=>expect(designStage(status)).toBe(tab));
+});

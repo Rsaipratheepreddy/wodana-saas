@@ -1,0 +1,610 @@
+.tabs:global(.wd-tab-list) {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.tabs > * {
+  flex: none;
+}
+.tabCount {
+  font-size: 0.7rem;
+  color: var(--wd-color-text-secondary);
+  margin-inline-start: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+.libraryHint {
+  margin: 0.7rem 0;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--wd-color-text-secondary);
+}
+.libraryToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.5rem;
+}
+.libraryToolbar > :first-child {
+  flex: 1;
+  max-inline-size: 30rem;
+  min-inline-size: 10rem;
+}
+.toolbarActions,
+.revisionActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: none;
+}
+.location {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-block: 0.5rem;
+  font-size: 0.8rem;
+}
+.location strong {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.location > span:last-child {
+  margin-inline-start: auto;
+  color: var(--wd-color-text-secondary);
+  white-space: nowrap;
+}
+.fileFilters {
+  display: flex;
+  align-items: end;
+  gap: 0.8rem;
+  padding: 0;
+  flex: 1;
+  justify-content: flex-end;
+}
+.fileFilters > div {
+  inline-size: 10rem;
+  min-inline-size: 0;
+}
+.fileFilters > small {
+  margin-inline-start: auto;
+  padding-block: 0.6rem;
+  color: var(--wd-color-text-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.fileFilters :global(.wd-field-label) {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.libraryToolbar {
+  flex-wrap: wrap;
+}
+.folderGrid,
+.fileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 1rem;
+  padding-block: 0.8rem;
+}
+.folder {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 0.5rem;
+  min-block-size: 8rem;
+  padding: 1rem;
+  text-align: start;
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  border: 1px solid var(--wd-color-structural-divider);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  font: inherit;
+}
+.folderTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  inline-size: 100%;
+  gap: 0.6rem;
+}
+.folderTop svg {
+  color: var(--wd-color-text-secondary);
+}
+.folderTop span {
+  color: var(--wd-color-text-secondary);
+  font-size: 0.72rem;
+}
+.folder strong {
+  font-size: 0.85rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+  padding-inline-end: 1rem;
+}
+.folderArrow {
+  position: absolute;
+  inset-inline-end: 0.8rem;
+  inset-block-end: 1rem;
+  color: var(--wd-color-text-secondary);
+}
+.needsChanges {
+  font-size: 0.7rem;
+  color: var(--crm-accent);
+}
+.folder:hover,
+.fileCard:hover {
+  border-color: var(--wd-color-border-control);
+  background: var(--wd-color-surface-muted);
+}
+.folder:focus-visible,
+.fileCard:focus-visible,
+.queueRow:focus-visible {
+  outline: 2px solid var(--crm-accent);
+  outline-offset: 3px;
+}
+.fileCard {
+  padding: 0;
+  text-align: start;
+  color: var(--wd-color-text);
+  border: 1px solid var(--wd-color-structural-divider);
+  border-radius: 0.4rem;
+  background: var(--wd-color-surface);
+  overflow: hidden;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+}
+.cover {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: var(--wd-color-surface-muted);
+  block-size: 10rem;
+  inline-size: 100%;
+  color: var(--wd-color-text-secondary);
+  overflow: hidden;
+}
+.cover img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
+.cover small {
+  font-size: 0.72rem;
+  padding: 0.3rem;
+  text-align: center;
+}
+.cover small[role="status"] {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  background: var(--wd-color-surface);
+}
+.cover a {
+  color: var(--crm-accent);
+  font-size: 0.8rem;
+}
+.fileInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.8rem 0.85rem 0.4rem;
+  min-inline-size: 0;
+}
+.fileInfo strong {
+  font-size: 0.82rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.fileInfo small {
+  color: var(--wd-color-text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.fileNote {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fileState {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 0.3rem;
+  padding: 0.4rem 0.85rem 0.85rem;
+  margin-block-start: auto;
+}
+.fileState > small {
+  color: var(--wd-color-text-secondary);
+  font-size: 0.72rem;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.25rem;
+  color: var(--wd-color-text-secondary);
+  background: var(--wd-color-surface-muted);
+}
+.status[data-status="internal_review"],
+.status[data-status="client_review"] {
+  background: color-mix(in srgb, var(--crm-lilac) 22%, var(--wd-color-surface));
+  color: var(--crm-accent);
+}
+.status[data-status="internal_approved"],
+.status[data-status="approved"] {
+  background: color-mix(in srgb, #43926f 12%, var(--wd-color-surface));
+  color: var(--wd-color-text);
+}
+.status[data-status="changes_requested"] {
+  background: color-mix(in srgb, #c77a33 15%, var(--wd-color-surface));
+  color: var(--wd-color-text);
+}
+.queue {
+  display: flex;
+  flex-direction: column;
+  padding-block: 0.5rem;
+}
+.queueRow {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) minmax(9rem, 13rem) 1rem;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 0.25rem;
+  background: transparent;
+  color: var(--wd-color-text);
+  text-align: start;
+  font: inherit;
+  border: 0;
+  border-block-end: 1px solid var(--wd-color-structural-divider);
+  cursor: pointer;
+}
+.queueRow:hover {
+  background: var(--wd-color-surface-muted);
+}
+.queueRow .cover {
+  block-size: 3.7rem;
+  border-radius: 0.25rem;
+}
+.queueRow .cover svg {
+  inline-size: 1.5rem;
+}
+.queueRow .cover small {
+  display: none;
+}
+.queueRow .fileInfo,
+.queueRow .fileState {
+  padding: 0;
+  margin: 0;
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  padding-block: 3.5rem;
+  text-align: center;
+  color: var(--wd-color-text-secondary);
+  font-size: 0.8rem;
+}
+.empty strong {
+  color: var(--wd-color-text);
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+.empty p {
+  margin: 0;
+  max-inline-size: 28rem;
+  line-height: 1.7;
+}
+.fileDetail {
+  min-inline-size: 0;
+}
+.compactFileHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+  border-block-end: 1px solid var(--wd-color-structural-divider);
+}
+.compactFileHeader > button span {
+  max-inline-size: 9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.compactFileHeader > div:first-of-type {
+  min-inline-size: 0;
+  flex: 1;
+}
+.compactFileHeader h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.compactFileHeader small {
+  color: var(--wd-color-text-secondary);
+  font-size: 0.72rem;
+}
+.compactFileActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.revisionBar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-block-size: 3rem;
+  padding-block: 0.4rem;
+}
+.revisionBar > div:first-child:not(.revisionActions) {
+  inline-size: 20rem;
+  max-inline-size: 55%;
+}
+.revisionBar > small {
+  font-size: 0.72rem;
+  color: var(--wd-color-text-secondary);
+}
+.revisionActions {
+  margin-inline-start: auto;
+}
+.originalFile {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-decoration: none;
+  color: var(--wd-color-text);
+  font-size: 0.75rem;
+  padding: 0.4rem;
+}
+.originalFile:hover {
+  text-decoration: underline;
+}
+.fileHint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--wd-color-text-secondary);
+  line-height: 1.6;
+  margin: 0.1rem 0 0.65rem;
+}
+.simpleFileBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
+  gap: 1.5rem;
+  padding-block: 0.4rem 1rem;
+}
+.fileWorkspace {
+  min-inline-size: 0;
+}
+.fileWorkspace > button {
+  margin-block-start: 0.6rem;
+}
+.canvas {
+  block-size: clamp(22rem, calc(100dvh - 18rem), 55rem);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: var(--wd-color-surface-muted);
+}
+.canvas .cover {
+  block-size: 100%;
+  background: none;
+}
+.canvas .cover img {
+  object-fit: contain;
+}
+.pdfViewer {
+  inline-size: 100%;
+  block-size: 100%;
+  border: 0;
+  display: block;
+}
+.fileSidebar {
+  min-inline-size: 0;
+  border-inline-start: 1px solid var(--wd-color-structural-divider);
+  padding-inline-start: 1.25rem;
+}
+.metadataHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.metadataHeading h2,
+.comments h2 {
+  font-size: 0.82rem;
+  font-weight: 550;
+  margin: 0;
+}
+.fileMetadata {
+  margin: 0.6rem 0 1rem;
+}
+.fileMetadata dt {
+  font-size: 0.68rem;
+  color: var(--wd-color-text-secondary);
+  margin-block: 0.7rem 0.3rem;
+}
+.fileMetadata dd {
+  margin: 0;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+.comments {
+  border-block-start: 1px solid var(--wd-color-structural-divider);
+  padding-block: 1rem;
+}
+.comments h2 small {
+  margin-inline-start: 0.35rem;
+  color: var(--wd-color-text-secondary);
+  font-weight: 400;
+}
+.inlineComposer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.75rem 0;
+}
+.inlineComposer label {
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.inlineComposer textarea {
+  inline-size: 100%;
+  resize: vertical;
+  min-block-size: 4.25rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--wd-color-border-control);
+  border-radius: 0.3rem;
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.inlineComposer textarea:focus {
+  outline: 2px solid var(--crm-accent);
+  outline-offset: 2px;
+}
+.inlineComposer > div {
+  display: flex;
+  justify-content: flex-end;
+}
+.commentList {
+  max-block-size: 29rem;
+  overflow-y: auto;
+}
+.plainComment {
+  padding-block: 0.8rem;
+  border-block-end: 1px solid var(--wd-color-structural-divider);
+}
+.messageMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--wd-color-text-secondary);
+}
+.messageMeta strong {
+  font-weight: 550;
+}
+.messageMeta time {
+  margin-inline-start: auto;
+  font-size: 0.6rem;
+}
+.plainComment p {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.decisionLabel {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 550;
+  margin-block-start: 0.5rem;
+}
+@media (max-width: 950px) {
+  .simpleFileBody {
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 19rem);
+    gap: 1rem;
+  }
+  .compactFileHeader {
+    flex-wrap: wrap;
+  }
+  .compactFileActions {
+    margin-inline-start: auto;
+  }
+}
+@media (max-width: 760px) {
+  .simpleFileBody {
+    grid-template-columns: 1fr;
+  }
+  .fileSidebar {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+  .canvas {
+    block-size: clamp(18rem, 50dvh, 30rem);
+  }
+  .commentList {
+    max-block-size: none;
+  }
+  .libraryToolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .libraryToolbar > :first-child {
+    max-inline-size: none;
+  }
+  .toolbarActions {
+    margin-inline-start: auto;
+  }
+  .queueRow {
+    grid-template-columns: 3rem minmax(0, 1fr) 1rem;
+    gap: 0.7rem;
+  }
+  .queueRow .fileState {
+    grid-column: 2;
+  }
+  .queueRow > svg {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .queueRow .cover {
+    block-size: 3rem;
+  }
+  .fileFilters {
+    flex-wrap: wrap;
+    order: 3;
+    flex-basis: 100%;
+  }
+  .fileFilters > div {
+    flex: 1;
+    min-inline-size: 8rem;
+  }
+  .fileHint {
+    flex-wrap: wrap;
+  }
+  .compactFileHeader > button span {
+    display: none;
+  }
+  .revisionBar {
+    flex-wrap: wrap;
+  }
+  .revisionBar > div:first-child:not(.revisionActions) {
+    max-inline-size: 100%;
+  }
+  .location {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 480px) {
+  .folderGrid,
+  .fileGrid {
+    grid-template-columns: 1fr;
+  }
+}

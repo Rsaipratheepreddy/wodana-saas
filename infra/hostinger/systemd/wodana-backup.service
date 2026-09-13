@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up Wodana PostgreSQL, Redis integration state, and uploaded files
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=wodana
+WorkingDirectory=/opt/wodana/app
+ExecStart=/opt/wodana/app/infra/hostinger/backup.sh
+Nice=10

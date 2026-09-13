@@ -1,0 +1,11 @@
+[Unit]
+Description=Add active Wodana tenant domains to the TLS certificate
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/wodana/app
+ExecStart=/opt/wodana/app/infra/hostinger/sync-tenant-certificates.sh
+Nice=10

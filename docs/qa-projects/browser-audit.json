@@ -1,0 +1,397 @@
+{
+  "at": "2026-09-07T05:05:57.431Z",
+  "results": [
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/overview",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Overview",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/plan-teams",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Plan & teams",
+      "rows": 8,
+      "firstRow": 279.015625
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/material-planning",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Material planning",
+      "rows": 1,
+      "firstRow": 244.953125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/procurement",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Procurement",
+      "rows": 1,
+      "firstRow": 313.703125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/production",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Production",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/site-work",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Site work",
+      "rows": 4,
+      "firstRow": 279.015625
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/daily-progress",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Daily progress",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/snagging",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Snagging",
+      "rows": 1,
+      "firstRow": 244.953125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/handover",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Handover",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/documents",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Documents",
+      "rows": 1,
+      "firstRow": 244.953125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/commercial",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Commercial",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/boq",
+      "width": 1440,
+      "overflow": 0,
+      "title": "BOQ & costing",
+      "rows": 9,
+      "firstRow": 319.5625
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/quotations",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Quotations",
+      "rows": 1,
+      "firstRow": 278.3125
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/contracts",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Agreement & payments",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/variations",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Change requests",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/execution-release",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Approvals & release",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/client-portal",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Client portal",
+      "rows": 1,
+      "firstRow": 203.5625
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/documents",
+      "width": 1440,
+      "overflow": 0,
+      "title": "Files & activity",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/overview",
+      "width": 390,
+      "overflow": 0,
+      "title": "Overview",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/plan-teams",
+      "width": 390,
+      "overflow": 0,
+      "title": "Plan & teams",
+      "rows": 8,
+      "firstRow": 265.203125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/material-planning",
+      "width": 390,
+      "overflow": 0,
+      "title": "Material planning",
+      "rows": 1,
+      "firstRow": 305.09375
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/procurement",
+      "width": 390,
+      "overflow": 0,
+      "title": "Procurement",
+      "rows": 1,
+      "firstRow": 356.5
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/production",
+      "width": 390,
+      "overflow": 0,
+      "title": "Production",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/site-work",
+      "width": 390,
+      "overflow": 0,
+      "title": "Site work",
+      "rows": 4,
+      "firstRow": 265.203125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/daily-progress",
+      "width": 390,
+      "overflow": 0,
+      "title": "Daily progress",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/snagging",
+      "width": 390,
+      "overflow": 0,
+      "title": "Snagging",
+      "rows": 1,
+      "firstRow": 268.3125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/handover",
+      "width": 390,
+      "overflow": 0,
+      "title": "Handover",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/documents",
+      "width": 390,
+      "overflow": 0,
+      "title": "Documents",
+      "rows": 1,
+      "firstRow": 268.3125
+    },
+    {
+      "route": "/workspace/projects/b6ee0e92-bc40-44dc-a188-e2492014c43f/commercial",
+      "width": 390,
+      "overflow": 0,
+      "title": "Commercial",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/boq",
+      "width": 390,
+      "overflow": 0,
+      "title": "BOQ & costing",
+      "rows": 9,
+      "firstRow": 531.171875
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/quotations",
+      "width": 390,
+      "overflow": 0,
+      "title": "Quotations",
+      "rows": 1,
+      "firstRow": 349.921875
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/contracts",
+      "width": 390,
+      "overflow": 0,
+      "title": "Agreement & payments",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/variations",
+      "width": 390,
+      "overflow": 0,
+      "title": "Change requests",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/execution-release",
+      "width": 390,
+      "overflow": 0,
+      "title": "Approvals & release",
+      "rows": 0
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/client-portal",
+      "width": 390,
+      "overflow": 0,
+      "title": "Client portal",
+      "rows": 1,
+      "firstRow": 281.9375
+    },
+    {
+      "route": "/workspace/pre-projects/cases/11911234-8004-4d49-b101-a9743f5ac28e/documents",
+      "width": 390,
+      "overflow": 0,
+      "title": "Files & activity",
+      "rows": 0
+    },
+    {
+      "section": "plan-teams",
+      "view": "Work calendars",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "production",
+      "view": "Dispatch",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "site-work",
+      "view": "Commissioning",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "documents",
+      "view": "Technical queries",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "documents",
+      "view": "Transmittals",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "procurement",
+      "view": "Returns & credits",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "commercial",
+      "view": "Retention",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "material-planning",
+      "view": "Warehouse & transfers",
+      "width": 1440,
+      "controls": true
+    },
+    {
+      "section": "plan-teams",
+      "view": "Work calendars",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "production",
+      "view": "Dispatch",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "site-work",
+      "view": "Commissioning",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "documents",
+      "view": "Technical queries",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "documents",
+      "view": "Transmittals",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "procurement",
+      "view": "Returns & credits",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "commercial",
+      "view": "Retention",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "section": "material-planning",
+      "view": "Warehouse & transfers",
+      "width": 390,
+      "controls": true
+    },
+    {
+      "portal": "Home",
+      "width": 390
+    },
+    {
+      "portal": "Designs & selections",
+      "width": 390
+    },
+    {
+      "portal": "Quotations",
+      "width": 390
+    },
+    {
+      "portal": "Agreement & payments",
+      "width": 390
+    },
+    {
+      "portal": "Project progress",
+      "width": 390
+    },
+    {
+      "portal": "Requests & messages",
+      "width": 390
+    }
+  ],
+  "errors": [],
+  "consoleErrors": []
+}

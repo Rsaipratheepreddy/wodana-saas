@@ -1,0 +1,59 @@
+.provider, .page { min-inline-size: 0; background: var(--wd-color-surface); }
+.visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; padding: 0; border: 0; margin: -1px; clip: rect(0 0 0 0); white-space: nowrap; }
+.filters { padding: .75rem 1.5rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.filterControls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.searchField { flex: 1 1 14rem; max-inline-size: 24rem; min-inline-size: 0; }
+.searchField input { inline-size: 100%; min-block-size: 2.25rem; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-xs); padding-inline: .65rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-xs); }
+.searchField input:focus-visible { outline: 2px solid var(--wd-color-text); outline-offset: 2px; }
+.searchField input::placeholder { color: var(--wd-color-text-tertiary); }
+.selectField { flex: 0 0 9rem; min-inline-size: 0; }
+.selectField :global(.wd-field-label), .selectField :global(.wd-field-help), .selectField :global(.wd-field-error) { display: none; }
+.selectField :global(.wd-select-button) { block-size: 2.25rem; min-block-size: 2.25rem; border-radius: var(--wd-radius-xs); box-shadow: none; font-size: var(--wd-text-xs); }
+.selectField :global(.wd-select-indicator) { inline-size: 2.25rem; block-size: calc(2.25rem - 2px); }
+.filterControls > :global(.wd-button) { min-block-size: 2.25rem; }
+.tableRegion { position: relative; overflow-x: auto; }
+.tableRegion:focus-visible { outline: 2px solid var(--wd-color-text); outline-offset: -2px; }
+.auditTable { inline-size: 100%; min-inline-size: 56rem; border-collapse: collapse; table-layout: fixed; }
+.auditTable th, .auditTable td { height: 3.25rem; border-block-end: 1px solid var(--wd-color-structural-divider); padding: .5rem 1rem; color: var(--wd-color-text); font-size: var(--wd-text-xs); text-align: start; vertical-align: middle; overflow-wrap: anywhere; }
+.auditTable th { height: 2.6rem; color: var(--wd-color-text-secondary); font-weight: 500; }
+.auditTable th:first-child, .auditTable td:first-child { padding-inline-start: 1.5rem; }
+.eventColumn { inline-size: 23%; }
+.actorColumn { inline-size: 22%; }
+.sourceColumn { inline-size: 10%; }
+.recordColumn { inline-size: 17%; }
+.dateColumn { inline-size: 20%; }
+.actionColumn { inline-size: 5rem; }
+.actor { display: grid; gap: .1rem; }
+.actor small { overflow: hidden; color: var(--wd-color-text-secondary); font-size: .6875rem; text-overflow: ellipsis; white-space: nowrap; }
+.auditTable time { white-space: nowrap; }
+.emptyRow td { height: 6rem; text-align: center; color: var(--wd-color-text-secondary); }
+.tableFooter { min-block-size: 3rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .5rem 1.5rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+.eventDetails { display: grid; gap: 1rem; }
+.eventDetails dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.eventDetails dl > div { min-inline-size: 0; display: grid; gap: .2rem; }
+.eventDetails dt, .changedFields > strong, .changeGrid section > strong { color: var(--wd-color-text-tertiary); font-size: .6875rem; font-weight: var(--wd-weight-medium); text-transform: uppercase; letter-spacing: .04em; }
+.eventDetails dd { min-inline-size: 0; margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+.eventDetails dd small { display: block; overflow: hidden; color: var(--wd-color-text-tertiary); text-overflow: ellipsis; white-space: nowrap; }
+.eventDetails code { overflow-wrap: anywhere; color: var(--wd-color-text-secondary); font-size: .6875rem; }
+.changedFields { display: grid; gap: .45rem; border-block: 1px solid var(--wd-color-structural-divider); padding-block: .85rem; }
+.changedFields > div { display: flex; flex-wrap: wrap; gap: .35rem; }
+.changedFields > div > span:not(:global(.wd-badge)) { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.changeGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.changeGrid section { min-inline-size: 0; display: grid; gap: .4rem; }
+.changeGrid pre { min-block-size: 8rem; max-block-size: 18rem; overflow: auto; margin: 0; padding: .75rem; background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font-size: .6875rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+
+@media (max-width: 48rem) {
+  .filters, .tableFooter { padding-inline: 1rem; }
+  .searchField { flex-basis: 100%; max-inline-size: none; }
+  .searchField input { font-size: 1rem; }
+  .selectField { flex: 1 1 7rem; }
+  .auditTable th:first-child, .auditTable td:first-child { padding-inline-start: 1rem; }
+  .changeGrid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 48rem) {
+  .searchField input, .selectField :global(.wd-select-button), .filterControls > :global(.wd-button), .tableFooter :global(.wd-button), .auditTable :global(.wd-button) { min-block-size: 2.75rem; }
+  .selectField :global(.wd-select-indicator) { block-size: calc(2.75rem - 2px); }
+}

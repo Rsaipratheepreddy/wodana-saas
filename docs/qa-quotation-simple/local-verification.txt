@@ -1,0 +1,95 @@
+Choose Room type from catalog Living Room
+Input: Living Room Options: [
+  'V1 · Draft',
+  '1 · Cover',
+  '2 · Preparation room',
+  '3 · Summary',
+  '4 · Payment schedule',
+  '5 · Terms & scope',
+  '6 · Acceptance'
+]
+Choose Item from catalog 2-Seater Sofa · Living Room
+Input: 2-Seater Sofa · Living Room Options: [
+  'V1 · Draft',
+  'Preparation room',
+  'QA Master bedroom',
+  '1 · Cover',
+  '2 · Preparation room',
+  '3 · QA Master bedroom',
+  '4 · Summary',
+  '5 · Payment schedule',
+  '6 · Terms & scope',
+  '7 · Acceptance'
+]
+Choose Variant from catalog 2-Seater Sofa · Budget · PT117
+Input: 2-Seater Sofa · Budget · PT117 Options: [
+  'V1 · Draft',
+  'Preparation room',
+  'QA Master bedroom',
+  '1 · Cover',
+  '2 · Preparation room',
+  '3 · QA Master bedroom',
+  '4 · Summary',
+  '5 · Payment schedule',
+  '6 · Terms & scope',
+  '7 · Acceptance'
+]
+Variant API 200 [ '2-Seater Sofa · Budget · PT117' ]
+Choose Material / SKU from catalog 0.8/1mm Edge Band
+Variant API 200 [
+  '2-Seater Sofa · Budget · PT117',
+  '2-Seater Sofa · Luxury · PT120',
+  '2-Seater Sofa · Premium · PT119',
+  '2-Seater Sofa · Standard · PT118'
+]
+Input: 0.8/1mm Edge Band Options: [
+  'V1 · Draft',
+  'Material / hardware',
+  'Finish',
+  'Preparation room',
+  'QA Master bedroom',
+  '1 · Cover',
+  '2 · Preparation room',
+  '3 · QA Master bedroom',
+  '4 · Summary',
+  '5 · Payment schedule',
+  '6 · Terms & scope',
+  '7 · Acceptance'
+]
+Choose Material / SKU from catalog 18mm Granite
+Input: 18mm Granite Options: [
+  'V1 · Draft',
+  'Material / hardware',
+  'Finish',
+  'Preparation room',
+  'QA Master bedroom',
+  '1 · Cover',
+  '2 · Preparation room',
+  '3 · QA Master bedroom',
+  '4 · Summary',
+  '5 · Payment schedule',
+  '6 · Terms & scope',
+  '7 · Acceptance'
+]
+Choose Material / SKU from catalog 18mm Granite
+Input: 18mm Granite Options: [
+  'V1 · Draft',
+  'Material / hardware',
+  'Finish',
+  'Preparation room',
+  'QA Master bedroom',
+  '1 · Cover',
+  '2 · Preparation room',
+  '3 · QA Master bedroom',
+  '4 · Summary',
+  '5 · Payment schedule',
+  '6 · Terms & scope',
+  '7 · Acceptance'
+]
+Variant API 200 [
+  '2-Seater Sofa · Budget · PT117',
+  '2-Seater Sofa · Luxury · PT120',
+  '2-Seater Sofa · Premium · PT119',
+  '2-Seater Sofa · Standard · PT118'
+]
+PASS: Preparation → catalogs → custom material → save/reopen → maximum numbers at 10 light/dark viewports → payment reorder → saved quotation template → client preview. Catalog count unchanged.

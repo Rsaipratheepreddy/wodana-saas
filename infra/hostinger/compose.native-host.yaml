@@ -1,0 +1,83 @@
+# Existing 4 GB host: native PostgreSQL and nginx stay in place.
+# Images are built for linux/amd64 off-host. Every service binds to loopback.
+name: wodana-release
+services:
+  redis:
+    image: redis:7-alpine
+    network_mode: host
+    restart: unless-stopped
+    command: [redis-server, --bind, 127.0.0.1, --port, "16379", --appendonly, "yes", --appendfsync, everysec, --maxmemory-policy, noeviction]
+    volumes: [redis_data:/data]
+    mem_limit: 192m
+    healthcheck:
+      test: [CMD, redis-cli, -p, "16379", ping]
+      interval: 10s
+      retries: 6
+  business-core:
+    image: wodana-core:20260907-amd64
+    network_mode: host
+    env_file: [./core.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOST: 127.0.0.1
+      PORT: 18000
+    restart: unless-stopped
+    init: true
+    volumes: [object_data:/app/.data]
+    mem_limit: 768m
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:18000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      start_period: 30s
+      retries: 8
+  intelligence-api:
+    image: wodana-intelligence:20260907-amd64
+    network_mode: host
+    env_file: [./intelligence.env]
+    command: [uvicorn, "wodana_intelligence.main:app", --host, 127.0.0.1, --port, "18001"]
+    restart: unless-stopped
+    init: true
+    mem_limit: 384m
+    depends_on:
+      business-core: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18001/api/v1/health/ready')"]
+      interval: 15s
+      start_period: 20s
+      retries: 8
+  intelligence-worker:
+    profiles: [delivery]
+    image: wodana-intelligence:20260907-amd64
+    network_mode: host
+    env_file: [./intelligence.env]
+    command: [python, -m, wodana_intelligence.worker]
+    restart: unless-stopped
+    init: true
+    mem_limit: 256m
+    depends_on:
+      business-core: {condition: service_healthy}
+  web:
+    image: wodana-web:20260907-amd64
+    network_mode: host
+    env_file: [./web.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOSTNAME: 127.0.0.1
+      PORT: 13000
+    restart: unless-stopped
+    init: true
+    mem_limit: 768m
+    depends_on:
+      intelligence-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:13000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      start_period: 30s
+      retries: 8
+volumes:
+  redis_data: {name: wodana-release-redis}
+  object_data: {name: wodana-release-objects}

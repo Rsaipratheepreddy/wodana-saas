@@ -1,0 +1,23 @@
+# Web-only release. Existing Business Core, Redis and integrations remain in place.
+name: wodana-quotation-fix
+services:
+  web:
+    image: wodana-web:20260907-quotation-fix
+    network_mode: host
+    env_file: [./web.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOSTNAME: 127.0.0.1
+      PORT: 13010
+    init: true
+    restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:13010/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 15s
+      retries: 8

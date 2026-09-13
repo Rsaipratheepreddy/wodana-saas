@@ -1,0 +1,41 @@
+name: Wodana quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  web-and-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck --workspace @wodana/web
+      - run: npm test --workspace @wodana/web
+      - run: npm run typecheck --workspace @wodana/business-core
+      - run: npm test --workspace @wodana/business-core
+
+  intelligence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/intelligence-automation/pyproject.toml
+      - run: pip install -e 'services/intelligence-automation[dev]'
+      - run: ruff check services/intelligence-automation/src services/intelligence-automation/tests
+      - run: mypy services/intelligence-automation/src
+      - run: pytest -q services/intelligence-automation/tests
+
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./infra/hostinger/validate.sh infra/hostinger/env.production.example structure-only

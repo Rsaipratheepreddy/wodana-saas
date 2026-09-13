@@ -1,0 +1,23 @@
+[
+  {
+    "name": "desktop",
+    "roomsVisibleMs": 430,
+    "completeMs": 1239,
+    "components": 9,
+    "status": "passed"
+  },
+  {
+    "name": "windows-125",
+    "roomsVisibleMs": 424,
+    "completeMs": 1236,
+    "components": 9,
+    "status": "passed"
+  },
+  {
+    "name": "mobile",
+    "roomsVisibleMs": 426,
+    "completeMs": 1235,
+    "components": 9,
+    "status": "passed"
+  }
+]

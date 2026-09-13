@@ -1,0 +1,25 @@
+.summary { display:flex; align-items:center; gap:.8rem; color:var(--wd-color-text-secondary); font-size:.7rem; padding-block:.35rem .65rem; }
+.summary span { display:inline-flex; align-items:center; gap:.3rem; }
+.visitTime { font-size:.85rem; font-weight:500; margin-block:.8rem .2rem; }
+.copy { white-space:pre-line; line-height:1.65; font-size:.78rem; margin:.6rem 0; overflow-wrap:anywhere; }
+.detail { display:grid; grid-template-columns:7rem 1fr; margin:.5rem 0; gap:.4rem; font-size:.75rem; line-height:1.65; }
+.detail dt { color:var(--wd-color-text-secondary); }
+.detail dd { margin:0; overflow-wrap:anywhere; white-space:pre-line; }
+.dimensionEditor { display:grid; gap:.7rem; padding-block:0 1rem; border-block-end:1px solid var(--wd-color-structural-divider); }
+.dimensionTitle { display:flex; align-items:end; gap:.5rem; }
+.dimensionTitle > label { flex:1; }
+.dimensionValues { display:grid; grid-template-columns:1fr 1fr 6rem; gap:.7rem; }
+.history { padding-block:.75rem; border-block-end:1px solid var(--wd-color-structural-divider); }
+.history h3 { margin:0; }
+.history small { color:var(--wd-color-text-secondary); }
+.history summary { cursor:pointer; font-size:.75rem; line-height:1.6; }
+.emptyAction { display:flex; justify-content:center; margin-block:-2rem 2rem; }
+.boardActions { display:flex; align-items:center; gap:.4rem; }
+.sectionHint { font-size:.75rem; color:var(--wd-color-text-secondary); margin:.5rem 0 .8rem; line-height:1.6; }
+.siteCalendar { min-inline-size:0; margin-block:.7rem; }
+.monthGrid { block-size:auto; min-block-size:34rem; grid-template-rows:2rem repeat(6,minmax(5rem,auto)); }
+.calendarTimezone { color:var(--wd-color-text-secondary); font-size:.7rem; }
+.calendarEvent { background:color-mix(in srgb,var(--wd-color-surface) 90%,var(--crm-lilac)); }
+.calendarEvent[data-status=completed] { background:color-mix(in srgb,var(--wd-color-surface) 90%,var(--crm-peach)); }
+.calendarEvent[data-status=cancelled] { opacity:.6; text-decoration:line-through; }
+@media(max-width:480px) { .dimensionValues {grid-template-columns:1fr 1fr;} .detail {grid-template-columns:1fr;} }

@@ -1,0 +1,13 @@
+
+> @wodana/web@0.1.0 test
+> vitest run components/commercial/catalog-picker.test.tsx components/commercial/quotation-builder.test.tsx lib/commercial/materials.test.ts lib/commercial/templates.test.ts lib/commercial/amounts.test.ts
+
+
+ RUN  v4.1.11 /Users/ramireddysaipratheepreddy/development/Igolo-Management-main/wodana-saas/apps/web
+
+
+ Test Files  5 passed (5)
+      Tests  16 passed (16)
+   Start at  16:29:16
+   Duration  3.27s (transform 471ms, setup 622ms, import 1.03s, tests 2.47s, environment 2.01s)
+

@@ -1,0 +1,24 @@
+# Quotation UI release; shares the current core, database and integrations.
+name: wodana-catalog-whatsapp
+services:
+  web:
+    image: wodana-web:20260907-catalog-whatsapp
+    network_mode: host
+    env_file: [./web.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOSTNAME: 127.0.0.1
+      PORT: 13050
+      BUSINESS_CORE_URL: http://127.0.0.1:18020/api/v1
+    init: true
+    restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:13050/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 15s
+      retries: 8

@@ -1,0 +1,21 @@
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { RequestActor } from "../../auth/actor";
+import { CurrentActor } from "../../auth/current-actor.decorator";
+import { CrmSettingsService } from "./crm-settings.service";
+import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
+@ApiTags("crm-settings") @ApiBearerAuth() @Controller("workspaces/:workspaceId/crm")
+export class CrmSettingsController {
+  constructor(private readonly settings: CrmSettingsService) {}
+  @Get("settings") list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.settings.list(actor, workspaceId); }
+  @Post("taxonomies") taxonomy(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateTaxonomyDto) { return this.settings.createTaxonomy(actor, workspaceId, input); }
+  @Patch("taxonomies/:taxonomyId") updateTaxonomy(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("taxonomyId", ParseUUIDPipe) taxonomyId: string, @Body() input: UpdateTaxonomyDto) { return this.settings.updateTaxonomy(actor, workspaceId, taxonomyId, input); }
+  @Post("custom-fields") field(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateCustomFieldDto) { return this.settings.createField(actor, workspaceId, input); }
+  @Patch("custom-fields/:definitionId") updateField(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("definitionId", ParseUUIDPipe) definitionId: string, @Body() input: UpdateCustomFieldDto) { return this.settings.updateField(actor, workspaceId, definitionId, input); }
+  @Post("custom-fields/:definitionId/value") value(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("definitionId", ParseUUIDPipe) definitionId: string, @Body() input: SetCustomFieldValueDto) { return this.settings.setFieldValue(actor, workspaceId, definitionId, input); }
+  @Post("qualification-forms") form(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateQualificationFormDto) { return this.settings.createForm(actor, workspaceId, input); }
+  @Patch("qualification-forms/:formId") updateForm(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("formId", ParseUUIDPipe) formId: string, @Body() input: UpdateQualificationFormDto) { return this.settings.updateForm(actor, workspaceId, formId, input); }
+  @Post("saved-views") view(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateSavedViewDto) { return this.settings.createView(actor, workspaceId, input); }
+  @Patch("saved-views/:viewId") updateView(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("viewId", ParseUUIDPipe) viewId: string, @Body() input: UpdateSavedViewDto) { return this.settings.updateView(actor, workspaceId, viewId, input); }
+  @Post("settings/:type/:id/archive") archive(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("type") type: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: ArchiveSettingDto) { return this.settings.archive(actor, workspaceId, type, id, input); }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "wodana-saas",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "services/business-core",
+    "packages/contracts"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @wodana/web",
+    "dev:mobile": "npm --prefix apps/mobile run start",
+    "install:mobile": "npm --prefix apps/mobile install",
+    "ios:mobile": "npm --prefix apps/mobile run ios",
+    "android:mobile": "npm --prefix apps/mobile run android",
+    "dev:business": "npm run start:dev --workspace @wodana/business-core",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify:backend": "bash ./scripts/verify-backend.sh",
+    "compose:up": "docker compose up --build",
+    "compose:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "sharp": "0.35.4"
+  }
+}

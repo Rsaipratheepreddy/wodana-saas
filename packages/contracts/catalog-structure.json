@@ -1,0 +1,2055 @@
+{
+  "room": {
+    "label": "Rooms",
+    "singular": "room type",
+    "group": "Planning",
+    "description": "Room types reused across projects.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "work": {
+    "label": "Items",
+    "singular": "item",
+    "group": "Planning",
+    "description": "Scope templates connected to rooms, construction and execution.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "measurement",
+        "label": "Measurement rule",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "room",
+        "label": "Rooms",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Suggested materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "finish",
+        "label": "Finishes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "construction",
+        "label": "Construction templates",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "category",
+        "label": "Category",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "category": {
+    "label": "Categories",
+    "singular": "category",
+    "group": "Products",
+    "description": "Material families organized by trade.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "material": {
+    "label": "Materials",
+    "singular": "material",
+    "group": "Products",
+    "description": "Shared material families and manufacturer references.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "category",
+        "label": "Category",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "brand",
+        "label": "Brand",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "finish",
+        "label": "Finishes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "finish": {
+    "label": "Finishes",
+    "singular": "finish",
+    "group": "Products",
+    "description": "Appearance and finish systems; exact performance belongs to the selected product.",
+    "links": [
+      {
+        "relation": "material",
+        "label": "Compatible materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "family",
+        "label": "Finish family",
+        "type": "text"
+      },
+      {
+        "key": "surface",
+        "label": "Surface appearance",
+        "type": "text"
+      },
+      {
+        "key": "suitability",
+        "label": "Product suitability to confirm",
+        "type": "text"
+      }
+    ]
+  },
+  "brand": {
+    "label": "Brands",
+    "singular": "brand",
+    "group": "Products",
+    "description": "Manufacturers used by the workspace.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "unit": {
+    "label": "Units",
+    "singular": "unit",
+    "group": "Planning",
+    "description": "Dimension-aware conversions; packs and workdays need product or job definitions.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "service": {
+    "label": "Services",
+    "singular": "service",
+    "group": "Planning",
+    "description": "Design, survey, coordination and handover services.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": []
+  },
+  "sku": {
+    "label": "Material & finish SKUs",
+    "singular": "SKU",
+    "group": "Products",
+    "description": "Exact product, brand, finish code and format selected for an item.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "material",
+        "label": "Material family",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "brand",
+        "label": "Brand",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "finish",
+        "label": "Finish",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "hardware",
+        "label": "Hardware",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "consumable",
+        "label": "Consumable",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "manufacturerCode",
+        "label": "Manufacturer product code",
+        "type": "text"
+      },
+      {
+        "key": "finishCode",
+        "label": "Shade / finish code",
+        "type": "text"
+      },
+      {
+        "key": "collection",
+        "label": "Collection",
+        "type": "text"
+      },
+      {
+        "key": "reference",
+        "label": "Product / sample reference",
+        "type": "text"
+      },
+      {
+        "key": "format",
+        "label": "Nominal format",
+        "type": "text"
+      },
+      {
+        "key": "packCoverage",
+        "label": "Pack coverage (usage units)",
+        "type": "number",
+        "min": 1e-06
+      },
+      {
+        "key": "usageUnit",
+        "label": "Pack coverage unit",
+        "type": "text"
+      },
+      {
+        "key": "suitability",
+        "label": "Product suitability to confirm",
+        "type": "text"
+      }
+    ]
+  },
+  "hardware": {
+    "label": "Hardware",
+    "singular": "hardware item",
+    "group": "Products",
+    "description": "Hardware specifications mapped to shared material families and exact SKUs.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "material",
+        "label": "Material family",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "brand",
+        "label": "Brand",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "finish",
+        "label": "Finish",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "category",
+        "label": "Hardware category",
+        "type": "text"
+      },
+      {
+        "key": "grade",
+        "label": "Grade",
+        "type": "text"
+      },
+      {
+        "key": "softClose",
+        "label": "Soft-close",
+        "type": "text"
+      },
+      {
+        "key": "selectionCriteria",
+        "label": "Model / load / dimension criteria",
+        "type": "text"
+      }
+    ]
+  },
+  "consumable": {
+    "label": "Consumables",
+    "singular": "consumable",
+    "group": "Products",
+    "description": "Reusable consumable specifications for factory and site processes.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "material",
+        "label": "Material family",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "brand",
+        "label": "Brand",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "category",
+        "label": "Consumable category",
+        "type": "text"
+      },
+      {
+        "key": "trade",
+        "label": "Trade / process",
+        "type": "text"
+      },
+      {
+        "key": "usageBasis",
+        "label": "Consumption basis",
+        "type": "text"
+      }
+    ]
+  },
+  "execution": {
+    "label": "Execution routes",
+    "singular": "execution route",
+    "group": "Factory & site",
+    "description": "Factory-made, site-made, hybrid and purchased items can all include site installation.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "fabrication",
+        "label": "Primary fabrication location",
+        "type": "select",
+        "options": [
+          "factory",
+          "site",
+          "mixed",
+          "supplier"
+        ]
+      },
+      {
+        "key": "siteInstallation",
+        "label": "Site installation",
+        "type": "select",
+        "options": [
+          "required",
+          "conditional",
+          "included"
+        ]
+      },
+      {
+        "key": "packing",
+        "label": "Packing",
+        "type": "select",
+        "options": [
+          "required",
+          "conditional",
+          "included"
+        ]
+      },
+      {
+        "key": "transport",
+        "label": "Transport",
+        "type": "select",
+        "options": [
+          "required",
+          "conditional",
+          "included"
+        ]
+      },
+      {
+        "key": "costRoute",
+        "label": "Cost route",
+        "type": "text"
+      }
+    ]
+  },
+  "factory_process": {
+    "label": "Factory processes",
+    "singular": "factory process",
+    "group": "Factory & site",
+    "description": "Cutting, machining, pressing, finishing, quality control, packing and dispatch.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "measurement",
+        "label": "Measurement rule",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "resource",
+        "label": "Work centres / crews",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "consumable",
+        "label": "Consumables",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "finish",
+        "label": "Finishes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "processGroup",
+        "label": "Trade / process group",
+        "type": "text"
+      },
+      {
+        "key": "performer",
+        "label": "Performed by",
+        "type": "select",
+        "options": [
+          "in_house",
+          "subcontractor",
+          "either"
+        ]
+      },
+      {
+        "key": "charging",
+        "label": "Charging basis",
+        "type": "select",
+        "options": [
+          "measured_quantity",
+          "time",
+          "fixed_job",
+          "included"
+        ]
+      },
+      {
+        "key": "costIncludes",
+        "label": "Rate includes",
+        "type": "select",
+        "options": [
+          "unconfirmed",
+          "labour",
+          "machine",
+          "labour_and_machine",
+          "all_inclusive"
+        ]
+      },
+      {
+        "key": "resourceType",
+        "label": "Resource / skill",
+        "type": "text"
+      },
+      {
+        "key": "setupMinutes",
+        "label": "Setup minutes per batch",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "runMinutes",
+        "label": "Run minutes per unit",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "alternativeUnits",
+        "label": "Alternative measurement bases",
+        "type": "text"
+      },
+      {
+        "key": "qualityCheck",
+        "label": "Quality / acceptance check",
+        "type": "text"
+      }
+    ]
+  },
+  "site_process": {
+    "label": "On-site processes",
+    "singular": "on-site process",
+    "group": "Factory & site",
+    "description": "Site fabrication, installation, adjustments, finishing, testing and handover.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "measurement",
+        "label": "Measurement rule",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "resource",
+        "label": "Work centres / crews",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "consumable",
+        "label": "Consumables",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "finish",
+        "label": "Finishes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "processGroup",
+        "label": "Trade / process group",
+        "type": "text"
+      },
+      {
+        "key": "performer",
+        "label": "Performed by",
+        "type": "select",
+        "options": [
+          "in_house",
+          "subcontractor",
+          "either"
+        ]
+      },
+      {
+        "key": "charging",
+        "label": "Charging basis",
+        "type": "select",
+        "options": [
+          "measured_quantity",
+          "time",
+          "fixed_job",
+          "included"
+        ]
+      },
+      {
+        "key": "costIncludes",
+        "label": "Rate includes",
+        "type": "select",
+        "options": [
+          "unconfirmed",
+          "labour",
+          "machine",
+          "labour_and_machine",
+          "all_inclusive"
+        ]
+      },
+      {
+        "key": "resourceType",
+        "label": "Resource / skill",
+        "type": "text"
+      },
+      {
+        "key": "setupMinutes",
+        "label": "Setup minutes per batch",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "runMinutes",
+        "label": "Run minutes per unit",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "alternativeUnits",
+        "label": "Alternative measurement bases",
+        "type": "text"
+      },
+      {
+        "key": "qualityCheck",
+        "label": "Quality / acceptance check",
+        "type": "text"
+      }
+    ]
+  },
+  "resource": {
+    "label": "Work centres & crews",
+    "singular": "resource",
+    "group": "Factory & site",
+    "description": "Machines, finishing booths, installers and site crews with separate dated rates.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "resourceType",
+        "label": "Resource type",
+        "type": "select",
+        "options": [
+          "machine",
+          "booth",
+          "crew",
+          "person",
+          "subcontractor"
+        ]
+      },
+      {
+        "key": "location",
+        "label": "Work location",
+        "type": "select",
+        "options": [
+          "factory",
+          "site",
+          "either"
+        ]
+      },
+      {
+        "key": "capacity",
+        "label": "Parallel capacity",
+        "type": "number",
+        "min": 1
+      },
+      {
+        "key": "shiftHours",
+        "label": "Hours per working day",
+        "type": "number",
+        "min": 0.01,
+        "max": 24
+      },
+      {
+        "key": "skills",
+        "label": "Skills / capability",
+        "type": "text"
+      }
+    ]
+  },
+  "measurement": {
+    "label": "Measurement rules",
+    "singular": "measurement rule",
+    "group": "Rules & pricing",
+    "description": "Named measurement specifications with explicit units. Formulas are definitions, not executable code.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "measurementType",
+        "label": "Measurement type",
+        "type": "text"
+      },
+      {
+        "key": "inputs",
+        "label": "Required inputs",
+        "type": "text"
+      },
+      {
+        "key": "formula",
+        "label": "Formula definition",
+        "type": "text"
+      },
+      {
+        "key": "basis",
+        "label": "Measurement basis / limitations",
+        "type": "text"
+      }
+    ]
+  },
+  "construction": {
+    "label": "Construction templates",
+    "singular": "construction template",
+    "group": "Planning",
+    "description": "Parent templates contain linked component slots; project selections supply the actual products.",
+    "links": [
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "variant",
+        "label": "Item variant",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "work",
+        "label": "Work items",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "measurement",
+        "label": "Measurement rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Suggested materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "sku",
+        "label": "Suggested SKUs",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "hardware",
+        "label": "Hardware",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "consumable",
+        "label": "Consumables",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "factory_process",
+        "label": "Factory processes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "site_process",
+        "label": "On-site processes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "unit",
+        "label": "Output unit",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "wastage_rule",
+        "label": "Wastage rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "logistics_rule",
+        "label": "Logistics rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "installation_rule",
+        "label": "Installation rule",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "commercial_rule",
+        "label": "Commercial rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "recordRole",
+        "label": "Row type",
+        "type": "select",
+        "options": [
+          "template",
+          "component",
+          "operation",
+          "charge"
+        ]
+      },
+      {
+        "key": "componentType",
+        "label": "Component type",
+        "type": "text"
+      },
+      {
+        "key": "required",
+        "label": "Requirement",
+        "type": "select",
+        "options": [
+          "required",
+          "optional",
+          "conditional"
+        ]
+      },
+      {
+        "key": "selectionSource",
+        "label": "Selection source",
+        "type": "text"
+      },
+      {
+        "key": "inputs",
+        "label": "Measurement inputs",
+        "type": "text"
+      },
+      {
+        "key": "sequence",
+        "label": "Sequence",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "quantityBasis",
+        "label": "Quantity calculation",
+        "type": "select",
+        "options": [
+          "width_height",
+          "length_width",
+          "width_depth",
+          "height_depth",
+          "length",
+          "width",
+          "height",
+          "perimeter",
+          "count",
+          "manual"
+        ]
+      },
+      {
+        "key": "factor",
+        "label": "Quantity multiplier",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "quantityInput",
+        "label": "Count / manual input name",
+        "type": "text"
+      },
+      {
+        "key": "workLocation",
+        "label": "Actual work location",
+        "type": "select",
+        "options": [
+          "factory",
+          "site",
+          "supplier"
+        ]
+      },
+      {
+        "key": "qualityGrade",
+        "label": "Quality grade",
+        "type": "text"
+      },
+      {
+        "key": "sellingBasis",
+        "label": "Selling measurement",
+        "type": "select",
+        "options": [
+          "width_height",
+          "length_width",
+          "length",
+          "count",
+          "manual"
+        ]
+      }
+    ]
+  },
+  "variant_rule": {
+    "label": "Variant rules",
+    "singular": "variant rule",
+    "group": "Planning",
+    "description": "Variant groups contain individual additions, removals and overrides.",
+    "links": [
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "construction",
+        "label": "Construction templates",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "work",
+        "label": "Work items",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "hardware",
+        "label": "Hardware",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "sku",
+        "label": "SKUs",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "variant",
+        "label": "Variant",
+        "type": "text"
+      },
+      {
+        "key": "component",
+        "label": "Attribute / component",
+        "type": "text"
+      },
+      {
+        "key": "operation",
+        "label": "Operation",
+        "type": "select",
+        "options": [
+          "group",
+          "set",
+          "default",
+          "add",
+          "remove"
+        ]
+      },
+      {
+        "key": "value",
+        "label": "Rule value",
+        "type": "text"
+      },
+      {
+        "key": "condition",
+        "label": "Condition",
+        "type": "text"
+      },
+      {
+        "key": "qualityGrade",
+        "label": "Quality grade",
+        "type": "text"
+      }
+    ]
+  },
+  "execution_rule": {
+    "label": "Execution rules",
+    "singular": "execution rule",
+    "group": "Factory & site",
+    "description": "Rules describe process applicability without charging the same work twice.",
+    "links": [
+      {
+        "relation": "factory_process",
+        "label": "Factory processes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "site_process",
+        "label": "On-site processes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "consumable",
+        "label": "Consumables",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "logistics_rule",
+        "label": "Logistics rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "wastage_rule",
+        "label": "Wastage rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "installation_rule",
+        "label": "Installation rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "factoryRule",
+        "label": "Factory-made route",
+        "type": "text"
+      },
+      {
+        "key": "siteRule",
+        "label": "Site-made route",
+        "type": "text"
+      },
+      {
+        "key": "hybridRule",
+        "label": "Hybrid route",
+        "type": "text"
+      },
+      {
+        "key": "condition",
+        "label": "Condition / inclusion policy",
+        "type": "text"
+      }
+    ]
+  },
+  "wastage_rule": {
+    "label": "Wastage rules",
+    "singular": "wastage rule",
+    "group": "Rules & pricing",
+    "description": "Review allowances by material and actual process location; avoid adding loss twice.",
+    "links": [
+      {
+        "relation": "category",
+        "label": "Category",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "materialFamily",
+        "label": "Material family",
+        "type": "text"
+      },
+      {
+        "key": "suggestedPercent",
+        "label": "Workbook suggestion (%)",
+        "type": "number",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "approvedPercent",
+        "label": "Workspace allowance (%)",
+        "type": "number",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "basis",
+        "label": "Allowance basis",
+        "type": "text"
+      },
+      {
+        "key": "condition",
+        "label": "Override / application condition",
+        "type": "text"
+      }
+    ]
+  },
+  "logistics_rule": {
+    "label": "Logistics rules",
+    "singular": "logistics rule",
+    "group": "Rules & pricing",
+    "description": "Transport and handling definitions, priced by zone and delivery.",
+    "links": [
+      {
+        "relation": "rate_zone",
+        "label": "Rate zones",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "ruleGroup",
+        "label": "Rule group",
+        "type": "text"
+      },
+      {
+        "key": "ruleType",
+        "label": "Rule type",
+        "type": "text"
+      },
+      {
+        "key": "referenceValue",
+        "label": "Workbook suggestion",
+        "type": "text"
+      },
+      {
+        "key": "minDistanceKm",
+        "label": "Distance above (km)",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "maxDistanceKm",
+        "label": "Distance up to (km)",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "calculation",
+        "label": "Calculation basis",
+        "type": "text"
+      },
+      {
+        "key": "condition",
+        "label": "Applicability",
+        "type": "text"
+      }
+    ]
+  },
+  "installation_rule": {
+    "label": "Installation rules",
+    "singular": "installation rule",
+    "group": "Factory & site",
+    "description": "Link measurable site processes, identifying installation already included in fabrication.",
+    "links": [
+      {
+        "relation": "site_process",
+        "label": "On-site processes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "service",
+        "label": "Services",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "construction",
+        "label": "Construction templates",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "chargeBasis",
+        "label": "Measurement / charge basis",
+        "type": "text"
+      },
+      {
+        "key": "calculation",
+        "label": "Calculation definition",
+        "type": "text"
+      },
+      {
+        "key": "inclusion",
+        "label": "Cost inclusion",
+        "type": "select",
+        "options": [
+          "separate",
+          "included",
+          "conditional"
+        ]
+      },
+      {
+        "key": "condition",
+        "label": "Minimum / special condition",
+        "type": "text"
+      }
+    ]
+  },
+  "commercial_rule": {
+    "label": "Commercial rules",
+    "singular": "commercial rule",
+    "group": "Rules & pricing",
+    "description": "Workspace-reviewed overhead, margin, discounts and rounding policies.",
+    "links": [
+      {
+        "relation": "execution",
+        "label": "Applicable execution routes",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "ruleGroup",
+        "label": "Rule group",
+        "type": "text"
+      },
+      {
+        "key": "valueType",
+        "label": "Value type",
+        "type": "select",
+        "options": [
+          "percent",
+          "amount",
+          "days"
+        ]
+      },
+      {
+        "key": "suggestedValue",
+        "label": "Workbook suggestion",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "approvedValue",
+        "label": "Workspace value",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "basis",
+        "label": "Calculation base",
+        "type": "text"
+      },
+      {
+        "key": "condition",
+        "label": "Approval / application condition",
+        "type": "text"
+      }
+    ]
+  },
+  "tax": {
+    "label": "Tax codes",
+    "singular": "tax code",
+    "group": "Rules & pricing",
+    "description": "Country-specific tax templates. Zero-rated, exempt and out-of-scope are distinct treatments.",
+    "links": [
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "country",
+        "label": "Country",
+        "type": "text"
+      },
+      {
+        "key": "currency",
+        "label": "Currency (ISO code)",
+        "type": "text"
+      },
+      {
+        "key": "taxType",
+        "label": "Tax type",
+        "type": "text"
+      },
+      {
+        "key": "treatment",
+        "label": "Tax treatment",
+        "type": "select",
+        "options": [
+          "standard",
+          "zero_rated",
+          "exempt",
+          "out_of_scope",
+          "unconfigured"
+        ]
+      },
+      {
+        "key": "suggestedPercent",
+        "label": "Workbook reference rate (%)",
+        "type": "number",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "approvedPercent",
+        "label": "Validated tax rate (%)",
+        "type": "number",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "effectiveFrom",
+        "label": "Effective from",
+        "type": "date"
+      },
+      {
+        "key": "effectiveTo",
+        "label": "Effective to",
+        "type": "date"
+      },
+      {
+        "key": "classification",
+        "label": "Transaction / product classification",
+        "type": "text"
+      }
+    ]
+  },
+  "rate_zone": {
+    "label": "Rate zones",
+    "singular": "rate zone",
+    "group": "Rules & pricing",
+    "description": "Location, currency and optional indices; exact local rates take precedence.",
+    "links": [
+      {
+        "relation": "tax",
+        "label": "Tax template",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "country",
+        "label": "Country",
+        "type": "text"
+      },
+      {
+        "key": "region",
+        "label": "State / region",
+        "type": "text"
+      },
+      {
+        "key": "currency",
+        "label": "Currency (ISO code)",
+        "type": "text"
+      },
+      {
+        "key": "locale",
+        "label": "Locale",
+        "type": "text"
+      },
+      {
+        "key": "timezone",
+        "label": "Timezone",
+        "type": "text"
+      },
+      {
+        "key": "materialIndex",
+        "label": "Material index",
+        "type": "number",
+        "min": 1e-06
+      },
+      {
+        "key": "labourIndex",
+        "label": "Labour index",
+        "type": "number",
+        "min": 1e-06
+      },
+      {
+        "key": "logisticsIndex",
+        "label": "Logistics index",
+        "type": "number",
+        "min": 1e-06
+      }
+    ]
+  },
+  "rate_card": {
+    "label": "Price book entries",
+    "singular": "price book entry",
+    "group": "Rules & pricing",
+    "description": "Dated supplier and internal rates with one unit, currency, zone and explicit inclusions.",
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Measurement unit",
+        "multiple": false,
+        "required": true
+      },
+      {
+        "relation": "variant",
+        "label": "Item variant",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "rate_zone",
+        "label": "Rate zone",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Material",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "sku",
+        "label": "Sku",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "hardware",
+        "label": "Hardware",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "consumable",
+        "label": "Consumable",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "factory_process",
+        "label": "Factory Process",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "site_process",
+        "label": "Site Process",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "resource",
+        "label": "Resource",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "service",
+        "label": "Service",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "logistics_rule",
+        "label": "Logistics Rule",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "work",
+        "label": "Item",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      }
+    ],
+    "fields": [
+      {
+        "key": "supplier",
+        "label": "Supplier / internal rate owner",
+        "type": "text"
+      },
+      {
+        "key": "currency",
+        "label": "Currency (ISO code)",
+        "type": "text"
+      },
+      {
+        "key": "amount",
+        "label": "Rate per unit",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "effectiveFrom",
+        "label": "Effective from",
+        "type": "date"
+      },
+      {
+        "key": "effectiveTo",
+        "label": "Effective to",
+        "type": "date"
+      },
+      {
+        "key": "costIncludes",
+        "label": "Cost inclusions",
+        "type": "select",
+        "options": [
+          "unconfirmed",
+          "labour",
+          "machine",
+          "labour_and_machine",
+          "all_inclusive",
+          "supply_only"
+        ]
+      },
+      {
+        "key": "taxIncluded",
+        "label": "Tax included",
+        "type": "select",
+        "options": [
+          "yes",
+          "no"
+        ]
+      },
+      {
+        "key": "minimumQuantity",
+        "label": "Minimum quantity",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "minimumCharge",
+        "label": "Minimum charge",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "reference",
+        "label": "Quote / price-list reference",
+        "type": "text"
+      },
+      {
+        "key": "priceType",
+        "label": "Price type",
+        "type": "select",
+        "options": [
+          "purchase",
+          "cost",
+          "selling"
+        ]
+      }
+    ]
+  },
+  "catalog_group": {
+    "label": "Catalogs",
+    "singular": "catalog",
+    "group": "Catalog",
+    "description": "A complete, independently configurable catalog owned by this workspace.",
+    "fields": [],
+    "links": []
+  },
+  "record_group": {
+    "label": "Groups",
+    "singular": "group",
+    "group": "Organisation",
+    "description": "A named group of records within this catalog.",
+    "fields": [
+      {
+        "key": "defaultKind",
+        "label": "Default record type",
+        "type": "text"
+      },
+      {
+        "key": "sortOrder",
+        "label": "Order",
+        "type": "number",
+        "min": 0
+      },
+      {
+        "key": "icon",
+        "label": "Icon",
+        "type": "select",
+        "options": [
+          "folder",
+          "rooms",
+          "items",
+          "materials",
+          "measurements",
+          "factory",
+          "site",
+          "construction",
+          "prices",
+          "brands"
+        ]
+      }
+    ],
+    "links": []
+  },
+  "custom": {
+    "label": "Custom records",
+    "singular": "custom record",
+    "group": "Custom",
+    "description": "Your own reusable records, with optional attributes and links.",
+    "fields": [],
+    "links": [
+      {
+        "relation": "unit",
+        "label": "Unit",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "related",
+        "label": "Linked records",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ]
+  },
+  "variant": {
+    "label": "Variants",
+    "singular": "variant",
+    "group": "Planning",
+    "description": "An item option, such as Sliding or Openable, linked to its item.",
+    "fields": [
+      {
+        "key": "specificationTier",
+        "label": "Specification tier",
+        "type": "text"
+      }
+    ],
+    "links": [
+      {
+        "relation": "work",
+        "label": "Item",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "sku",
+        "label": "Material products",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "material",
+        "label": "Materials",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "unit",
+        "label": "Unit",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "variant_rule",
+        "label": "Variant rules",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "hardware",
+        "label": "Hardware",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "execution",
+        "label": "Execution types",
+        "multiple": true,
+        "required": false
+      },
+      {
+        "relation": "record_group",
+        "label": "Group",
+        "multiple": false,
+        "required": false
+      },
+      {
+        "relation": "parent",
+        "label": "Parent record",
+        "multiple": false,
+        "required": false
+      }
+    ]
+  }
+}

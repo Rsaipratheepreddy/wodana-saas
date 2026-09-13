@@ -1,0 +1,48 @@
+.workbench { display: grid; align-content: start; gap: 1rem; color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+.workbench p { color: var(--wd-color-text-secondary); line-height: 1.6; margin: 0; }
+.workbench h3 { font-size: var(--wd-text-sm); margin: 0; font-weight: 600; }
+.workbench :global(.wd-tab-list) { gap: 1rem; }
+.workbench :global(.wd-tab) { font-size: var(--wd-text-xs); padding-block: .65rem; }
+.workbench :global(.wd-tab-panel) { padding-block: 1rem; }
+.form { display: grid; gap: .9rem; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.field { min-inline-size: 0; display: grid; align-content: start; gap: .35rem; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.field:has(textarea) { grid-column: 1 / -1; }
+.nativeField { display: grid; gap: .5rem; font-size: var(--wd-text-sm); }
+.nativeField input { box-sizing: border-box; inline-size: 100%; min-inline-size: 0; min-block-size: var(--wd-control-lg); padding: .5rem .75rem; border: 1px solid var(--wd-color-border-control); border-radius: .5rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; }
+.nativeField input:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.fields .field :global(.wd-field) { min-block-size: 0; }
+.actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }
+.section { display: grid; gap: .8rem; padding-block: .25rem 1rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.section:last-child { border-block-end: 0; }
+.row { min-inline-size: 0; display: flex; justify-content: space-between; align-items: center; gap: .8rem; padding-block: .75rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.row > div { min-inline-size: 0; display: grid; gap: .25rem; }
+.row strong { font-weight: 550; overflow-wrap: anywhere; }
+.row small { color: var(--wd-color-text-tertiary); }
+.row a, .link { color: var(--wd-color-text); text-decoration: underline; text-underline-offset: 3px; }
+.stack { display: grid; gap: .75rem; }
+.empty { padding-block: 1rem; color: var(--wd-color-text-tertiary); }
+.message { padding: .7rem .85rem; border-radius: .5rem; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.message[data-direction="outbound"] { margin-inline-start: 2rem; }
+.message small { display: block; margin-block-end: .3rem; font-size: .65rem; color: var(--wd-color-text-tertiary); }
+.facts { margin: 0; }
+.facts > div { display: grid; grid-template-columns: minmax(6rem, .7fr) minmax(0, 1.3fr); gap: .6rem; padding-block: .65rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.facts dt { color: var(--wd-color-text-tertiary); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.notice { padding: .7rem .9rem; border-inline-start: 3px solid var(--wd-color-border); background: var(--wd-color-surface-muted); }
+.history { list-style: none; padding: 0; margin: 0; }
+.history li { padding: .6rem 0 .6rem 1rem; border-inline-start: 1px solid var(--wd-color-structural-divider); display: grid; gap: .25rem; }
+.history small { color: var(--wd-color-text-tertiary); }
+.sectionTabs { margin-block: 1rem; }
+.sectionTabs :global(.wd-tab-panel) { padding-block: 1rem; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.toolbar h2 { margin: 0; font-size: var(--wd-text-sm); }
+.table { inline-size: 100%; border-collapse: collapse; font-size: var(--wd-text-xs); }
+.table th, .table td { padding: .8rem; text-align: start; border-block-end: 1px solid var(--wd-color-structural-divider); vertical-align: middle; }
+.table th { color: var(--wd-color-text-secondary); font-weight: 550; background: var(--wd-color-surface-muted); }
+.table td small { display: block; color: var(--wd-color-text-tertiary); margin-block-start: .2rem; }
+.tableWrap { overflow-x: auto; scrollbar-width: thin; }
+.assistant { display: grid; gap: .65rem; background: var(--wd-color-surface-muted); border-radius: .7rem; padding: 1rem; }
+.assistant h3 { display: flex; align-items: center; gap: .4rem; }
+.assistant ul { margin: 0; padding-inline-start: 1rem; line-height: 1.7; }
+@media (max-width: 40rem) { .fields { grid-template-columns: 1fr; } .row { flex-wrap: wrap; } }

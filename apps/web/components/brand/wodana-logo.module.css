@@ -1,0 +1,29 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--wd-color-text);
+  text-decoration: none;
+}
+
+.wordmark {
+  display: grid;
+  min-inline-size: 0;
+  justify-items: start;
+  line-height: 1.15;
+}
+
+.logoImage {
+  inline-size: 7.75rem;
+  block-size: auto;
+  object-fit: contain;
+}
+
+.wordmark small {
+  color: var(--wd-color-text-tertiary);
+  font-size: var(--wd-text-2xs);
+}
+
+.logo[data-size="large"] .logoImage {
+  inline-size: 9.25rem;
+}

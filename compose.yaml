@@ -1,0 +1,189 @@
+name: wodana-saas
+
+x-intelligence-environment: &intelligence-environment
+  ENVIRONMENT: ${NODE_ENV:-development}
+  BUSINESS_CORE_URL: http://business-core:8000/api/v1
+  BUSINESS_CORE_INTERNAL_TOKEN: ${BUSINESS_CORE_INTERNAL_TOKEN:-local-development-token}
+  INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-local-development-integration-key-change-me}
+  REDIS_URL: redis://redis:6379/0
+  DEPENDENCY_CHECKS_ENABLED: "true"
+  WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:${WEB_PORT:-3000}}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  NOTIFICATION_ADAPTER_MODE: ${NOTIFICATION_ADAPTER_MODE:-live}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8001/api/v1/integrations/google/oauth/callback}
+  GOOGLE_OAUTH_STATE_TTL_SECONDS: ${GOOGLE_OAUTH_STATE_TTL_SECONDS:-600}
+  GOOGLE_REQUEST_TIMEOUT_SECONDS: ${GOOGLE_REQUEST_TIMEOUT_SECONDS:-15}
+  QUICKBOOKS_CLIENT_ID: ${QUICKBOOKS_CLIENT_ID:-}
+  QUICKBOOKS_CLIENT_SECRET: ${QUICKBOOKS_CLIENT_SECRET:-}
+  QUICKBOOKS_ENVIRONMENT: ${QUICKBOOKS_ENVIRONMENT:-sandbox}
+  QUICKBOOKS_REDIRECT_URI: ${QUICKBOOKS_REDIRECT_URI:-http://localhost:8001/api/v1/integrations/providers/quickbooks/oauth/callback}
+  QUICKBOOKS_WEBHOOK_VERIFIER: ${QUICKBOOKS_WEBHOOK_VERIFIER:-}
+  ZOHO_CLIENT_ID: ${ZOHO_CLIENT_ID:-}
+  ZOHO_CLIENT_SECRET: ${ZOHO_CLIENT_SECRET:-}
+  ZOHO_REDIRECT_URI: ${ZOHO_REDIRECT_URI:-http://localhost:8001/api/v1/integrations/providers/zoho_books/oauth/callback}
+  WHATSAPP_APP_ID: ${WHATSAPP_APP_ID:-}
+  WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+  WHATSAPP_CONFIG_ID: ${WHATSAPP_CONFIG_ID:-}
+  WHATSAPP_GRAPH_VERSION: ${WHATSAPP_GRAPH_VERSION:-v23.0}
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:-}
+  PORTAL_OTP_TEMPLATE: ${PORTAL_OTP_TEMPLATE:-}
+  PORTAL_OTP_LANGUAGE: ${PORTAL_OTP_LANGUAGE:-en_US}
+  INTEGRATION_PUBLIC_URL: ${INTEGRATION_PUBLIC_URL:-http://localhost:8001/api/v1/integrations/providers}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wodana_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wodana-local}
+      POSTGRES_DB: ${POSTGRES_DB:-wodana}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-wodana_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-wodana-app-local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/001-create-app-role.sh:/docker-entrypoint-initdb.d/001-create-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wodana_owner} -d ${POSTGRES_DB:-wodana}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  business-core-migrate:
+    build:
+      context: .
+      dockerfile: services/business-core/Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wodana_owner}:${POSTGRES_PASSWORD:-wodana-local}@postgres:5432/${POSTGRES_DB:-wodana}
+      DATABASE_SSL: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  business-core:
+    build:
+      context: .
+      dockerfile: services/business-core/Dockerfile
+      target: runner
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 8000
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-wodana_app}:${POSTGRES_APP_PASSWORD:-wodana-app-local}@postgres:5432/${POSTGRES_DB:-wodana}
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://redis:6379/0
+      AUTH_MODE: ${AUTH_MODE:-local}
+      LOCAL_AUTH_JWT_SECRET: ${LOCAL_AUTH_JWT_SECRET:-local-auth-signing-secret-change-me-at-least-32-bytes}
+      LOCAL_AUTH_ISSUER: ${LOCAL_AUTH_ISSUER:-wodana-local}
+      LOCAL_AUTH_AUDIENCE: ${LOCAL_AUTH_AUDIENCE:-wodana-web}
+      DEMO_TENANT_ENABLED: ${DEMO_TENANT_ENABLED:-true}
+      EXPOSE_DEMO_AUTH_TOKENS: ${EXPOSE_DEMO_AUTH_TOKENS:-true}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
+      BUSINESS_CORE_INTERNAL_TOKEN: ${BUSINESS_CORE_INTERNAL_TOKEN:-local-development-token}
+      INTELLIGENCE_API_URL: http://intelligence-api:8001/api/v1
+      PORTAL_OTP_SECRET: ${PORTAL_OTP_SECRET:-local-portal-otp-secret-change-me-at-least-32-bytes}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
+      MAILGUN_FROM: ${MAILGUN_FROM:-}
+      MAILGUN_BASE_URL: ${MAILGUN_BASE_URL:-https://api.mailgun.net}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-ap-south-1}
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:-}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}
+      OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-}
+      BRAND_ASSET_STORAGE_DIR: ${BRAND_ASSET_STORAGE_DIR:-/app/.data/workspace-assets}
+    volumes:
+      - object_data:/app/.data
+    ports:
+      - "${BUSINESS_CORE_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    depends_on:
+      postgres:
+        condition: service_healthy
+      business-core-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  intelligence-api:
+    build:
+      context: ./services/intelligence-automation
+    environment:
+      <<: *intelligence-environment
+      PORT: 8001
+    ports:
+      - "${INTELLIGENCE_API_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health/ready')"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    depends_on:
+      business-core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  intelligence-worker:
+    build:
+      context: ./services/intelligence-automation
+    command: ["python", "-m", "wodana_intelligence.worker"]
+    environment:
+      <<: *intelligence-environment
+      WORKER_CONSUMER_GROUP: ${WORKER_CONSUMER_GROUP:-wodana-intelligence}
+      WORKER_CONSUMER_NAME: ${WORKER_CONSUMER_NAME:-worker-1}
+    depends_on:
+      business-core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_BUSINESS_API_URL: http://localhost:${BUSINESS_CORE_PORT:-8000}/api/v1
+      NEXT_PUBLIC_INTELLIGENCE_API_URL: http://localhost:${INTELLIGENCE_API_PORT:-8001}/api/v1
+      BUSINESS_CORE_URL: http://business-core:8000/api/v1
+      INTELLIGENCE_API_URL: http://intelligence-api:8001/api/v1
+      LOGIN_TENANT_SLUG: ${LOGIN_TENANT_SLUG:-iglo-architects}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      business-core:
+        condition: service_healthy
+      intelligence-api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  object_data:

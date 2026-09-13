@@ -1,0 +1,247 @@
+export type Membership = { workspaceId: string; workspaceSlug: string; workspaceName: string; status: string; roles: string[] };
+export type Profile = { id: string; primaryEmail: string; displayName: string; status: string; memberships: Membership[]; nextAction: string };
+export type AuthState =
+  | { status: 'checking' | 'authenticating' }
+  | { status: 'signedOut'; message?: string }
+  | { status: 'unavailable'; message: string }
+  | { status: 'signedIn'; profile: Profile; workspaceId: string };
+export type SessionStorage = { read(): Promise<string | null>; write(value: string): Promise<void>; clear(): Promise<void> };
+type SavedSession = { version: 1; scope: string; refreshToken: string; refreshExpiresAt: number; workspaceId: string };
+type Session = SavedSession & { accessToken: string; accessExpiresAt: number };
+type Options = { baseUrl: string; tenantSlug: string; storage: SessionStorage; fetch?: typeof fetch; now?: () => number; credentials?: RequestCredentials; timeoutMs?: number };
+
+export class AuthError extends Error {
+  constructor(message: string, public code: 'credentials' | 'expired' | 'network' | 'server' | 'storage' | 'cancelled' | 'access' | 'configuration') { super(message); }
+}
+export class ApiError extends Error { constructor(message:string, public status:number, public issues:string[]=[]){super(message);} }
+const cancelled = () => new AuthError('Sign-in was cancelled.', 'cancelled');
+const expired = () => new AuthError('Your session has expired. Sign in again.', 'expired');
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object';
+
+/** One owner for token rotation and storage. Access tokens stay in memory. */
+export class AuthClient {
+  private state: AuthState = { status: 'checking' };
+  private listeners = new Set<() => void>();
+  private session: Session | null = null;
+  private epoch = 0;
+  private rotation: Promise<Session> | null = null;
+  private restoration: Promise<void> | null = null;
+  private storageWork: Promise<unknown> = Promise.resolve();
+  private readonly base: string;
+  private readonly scope: string;
+  private readonly now: () => number;
+  private readonly fetcher: typeof fetch;
+
+  constructor(private options: Options) {
+    this.base = options.baseUrl.replace(/\/$/, '');
+    this.scope = `${this.base}|${options.tenantSlug}`;
+    this.now = options.now ?? Date.now;
+    this.fetcher = options.fetch ?? fetch.bind(globalThis);
+  }
+  getSnapshot = (): AuthState => this.state;
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  private publish(state: AuthState) { this.state = state; this.listeners.forEach((listener) => listener()); }
+  private writeStorage(operation: () => Promise<void>) {
+    const next = this.storageWork.catch(() => {}).then(operation);
+    this.storageWork = next;
+    return next;
+  }
+  private async request(path: string, body?: unknown, token?: string, api?:{method:string;binary?:boolean}): Promise<unknown> {
+    let url: URL | null = null;
+    try { url = new URL(this.base); } catch { /* report configuration error below */ }
+    const local = url && ['localhost', '127.0.0.1', '[::1]', '10.0.2.2'].includes(url.hostname);
+    if (!path.startsWith('/') || path.startsWith('//') || !url
+      || (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))) {
+      throw new AuthError('Authentication is not configured for this build.', 'configuration');
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? (api ? 60000 : 15000));
+    try {
+      const response = await this.fetcher(`${this.base}${path}`, {
+        method: api?.method ?? (body === undefined ? 'GET' : 'POST'),
+        headers: { accept: 'application/json', ...(body === undefined || body instanceof FormData ? {} : { 'content-type': 'application/json' }), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+        credentials: this.options.credentials ?? 'omit', signal: controller.signal, redirect: 'error',
+      });
+      if (!response.ok) {
+        if (response.status === 401) throw path === '/auth/login'
+          ? new AuthError('Email or password is incorrect.', 'credentials') : expired();
+        if(api){const payload=await response.json().catch(()=>null);throw new ApiError(Array.isArray(payload?.message)?payload.message.join(' '):payload?.message??'The request could not be completed.',response.status,payload?.issues??[]);}
+        if (response.status === 403) throw new AuthError('You no longer have access to this workspace.', 'access');
+        if (response.status === 429) throw new AuthError('Too many attempts. Please try again later.', 'server');
+        if (response.status === 400 || response.status === 422) throw new AuthError('Check your details and try again.', 'server');
+        throw new AuthError('Authentication is unavailable. Please try again.', 'server');
+      }
+      if (api?.binary) return await response.arrayBuffer();
+      if (api) {
+        // Nest sends an empty success body for nullable results such as no active attendance.
+        const payload = await response.text();
+        return payload.trim() ? JSON.parse(payload) : null;
+      }
+      return await response.json();
+    } catch (error) {
+      if (error instanceof AuthError || error instanceof ApiError) throw error;
+      throw new AuthError('Unable to connect. Check your connection and try again.', 'network');
+    } finally { clearTimeout(timer); }
+  }
+  private decodeTokens(value: unknown, workspaceId: string): Session {
+    if (!isRecord(value) || typeof value.accessToken !== 'string' || !value.accessToken
+      || typeof value.refreshToken !== 'string' || !value.refreshToken
+      || typeof value.accessTokenExpiresIn !== 'number' || !Number.isFinite(value.accessTokenExpiresIn) || value.accessTokenExpiresIn <= 0
+      || typeof value.refreshTokenExpiresIn !== 'number' || !Number.isFinite(value.refreshTokenExpiresIn) || value.refreshTokenExpiresIn <= 0) {
+      throw new AuthError('The authentication service returned an invalid session.', 'server');
+    }
+    return { version: 1, scope: this.scope, workspaceId, accessToken: value.accessToken, refreshToken: value.refreshToken,
+      accessExpiresAt: this.now() + value.accessTokenExpiresIn * 1000, refreshExpiresAt: this.now() + value.refreshTokenExpiresIn * 1000 };
+  }
+  private async remember(session: Session, epoch: number) {
+    try {
+      await this.writeStorage(async () => {
+        if (epoch !== this.epoch) throw cancelled();
+        const { accessToken: _access, accessExpiresAt: _expires, ...saved } = session;
+        await this.options.storage.write(JSON.stringify(saved));
+      });
+      if (epoch !== this.epoch) throw cancelled();
+      this.session = session;
+    } catch (error) {
+      await this.revoke(session.refreshToken);
+      if (error instanceof AuthError) throw error;
+      throw new AuthError('Unable to save your sign-in securely. Please try again.', 'storage');
+    }
+  }
+  private async profile(session: Session): Promise<Profile> {
+    const value = await this.request('/me', undefined, session.accessToken);
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.primaryEmail !== 'string'
+      || typeof value.displayName !== 'string' || !Array.isArray(value.memberships)) {
+      throw new AuthError('Unable to verify your account. Please try again.', 'server');
+    }
+    const membership = value.memberships.find((item) => isRecord(item) && item.workspaceId === session.workspaceId
+      && item.workspaceSlug === this.options.tenantSlug && item.status === 'active');
+    if (value.status !== 'active' || !membership) throw new AuthError('You no longer have access to this workspace.', 'access');
+    return value as Profile;
+  }
+  async signIn(email: string, password: string) {
+    if (this.state.status === 'authenticating') return;
+    const epoch = ++this.epoch;
+    this.publish({ status: 'authenticating' });
+    let tokens: Session | undefined;
+    try {
+      const payload = await this.request('/auth/login', { email: email.trim().toLowerCase(), password, tenantSlug: this.options.tenantSlug });
+      if (!isRecord(payload) || typeof payload.selectedWorkspaceId !== 'string') throw new AuthError('Unable to verify your workspace.', 'server');
+      tokens = this.decodeTokens(payload, payload.selectedWorkspaceId);
+      if (epoch !== this.epoch) throw cancelled();
+      const profile = await this.profile(tokens);
+      await this.remember(tokens, epoch);
+      this.publish({ status: 'signedIn', profile, workspaceId: tokens.workspaceId });
+    } catch (error) {
+      if (tokens) await this.revoke(tokens.refreshToken);
+      if (epoch === this.epoch) this.publish({ status: 'signedOut' });
+      throw error;
+    }
+  }
+  private rotate(saved: SavedSession): Promise<Session> {
+    if (this.rotation) return this.rotation;
+    const epoch = this.epoch;
+    const operation = (async () => {
+      if (saved.refreshExpiresAt <= this.now()) throw expired();
+      const tokens = this.decodeTokens(await this.request('/auth/refresh', { refreshToken: saved.refreshToken }), saved.workspaceId);
+      await this.remember(tokens, epoch);
+      return tokens;
+    })();
+    this.rotation = operation;
+    void operation.finally(() => { if (this.rotation === operation) this.rotation = null; }).catch(() => {});
+    return operation;
+  }
+  restore = (): Promise<void> => {
+    if (this.restoration) return this.restoration;
+    if (this.state.status === 'authenticating') return Promise.resolve();
+    const epoch = this.epoch;
+    const operation = (async () => {
+      const foreground=this.state.status==='signedIn';
+      if(!foreground)this.publish({ status: 'checking' });
+      try {
+        await this.storageWork.catch(() => {});
+        const raw = await this.options.storage.read();
+        if (epoch !== this.epoch) return;
+        if (!raw) { this.publish({ status: 'signedOut' }); return; }
+        let saved: SavedSession;
+        try { saved = JSON.parse(raw); } catch { throw expired(); }
+        if (!saved || saved.version !== 1 || saved.scope !== this.scope || typeof saved.refreshToken !== 'string'
+          || !saved.refreshToken || typeof saved.workspaceId !== 'string' || !Number.isFinite(saved.refreshExpiresAt)) throw expired();
+        const session = await this.rotate(saved);
+        const profile = await this.profile(session);
+        if (epoch === this.epoch) this.publish({ status: 'signedIn', profile, workspaceId: session.workspaceId });
+      } catch (error) {
+        if (epoch !== this.epoch) return;
+        if (error instanceof AuthError && ['expired', 'access', 'storage'].includes(error.code)) {
+          await this.signOut(error.message);
+        } else {
+          if(!foreground)this.publish({ status: 'unavailable', message: error instanceof AuthError ? error.message : 'Unable to read your saved sign-in. Try again.' });
+        }
+      }
+    })();
+    this.restoration = operation;
+    void operation.finally(() => { if (this.restoration === operation) this.restoration = null; }).catch(() => {});
+    return operation;
+  };
+  /** Authenticated reads retry once after a shared refresh; never refresh concurrently. */
+  async get(path: string): Promise<unknown> {
+    const epoch = this.epoch;
+    let session = this.session;
+    if (!session || this.state.status !== 'signedIn') throw expired();
+    try {
+      if (session.accessExpiresAt <= this.now() + 30000) session = await this.rotate(session);
+      let result: unknown;
+      try { result = await this.request(path, undefined, session.accessToken); }
+      catch (error) {
+        if (!(error instanceof AuthError) || error.code !== 'expired') throw error;
+        session = this.session && this.session !== session ? this.session : await this.rotate(session);
+        result = await this.request(path, undefined, session.accessToken);
+      }
+      if (epoch !== this.epoch) throw cancelled();
+      return result;
+    } catch (error) {
+      if (epoch === this.epoch && error instanceof AuthError && error.code === 'expired') await this.signOut(error.message);
+      throw error;
+    }
+  }
+  /** Workspace API requests share auth rotation and preserve multipart bodies on retry. */
+  async api<T>(path:string,method='GET',body?:unknown,binary=false):Promise<T>{
+    const epoch=this.epoch;let session=this.session;
+    if(!session||this.state.status!=='signedIn')throw expired();
+    const prefix=`/workspaces/${session.workspaceId}/`;
+    if(!path.startsWith(prefix)||!['crm','hrms','projects','pre-projects'].includes(path.slice(prefix.length).split(/[/?]/)[0])||path.includes('..'))throw new AuthError('This request is outside the active workspace.','access');
+    try{
+      if(session.accessExpiresAt<=this.now()+30000)session=await this.rotate(session);
+      let result:unknown;
+      try{result=await this.request(path,body,session.accessToken,{method,binary});}
+      catch(error){if(!(error instanceof AuthError)||error.code!=='expired')throw error;session=this.session&&this.session!==session?this.session:await this.rotate(session);result=await this.request(path,body,session.accessToken,{method,binary});}
+      if(epoch!==this.epoch)throw cancelled();return result as T;
+    }catch(error){if(epoch===this.epoch&&error instanceof AuthError&&error.code==='expired')await this.signOut(error.message);throw error;}
+  }
+  async requestPasswordReset(email: string) {
+    await this.request('/auth/password/forgot', { email: email.trim().toLowerCase(), tenantSlug: this.options.tenantSlug });
+  }
+  private async revoke(refreshToken: string) {
+    await this.request('/auth/logout', { refreshToken }).catch(() => {});
+  }
+  async signOut(message?: string) {
+    ++this.epoch;
+    const prior = this.session;
+    this.session = null;
+    this.publish({ status: 'signedOut', message });
+    let saved: SavedSession | null = null;
+    try {
+      await this.writeStorage(async () => {
+        const raw = await this.options.storage.read();
+        try { saved = raw ? JSON.parse(raw) : null; } catch { /* discard malformed storage */ }
+        await this.options.storage.clear();
+      });
+    } catch {
+      this.publish({ status: 'signedOut', message: 'Sign-in was closed, but saved-session cleanup failed. Please try again.' });
+    }
+    const stored = saved as SavedSession | null;
+    const token = prior?.refreshToken ?? (stored?.scope === this.scope ? stored.refreshToken : undefined);
+    if (token) await this.revoke(token);
+  }
+}

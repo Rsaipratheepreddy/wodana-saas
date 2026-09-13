@@ -1,0 +1,44 @@
+.details { display:grid; color:var(--wd-color-text); font-size:.8125rem; line-height:1.5; min-inline-size:0; }
+.details > section + section,.details > details { border-block-start:1px solid var(--wd-color-border-control); margin-block-start:1.25rem; padding-block-start:1.25rem; }
+.details p { margin:0; overflow-wrap:anywhere; }
+.summary p { margin-block-start:.65rem; color:var(--wd-color-text-secondary); }
+.identity { display:flex; align-items:center; justify-content:space-between; gap:1rem; text-transform:capitalize; }
+.status { padding:.2rem .55rem; background:var(--wd-color-surface-muted); color:var(--wd-color-text-secondary); border-radius:var(--wd-radius-sm); font-size:.6875rem; }
+.sectionHeading { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-block-end:.65rem; }
+.sectionHeading h3 { margin:0; font-size:.875rem; font-weight:600; }
+.properties { margin:0; }
+.properties > div { display:grid; grid-template-columns:minmax(9rem,35%) minmax(0,1fr); gap:1rem; padding:.625rem 0; border-block-end:1px solid var(--wd-color-structural-divider); }
+.properties > div:last-child { border-block-end:0; }
+.properties dt { color:var(--wd-color-text-secondary); }
+.properties dd { margin:0; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.references { display:flex; align-items:center; flex-wrap:wrap; gap:.35rem; }
+.reference,.cellButton { border:0; border-radius:var(--wd-radius-xs); background:transparent; color:var(--wd-color-text); font:inherit; text-align:start; cursor:pointer; }
+.reference { display:inline-flex; align-items:center; gap:.35rem; padding:.2rem .35rem; max-inline-size:100%; overflow-wrap:anywhere; }
+.reference svg { flex:none; inline-size:14px; block-size:14px; }
+.reference:hover,.cellButton:hover { background:var(--wd-color-surface-hover); }
+.reference:focus-visible,.cellButton:focus-visible,.linkedList button:focus-visible { outline:2px solid var(--wd-color-text); outline-offset:2px; }
+.linkedList { display:grid; }
+.linkedList > button { display:flex; align-items:center; gap:.65rem; padding:.7rem .25rem; border:0; border-block-end:1px solid var(--wd-color-structural-divider); background:transparent; color:var(--wd-color-text); font:inherit; text-align:start; cursor:pointer; }
+.linkedList > button:hover { background:var(--wd-color-surface-hover); }
+.linkedList > button > span:not([aria-hidden]) { flex:1; min-inline-size:0; }
+.linkedList > button > span[aria-hidden] { flex:none; }
+.linkedList strong { display:block; font-size:.8125rem; font-weight:500; overflow-wrap:anywhere; }
+.linkedList small,.table small { display:block; color:var(--wd-color-text-secondary); font-size:.6875rem; margin-block-start:.2rem; }
+.count { color:var(--wd-color-text-secondary); font-size:.75rem; }
+.muted,.help { color:var(--wd-color-text-secondary); font-size:.75rem; }
+.details p.help { margin-block-start:.65rem; }
+.missing { color:var(--wd-color-text-secondary); }
+.size { padding:.75rem 0; }
+.size + .size { border-block-start:1px solid var(--wd-color-structural-divider); }
+.size h4 { margin:0 0 .35rem; font-size:.8125rem; font-weight:500; }
+.tableScroll { overflow:auto; margin-block-start:.5rem; }
+.table { inline-size:100%; border-collapse:collapse; font-size:.75rem; }
+.table th { text-align:start; font-weight:500; background:var(--wd-color-surface-muted); color:var(--wd-color-text-secondary); font-size:.6875rem; white-space:nowrap; }
+.table th,.table td { padding:.65rem .5rem; border-block-end:1px solid var(--wd-color-border-control); vertical-align:top; }
+.table th + th,.table td + td { border-inline-start:1px solid var(--wd-color-structural-divider); }
+.table th:first-child,.table td:first-child { padding-inline-start:.5rem; }
+.amount { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.cellButton { padding:.15rem 0; font-weight:500; }
+.importDetails summary { cursor:pointer; color:var(--wd-color-text-secondary); font-size:.75rem; margin-block-end:.5rem; }
+.srOnly { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); }
+@media(max-width:600px) { .properties > div { grid-template-columns:minmax(7rem,38%) minmax(0,1fr); gap:.65rem; }.sectionHeading { flex-wrap:wrap; }.table { min-inline-size:34rem; } }

@@ -1,0 +1,270 @@
+name: wodana-saas-production
+
+x-intelligence-environment: &intelligence-environment
+  ENVIRONMENT: production
+  BUSINESS_CORE_URL: http://business-core:8000/api/v1
+  BUSINESS_CORE_INTERNAL_TOKEN: ${BUSINESS_CORE_INTERNAL_TOKEN:?Set BUSINESS_CORE_INTERNAL_TOKEN}
+  INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:?Set INTEGRATIONS_ENCRYPTION_KEY}
+  REDIS_URL: redis://redis:6379/0
+  DEPENDENCY_CHECKS_ENABLED: "true"
+  WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  NOTIFICATION_ADAPTER_MODE: live
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:?Set GOOGLE_REDIRECT_URI}
+  GOOGLE_OAUTH_STATE_TTL_SECONDS: ${GOOGLE_OAUTH_STATE_TTL_SECONDS:-600}
+  GOOGLE_REQUEST_TIMEOUT_SECONDS: ${GOOGLE_REQUEST_TIMEOUT_SECONDS:-15}
+  QUICKBOOKS_CLIENT_ID: ${QUICKBOOKS_CLIENT_ID:?Set QUICKBOOKS_CLIENT_ID}
+  QUICKBOOKS_CLIENT_SECRET: ${QUICKBOOKS_CLIENT_SECRET:?Set QUICKBOOKS_CLIENT_SECRET}
+  QUICKBOOKS_ENVIRONMENT: ${QUICKBOOKS_ENVIRONMENT:-production}
+  QUICKBOOKS_REDIRECT_URI: ${QUICKBOOKS_REDIRECT_URI:?Set QUICKBOOKS_REDIRECT_URI}
+  QUICKBOOKS_WEBHOOK_VERIFIER: ${QUICKBOOKS_WEBHOOK_VERIFIER:?Set QUICKBOOKS_WEBHOOK_VERIFIER}
+  ZOHO_CLIENT_ID: ${ZOHO_CLIENT_ID:?Set ZOHO_CLIENT_ID}
+  ZOHO_CLIENT_SECRET: ${ZOHO_CLIENT_SECRET:?Set ZOHO_CLIENT_SECRET}
+  ZOHO_REDIRECT_URI: ${ZOHO_REDIRECT_URI:?Set ZOHO_REDIRECT_URI}
+  WHATSAPP_APP_ID: ${WHATSAPP_APP_ID:?Set WHATSAPP_APP_ID}
+  WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:?Set WHATSAPP_APP_SECRET}
+  WHATSAPP_CONFIG_ID: ${WHATSAPP_CONFIG_ID:?Set WHATSAPP_CONFIG_ID}
+  WHATSAPP_GRAPH_VERSION: ${WHATSAPP_GRAPH_VERSION:-v23.0}
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN: ${WHATSAPP_WEBHOOK_VERIFY_TOKEN:?Set WHATSAPP_WEBHOOK_VERIFY_TOKEN}
+  PORTAL_OTP_TEMPLATE: ${PORTAL_OTP_TEMPLATE:-}
+  PORTAL_OTP_LANGUAGE: ${PORTAL_OTP_LANGUAGE:-en_US}
+  INTEGRATION_PUBLIC_URL: https://integrations.${BASE_DOMAIN:?Set BASE_DOMAIN}/api/v1/integrations/providers
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wodana_owner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wodana}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-wodana_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=1000
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../infra/postgres/001-create-app-role.sh:/docker-entrypoint-initdb.d/001-create-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { cpus: "1.5", memory: 3G }
+        reservations: { cpus: "0.5", memory: 1G }
+    networks: [data]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 768M }
+        reservations: { cpus: "0.1", memory: 256M }
+    networks: [data]
+
+  business-core-migrate:
+    build:
+      context: ../..
+      dockerfile: services/business-core/Dockerfile
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wodana_owner}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wodana}
+      DATABASE_SSL: "false"
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [data]
+
+  business-core:
+    build:
+      context: ../..
+      dockerfile: services/business-core/Dockerfile
+      target: runner
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
+      DATABASE_URL: postgresql://${POSTGRES_APP_USER:-wodana_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-wodana}
+      DATABASE_SSL: "false"
+      REDIS_URL: redis://redis:6379/0
+      AUTH_MODE: ${AUTH_MODE:-password}
+      LOCAL_AUTH_JWT_SECRET: ${LOCAL_AUTH_JWT_SECRET:-}
+      LOCAL_AUTH_ISSUER: ${LOCAL_AUTH_ISSUER:-}
+      LOCAL_AUTH_AUDIENCE: ${LOCAL_AUTH_AUDIENCE:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
+      BUSINESS_CORE_INTERNAL_TOKEN: ${BUSINESS_CORE_INTERNAL_TOKEN:?Set BUSINESS_CORE_INTERNAL_TOKEN}
+      INTELLIGENCE_API_URL: http://intelligence-api:8001/api/v1
+      WODANA_RELEASE_ID: ${WODANA_RELEASE_ID:?Set WODANA_RELEASE_ID}
+      PORTAL_OTP_SECRET: ${PORTAL_OTP_SECRET:?Set PORTAL_OTP_SECRET}
+      PORTAL_DEMO_OTP: "false"
+      DEMO_TENANT_ENABLED: "false"
+      EXPOSE_DEMO_AUTH_TOKENS: "false"
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
+      MAILGUN_FROM: ${MAILGUN_FROM:-}
+      MAILGUN_BASE_URL: ${MAILGUN_BASE_URL:-https://api.mailgun.net}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-ap-south-1}
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-}
+      OBJECT_STORAGE_PUBLIC_ENDPOINT: ${OBJECT_STORAGE_PUBLIC_ENDPOINT:-}
+      OBJECT_STORAGE_FORCE_PATH_STYLE: ${OBJECT_STORAGE_FORCE_PATH_STYLE:-false}
+      OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID:-}
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY:-}
+      BRAND_ASSET_STORAGE_DIR: /app/.data/workspace-assets
+    volumes:
+      - object_data:/app/.data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      business-core-migrate: { condition: service_completed_successfully }
+    deploy:
+      resources:
+        limits: { cpus: "1.5", memory: 2G }
+        reservations: { cpus: "0.5", memory: 768M }
+    networks: [app, data]
+
+  intelligence-api:
+    build:
+      context: ../../services/intelligence-automation
+    restart: unless-stopped
+    init: true
+    environment:
+      <<: *intelligence-environment
+      PORT: 8001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    depends_on:
+      business-core: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+        reservations: { cpus: "0.25", memory: 384M }
+    networks: [app, data]
+
+  intelligence-worker:
+    build:
+      context: ../../services/intelligence-automation
+    restart: unless-stopped
+    init: true
+    command: ["python", "-m", "wodana_intelligence.worker"]
+    environment:
+      <<: *intelligence-environment
+      WORKER_CONSUMER_GROUP: ${WORKER_CONSUMER_GROUP:-wodana-intelligence}
+      WORKER_CONSUMER_NAME: ${WORKER_CONSUMER_NAME:-worker-1}
+    depends_on:
+      business-core: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+        reservations: { cpus: "0.25", memory: 384M }
+    networks: [app, data]
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      BUSINESS_CORE_URL: http://business-core:8000/api/v1
+      INTELLIGENCE_API_URL: http://intelligence-api:8001/api/v1
+      BUSINESS_CORE_INTERNAL_TOKEN: ${BUSINESS_CORE_INTERNAL_TOKEN:?Set BUSINESS_CORE_INTERNAL_TOKEN}
+      NEXT_PUBLIC_BUSINESS_API_URL: https://api.${BASE_DOMAIN}/api/v1
+      NEXT_PUBLIC_INTELLIGENCE_API_URL: https://api.${BASE_DOMAIN}/api/v1
+      LOGIN_TENANT_SLUG: ${LOGIN_TENANT_SLUG:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      business-core: { condition: service_healthy }
+      intelligence-api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1536M }
+        reservations: { cpus: "0.25", memory: 512M }
+    networks: [app]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:?Set BASE_DOMAIN}
+      CERT_NAME: ${CERT_NAME:-wodana.ai}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${CERTBOT_CONF_DIR:-/opt/wodana/certbot/conf}:/etc/letsencrypt:ro
+      - ${CERTBOT_WWW_DIR:-/opt/wodana/certbot/www}:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      web: { condition: service_healthy }
+      business-core: { condition: service_healthy }
+      intelligence-api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 64M }
+    networks: [app]
+
+volumes:
+  postgres_data: { name: wodana-postgres-data }
+  redis_data: { name: wodana-redis-data }
+  object_data: { name: wodana-object-data }
+
+networks:
+  app: { name: wodana-app }
+  data: { name: wodana-data, internal: true }

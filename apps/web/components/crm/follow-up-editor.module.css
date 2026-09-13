@@ -1,0 +1,39 @@
+.editor { display: grid; align-content: start; gap: 1.25rem; color: var(--wd-color-text); font-size: .8rem; }
+.fields { display: grid; gap: 1.25rem; border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+.editor :global(.wd-field) { gap: .4rem; }
+.editor :global(.wd-field-label) { font-size: .75rem; font-weight: 500; }
+.editor :global(.wd-input-group), .editor :global(.wd-select-button) { block-size: 2.5rem; min-block-size: 2.5rem; border-radius: .5rem; }
+.editor :global(.wd-input), .editor :global(.wd-select-value) { font-size: .8rem; min-block-size: 0; }
+.editor :global(.wd-select-button) { padding-inline: .65rem; }
+.editor :global(.wd-select-indicator) { block-size: 100%; inline-size: 1.25rem; border: 0; background: transparent; }
+.editor :global(.wd-textarea) { min-block-size: 8rem; font-size: .8rem; line-height: 1.65; }
+.editor :global(.wd-textarea-frame) { border-radius: .5rem; }
+.editor :global(.wd-field-help), .hint { margin: 0; color: var(--wd-color-text-tertiary); font-size: .7rem; line-height: 1.5; }
+.context { display: flex; align-items: center; gap: .65rem; padding: .85rem; border-radius: .65rem; background: var(--wd-color-surface-muted); }
+.context > div { display: grid; gap: .25rem; min-inline-size: 0; }
+.context strong { font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
+.context small { color: var(--wd-color-text-secondary); font-size: .7rem; }
+.contextIcon { color: var(--crm-accent); flex-shrink: 0; }
+.context a { margin-inline-start: auto; white-space: nowrap; }
+.editor a { color: var(--crm-accent); font-size: .7rem; text-underline-offset: 3px; }
+.schedule { display: grid; gap: .65rem; }
+.schedule h3 { display: flex; align-items: center; gap: .4rem; margin: 0; font-size: .8rem; font-weight: 600; }
+.schedule h3 svg { color: var(--crm-accent); }
+.dateFields { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: .75rem; }
+.dateFields label { display: grid; gap: .4rem; font-size: .75rem; }
+.dateFields input { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; block-size: 2.5rem; padding-inline: .65rem; border: 1px solid var(--wd-color-border-control); border-radius: .5rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: .8rem; }
+.shortcuts { display: flex; flex-wrap: wrap; gap: .4rem; }
+.shortcuts button { border: 0; border-radius: .4rem; padding: .4rem .65rem; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font: inherit; font-size: .7rem; cursor: pointer; }
+.shortcuts button:hover { background: var(--wd-color-surface-hover); }
+.actions { position: sticky; inset-block-end: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; background: var(--wd-color-surface); padding-block: .75rem .25rem; z-index: 1; }
+.actions :global(.wd-button) { block-size: 2.25rem; min-block-size: 2.25rem; font-size: .75rem; border-radius: .5rem; box-shadow: none; }
+.notice, .status { margin: 0; color: var(--crm-accent); font-size: .75rem; line-height: 1.5; }
+.status { display: flex; gap: .4rem; align-items: center; }
+.readOnly { display: grid; gap: .6rem; }
+.readOnly h3 { margin: 0; font-size: .8rem; }
+.readOnly p { margin: 0 0 .75rem; color: var(--wd-color-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.options summary { cursor: pointer; color: var(--wd-color-text-secondary); font-size: .75rem; }
+.options > div { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; padding-block-start: .8rem; }
+.options .hint { grid-column: 1 / -1; }
+.dateFields input:focus-visible, .shortcuts button:focus-visible, .options summary:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+@media (max-width: 30rem) { .editor { gap: 1rem; } .context { flex-wrap: wrap; } .options > div { grid-template-columns: 1fr; } .actions :global(.wd-button) { flex: 1; } }

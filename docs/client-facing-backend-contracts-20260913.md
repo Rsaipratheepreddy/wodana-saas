@@ -1,0 +1,89 @@
+# Client-facing backend contracts — 13 September 2026
+
+These contracts are the stable backend inputs for the later frontend cleanup. They are additive;
+existing project, quotation, and execution routes remain available.
+
+## Tenant terminology
+
+`GET /api/v1/workspaces/:workspaceId/terminology` returns every allowlisted key with its current
+default, resolved singular/plural visible name, override state, and optimistic-lock version. When a
+tenant has no override, the current product terminology is returned with `version: 0`.
+
+`PUT /api/v1/workspaces/:workspaceId/terminology/:key` creates or updates one override. First writes
+use version `0`; later writes use the returned version. `DELETE` on the same path with an expected
+`version` query restores the current default.
+
+Workspace organization responses include the resolved terminology map. Business-unit and calendar
+department responses add `visibleName` while retaining `name`; calendar departments also expose
+their stable `code`. Terminology changes never modify routes, permissions, audit codes, integration
+fields, or historical documents.
+
+## Project portfolio
+
+`GET /api/v1/workspaces/:workspaceId/projects/portfolio`
+
+Each existing project row now also contains:
+
+- `progress`: approved weighted completion percentage.
+- `taskSummary`: total leaf tasks and counts for planned, in-progress, inspection, blocked,
+  on-hold, completed, cancelled, and overdue work.
+- `schedule`: earliest/latest baseline and current dates, or `null` when no dated tasks exist.
+- `milestoneSummary`: total, accepted count, and next unaccepted milestone with its progress.
+- `fileCount`: number of delivery-project attachments.
+
+Access remains tenant-scoped. A member without `projects.manage` only receives assigned projects.
+Incomplete historical execution JSON is treated as empty summary data instead of breaking the list.
+
+## Full department calendar
+
+`GET /api/v1/workspaces/:workspaceId/projects/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD&businessUnitId=<optional UUID>`
+
+The inclusive range is limited to 93 days. The response contains:
+
+- `range`: requested dates and the workspace timezone.
+- `departments`: active department IDs, names, and configurable colors.
+- `events`: one event per confirmed booking slot, with project, deal reference, client, task,
+  department, resource, members, date, start/end time, display title, and `overlapIds`.
+- `overlapCount`: number of events that overlap another event in the same department.
+
+Overlap detection is deliberately department-specific: simultaneous Design and Production work is
+valid, while two overlapping Design bookings are surfaced for capacity review. The backend title is
+assembled as `Deal reference — Client — Department — Resource — Assigned people`; the frontend can
+append localized booking wording without reconstructing business data.
+
+Project resources accept an optional `businessUnitId`. The database validates that the department
+belongs to the same workspace. Unassigned resources remain visible under neutral `#64748B`.
+
+## Project file index
+
+`GET /api/v1/workspaces/:workspaceId/projects/:projectId/files`
+
+The response contains `items`, `folders`, and `truncated`. It combines:
+
+- delivery evidence from tasks, daily reports, procurement, documents, snags, handover,
+  dispatches, commissioning, technical queries, transmittals, retentions, and supplier returns;
+- pre-execution designs, site survey evidence, requirement evidence, and uncategorized uploads.
+
+Every item identifies its source, folder, linked record context, file metadata, uploader, and upload
+time. Pre-execution results are capped at 2,000 and report `truncated: true` if more exist.
+
+`GET /api/v1/workspaces/:workspaceId/projects/:projectId/files/:fileId` downloads either a delivery
+attachment or a pre-execution asset through the same protected route.
+
+## Quotation templates
+
+The existing tenant-scoped backend remains the source of truth:
+
+- `GET /api/v1/workspaces/:workspaceId/commercial/quotation-templates`
+- `GET /api/v1/workspaces/:workspaceId/commercial/quotation-templates/:templateId`
+- `PUT /api/v1/workspaces/:workspaceId/commercial/quotation-templates`
+
+Saved templates are workspace-isolated. Preparing a quotation from a template strips client,
+approval, and source-record identifiers so reusable commercial structure cannot accidentally retain
+another client's transaction state.
+
+## Verification
+
+Run `npm run verify:backend` from the repository root. For an isolated HTTP/database exercise of the
+new project overview contract, run the documented disposable environment followed by
+`npm --workspace @wodana/business-core run test:smoke:portfolio-calendar`.

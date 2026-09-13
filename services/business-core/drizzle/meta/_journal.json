@@ -1,0 +1,405 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788431446989,
+      "tag": "0000_adorable_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788431466470,
+      "tag": "0001_tenant_policies_and_reference_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788432830063,
+      "tag": "0002_careful_silver_fox",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788433598334,
+      "tag": "0003_absent_sentinels",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788435000000,
+      "tag": "0004_business_unit_child_entity_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788435500000,
+      "tag": "0005_business_unit_active_hierarchy_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788548002910,
+      "tag": "0006_crm_backend",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788548023413,
+      "tag": "0007_crm_security_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788624000000,
+      "tag": "0008_outbox_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788627600000,
+      "tag": "0009_crm_due_sla_work",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788631200000,
+      "tag": "0010_notification_delivery_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788634800000,
+      "tag": "0011_due_work_precision",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788638400000,
+      "tag": "0012_due_sequence_work",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788642000000,
+      "tag": "0013_default_crm_automations",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788645600000,
+      "tag": "0014_safe_default_crm_automations",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788649200000,
+      "tag": "0015_recoverable_notification_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788652800000,
+      "tag": "0016_auth_onboarding_control_plane",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788660000000,
+      "tag": "0017_local_auth_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788663600000,
+      "tag": "0018_workspace_brand_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788676200000,
+      "tag": "0019_workspace_teams",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788679800000,
+      "tag": "0020_module_crud_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788683400000,
+      "tag": "0021_module_permission_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788687000000,
+      "tag": "0022_pre_project_cases",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788769200000,
+      "tag": "0024_workspace_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788772800000,
+      "tag": "0025_execution_catalog_masters",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788776400000,
+      "tag": "0026_tenant_catalog_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788780000000,
+      "tag": "0027_catalog_ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788783600000,
+      "tag": "0028_catalog_record_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788787200000,
+      "tag": "0029_catalog_single_group",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788790800000,
+      "tag": "0030_hrms_attendance_leave",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788794400000,
+      "tag": "0031_background_work_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788798000000,
+      "tag": "0032_pre_project_designs",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788801600000,
+      "tag": "0033_pre_project_item_specifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788805200000,
+      "tag": "0034_pre_project_site",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788808800000,
+      "tag": "0035_commercial_client_portal",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788812400000,
+      "tag": "0036_pre_project_design_folders_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788816000000,
+      "tag": "0037_internal_client_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788819600000,
+      "tag": "0038_design_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788823200000,
+      "tag": "0039_pre_project_asset_markups",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788826800000,
+      "tag": "0040_project_execution",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788830400000,
+      "tag": "0041_project_vendor_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1788834000000,
+      "tag": "0042_project_reporter_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1788837600000,
+      "tag": "0043_project_crm_link_timestamp",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788841200000,
+      "tag": "0044_project_operational_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788844800000,
+      "tag": "0045_commercial_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1788848400000,
+      "tag": "0046_project_stock_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1788852000000,
+      "tag": "0047_project_legacy_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788855600000,
+      "tag": "0048_quotation_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788860000000,
+      "tag": "0049_lead_enquiry_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788897600000,
+      "tag": "0050_requirement_note_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788901200000,
+      "tag": "0051_design_folder_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1788904800000,
+      "tag": "0052_client_design_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789300800000,
+      "tag": "0053_business_unit_color",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789304400000,
+      "tag": "0054_preserve_legacy_lead_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789308000000,
+      "tag": "0055_preserve_legacy_budget_ranges",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1789311600000,
+      "tag": "0056_project_resource_business_unit",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789315200000,
+      "tag": "0057_workspace_terminology",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "integration_connections_active_domain_uidx" ON "integration_connections" USING btree ("workspace_id","provider","legal_entity_id","external_domain") WHERE "integration_connections"."external_domain" IS NOT NULL AND "integration_connections"."status" <> 'revoked';

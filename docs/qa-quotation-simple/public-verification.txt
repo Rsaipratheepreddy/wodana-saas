@@ -1,0 +1,1 @@
+PASS: simplified room/item/material builder; ten responsive layouts using the actual theme switch; full numeric fields; custom material preview; mobile pages; payment and template APIs; existing production quote unchanged.

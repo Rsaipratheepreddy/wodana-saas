@@ -1,0 +1,737 @@
+import {
+  ConflictException,
+  ForbiddenException,
+  GoneException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import type { PoolClient } from "pg";
+import { MAX_ACTIVE_DEVICES, sessionDeviceLimit } from "./session-policy";
+import { ConfigService } from "@nestjs/config";
+import { randomBytes, randomUUID } from "node:crypto";
+import * as jwt from "jsonwebtoken";
+import { DatabaseService } from "../database/database.service";
+import { IdentityService } from "./identity.service";
+import { RequestActor } from "./actor";
+import { TransactionalEmailService } from "../email/transactional-email.service";
+import { hashOpaqueToken, hashPassword, verifyPassword } from "./local-password";
+
+interface LoginMetadata {
+  ipAddress?: string;
+  userAgent?: string;
+  currentRefreshToken?: string;
+  revokeFamilyId?: string;
+  verifiedPasswordHash?: string;
+}
+
+interface LocalUserRow {
+  id: string;
+  primaryEmail: string;
+  displayName: string;
+  status: string;
+  passwordHash: string;
+  passwordSalt: string;
+  failedAttempts: number;
+  lockedUntil: Date | null;
+}
+
+interface RefreshRow {
+  id: string;
+  userId: string;
+  familyId: string;
+  expiresAt: Date;
+  revokedAt: Date | null;
+  email: string;
+  displayName: string;
+  subject: string;
+}
+
+export interface SecuritySessionRow {
+  familyId: string;
+  createdAt: Date;
+  lastActiveAt: Date;
+  expiresAt: Date;
+  userAgent: string | null;
+  ipAddress: string | null;
+  current: boolean;
+}
+
+const ACCESS_TOKEN_SECONDS = 15 * 60;
+const REFRESH_TOKEN_DAYS = 30;
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
+
+@Injectable()
+export class LocalAuthService {
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly config: ConfigService,
+    private readonly identities: IdentityService,
+    private readonly email: TransactionalEmailService,
+  ) {}
+
+  async getTenantBranding(loginSlug: string) {
+    const result = await this.database.query<{
+      displayName: string;
+      loginSlug: string;
+      logoUrl: string | null;
+    }>(
+      `SELECT display_name AS "displayName", login_slug AS "loginSlug",
+              CASE WHEN logo_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-logo/' || login_slug || '?v=' || logo_asset_id::text
+                   ELSE logo_url END AS "logoUrl"
+       FROM tenant_login_branding WHERE login_slug = $1`,
+      [loginSlug.toLowerCase()],
+    );
+    if (!result.rowCount) throw new NotFoundException("Tenant login was not found");
+    return result.rows[0];
+  }
+
+  async login(email: string, password: string, tenantSlug: string, metadata: LoginMetadata = {}) {
+    this.assertLocalAuthAvailable();
+    const result = await this.database.query<LocalUserRow>(
+      `SELECT app_user.id, app_user.primary_email AS "primaryEmail",
+              app_user.display_name AS "displayName", app_user.status,
+              credential.password_hash AS "passwordHash",
+              credential.password_salt AS "passwordSalt",
+              credential.failed_attempts AS "failedAttempts",
+              credential.locked_until AS "lockedUntil"
+       FROM users app_user
+       JOIN local_auth_credentials credential ON credential.user_id = app_user.id
+       WHERE app_user.primary_email = $1`,
+      [email.toLowerCase()],
+    );
+    const user = result.rows[0];
+    if (!user || user.status !== "active") {
+      throw new UnauthorizedException("Email, password, or tenant is incorrect");
+    }
+    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+      throw new HttpException(
+        "Too many sign-in attempts. Try again later",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const validPassword = await verifyPassword(password, user.passwordSalt, user.passwordHash);
+    if (!validPassword) {
+      await this.database.query(
+        `UPDATE local_auth_credentials
+         SET failed_attempts = failed_attempts + 1,
+             locked_until = CASE WHEN failed_attempts + 1 >= $2
+               THEN now() + ($3 * interval '1 minute') ELSE NULL END,
+             updated_at = now()
+         WHERE user_id = $1`,
+        [user.id, MAX_FAILED_ATTEMPTS, LOCK_MINUTES],
+      );
+      throw new UnauthorizedException("Email, password, or tenant is incorrect");
+    }
+
+    const branding = await this.database.query<{ workspaceId: string }>(
+      `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
+      [tenantSlug.toLowerCase()],
+    );
+    const membership = branding.rowCount
+      ? await this.database.actorTransaction(user.id, (client) => client.query(
+        `SELECT membership.id FROM workspace_memberships membership
+         JOIN workspaces workspace ON workspace.id = membership.workspace_id
+         WHERE membership.workspace_id = $1
+           AND membership.user_id = $2
+           AND membership.status = 'active'
+           AND workspace.status = 'active'`,
+        [branding.rows[0].workspaceId, user.id],
+      ))
+      : null;
+    if (!branding.rowCount || !membership?.rowCount) {
+      throw new UnauthorizedException("Email, password, or tenant is incorrect");
+    }
+
+    await this.database.query(
+      `UPDATE local_auth_credentials SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+       WHERE user_id = $1`,
+      [user.id],
+    );
+    await this.database.query(
+      `UPDATE user_identities SET last_login_at = now(), updated_at = now()
+       WHERE provider = 'local' AND provider_subject = $1`,
+      [`local:${user.id}`],
+    );
+
+    return this.issueSession(this.actorFor(user), branding.rows[0].workspaceId, { ...metadata, verifiedPasswordHash: user.passwordHash });
+  }
+
+  async activateInvitation(invitationToken: string, password: string, metadata: LoginMetadata = {}) {
+    this.assertLocalAuthAvailable();
+    const tokenHash = hashOpaqueToken(invitationToken);
+    const activated = await this.database.transaction(async (client) => {
+      await client.query("SELECT set_config('app.current_invitation_token_hash', $1, true)", [tokenHash]);
+      const invitation = await client.query<{
+        id: string;
+        workspaceId: string;
+        email: string;
+        status: string;
+        expiresAt: Date;
+        userId: string;
+        displayName: string;
+      }>(
+        `SELECT invitation.id, invitation.workspace_id AS "workspaceId", invitation.email,
+                invitation.status, invitation.expires_at AS "expiresAt",
+                app_user.id AS "userId", app_user.display_name AS "displayName"
+         FROM workspace_invitations invitation
+         JOIN users app_user ON app_user.primary_email = invitation.email
+         WHERE invitation.token_hash = $1`,
+        [tokenHash],
+      );
+      const row = invitation.rows[0];
+      if (!row) throw new NotFoundException("Invitation was not found");
+      if (row.status !== "pending" || row.expiresAt.getTime() <= Date.now()) {
+        throw new GoneException("Invitation is no longer active");
+      }
+
+      await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [row.workspaceId]);
+      await client.query("SELECT set_config('app.current_actor_id', $1, true)", [row.userId]);
+      const locked = await client.query<{ status: string; expiresAt: Date }>(
+        `SELECT status, expires_at AS "expiresAt" FROM workspace_invitations
+         WHERE id = $1 FOR UPDATE`,
+        [row.id],
+      );
+      if (!locked.rowCount || locked.rows[0].status !== "pending"
+        || locked.rows[0].expiresAt.getTime() <= Date.now()) {
+        throw new GoneException("Invitation is no longer active");
+      }
+      const encoded = await hashPassword(password);
+      await client.query(
+        `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+           password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
+           password_changed_at = now(), updated_at = now()`,
+        [row.userId, encoded.hash, encoded.salt],
+      );
+      await client.query(
+        `INSERT INTO user_identities
+          (user_id, provider, provider_subject, email_at_provider, last_login_at)
+         VALUES ($1, 'local', $2, $3, now())
+         ON CONFLICT (provider, provider_subject) DO UPDATE SET
+           email_at_provider = EXCLUDED.email_at_provider, last_login_at = now(), updated_at = now()`,
+        [row.userId, `local:${row.userId}`, row.email],
+      );
+      const membership = await client.query<{ id: string }>(
+        `INSERT INTO workspace_memberships (workspace_id, user_id, status, joined_at)
+         VALUES ($1, $2, 'active', now())
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET status = 'active',
+           joined_at = COALESCE(workspace_memberships.joined_at, now()), updated_at = now()
+         RETURNING id`,
+        [row.workspaceId, row.userId],
+      );
+      await client.query(
+        `INSERT INTO member_roles (workspace_id, membership_id, role_id)
+         SELECT $1, $2, assigned.role_id FROM invitation_roles assigned
+         WHERE assigned.invitation_id = $3
+         ON CONFLICT DO NOTHING`,
+        [row.workspaceId, membership.rows[0].id, row.id],
+      );
+      await client.query(
+        `UPDATE workspace_invitations SET status = 'accepted', accepted_at = now(), updated_at = now()
+         WHERE id = $1`,
+        [row.id],
+      );
+      return row;
+    });
+
+    return this.issueSession({
+      subject: `local:${activated.userId}`,
+      provider: "local",
+      email: activated.email.toLowerCase(),
+      displayName: activated.displayName,
+    }, activated.workspaceId, metadata);
+  }
+
+  async refresh(refreshToken: string, metadata: LoginMetadata = {}) {
+    this.assertLocalAuthAvailable();
+    const tokenHash = hashOpaqueToken(refreshToken);
+    const result = await this.database.transaction(async (client) => {
+      const owner = await client.query<{ userId: string }>(
+        'SELECT user_id AS "userId" FROM auth_refresh_sessions WHERE token_hash = $1', [tokenHash],
+      );
+      if (!owner.rowCount) throw new UnauthorizedException("Refresh session is invalid or expired");
+      await this.lockSessions(client, owner.rows[0].userId);
+      const result = await client.query<RefreshRow>(
+        `SELECT session.id, session.user_id AS "userId", session.family_id AS "familyId",
+                session.expires_at AS "expiresAt", session.revoked_at AS "revokedAt",
+                app_user.primary_email AS email, app_user.display_name AS "displayName",
+                identity.provider_subject AS subject
+         FROM auth_refresh_sessions session
+         JOIN users app_user ON app_user.id = session.user_id
+         JOIN user_identities identity ON identity.user_id = app_user.id AND identity.provider = 'local'
+         WHERE session.token_hash = $1 AND app_user.status = 'active'
+         FOR UPDATE OF session`,
+        [tokenHash],
+      );
+      const prior = result.rows[0];
+      if (!prior || prior.expiresAt.getTime() <= Date.now()) {
+        throw new UnauthorizedException("Refresh session is invalid or expired");
+      }
+      if (prior.revokedAt) {
+        await client.query(
+          `UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now())
+           WHERE family_id = $1`,
+          [prior.familyId],
+        );
+        return { reuseDetected: true as const };
+      }
+
+      const active = await this.activeSessions(client, prior.userId);
+      const deviceLimit = this.deviceLimit(prior.userId);
+      if (deviceLimit !== null && active.length > deviceLimit) {
+        throw new UnauthorizedException("Device limit exceeded. Sign in to manage your devices.");
+      }
+      const nextToken = randomBytes(48).toString("base64url");
+      const nextId = randomUUID();
+      await client.query(
+        `INSERT INTO auth_refresh_sessions
+          (id, user_id, family_id, token_hash, expires_at, user_agent, ip_address)
+         VALUES ($1, $2, $3, $4, now() + ($5 * interval '1 day'), $6, $7)`,
+        [nextId, prior.userId, prior.familyId, hashOpaqueToken(nextToken), REFRESH_TOKEN_DAYS,
+          metadata.userAgent ?? active.find((session) => session.familyId === prior.familyId)?.userAgent ?? null,
+          metadata.ipAddress ?? active.find((session) => session.familyId === prior.familyId)?.ipAddress ?? null],
+      );
+      await client.query(
+        `UPDATE auth_refresh_sessions SET revoked_at = now(), replaced_by_session_id = $2
+         WHERE id = $1`,
+        [prior.id, nextId],
+      );
+
+      const actor: RequestActor = {
+        subject: prior.subject,
+        provider: "local",
+        email: prior.email,
+        displayName: prior.displayName,
+      };
+      return {
+        reuseDetected: false as const,
+        accessToken: this.signAccessToken(actor, prior.familyId),
+        refreshToken: nextToken,
+        accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+        refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
+      };
+    });
+    if (result.reuseDetected) {
+      throw new UnauthorizedException("Refresh session reuse was detected");
+    }
+    const { reuseDetected: _reuseDetected, ...session } = result;
+    return session;
+  }
+
+  async logout(refreshToken?: string) {
+    if (refreshToken) {
+      await this.database.transaction(async (client) => {
+        const session = await client.query<{ userId: string; familyId: string }>(
+          'SELECT user_id AS "userId", family_id AS "familyId" FROM auth_refresh_sessions WHERE token_hash = $1',
+          [hashOpaqueToken(refreshToken)],
+        );
+        if (!session.rowCount) return;
+        await this.lockSessions(client, session.rows[0].userId);
+        await client.query(
+          `UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now())
+           WHERE user_id = $1 AND family_id = $2`,
+          [session.rows[0].userId, session.rows[0].familyId],
+        );
+      });
+    }
+    return { signedOut: true };
+  }
+
+  async securityOverview(actor: RequestActor, refreshToken: string, workspaceId: string) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    const current = await this.currentSession(actorUser.userId, refreshToken);
+    const sessions = { rows: await this.database.transaction((client) =>
+      this.activeSessions(client, actorUser.userId, current.familyId)) };
+    if (!sessions.rows.some((session) => session.current)) {
+      throw new UnauthorizedException("The current session is no longer active");
+    }
+    const credential = await this.database.query<{ passwordChangedAt: Date }>(
+      `SELECT password_changed_at AS "passwordChangedAt"
+       FROM local_auth_credentials WHERE user_id = $1`,
+      [actorUser.userId],
+    );
+    return {
+      authenticationMethod: actor.provider,
+      passwordChangedAt: credential.rows[0]?.passwordChangedAt ?? null,
+      policy: {
+        accessTokenMinutes: ACCESS_TOKEN_SECONDS / 60,
+        refreshSessionDays: REFRESH_TOKEN_DAYS,
+        maxFailedAttempts: MAX_FAILED_ATTEMPTS,
+        lockMinutes: LOCK_MINUTES,
+        minimumPasswordLength: 10,
+        maxActiveDevices: this.deviceLimit(actorUser.userId),
+      },
+      sessions: sessions.rows,
+    };
+  }
+
+  async revokeSession(
+    actor: RequestActor,
+    familyId: string,
+    refreshToken: string,
+    workspaceId: string,
+  ) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    const current = await this.currentSession(actorUser.userId, refreshToken);
+    if (current.familyId === familyId) {
+      throw new ConflictException("Use Sign out to end the current session");
+    }
+    const revoked = await this.database.transaction(async (client) => {
+      await this.lockSessions(client, actorUser.userId);
+      return client.query<{ familyId: string }>(
+      `UPDATE auth_refresh_sessions
+       SET revoked_at = COALESCE(revoked_at, now())
+       WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL
+       RETURNING family_id AS "familyId"`,
+      [actorUser.userId, familyId],
+      );
+    });
+    if (!revoked.rowCount) throw new NotFoundException("The session is no longer active");
+    await this.recordSecurityAudit(actorUser.userId, workspaceId, "security.session_revoked", familyId, { familyId });
+    return { familyId, revoked: true };
+  }
+
+  async revokeOtherSessions(actor: RequestActor, refreshToken: string, workspaceId: string) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    const current = await this.currentSession(actorUser.userId, refreshToken);
+    const revoked = await this.database.transaction(async (client) => {
+      await this.lockSessions(client, actorUser.userId);
+      return client.query<{ familyId: string }>(
+      `UPDATE auth_refresh_sessions
+       SET revoked_at = COALESCE(revoked_at, now())
+       WHERE user_id = $1 AND family_id <> $2 AND revoked_at IS NULL AND expires_at > now()
+       RETURNING family_id AS "familyId"`,
+      [actorUser.userId, current.familyId],
+      );
+    });
+    const count = new Set(revoked.rows.map((row) => row.familyId)).size;
+    await this.recordSecurityAudit(
+      actorUser.userId,
+      workspaceId,
+      "security.other_sessions_revoked",
+      current.familyId,
+      { count },
+    );
+    return { revoked: count };
+  }
+
+  async forgotPassword(email: string, tenantSlug: string) {
+    this.assertLocalAuthAvailable();
+    const user = await this.database.query<{ id: string }>(
+      `SELECT app_user.id FROM users app_user
+       JOIN local_auth_credentials credential ON credential.user_id = app_user.id
+       WHERE app_user.primary_email = $1`,
+      [email.toLowerCase()],
+    );
+    let developmentResetToken: string | undefined;
+    const branding = await this.database.query<{ workspaceId: string }>(
+      `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
+      [tenantSlug.toLowerCase()],
+    );
+    const membership = user.rowCount && branding.rowCount
+      ? await this.database.actorTransaction(user.rows[0].id, (client) => client.query(
+        `SELECT membership.id FROM workspace_memberships membership
+         JOIN workspaces workspace ON workspace.id = membership.workspace_id
+         WHERE membership.workspace_id = $1
+           AND membership.user_id = $2
+           AND membership.status = 'active'
+           AND workspace.status = 'active'`,
+        [branding.rows[0].workspaceId, user.rows[0].id],
+      ))
+      : null;
+    if (user.rowCount && membership?.rowCount) {
+      const token = randomBytes(32).toString("base64url");
+      await this.database.query(
+        `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+         VALUES ($1, $2, now() + interval '30 minutes')`,
+        [user.rows[0].id, hashOpaqueToken(token)],
+      );
+      await this.email.sendPasswordReset({ email: email.toLowerCase(), resetToken: token, tenantSlug });
+      if (this.config.get<string>("NODE_ENV") !== "production"
+        && this.config.get<string>("EXPOSE_DEMO_AUTH_TOKENS", "false") === "true") {
+        developmentResetToken = token;
+      }
+    }
+    return {
+      accepted: true,
+      message: "If the account exists, password reset instructions have been issued.",
+      ...(developmentResetToken ? { developmentResetToken } : {}),
+    };
+  }
+
+  async resetPassword(resetToken: string, password: string) {
+    this.assertLocalAuthAvailable();
+    const encoded = await hashPassword(password);
+    await this.database.transaction(async (client) => {
+      const result = await client.query<{ id: string; userId: string; expiresAt: Date; usedAt: Date | null }>(
+        `SELECT id, user_id AS "userId", expires_at AS "expiresAt", used_at AS "usedAt"
+         FROM password_reset_tokens WHERE token_hash = $1 FOR UPDATE`,
+        [hashOpaqueToken(resetToken)],
+      );
+      const row = result.rows[0];
+      if (!row || row.usedAt || row.expiresAt.getTime() <= Date.now()) {
+        throw new GoneException("Password reset token is invalid or expired");
+      }
+      await this.lockSessions(client, row.userId);
+      await client.query(
+        `UPDATE local_auth_credentials SET password_hash = $2, password_salt = $3,
+           failed_attempts = 0, locked_until = NULL, password_changed_at = now(), updated_at = now()
+         WHERE user_id = $1`,
+        [row.userId, encoded.hash, encoded.salt],
+      );
+      await client.query("UPDATE password_reset_tokens SET used_at = now() WHERE id = $1", [row.id]);
+      await client.query(
+        `UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now())
+         WHERE user_id = $1`,
+        [row.userId],
+      );
+    });
+    return { passwordReset: true };
+  }
+
+  async ensureDemoAccount(workspaceId: string, email: string, password: string) {
+    const user = await this.database.query<{ id: string; displayName: string }>(
+      `SELECT id, display_name AS "displayName" FROM users WHERE primary_email = $1`,
+      [email.toLowerCase()],
+    );
+    if (!user.rowCount) throw new NotFoundException("Demo owner was not provisioned");
+    const userId = user.rows[0].id;
+    const encoded = await hashPassword(password);
+    await this.database.tenantTransaction(workspaceId, userId, async (client) => {
+      await client.query(
+        `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+           password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
+           password_changed_at = now(), updated_at = now()`,
+        [userId, encoded.hash, encoded.salt],
+      );
+      await client.query(
+        `INSERT INTO user_identities
+          (user_id, provider, provider_subject, email_at_provider)
+         VALUES ($1, 'local', $2, $3)
+         ON CONFLICT (provider, provider_subject) DO NOTHING`,
+        [userId, `local:${userId}`, email.toLowerCase()],
+      );
+      const membership = await client.query<{ id: string }>(
+        `INSERT INTO workspace_memberships (workspace_id, user_id, status, joined_at)
+         VALUES ($1, $2, 'active', now())
+         ON CONFLICT (workspace_id, user_id) DO UPDATE SET status = 'active',
+           joined_at = COALESCE(workspace_memberships.joined_at, now()), updated_at = now()
+         RETURNING id`,
+        [workspaceId, userId],
+      );
+      await client.query(
+        `INSERT INTO member_roles (workspace_id, membership_id, role_id)
+         SELECT $1, $2, id FROM roles WHERE workspace_id = $1 AND code = 'owner'
+         ON CONFLICT DO NOTHING`,
+        [workspaceId, membership.rows[0].id],
+      );
+      await client.query(
+        `UPDATE workspace_invitations SET status = 'accepted', accepted_at = COALESCE(accepted_at, now()),
+           updated_at = now() WHERE workspace_id = $1 AND email = $2 AND status = 'pending'`,
+        [workspaceId, email.toLowerCase()],
+      );
+      await client.query(
+        `UPDATE workspace_onboarding SET status = 'completed', current_step = 'complete',
+           completed_steps = '["workspace_profile","organization","team","integrations"]'::jsonb,
+           started_at = COALESCE(started_at, now()), completed_at = COALESCE(completed_at, now()),
+           updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+    });
+  }
+
+  private actorFor(user: LocalUserRow): RequestActor {
+    return {
+      subject: `local:${user.id}`,
+      provider: "local",
+      email: user.primaryEmail.toLowerCase(),
+      displayName: user.displayName,
+    };
+  }
+
+  private async assertWorkspaceMembership(userId: string, workspaceId: string) {
+    const membership = await this.database.actorTransaction(userId, (client) => client.query(
+      `SELECT membership.id FROM workspace_memberships membership
+       JOIN workspaces workspace ON workspace.id = membership.workspace_id
+       WHERE membership.workspace_id = $1
+         AND membership.user_id = $2
+         AND membership.status = 'active'
+         AND workspace.status = 'active'`,
+      [workspaceId, userId],
+    ));
+    if (!membership.rowCount) throw new ForbiddenException("Workspace access is required");
+  }
+
+  private async currentSession(userId: string, refreshToken: string) {
+    const current = await this.database.query<{ familyId: string }>(
+      `SELECT prior.family_id AS "familyId"
+       FROM auth_refresh_sessions prior
+       WHERE prior.user_id = $1 AND prior.token_hash = $2
+         AND EXISTS (
+           SELECT 1 FROM auth_refresh_sessions active
+           WHERE active.user_id = prior.user_id AND active.family_id = prior.family_id
+             AND active.revoked_at IS NULL AND active.expires_at > now()
+         )`,
+      [userId, hashOpaqueToken(refreshToken)],
+    );
+    if (!current.rowCount) throw new UnauthorizedException("The current session is no longer active");
+    return current.rows[0];
+  }
+
+  private async recordSecurityAudit(
+    actorUserId: string,
+    workspaceId: string,
+    action: string,
+    entityId: string,
+    after: Record<string, unknown>,
+  ) {
+    await this.database.tenantTransaction(workspaceId, actorUserId, (client) => client.query(
+      `INSERT INTO audit_events
+        (workspace_id, actor_user_id, source, action, entity_type, entity_id, before, after, correlation_id)
+       VALUES ($1, $2, 'user', $3, 'auth_session', $4, NULL, $5::jsonb, $6)`,
+      [workspaceId, actorUserId, action, entityId, JSON.stringify(after), randomUUID()],
+    ));
+  }
+
+  private async lockSessions(client: PoolClient, userId: string) {
+    // A per-user database lock covers every login, refresh, and revocation across servers.
+    await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [userId]);
+  }
+
+  private async activeSessions(client: PoolClient, userId: string, currentFamilyId?: string) {
+    const result = await client.query<SecuritySessionRow>(
+      `SELECT active.family_id AS "familyId", min(history.created_at) AS "createdAt",
+              active.created_at AS "lastActiveAt", active.expires_at AS "expiresAt",
+              active.user_agent AS "userAgent", active.ip_address AS "ipAddress",
+              COALESCE(active.family_id = $2::uuid, false) AS current
+       FROM auth_refresh_sessions active
+       JOIN auth_refresh_sessions history ON history.family_id = active.family_id AND history.user_id = active.user_id
+       WHERE active.user_id = $1 AND active.revoked_at IS NULL AND active.expires_at > now()
+       GROUP BY active.id
+       ORDER BY current DESC, active.created_at DESC, active.id`,
+      [userId, currentFamilyId ?? null],
+    );
+    return result.rows;
+  }
+
+  private async issueSession(actor: RequestActor, selectedWorkspaceId: string, metadata: LoginMetadata) {
+    const user = await this.identities.resolveActor(actor);
+    const profile = await this.identities.getProfile(actor);
+    const result = await this.database.transaction(async (client) => {
+      await this.lockSessions(client, user.userId);
+      if (metadata.verifiedPasswordHash) {
+        const credential = await client.query(
+          `SELECT 1 FROM local_auth_credentials credential JOIN users app_user ON app_user.id = credential.user_id
+           WHERE credential.user_id = $1 AND credential.password_hash = $2 AND app_user.status = 'active'`,
+          [user.userId, metadata.verifiedPasswordHash],
+        );
+        if (!credential.rowCount) throw new UnauthorizedException("Your account changed. Sign in again.");
+      }
+
+      if (metadata.revokeFamilyId) {
+        // Credentials and tenant membership have already been verified. Only this user's family can be revoked.
+        const revoked = await client.query(
+          `UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now())
+           WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL RETURNING id`,
+          [user.userId, metadata.revokeFamilyId],
+        );
+        if (revoked.rowCount) {
+          await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [selectedWorkspaceId]);
+          await client.query("SELECT set_config('app.current_actor_id', $1, true)", [user.userId]);
+          await client.query(
+            `INSERT INTO audit_events (workspace_id, actor_user_id, source, action, entity_type, entity_id, after, correlation_id)
+             VALUES ($1, $2, 'user', 'security.session_revoked', 'auth_session', $3, $4::jsonb, $5)`,
+            [selectedWorkspaceId, user.userId, metadata.revokeFamilyId,
+              JSON.stringify({ familyId: metadata.revokeFamilyId, reason: "device_limit" }), randomUUID()],
+          );
+        }
+      }
+      // A valid refresh token proves an existing browser session; user-agent strings do not.
+      const current = metadata.currentRefreshToken ? await client.query<{ familyId: string }>(
+        `SELECT family_id AS "familyId" FROM auth_refresh_sessions
+         WHERE user_id = $1 AND token_hash = $2 AND revoked_at IS NULL AND expires_at > now()`,
+        [user.userId, hashOpaqueToken(metadata.currentRefreshToken)],
+      ) : null;
+      const sessions = await this.activeSessions(client, user.userId);
+      const currentFamilyId = current?.rows[0]?.familyId;
+      const deviceLimit = this.deviceLimit(user.userId);
+      if (deviceLimit !== null && sessions.length - (currentFamilyId ? 1 : 0) >= deviceLimit) {
+        // Return normally so any chosen logout commits even if more devices still need removal.
+        return { blocked: true as const, sessions };
+      }
+      if (currentFamilyId) {
+        await client.query(
+          'UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE user_id = $1 AND family_id = $2',
+          [user.userId, currentFamilyId],
+        );
+      }
+      const refreshToken = randomBytes(48).toString("base64url");
+      const familyId = randomUUID();
+      await client.query(
+        `INSERT INTO auth_refresh_sessions
+          (user_id, family_id, token_hash, expires_at, user_agent, ip_address)
+         VALUES ($1, $2, $3, now() + ($4 * interval '1 day'), $5, $6)`,
+        [user.userId, familyId, hashOpaqueToken(refreshToken), REFRESH_TOKEN_DAYS,
+          metadata.userAgent ?? null, metadata.ipAddress ?? null],
+      );
+      return { blocked: false as const, refreshToken, familyId };
+    });
+    if (result.blocked) {
+      throw new ConflictException({
+        code: "DEVICE_LIMIT_REACHED",
+        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${MAX_ACTIVE_DEVICES} devices. Log out a device to continue.`,
+        maxActiveDevices: MAX_ACTIVE_DEVICES,
+        sessions: result.sessions,
+      });
+    }
+    return {
+      accessToken: this.signAccessToken(actor, result.familyId),
+      refreshToken: result.refreshToken,
+      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
+      selectedWorkspaceId,
+      profile,
+    };
+  }
+
+  private signAccessToken(actor: RequestActor, familyId: string) {
+    return jwt.sign(
+      { email: actor.email, email_verified: true, name: actor.displayName, provider: "local", sid: familyId },
+      this.config.getOrThrow<string>("LOCAL_AUTH_JWT_SECRET"),
+      {
+        algorithm: "HS256",
+        subject: actor.subject,
+        issuer: this.config.get<string>("LOCAL_AUTH_ISSUER", "wodana-local"),
+        audience: this.config.get<string>("LOCAL_AUTH_AUDIENCE", "wodana-web"),
+        expiresIn: ACCESS_TOKEN_SECONDS,
+      },
+    );
+  }
+
+  private deviceLimit(userId: string) {
+    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""));
+  }
+
+  private assertLocalAuthAvailable() {
+    const mode = this.config.get<string>("AUTH_MODE", "development");
+    if (!["local", "password"].includes(mode)
+      || (this.config.get<string>("NODE_ENV") === "production" && mode !== "password")) {
+      throw new NotFoundException("Local authentication is not enabled");
+    }
+  }
+}

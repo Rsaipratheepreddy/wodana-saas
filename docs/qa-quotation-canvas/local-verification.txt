@@ -1,0 +1,1 @@
+PASS: Preparation → catalogs → custom material → save/reopen → maximum numbers at 10 light/dark viewports → payment reorder → saved quotation template → client preview. Catalog count unchanged.

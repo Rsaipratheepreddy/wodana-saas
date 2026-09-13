@@ -1,0 +1,392 @@
+export type TaskStatus =
+  | "planned"
+  | "in_progress"
+  | "blocked"
+  | "on_hold"
+  | "awaiting_inspection"
+  | "completed"
+  | "cancelled";
+export type Task = {
+  id: string;
+  parentId: string;
+  package: string;
+  title: string;
+  description: string;
+  area: string;
+  location: "site" | "factory" | "office";
+  ownerId: string;
+  assigneeIds: string[];
+  resourceId: string;
+  start: string;
+  end: string;
+  baselineStart: string;
+  baselineEnd: string;
+  predecessors: string[];
+  quantity: number;
+  unit: string;
+  weight: number;
+  approved: number;
+  status: TaskStatus;
+  priority: "normal" | "high" | "urgent";
+  inspectionRequired: boolean;
+  scopeIds: string[];
+  drawingId: string;
+  readiness: { scope: boolean; access: boolean; materials: boolean };
+  blocker: string;
+};
+export type DailyReport = {
+  summary?: string;
+  weather?: string;
+  safety?: string;
+  workforce?: {trade:string;people:number;hours:number}[];
+  clientFileIds?:string[];
+  id: string;
+  date: string;
+  shift: string;
+  location: "site" | "factory";
+  authorId: string;
+  author: string;
+  status: "draft" | "submitted" | "returned" | "approved";
+  entries: { taskId: string; quantity: number }[];
+  hours: number;
+  people: number;
+  materials: string;
+  issues: string;
+  tomorrow: string;
+  evidence: string;
+  note: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  publishedAt?: string;
+  supersedes?: string;
+};
+export type Material = {
+  reservations?: {
+    taskId: string;
+    quantity: number;
+    reference: string;
+    at: string;
+  }[];
+  id: string;
+  title: string;
+  specification: string;
+  catalogId: string;
+  catalogVersion: number;
+  unit: string;
+  required: number;
+  supply: "company" | "vendor" | "client";
+  taskId: string;
+  needBy: string;
+  movements: {
+    taskId?: string;
+    id: string;
+    kind: "receive" | "issue" | "return" | "waste" | "supplier_return" | "transfer_out";
+    quantity: number;
+    reference: string;
+    at: string;
+  }[];
+};
+export type Order = {
+  sourceEnquiry?: string;
+  vendorUpdates?: {
+    id: string;
+    at: string;
+    kind: "quotation" | "acknowledgement" | "progress" | "delivery";
+    note: string;
+    evidence: string;
+    date: string;
+    quantity: number;
+    unitCost?: number;
+  }[];
+  id: string;
+  number: string;
+  title: string;
+  vendor: string;
+  vendorContact: string;
+  kind: "material" | "subcontract" | "factory";
+  materialId: string;
+  taskId: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  currency: string;
+  promisedDate: string;
+  status:
+    | "enquiry"
+    | "draft"
+    | "submitted"
+    | "approved"
+    | "acknowledged"
+    | "closed"
+    | "cancelled";
+  acknowledgement: string;
+  receipts: {
+    id: string;
+    accepted: number;
+    rejected: number;
+    evidence: string;
+    at: string;
+  }[];
+};
+export type ProjectDocument = {
+  id: string;
+  title: string;
+  kind:
+    | "drawing"
+    | "specification"
+    | "permit"
+    | "as_built"
+    | "manual"
+    | "warranty"
+    | "other";
+  revision: string;
+  url: string;
+  note: string;
+  status: "draft" | "review" | "approved" | "superseded";
+  replaces: string;
+  published: boolean;
+  approvedBy?: string;
+};
+export type Snag = {
+  handoverId?: string;
+  id: string;
+  title: string;
+  taskId: string;
+  area: string;
+  ownerId: string;
+  severity: "minor" | "major" | "critical";
+  dueDate: string;
+  status: "open" | "ready" | "closed";
+  evidence: string;
+  resolution: string;
+  verifiedBy?: string;
+};
+export type Handover = {
+  id: string;
+  area: string;
+  title: string;
+  status: "draft" | "ready" | "accepted";
+  documentIds: string[];
+  taskIds: string[];
+  evidence: string;
+  acceptedBy: string;
+  acceptedAt: string;
+  warrantyUntil: string;
+  outstanding: string;
+  published: boolean;
+};
+export type ProjectComment = {
+  legacy?:boolean;
+  mentions?: string[];
+  edits?: { text: string; at: string }[];
+  id: string;
+  recordId: string;
+  parentId: string;
+  text: string;
+  author: string;
+  authorId: string;
+  at: string;
+  resolved: boolean;
+};
+export type ProjectAudit = {
+  id: string;
+  at: string;
+  author: string;
+  action: string;
+  recordId: string;
+  note: string;
+};
+export type ProjectControlSummary = {
+  reference: string;
+  priority: "normal" | "high" | "critical";
+  risk: "on_track" | "get_ready" | "urgent_action" | "high_risk" | "complete";
+  onHold: boolean;
+  holdReason: string;
+  holdSince: string;
+  holdOwnerId: string;
+  promise: string;
+  targetCompletion: string;
+  handoverDate: string;
+  nextAction: string;
+  nextActionOwnerId: string;
+  nextActionDate: string;
+  nextClientMeeting: string;
+  clientNote: string;
+};
+export type ProjectRole =
+  | "sales_manager"
+  | "senior_designer"
+  | "junior_designer"
+  | "technical_designer"
+  | "visualizer"
+  | "project_manager"
+  | "creative_director"
+  | "finance"
+  | "procurement_production"
+  | "crm_owner"
+  | "sales_assistant"
+  | "surveyor";
+export type ProjectRoleAssignment = { role: ProjectRole; memberId: string };
+export type ApprovedMaterialSelection = {
+  id: string;
+  sourceApprovalId: string;
+  quoteId: string;
+  lineId: string;
+  room: string;
+  item: string;
+  name: string;
+  code: string;
+  brand: string;
+  specification: string;
+  revision: number;
+  approvedAt: string;
+  approvedBy: string;
+};
+export type ProjectData = import("./execution-controls.types").ExecutionControls & {
+  controls?: ProjectControlSummary;
+  roleAssignments?: ProjectRoleAssignment[];
+  approvedMaterials?: ApprovedMaterialSelection[];
+  milestones?: {
+    id: string;
+    title: string;
+    dueDate: string;
+    baselineDate: string;
+    ownerId: string;
+    taskIds: string[];
+    visibleToClient: boolean;
+    acceptedAt?: string;
+    evidence: string;
+  }[];
+  variations?: {
+    direction?:"addition"|"deduction";
+    quoteId: string;
+    number: number;
+    value: number;
+    lines: {
+      id: string;
+      deductsLineId?:string;
+      title: string;
+      room: string;
+      material: string;
+      quantity: number;
+      unit: string;
+    }[];
+  }[];
+  files?: {
+    id: string;
+    recordId: string;
+    name: string;
+    mimeType: string;
+    bytes: number;
+    sha256: string;
+    by: string;
+    at: string;
+  }[];
+  revision: number;
+  phase: "planning" | "active" | "handover" | "completed";
+  scope: {
+    quoteId: string;
+    quoteNumber: number;
+    currency: string;
+    value: number;
+    lines: {
+      id: string;
+      title: string;
+      room: string;
+      material: string;
+      quantity: number;
+      unit: string;
+    }[];
+  } | null;
+  tasks: Task[];
+  reports: DailyReport[];
+  materials: Material[];
+  orders: Order[];
+  documents: ProjectDocument[];
+  snags: Snag[];
+  handovers: Handover[];
+  comments: ProjectComment[];
+  audit: ProjectAudit[];
+  processed: string[];
+  budget: number;
+  forecast: number;
+  financeClosed: boolean;
+  financeEvidence: string;
+};
+export type ProjectResource = {
+  id: string;
+  name: string;
+  kind: "crew" | "person" | "factory" | "vendor";
+  members: string[];
+  active: boolean;
+  businessUnitId?: string | null;
+  calendar?: import("./project-calendar").WorkCalendar;
+};
+export type ProjectBooking = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  taskId: string;
+  taskTitle: string;
+  resourceId: string;
+  start: string;
+  end: string;
+  status: "confirmed" | "cancelled";
+  acknowledgement: string;
+  startTime?: string; endTime?: string;
+};
+export type ProjectState = {
+  legacyImports?:{id:string;sourceProject:string;createdAt:string}[];
+  notifications?:{id:string;subject:string;body:string;deepLink:string;readAt:string|null;createdAt:string}[];
+  timezone?:string;
+  today?: string;
+  workspaceId: string;
+  id: string;
+  caseId: string;
+  name: string;
+  customer: string;
+  data: ProjectData;
+  members: { id: string; name: string }[];
+  resources: ProjectResource[];
+  bookings: ProjectBooking[];
+  memberId: string;
+  canManage: boolean;
+  canReview: boolean;
+  canReport: boolean;
+  canBuy: boolean;
+  commercialReady: boolean;
+};
+export type PublicProject = {
+  id: string;
+  name: string;
+  phase: string;
+  progress: number;
+  targetCompletion?: string;
+  handoverDate?: string;
+  promise?: string;
+  milestones: {
+    id: string;
+    title: string;
+    dueDate: string;
+    acceptedAt?: string;
+    progress: number;
+  }[];
+  reports: (Pick<
+    DailyReport,
+    "id" | "date" | "location" | "tomorrow" | "publishedAt"
+  > & { work: { title: string; quantity: number; unit: string }[]; files?:{id:string;name:string;mimeType:string}[] })[];
+  documents: Pick<
+    ProjectDocument,
+    "id" | "title" | "kind" | "revision" | "url"
+  >[];
+  handovers: Pick<
+    Handover,
+    | "id"
+    | "area"
+    | "title"
+    | "status"
+    | "acceptedAt"
+    | "warrantyUntil"
+    | "outstanding"
+  >[];
+};

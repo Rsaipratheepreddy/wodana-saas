@@ -1,0 +1,66 @@
+import {useEffect,useState} from 'react';
+import {BackHandler,RefreshControl,ScrollView,View} from 'react-native';
+import {Text,useTheme} from '../design-system';
+import {DesignSystemColorScope} from '../design-system/provider';
+import {HrmsTheme} from '../hrms/theme';
+import {Attachments,Photo} from '../pre-project/assets';
+import {Button,Choice,FieldSheet,NoteCard,Notice,Tabs,TextField} from '../pre-project/ui';
+import {BriefEditor,EntryEditor,RoomEditor} from '../pre-project/entry-editor';
+import {SurveyEditor} from '../pre-project/survey-editor';
+import {errorText,newEntry,newSurvey,siteLabels,useFieldData,usePreProjectApi,type CaseContent,type PreProjectCase,type PreProjectList,type SiteData,type SiteKind,type SiteRecord,type ScopeEntry} from '../pre-project/api';
+
+export function PreProjectScreen({workspaceId}:{workspaceId:string}){return <HrmsTheme><FieldWorkspace workspaceId={workspaceId}/></HrmsTheme>;}
+function FieldWorkspace({workspaceId}:{workspaceId:string}){
+ const {mode}=useTheme();const [selected,setSelected]=useState<PreProjectCase|null>(null),[search,setSearch]=useState(''),[page,setPage]=useState(1),[revision,setRevision]=useState(0);
+ const result=useFieldData<PreProjectList>(workspaceId,`?search=${encodeURIComponent(search)}&page=${page}`,revision);
+ useEffect(()=>{const listener=BackHandler.addEventListener('hardwareBackPress',()=>{if(selected){setSelected(null);return true;}return false;});return()=>listener.remove();},[selected]);
+ return <DesignSystemColorScope colors={mode==='light'?{canvas:'#faf8fc',surfaceSubtle:'#f8f3fc',surfaceMuted:'#f2edf5'}:{}}><View style={{flex:1}}>{selected?<CaseField key={selected.id} workspaceId={workspaceId} record={selected} onBack={()=>setSelected(null)}/>:<>
+ <TextField label="Find a pre-project" placeholder="Search project or client" value={search} maxLength={200} onChangeText={value=>{setSearch(value);setPage(1);}}/>
+ <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:12,paddingVertical:14,paddingBottom:40}} refreshControl={<RefreshControl refreshing={false} onRefresh={()=>setRevision(r=>r+1)}/>}>
+ {result.error&&<><Notice error>{result.error}</Notice><Button label="Retry" variant="secondary" onPress={()=>setRevision(r=>r+1)}/></>}{result.loading&&!result.data&&<Text>Loading pre-projects…</Text>}
+ {result.data?.items.map(record=><NoteCard key={record.id} title={record.title} meta={`${record.customerName} · ${record.status==='active'?'In progress':record.status}`} onPress={()=>setSelected(record)}/>)}
+ {result.data&&!result.data.items.length&&<Text tone="textSecondary">No pre-projects found.</Text>}{result.data&&<View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}><Button label="Previous" variant="ghost" disabled={page===1} onPress={()=>setPage(p=>p-1)}/><Text size="xs">Page {page} · {result.data.total} projects</Text><Button label="Next" variant="ghost" disabled={page*20>=result.data.total} onPress={()=>setPage(p=>p+1)}/></View>}
+ </ScrollView></>}</View></DesignSystemColorScope>;
+}
+function CaseField({workspaceId,record,onBack}:{workspaceId:string;record:PreProjectCase;onBack:()=>void}){
+ const [revision,setRevision]=useState(0),[tab,setTab]=useState('brief');const brief=useFieldData<CaseContent>(workspaceId,`${record.id}/brief`,revision),site=useFieldData<SiteData>(workspaceId,`${record.id}/site`,revision);const refresh=()=>setRevision(r=>r+1);
+ return <View style={{flex:1,gap:8}}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><Button label="Projects" variant="ghost" onPress={onBack}/><Text weight="medium" numberOfLines={2} style={{flex:1}}>{record.title}</Text></View><Tabs value={tab} items={[{id:'brief',label:'Brief & scope'},{id:'site',label:'Site survey'}]} onChange={setTab}/>
+ {(brief.error||site.error)&&<><Notice error>{brief.error||site.error}</Notice><Button label="Reload" variant="secondary" onPress={refresh}/></>}
+ {!brief.data||!site.data?<Text>Loading project…</Text>:<ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{gap:14,paddingTop:8,paddingBottom:36}} refreshControl={<RefreshControl refreshing={false} onRefresh={refresh}/>}>
+ {!brief.data.canEdit&&<Notice>This pre-project is read-only.</Notice>}{tab==='brief'?<BriefField data={brief.data} refresh={refresh}/>:<SiteField data={brief.data} site={site.data} refresh={refresh}/>}
+ </ScrollView>}
+ </View>;
+}
+function BriefField({data,refresh}:{data:CaseContent;refresh:()=>void}){
+ const [room,setRoom]=useState('all'),[search,setSearch]=useState(''),[editing,setEditing]=useState<ScopeEntry|null>(null),[selected,setSelected]=useState<ScopeEntry|null>(null),[roomOpen,setRoomOpen]=useState(false),[briefOpen,setBriefOpen]=useState(false);
+ const entries=data.entries.filter(e=>!e.archivedAt&&(room==='all'||(e.roomId??'whole')===room)&&`${e.title} ${e.note}`.toLowerCase().includes(search.toLowerCase()));
+ const openEntry=data.entries.find(e=>e.id===selected?.id)??selected;
+ return <><View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}><Text weight="semibold">Client brief</Text>{data.canEdit&&<Button label="Edit brief" variant="ghost" onPress={()=>setBriefOpen(true)}/>}</View><Text size="sm" tone="textSecondary">{data.brief.goals||'Capture what the client wants to create.'}</Text>{data.brief.budgetAmount&&<Text size="xs">Budget · {new Intl.NumberFormat(undefined,{style:'currency',currency:data.brief.currencyCode}).format(Number(data.brief.budgetAmount))}</Text>}
+ <View style={{flexDirection:'row',gap:8}}>{data.canEdit&&<><Button label="Add room" variant="secondary" onPress={()=>setRoomOpen(true)}/><Button label="Add requirement" onPress={()=>setEditing(newEntry(room==='all'||room==='whole'?null:room))}/></>}</View>
+ <TextField label="Search requirements" value={search} onChangeText={setSearch}/><Choice label="Room" value={room} options={[{value:'all',label:'All rooms'},{value:'whole',label:'Whole project'},...data.rooms.map(r=>({value:r.id,label:r.name}))]} onChange={setRoom}/>
+ {entries.map(e=><NoteCard key={e.id} title={e.title} meta={`${e.roomName??'Whole project'} · ${e.kind==='requirement'?e.scopeStatus==='undecided'?'To decide':e.scopeStatus:e.kind}`} note={e.note} onPress={()=>setSelected(e)}>{e.assets[0]&&<Photo workspaceId={data.workspaceId} caseId={data.caseId} asset={e.assets[0]}/>}{e.quantity!==null&&<Text size="xs">{e.quantity} {e.unit}</Text>}{e.specification?.dimensions?.length? <Text size="xs" tone="textSecondary">{e.specification.dimensions.length} dimensions recorded</Text>:null}</NoteCard>)}
+ {!entries.length&&<Text size="sm" tone="textSecondary">No requirements here yet. Add a need, note or reference photo.</Text>}
+ {editing&&<EntryEditor key={editing.id} data={data} initial={editing} onClose={()=>setEditing(null)} onSaved={refresh}/>}{roomOpen&&<RoomEditor data={data} onClose={()=>setRoomOpen(false)} onSaved={refresh}/>}{briefOpen&&<BriefEditor data={data} onClose={()=>setBriefOpen(false)} onSaved={refresh}/>}
+ {openEntry&&<FieldSheet title={openEntry.title} onClose={()=>setSelected(null)}><Text size="sm">{openEntry.roomName??'Whole project'} · {openEntry.scopeStatus}</Text><Text>{openEntry.note||'No additional notes.'}</Text>{openEntry.catalogLinks.map(l=><Text size="sm" key={l.role}>{l.role}: {l.snapshot.name}</Text>)}{openEntry.specification?.dimensions?.map(d=><Text key={d.id} size="sm">{d.name} · Approx. {d.approximate??'—'} · Measured {d.measured??'—'} {d.unit}</Text>)}<Attachments workspaceId={data.workspaceId} caseId={data.caseId} assets={openEntry.assets}/>{data.canEdit&&<Button label="Edit requirement" onPress={()=>{setEditing(openEntry);setSelected(null);}}/>}</FieldSheet>}
+ </>;
+}
+function SiteField({data,site,refresh}:{data:CaseContent;site:SiteData;refresh:()=>void}){
+ const [kind,setKind]=useState<SiteKind>('visit'),[editing,setEditing]=useState<SiteRecord|null>(null),[selected,setSelected]=useState<SiteRecord|null>(null),[room,setRoom]=useState('all');const records=site.items.filter(r=>r.kind===kind&&(kind==='visit'||room==='all'||(r.roomId??'whole')===room));const current=site.items.find(r=>r.id===selected?.id)??selected;
+ const add=(next:SiteKind)=>{const row=newSurvey(next,site.timezone);if(next==='visit')row.location=data.brief.location;else row.roomId=room==='all'||room==='whole'?null:room;setEditing(row);};
+ return <><Tabs value={kind} items={[{id:'visit',label:'Visits'},{id:'measurement',label:'Measurements'},{id:'observation',label:'Observations'}]} onChange={id=>setKind(id as SiteKind)}/>{data.canEdit&&<View style={{flexDirection:'row',gap:8,flexWrap:'wrap'}}><Button label={kind==='visit'?'Schedule visit':kind==='measurement'?'Add measurements':'Add observation'} onPress={()=>add(kind)}/><Button label="Add photos" variant="secondary" onPress={()=>{const row=newSurvey('observation',site.timezone);row.title='Site photos';setEditing(row);}}/></View>}
+ {kind!=='visit'&&<Choice label="Room" value={room} options={[{value:'all',label:'All rooms'},{value:'whole',label:'Whole project'},...data.rooms.map(r=>({value:r.id,label:r.name}))]} onChange={setRoom}/>}
+ {records.map(r=><NoteCard key={r.id} title={r.title} meta={`${kind==='visit'&&r.scheduledAt?new Intl.DateTimeFormat(undefined,{timeZone:r.timezone,dateStyle:'medium',timeStyle:'short'}).format(new Date(r.scheduledAt)):r.roomName??'Whole project'} · ${siteLabels[r.status]??r.status}`} note={r.note} onPress={()=>setSelected(r)}>{r.assets[0]&&<Photo workspaceId={data.workspaceId} caseId={data.caseId} asset={r.assets[0]}/>}{r.dimensions?.map(d=><Text key={d.id} size="sm">{d.name} · {d.measured??d.approximate??'—'} {d.unit}{d.measured===null?' · Approx.':''}</Text>)}</NoteCard>)}
+ {!records.length&&<Text size="sm" tone="textSecondary">No {kind==='visit'?'visits':kind==='measurement'?'measurement records':'observations'} yet.</Text>}
+ {editing&&<SurveyEditor data={data} site={site} initial={editing} onClose={()=>setEditing(null)} onSaved={()=>{setKind(editing.kind);refresh();}}/>}
+ {current&&<SurveyDetail data={data} site={site} record={current} onClose={()=>setSelected(null)} onEdit={()=>{setEditing(current);setSelected(null);}} refresh={refresh}/>}
+ </>;
+}
+function SurveyDetail({data,site,record,onClose,onEdit,refresh}:{data:CaseContent;site:SiteData;record:SiteRecord;onClose:()=>void;onEdit:()=>void;refresh:()=>void}){
+ const api=usePreProjectApi(data.workspaceId,data.caseId);const [review,setReview]=useState(false),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[history,setHistory]=useState<SiteRecord[]|null>(null);
+ const verified=record.dimensions?.length&&record.dimensions.every(d=>d.measured!==null)&&record.assets.length>0;
+ async function decision(status:string){setBusy(true);try{await api(`site/${record.id}/review`,'POST',{version:record.version,status,note});setReview(false);setNote('');refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}}
+ return <FieldSheet title={record.title} onClose={onClose} busy={busy} dirty={Boolean(note)}>{error&&<Notice error>{error}</Notice>}<Text size="sm">{siteLabels[record.status]} · Revision {record.version}</Text><Text>{record.note||'No additional notes.'}</Text>{record.scheduledAt&&<Text size="sm">{new Intl.DateTimeFormat(undefined,{timeZone:record.timezone,dateStyle:'full',timeStyle:'short'}).format(new Date(record.scheduledAt))} · {record.timezone}</Text>}{record.assigneeName&&<Text size="sm">Assigned to {record.assigneeName}</Text>}{record.dimensions?.map(d=><View key={d.id} style={{gap:4}}><Text weight="medium">{d.name} · {d.unit}</Text><Text size="sm">Approximate {d.approximate??'—'} · Measured {d.measured??'—'}</Text>{d.evidence&&<Text size="xs" tone="textSecondary">{d.evidence}</Text>}</View>)}{record.verifiedBy&&<Text size="xs">Checked by {record.verifiedBy}</Text>}<Attachments workspaceId={data.workspaceId} caseId={data.caseId} assets={record.assets}/>
+ {data.canEdit&&<Button label="Edit record" variant="secondary" onPress={onEdit}/>}{data.canEdit&&site.canVerify&&record.kind==='measurement'&&!review&&<Button label="Review measurements" onPress={()=>setReview(true)}/>}{review&&<><TextField label="Review note" multiline value={note} maxLength={3000} onChangeText={setNote}/>{record.status!=='verified'&&<Button label="Verify measurements" disabled={!verified||!note.trim()} loading={busy} onPress={()=>void decision('verified')}/>}{record.status!=='recheck'&&<Button label="Request recheck" variant="secondary" disabled={!note.trim()} loading={busy} onPress={()=>void decision('recheck')}/>}{!verified&&<Text size="xs">Verification needs measured values for every dimension and a supporting photo or PDF.</Text>}</>}
+ <Button label={history?'Hide history':'View history'} variant="ghost" onPress={async()=>{if(history){setHistory(null);return;}try{const result=await api<{items:SiteRecord[]}>(`site/${record.id}/history`);setHistory(result.items);}catch(e){setError(errorText(e));}}}/>{history?.map(r=><NoteCard key={r.version} title={`Revision ${r.version} · ${siteLabels[r.status]}`} meta={r.recordedBy} note={r.reviewNote||r.note}/>)}
+ </FieldSheet>;
+}

@@ -1,0 +1,30 @@
+import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+
+const collections = new Set(["settings", "lead-options", "lead-forms", "relationships", "parties", "leads", "queues", "assignment-policies", "sla-policies", "intake-inbox", "intake-events", "enquiries", "activities", "pipelines", "opportunities", "conversations", "sequences", "automations", "automation-runs", "automation-approvals", "today", "reports", "taxonomies", "custom-fields", "qualification-forms", "saved-views", "duplicate-candidates", "sequence-enrollments", "notification-templates"]);
+const segments = new Set(["responses", "details", "lead-flow", "default-managers", "requirement-notes", "decision", "members", "qualification", "qualify", "assign", "auto-assign", "assignment-simulation", "status", "complete", "appointment", "transition", "stages", "stakeholders", "team", "project-link", "messages", "read", "publish", "pause", "validate", "dry-run", "enrollments", "stop", "review", "contact-points", "addresses", "consents", "relationships", "sources", "pipeline", "funnel", "sla", "assignment", "forecast"]);
+
+async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
+  const url = new URL(request.url);
+  const workspaceId = url.searchParams.get("workspaceId") ?? "";
+  if (path.length === 1 && path[0] === "members" && request.method === "GET" && UUID.test(workspaceId)) return workspaceJsonResponse(`/workspaces/${workspaceId}/members`, { method: "GET" }, "Members could not be loaded.");
+  if (!UUID.test(workspaceId) || !collections.has(path[0]) || path.length > 5 || path.slice(1).some((part) => !UUID.test(part) && !segments.has(part))) return invalidRequest("Invalid CRM resource.");
+  if (request.method !== "GET") {
+    if (!isSameOrigin(request)) return Response.json({ message: "This request must come from your workspace." }, { status: 403 });
+  }
+  const query = new URLSearchParams(url.searchParams);
+  query.delete("workspaceId");
+  if (query.toString().length > 2500) return invalidRequest("The request filters are too long.");
+  let body: string | undefined;
+  if (!["GET", "DELETE"].includes(request.method)) {
+    body = await request.text();
+    if (body.length > 250_000) return invalidRequest("The request is too large.");
+    try { const parsed: unknown = JSON.parse(body || "{}"); if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return invalidRequest("A JSON object is required."); body = JSON.stringify(parsed); }
+    catch { return invalidRequest("Invalid JSON request."); }
+  }
+  return workspaceJsonResponse(`/workspaces/${workspaceId}/crm/${path.join("/")}${query.size ? `?${query}` : ""}`, {
+    method: request.method, headers: { "content-type": "application/json" }, body,
+  }, "The CRM request could not be completed.");
+}
+
+export { handle as GET, handle as POST, handle as PUT, handle as PATCH, handle as DELETE };

@@ -1,0 +1,77 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    ".next-case-preview/types/**/*.ts",
+    ".next-case-preview/dev/types/**/*.ts",
+    ".next-settings-qa/types/**/*.ts",
+    ".next-settings-qa/dev/types/**/*.ts",
+    ".next-capture-qa/types/**/*.ts",
+    ".next-capture-qa/dev/types/**/*.ts",
+    ".next-crm-refinement/types/**/*.ts",
+    ".next-crm-refinement/dev/types/**/*.ts",
+    ".next-catalog-local/types/**/*.ts",
+    ".next-catalog-local/dev/types/**/*.ts",
+    ".next-quotation-release/types/**/*.ts",
+    ".next-quotation-release/dev/types/**/*.ts",
+    ".next-quotation-polish/types/**/*.ts",
+    ".next-quotation-polish/dev/types/**/*.ts",
+    ".next-requirement-notes/types/**/*.ts",
+    ".next-requirement-notes/dev/types/**/*.ts",
+    ".next-quotation-direct/types/**/*.ts",
+    ".next-quotation-direct/dev/types/**/*.ts",
+    ".next-preexecution-tables/types/**/*.ts",
+    ".next-preexecution-tables/dev/types/**/*.ts",
+    ".next-quotation-workspace/types/**/*.ts",
+    ".next-quotation-workspace/dev/types/**/*.ts",
+    ".next-lead-flow-local/types/**/*.ts",
+    ".next-lead-flow-local/dev/types/**/*.ts",
+    ".next-lead-flow-build/types/**/*.ts",
+    ".next-lead-flow-build/dev/types/**/*.ts",
+    ".next-requirements-unified/types/**/*.ts",
+    ".next-requirements-unified/dev/types/**/*.ts",
+    ".next-requirements-verified/types/**/*.ts",
+    ".next-requirements-verified/dev/types/**/*.ts",
+    ".next-requirements-release/types/**/*.ts",
+    ".next-requirements-release/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

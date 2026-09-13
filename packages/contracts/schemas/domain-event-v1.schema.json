@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.wodana.ai/domain-event-v1.schema.json",
+  "title": "Wodana Domain Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "workspaceId", "aggregateType", "aggregateId", "actorUserId", "occurredAt", "correlationId", "causationId", "data"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "eventId": { "type": "string", "format": "uuid" },
+    "workspaceId": { "type": "string", "format": "uuid" },
+    "aggregateType": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "actorUserId": { "type": ["string", "null"], "format": "uuid" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "causationId": { "type": ["string", "null"], "format": "uuid" },
+    "data": { "type": "object" }
+  }
+}

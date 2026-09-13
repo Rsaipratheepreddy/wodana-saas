@@ -1,0 +1,15 @@
+.notes { min-inline-size:0; --crm-lilac:var(--wd-brand-lilac,#d6b9f3); --crm-rose:#e4a2bc; --crm-peach:#f39b54; --crm-accent:var(--wd-color-focus); }
+.toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.75rem; margin-block-end:1rem; }
+.toolbar > :global(.wd-search-field) { flex:1 1 13rem; min-inline-size:0; }
+.actions { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }
+.message { color:var(--wd-color-text-secondary); font-size:.75rem; margin:.5rem 0; }
+.error { color:var(--wd-color-danger,var(--wd-danger)); font-size:.8125rem; margin:.5rem 0; overflow-wrap:anywhere; }
+.noteForm, .fields { display:grid; gap:1rem; min-inline-size:0; }
+.noteForm .pin :global(.wd-checkbox) { display:flex; flex-direction:row; align-items:center; gap:.5rem; }
+.references { padding-block-start:1rem; border-block-start:1px solid var(--wd-color-structural-divider); min-inline-size:0; }
+.referenceHeading { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+.referenceHeading h3 { margin:0; }
+.linkRow { display:flex; align-items:end; gap:.5rem; margin-block-start:.75rem; min-inline-size:0; }
+.linkRow label { flex:1; }
+.linkRow a { color:var(--wd-color-text); overflow-wrap:anywhere; text-underline-offset:3px; font-size:.8125rem; }
+@media (max-width:40rem) { .toolbar > :global(.wd-search-field), .actions { flex-basis:100%; }.actions > :last-child { margin-inline-start:auto; } }

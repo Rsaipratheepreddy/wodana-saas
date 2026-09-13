@@ -1,0 +1,61 @@
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
+const app = new URL('../', import.meta.url);
+const web = new URL('../../web/', import.meta.url);
+
+function declarations(block) {
+  return Object.fromEntries([...block.matchAll(/(--wd-[\w-]+):\s*([^;]+);/g)]
+    .map(([, name, value]) => [name, value.trim()]));
+}
+
+function resolve(name, values, seen = new Set()) {
+  if (seen.has(name) || !values[name]) throw new Error(`Unresolved design token: ${name}`);
+  seen.add(name);
+  return values[name].replace(/var\((--wd-[\w-]+)\)/g,
+    (_, reference) => resolve(reference, values, new Set(seen)))
+    .replace(/rgb\((\d+) (\d+) (\d+) \/ (\d+)%\)/g,
+      (_, r, g, b, a) => `rgba(${r}, ${g}, ${b}, ${Number(a) / 100})`);
+}
+
+export async function generateTokens() {
+  const css = await readFile(new URL('styles/tokens.css', web), 'utf8');
+  const root = declarations(css.match(/:root\s*\{([\s\S]*?)\}/)[1]);
+  const camel = (value) => value.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+  const theme = (mode) => {
+    const match = css.match(new RegExp(`\\[data-wd-theme="${mode}"\\]\\s*\\{([\\s\\S]*?)\\}`));
+    const values = { ...root, ...declarations(match?.[1] ?? '') };
+    return Object.fromEntries(Object.keys(root).filter((key) => key.startsWith('--wd-color-'))
+      .map((key) => [camel(key.slice(11)), resolve(key, values)]));
+  };
+  const scale = (prefix, excluded = []) => Object.fromEntries(Object.keys(root)
+    .filter((key) => key.startsWith(prefix) && !excluded.includes(key.slice(prefix.length)))
+    .map((key) => {
+      const value = resolve(key, root);
+      const multiplier = value.endsWith('rem') ? 16 : 1;
+      const parsed = Number.parseFloat(value) * multiplier;
+      if (!Number.isFinite(parsed)) throw new Error(`Invalid numeric token: ${key}`);
+      return [key.slice(prefix.length).replace('-', '.'), parsed];
+    }));
+  const tokens = {
+    colors: { light: theme('light'), dark: theme('dark'), 'high-contrast': theme('high-contrast') },
+    brand: Object.fromEntries(['lilac', 'rose', 'peach', 'ink'].map((key) => [key, root[`--wd-brand-${key}`]])),
+    spacing: scale('--wd-space-'),
+    radius: scale('--wd-radius-', ['round']),
+    fontSize: scale('--wd-text-'),
+    motion: scale('--wd-duration-'),
+  };
+  return `// Generated from apps/web/styles/tokens.css. Run npm run sync:design; do not edit.\nexport const tokens = ${JSON.stringify(tokens, null, 2)} as const;\n`;
+}
+
+export async function syncDesign() {
+  await mkdir(new URL('src/design-system/', app), { recursive: true });
+  await mkdir(new URL('assets/brand/', app), { recursive: true });
+  await writeFile(new URL('src/design-system/tokens.generated.ts', app), await generateTokens());
+  for (const file of ['wodana-logo-v4.png', 'woddy-mark-v4.png']) {
+    await copyFile(new URL(`public/brand/wodana/${file}`, web), new URL(`assets/brand/${file}`, app));
+  }
+  console.log('Synced web colors, type scale, spacing, radii, motion, and original brand assets.');
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) await syncDesign();

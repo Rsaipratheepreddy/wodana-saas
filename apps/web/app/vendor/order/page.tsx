@@ -1,0 +1,1 @@
+import {VendorOrderForm} from '@/components/projects/vendor-order-form';export const metadata={title:'Vendor order',referrer:'no-referrer',robots:{index:false,follow:false}};export default function Page(){return <VendorOrderForm/>;}

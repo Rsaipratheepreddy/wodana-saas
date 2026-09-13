@@ -1,0 +1,48 @@
+name: wodana-master-data
+services:
+  business-core:
+    image: wodana-core:20260908-master-data
+    network_mode: host
+    env_file: [./core.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOST: 127.0.0.1
+      PORT: 18090
+      INTELLIGENCE_API_URL: http://127.0.0.1:18006/api/v1
+    init: true
+    restart: unless-stopped
+    mem_limit: 768m
+    volumes: [object_data:/app/.data]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:18090/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 15s
+      retries: 8
+  web:
+    image: wodana-web:20260908-master-data
+    network_mode: host
+    env_file: [./web.env]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOSTNAME: 127.0.0.1
+      PORT: 13130
+      BUSINESS_CORE_URL: http://127.0.0.1:18090/api/v1
+      INTELLIGENCE_API_URL: http://127.0.0.1:18006/api/v1
+    init: true
+    restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:13130/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 15s
+      retries: 8
+volumes:
+  object_data: {external: true, name: wodana-release-objects}

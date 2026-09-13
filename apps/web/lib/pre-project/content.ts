@@ -1,0 +1,82 @@
+import type { NoteDocument } from '@/lib/crm/note-document';
+export type CatalogChoice={links?:Array<{role:string;recordId:string;snapshot:CatalogChoice}>;id:string;name:string;code:string;kind:string;version:number;catalogId:string;catalogName?:string;configuration?:Record<string,string|number>};
+export type ScopeLink={role:string;recordId:string;snapshot:CatalogChoice};
+export type CaseRoom={id:string;name:string;version:number;catalogRecordId?:string|null;catalogSnapshot?:CatalogChoice|null};
+export type CaseAsset={id:string;name:string;mimeType:string;byteSize:number;hasPreview:boolean};
+export const briefFields={goals:'Goals & requirements',propertyType:'Property type',location:'Site location',area:'Property area',budget:'Budget notes / range',timeline:'Target timeline',decisionMakers:'Decision makers',people:'Who will use the space?',preferences:'Style & material preferences',retainedItems:'Items to retain',exclusions:'Known exclusions',constraints:'Site constraints'};
+export type CaseBrief=Record<keyof typeof briefFields,string>&{version:number;updatedAt?:string|null;currencyCode:string;budgetAmount:string};
+export type ScopeEntry={document?:NoteDocument|null;pinned?:boolean;specification?:ItemSpecification|null;id:string;version:number;kind:'requirement'|'note'|'inspiration'|'file';title:string;roomId:string|null;roomName?:string|null;note:string;category:string;priority:string;scopeStatus:string;reviewStatus:string;quantity:number|null;unit:string;referenceUrl:string;avoid:string;source:string;assets:CaseAsset[];catalogLinks:ScopeLink[];archivedAt:string|null;updatedAt?:string;createdByName?:string};
+export type CaseContent={workspaceId:string;caseId:string;brief:CaseBrief;rooms:CaseRoom[];entries:ScopeEntry[];canEdit:boolean;caseStatus:string;fromCrm:boolean;crmContext:{description:string|null;opportunityAmount:string|null;currencyCode:string|null}};
+export type DesignVersion={reviewerId?:string|null;createdBy?:string;id:string;number:number;note:string;status:string;asset:CaseAsset;createdAt:string;createdByName:string};
+export type DesignActivity={reviewerId?:string|null;decisionSource?:string|null;decisionAt?:string|null;id:string;versionId:string;action:string;note:string;decisionBy:string;createdAt:string;createdByName:string};
+export type CaseDesign={threads?:DesignThread[];folderId?:string|null;id:string;version:number;title:string;documentType:string;description:string;roomId:string|null;roomName?:string|null;scopeEntryId:string|null;scopeTitle?:string|null;scopeArchived?:boolean;archivedAt:string|null;updatedAt:string;versions:DesignVersion[];activity:DesignActivity[]};
+export const documentTypes=[
+ 'Concept / mood board',
+ 'Material / finish board',
+ 'Space plan / furniture layout',
+ '2D floor plan',
+ 'Demolition / partition plan',
+ 'Reflected ceiling plan',
+ 'Lighting plan',
+ 'Power / data plan',
+ 'Flooring / finish plan',
+ 'Furniture / FF&E plan',
+ 'Elevation',
+ 'Section',
+ 'Joinery / millwork detail',
+ 'Construction detail',
+ '3D model',
+ '3D render / visualization',
+ 'Material / finish specification',
+ 'Door / hardware schedule',
+ 'Fixture / equipment schedule',
+ 'Signage / wayfinding',
+ 'Code / egress plan',
+ 'MEP coordination',
+ 'As-built / record drawing',
+ 'Presentation / client approval',
+ 'Other',
+] as const;
+export const scopeLabels:Record<string,string>={included:'Included',excluded:'Excluded',undecided:'To decide',must_have:'Must have',preferred:'Preferred',optional:'Optional',captured:'Captured',reviewed:'Reviewed',clarification:'Needs clarification',requirement:'Scope item',note:'Note',inspiration:'Inspiration',file:'Reference file'};
+export const designStatus:Record<string,string>={draft:'Draft',internal_review:'Internal review',internal_approved:'Internally approved',client_review:'Awaiting client decision',approved:'Client approved',changes_requested:'Changes requested',no_file:'File needed'};
+export function blankEntry(roomId:string|null=null):ScopeEntry {return {id:crypto.randomUUID(),version:0,kind:'requirement',title:'',roomId,note:'',category:'General',priority:'preferred',scopeStatus:'undecided',reviewStatus:'captured',quantity:null,unit:'nos',referenceUrl:'',avoid:'',source:'team',assets:[],catalogLinks:[],archivedAt:null};}
+export function entryPayload(entry:ScopeEntry) {const {id,version,kind,title,roomId,note,category,priority,scopeStatus,reviewStatus,quantity,unit,referenceUrl,avoid,source}=entry;return {...(entry.document?{document:entry.document}:{}),...(entry.pinned!==undefined?{pinned:entry.pinned}:{}),id,version,kind,title,roomId,note,category,priority,scopeStatus,reviewStatus,quantity,unit,referenceUrl,avoid,source,assetIds:entry.assets.map(a=>a.id),catalogLinks:entry.catalogLinks.map(({role,recordId})=>({role,recordId}))};}
+export function designPayload(d:CaseDesign) {return {id:d.id,version:d.version,title:d.title,folderId:d.folderId??null,documentType:d.documentType,description:d.description,roomId:d.roomId,scopeEntryId:d.scopeEntryId,archived:Boolean(d.archivedAt)};}
+export function caseApi(workspaceId:string,caseId:string,path:string) {return `/api/workspace/pre-projects/${caseId}/${path}${path.includes('?')?'&':'?'}workspaceId=${workspaceId}`;}
+export async function caseRequest<T>(workspaceId:string,caseId:string,path:string,method='GET',input?:unknown):Promise<T> {
+ const response=await fetch(caseApi(workspaceId,caseId,path),{method,headers:input instanceof FormData?undefined:{'content-type':'application/json'},body:input===undefined?undefined:input instanceof FormData?input:JSON.stringify(input)});
+ const payload=await response.json().catch(()=>null);if(!response.ok)throw new Error(Array.isArray(payload?.message)?payload.message.join('. '):payload?.message??'Could not save. Your changes are still available.');return payload;
+}
+export function formatCaseMoney(value:string|null|undefined,currency:string,locale='en-IN') {if(value==null||value==='')return 'Not set';const n=Number(value);if(!Number.isFinite(n))return 'Not set';try{return new Intl.NumberFormat(locale,{style:'currency',currency,currencyDisplay:'code'}).format(n);}catch{return `${currency} ${value}`;}}
+export function parseScopePaste(text:string,roomId:string|null):ScopeEntry[] {
+ const lines=text.trim().split(/\r?\n/).filter(l=>l.trim());if(lines.length>100)throw new Error('Paste up to 100 rows at a time.');
+ return lines.map((line,index)=>{const cells=line.split('\t');if(cells.length>4)throw new Error(`Row ${index+1}: use Item, Quantity, Unit and Notes columns.`);const [name,quantity='',unit='nos',note='']=cells.map(s=>s.trim());const amount=quantity===''?null:Number(quantity);
+ if(!name||name.length>240)throw new Error(`Row ${index+1}: enter an item name up to 240 characters.`);
+ if(amount!==null&&(!Number.isFinite(amount)||amount<=0||amount>1e9||!/^\d+(\.\d{1,4})?$/.test(quantity)))throw new Error(`Row ${index+1}: enter a positive quantity with up to 4 decimals.`);
+ if(unit.length>20||note.length>6000)throw new Error(`Row ${index+1}: unit or notes are too long.`);
+ return {...blankEntry(roomId),title:name,quantity:amount,unit:unit||'nos',note};});
+}
+export type ItemMaterial={id:string;application:string;materialId:string|null;brandId:string|null;finishId:string|null;productName:string;productCode:string;finishCode:string;stockSize:string;status:string;selectedBy:string;selectedAt:string|null;evidence:string;assetIds:string[];assets?:CaseAsset[];catalog?:Partial<Record<string,CatalogChoice>>;recordingSource?:string};
+export type ItemDimension={id:string;name:string;unit:string;basis:string;approximate:number|null;measured:number|null;source:string;evidence:string;approximateMetres?:number|null;measuredMetres?:number|null;verification?:string;siteSurvey?:{id:string;version:number;status:string;verifiedAt?:string|null;verifiedBy?:string|null}};
+export type ItemDesignRef={versionId:string;usage:string;sheet:string;currentStatus?:string;snapshot?:{id:string;designId:string;number:number;status:string;title:string;documentType:string;fileName:string;assetId:string}};
+export type ItemSpecification={requirement?:{id:string;version:number;title:string;note:string;quantity:string|null;unit:string;roomId:string|null;roomName:string|null;scopeStatus:string;catalogLinks:ScopeLink[]};version:number;refinedRequirement:string;construction:string;inclusions:string;exclusions:string;assumptions:string;materials:ItemMaterial[];dimensions:ItemDimension[];designRefs:ItemDesignRef[];createdAt?:string;recordedBy?:string};
+export function blankSpecification():ItemSpecification{return {version:0,refinedRequirement:'',construction:'',inclusions:'',exclusions:'',assumptions:'',materials:[],dimensions:[],designRefs:[]};}
+export function specificationPayload(s:ItemSpecification) {return {version:s.version,refinedRequirement:s.refinedRequirement,construction:s.construction,inclusions:s.inclusions,exclusions:s.exclusions,assumptions:s.assumptions,materials:s.materials.map(m=>({id:m.id,application:m.application,materialId:m.materialId,brandId:m.brandId,finishId:m.finishId,productName:m.productName,productCode:m.productCode,finishCode:m.finishCode,stockSize:m.stockSize,status:m.status,selectedBy:m.selectedBy,selectedAt:m.selectedAt,evidence:m.evidence,assetIds:m.assetIds})),dimensions:s.dimensions.map(d=>({id:d.id,name:d.name,unit:d.unit,basis:d.basis,approximate:d.approximate,measured:d.measured,source:d.source,evidence:d.evidence})),designRefs:s.designRefs.map(d=>({versionId:d.versionId,usage:d.usage,sheet:d.sheet}))};}
+
+export function updateItemMaterial(current:ItemMaterial,patch:Partial<ItemMaterial>):ItemMaterial {
+ const changed=(["application","materialId","brandId","finishId","productName","productCode","finishCode","stockSize"] as const).some(key=>key in patch&&patch[key]!==current[key]);
+ return {...current,...patch,...(current.status==='selected'&&changed?{status:'proposed',selectedBy:'',selectedAt:null,evidence:'',assetIds:[],assets:[]}:{} )};
+}
+
+export function chooseItemMaterial(current:ItemMaterial,value:CatalogChoice|null):ItemMaterial {
+ if(!value)return updateItemMaterial(current,{materialId:null,catalog:{...current.catalog,material:undefined} as ItemMaterial['catalog']});
+ if(value.id===current.materialId)return current;
+ const single=(role:string)=>{const links=value.links?.filter(link=>link.role===role)??[];return links.length===1?links[0].snapshot:undefined;};
+ const brand=single('brand'),finish=single('finish');
+ return updateItemMaterial(current,{materialId:value.id,brandId:brand?.id??null,finishId:finish?.id??null,productName:value.name,productCode:String(value.configuration?.manufacturerCode??''),finishCode:String(value.configuration?.finishCode??''),stockSize:String(value.configuration?.format??''),catalog:{material:value,...(brand?{brand}:{}),...(finish?{finish}:{})}});
+}
+
+export type DesignFolder={id:string;name:string;description:string;roomId:string|null;roomName?:string|null;scopeEntryId:string|null;scopeTitle?:string|null;version:number};
+export type DesignOptions={folders:DesignFolder[];reviewers:Array<{id:string;name:string}>;actorId:string;canReview:boolean;canRecordClient:boolean;portal?:{enabled:boolean;slug:string|null;hasApprover:boolean}};
+
+export type DesignThread={id:string;versionId:string;title:string;blocking:boolean;status:string;version:number;createdBy:string;createdByName:string;createdAt:string;resolvedAt:string|null;resolvedByName:string|null;messages:Array<{id:string;body:string;createdBy:string;createdByName:string;createdAt:string}>};

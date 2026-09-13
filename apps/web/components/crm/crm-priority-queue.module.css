@@ -1,0 +1,50 @@
+.queue { min-inline-size: 0; align-self: start; padding: 0 .45rem .45rem; border-radius: 1rem; background: var(--overview-gradient); }
+.heading { min-block-size: 4.1rem; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .85rem .85rem .75rem; }
+.heading h2 { display: flex; align-items: center; gap: .5rem; margin: 0; color: var(--wd-color-text); font-size: 1rem; font-weight: 650; }
+.heading p { margin: .25rem 0 0; color: var(--wd-color-text-secondary); font-size: .7rem; }
+.count { display: inline-grid; place-items: center; min-inline-size: 1.5rem; block-size: 1.5rem; padding-inline: .35rem; border-radius: 99px; background: color-mix(in srgb, var(--wd-color-surface) 75%, transparent); color: var(--crm-accent); font-size: .7rem; }
+.viewAll { flex-shrink: 0; min-block-size: 2rem; border: 0; border-radius: .4rem; padding: .3rem .4rem; background: transparent; color: var(--wd-color-text); font: inherit; font-size: .75rem; font-weight: 600; }
+.viewAll:hover { background: color-mix(in srgb, var(--wd-color-surface) 55%, transparent); }
+.body { overflow: hidden; border-radius: .8rem; background: var(--wd-color-surface); }
+.tabs { padding-inline: .75rem; background: color-mix(in srgb, var(--wd-color-surface) 92%, var(--crm-lilac)); }
+.tabs :global(.wd-tab) { min-block-size: 2.75rem; padding-inline: .3rem; font-size: .7rem; }
+.tabs :global(.wd-tabs-list) { gap: .8rem; }
+.limitNotice { padding: .6rem .9rem; margin: 0; color: var(--wd-color-text-secondary); font-size: .7rem; }
+.tableScroll { overflow-x: auto; overscroll-behavior-inline: contain; }
+.table { inline-size: 100%; min-inline-size: 43rem; table-layout: fixed; border-collapse: separate; border-spacing: 0; color: var(--wd-color-text); }
+.clientColumn { width: 27%; }.taskColumn { width: 29%; }.dueColumn { width: 17%; }.statusColumn { width: 18%; }.actionColumn { width: 9%; }
+.table th { height: 2.8rem; padding: .65rem .9rem; background: color-mix(in srgb, var(--wd-color-surface) 80%, var(--crm-lilac)); color: var(--crm-accent); font-size: .65rem; font-weight: 650; letter-spacing: .035em; text-align: start; text-transform: uppercase; }
+.table td { height: 4.6rem; padding: .8rem .9rem; border-block-end: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); vertical-align: middle; font-size: .75rem; }
+.table tr:last-child td { border-block-end: 0; }
+.table tr:hover td, .table tr:focus-within td { background: color-mix(in srgb, var(--wd-color-surface) 94%, var(--crm-lilac)); }
+.client { display: flex; align-items: center; gap: .65rem; color: var(--wd-color-text); text-decoration: none; }
+.client > span:last-child { display: grid; gap: .22rem; min-inline-size: 0; }
+.client strong { font-size: .77rem; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+.client small, .reason { color: var(--wd-color-text-secondary); font-size: .68rem; line-height: 1.5; }
+.client :global(.wd-avatar), .unknownAvatar { inline-size: 2.15rem; block-size: 2.15rem; flex-shrink: 0; border: 0; border-radius: 50%; display: grid; place-items: center; font-size: .7rem; }
+.unknownAvatar { background: var(--wd-identity-gradient-0); color: var(--wd-identity-ink); }
+.task { color: var(--wd-color-text); text-decoration: none; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.task:hover, .client:hover strong { color: var(--crm-accent); text-decoration: underline; }
+.reason { display: block; margin-block-start: .2rem; }
+.due { color: var(--wd-color-text-secondary); font-size: .7rem; font-variant-numeric: tabular-nums; line-height: 1.5; }
+.status { display: inline-flex; align-items: center; gap: .3rem; padding: .36rem .55rem; border-radius: 99px; background: var(--crm-accent-soft); color: var(--crm-accent); font-size: .66rem; font-weight: 550; line-height: 1.3; white-space: nowrap; }
+.status svg { flex-shrink: 0; }
+.status[data-tone="danger"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.status[data-tone="attention"] { background: var(--crm-note-soft); color: var(--crm-note); }
+.status[data-tone="reply"] { background: color-mix(in srgb, var(--wd-color-surface) 75%, var(--crm-rose)); color: var(--wd-color-text); }
+.table .actionCell { padding-inline: .4rem; text-align: center; }
+.actionCell :global(.wd-icon-button[data-size="compact"]) { inline-size: 2rem; block-size: 2rem; min-inline-size: 2rem; min-block-size: 2rem; aspect-ratio: 1; flex: 0 0 auto; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--wd-color-border-control); border-radius: 50%; color: var(--wd-color-text-secondary); }
+.actionCell :global(.wd-icon-button) > svg { inline-size: 1rem; block-size: 1rem; flex-shrink: 0; }
+.actionCell :global(.wd-icon-button:hover) { border-color: var(--crm-accent); background: var(--crm-accent-soft); color: var(--crm-accent); }
+.footer { border-block-start: 1px solid var(--wd-color-structural-divider); padding: .6rem .9rem; color: var(--wd-color-text-secondary); font-size: .65rem; }
+.empty { min-block-size: 15rem; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .6rem; padding: 1.5rem; text-align: center; color: var(--crm-accent); }
+.empty h3 { font-size: .9rem; margin: 0; color: var(--wd-color-text); }
+.empty p { font-size: .75rem; line-height: 1.6; margin: 0; color: var(--wd-color-text-secondary); }
+.viewAll:focus-visible, .client:focus-visible, .task:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: 2px; }
+.tableScroll:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: -2px; }
+:global([data-theme="dark"]) .queue { background: var(--crm-soft-gradient); }
+@media (max-width: 48rem) {
+  .heading { padding-inline: .55rem; align-items: flex-start; }.heading p { max-inline-size: 15rem; line-height: 1.5; }.heading h2 { font-size: .9rem; }.viewAll { font-size: .68rem; }
+  .table { min-inline-size: 42rem; }.table th:first-child, .table td:first-child { position: sticky; inset-inline-start: 0; z-index: 1; }.table th:first-child { background: color-mix(in srgb, var(--wd-color-surface) 80%, var(--crm-lilac)); }
+}
+@media (forced-colors: active) { .queue, .status, .table th, .table td, .client :global(.wd-avatar) { background: Canvas; color: CanvasText; }.status { outline: 1px solid CanvasText; } }
