@@ -13,6 +13,16 @@ export class WorkspaceResponseDto {
   @ApiProperty({ minimum: 1 }) version!: number;
   @ApiProperty({ format: "date-time" }) createdAt!: string;
   @ApiProperty({ format: "date-time" }) updatedAt!: string;
+  @ApiPropertyOptional({ type: String, format: "uuid", nullable: true }) accountId?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) accountName?: string | null;
+  @ApiPropertyOptional() isDefaultOrganization?: boolean;
+}
+
+export class CustomerAccountSummaryResponseDto {
+  @ApiProperty({ format: "uuid" }) id!: string;
+  @ApiProperty() displayName!: string;
+  @ApiProperty({ minimum: 1 }) organizationLimit!: number;
+  @ApiProperty() isDefaultOrganization!: boolean;
 }
 
 export class LegalEntityResponseDto {
@@ -95,6 +105,8 @@ export class CreateWorkspaceMembershipResponseDto {
 }
 
 export class CreateWorkspaceResponseDto {
+  @ApiProperty({ type: CustomerAccountSummaryResponseDto })
+  account!: CustomerAccountSummaryResponseDto;
   @ApiProperty({ type: WorkspaceResponseDto }) workspace!: WorkspaceResponseDto;
   @ApiProperty({ type: [LegalEntityResponseDto] }) legalEntities!: LegalEntityResponseDto[];
   @ApiProperty({ type: CreateWorkspaceMembershipResponseDto })
@@ -162,6 +174,8 @@ export class ProvisionedOwnerInvitationResponseDto {
 
 export class ProvisionTenantResponseDto {
   @ApiProperty() externalTenantId!: string;
+  @ApiProperty({ type: CustomerAccountSummaryResponseDto })
+  account!: CustomerAccountSummaryResponseDto;
   @ApiProperty({ type: WorkspaceResponseDto }) workspace!: WorkspaceResponseDto;
   @ApiProperty({ type: LegalEntityResponseDto }) legalEntity!: LegalEntityResponseDto;
   @ApiProperty({ type: ProvisionedOwnerInvitationResponseDto })

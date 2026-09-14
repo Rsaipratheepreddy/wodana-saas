@@ -200,8 +200,28 @@ export class TenantManagementService {
       );
     const subscription = await this.subscription(client, workspaceId);
     const usage = await this.usage(client, workspaceId);
+    const account = await client.query<{
+      id: string;
+      displayName: string;
+      status: string;
+      organizationLimit: number;
+      organizationCount: number;
+      version: number;
+      isDefaultOrganization: boolean;
+    }>(
+      `SELECT account.id, account.display_name AS "displayName", account.status,
+              account.organization_limit AS "organizationLimit", account.version,
+              linked.is_default AS "isDefaultOrganization",
+              (SELECT count(*)::int FROM customer_account_organizations counted
+               WHERE counted.account_id = account.id) AS "organizationCount"
+       FROM customer_account_organizations linked
+       JOIN customer_accounts account ON account.id = linked.account_id
+       WHERE linked.workspace_id = $1`,
+      [workspaceId],
+    );
     return {
       externalTenantId,
+      account: account.rows[0] ?? null,
       workspace: workspace.rows[0],
       owner: owner.rows[0] ?? null,
       onboarding: onboarding.rows[0] ?? { status: "not_started", currentStep: "workspace_profile", completedSteps: [] },

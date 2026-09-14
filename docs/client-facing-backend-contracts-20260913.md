@@ -3,6 +3,29 @@
 These contracts are the stable backend inputs for the later frontend cleanup. They are additive;
 existing project, quotation, and execution routes remain available.
 
+## Customer accounts and independent organizations
+
+Every existing or newly provisioned workspace is the default organization of one customer account.
+An account may group additional organizations, but each organization remains an independent
+workspace with its own members, roles, subscription, configuration, CRM, files, commercial data,
+projects and row-level tenant boundary.
+
+`GET /api/v1/workspaces/:workspaceId/account` returns the account limit and only the organizations
+where the current user has an active workspace membership. It never grants membership to another
+organization. `/me` and the workspace list include additive account identity and default-org fields
+so the later switcher can group the organizations the user can actually enter.
+
+Account owners and administrators with workspace organization-management permission can submit,
+list and cancel additional-organization requests under
+`/api/v1/workspaces/:workspaceId/account/organization-requests`. Creation requires an idempotency
+key. Wodana's internal control plane can review requests, change the approved organization limit,
+and atomically provision an approved organization. Users do not self-provision beyond that limit.
+
+The schema enforces one default organization, one customer account per workspace, approved limits,
+source/approved workspace ownership and request uniqueness. Existing active workspace members are
+backfilled as account members for discovery only; future active members are synchronized by the
+database. Cross-account and cross-workspace business access remain denied.
+
 ## Tenant terminology
 
 `GET /api/v1/workspaces/:workspaceId/terminology` returns every allowlisted key with its current

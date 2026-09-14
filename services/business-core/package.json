@@ -16,6 +16,7 @@
     "test:smoke:seats": "node scripts/smoke-seat-capacity.mjs",
     "test:smoke:tenant-isolation": "node scripts/verify-tenant-isolation.mjs",
     "test:smoke:portfolio-calendar": "node scripts/smoke-portfolio-calendar.mjs",
+    "test:smoke:customer-accounts": "node scripts/smoke-customer-accounts.mjs",
     "test:smoke:google": "node scripts/smoke-google-integration.mjs",
     "test:smoke:crm": "node scripts/smoke-crm.mjs",
     "seed:crm:iglo": "node scripts/seed-iglo-crm.mjs",

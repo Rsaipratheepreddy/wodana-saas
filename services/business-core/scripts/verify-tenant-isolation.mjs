@@ -9,6 +9,7 @@ if (!databaseUrl) {
 const intentionalExceptions = [
   "client_portal_settings",
   "commercial_reconciliation_jobs",
+  "customer_account_organizations",
   "project_vendor_access",
   "tenant_login_branding",
   "tenant_provisioning_requests",

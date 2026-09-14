@@ -106,17 +106,30 @@ export class IdentityService {
         workspaceSlug: string;
         workspaceStatus: string;
         workspaceLogoUrl: string | null;
+        accountId: string | null;
+        accountName: string | null;
+        accountRole: string | null;
+        isDefaultOrganization: boolean;
         status: string;
       }>(
         `SELECT membership.id, membership.workspace_id AS "workspaceId",
                 workspace.name AS "workspaceName", workspace.slug AS "workspaceSlug",
                 workspace.status AS "workspaceStatus", membership.status,
+                linked.account_id AS "accountId", account.display_name AS "accountName",
+                account_member.role AS "accountRole",
+                COALESCE(linked.is_default, false) AS "isDefaultOrganization",
                 CASE WHEN branding.logo_asset_id IS NOT NULL
                      THEN '/api/auth/tenant-logo/' || workspace.slug || '?v=' || branding.logo_asset_id::text
                      ELSE branding.logo_url END AS "workspaceLogoUrl"
          FROM workspace_memberships membership
          JOIN workspaces workspace ON workspace.id = membership.workspace_id
          LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
+         LEFT JOIN customer_account_organizations linked ON linked.workspace_id = workspace.id
+         LEFT JOIN customer_accounts account ON account.id = linked.account_id
+         LEFT JOIN customer_account_memberships account_member
+           ON account_member.account_id = linked.account_id
+          AND account_member.user_id = membership.user_id
+          AND account_member.status = 'active'
          WHERE membership.user_id = $1
            AND membership.status = 'active'
            AND workspace.status = 'active'
@@ -160,6 +173,10 @@ export class IdentityService {
         workspaceSlug: membership.workspaceSlug,
         workspaceStatus: membership.workspaceStatus,
         workspaceLogoUrl: membership.workspaceLogoUrl,
+        accountId: membership.accountId,
+        accountName: membership.accountName,
+        accountRole: membership.accountRole,
+        isDefaultOrganization: membership.isDefaultOrganization,
         status: membership.status,
         roles: tenantAccess.roles.map((role) => role.code),
         onboarding: tenantAccess.onboarding,

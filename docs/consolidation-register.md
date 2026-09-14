@@ -7,7 +7,7 @@ application.
 | Capability | Wodana SaaS destination | Current status | Required consolidation work |
 | --- | --- | --- | --- |
 | Workspace provisioning and tenant administration | `services/business-core/src/workspaces`, `apps/web/app/internal` | Implemented | Verify production authorization, subscription controls, and audit coverage |
-| Independent organizations under one customer account | `services/business-core/src/workspaces` | Partial | Add explicit account-to-organization request, approval, limit, provisioning, and switch contracts |
+| Independent organizations under one customer account | `services/business-core/src/workspaces` | Implemented backend contract | Connect the later account switcher, tenant request form, and Wodana review UI to the verified APIs |
 | Tenant-configurable terminology with safe defaults | `services/business-core/src/workspaces`, web workspace bootstrap | Implemented | Apply resolved labels consistently across remaining web navigation and forms |
 | MFA/TOTP, recovery codes, and step-up authentication | `services/business-core/src/auth`, web authentication/settings | Missing | Port behavior into the NestJS auth boundary; do not copy the legacy Python runtime |
 | Tenant portfolio overview and department calendar | `services/business-core/src/projects`, project workspace UI | Partial | Connect complete booking CRUD, capacity, overlap/gap summaries, filters, and tenant colors |

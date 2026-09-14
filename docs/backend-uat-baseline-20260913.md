@@ -50,11 +50,11 @@ at a time.
 
 No live deployment or production-data mutation is part of B0.
 
-## Current regression status after the B2-B8 backend slices
+## Current regression status after the B2-B9 backend slices
 
-- Business Core: 346 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 350 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
-- Clean database replay: all 57 registered migrations passed; the schema contains 147 public
+- Clean database replay: all 58 registered migrations passed; the schema contains 151 public
   tables.
 - Lead-flow HTTP/database smoke: 29 of 29 checks passed on a clean generic workspace.
 - Workspace HTTP/database smoke passes 19 safeguards, including business-unit color and
@@ -67,7 +67,11 @@ No live deployment or production-data mutation is part of B0.
 - Portfolio-calendar HTTP/database smoke passed on a clean generic workspace, covering computed
   project summaries, department colors, timed events, overlap detection, department filters,
   stable department codes and visible names, the 93-day range limit, and denial of an outside user.
+- Customer-account HTTP/database smoke passed 11 safeguards: one default organization, request
+  idempotency and mutation rejection, no access before approval, organization-limit enforcement,
+  atomic provisioning, approval replay, account switch metadata, active-member discovery,
+  default preservation, and cross-account denial.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.
-- The disposable PostgreSQL database and isolated Redis test data were removed after the smoke.
+- The disposable PostgreSQL and isolated Redis processes were stopped after the smoke.

@@ -134,6 +134,7 @@ export class WorkspacesService {
 
   async create(actor: RequestActor, input: CreateWorkspaceDto) {
     const actorUser = await this.identities.resolveActor(actor);
+    const accountId = randomUUID();
     const workspaceId = randomUUID();
     const legalEntityId = randomUUID();
     const membershipId = randomUUID();
@@ -197,6 +198,13 @@ export class WorkspacesService {
              VALUES ($1, $2, now() + interval '14 days')`,
             [workspaceId, input.defaultCurrency],
           );
+          await this.insertCustomerAccountFoundation(client, {
+            accountId,
+            workspaceId,
+            ownerUserId: actorUser.userId,
+            displayName: input.name,
+            externalCustomerId: null,
+          });
           await this.recordChange(client, {
             workspaceId,
             actorUserId: actorUser.userId,
@@ -207,6 +215,12 @@ export class WorkspacesService {
           });
 
           return {
+            account: {
+              id: accountId,
+              displayName: input.name,
+              organizationLimit: 1,
+              isDefaultOrganization: true,
+            },
             workspace: this.mapWorkspace(workspace.rows[0]),
             legalEntities: [this.mapLegalEntity(legalEntity)],
             membership: { id: membershipId, role: "owner", status: "active" },
@@ -226,6 +240,7 @@ export class WorkspacesService {
       throw new BadRequestException((error as Error).message);
     }
     const requestHash = provisioningRequestHash(input);
+    const accountId = randomUUID();
     const workspaceId = randomUUID();
     const legalEntityId = randomUUID();
     const invitationId = randomUUID();
@@ -340,10 +355,23 @@ export class WorkspacesService {
            VALUES ($1, $2, now() + interval '14 days')`,
           [workspaceId, input.defaultCurrency],
         );
+        await this.insertCustomerAccountFoundation(client, {
+          accountId,
+          workspaceId,
+          ownerUserId,
+          displayName: input.name,
+          externalCustomerId: input.externalTenantId,
+        });
         const legalEntityResponse = this.mapLegalEntity(legalEntity);
         const onboardingResponse = this.mapOnboarding(onboarding);
         const safeResponse = {
           externalTenantId: input.externalTenantId,
+          account: {
+            id: accountId,
+            displayName: input.name,
+            organizationLimit: 1,
+            isDefaultOrganization: true,
+          },
           workspace: workspaceResponse,
           legalEntity: legalEntityResponse,
           ownerInvitation: {
@@ -400,6 +428,95 @@ export class WorkspacesService {
     }
   }
 
+  async provisionApprovedOrganization(
+    client: PoolClient,
+    input: CreateWorkspaceDto,
+    ownerUserId: string,
+    accountId: string,
+  ) {
+    const workspaceId = randomUUID();
+    const legalEntityId = randomUUID();
+    const membershipId = randomUUID();
+    const slug = input.slug ?? this.toSlug(input.name);
+
+    await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
+    await client.query("SELECT set_config('app.current_actor_id', $1, true)", [ownerUserId]);
+    const workspace = await client.query<WorkspaceRow>(
+      `INSERT INTO workspaces
+        (id, name, slug, default_currency, default_locale, default_timezone,
+         unit_system, week_starts_on, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        workspaceId,
+        input.name,
+        slug,
+        input.defaultCurrency,
+        input.defaultLocale,
+        input.defaultTimezone,
+        input.unitSystem,
+        input.weekStartsOn,
+        ownerUserId,
+      ],
+    );
+    await client.query(
+      `INSERT INTO tenant_login_branding (workspace_id, login_slug, display_name)
+       VALUES ($1, $2, $3)`,
+      [workspaceId, slug, input.name],
+    );
+    const legalEntity = await this.insertLegalEntity(
+      client,
+      workspaceId,
+      legalEntityId,
+      input.firstLegalEntity,
+    );
+    await client.query(
+      `INSERT INTO workspace_memberships
+        (id, workspace_id, user_id, status, joined_at)
+       VALUES ($1, $2, $3, 'active', now())`,
+      [membershipId, workspaceId, ownerUserId],
+    );
+    const roleIds = await this.insertSystemRoles(client, workspaceId);
+    await client.query(
+      `INSERT INTO member_roles (workspace_id, membership_id, role_id)
+       VALUES ($1, $2, $3)`,
+      [workspaceId, membershipId, roleIds.get("owner")],
+    );
+    const onboarding = await this.insertOnboarding(client, workspaceId);
+    await this.insertDefaultSequences(
+      client,
+      workspaceId,
+      legalEntityId,
+      input.firstLegalEntity.code,
+    );
+    await this.insertDefaultCrmAutomations(client, workspaceId);
+    await client.query(
+      `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
+       VALUES ($1, $2, now() + interval '14 days')`,
+      [workspaceId, input.defaultCurrency],
+    );
+    await client.query(
+      `INSERT INTO customer_account_organizations (account_id, workspace_id, is_default)
+       VALUES ($1, $2, false)`,
+      [accountId, workspaceId],
+    );
+    await this.recordChange(client, {
+      workspaceId,
+      actorUserId: null,
+      source: "internal",
+      action: "customer_account.organization_provisioned",
+      entityType: "workspace",
+      entityId: workspaceId,
+      after: { ...this.mapWorkspace(workspace.rows[0]), accountId, isDefaultOrganization: false },
+    });
+    return {
+      workspace: this.mapWorkspace(workspace.rows[0]),
+      legalEntity: this.mapLegalEntity(legalEntity),
+      onboarding: this.mapOnboarding(onboarding),
+      membership: { id: membershipId, role: "owner", status: "active" },
+    };
+  }
+
   async getProvisionedTenant(externalTenantId: string) {
     const provisioned = await this.database.query<{
       workspace_id: string;
@@ -434,7 +551,23 @@ export class WorkspacesService {
         [ownerInvitationId, workspaceId],
       );
       if (!invitation.rowCount) throw new NotFoundException("Owner invitation not found");
+      const account = await client.query<{
+        id: string;
+        displayName: string;
+        organizationLimit: number;
+        version: number;
+        isDefaultOrganization: boolean;
+      }>(
+        `SELECT account.id, account.display_name AS "displayName",
+                account.organization_limit AS "organizationLimit", account.version,
+                linked.is_default AS "isDefaultOrganization"
+         FROM customer_account_organizations linked
+         JOIN customer_accounts account ON account.id = linked.account_id
+         WHERE linked.workspace_id = $1`,
+        [workspaceId],
+      );
       return {
+        account: account.rows[0] ?? null,
         workspace: this.mapWorkspace(workspace),
         onboarding: this.mapOnboarding(onboarding),
         ownerInvitation: {
@@ -512,17 +645,30 @@ export class WorkspacesService {
   async list(actor: RequestActor) {
     const actorUser = await this.identities.resolveActor(actor);
     return this.database.actorTransaction(actorUser.userId, async (client) => {
-      const result = await client.query<WorkspaceRow>(
-        `SELECT workspace.*
+      const result = await client.query<WorkspaceRow & {
+        account_id: string | null;
+        account_name: string | null;
+        is_default_organization: boolean;
+      }>(
+        `SELECT workspace.*, linked.account_id,
+                account.display_name AS account_name,
+                COALESCE(linked.is_default, false) AS is_default_organization
          FROM workspaces workspace
          JOIN workspace_memberships membership ON membership.workspace_id = workspace.id
+         LEFT JOIN customer_account_organizations linked ON linked.workspace_id = workspace.id
+         LEFT JOIN customer_accounts account ON account.id = linked.account_id
          WHERE membership.user_id = $1
            AND membership.status = 'active'
            AND workspace.status = 'active'
          ORDER BY workspace.name`,
         [actorUser.userId],
       );
-      return result.rows.map((row) => this.mapWorkspace(row));
+      return result.rows.map((row) => ({
+        ...this.mapWorkspace(row),
+        accountId: row.account_id,
+        accountName: row.account_name,
+        isDefaultOrganization: row.is_default_organization,
+      }));
     });
   }
 
@@ -3232,6 +3378,36 @@ export class WorkspacesService {
       ],
     );
     return result.rows[0];
+  }
+
+  private async insertCustomerAccountFoundation(
+    client: PoolClient,
+    input: {
+      accountId: string;
+      workspaceId: string;
+      ownerUserId: string;
+      displayName: string;
+      externalCustomerId: string | null;
+    },
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO customer_accounts
+        (id, external_customer_id, display_name, created_by)
+       VALUES ($1, $2, $3, $4)`,
+      [input.accountId, input.externalCustomerId, input.displayName, input.ownerUserId],
+    );
+    await client.query(
+      `INSERT INTO customer_account_memberships
+        (account_id, user_id, role, status)
+       VALUES ($1, $2, 'owner', 'active')`,
+      [input.accountId, input.ownerUserId],
+    );
+    await client.query(
+      `INSERT INTO customer_account_organizations
+        (account_id, workspace_id, is_default)
+       VALUES ($1, $2, true)`,
+      [input.accountId, input.workspaceId],
+    );
   }
 
   private async insertSystemRoles(

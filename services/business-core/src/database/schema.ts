@@ -219,6 +219,99 @@ export const workspaces = pgTable(
   (table) => [uniqueIndex("workspaces_slug_uidx").on(table.slug)],
 );
 
+export const customerAccounts = pgTable(
+  "customer_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalCustomerId: varchar("external_customer_id", { length: 160 }),
+    displayName: varchar("display_name", { length: 160 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    organizationLimit: integer("organization_limit").notNull().default(1),
+    version: integer("version").notNull().default(1),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("customer_accounts_external_customer_uidx")
+      .on(table.externalCustomerId)
+      .where(sql`${table.externalCustomerId} IS NOT NULL`),
+    check("customer_accounts_status_check", sql`${table.status} IN ('active', 'suspended', 'archived')`),
+    check("customer_accounts_organization_limit_check", sql`${table.organizationLimit} > 0`),
+    check("customer_accounts_version_check", sql`${table.version} > 0`),
+  ],
+);
+
+export const customerAccountMemberships = pgTable(
+  "customer_account_memberships",
+  {
+    accountId: uuid("account_id").notNull().references(() => customerAccounts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 30 }).notNull().default("member"),
+    status: varchar("status", { length: 20 }).notNull().default("active"),
+    ...auditColumns,
+  },
+  (table) => [
+    primaryKey({ name: "customer_account_memberships_pk", columns: [table.accountId, table.userId] }),
+    index("customer_account_memberships_user_idx").on(table.userId, table.status),
+    check("customer_account_memberships_role_check", sql`${table.role} IN ('owner', 'administrator', 'member')`),
+    check("customer_account_memberships_status_check", sql`${table.status} IN ('active', 'suspended')`),
+  ],
+);
+
+export const customerAccountOrganizations = pgTable(
+  "customer_account_organizations",
+  {
+    accountId: uuid("account_id").notNull().references(() => customerAccounts.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ name: "customer_account_organizations_pk", columns: [table.accountId, table.workspaceId] }),
+    uniqueIndex("customer_account_organizations_workspace_uidx").on(table.workspaceId),
+    uniqueIndex("customer_account_default_organization_uidx")
+      .on(table.accountId)
+      .where(sql`${table.isDefault} = true`),
+  ],
+);
+
+export const organizationRequests = pgTable(
+  "organization_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => customerAccounts.id, { onDelete: "cascade" }),
+    sourceWorkspaceId: uuid("source_workspace_id").notNull().references(() => workspaces.id),
+    requestedBy: uuid("requested_by").notNull().references(() => users.id),
+    idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    requestHash: char("request_hash", { length: 64 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    slug: varchar("slug", { length: 80 }).notNull(),
+    configuration: jsonb("configuration").$type<Record<string, unknown>>().notNull(),
+    reason: varchar("reason", { length: 500 }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    decisionReason: varchar("decision_reason", { length: 500 }),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    approvedWorkspaceId: uuid("approved_workspace_id").references(() => workspaces.id),
+    version: integer("version").notNull().default(1),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("organization_requests_account_idempotency_uidx").on(table.accountId, table.idempotencyKey),
+    uniqueIndex("organization_requests_pending_slug_uidx")
+      .on(table.accountId, sql`lower(${table.slug})`)
+      .where(sql`${table.status} = 'pending'`),
+    uniqueIndex("organization_requests_approved_workspace_uidx")
+      .on(table.approvedWorkspaceId)
+      .where(sql`${table.approvedWorkspaceId} IS NOT NULL`),
+    index("organization_requests_review_queue_idx").on(table.status, table.createdAt),
+    check("organization_requests_status_check", sql`${table.status} IN ('pending', 'approved', 'rejected', 'cancelled')`),
+    check("organization_requests_slug_check", sql`${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`),
+    check("organization_requests_configuration_check", sql`jsonb_typeof(${table.configuration}) = 'object'`),
+    check("organization_requests_version_check", sql`${table.version} > 0`),
+  ],
+);
+
 export const workspaceTerminology = pgTable(
   "workspace_terminology",
   {

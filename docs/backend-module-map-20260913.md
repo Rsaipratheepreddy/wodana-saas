@@ -7,7 +7,7 @@ Core commands and must not write business tables directly.
 | Domain | Authoritative implementation | Public route family | Depends on |
 | --- | --- | --- | --- |
 | Identity and sessions | `services/business-core/src/auth` | `/auth`, `/me`, `/security` | Workspace identity, Redis sessions |
-| Tenant and organization | `services/business-core/src/workspaces` | `/workspaces`, `/public/tenant-branding` | Identity, audit, email |
+| Tenant and organization | `services/business-core/src/workspaces` | `/workspaces`, `/workspaces/:workspaceId/account`, `/internal/customer-accounts`, `/internal/organization-requests`, `/public/tenant-branding` | Identity, audit, email |
 | Reference data | `services/business-core/src/reference` | `/reference` | Global reference tables |
 | CRM | `services/business-core/src/crm` | `/workspaces/:workspaceId/crm` | Tenant access, eventing, email |
 | Pre-execution | `services/business-core/src/pre-projects` | `/workspaces/:workspaceId/pre-projects` | CRM opportunity, catalog, file storage |

@@ -9,11 +9,28 @@ import { PublicBrandingController } from "./public-branding.controller";
 import { EmailModule } from "../email/email.module";
 import { TenantManagementService } from "./tenant-management.service";
 import { WorkspaceBillingController } from "./workspace-billing.controller";
+import { CustomerAccountsController } from "./customer-accounts.controller";
+import { CustomerAccountsService } from "./customer-accounts.service";
+import { InternalOrganizationAccountsController } from "./internal-organization-accounts.controller";
 
 @Module({
   imports: [EmailModule],
-  controllers: [WorkspacesController, WorkspaceBillingController, InternalTenantsController, PublicBrandingController],
-  providers: [WorkspaceAccessService, WorkspacesService, TenantManagementService, InternalServiceGuard, BrandAssetStorageService],
+  controllers: [
+    WorkspacesController,
+    WorkspaceBillingController,
+    CustomerAccountsController,
+    InternalTenantsController,
+    InternalOrganizationAccountsController,
+    PublicBrandingController,
+  ],
+  providers: [
+    WorkspaceAccessService,
+    WorkspacesService,
+    CustomerAccountsService,
+    TenantManagementService,
+    InternalServiceGuard,
+    BrandAssetStorageService,
+  ],
   exports: [WorkspaceAccessService, WorkspacesService],
 })
 export class WorkspacesModule {}
