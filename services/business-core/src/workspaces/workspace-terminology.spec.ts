@@ -11,6 +11,9 @@ describe("workspace terminology", () => {
     expect(result.map.lead).toEqual({ visibleName: "Lead", visibleNamePlural: "Leads" });
     expect(result.map.pre_execution).toEqual({ visibleName: "Pre-execution", visibleNamePlural: "Pre-execution" });
     expect(result.map.business_unit).toEqual({ visibleName: "Business unit", visibleNamePlural: "Business units" });
+    expect(result.map.catalog).toEqual({ visibleName: "Catalog", visibleNamePlural: "Catalogs" });
+    expect(result.map.vendor).toEqual({ visibleName: "Vendor", visibleNamePlural: "Vendors" });
+    expect(result.map.procurement).toEqual({ visibleName: "Procurement", visibleNamePlural: "Procurement" });
     expect(result.items.every((item) => !item.overridden && item.version === 0)).toBe(true);
   });
 

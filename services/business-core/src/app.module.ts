@@ -26,6 +26,7 @@ import { DemoTenantSeedService } from "./auth/demo-tenant-seed.service";
 import { PreProjectsModule } from "./pre-projects/pre-projects.module";
 import { HrmsModule } from "./hrms/hrms.module";
 import { CatalogModule } from "./catalog/catalog.module";
+import { SourcingModule } from "./sourcing/sourcing.module";
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { CatalogModule } from "./catalog/catalog.module";
     PreProjectsModule,
     CommercialModule,
     CatalogModule,
+    SourcingModule,
     HrmsModule,
   ],
   controllers: [AppController],
