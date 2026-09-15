@@ -108,6 +108,7 @@ export async function releaseDeliveryProject(
       quoteId: quote.id,
       quoteHash: acceptedHash,
       quoteNumber: quote.number,
+      definitionBaseline: quote.definitionBaseline,
       dealFileId: dealFile.id,
       dealFileReference: dealFile.reference,
       releaseId: data.release!.id,

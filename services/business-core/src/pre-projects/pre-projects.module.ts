@@ -15,6 +15,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { SiteController } from "./site.controller";
 import { SiteService } from "./site.service";
 import { PreProjectReadinessService } from "./pre-project-readiness.service";
+import { PreProjectDefinitionService } from "./pre-project-definition.service";
 
 @ApiTags("pre-projects")
 @ApiBearerAuth()
@@ -31,5 +32,5 @@ export class PreProjectsController {
   @Patch(":id/profile") updateProfile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateEngagementProfileDto) { return this.service.updateProfile(actor, workspaceId, id, body); }
   @Post(":id/lifecycle") transition(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: TransitionEngagementDto) { return this.service.transition(actor, workspaceId, id, body); }
 }
-@Module({ imports: [WorkspacesModule, CrmOpportunitiesModule], controllers: [PreProjectsController,CaseContentController,SiteController,AssetMarkupController], providers: [PreProjectsService,PreProjectReadinessService,BriefService,DesignService,BrandAssetStorageService,ItemSpecificationService,SiteService,AssetMarkupService], exports: [PreProjectReadinessService] })
+@Module({ imports: [WorkspacesModule, CrmOpportunitiesModule], controllers: [PreProjectsController,CaseContentController,SiteController,AssetMarkupController], providers: [PreProjectsService,PreProjectDefinitionService,PreProjectReadinessService,BriefService,DesignService,BrandAssetStorageService,ItemSpecificationService,SiteService,AssetMarkupService], exports: [PreProjectDefinitionService,PreProjectReadinessService] })
 export class PreProjectsModule {}

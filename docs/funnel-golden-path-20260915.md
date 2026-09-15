@@ -27,14 +27,20 @@ database or port names.
    missing site-plan, specification, measurement, and design actions.
 9. Add the current site plan, upload the linked design, save its controlled specification, record
    and independently verify the site measurement, pass internal and recorded client design
-   approval, then prove that Preparation is pricing-ready with a deterministic state hash.
-10. Import Preparation into a quotation, set selling terms, pass the same readiness gate and internal approval, issue through the
-   enabled client portal, and record OTP-backed client acceptance.
-11. Record and execute the agreement, submit owner review, approve it with the second owner, create
+   approval, then prove that the unfinished Definition blocks pricing with an ordered next action.
+10. Publish the client-safe Definition Baseline, idempotently replay publication, confirm the exact
+    version through an OTP-backed client decision, and prove that Preparation is pricing-ready with
+    a deterministic state hash.
+11. Edit the controlled specification, prove that the confirmed baseline becomes superseded,
+    publish and confirm its replacement, and restore readiness without modifying history.
+12. Import Preparation into a quotation, set selling terms, pass the same readiness gate and internal
+    approval, issue through the enabled client portal, and record OTP-backed client acceptance.
+13. Record and execute the agreement, submit owner review, approve it with the second owner, create
     the Deal File, and release the delivery project.
-12. Verify preserved accepted hash, scope/specification versions, selling rate and line total, CRM
-    project link, released Preparation state, absence of internal cost/photo, and retry-safe release.
-13. Verify that the planning project retained its frozen tenant workflow after the template changed,
+14. Verify preserved accepted hash, Definition Baseline, scope/specification versions, selling rate
+    and line total, CRM project link, released Preparation state, absence of internal cost/photo,
+    and retry-safe release.
+15. Verify that the planning project retained its frozen tenant workflow after the template changed,
     advance it through real ownership/task gates, place and release an independent hold, and preserve
     the stage and hold histories.
 
@@ -44,5 +50,5 @@ by the migration runner when preparing the disposable database.
 ## Result
 
 The completed run passed and returned concrete Intake, Enquiry, Lead, Opportunity, Preparation,
-Quotation, Deal File and Project identities. A post-run check confirmed no test API process,
-temporary database, or temporary file root remained.
+Definition Baseline, Quotation, Deal File and Project identities. A post-run check confirmed no
+test API process, temporary database, or temporary file root remained.

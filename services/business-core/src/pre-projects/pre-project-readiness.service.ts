@@ -10,6 +10,7 @@ import {
   type PreProjectMeasurementFact,
   type PreProjectReadinessFacts,
 } from "./pre-project-readiness";
+import { PreProjectDefinitionService } from "./pre-project-definition.service";
 
 type CaseRow = {
   id: string;
@@ -39,7 +40,10 @@ type DesignRow = PreProjectDesignFact & {
 
 @Injectable()
 export class PreProjectReadinessService {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  constructor(
+    private readonly access: WorkspaceAccessService,
+    private readonly definitions: PreProjectDefinitionService,
+  ) {}
 
   get(
     actor: RequestActor,
@@ -65,6 +69,9 @@ export class PreProjectReadinessService {
     caseId: string,
     options: EvaluatePreProjectReadinessOptions = {},
   ) {
+    const requireIncludedScope = options.requireIncludedScope ?? true;
+    const requireConfirmedDefinition =
+      options.requireConfirmedDefinition ?? requireIncludedScope;
     const caseResult = await client.query<CaseRow>(
       `SELECT id,status::text AS status,phase,version
        FROM pre_project_cases
@@ -250,6 +257,13 @@ export class PreProjectReadinessService {
       sitePlanCount: Number(counts.sitePlanCount),
       openObservationCount: Number(counts.openObservationCount),
       items,
+      definitionConfirmation: requireConfirmedDefinition
+        ? await this.definitions.currentConfirmation(
+            client,
+            workspaceId,
+            caseId,
+          )
+        : null,
     };
     return evaluatePreProjectReadiness(facts, options);
   }

@@ -244,6 +244,7 @@ export function freezeHash(q: Quote): string {
       JSON.stringify({
         direction: q.direction,
         familyId: q.familyId,
+        definitionBaseline: q.definitionBaseline,
         title: q.title,
         cover: q.cover,
         rooms: q.rooms,
@@ -271,6 +272,7 @@ export function clientQuote(q: Quote, grantId: string): ClientQuote {
     direction: q.direction,
     familyId: q.familyId,
     baselineId: q.baselineId,
+    definitionBaseline: q.definitionBaseline,
     status: q.status,
     title: q.title,
     cover: q.cover,

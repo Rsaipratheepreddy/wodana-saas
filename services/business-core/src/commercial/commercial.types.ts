@@ -141,6 +141,7 @@ export type Quote = {
   number: number;
   kind: "quotation" | "variation";
   baselineId?: string;
+  definitionBaseline?: { id: string; number: number; hash: string };
   status: QuoteStatus;
   title: string;
   cover?: {
@@ -263,6 +264,7 @@ export type DealFile = {
   quoteId: string;
   quoteNumber: number;
   quoteHash: string;
+  definitionBaseline?: { id: string; number: number; hash: string };
   agreementReference: string;
   paymentIds: string[];
   value: number;

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RequestActor } from "../auth/actor";
 import type { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { PreProjectReadinessService } from "./pre-project-readiness.service";
+import type { PreProjectDefinitionService } from "./pre-project-definition.service";
 
 const actor = {
   subject: "readiness-user",
@@ -89,9 +90,24 @@ function setup(caseExists = true) {
     async (_actor, _workspaceId, _permission, callback) => callback({ query }),
   );
   return {
-    service: new PreProjectReadinessService({
-      withPermission,
-    } as unknown as WorkspaceAccessService),
+    service: new PreProjectReadinessService(
+      { withPermission } as unknown as WorkspaceAccessService,
+      {
+        currentConfirmation: vi.fn().mockResolvedValue({
+          sourceHash: "s".repeat(64),
+          readyToPublish: true,
+          confirmed: true,
+          latest: {
+            id: "definition-1",
+            number: 1,
+            sourceHash: "s".repeat(64),
+            snapshotHash: "d".repeat(64),
+            status: "confirmed",
+            current: true,
+          },
+        }),
+      } as unknown as PreProjectDefinitionService,
+    ),
     query,
     withPermission,
   };

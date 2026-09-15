@@ -44,6 +44,17 @@ function readyFacts(overrides: Partial<PreProjectReadinessFacts> = {}): PreProje
     sitePlanCount: 1,
     openObservationCount: 0,
     items: [readyItem()],
+    definitionConfirmation: {
+      readyToPublish: true,
+      confirmed: true,
+      latest: {
+        id: "definition-1",
+        number: 1,
+        snapshotHash: "d".repeat(64),
+        status: "confirmed",
+        current: true,
+      },
+    },
     ...overrides,
   };
 }
@@ -230,6 +241,43 @@ describe("Preparation pricing readiness", () => {
     expect(unsafe.nextActions.map((value) => value.code)).toEqual([
       "RESUME_ENGAGEMENT",
       "ADD_SITE_PLAN",
+    ]);
+  });
+
+  it("requires a current confirmed definition and returns the correct workflow action", () => {
+    const unpublished = evaluatePreProjectReadiness(
+      readyFacts({
+        definitionConfirmation: {
+          readyToPublish: true,
+          confirmed: false,
+          latest: null,
+        },
+      }),
+      { scopeReferences: [currentReference] },
+    );
+    expect(unpublished.ready).toBe(false);
+    expect(unpublished.nextActions.map((value) => value.code)).toEqual([
+      "PUBLISH_DEFINITION",
+    ]);
+
+    const changed = evaluatePreProjectReadiness(
+      readyFacts({
+        definitionConfirmation: {
+          readyToPublish: true,
+          confirmed: false,
+          latest: {
+            id: "definition-1",
+            number: 1,
+            snapshotHash: "d".repeat(64),
+            status: "superseded",
+            current: false,
+          },
+        },
+      }),
+      { scopeReferences: [currentReference] },
+    );
+    expect(changed.nextActions.map((value) => value.code)).toEqual([
+      "PUBLISH_DEFINITION",
     ]);
   });
 });

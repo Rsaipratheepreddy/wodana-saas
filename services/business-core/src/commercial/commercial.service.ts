@@ -1191,6 +1191,7 @@ export class CommercialService {
             direction: action === "variation" ? "addition" : q?.direction,
             familyId: action === "revise" ? (q?.familyId ?? q?.id) : undefined,
             baselineId: action === "variation" ? q?.id : q?.baselineId,
+            definitionBaseline: q?.definitionBaseline,
             status: "draft",
             title:
               action === "variation"
@@ -1606,6 +1607,22 @@ export class CommercialService {
               );
               if (!readiness.ready)
                 throw new ConflictException(readiness.blockers[0].detail);
+              if (linked.length) {
+                const baseline = readiness.definitionBaseline?.latest;
+                if (
+                  !readiness.definitionBaseline?.confirmed ||
+                  !baseline?.current ||
+                  baseline.status !== "confirmed"
+                )
+                  throw new ConflictException(
+                    "Confirm the current requirements and design definition before quotation review.",
+                  );
+                q.definitionBaseline = {
+                  id: baseline.id,
+                  number: baseline.number,
+                  hash: baseline.snapshotHash,
+                };
+              } else delete q.definitionBaseline;
             }
             q.total = totals(q).total;
             q.status = "internal_review";
@@ -1788,6 +1805,7 @@ export class CommercialService {
               quoteId: accepted.id,
               quoteNumber: accepted.number,
               quoteHash: review.quoteHash,
+              definitionBaseline: accepted.definitionBaseline,
               agreementReference: agreement!.reference,
               paymentIds: data.payments
                 .filter((payment) => payment.requiredForRelease)

@@ -22,12 +22,16 @@ export type PreProjectReadinessActionCode =
   | "REVIEW_NEWER_DESIGN_REVISION"
   | "COMPLETE_MATERIAL_SELECTION"
   | "RESOLVE_SITE_OBSERVATION"
+  | "COMPLETE_DEFINITION"
+  | "PUBLISH_DEFINITION"
+  | "REQUEST_DEFINITION_CONFIRMATION"
+  | "APPLY_DEFINITION_CHANGES"
   | "RESUME_ENGAGEMENT";
 
 export interface PreProjectReadinessAction {
   code: PreProjectReadinessActionCode;
   label: string;
-  targetType: "engagement" | "scope_item" | "site" | "design";
+  targetType: "engagement" | "scope_item" | "site" | "design" | "definition";
   targetId: string;
 }
 
@@ -92,12 +96,28 @@ export interface PreProjectReadinessFacts {
   sitePlanCount: number;
   openObservationCount: number;
   items: PreProjectItemFact[];
+  definitionConfirmation: null | {
+    readyToPublish: boolean;
+    confirmed: boolean;
+    latest: null | {
+      id: string;
+      number: number;
+      snapshotHash: string;
+      status:
+        | "awaiting_confirmation"
+        | "confirmed"
+        | "changes_requested"
+        | "superseded";
+      current: boolean;
+    };
+  };
 }
 
 export interface EvaluatePreProjectReadinessOptions {
   target?: "pricing";
   scopeReferences?: PricingScopeReference[];
   requireIncludedScope?: boolean;
+  requireConfirmedDefinition?: boolean;
 }
 
 export interface PreProjectItemReadiness {
@@ -128,6 +148,7 @@ export interface PreProjectReadinessResult {
   blockers: PreProjectReadinessCheck[];
   warnings: PreProjectReadinessCheck[];
   nextActions: PreProjectReadinessAction[];
+  definitionBaseline: PreProjectReadinessFacts["definitionConfirmation"];
 }
 
 const check = (
@@ -535,6 +556,8 @@ export function evaluatePreProjectReadiness(
 ): PreProjectReadinessResult {
   const target = options.target ?? "pricing";
   const requireIncludedScope = options.requireIncludedScope ?? true;
+  const requireConfirmedDefinition =
+    options.requireConfirmedDefinition ?? requireIncludedScope;
   const checks: PreProjectReadinessCheck[] = [];
   const active = facts.case.status === "active";
   checks.push(
@@ -621,6 +644,57 @@ export function evaluatePreProjectReadiness(
     );
   }
 
+  if (requireConfirmedDefinition) {
+    const definition = facts.definitionConfirmation;
+    const latest = definition?.latest;
+    const confirmed = Boolean(definition?.confirmed && latest?.current);
+    const definitionState: PreProjectReadinessState = confirmed
+      ? "satisfied"
+      : latest?.status === "changes_requested" && latest.current
+        ? "blocked"
+        : latest && !latest.current
+          ? "stale"
+          : "missing";
+    const actionCode: PreProjectReadinessActionCode = !definition?.readyToPublish
+      ? "COMPLETE_DEFINITION"
+      : !latest || !latest.current
+        ? "PUBLISH_DEFINITION"
+        : latest.status === "changes_requested"
+          ? "APPLY_DEFINITION_CHANGES"
+          : "REQUEST_DEFINITION_CONFIRMATION";
+    checks.push(
+      check(
+        "definition_confirmed",
+        "Current definition is client-confirmed",
+        definitionState,
+        true,
+        confirmed
+          ? `Definition baseline ${latest!.number} is current and client-confirmed.`
+          : !definition?.readyToPublish
+            ? "Complete the reviewed scope and item specifications before publishing the definition."
+            : !latest || !latest.current
+              ? "Publish the current requirements and design definition for client confirmation."
+              : latest.status === "changes_requested"
+                ? "Apply the client's requested definition changes and publish a new version."
+                : "Obtain client confirmation of the current published definition before quotation review.",
+        confirmed
+          ? undefined
+          : action(
+              actionCode,
+              actionCode === "COMPLETE_DEFINITION"
+                ? "Complete definition"
+                : actionCode === "PUBLISH_DEFINITION"
+                  ? "Publish definition"
+                  : actionCode === "APPLY_DEFINITION_CHANGES"
+                    ? "Apply requested changes"
+                    : "Request client confirmation",
+              "definition",
+              latest?.id ?? facts.case.id,
+            ),
+      ),
+    );
+  }
+
   const references = options.scopeReferences ?? included.map((item) => ({
     scopeId: item.id,
     title: item.title,
@@ -687,6 +761,7 @@ export function evaluatePreProjectReadiness(
     case: facts.case,
     sitePlanCount: facts.sitePlanCount,
     openObservationCount: facts.openObservationCount,
+    definitionConfirmation: facts.definitionConfirmation,
     references,
     items: facts.items.map((item) => ({
       id: item.id,
@@ -718,5 +793,6 @@ export function evaluatePreProjectReadiness(
     blockers,
     warnings,
     nextActions,
+    definitionBaseline: facts.definitionConfirmation,
   };
 }

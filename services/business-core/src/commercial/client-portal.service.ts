@@ -34,6 +34,7 @@ import {
   text,
 } from "./commercial.domain";
 import type { PortalSettings } from "./commercial.types";
+import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 const actorId = "00000000-0000-4000-8000-000000000000";
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -45,6 +46,7 @@ export class ClientPortalService {
     private readonly commercial: CommercialService,
     private readonly storage: BrandAssetStorageService,
     private readonly config: ConfigService,
+    private readonly definitions: PreProjectDefinitionService,
   ) {
     if (
       config.get("PORTAL_DEMO_OTP") === "true" &&
@@ -112,8 +114,9 @@ export class ClientPortalService {
           const parts = purpose.split(":");
           if (
             parts.length !== 4 ||
-            !['decision','design-decision','material-decision'].includes(parts[0]) ||
+            !['decision','design-decision','material-decision','definition-decision'].includes(parts[0]) ||
             !(['design-decision','material-decision'].includes(parts[0])
+              || parts[0] === 'definition-decision'
               ? ['accept','changes']
               : ["accept", "changes", "decline"]).includes(parts[3])
           )
@@ -127,6 +130,7 @@ export class ClientPortalService {
             );
           grantId = grant.id;
           if(parts[0]==='design-decision')await portalReviewDesign(client,settings.workspaceId,parts[1],parts[2]);
+          else if(parts[0]==='definition-decision')await this.definitions.assertPortalDecisionAvailable(client,settings.workspaceId,parts[1],parts[2]);
           else {
           const data = await this.commercial.load(
             client,
@@ -299,6 +303,12 @@ export class ClientPortalService {
         const project=(await client.query(`SELECT p.id,p.name,e.content FROM delivery_projects p JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.case_id=$2`,[s.workspaceId,grant.caseId])).rows[0];
         const designs=(await client.query(`SELECT v.id,d.title,d.document_type AS type,v.number,v.status,a.original_name AS name,a.mime_type AS "mimeType" FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.case_id=$2 AND d.archived_at IS NULL AND v.status IN ('client_review','approved') AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id) ORDER BY d.title,v.number DESC`,[s.workspaceId,grant.caseId])).rows;
         cases.push({
+          definitionBaseline: await this.definitions.portalData(
+            client,
+            s.workspaceId,
+            grant.caseId,
+            grant,
+          ),
           designs,
           materials: (data.materialApprovals ?? [])
             .filter((item) => ["client_review", "approved", "rejected"].includes(item.status))
@@ -352,6 +362,18 @@ export class ClientPortalService {
         if(action==='design-decision'){
           const versionId=text(b.versionId,80,true),decision=text(b.decision,20,true),note=text(b.note??'',5000,decision==='changes'),challengeId=text(b.challengeId,80,true);
           return decidePortalDesign(client,s.workspaceId,caseId,grant,{versionId,decision,note,challengeId},()=>this.consume(client,s.workspaceId,challengeId,text(b.code,6,true),`design-decision:${caseId}:${versionId}:${decision}`,session.phone));
+        }
+        if(action==='definition-decision'){
+          const baselineId=text(b.baselineId,80,true),decision=text(b.decision,20,true),note=text(b.note??'',5000,b.decision==='changes'),challengeId=text(b.challengeId,80,true);
+          if(decision!=='accept'&&decision!=='changes')throw new BadRequestException('Choose confirm or request changes.');
+          return this.definitions.decidePortal(
+            client,
+            s.workspaceId,
+            caseId,
+            grant,
+            {baselineId,decision,note,challengeId},
+            ()=>this.consume(client,s.workspaceId,challengeId,text(b.code,6,true),`definition-decision:${caseId}:${baselineId}:${decision}`,session.phone),
+          );
         }
         const data = await this.commercial.load(client, s.workspaceId, caseId);
         let quoteId: string | undefined;

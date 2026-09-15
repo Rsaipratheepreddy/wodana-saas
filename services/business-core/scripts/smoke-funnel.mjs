@@ -453,6 +453,7 @@ assert.deepEqual(
   incompleteReadiness.nextActions.map((next) => next.code),
   [
     "ADD_SITE_PLAN",
+    "COMPLETE_DEFINITION",
     "CREATE_SPECIFICATION",
     "RECORD_MEASUREMENT",
     "LINK_DESIGN_REVISION",
@@ -583,6 +584,164 @@ await designActivity("approved", owner, {
   decisionAt: new Date().toISOString(),
 });
 
+const unpublishedReadiness = await request(`${contentPath}/readiness?target=pricing`);
+assert.equal(unpublishedReadiness.ready, false);
+assert.deepEqual(unpublishedReadiness.nextActions.map((next) => next.code), [
+  "PUBLISH_DEFINITION",
+]);
+
+const definitionState = await request(`${contentPath}/definition-baselines`);
+assert.equal(definitionState.draft.readyToPublish, true);
+assert.equal(definitionState.current, null);
+const definitionRequestId = randomUUID();
+const definitionBaseline = await request(`${contentPath}/definition-baselines`, {
+  body: {
+    requestId: definitionRequestId,
+    sourceHash: definitionState.draft.sourceHash,
+    message: "Please confirm this requirements and design definition.",
+  },
+});
+assert.equal(definitionBaseline.number, 1);
+assert.equal(definitionBaseline.status, "awaiting_confirmation");
+assert.match(definitionBaseline.snapshotHash, /^[0-9a-f]{64}$/);
+const definitionReplay = await request(`${contentPath}/definition-baselines`, {
+  body: {
+    requestId: definitionRequestId,
+    sourceHash: definitionState.draft.sourceHash,
+    message: "Please confirm this requirements and design definition.",
+  },
+});
+assert.equal(definitionReplay.id, definitionBaseline.id);
+assert.equal(definitionReplay.replayed, true);
+
+const loginChallenge = await request(`/client-portal/${slug}/challenge`, {
+  body: { phone: mobile, purpose: "login" },
+  headers: {},
+});
+const clientToken = (
+  await request(`/client-portal/${slug}/login`, {
+    body: { challengeId: loginChallenge.challengeId, code: "123456" },
+    headers: {},
+  })
+).token;
+const clientHeaders = { authorization: `Bearer ${clientToken}` };
+const definitionPortal = await request(`/client-portal/${slug}/data`, {
+  headers: clientHeaders,
+});
+const portalBaseline = definitionPortal.cases.find((item) => item.id === caseId).definitionBaseline;
+assert.equal(portalBaseline.id, definitionBaseline.id);
+assert.equal(portalBaseline.canDecide, true);
+assert.equal(JSON.stringify(portalBaseline).includes("objectKey"), false);
+const definitionChallenge = await request(`/client-portal/${slug}/challenge`, {
+  body: {
+    phone: mobile,
+    purpose: `definition-decision:${caseId}:${definitionBaseline.id}:accept`,
+  },
+  headers: clientHeaders,
+});
+const definitionDecision = {
+  caseId,
+  action: "definition-decision",
+  baselineId: definitionBaseline.id,
+  decision: "accept",
+  note: "",
+  challengeId: definitionChallenge.challengeId,
+  code: "123456",
+};
+await request(`/client-portal/${slug}/action`, {
+  body: definitionDecision,
+  headers: clientHeaders,
+});
+const definitionDecisionReplay = await request(`/client-portal/${slug}/action`, {
+  body: definitionDecision,
+  headers: clientHeaders,
+});
+assert.equal(definitionDecisionReplay.replayed, true);
+
+const confirmedDefinition = await request(`${contentPath}/definition-baselines`);
+assert.equal(confirmedDefinition.confirmed, true);
+assert.equal(confirmedDefinition.current.status, "confirmed");
+const initiallyReady = await request(`${contentPath}/readiness?target=pricing`);
+assert.equal(initiallyReady.ready, true);
+
+const currentSpecification = (
+  await request(`${contentPath}/specifications/${scopeId}`)
+).items[0];
+await request(`${contentPath}/specifications/${scopeId}`, {
+  method: "PUT",
+  body: {
+    version: currentSpecification.version,
+    refinedRequirement: `${currentSpecification.refinedRequirement} Confirmed access clearance.`,
+    construction: currentSpecification.construction,
+    inclusions: currentSpecification.inclusions,
+    exclusions: currentSpecification.exclusions,
+    assumptions: currentSpecification.assumptions,
+    materials: currentSpecification.materials.map((material) => ({
+      id: material.id,
+      application: material.application,
+      materialId: material.materialId ?? null,
+      brandId: material.brandId ?? null,
+      finishId: material.finishId ?? null,
+      productName: material.productName,
+      productCode: material.productCode,
+      finishCode: material.finishCode,
+      stockSize: material.stockSize,
+      status: material.status,
+      selectedBy: material.selectedBy,
+      selectedAt: material.selectedAt ?? null,
+      evidence: material.evidence,
+      assetIds: material.assetIds,
+    })),
+    dimensions: currentSpecification.dimensions.map((dimension) => ({
+      id: dimension.id,
+      name: dimension.name,
+      unit: dimension.unit,
+      basis: dimension.basis,
+      approximate: dimension.approximate ?? null,
+      measured: dimension.measured ?? null,
+      source: dimension.source,
+      evidence: dimension.evidence,
+    })),
+    designRefs: currentSpecification.designRefs.map((reference) => ({
+      versionId: reference.versionId,
+      usage: reference.usage,
+      sheet: reference.sheet,
+    })),
+  },
+});
+const changedReadiness = await request(`${contentPath}/readiness?target=pricing`);
+assert.equal(changedReadiness.ready, false);
+assert.equal(changedReadiness.nextActions[0].code, "PUBLISH_DEFINITION");
+const changedDefinition = await request(`${contentPath}/definition-baselines`);
+assert.equal(changedDefinition.current.status, "superseded");
+const replacementBaseline = await request(`${contentPath}/definition-baselines`, {
+  body: {
+    requestId: randomUUID(),
+    sourceHash: changedDefinition.draft.sourceHash,
+    message: "Please confirm the updated access requirement.",
+  },
+});
+assert.equal(replacementBaseline.number, 2);
+assert.equal(replacementBaseline.supersedesId, definitionBaseline.id);
+const replacementChallenge = await request(`/client-portal/${slug}/challenge`, {
+  body: {
+    phone: mobile,
+    purpose: `definition-decision:${caseId}:${replacementBaseline.id}:accept`,
+  },
+  headers: clientHeaders,
+});
+await request(`/client-portal/${slug}/action`, {
+  body: {
+    caseId,
+    action: "definition-decision",
+    baselineId: replacementBaseline.id,
+    decision: "accept",
+    note: "",
+    challengeId: replacementChallenge.challengeId,
+    code: "123456",
+  },
+  headers: clientHeaders,
+});
 const preparationReadiness = await request(`${contentPath}/readiness?target=pricing`);
 assert.equal(preparationReadiness.ready, true);
 assert.equal(preparationReadiness.summary.evaluatedItemCount, 1);
@@ -609,7 +768,7 @@ let commercialState = await request(commercialPath);
 const quote = commercialState.data.quotes.find((candidate) => candidate.id === quoteId);
 assert.equal(quote.lines.length, 1);
 assert.equal(quote.lines[0].scopeId, scopeId);
-assert.equal(quote.lines[0].specificationVersion, 3);
+assert.equal(quote.lines[0].specificationVersion, 4);
 Object.assign(quote.lines[0], {
   specification: "Four-door wardrobe with soft-close hardware.",
   material: "",
@@ -628,23 +787,21 @@ quote.paymentTerms = [
   },
 ];
 await commercial("save", { quote });
-await commercial("submit");
+const submittedQuotation = await commercial("submit");
+assert.deepEqual(
+  submittedQuotation.data.quotes.find((candidate) => candidate.id === quoteId)
+    .definitionBaseline,
+  {
+    id: replacementBaseline.id,
+    number: replacementBaseline.number,
+    hash: replacementBaseline.snapshotHash,
+  },
+);
 await commercial("approve");
 commercialState = await request(commercialPath);
 const approverId = commercialState.contacts.find((contact) => contact.phone === mobile).id;
 await commercial("issue", { approverId });
 
-const loginChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: { phone: mobile, purpose: "login" },
-  headers: {},
-});
-const clientToken = (
-  await request(`/client-portal/${slug}/login`, {
-    body: { challengeId: loginChallenge.challengeId, code: "123456" },
-    headers: {},
-  })
-).token;
-const clientHeaders = { authorization: `Bearer ${clientToken}` };
 const decisionChallenge = await request(`/client-portal/${slug}/challenge`, {
   body: { phone: mobile, purpose: `decision:${caseId}:${quoteId}:accept` },
   headers: clientHeaders,
@@ -703,10 +860,14 @@ assert.equal(project.data.scope.quoteId, quoteId);
 assert.equal(project.data.scope.quoteHash, commercialState.data.dealFile.quoteHash);
 assert.equal(project.data.scope.dealFileId, commercialState.data.dealFile.id);
 assert.equal(project.data.scope.releaseId, commercialState.data.release.id);
+assert.deepEqual(
+  project.data.scope.definitionBaseline,
+  commercialState.data.dealFile.definitionBaseline,
+);
 assert.equal(releasedLine.id, quote.lines[0].id);
 assert.equal(releasedLine.sourceScopeId, scopeId);
 assert.equal(releasedLine.sourceScopeVersion, quote.lines[0].scopeVersion);
-assert.equal(releasedLine.sourceSpecificationVersion, 3);
+assert.equal(releasedLine.sourceSpecificationVersion, 4);
 assert.equal(releasedLine.rate, 750);
 assert.equal(releasedLine.lineTotal, 1500);
 assert.equal("unitCost" in releasedLine, false);
@@ -1093,6 +1254,10 @@ process.stdout.write(
         engagementHoldWriteSafe: true,
         engagementCancellationRecoverySafe: true,
         preparationReadinessSafe: true,
+        definitionBaselineImmutable: true,
+        definitionSupersessionSafe: true,
+        definitionClientDecisionReplaySafe: true,
+        definitionLineagePreserved: true,
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,
         projectReleaseReplaySafe: true,

@@ -10,10 +10,15 @@ import { DesignService } from "./design.service";
 
 import {ItemSpecificationService} from "./item-specification.service";
 import {SaveItemSpecificationDto} from "./item-specification.dto";
+import { PreProjectDefinitionService } from "./pre-project-definition.service";
+import { PublishDefinitionBaselineDto, RecordDefinitionDecisionDto } from "./pre-project-definition.dto";
 
 @Controller('workspaces/:workspaceId/pre-projects/:caseId')
 export class CaseContentController {
- constructor(private readonly brief:BriefService,private readonly designs:DesignService,private readonly specifications:ItemSpecificationService){}
+ constructor(private readonly brief:BriefService,private readonly designs:DesignService,private readonly specifications:ItemSpecificationService,private readonly definitions:PreProjectDefinitionService){}
+ @Get('definition-baselines') definitionBaselines(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string) {return this.definitions.get(a,w,c);}
+ @Post('definition-baselines') publishDefinition(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:PublishDefinitionBaselineDto) {return this.definitions.publish(a,w,c,b);}
+ @Post('definition-baselines/:baselineId/decisions') definitionDecision(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('baselineId',ParseUUIDPipe) id:string,@Body() b:RecordDefinitionDecisionDto) {return this.definitions.recordDecision(a,w,c,id,b);}
  @Get('specifications/:id') specificationsHistory(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string) {return this.specifications.history(a,w,c,id);}
  @Put('specifications/:id') specification(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Body() b:SaveItemSpecificationDto) {return this.specifications.save(a,w,c,id,b);}
  @Get('brief') get(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string) {return this.brief.get(a,w,c);}

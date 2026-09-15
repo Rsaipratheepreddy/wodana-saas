@@ -346,6 +346,7 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
     quoteId: string;
     quoteHash?: string;
     quoteNumber: number;
+    definitionBaseline?: { id: string; number: number; hash: string };
     dealFileId?: string;
     dealFileReference?: string;
     releaseId?: string;
