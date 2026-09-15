@@ -25,6 +25,7 @@ import {
   UpdateSlaPolicyDto,
   UpsertQualificationDto,
 } from "./dto/leads.dto";
+import { normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -472,15 +473,24 @@ export class CrmLeadsService {
       if (input.breachAfterMinutes <= input.warningAfterMinutes) {
         throw new UnprocessableEntityException("Breach time must be later than warning time");
       }
+      let schedule: SlaSchedule;
+      try {
+        schedule = normalizeSlaSchedule(input.schedule, input.calculationMode);
+      } catch (error) {
+        if (error instanceof SlaScheduleValidationError) throw new UnprocessableEntityException(error.message);
+        throw error;
+      }
       const result = await client.query(
         `INSERT INTO crm_sla_policies
           (workspace_id, name, event_type, warning_after_minutes,
-           breach_after_minutes, schedule)
-         VALUES ($1, $2, $3, $4, $5, $6)
+           breach_after_minutes, calculation_mode, schedule_version, schedule)
+         VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
          RETURNING id, name, event_type AS "eventType",
                    warning_after_minutes AS "warningAfterMinutes",
-                   breach_after_minutes AS "breachAfterMinutes", schedule, status, version`,
-        [workspaceId, input.name, input.eventType, input.warningAfterMinutes, input.breachAfterMinutes, input.schedule ?? {}],
+                   breach_after_minutes AS "breachAfterMinutes",
+                   calculation_mode AS "calculationMode", schedule_version AS "scheduleVersion",
+                   schedule, status, version`,
+        [workspaceId, input.name.trim(), input.eventType.trim(), input.warningAfterMinutes, input.breachAfterMinutes, schedule.mode, schedule],
       );
       await this.events.record(client, {
         workspaceId, actorUserId: actorUser.userId, source: "user",
@@ -495,7 +505,8 @@ export class CrmLeadsService {
     return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
       const result = await client.query(
         `SELECT id,name,event_type AS "eventType",warning_after_minutes AS "warningAfterMinutes",
-                breach_after_minutes AS "breachAfterMinutes",schedule,status,version,
+                breach_after_minutes AS "breachAfterMinutes",calculation_mode AS "calculationMode",
+                schedule_version AS "scheduleVersion",schedule,status,version,
                 created_at AS "createdAt",updated_at AS "updatedAt"
          FROM crm_sla_policies WHERE workspace_id=$1 ORDER BY name`,
         [workspaceId],
@@ -513,15 +524,29 @@ export class CrmLeadsService {
       const warning = input.warningAfterMinutes ?? Number(before.warning_after_minutes);
       const breach = input.breachAfterMinutes ?? Number(before.breach_after_minutes);
       if (breach <= warning) throw new UnprocessableEntityException("Breach time must be later than warning time");
+      let schedule = before.schedule;
+      let calculationMode = String(before.calculation_mode);
+      if (input.schedule !== undefined || input.calculationMode !== undefined) {
+        try {
+          const normalized = normalizeSlaSchedule(input.schedule ?? before.schedule, input.calculationMode ?? before.calculation_mode);
+          schedule = normalized;
+          calculationMode = normalized.mode;
+        } catch (error) {
+          if (error instanceof SlaScheduleValidationError) throw new UnprocessableEntityException(error.message);
+          throw error;
+        }
+      }
       const result = await client.query(
         `UPDATE crm_sla_policies SET name = COALESCE($1, name), event_type = COALESCE($2, event_type),
            warning_after_minutes = $3, breach_after_minutes = $4,
-           schedule = COALESCE($5, schedule), status = COALESCE($6, status),
+           calculation_mode = $5, schedule_version = 1, schedule = $6,
+           status = COALESCE($7, status),
            version = version + 1, updated_at = now()
-         WHERE workspace_id = $7 AND id = $8 AND version = $9
+         WHERE workspace_id = $8 AND id = $9 AND version = $10
          RETURNING id, name, event_type AS "eventType", warning_after_minutes AS "warningAfterMinutes",
-                   breach_after_minutes AS "breachAfterMinutes", schedule, status, version`,
-        [input.name?.trim() ?? null, input.eventType?.trim() ?? null, warning, breach, input.schedule ?? null, input.status ?? null, workspaceId, policyId, input.version],
+                   breach_after_minutes AS "breachAfterMinutes", calculation_mode AS "calculationMode",
+                   schedule_version AS "scheduleVersion", schedule, status, version`,
+        [input.name?.trim() ?? null, input.eventType?.trim() ?? null, warning, breach, calculationMode, schedule, input.status ?? null, workspaceId, policyId, input.version],
       );
       if (!result.rowCount) throw new ConflictException("SLA policy changed; reload and try again");
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.sla_policy.updated.v1", entityType: "crm_sla_policy", entityId: policyId, before, after: result.rows[0] as Record<string, unknown> });

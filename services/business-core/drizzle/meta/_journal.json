@@ -428,6 +428,13 @@
       "when": 1789329600000,
       "tag": "0061_project_schedule_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789416000000,
+      "tag": "0062_crm_sla_contract",
+      "breakpoints": true
     }
   ]
 }

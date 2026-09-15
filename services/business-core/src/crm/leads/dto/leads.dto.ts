@@ -81,6 +81,7 @@ export class CreateSlaPolicyDto {
   @IsString() @IsNotEmpty() @MaxLength(80) eventType!: string;
   @IsInt() @Min(0) @Max(525_600) warningAfterMinutes!: number;
   @IsInt() @Min(1) @Max(525_600) breachAfterMinutes!: number;
+  @IsOptional() @IsIn(["elapsed", "business"]) calculationMode?: string;
   @IsOptional() @IsObject() schedule?: Record<string, unknown>;
 }
 
@@ -90,6 +91,7 @@ export class UpdateSlaPolicyDto {
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(80) eventType?: string;
   @IsOptional() @IsInt() @Min(0) @Max(525_600) warningAfterMinutes?: number;
   @IsOptional() @IsInt() @Min(1) @Max(525_600) breachAfterMinutes?: number;
+  @IsOptional() @IsIn(["elapsed", "business"]) calculationMode?: string;
   @IsOptional() @IsObject() schedule?: Record<string, unknown>;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
 }
