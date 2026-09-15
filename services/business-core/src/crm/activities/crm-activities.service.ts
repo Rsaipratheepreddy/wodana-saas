@@ -5,10 +5,11 @@ import { WorkspaceAccessService } from "../../workspaces/workspace-access.servic
 import { CrmEventsService } from "../shared/crm-events.service";
 import { decodeCursor, encodeCursor } from "../shared/crm-types";
 import { CompleteActivityDto, CreateActivityDto, CreateAppointmentDto, ListActivitiesQueryDto, UpdateActivityDto, UpdateAppointmentDto } from "./dto/activities.dto";
+import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 
 @Injectable()
 export class CrmActivitiesService {
-  constructor(private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService) {}
+  constructor(private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly slas: CrmSlaLifecycleService = new CrmSlaLifecycleService()) {}
 
   get(actor: RequestActor, workspaceId: string, activityId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.activities.view", async (client) => {
@@ -51,7 +52,7 @@ export class CrmActivitiesService {
       const result = await client.query(
         `SELECT activity.id, activity.party_id AS "partyId", activity.lead_id AS "leadId",
                 activity.opportunity_id AS "opportunityId", activity.type, activity.status,
-                activity.title, activity.description,
+                activity.title, activity.description, activity.interaction_direction AS "interactionDirection",
                 party.display_name AS "partyName", enquiry.title AS "leadTitle",
                 activity.owner_membership_id AS "ownerMembershipId", account.display_name AS "ownerName",
                 activity.priority, activity.due_at AS "dueAt", activity.completed_at AS "completedAt",
@@ -90,6 +91,7 @@ export class CrmActivitiesService {
   create(actor: RequestActor, workspaceId: string, input: CreateActivityDto) {
     return this.access.withPermission(actor, workspaceId, "crm.activities.manage", async (client, actorUser) => {
       if (!input.partyId && !input.leadId && !input.opportunityId) throw new UnprocessableEntityException("Activity requires a party, lead, or opportunity");
+      this.validateInteractionDirection(input.type, input.interactionDirection);
       await this.assertTargets(client, workspaceId, input);
       if (input.appointment && input.type !== "meeting") throw new UnprocessableEntityException("Appointments require a meeting activity");
       const dueAt = this.date(input.appointment?.startsAt ?? input.dueAt, "dueAt");
@@ -97,17 +99,17 @@ export class CrmActivitiesService {
       if (input.isNextAction) await this.clearNextAction(client, workspaceId, input.leadId, input.opportunityId);
       const result = await client.query(
         `INSERT INTO crm_activities
-          (workspace_id, party_id, lead_id, opportunity_id, type, title, description,
+          (workspace_id, party_id, lead_id, opportunity_id, type, interaction_direction, title, description,
            owner_membership_id, priority, due_at, is_next_action, customer_visible, created_by)
-         VALUES ($1, $2, $3, $4, $5::crm_activity_type, $6, $7, $8, $9, $10, $11, $12, $13)
+         VALUES ($1, $2, $3, $4, $5::crm_activity_type, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id, party_id AS "partyId", lead_id AS "leadId", opportunity_id AS "opportunityId",
-                   type, status, title, description, owner_membership_id AS "ownerMembershipId",
+                   type, interaction_direction AS "interactionDirection", status, title, description, owner_membership_id AS "ownerMembershipId",
                    priority, due_at AS "dueAt", is_next_action AS "isNextAction",
                    customer_visible AS "customerVisible", version,
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
         [
           workspaceId, input.partyId ?? null, input.leadId ?? null, input.opportunityId ?? null,
-          input.type, input.title, input.description ?? null, input.ownerMembershipId ?? null,
+          input.type, input.interactionDirection ?? null, input.title, input.description ?? null, input.ownerMembershipId ?? null,
           input.priority ?? "normal", dueAt, input.isNextAction ?? false,
           input.customerVisible ?? false, actorUser.userId,
         ],
@@ -126,6 +128,12 @@ export class CrmActivitiesService {
       const before = await this.lockActivity(client, workspaceId, activityId);
       if (Number(before.version) !== input.version) throw new ConflictException("Activity changed; reload and try again");
       if (before.status !== "pending") throw new ConflictException("Only pending activities can be edited");
+      this.validateInteractionDirection(
+        String(before.type),
+        input.interactionDirection !== undefined
+          ? input.interactionDirection
+          : before.interaction_direction as string | null | undefined,
+      );
       if (input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
       const dueAt = input.dueAt !== undefined ? this.date(input.dueAt ?? undefined, "dueAt") : before.due_at;
       this.validateNextAction(String(before.type), input.isNextAction ?? Boolean(before.is_next_action), dueAt);
@@ -147,13 +155,15 @@ export class CrmActivitiesService {
       const result = await client.query(
         `UPDATE crm_activities SET title = COALESCE($1, title),
            description = CASE WHEN $2::boolean THEN $3 ELSE description END,
-           owner_membership_id = CASE WHEN $4::boolean THEN $5::uuid ELSE owner_membership_id END,
-           priority = COALESCE($6, priority), due_at = $7,
-           is_next_action = COALESCE($8, is_next_action), version = version + 1
-         WHERE id = $9 AND workspace_id = $10 AND version = $11
+           interaction_direction = CASE WHEN $4::boolean THEN $5 ELSE interaction_direction END,
+           owner_membership_id = CASE WHEN $6::boolean THEN $7::uuid ELSE owner_membership_id END,
+           priority = COALESCE($8, priority), due_at = $9,
+           is_next_action = COALESCE($10, is_next_action), version = version + 1
+         WHERE id = $11 AND workspace_id = $12 AND version = $13
          RETURNING *`,
         [
           input.title ?? null, input.description !== undefined, input.description ?? null,
+          input.interactionDirection !== undefined, input.interactionDirection ?? null,
           input.ownerMembershipId !== undefined, input.ownerMembershipId ?? null,
           input.priority ?? null, dueAt, input.isNextAction ?? null,
           activityId, workspaceId, input.version,
@@ -180,6 +190,23 @@ export class CrmActivitiesService {
         [input.outcome ?? null, activityId, workspaceId, input.version],
       );
       const response = this.mapActivity(result.rows[0] as Record<string, unknown>);
+      const isGeneratedResponseTask = Boolean(before.sla_instance_id);
+      const isOutboundHumanInteraction = ["call", "email", "whatsapp", "sms", "portal"].includes(String(before.type))
+        && before.interaction_direction === "outbound";
+      if (before.lead_id && (isGeneratedResponseTask || isOutboundHumanInteraction)) {
+        await this.slas.recordFirstResponse(client, workspaceId, String(before.lead_id), {
+          sourceType: "activity",
+          sourceId: activityId,
+          actorUserId: actorUser.userId,
+          respondedAt: new Date(String(result.rows[0].completed_at)),
+          details: {
+            activityType: before.type,
+            interactionDirection: before.interaction_direction ?? null,
+            outcome: input.outcome ?? null,
+            attestation: isGeneratedResponseTask ? "completed_response_task" : "completed_outbound_interaction",
+          },
+        });
+      }
       if (before.is_next_action) await this.syncParentNextAction(client, workspaceId, response);
       await this.touchLead(client, workspaceId, activityId);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.activity.completed.v1", entityType: "crm_activity", entityId: activityId, before: this.mapActivity(before), after: response });
@@ -319,7 +346,13 @@ export class CrmActivitiesService {
   }
 
   private mapActivity(row: Record<string, unknown>) {
-    return { id: row.id, partyId: row.party_id, leadId: row.lead_id, opportunityId: row.opportunity_id, type: row.type, status: row.status, title: row.title, description: row.description, ownerMembershipId: row.owner_membership_id, priority: row.priority, dueAt: row.due_at, completedAt: row.completed_at, completionOutcome: row.completion_outcome, isNextAction: row.is_next_action, customerVisible: row.customer_visible, version: Number(row.version) };
+    return { id: row.id, partyId: row.party_id, leadId: row.lead_id, opportunityId: row.opportunity_id, type: row.type, interactionDirection: row.interaction_direction, status: row.status, title: row.title, description: row.description, ownerMembershipId: row.owner_membership_id, priority: row.priority, dueAt: row.due_at, completedAt: row.completed_at, completionOutcome: row.completion_outcome, isNextAction: row.is_next_action, customerVisible: row.customer_visible, version: Number(row.version) };
+  }
+
+  private validateInteractionDirection(type: string, direction: string | null | undefined) {
+    if (direction && !["call", "email", "whatsapp", "sms", "portal"].includes(type)) {
+      throw new UnprocessableEntityException("Interaction direction is only valid for calls, email, WhatsApp, SMS, or portal messages");
+    }
   }
 
   private date(value: string | undefined, field: string): Date | null {

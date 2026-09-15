@@ -15,6 +15,13 @@ type SlaRow = {
   status: "active" | "warning" | "breached" | "paused" | "stopped";
   warning_at: Date;
   due_at: Date;
+  warned_at: Date | null;
+  breached_at: Date | null;
+  stopped_at: Date | null;
+  responded_at: Date | null;
+  response_source_type: "message" | "activity" | "lead_status" | null;
+  response_source_id: string | null;
+  response_actor_user_id: string | null;
   paused_at: Date | null;
   paused_from_status: "active" | "warning" | null;
   remaining_warning_minutes: number | null;
@@ -253,6 +260,127 @@ export class CrmSlaLifecycleService {
     );
     await this.recordTransition(client, workspaceId, before.id, "stopped", before.status, "stopped", reason, evidence, actorUserId, now);
     return stopped.rows[0];
+  }
+
+  async recordFirstResponse(
+    client: PoolClient,
+    workspaceId: string,
+    leadId: string,
+    input: {
+      sourceType: "message" | "activity" | "lead_status";
+      sourceId: string;
+      actorUserId: string;
+      respondedAt: Date;
+      details?: Record<string, unknown>;
+    },
+  ): Promise<{ instanceId: string; recorded: boolean; respondedAt: Date; reason?: string } | null> {
+    if (!(input.respondedAt instanceof Date) || !Number.isFinite(input.respondedAt.getTime())) {
+      throw new UnprocessableEntityException("Response evidence requires a valid timestamp");
+    }
+    if (input.respondedAt.getTime() > Date.now() + 5 * 60_000) {
+      throw new UnprocessableEntityException("Response evidence timestamp cannot be in the future");
+    }
+    await this.lock(client, workspaceId, leadId, "first_response");
+    const current = await client.query<SlaRow>(
+      `SELECT * FROM crm_sla_instances
+       WHERE workspace_id=$1 AND lead_id=$2 AND event_type='first_response'
+       ORDER BY cycle DESC LIMIT 1 FOR UPDATE`,
+      [workspaceId, leadId],
+    );
+    if (!current.rowCount) return null;
+    const before = current.rows[0];
+    const startedAt = new Date(before.started_at);
+    if (input.respondedAt < startedAt) {
+      return { instanceId: before.id, recorded: false, respondedAt: input.respondedAt, reason: "before_sla_start" };
+    }
+    if (before.responded_at && new Date(before.responded_at) <= input.respondedAt) {
+      return { instanceId: before.id, recorded: false, respondedAt: new Date(before.responded_at), reason: "existing_earlier_response" };
+    }
+    if (
+      !before.responded_at
+      && before.status === "stopped"
+      && (!before.stopped_at || input.respondedAt > new Date(before.stopped_at))
+    ) {
+      return { instanceId: before.id, recorded: false, respondedAt: input.respondedAt, reason: "after_sla_stopped" };
+    }
+    const actor = await client.query<{ id: string }>(
+      `SELECT id FROM users WHERE id=$1 FOR KEY SHARE`,
+      [input.actorUserId],
+    );
+    const persistedActorUserId = actor.rowCount ? input.actorUserId : null;
+
+    let effectiveFrom = before.status;
+    let warnedAt = before.warned_at;
+    let breachedAt = before.breached_at;
+    if (before.status !== "paused") {
+      const afterWarning = input.respondedAt >= new Date(before.warning_at);
+      const afterDeadline = input.respondedAt >= new Date(before.due_at);
+      warnedAt = afterWarning ? warnedAt ?? new Date(before.warning_at) : null;
+      breachedAt = afterDeadline ? breachedAt ?? new Date(before.due_at) : null;
+      if (before.status === "active" && afterWarning && !before.warned_at) {
+        await this.recordTransition(client, workspaceId, before.id, "warning", "active", "warning", "Response arrived after the SLA warning threshold", { warningAt: before.warning_at }, input.actorUserId, warnedAt as Date);
+        effectiveFrom = "warning";
+      }
+      if (["active", "warning"].includes(before.status) && afterDeadline && !before.breached_at) {
+        await this.recordTransition(client, workspaceId, before.id, "breached", effectiveFrom, "breached", "Response arrived after the SLA deadline", { dueAt: before.due_at }, input.actorUserId, breachedAt as Date);
+        effectiveFrom = "breached";
+      }
+    }
+
+    const isCorrection = Boolean(before.responded_at);
+    const evidence = {
+      ...(input.details ?? {}),
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      actorUserId: input.actorUserId,
+      actorUserAvailable: Boolean(persistedActorUserId),
+      respondedAt: input.respondedAt.toISOString(),
+      ...(isCorrection ? {
+        correction: true,
+        previousRespondedAt: new Date(before.responded_at as Date).toISOString(),
+        previousSourceType: before.response_source_type,
+        previousSourceId: before.response_source_id,
+      } : {}),
+    };
+    await client.query<SlaRow>(
+      `UPDATE crm_sla_instances SET status='stopped',
+         warned_at=$6,breached_at=$7,
+         stopped_at=CASE WHEN stopped_at IS NULL OR $3<stopped_at THEN $3 ELSE stopped_at END,
+         stop_reason='first_response_recorded',response_evidence=$4,
+         responded_at=$3,response_source_type=$5,response_source_id=$8,response_actor_user_id=$9,
+         paused_at=NULL,paused_from_status=NULL,remaining_warning_minutes=NULL,remaining_breach_minutes=NULL,
+         version=version+1,updated_at=now()
+       WHERE workspace_id=$1 AND id=$2 RETURNING *`,
+      [workspaceId, before.id, input.respondedAt, evidence, input.sourceType, warnedAt, breachedAt, input.sourceId, persistedActorUserId],
+    );
+    await this.recordTransition(
+      client,
+      workspaceId,
+      before.id,
+      "response_recorded",
+      effectiveFrom,
+      "stopped",
+      isCorrection ? "Earlier verified human first response recorded" : "Verified human first response recorded",
+      evidence,
+      persistedActorUserId,
+      input.respondedAt,
+    );
+    await client.query(
+      `UPDATE crm_activities SET status='completed',completed_at=COALESCE(completed_at,$3),
+         completion_outcome=COALESCE(completion_outcome,'First response recorded'),
+         is_next_action=false,version=version+1,updated_at=now()
+       WHERE workspace_id=$1 AND sla_instance_id=$2 AND status='pending'`,
+      [workspaceId, before.id, input.respondedAt],
+    );
+    await client.query(
+      `UPDATE crm_leads SET next_action_at=(
+         SELECT due_at FROM crm_activities
+         WHERE workspace_id=$1 AND lead_id=$2 AND status='pending' AND is_next_action
+         ORDER BY due_at NULLS LAST,id LIMIT 1
+       ) WHERE workspace_id=$1 AND id=$2`,
+      [workspaceId, leadId],
+    );
+    return { instanceId: before.id, recorded: true, respondedAt: input.respondedAt };
   }
 
   private snapshotSchedule(row: SlaRow): SlaSchedule {

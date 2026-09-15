@@ -5,11 +5,12 @@ import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { ApproveTemplateDto, ClaimNotificationJobsDto, CreateNotificationPolicyDto, CreateNotificationTemplateDto, EnqueueNotificationDto, NotificationPolicyStatusDto, NotificationResultDto, UpsertPreferenceDto } from "./dto/notifications.dto";
+import { CrmMessageReceiptService } from "../conversations/crm-message-receipt.service";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
 export class CrmNotificationsService {
-  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService) {}
+  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService()) {}
   templates(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client) => (await client.query(`SELECT id,code,channel,locale,version_number AS "versionNumber",status,subject_template AS "subjectTemplate",body_template AS "bodyTemplate",variables,provider_template_id AS "providerTemplateId",approved_at AS "approvedAt" FROM notification_templates WHERE workspace_id=$1 ORDER BY code,channel,locale,version_number DESC`, [workspaceId])).rows);
   }
@@ -155,7 +156,12 @@ export class CrmNotificationsService {
       const key = String(notification.rows[0].idempotency_key ?? "");
       const messageId = /^message:([0-9a-f-]{36})$/i.exec(key)?.[1];
       if (messageId && (finalStatus === "delivered" || finalStatus === "failed")) {
-        await client.query(`UPDATE crm_messages SET status=$1::crm_message_status,provider_message_id=COALESCE($2,provider_message_id),sent_at=CASE WHEN $1='sent' THEN now() ELSE sent_at END,failure_code=CASE WHEN $1='failed' THEN $3 ELSE NULL END,version=version+1,updated_at=now() WHERE workspace_id=$4 AND id=$5 AND direction='outbound'`, [finalStatus === "delivered" ? "sent" : "failed", input.providerMessageId ?? null, input.errorCode ?? null, input.workspaceId, messageId]);
+        await this.receipts.record(client, messageId, {
+          workspaceId: input.workspaceId,
+          status: finalStatus === "delivered" ? "sent" : "failed",
+          providerMessageId: input.providerMessageId,
+          failureCode: input.errorCode,
+        }, { ignoreMissing: true, ignoreNonOutbound: true });
       }
       if (finalStatus === "failed") await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "automation", action: "notification.delivery_failed.v1", entityType: "notification", entityId: notificationId, after: { ...result.rows[0], errorCode: input.errorCode, attempts: input.attempt } });
       return result.rows[0];

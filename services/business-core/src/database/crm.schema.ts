@@ -602,6 +602,10 @@ export const crmSlaInstances = pgTable(
     totalPausedMinutes: integer("total_paused_minutes").notNull().default(0),
     stopReason: varchar("stop_reason", { length: 120 }),
     responseEvidence: jsonb("response_evidence").$type<Record<string, unknown>>(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+    responseSourceType: varchar("response_source_type", { length: 30 }),
+    responseSourceId: uuid("response_source_id"),
+    responseActorUserId: uuid("response_actor_user_id").references(() => users.id, { onDelete: "set null" }),
     ...versionColumn,
     ...auditColumns,
   },
@@ -624,6 +628,13 @@ export const crmSlaInstances = pgTable(
       ${table.status} <> 'paused' AND ${table.pausedAt} IS NULL AND ${table.pausedFromStatus} IS NULL
       AND ${table.remainingWarningMinutes} IS NULL AND ${table.remainingBreachMinutes} IS NULL
     )`),
+    check("crm_sla_instances_response_source_type_check", sql`${table.responseSourceType} IS NULL OR ${table.responseSourceType} IN ('message','activity','lead_status')`),
+    check("crm_sla_instances_response_fields_check", sql`(
+      ${table.respondedAt} IS NULL AND ${table.responseSourceType} IS NULL AND ${table.responseSourceId} IS NULL AND ${table.responseActorUserId} IS NULL
+    ) OR (
+      ${table.respondedAt} IS NOT NULL AND ${table.responseSourceType} IS NOT NULL AND ${table.responseSourceId} IS NOT NULL
+    )`),
+    index("crm_sla_instances_response_reporting_idx").on(table.workspaceId, table.eventType, table.respondedAt).where(sql`${table.respondedAt} IS NOT NULL`),
   ],
 );
 
@@ -664,6 +675,7 @@ export const crmActivities = pgTable(
     leadId: uuid("lead_id").references(() => crmLeads.id, { onDelete: "cascade" }),
     opportunityId: uuid("opportunity_id"),
     slaInstanceId: uuid("sla_instance_id"),
+    interactionDirection: varchar("interaction_direction", { length: 20 }),
     type: crmActivityType("type").notNull(),
     status: crmActivityStatus("status").notNull().default("pending"),
     title: varchar("title", { length: 240 }).notNull(),
@@ -687,6 +699,8 @@ export const crmActivities = pgTable(
       foreignColumns: [crmSlaInstances.workspaceId, crmSlaInstances.id],
     }).onDelete("restrict"),
     uniqueIndex("crm_activities_sla_instance_uidx").on(table.workspaceId, table.slaInstanceId).where(sql`${table.slaInstanceId} IS NOT NULL`),
+    check("crm_activities_interaction_direction_check", sql`${table.interactionDirection} IS NULL OR ${table.interactionDirection} IN ('inbound','outbound','internal')`),
+    index("crm_activities_response_evidence_idx").on(table.workspaceId, table.leadId, table.interactionDirection, table.completedAt).where(sql`${table.status} = 'completed'`),
     index("crm_activities_owner_due_idx").on(table.workspaceId, table.ownerMembershipId, table.status, table.dueAt),
     index("crm_activities_lead_idx").on(table.workspaceId, table.leadId, table.createdAt),
     index("crm_activities_party_idx").on(table.workspaceId, table.partyId, table.createdAt),
@@ -763,6 +777,7 @@ export const crmMessages = pgTable(
     status: crmMessageStatus("status").notNull().default("draft"),
     senderType: varchar("sender_type", { length: 30 }).notNull(),
     senderId: uuid("sender_id"),
+    authorship: varchar("authorship", { length: 20 }).notNull().default("automation"),
     providerMessageId: varchar("provider_message_id", { length: 500 }),
     bodyText: text("body_text"),
     bodyHtml: text("body_html"),
@@ -777,6 +792,9 @@ export const crmMessages = pgTable(
   (table) => [
     index("crm_messages_conversation_idx").on(table.workspaceId, table.conversationId, table.createdAt),
     uniqueIndex("crm_messages_provider_uidx").on(table.workspaceId, table.providerMessageId),
+    check("crm_messages_authorship_check", sql`${table.authorship} IN ('human','automation','provider')`),
+    check("crm_messages_human_author_check", sql`${table.authorship} <> 'human' OR (${table.senderType} = 'user' AND ${table.senderId} IS NOT NULL)`),
+    index("crm_messages_response_evidence_idx").on(table.workspaceId, table.conversationId, table.direction, table.authorship, table.sentAt).where(sql`${table.direction} = 'outbound'`),
   ],
 );
 

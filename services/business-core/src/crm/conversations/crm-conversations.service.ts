@@ -6,6 +6,7 @@ import { DatabaseService } from "../../database/database.service";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmNotificationsService } from "../notifications/crm-notifications.service";
+import { CrmMessageReceiptService } from "./crm-message-receipt.service";
 import { decodeCursor, encodeCursor, normalizeEmail, normalizeLoosePhone, normalizeName, stableHash } from "../shared/crm-types";
 import { CreateConversationDto, CreateMessageDto, CreateSequenceDto, EnrollSequenceDto, ListConversationsQueryDto, MessageReceiptDto, ProviderInboundMessageDto, ProviderMessageReceiptDto, SequenceVersionDto, StopSequenceEnrollmentDto, UpdateSequenceDto, UpdateConversationDto } from "./dto/conversations.dto";
 
@@ -13,7 +14,13 @@ const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
 @Injectable()
 export class CrmConversationsService {
-  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly notifications: CrmNotificationsService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly access: WorkspaceAccessService,
+    private readonly events: CrmEventsService,
+    private readonly notifications: CrmNotificationsService,
+    private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(),
+  ) {}
 
   list(actor: RequestActor, workspaceId: string, query: ListConversationsQueryDto) {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client) => {
@@ -59,7 +66,7 @@ export class CrmConversationsService {
     return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
       const conversation = await this.requireConversation(client, workspaceId, conversationId, false);
       const messages = await client.query(
-        `SELECT id, direction, status, sender_type AS "senderType", sender_id AS "senderId",
+        `SELECT id, direction, status, authorship, sender_type AS "senderType", sender_id AS "senderId",
                 provider_message_id AS "providerMessageId", body_text AS "bodyText",
                 body_html AS "bodyHtml", sent_at AS "sentAt", delivered_at AS "deliveredAt",
                 read_at AS "readAt", failure_code AS "failureCode", metadata, version,
@@ -82,7 +89,7 @@ export class CrmConversationsService {
       const conversation = await this.requireConversation(client, workspaceId, conversationId, false);
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(cursor.id) || !Number.isFinite(Date.parse(cursor.value)))) throw new BadRequestException("Invalid message cursor");
-      const result = await client.query(`SELECT id,direction,status,sender_type AS "senderType",sender_id AS "senderId",body_text AS "bodyText",metadata,created_at AS "createdAt",failure_code AS "failureCode" FROM crm_messages WHERE workspace_id=$1 AND conversation_id=$2 AND ($6 <> 'whatsapp' OR direction <> 'internal') AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid)) ORDER BY created_at DESC,id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1, conversation.channel]);
+      const result = await client.query(`SELECT id,direction,status,authorship,sender_type AS "senderType",sender_id AS "senderId",body_text AS "bodyText",metadata,created_at AS "createdAt",failure_code AS "failureCode" FROM crm_messages WHERE workspace_id=$1 AND conversation_id=$2 AND ($6 <> 'whatsapp' OR direction <> 'internal') AND ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::uuid)) ORDER BY created_at DESC,id DESC LIMIT $5`, [workspaceId, conversationId, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1, conversation.channel]);
       const data = result.rows.slice(0, query.limit), oldest = data.at(-1);
       return { data: data.reverse(), nextCursor: result.rows.length > query.limit && oldest ? encodeCursor({ value: new Date(oldest.createdAt).toISOString(), id: oldest.id }) : null };
     });
@@ -216,25 +223,7 @@ export class CrmConversationsService {
   }
 
   private async recordReceiptWithClient(client: PoolClient, messageId: string, input: MessageReceiptDto) {
-      const before = await client.query<Record<string, unknown>>(`SELECT * FROM crm_messages WHERE id = $1 AND workspace_id = $2 FOR UPDATE`, [messageId, input.workspaceId]);
-      if (!before.rowCount) throw new NotFoundException("Message not found");
-      if (before.rows[0].direction !== "outbound") throw new ConflictException("Only outbound messages have provider receipts");
-      const ranks: Record<string, number> = { queued: 0, sent: 1, delivered: 2, read: 3, failed: 4 };
-      const current = String(before.rows[0].status);
-      if (input.status !== "failed" && (ranks[input.status] ?? 0) < (ranks[current] ?? 0)) return { ignored: true, reason: "stale_receipt" };
-      const result = await client.query(
-        `UPDATE crm_messages SET status = $1::crm_message_status,
-           provider_message_id = COALESCE($2, provider_message_id),
-           sent_at = CASE WHEN $1 = 'sent' THEN now() ELSE sent_at END,
-           delivered_at = CASE WHEN $1 = 'delivered' THEN now() ELSE delivered_at END,
-           read_at = CASE WHEN $1 = 'read' THEN now() ELSE read_at END,
-           failure_code = CASE WHEN $1 = 'failed' THEN $3 ELSE NULL END,
-           version = version + 1 WHERE id = $4 AND workspace_id = $5
-         RETURNING id, status, provider_message_id AS "providerMessageId", sent_at AS "sentAt",
-                   delivered_at AS "deliveredAt", read_at AS "readAt", failure_code AS "failureCode", version`,
-        [input.status, input.providerMessageId ?? null, input.failureCode ?? null, messageId, input.workspaceId],
-      );
-      return result.rows[0];
+    return this.receipts.record(client, messageId, input);
   }
 
   createSequence(actor: RequestActor, workspaceId: string, input: CreateSequenceDto) {
@@ -563,12 +552,25 @@ export class CrmConversationsService {
     const queued = input.direction === "outbound" && conversation.channel !== "internal";
     const inserted = await client.query(
         `INSERT INTO crm_messages
-          (id, workspace_id, conversation_id, direction, status, sender_type,
+          (id, workspace_id, conversation_id, direction, status, authorship, sender_type,
            sender_id, provider_message_id, body_text, body_html, metadata)
          VALUES ($1, $2, $3, $4::crm_message_direction, $5::crm_message_status,
-                 $6, $7, $8, $9, $10, $11)
+                 $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (workspace_id, provider_message_id) DO NOTHING RETURNING id`,
-        [messageId, workspaceId, conversationId, input.direction, queued ? "queued" : input.direction === "inbound" ? "delivered" : "sent", actorUserId ? "user" : "provider", actorUserId, input.providerMessageId ?? null, bodyText, bodyHtml, { ...input.metadata, ...(input.clientMessageId ? { clientMessageId: input.clientMessageId, requestHash } : {}) }],
+        [
+          messageId,
+          workspaceId,
+          conversationId,
+          input.direction,
+          queued ? "queued" : input.direction === "inbound" ? "delivered" : "sent",
+          actorUserId && source === "user" ? "human" : source === "integration" ? "provider" : "automation",
+          actorUserId ? "user" : source === "integration" ? "provider" : "system",
+          actorUserId,
+          input.providerMessageId ?? null,
+          bodyText,
+          bodyHtml,
+          { ...input.metadata, ...(input.clientMessageId ? { clientMessageId: input.clientMessageId, requestHash } : {}) },
+        ],
       );
     if (!inserted.rowCount) {
       const prior = await client.query(`SELECT id, status, conversation_id AS "conversationId", direction FROM crm_messages WHERE workspace_id = $1 AND provider_message_id = $2`, [workspaceId, input.providerMessageId]);
@@ -585,7 +587,6 @@ export class CrmConversationsService {
     );
     if (input.direction === "inbound") {
       await client.query(`UPDATE crm_sequence_enrollments SET status = 'exited', exit_reason = 'customer_replied', exited_at = now(), next_run_at = NULL, version = version + 1 WHERE workspace_id = $1 AND party_id = $2 AND status = 'active'`, [workspaceId, conversation.party_id]);
-      if (conversation.lead_id) await client.query(`UPDATE crm_sla_instances SET status = 'stopped', stopped_at = now(), version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND status = 'active'`, [workspaceId, conversation.lead_id]);
     }
     const response = { id: messageId, conversationId, direction: input.direction, status: queued ? "queued" : input.direction === "inbound" ? "delivered" : "sent", bodyText, bodyHtml };
     if (queued) {

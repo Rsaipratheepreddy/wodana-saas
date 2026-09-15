@@ -10,6 +10,7 @@ import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
+import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -32,6 +33,7 @@ export class CrmOpportunitiesService {
   constructor(
     private readonly access: WorkspaceAccessService,
     private readonly events: CrmEventsService,
+    private readonly slas: CrmSlaLifecycleService = new CrmSlaLifecycleService(),
   ) {}
 
   listPipelines(actor: RequestActor, workspaceId: string) {
@@ -245,7 +247,13 @@ export class CrmOpportunitiesService {
       );
       if (!updated.rowCount) throw new ConflictException("Lead changed; reload and try again");
       await client.query(`UPDATE crm_enquiries SET status = 'qualified', closed_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.enquiry_id]);
-      await client.query(`UPDATE crm_sla_instances SET status = 'stopped', stopped_at = now(), version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND status IN ('active', 'warning', 'breached')`, [workspaceId, leadId]);
+      await this.slas.recordFirstResponse(client, workspaceId, leadId, {
+        sourceType: "lead_status",
+        sourceId: leadId,
+        actorUserId: actorUser.userId,
+        respondedAt: new Date(),
+        details: { fromStatus: row.status, toStatus: "qualified", opportunityId: opportunity.id },
+      });
       await client.query(`UPDATE crm_activities SET opportunity_id = $3, is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND opportunity_id IS NULL`, [workspaceId, leadId, opportunity.id]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.qualified.v1", entityType: "crm_lead", entityId: leadId, before: row, after: updated.rows[0] as Row });
       return this.presentOpportunity(opportunity, permissions.includes("crm.opportunities.sensitive_values"));

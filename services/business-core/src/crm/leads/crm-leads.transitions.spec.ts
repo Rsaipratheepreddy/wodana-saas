@@ -18,6 +18,7 @@ function setup(status: string, options: { converted?: boolean; unassigned?: bool
     resumeFirstResponse: vi.fn().mockResolvedValue(null),
     stopFirstResponse: vi.fn().mockResolvedValue(null),
     startFirstResponse: vi.fn().mockResolvedValue(null),
+    recordFirstResponse: vi.fn().mockResolvedValue(null),
   };
   const service = new CrmLeadsService({} as never, access as never, events as never, slas as never);
   return { service, query, events, access, slas };
@@ -79,20 +80,22 @@ describe("CRM lead status moves", () => {
     expect(resumed.slas.resumeFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", "user", "Lead reopened from pause");
   });
 
-  it("stops on a response-bearing status and creates a new cycle only after reopening a closed lead", async () => {
+  it("records verified status evidence and creates a new cycle only after reopening a closed lead", async () => {
     const connected = setup("new");
     await connected.service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" });
-    expect(connected.slas.stopFirstResponse).toHaveBeenCalledWith(
-      expect.anything(), "workspace", "lead", "user", "lead_status_connected",
-      { type: "lead_status", fromStatus: "new", toStatus: "connected" },
-    );
+    expect(connected.slas.recordFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", expect.objectContaining({
+      sourceType: "lead_status",
+      sourceId: "lead",
+      actorUserId: "user",
+      details: { fromStatus: "new", toStatus: "connected" },
+    }));
 
     const reopened = setup("disqualified");
     await reopened.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" });
     expect(reopened.slas.startFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", expect.objectContaining({ newCycle: true }));
   });
 
-  it("keeps the generated response task consistent across pause, resume, and stop", async () => {
+  it("keeps the generated response task consistent across pause, resume, and non-response stop", async () => {
     const paused = setup("new");
     paused.slas.pauseFirstResponse.mockResolvedValue({ id: "sla" });
     await paused.service.transition({} as never, "workspace", "lead", { version: 5, status: "paused", reason: "Waiting" });
@@ -105,7 +108,7 @@ describe("CRM lead status moves", () => {
 
     const stopped = setup("new");
     stopped.slas.stopFirstResponse.mockResolvedValue({ id: "sla" });
-    await stopped.service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" });
-    expect(stopped.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("completion_outcome") && params?.[2] === "completed")).toBe(true);
+    await stopped.service.transition({} as never, "workspace", "lead", { version: 5, status: "disqualified", reason: "Not a fit" });
+    expect(stopped.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("completion_outcome") && params?.[2] === "cancelled")).toBe(true);
   });
 });

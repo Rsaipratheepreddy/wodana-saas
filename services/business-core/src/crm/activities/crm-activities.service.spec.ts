@@ -28,3 +28,81 @@ describe("Follow-up client context", () => {
     expect(sql).not.toContain("due_at IS NOT NULL");
   });
 });
+
+describe("CRM activity response evidence", () => {
+  const setup = (overrides: Record<string, unknown> = {}) => {
+    const completedAt = new Date("2026-09-15T08:00:00.000Z");
+    const before = {
+      id: "activity",
+      workspace_id: "workspace",
+      lead_id: "lead",
+      opportunity_id: null,
+      sla_instance_id: null,
+      type: "call",
+      interaction_direction: "outbound",
+      status: "pending",
+      title: "Call client",
+      is_next_action: false,
+      version: 2,
+      ...overrides,
+    };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT * FROM crm_activities")) return { rows: [before], rowCount: 1 };
+      if (sql.includes("UPDATE crm_activities SET status = 'completed'")) {
+        return { rows: [{ ...before, status: "completed", completed_at: completedAt, version: 3 }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 1 };
+    });
+    const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })) };
+    const events = { record: vi.fn().mockResolvedValue(undefined) };
+    const slas = { recordFirstResponse: vi.fn().mockResolvedValue(null) };
+    const service = new CrmActivitiesService(access as never, events as never, slas as never);
+    return { service, query, slas, completedAt };
+  };
+
+  it("records a completed outbound human interaction as verified response evidence", async () => {
+    const { service, slas, completedAt } = setup();
+    await service.complete({} as never, "workspace", "activity", { version: 2, outcome: "Spoke to client" });
+    expect(slas.recordFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", {
+      sourceType: "activity",
+      sourceId: "activity",
+      actorUserId: "user",
+      respondedAt: completedAt,
+      details: {
+        activityType: "call",
+        interactionDirection: "outbound",
+        outcome: "Spoke to client",
+        attestation: "completed_outbound_interaction",
+      },
+    });
+  });
+
+  it("accepts completion of the SLA-generated response task as an explicit human attestation", async () => {
+    const { service, slas } = setup({ type: "task", interaction_direction: null, sla_instance_id: "sla" });
+    await service.complete({} as never, "workspace", "activity", { version: 2 });
+    expect(slas.recordFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", expect.objectContaining({
+      details: expect.objectContaining({ attestation: "completed_response_task" }),
+    }));
+  });
+
+  it.each([
+    ["call", "inbound"],
+    ["email", "internal"],
+    ["meeting", null],
+    ["task", null],
+  ])("does not treat a %s/%s completion as an outbound response", async (type, interactionDirection) => {
+    const { service, slas } = setup({ type, interaction_direction: interactionDirection });
+    await service.complete({} as never, "workspace", "activity", { version: 2 });
+    expect(slas.recordFirstResponse).not.toHaveBeenCalled();
+  });
+
+  it("rejects interaction directions on non-communication activity types", async () => {
+    const { service } = setup();
+    await expect(service.create({} as never, "workspace", {
+      partyId: "party",
+      type: "task",
+      interactionDirection: "outbound",
+      title: "Follow up",
+    })).rejects.toThrow("Interaction direction is only valid");
+  });
+});

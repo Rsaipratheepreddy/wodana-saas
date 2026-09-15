@@ -48,6 +48,7 @@ export class CreateActivityDto {
   @IsOptional() @IsUUID() opportunityId?: string;
   @IsIn(["task", "note", "call", "meeting", "email", "whatsapp", "sms", "portal", "other"])
   type!: string;
+  @IsOptional() @IsIn(["inbound", "outbound", "internal"]) interactionDirection?: string;
   @IsString() @IsNotEmpty() @MaxLength(240) title!: string;
   @IsOptional() @IsString() @MaxLength(10_000) description?: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string;
@@ -61,6 +62,7 @@ export class UpdateActivityDto {
   @IsInt() @Min(1) version!: number;
   @IsOptional() @IsString() @MaxLength(240) title?: string;
   @IsOptional() @IsString() @MaxLength(10_000) description?: string | null;
+  @IsOptional() @IsIn(["inbound", "outbound", "internal"]) interactionDirection?: string | null;
   @IsOptional() @IsUUID() ownerMembershipId?: string | null;
   @IsOptional() @IsIn(["low", "normal", "high", "urgent"]) priority?: string;
   @IsOptional() @IsString() dueAt?: string | null;

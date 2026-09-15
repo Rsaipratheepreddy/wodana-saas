@@ -701,7 +701,15 @@ export class CrmLeadsService {
           );
           if (makeNextAction) await client.query(`UPDATE crm_leads SET next_action_at=$3 WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId, resumed.warning_at]);
         }
-      } else if (["connected", "nurturing", "qualified", "disqualified"].includes(input.status)) {
+      } else if (["connected", "nurturing", "qualified"].includes(input.status)) {
+        await this.slas.recordFirstResponse(client, workspaceId, leadId, {
+          sourceType: "lead_status",
+          sourceId: leadId,
+          actorUserId: actorUser.userId,
+          respondedAt: new Date(),
+          details: { fromStatus: before.status, toStatus: input.status },
+        });
+      } else if (input.status === "disqualified") {
         const stopped = await this.slas.stopFirstResponse(client, workspaceId, leadId, actorUser.userId, `lead_status_${input.status}`, {
           type: "lead_status",
           fromStatus: before.status,

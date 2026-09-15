@@ -13,6 +13,6 @@ import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
   imports: [WorkspacesModule],
   controllers: [RequirementNoteAssetsController, RequirementNotesController, CrmLeadsController, InternalCrmSlasController],
   providers: [BriefService, BrandAssetStorageService, RequirementNotesService, CrmSlaLifecycleService, CrmLeadsService, InternalServiceGuard],
-  exports: [CrmLeadsService],
+  exports: [CrmLeadsService, CrmSlaLifecycleService],
 })
 export class CrmLeadsModule {}
