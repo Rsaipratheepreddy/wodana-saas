@@ -18,6 +18,9 @@ describe('release image and object storage compatibility', () => {
     const stored = await service.read('workspace/report/photo.webp');
     expect(stored.body).toEqual(preview);
     expect(await sharp(stored.body).metadata()).toMatchObject({ width: 10, height: 5, format: 'webp' });
+    await service.remove('workspace/report/photo.webp');
+    await expect(service.read('workspace/report/photo.webp')).rejects.toThrow();
+    await service.remove('workspace/report/photo.webp');
     await expect(service.read('../private-file')).rejects.toThrow('Invalid object key');
   });
   it('signs an upload for the configured public storage endpoint without contacting the provider', async () => {

@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -8,7 +9,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 
@@ -116,6 +117,17 @@ export class BrandAssetStorageService {
     }
     const metadata = await stat(this.localPath(objectKey));
     return { byteSize: metadata.size };
+  }
+
+  async remove(objectKey: string): Promise<void> {
+    if (this.usesObjectStorage) {
+      await this.dataClient!.send(new DeleteObjectCommand({
+        Bucket: this.bucket!,
+        Key: objectKey,
+      }));
+      return;
+    }
+    await rm(this.localPath(objectKey), { force: true });
   }
 
   createLocalReadStream(objectKey: string) {

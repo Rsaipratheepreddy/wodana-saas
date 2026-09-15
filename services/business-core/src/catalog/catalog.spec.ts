@@ -41,6 +41,13 @@ describe("starter catalog integrity",()=>{
   expect(()=>validateCatalogRecord({...room,kind:"unit",dimension:"pack",baseFactor:32})).toThrow("Pack conversions");
   expect(()=>validateCatalogRecord({...material,specificationStatus:"reference",sources:[]})).toThrow("source");
  });
+ it("accepts reviewable sellable records without changing existing catalog defaults",async()=>{
+  const work=structuredClone(CATALOG_STARTER.find(r=>r.kind==="work")!);
+  const reviewed={...work,commerce:{pricingMode:"on_request" as const},provenance:{namespace:"xlsx:palm-living",sourceKey:"chairs/aria",sourceFingerprint:"a".repeat(64),reviewStatus:"needs_review" as const,sourceFileName:"Core Collection.xlsx",sourceSheet:"Chairs",sourceRow:7}};
+  expect(await validate(plainToInstance(SaveCatalogRecordDto,reviewed),{whitelist:true,forbidNonWhitelisted:true})).toEqual([]);
+  expect(()=>validateCatalogRecord(reviewed)).not.toThrow();
+  expect(()=>validateCatalogRecord({...room,commerce:{pricingMode:"fixed"}})).toThrow("sellable");
+ });
 });
 describe("factory and on-site master structure",()=>{
  const row=(code:string)=>structuredClone(CATALOG_STARTER.find(r=>r.code===code)!);
@@ -108,6 +115,25 @@ describe("workspace catalog writes",()=>{
   const group=CATALOG_STARTER.find(r=>r.kind==="record_group")!;
   const {service,query}=setup(null,[{id:group.id,kind:"record_group",archived:false,catalogId:"other",content:{}}]);
   await expect(service.save(actor,"workspace",{...room,links:[{relation:"record_group",targetId:group.id}]})).rejects.toThrow("same catalog");
+  expect(query.mock.calls.some(([sql])=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
+ });
+ it("reserves a reviewed source identity for one record in each catalog",async()=>{
+  const work={...structuredClone(CATALOG_STARTER.find(r=>r.kind==="work")!),catalogId,commerce:{pricingMode:"fixed" as const},provenance:{namespace:"xlsx:client",sourceKey:"chairs/aria",sourceFingerprint:"b".repeat(64),reviewStatus:"needs_review" as const}};
+  const {service,query}=setup();
+  const original=query.getMockImplementation()!;
+  query.mockImplementation(async(sql:string)=>sql.includes("content->'provenance'->>'sourceKey'")?{rows:[{}],rowCount:1}:original(sql));
+  await expect(service.save(actor,"workspace",work)).rejects.toThrow("source row");
+  expect(query.mock.calls.some(([sql])=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
+ });
+ it("rejects duplicate source identities inside one reviewed import batch",async()=>{
+  const template=structuredClone(CATALOG_STARTER.find(r=>r.kind==="work")!);
+  const provenance={namespace:"xlsx:client",sourceKey:"chairs/aria",sourceFingerprint:"c".repeat(64),reviewStatus:"needs_review" as const};
+  const records=[
+   {...template,id:"10000000-0000-4000-a000-000000000001",catalogId,version:0,code:"IMPORT_ONE",name:"Imported one",provenance},
+   {...template,id:"10000000-0000-4000-a000-000000000002",catalogId,version:0,code:"IMPORT_TWO",name:"Imported two",provenance},
+  ];
+  const {service,query}=setup();
+  await expect(service.importRecords(actor,"workspace",{catalogId,dryRun:true,records,references:[]})).rejects.toThrow("Duplicate import source key");
   expect(query.mock.calls.some(([sql])=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
  });
  it("validates the entire bulk selection before changing any membership",async()=>{

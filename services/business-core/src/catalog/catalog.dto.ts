@@ -29,6 +29,20 @@ export class CatalogLinkDto {
   @IsIn([...catalogKinds,"parent","related"]) relation: string;
   @IsUUID() targetId: string;
 }
+export class CatalogCommerceDto {
+  @IsIn(["unpriced", "fixed", "on_request"])
+  pricingMode: "unpriced" | "fixed" | "on_request";
+}
+export class CatalogProvenanceDto {
+  @Transform(trim) @Matches(/^[a-z0-9][a-z0-9._:-]{0,119}$/) namespace: string;
+  @Transform(trim) @IsString() @Length(1, 300) sourceKey: string;
+  @Matches(/^[0-9a-f]{64}$/) sourceFingerprint: string;
+  @IsIn(["needs_review", "approved", "rejected"])
+  reviewStatus: "needs_review" | "approved" | "rejected";
+  @IsOptional() @Transform(trim) @IsString() @Length(1, 240) sourceFileName?: string;
+  @IsOptional() @Transform(trim) @IsString() @Length(1, 120) sourceSheet?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(1_000_000) sourceRow?: number;
+}
 export class SaveCatalogRecordDto {
   @IsOptional() @IsUUID() catalogId?:string;
   @IsUUID() id: string;
@@ -47,6 +61,8 @@ export class SaveCatalogRecordDto {
   @IsIn(["none", "length", "area", "volume", "mass", "count", "time", "pack"]) dimension: string;
   @IsOptional() @IsNumber() @Min(0.000000001) @Max(1000000000) baseFactor?: number;
   @IsOptional() @IsObject() configuration?: Record<string,string|number>;
+  @IsOptional() @ValidateNested() @Type(() => CatalogCommerceDto) commerce?: CatalogCommerceDto;
+  @IsOptional() @ValidateNested() @Type(() => CatalogProvenanceDto) provenance?: CatalogProvenanceDto;
 }
 export class ArchiveCatalogDto {
   @IsInt() @Min(1) version: number;
@@ -109,4 +125,21 @@ export class ImportCatalogDto {
   records: SaveCatalogRecordDto[];
   @IsArray() @ArrayMaxSize(5000) @ValidateNested({each:true}) @Type(()=>CatalogVersionDto)
   references: CatalogVersionDto[];
+}
+
+export class CatalogAssetUploadQueryDto {
+  @IsIn(["primary_image", "gallery_image", "technical_drawing"])
+  role: "primary_image" | "gallery_image" | "technical_drawing" = "gallery_image";
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(300) altText?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1_000_000) sortOrder?: number;
+}
+
+export class UpdateCatalogAssetDto {
+  @IsInt() @Min(1) version: number;
+  @IsOptional() @IsIn(["primary_image", "gallery_image", "technical_drawing"])
+  role?: "primary_image" | "gallery_image" | "technical_drawing";
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(300) altText?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(1_000_000) sortOrder?: number;
+  @IsOptional() @IsBoolean() archived?: boolean;
+  @IsOptional() @Transform(trim) @IsString() @Length(1, 500) archivedReason?: string;
 }

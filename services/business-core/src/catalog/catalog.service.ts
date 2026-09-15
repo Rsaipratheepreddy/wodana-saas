@@ -79,6 +79,17 @@ export function validateCatalogRecord(input: SaveCatalogRecordDto) {
   const definition = catalogStructure[input.kind];
   if (!definition)
     throw new BadRequestException("Choose a supported master group.");
+  if (
+    input.commerce &&
+    !["work", "variant", "material", "service", "sku", "hardware", "consumable", "custom"].includes(input.kind)
+  )
+    throw new BadRequestException(
+      "Pricing mode belongs to a sellable catalog item or variant.",
+    );
+  if (input.provenance && input.kind === "catalog_group")
+    throw new BadRequestException(
+      "Import provenance belongs to catalog records, not the catalog itself.",
+    );
   if (!["material", "sku"].includes(input.kind) && input.sizes.length)
     throw new BadRequestException("Size options belong to materials or SKUs.");
   if (
@@ -302,7 +313,7 @@ export class CatalogService {
       if (!input.records.length || input.records.length > 500) throw new BadRequestException("Import between 1 and 500 records at a time.");
       const existing = (await client.query<Row>(select, [workspaceId])).rows;
       const additions: SaveCatalogRecordDto[] = [];
-      const ids = new Set<string>(), codes = new Set<string>(), names = new Set<string>();
+      const ids = new Set<string>(), codes = new Set<string>(), names = new Set<string>(), sourceKeys = new Set<string>();
       for (const row of input.records) {
         if (row.catalogId !== input.catalogId || row.kind === "catalog_group" || row.version !== 0)
           throw new BadRequestException("Imports add new records to the chosen catalog. Existing records cannot be overwritten.");
@@ -312,6 +323,11 @@ export class CatalogService {
         const code = `${row.kind}:${row.code}`, name = `${row.kind}:${row.name.toLowerCase()}`;
         if (ids.has(row.id) || codes.has(code) || names.has(name)) throw new BadRequestException(`Duplicate import record: ${row.name}.`);
         ids.add(row.id); codes.add(code); names.add(name);
+        if (row.provenance) {
+          const sourceKey = `${row.provenance.namespace}:${row.provenance.sourceKey}`;
+          if (sourceKeys.has(sourceKey)) throw new BadRequestException(`Duplicate import source key: ${row.name}.`);
+          sourceKeys.add(sourceKey);
+        }
         const same = existing.find(r=>r.id===row.id);
         if (same) {
           if (same.archived || same.catalogId!==input.catalogId || same.kind!==row.kind || same.code!==row.code || same.name!==row.name || canonical(same.content)!==canonical(writable(row)))
@@ -320,6 +336,11 @@ export class CatalogService {
         }
         if (existing.some(r=>r.catalogId===input.catalogId&&r.kind===row.kind&&(r.code===row.code||r.name.toLowerCase()===row.name.toLowerCase())))
           throw new ConflictException(`${row.name} already exists. Reload records and review this import again.`);
+        if (row.provenance && existing.some(r => {
+          const provenance = r.content.provenance as SaveCatalogRecordDto["provenance"] | undefined;
+          return r.catalogId === input.catalogId && provenance?.namespace === row.provenance!.namespace && provenance.sourceKey === row.provenance!.sourceKey;
+        }))
+          throw new ConflictException(`${row.name} has already been reviewed from this source. Reload records and review this import again.`);
         additions.push(row);
       }
       const references = new Map(input.references.map(r=>[r.id,r.version]));
@@ -503,6 +524,25 @@ export class CatalogService {
           throw new ConflictException(
             "This name or code already exists, including archived records. Use the existing record or a distinct product name.",
           );
+        if (input.provenance) {
+          const duplicateSource = await client.query(
+            `SELECT 1 FROM workspace_catalog_records
+             WHERE workspace_id=$1 AND catalog_id=$2 AND id<>$3
+               AND content->'provenance'->>'namespace'=$4
+               AND content->'provenance'->>'sourceKey'=$5`,
+            [
+              workspaceId,
+              input.catalogId,
+              input.id,
+              input.provenance.namespace,
+              input.provenance.sourceKey,
+            ],
+          );
+          if (duplicateSource.rowCount)
+            throw new ConflictException(
+              "This source row is already linked to another catalog record.",
+            );
+        }
         await this.validateLinks(client, workspaceId, input);
         await client.query(
           `INSERT INTO workspace_catalog_records(workspace_id,id,kind,code,name,content,created_by,updated_by,catalog_id) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8)
