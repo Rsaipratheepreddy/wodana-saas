@@ -23,9 +23,13 @@ import { CommercialService } from "./commercial.service";
 import { ClientPortalService } from "./client-portal.service";
 import { CatalogSellingPriceService } from "./catalog-selling-price.service";
 import { PreProjectsModule } from "../pre-projects/pre-projects.module";
+import { QuotationComposerService } from "./quotation-composer.service";
 @Controller("workspaces/:workspaceId/commercial")
 export class CommercialController {
-  constructor(private readonly service: CommercialService) {}
+  constructor(
+    private readonly service: CommercialService,
+    private readonly composer: QuotationComposerService,
+  ) {}
   @Get("quotation-templates") quotationTemplates(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string) { return this.service.quotationTemplates(a, w); }
   @Get("quotation-templates/:templateId") prepareQuotationTemplate(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("templateId", ParseUUIDPipe) id: string) { return this.service.prepareQuotationTemplate(a, w, id); }
   @Put("quotation-templates") saveQuotationTemplate(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Body() b: unknown) { return this.service.saveQuotationTemplate(a, w, b); }
@@ -53,6 +57,40 @@ export class CommercialController {
     @Param("caseId", ParseUUIDPipe) c: string,
   ) {
     return this.service.catalogContext(a, w, c);
+  }
+  @Get("cases/:caseId/quotation-composer") quotationComposer(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string,
+    @Query("quoteId", ParseUUIDPipe) quoteId: string,
+  ) {
+    return this.composer.get(actor, workspaceId, caseId, quoteId);
+  }
+  @Post("cases/:caseId/quotation-proposals") createQuotationProposal(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string,
+    @Body() body: unknown,
+  ) {
+    return this.composer.create(actor, workspaceId, caseId, body);
+  }
+  @Post("cases/:caseId/quotation-proposals/:runId/apply") applyQuotationProposal(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string,
+    @Param("runId", ParseUUIDPipe) runId: string,
+    @Body() body: unknown,
+  ) {
+    return this.composer.apply(actor, workspaceId, caseId, runId, body);
+  }
+  @Post("cases/:caseId/quotation-proposals/:runId/dismiss") dismissQuotationProposal(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string,
+    @Param("runId", ParseUUIDPipe) runId: string,
+    @Body() body: unknown,
+  ) {
+    return this.composer.dismiss(actor, workspaceId, caseId, runId, body);
   }
   @Get("portal-settings") settings(
     @CurrentActor() actor: RequestActor,
@@ -141,6 +179,6 @@ export class InternalAccountingReconciliationController {
 @Module({
   imports: [WorkspacesModule, PreProjectsModule],
   controllers: [InternalAccountingReconciliationController,CommercialController, ClientPortalController],
-  providers: [AccountingReconciliationService,InternalServiceGuard,CatalogSellingPriceService,CommercialService, ClientPortalService, BrandAssetStorageService],
+  providers: [AccountingReconciliationService,InternalServiceGuard,CatalogSellingPriceService,CommercialService,QuotationComposerService,ClientPortalService,BrandAssetStorageService],
 })
 export class CommercialModule {}

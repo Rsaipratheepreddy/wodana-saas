@@ -765,6 +765,46 @@ async function commercial(action, body = {}, headers = owner) {
 
 quoteId = (await commercial("create")).data.quotes[0].id;
 let commercialState = await request(commercialPath);
+const composerPath = `${commercialPath}/quotation-proposals`;
+const composerRequestId = randomUUID();
+const composerInput = {
+  requestId: composerRequestId,
+  quoteId,
+  revision: commercialState.data.revision,
+  mode: "scope",
+};
+const scopeProposal = await request(composerPath, { body: composerInput });
+assert.equal(scopeProposal.run.proposal.items.length, 1);
+assert.equal(scopeProposal.run.proposal.coverage.linkedSourceIds[0], scopeId);
+assert.equal(scopeProposal.run.duplicates.length, 1);
+const proposalReplay = await request(composerPath, { body: composerInput });
+assert.equal(proposalReplay.replayed, true);
+assert.equal(proposalReplay.run.id, scopeProposal.run.id);
+const applyRequestId = randomUUID();
+const applyInput = {
+  requestId: applyRequestId,
+  revision: commercialState.data.revision,
+  selectedItemIds: [scopeProposal.run.proposal.items[0].id],
+};
+const appliedProposal = await request(
+  `${composerPath}/${scopeProposal.run.id}/apply`,
+  { body: applyInput },
+);
+assert.equal(appliedProposal.addedItemIds.length, 0);
+assert.equal(appliedProposal.skippedDuplicateItemIds.length, 1);
+const appliedReplay = await request(
+  `${composerPath}/${scopeProposal.run.id}/apply`,
+  { body: applyInput },
+);
+assert.equal(appliedReplay.replayed, true);
+assert.equal(appliedReplay.revision, appliedProposal.revision);
+const composerState = await request(
+  `${commercialPath}/quotation-composer?quoteId=${quoteId}`,
+);
+assert.equal(composerState.runs[0].status, "applied");
+assert.equal(composerState.runs[0].stale, false);
+assert.equal(composerState.definition.id, replacementBaseline.id);
+commercialState = await request(commercialPath);
 const quote = commercialState.data.quotes.find((candidate) => candidate.id === quoteId);
 assert.equal(quote.lines.length, 1);
 assert.equal(quote.lines[0].scopeId, scopeId);
@@ -1258,6 +1298,9 @@ process.stdout.write(
         definitionSupersessionSafe: true,
         definitionClientDecisionReplaySafe: true,
         definitionLineagePreserved: true,
+        quotationProposalReplaySafe: true,
+        quotationProposalDuplicateSafe: true,
+        quotationProposalDefinitionBound: true,
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,
         projectReleaseReplaySafe: true,

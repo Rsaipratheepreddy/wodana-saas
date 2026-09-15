@@ -33,8 +33,10 @@ database or port names.
     a deterministic state hash.
 11. Edit the controlled specification, prove that the confirmed baseline becomes superseded,
     publish and confirm its replacement, and restore readiness without modifying history.
-12. Import Preparation into a quotation, set selling terms, pass the same readiness gate and internal
-    approval, issue through the enabled client portal, and record OTP-backed client acceptance.
+12. Import Preparation into a quotation, create and replay a Definition-bound quotation proposal,
+    apply and replay it without duplicating imported scope, then set selling terms, pass the same
+    readiness gate and internal approval, issue through the enabled client portal, and record
+    OTP-backed client acceptance.
 13. Record and execute the agreement, submit owner review, approve it with the second owner, create
     the Deal File, and release the delivery project.
 14. Verify preserved accepted hash, Definition Baseline, scope/specification versions, selling rate
@@ -50,5 +52,5 @@ by the migration runner when preparing the disposable database.
 ## Result
 
 The completed run passed and returned concrete Intake, Enquiry, Lead, Opportunity, Preparation,
-Definition Baseline, Quotation, Deal File and Project identities. A post-run check confirmed no
+Definition Baseline, Quotation Proposal, Quotation, Deal File and Project identities. A post-run check confirmed no
 test API process, temporary database, or temporary file root remained.

@@ -512,6 +512,13 @@
       "when": 1789455600000,
       "tag": "0073_pre_project_definition_baselines",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789459200000,
+      "tag": "0074_quotation_proposal_runs",
+      "breakpoints": true
     }
   ]
 }

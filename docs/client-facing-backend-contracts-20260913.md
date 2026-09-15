@@ -83,6 +83,21 @@ Each existing project row now also contains:
 Access remains tenant-scoped. A member without `projects.manage` only receives assigned projects.
 Incomplete historical execution JSON is treated as empty summary data instead of breaking the list.
 
+## Smart quotation composer
+
+The quotation composer is available through:
+
+- `GET /api/v1/workspaces/:workspaceId/commercial/cases/:caseId/quotation-composer?quoteId=:quoteId`
+- `POST /api/v1/workspaces/:workspaceId/commercial/cases/:caseId/quotation-proposals`
+- `POST /api/v1/workspaces/:workspaceId/commercial/cases/:caseId/quotation-proposals/:runId/apply`
+- `POST /api/v1/workspaces/:workspaceId/commercial/cases/:caseId/quotation-proposals/:runId/dismiss`
+
+It returns the current Definition context, readiness, revision comparison and proposal history.
+Confirmed-scope and assistant proposals are stored as reviewable runs. Apply is selective,
+idempotent, duplicate-safe and atomic. The API rejects stale quotation, Definition, catalog, and
+selling-price evidence. It never accepts AI-generated price or cost values. Existing direct,
+template and blank quotation flows are unchanged.
+
 ## Accepted commercial handoff
 
 Starting execution recomputes the accepted quotation hash and requires it to match both the approved
