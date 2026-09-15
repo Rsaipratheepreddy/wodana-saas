@@ -1,5 +1,9 @@
-import { BadRequestException } from "@nestjs/common";
-import type { ProjectRole } from "./execution.types";
+import { BadRequestException, ConflictException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import type {
+  ProjectData,
+  ProjectRole,
+} from "./execution.types";
 
 export const PROJECT_WORKFLOW_PHASES = [
   "planning",
@@ -60,6 +64,37 @@ export type ProjectWorkflowTemplate = ProjectWorkflowTemplateInput & {
   status: "active" | "archived";
   source: "built_in" | "workspace";
   updatedAt: Date | string | null;
+};
+
+export type ProjectWorkflowGateResult = {
+  key: ProjectWorkflowGateKey;
+  passed: boolean;
+};
+
+export type ProjectWorkflowHistoryEntry = {
+  id: string;
+  action: "adopted" | "advanced" | "returned" | "completed" | "reopened";
+  fromStageKey: string | null;
+  toStageKey: string;
+  at: string;
+  byId: string;
+  byName: string;
+  note: string;
+  gateResults: ProjectWorkflowGateResult[];
+};
+
+export type ProjectWorkflowState = {
+  template: {
+    id: string | null;
+    code: string;
+    name: string;
+    version: number;
+    source: "built_in" | "workspace";
+    stages: ProjectWorkflowStage[];
+  };
+  currentStageKey: string;
+  currentStageStartedAt: string;
+  history: ProjectWorkflowHistoryEntry[];
 };
 
 export const DEFAULT_PROJECT_WORKFLOW_STAGES: readonly ProjectWorkflowStage[] = [
@@ -224,4 +259,314 @@ export function parseWorkflowVersion(input: unknown): number {
   if (!Number.isInteger(value) || Number(value) < 1)
     throw new BadRequestException("Workflow template version is invalid.");
   return Number(value);
+}
+
+function frozenTemplate(template: ProjectWorkflowTemplate) {
+  return {
+    id: template.id,
+    code: template.code,
+    name: template.name,
+    version: template.version,
+    source: template.source,
+    stages: template.stages.map((stage) => ({
+      ...stage,
+      exitGates: [...stage.exitGates],
+    })),
+  };
+}
+
+function historyEntry(
+  action: ProjectWorkflowHistoryEntry["action"],
+  fromStageKey: string | null,
+  toStageKey: string,
+  at: string,
+  byId: string,
+  byName: string,
+  note: string,
+  gateResults: ProjectWorkflowGateResult[] = [],
+): ProjectWorkflowHistoryEntry {
+  return {
+    id: randomUUID(),
+    action,
+    fromStageKey,
+    toStageKey,
+    at,
+    byId,
+    byName,
+    note,
+    gateResults,
+  };
+}
+
+export function adoptProjectWorkflow(
+  template: ProjectWorkflowTemplate,
+  at: string,
+  byId: string,
+  byName: string,
+): ProjectWorkflowState {
+  const selected = frozenTemplate(template);
+  const first = selected.stages[0];
+  return {
+    template: selected,
+    currentStageKey: first.key,
+    currentStageStartedAt: at,
+    history: [
+      historyEntry(
+        "adopted",
+        null,
+        first.key,
+        at,
+        byId,
+        byName,
+        `Adopted ${selected.name} version ${selected.version}.`,
+      ),
+    ],
+  };
+}
+
+export function ensureProjectWorkflow(data: ProjectData): ProjectWorkflowState {
+  if (data.workflow) return data.workflow;
+  const template = builtInProjectWorkflow();
+  const workflow = adoptProjectWorkflow(template, "", "", "System migration");
+  const phaseIndex = PROJECT_WORKFLOW_PHASES.indexOf(data.phase);
+  const matching = [...workflow.template.stages]
+    .reverse()
+    .find(
+      (stage) =>
+        PROJECT_WORKFLOW_PHASES.indexOf(stage.phase) <= phaseIndex,
+    );
+  if (matching) {
+    workflow.currentStageKey = matching.key;
+    workflow.history[0].toStageKey = matching.key;
+  }
+  data.workflow = workflow;
+  return workflow;
+}
+
+export function projectWorkflowGateResults(
+  data: ProjectData,
+  stage: ProjectWorkflowStage,
+): ProjectWorkflowGateResult[] {
+  return stage.exitGates.map((key) => {
+    let passed = false;
+    if (key === "project_manager_assigned")
+      passed = Boolean(
+        data.roleAssignments?.some(
+          (assignment) =>
+            assignment.role === "project_manager" && assignment.memberId,
+        ),
+      );
+    else if (key === "tasks_planned")
+      passed = data.tasks.some(
+        (task) =>
+          task.status !== "cancelled" &&
+          Boolean(task.ownerId && task.start && task.end),
+      );
+    else if (key === "all_tasks_closed")
+      passed =
+        data.tasks.length > 0 &&
+        data.tasks.every((task) =>
+          ["completed", "cancelled"].includes(task.status),
+        );
+    else if (key === "all_snags_closed")
+      passed = data.snags.every((snag) => snag.status === "closed");
+    else if (key === "all_handovers_accepted")
+      passed =
+        data.handovers.length > 0 &&
+        data.handovers.every((handover) => handover.status === "accepted");
+    else if (key === "finance_closed") passed = data.financeClosed;
+    return { key, passed };
+  });
+}
+
+export function projectWorkflowSummary(data: ProjectData) {
+  const workflow = ensureProjectWorkflow(data);
+  const current = currentStage(workflow);
+  const next = workflow.template.stages[current.index + 1] ?? null;
+  const ownerId = current.stage.ownerRole
+    ? (data.roleAssignments ?? []).find(
+        (assignment) => assignment.role === current.stage.ownerRole,
+      )?.memberId ?? null
+    : null;
+  return {
+    templateId: workflow.template.id,
+    templateCode: workflow.template.code,
+    templateVersion: workflow.template.version,
+    currentStageKey: current.stage.key,
+    currentStageName: current.stage.visibleName,
+    currentStageStartedAt: workflow.currentStageStartedAt || null,
+    ownerRole: current.stage.ownerRole,
+    ownerId,
+    nextStage: next ? { key: next.key, name: next.visibleName } : null,
+    exitGates: projectWorkflowGateResults(data, current.stage),
+  };
+}
+
+function currentStage(workflow: ProjectWorkflowState) {
+  const index = workflow.template.stages.findIndex(
+    (stage) => stage.key === workflow.currentStageKey,
+  );
+  if (index < 0)
+    throw new ConflictException(
+      "The frozen project workflow is invalid. Review the project before continuing.",
+    );
+  return { index, stage: workflow.template.stages[index] };
+}
+
+function transitionNote(value: unknown, required: boolean): string {
+  if (value === undefined || value === null) value = "";
+  if (typeof value !== "string")
+    throw new BadRequestException("Workflow transition note is invalid.");
+  const note = value.trim();
+  if ((required && !note) || note.length > 3000)
+    throw new BadRequestException(
+      required
+        ? "Record why the project is returning to an earlier stage."
+        : "Workflow transition note is too long.",
+    );
+  return note;
+}
+
+function assertPassed(results: ProjectWorkflowGateResult[]) {
+  const failed = results.filter((result) => !result.passed);
+  if (failed.length)
+    throw new ConflictException(
+      `Complete the current stage gates first: ${failed
+        .map((result) => result.key)
+        .join(", ")}.`,
+    );
+}
+
+function assertStageOwner(data: ProjectData, stage: ProjectWorkflowStage) {
+  if (
+    stage.ownerRole &&
+    !data.roleAssignments?.some(
+      (assignment) =>
+        assignment.role === stage.ownerRole && assignment.memberId,
+    )
+  )
+    throw new ConflictException(
+      `Assign the ${stage.ownerRole} role before leaving ${stage.visibleName}.`,
+    );
+}
+
+export function transitionProjectWorkflow(
+  data: ProjectData,
+  toStageKey: unknown,
+  noteValue: unknown,
+  actor: { id: string; name: string; now: string },
+): string {
+  const workflow = ensureProjectWorkflow(data);
+  if (typeof toStageKey !== "string" || !toStageKey.trim())
+    throw new BadRequestException("Choose the next project stage.");
+  const targetIndex = workflow.template.stages.findIndex(
+    (stage) => stage.key === toStageKey.trim(),
+  );
+  if (targetIndex < 0)
+    throw new BadRequestException("Choose a stage from this project's frozen workflow.");
+  const current = currentStage(workflow);
+  if (targetIndex === current.index)
+    throw new ConflictException("The project is already in this stage.");
+  if (targetIndex === workflow.template.stages.length - 1)
+    throw new ConflictException(
+      "Use project completion so all closeout controls are checked.",
+    );
+
+  const movingForward = targetIndex > current.index;
+  if (movingForward && targetIndex !== current.index + 1)
+    throw new ConflictException("Move through one project stage at a time.");
+  if (movingForward && data.controls?.onHold)
+    throw new ConflictException(
+      `Release the project hold before moving forward${
+        data.controls.holdReason ? `: ${data.controls.holdReason}` : "."
+      }`,
+    );
+  const target = workflow.template.stages[targetIndex];
+  if (
+    movingForward &&
+    PROJECT_WORKFLOW_PHASES.indexOf(target.phase) >
+      PROJECT_WORKFLOW_PHASES.indexOf(data.phase)
+  )
+    throw new ConflictException(
+      `Complete the project's ${target.phase} operational controls before entering this stage.`,
+    );
+  const note = transitionNote(noteValue, !movingForward);
+  const gateResults = movingForward
+    ? projectWorkflowGateResults(data, current.stage)
+    : [];
+  if (movingForward) {
+    assertStageOwner(data, current.stage);
+    assertPassed(gateResults);
+  }
+  const entry = historyEntry(
+    movingForward ? "advanced" : "returned",
+    current.stage.key,
+    target.key,
+    actor.now,
+    actor.id,
+    actor.name,
+    note,
+    gateResults,
+  );
+  workflow.currentStageKey = target.key;
+  workflow.currentStageStartedAt = actor.now;
+  workflow.history.push(entry);
+  return entry.id;
+}
+
+export function completeProjectWorkflow(
+  data: ProjectData,
+  noteValue: unknown,
+  actor: { id: string; name: string; now: string },
+): string {
+  const workflow = ensureProjectWorkflow(data);
+  const current = currentStage(workflow);
+  const finalIndex = workflow.template.stages.length - 1;
+  if (current.index !== finalIndex - 1)
+    throw new ConflictException(
+      "Move through the remaining project stages before completion.",
+    );
+  if (data.controls?.onHold)
+    throw new ConflictException("Release the project hold before completion.");
+  assertStageOwner(data, current.stage);
+  const gateResults = projectWorkflowGateResults(data, current.stage);
+  assertPassed(gateResults);
+  const final = workflow.template.stages[finalIndex];
+  const entry = historyEntry(
+    "completed",
+    current.stage.key,
+    final.key,
+    actor.now,
+    actor.id,
+    actor.name,
+    transitionNote(noteValue, false),
+    gateResults,
+  );
+  workflow.currentStageKey = final.key;
+  workflow.currentStageStartedAt = actor.now;
+  workflow.history.push(entry);
+  return entry.id;
+}
+
+export function reopenProjectWorkflow(
+  data: ProjectData,
+  noteValue: unknown,
+  actor: { id: string; name: string; now: string },
+): string {
+  const workflow = ensureProjectWorkflow(data);
+  const current = currentStage(workflow);
+  const target = workflow.template.stages[Math.max(0, current.index - 1)];
+  const entry = historyEntry(
+    "reopened",
+    current.stage.key,
+    target.key,
+    actor.now,
+    actor.id,
+    actor.name,
+    transitionNote(noteValue, true),
+  );
+  workflow.currentStageKey = target.key;
+  workflow.currentStageStartedAt = actor.now;
+  workflow.history.push(entry);
+  return entry.id;
 }

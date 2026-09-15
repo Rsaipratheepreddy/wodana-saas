@@ -27,6 +27,12 @@ describe("project portfolio summaries", () => {
     expect(result.progress).toBe(50);
     expect(result.taskSummary).toMatchObject({ total: 2, completed: 1, blocked: 1, overdue: 1 });
     expect(result.schedule).toEqual({ baselineStart: "2026-08-30", baselineEnd: "2026-09-09", currentStart: "2026-09-01", currentEnd: "2026-09-11" });
+    expect(result.workflow).toMatchObject({
+      templateCode: "standard_delivery",
+      currentStageKey: "planning",
+      currentStageName: "Planning",
+      nextStage: { key: "delivery", name: "Delivery" },
+    });
   });
 
   it("returns the next incomplete milestone with its own progress", () => {

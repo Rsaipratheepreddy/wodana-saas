@@ -71,6 +71,7 @@ describe("ProjectWorkflowService", () => {
       .mockResolvedValueOnce({ rowCount: 1, rows: [{}] })
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [saved] });
     const { service, record } = harness(query);
     const result = await service.save(
@@ -111,6 +112,46 @@ describe("ProjectWorkflowService", () => {
     ).rejects.toThrow("changed");
     expect(query).toHaveBeenCalledTimes(2);
     expect(record).not.toHaveBeenCalled();
+  });
+
+  it("audits the previous template when a new default replaces it", async () => {
+    const previous = {
+      id: "20000000-0000-4000-8000-000000000002",
+      ...templateInput(4),
+      code: "previous_default",
+      status: "active",
+      updatedAt: "2026-09-15T00:00:00.000Z",
+    };
+    const displaced = {
+      ...previous,
+      isDefault: false,
+      version: 5,
+      updatedAt: "2026-09-15T00:01:00.000Z",
+    };
+    const saved = {
+      id: templateId,
+      ...templateInput(1),
+      status: "active",
+      updatedAt: "2026-09-15T00:01:00.000Z",
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{}] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [previous] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [displaced] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [saved] });
+    const { service, record } = harness(query);
+    await service.save(actor, workspaceId, templateId, templateInput());
+    expect(record).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "project.workflow_template_default_replaced.v1",
+        entityId: previous.id,
+        before: expect.objectContaining({ isDefault: true, version: 4 }),
+        after: expect.objectContaining({ isDefault: false, version: 5 }),
+      }),
+    );
   });
 
   it("archives by version and keeps the record as audit evidence", async () => {

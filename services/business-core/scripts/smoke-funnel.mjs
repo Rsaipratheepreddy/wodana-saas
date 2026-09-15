@@ -129,6 +129,24 @@ const archivedWorkflow = await request(
 assert.equal(archivedWorkflow.status, "archived");
 assert.equal(archivedWorkflow.version, 2);
 assert.equal((await request(workflowPath)).defaultTemplate.source, "built_in");
+const projectWorkflowTemplateId = randomUUID();
+const projectWorkflowStages = workflowFallback.defaultTemplate.stages.map(
+  (stage, index) => ({
+    ...stage,
+    visibleName: index === 0 ? "Mobilisation" : stage.visibleName,
+  }),
+);
+await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
+  method: "PUT",
+  body: {
+    version: 0,
+    code: "tenant_delivery",
+    name: "Tenant delivery",
+    description: "The default frozen by new projects in this workspace.",
+    isDefault: true,
+    stages: projectWorkflowStages,
+  },
+});
 
 const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
   body: {
@@ -212,6 +230,10 @@ const preparationReplay = await request(`/workspaces/${workspaceId}/pre-projects
 });
 assert.equal(preparationReplay.id, prepared.id);
 const caseId = prepared.id;
+const plannedProject = await request(
+  `/workspaces/${workspaceId}/projects/planning`,
+  { body: { caseId } },
+);
 
 const portalSettings = await request(
   `/workspaces/${workspaceId}/commercial/portal-settings`,
@@ -498,6 +520,7 @@ const released = await commercial("release", {
 });
 const projectId = released.data.release.projectId;
 assert(projectId);
+assert.equal(projectId, plannedProject.id);
 
 commercialState = await request(commercialPath);
 const project = await request(
@@ -517,6 +540,114 @@ assert.equal(releasedLine.rate, 750);
 assert.equal(releasedLine.lineTotal, 1500);
 assert.equal("unitCost" in releasedLine, false);
 assert.equal("photo" in releasedLine, false);
+assert.equal(project.data.workflow.template.id, projectWorkflowTemplateId);
+assert.equal(project.data.workflow.template.version, 1);
+assert.equal(project.data.workflow.template.stages[0].visibleName, "Mobilisation");
+
+await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
+  method: "PUT",
+  body: {
+    version: 1,
+    code: "tenant_delivery",
+    name: "Tenant delivery",
+    description: "Updated for future projects only.",
+    isDefault: true,
+    stages: projectWorkflowStages.map((stage, index) => ({
+      ...stage,
+      visibleName: index === 0 ? "Future planning" : stage.visibleName,
+    })),
+  },
+});
+assert.equal(
+  (
+    await request(
+      `/workspaces/${workspaceId}/projects/${projectId}/execution`,
+    )
+  ).data.workflow.template.stages[0].visibleName,
+  "Mobilisation",
+);
+
+async function projectCommand(action, body = {}, expected = 201) {
+  const state = await request(
+    `/workspaces/${workspaceId}/projects/${projectId}/execution`,
+  );
+  return request(
+    `/workspaces/${workspaceId}/projects/${projectId}/execution`,
+    {
+      expected,
+      body: {
+        action,
+        revision: state.data.revision,
+        requestId: randomUUID(),
+        ...body,
+      },
+    },
+  );
+}
+
+await projectCommand("project_roles", {
+  assignments: [{ role: "project_manager", memberId: ownerMember.id }],
+});
+const deliveryTaskId = randomUUID();
+await projectCommand("task", {
+  task: {
+    id: deliveryTaskId,
+    parentId: "",
+    package: "Delivery planning",
+    title: "Coordinate accepted scope",
+    description: "API workflow transition fixture.",
+    area: "Project-wide",
+    location: "office",
+    ownerId: ownerMember.id,
+    assigneeIds: [],
+    resourceId: "",
+    start: "2026-09-16",
+    end: "2026-09-17",
+    predecessors: [],
+    quantity: 1,
+    unit: "item",
+    weight: 1,
+    priority: "normal",
+    inspectionRequired: false,
+    scopeIds: [releasedLine.id],
+    drawingId: "",
+    readiness: { scope: true, access: true, materials: true },
+  },
+});
+let workflowState = await projectCommand("workflow_transition", {
+  toStageKey: "delivery",
+  note: "Delivery plan and ownership reviewed.",
+});
+assert.equal(workflowState.data.workflow.currentStageKey, "delivery");
+assert.equal(workflowState.data.workflow.history.at(-1).action, "advanced");
+
+workflowState = await projectCommand("project_controls", {
+  controls: {
+    ...workflowState.data.controls,
+    onHold: true,
+    holdReason: "Awaiting client access",
+    holdOwnerId: ownerMember.id,
+  },
+});
+assert.equal(workflowState.data.holdHistory.at(-1).action, "placed");
+await projectCommand(
+  "workflow_transition",
+  { toStageKey: "handover", note: "" },
+  409,
+);
+workflowState = await projectCommand("project_controls", {
+  controls: {
+    ...workflowState.data.controls,
+    onHold: false,
+    holdReason: "",
+    holdOwnerId: "",
+  },
+});
+assert.equal(workflowState.data.holdHistory.at(-1).action, "released");
+assert.equal(
+  workflowState.data.holdHistory.at(-1).reason,
+  "Awaiting client access",
+);
 
 const linkedOpportunity = await request(
   `/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`,
@@ -554,6 +685,10 @@ process.stdout.write(
         workflowTemplateFallbackSafe: true,
         workflowTemplateVersionSafe: true,
         workflowTemplateArchiveSafe: true,
+        workflowTemplateFrozenPerProject: true,
+        workflowTransitionGatesSafe: true,
+        projectHoldHistorySafe: true,
+        preReleasePlanningPreserved: true,
       },
     },
     null,

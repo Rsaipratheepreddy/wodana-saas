@@ -104,13 +104,29 @@ export class ProjectWorkflowService {
         );
 
       try {
+        let displacedBefore: WorkflowRow[] = [];
+        let displacedAfter: WorkflowRow[] = [];
         if (next.isDefault) {
-          await ctx.client.query(
+          displacedBefore = (
+            await ctx.client.query<WorkflowRow>(
+              `SELECT id,code,name,description,status,is_default AS "isDefault",version,stages,
+                      updated_at AS "updatedAt"
+               FROM project_workflow_templates
+               WHERE workspace_id=$1 AND status='active' AND is_default AND id<>$2
+               FOR UPDATE`,
+              [workspaceId, templateId],
+            )
+          ).rows;
+          displacedAfter = (
+            await ctx.client.query<WorkflowRow>(
             `UPDATE project_workflow_templates
              SET is_default=false,version=version+1,updated_by=$1,updated_at=now()
-             WHERE workspace_id=$2 AND status='active' AND is_default AND id<>$3`,
+             WHERE workspace_id=$2 AND status='active' AND is_default AND id<>$3
+             RETURNING id,code,name,description,status,is_default AS "isDefault",version,stages,
+                       updated_at AS "updatedAt"`,
             [ctx.userId, workspaceId, templateId],
-          );
+            )
+          ).rows;
         }
         const result = current.rowCount
           ? await ctx.client.query<WorkflowRow>(
@@ -164,6 +180,20 @@ export class ProjectWorkflowService {
           before: before ?? undefined,
           after: saved,
         });
+        for (const displaced of displacedAfter) {
+          await this.events.record(ctx.client, {
+            workspaceId,
+            actorUserId: ctx.userId,
+            source: "user",
+            action: "project.workflow_template_default_replaced.v1",
+            entityType: "project_workflow_template",
+            entityId: displaced.id,
+            before: workflow(
+              displacedBefore.find((candidate) => candidate.id === displaced.id)!,
+            ),
+            after: workflow(displaced),
+          });
+        }
         return saved;
       } catch (error) {
         if (isUniqueViolation(error))

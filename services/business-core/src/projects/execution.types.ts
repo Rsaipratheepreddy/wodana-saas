@@ -248,6 +248,15 @@ export type ProjectAudit = {
   recordId: string;
   note: string;
 };
+export type ProjectHoldHistoryEntry = {
+  id: string;
+  action: "placed" | "updated" | "released";
+  reason: string;
+  ownerId: string;
+  at: string;
+  byId: string;
+  byName: string;
+};
 export type ProjectControlSummary = {
   reference: string;
   priority: "normal" | "high" | "critical";
@@ -296,6 +305,8 @@ export type ApprovedMaterialSelection = {
 };
 export type ProjectData = import("./execution-controls.types").ExecutionControls & {
   controls?: ProjectControlSummary;
+  holdHistory?: ProjectHoldHistoryEntry[];
+  workflow?: import("./project-workflow").ProjectWorkflowState;
   roleAssignments?: ProjectRoleAssignment[];
   approvedMaterials?: ApprovedMaterialSelection[];
   milestones?: {
@@ -405,6 +416,7 @@ export type PublicProject = {
   id: string;
   name: string;
   phase: string;
+  stage: { key: string; name: string };
   progress: number;
   targetCompletion?: string;
   handoverDate?: string;

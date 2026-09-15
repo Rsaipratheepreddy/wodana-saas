@@ -7,6 +7,8 @@ import type { CommercialData } from "../commercial/commercial.types";
 import { emptyProject } from "./execution.domain";
 import type { ProjectData } from "./execution.types";
 import { releasedScopeLine } from "./released-scope-line";
+import { adoptProjectWorkflow } from "./project-workflow";
+import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 // Called inside the same transaction and pre-execution row lock as commercial approval.
 export async function releaseDeliveryProject(
   client: PoolClient,
@@ -74,6 +76,12 @@ export async function releaseDeliveryProject(
   ).rows[0]?.content as ProjectData | undefined;
   const execution = existing ?? emptyProject();
   if (!execution.scope) {
+    execution.workflow ??= adoptProjectWorkflow(
+      await resolvedProjectWorkflowTemplate(client, workspaceId),
+      data.release!.at,
+      userId,
+      data.release!.by,
+    );
     execution.controls = {
       ...(execution.controls ?? emptyProject().controls!),
       reference: dealFile.reference.replace(/^DF-/, "PRJ-"),

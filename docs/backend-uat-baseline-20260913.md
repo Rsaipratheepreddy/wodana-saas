@@ -52,7 +52,7 @@ No live deployment or production-data mutation is part of B0.
 
 ## Current regression status after the B1-B9 backend slices
 
-- Business Core: 367 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 372 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
 - Clean database replay: all 60 registered migrations passed; migration 0060 is exercised by the
   disposable funnel and the new workspace-scoped table passes the RLS manifest.
@@ -86,6 +86,9 @@ No live deployment or production-data mutation is part of B0.
   design controls → accepted Quotation → Agreement → Owner Review → Deal File → Delivery Project.
 - The same disposable API smoke proves project workflow built-in fallback, tenant default creation,
   optimistic stale-write rejection, non-destructive archival and fallback restoration.
+- Project workflow API verification also proves that release freezes the selected tenant template,
+  later template edits affect only future projects, stage gates read existing project facts, holds
+  block forward movement, and place/release history retains its reason and owner.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.

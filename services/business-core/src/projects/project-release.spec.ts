@@ -204,6 +204,8 @@ function database(options: { existing?: ReturnType<typeof emptyProject>; scopeVe
         rowCount: options.existing ? 1 : 0,
         rows: options.existing ? [{ content: options.existing }] : [],
       };
+    if (sql.includes("FROM project_workflow_templates"))
+      return { rowCount: 0, rows: [] };
     if (sql.startsWith("INSERT INTO project_execution")) {
       stored = JSON.parse(String(values?.[3]));
       return { rowCount: 1, rows: [] };
@@ -261,6 +263,10 @@ describe("commercial project release", () => {
     expect(scope?.lines[0]).not.toHaveProperty("unitCost");
     expect(scope?.lines[0]).not.toHaveProperty("photo");
     expect(scope?.lines[0]).not.toHaveProperty("catalogLinks");
+    expect(db.stored()?.workflow).toMatchObject({
+      currentStageKey: "planning",
+      template: { code: "standard_delivery", source: "built_in", version: 0 },
+    });
   });
 
   it("rejects accepted-price drift against the approved Deal File", async () => {

@@ -42,6 +42,8 @@ import { projectPortfolioSummary } from "./project-portfolio";
 import { portfolioCalendarEvents, type PortfolioBookingRow } from "./project-portfolio-calendar";
 import type { PortfolioCalendarQueryDto } from "./projects.dto";
 import { releasedScopeLine } from "./released-scope-line";
+import { adoptProjectWorkflow, ensureProjectWorkflow } from "./project-workflow";
+import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 @Injectable()
 export class ExecutionService {
   constructor(private readonly access: HrmsAccessService) {}
@@ -69,13 +71,15 @@ export class ExecutionService {
     const stored = r.rows[0]?.content as Partial<ProjectData> | undefined;
     if (!stored) return emptyProject();
     const blank = emptyProject();
-    return {
+    const data = {
       ...blank,
       ...stored,
       controls: { ...blank.controls!, ...(stored.controls ?? {}) },
       roleAssignments: stored.roleAssignments ?? [],
       approvedMaterials: stored.approvedMaterials ?? [],
     } as ProjectData;
+    ensureProjectWorkflow(data);
+    return data;
   }
   async store(ctx: HrmsContext, id: string, d: ProjectData) {
     d.revision++;
@@ -849,6 +853,7 @@ export class ExecutionService {
         }
         changedRecordId = applyExecution(d, action, b, {
           id: ctx.membershipId,
+          userId: ctx.userId,
           name,
           manage: ctx.permissions.has("projects.manage"),
           review: ctx.permissions.has("projects.review"),
@@ -926,8 +931,8 @@ export class ExecutionService {
       this.access.require(ctx, "projects.manage");
       const caseId = str(obj(input).caseId, 80, true);
       const r = await ctx.client.query(
-        `SELECT c.id,c.status,o.title FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id WHERE c.workspace_id=$1 AND c.id=$2 FOR UPDATE OF c`,
-        [w, caseId],
+        `SELECT c.id,c.status,o.title,(SELECT display_name FROM users WHERE id=$3) AS planner FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id WHERE c.workspace_id=$1 AND c.id=$2 FOR UPDATE OF c`,
+        [w, caseId, ctx.userId],
       );
       if (!r.rowCount) throw new NotFoundException("Pre-execution not found.");
       const existing = await ctx.client.query(
@@ -949,6 +954,12 @@ export class ExecutionService {
       );
       const project = emptyProject();
       project.controls!.reference = `PRJ-PLAN-${new Date().getUTCFullYear()}-${p.id.slice(0, 8).toUpperCase()}`;
+      project.workflow = adoptProjectWorkflow(
+        await resolvedProjectWorkflowTemplate(ctx.client, w),
+        new Date().toISOString(),
+        ctx.userId,
+        r.rows[0].planner ?? "Project planner",
+      );
       await this.store(ctx, p.id, project);
       return p;
     });

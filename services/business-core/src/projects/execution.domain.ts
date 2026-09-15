@@ -12,6 +12,12 @@ import type {
   DailyReport,
   PublicProject,
 } from "./execution.types";
+import {
+  completeProjectWorkflow,
+  ensureProjectWorkflow,
+  reopenProjectWorkflow,
+  transitionProjectWorkflow,
+} from "./project-workflow";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
   phase: "planning",
@@ -209,10 +215,15 @@ export function publicProject(
   name: string,
   d: ProjectData,
 ): PublicProject {
+  const workflow = ensureProjectWorkflow(d);
+  const stage = workflow.template.stages.find(
+    (candidate) => candidate.key === workflow.currentStageKey,
+  )!;
   return {
     id,
     name,
     phase: d.phase,
+    stage: { key: stage.key, name: stage.visibleName },
     progress: Math.round(progress(d)),
     targetCompletion: d.controls?.targetCompletion || undefined,
     handoverDate: d.controls?.handoverDate || undefined,
@@ -283,6 +294,7 @@ export function publicProject(
 export type ExecutionActor = {
   today?: string;
   id: string;
+  userId?: string;
   name: string;
   manage: boolean;
   review: boolean;
@@ -380,6 +392,29 @@ export function applyExecution(
       nextClientMeeting: day(value.nextClientMeeting),
       clientNote: str(value.clientNote, 3000),
     };
+    if (
+      previous &&
+      (previous.onHold !== onHold ||
+        (onHold &&
+          (previous.holdReason !== d.controls.holdReason ||
+            previous.holdOwnerId !== d.controls.holdOwnerId)))
+    ) {
+      const action = !previous.onHold
+        ? "placed"
+        : onHold
+          ? "updated"
+          : "released";
+      d.holdHistory ??= [];
+      d.holdHistory.push({
+        id: randomUUID(),
+        action,
+        reason: onHold ? d.controls.holdReason : previous.holdReason,
+        ownerId: onHold ? d.controls.holdOwnerId : previous.holdOwnerId,
+        at: a.now,
+        byId: a.userId ?? a.id,
+        byName: a.name,
+      });
+    }
     recordId = "project-controls";
   } else if (action === "project_roles") {
     manage();
@@ -413,6 +448,13 @@ export function applyExecution(
     )
       throw new BadRequestException("Give every selected role one active member.");
     recordId = "project-roles";
+  } else if (action === "workflow_transition") {
+    manage();
+    recordId = transitionProjectWorkflow(d, b.toStageKey, b.note, {
+      id: a.userId ?? a.id,
+      name: a.name,
+      now: a.now,
+    });
   } else if (action === "milestone") {
     manage();
     const value = obj(b.milestone);
@@ -1341,11 +1383,21 @@ export function applyExecution(
       throw new ConflictException(
         "Complete all work, handovers, snags and financial reconciliation first.",
       );
+    recordId = completeProjectWorkflow(d, b.note, {
+      id: a.userId ?? a.id,
+      name: a.name,
+      now: a.now,
+    });
     d.phase = "completed";
   } else if (action === "reopen_project") {
     review();
     if (!note)
       throw new BadRequestException("Record why the project is reopening.");
+    recordId = reopenProjectWorkflow(d, b.note, {
+      id: a.userId ?? a.id,
+      name: a.name,
+      now: a.now,
+    });
     d.phase = "active";
     d.financeClosed = false;
   } else if (action === "comment_status" || action === "edit_comment") {

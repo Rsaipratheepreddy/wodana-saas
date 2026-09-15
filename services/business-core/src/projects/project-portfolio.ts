@@ -1,5 +1,6 @@
 import { progress } from "./execution.domain";
 import type { ProjectData, Task } from "./execution.types";
+import { projectWorkflowSummary } from "./project-workflow";
 
 const range = (values: string[], mode: "first" | "last") => {
   const dates = values.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)).sort();
@@ -59,6 +60,7 @@ export function projectPortfolioSummary(data: ProjectData, today: string) {
           }
         : null,
     },
+    workflow: projectWorkflowSummary(normalized),
     fileCount: data.files?.length ?? 0,
   };
 }

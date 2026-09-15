@@ -16,19 +16,25 @@ database or port names.
 
 1. Create a neutral SaaS workspace and its first owner.
 2. Invite and activate a second owner through the public membership APIs.
-3. Create a generic CRM pipeline.
-4. Submit and idempotently replay a real CRM intake event.
-5. Verify the generated Enquiry and Lead, then qualify the Lead into an Opportunity.
-6. Start and idempotently replay Preparation from the Opportunity.
-7. Create the room, included requirement and current site plan.
-8. Upload the linked design, save its controlled specification, record and independently verify the
+3. Prove the built-in project-workflow fallback, workspace template versioning, stale-write
+   rejection and non-destructive archival, then create a tenant default for new projects.
+4. Create a generic CRM pipeline.
+5. Submit and idempotently replay a real CRM intake event.
+6. Verify the generated Enquiry and Lead, then qualify the Lead into an Opportunity.
+7. Start and idempotently replay Preparation from the Opportunity, and create its pre-release
+   planning project.
+8. Create the room, included requirement and current site plan.
+9. Upload the linked design, save its controlled specification, record and independently verify the
    site measurement, then pass internal and recorded client design approval.
-9. Import Preparation into a quotation, set selling terms, pass internal approval, issue through the
+10. Import Preparation into a quotation, set selling terms, pass internal approval, issue through the
    enabled client portal, and record OTP-backed client acceptance.
-10. Record and execute the agreement, submit owner review, approve it with the second owner, create
+11. Record and execute the agreement, submit owner review, approve it with the second owner, create
     the Deal File, and release the delivery project.
-11. Verify preserved accepted hash, scope/specification versions, selling rate and line total, CRM
+12. Verify preserved accepted hash, scope/specification versions, selling rate and line total, CRM
     project link, released Preparation state, absence of internal cost/photo, and retry-safe release.
+13. Verify that the planning project retained its frozen tenant workflow after the template changed,
+    advance it through real ownership/task gates, place and release an independent hold, and preserve
+    the stage and hold histories.
 
 All business records in this proof are created through authenticated API endpoints. SQL is used only
 by the migration runner when preparing the disposable database.

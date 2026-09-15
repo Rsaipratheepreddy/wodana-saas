@@ -47,12 +47,38 @@ workspace has never configured one, the built-in workflow is returned without in
 data. Writes require `projects.manage`; reads require `projects.view` or `projects.manage`.
 Templates use optimistic versions, row-level tenant isolation and audit/outbox events.
 
+## Project adoption and movement
+
+Planning a project or releasing an accepted Deal File freezes the workspace's resolved default
+template into that project. The template ID, code, name, version, stage definitions and gate keys
+therefore remain stable even when an administrator changes the default for future projects. A
+pre-release planning project keeps the template it originally adopted when commercial release is
+completed.
+
+The existing idempotent execution command accepts `workflow_transition`. Only a user with project
+management permission can move the management stage. Forward movement is one stage at a time, checks every configured
+exit gate against the existing authoritative project records, cannot move into an operational
+phase before that phase's existing controls are complete, and is blocked by an active project
+hold. Returning to any earlier stage is allowed with a mandatory reason so rework is represented
+honestly rather than erased.
+
+The Completed stage remains reachable only through the existing project-completion command. That
+command still enforces work, handover, snag, procurement, milestone, stock-transfer, payment and
+finance closure before adding the final workflow history event. Reopening moves the workflow back
+to its preceding stage with the required reopening reason.
+
+Every stage movement records actor, time, from/to keys, note and evaluated gate results. Portfolio
+responses include the current and next visible stages, accountable role/member and current gate
+results. The client project response exposes only the safe current stage key and visible name.
+
+Project hold is still an independent overlay rather than a fake workflow stage. Its current reason,
+owner and start time remain in project controls; place, update and release events now preserve a
+separate history, including the original reason and owner after release.
+
 ## Verification boundary
 
 The disposable API funnel proves built-in fallback, creation of a workspace default, stale-write
-rejection, safe archival, fallback restoration, migration replay and the RLS manifest. Focused
-tests cover validation, permissions, optimistic versions and audit calls.
-
-Project adoption, frozen template snapshots, stage transitions and stage history are the next
-backend slice. Until that slice lands, this contract does not claim that changing a template moves
-an existing project or enforces a project transition.
+rejection, safe archival, fallback restoration, migration replay, the RLS manifest, per-project
+template freezing, an API stage transition, gate enforcement, and hold/release history. Focused
+tests cover validation, permissions, optimistic versions, frozen copies, stage order, operational
+bypass prevention, configured gate facts, safe completion and audit calls.
