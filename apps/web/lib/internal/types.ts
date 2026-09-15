@@ -17,6 +17,15 @@ export type WorkspaceSubscription = {
 };
 
 export type ManagedTenant = {
+  account?: {
+    displayName: string;
+    id: string;
+    isDefaultOrganization: boolean;
+    organizationCount: number;
+    organizationLimit: number;
+    status: string;
+    version: number;
+  } | null;
   externalTenantId: string;
   integrations: Array<{ count: number; provider: string; status: string }>;
   onboarding: { completedSteps: string[]; currentStep: string | null; status: string };

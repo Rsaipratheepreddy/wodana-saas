@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/backend-session";
 import {
   ACCESS_COOKIE,
+  ACTIVE_WORKSPACE_COOKIE,
   MFA_CHALLENGE_COOKIE,
   MFA_REVOKE_COOKIE,
   REFRESH_COOKIE,
@@ -106,6 +107,10 @@ async function verifyChallenge(code: string) {
     maxAge: payload.accessTokenExpiresIn,
   });
   response.cookies.set(REFRESH_COOKIE, payload.refreshToken, {
+    ...authCookieOptions,
+    maxAge: payload.refreshTokenExpiresIn,
+  });
+  response.cookies.set(ACTIVE_WORKSPACE_COOKIE, payload.selectedWorkspaceId, {
     ...authCookieOptions,
     maxAge: payload.refreshTokenExpiresIn,
   });

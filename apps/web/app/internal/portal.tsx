@@ -21,9 +21,19 @@ import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-compone
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
 import type { ManagedTenant } from "@/lib/internal/types";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
+import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
 import styles from "./portal.module.css";
 
-type NewClient = { name: string; ownerName: string; ownerEmail: string; slug: string };
+type NewClient = {
+  countryCode: string;
+  defaultCurrency: string;
+  defaultLocale: string;
+  defaultTimezone: string;
+  name: string;
+  ownerName: string;
+  ownerEmail: string;
+  slug: string;
+};
 type BillingDraft = {
   amount: string;
   billingCycle: string;
@@ -36,7 +46,13 @@ type BillingDraft = {
   workspaceStatus: string;
 };
 
-const blankClient: NewClient = { name: "", ownerName: "", ownerEmail: "", slug: "" };
+const blankClient: NewClient = { countryCode: "AE", defaultCurrency: "AED", defaultLocale: "en-AE", defaultTimezone: "Asia/Dubai", name: "", ownerName: "", ownerEmail: "", slug: "" };
+const regionalPresets: Record<string, Pick<NewClient, "defaultCurrency" | "defaultLocale" | "defaultTimezone">> = {
+  AE: { defaultCurrency: "AED", defaultLocale: "en-AE", defaultTimezone: "Asia/Dubai" },
+  GB: { defaultCurrency: "GBP", defaultLocale: "en-GB", defaultTimezone: "Europe/London" },
+  IN: { defaultCurrency: "INR", defaultLocale: "en-IN", defaultTimezone: "Asia/Kolkata" },
+  US: { defaultCurrency: "USD", defaultLocale: "en-US", defaultTimezone: "America/New_York" },
+};
 const planLabel: Record<string, string> = { starter: "Starter", pro: "Pro", enterprise: "Enterprise" };
 const statusLabel: Record<string, string> = { trial: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", suspended: "Suspended" };
 
@@ -90,6 +106,8 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [activationLink, setActivationLink] = useState("");
+  const [provisionKey, setProvisionKey] = useState(() => crypto.randomUUID());
+  const [newTenantId, setNewTenantId] = useState("");
   const { theme, toggleTheme } = useWorkspaceTheme();
   const selected = tenants.find((tenant) => tenant.externalTenantId === selectedId) ?? null;
   const filtered = useMemo(() => {
@@ -98,6 +116,9 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
   }, [query, tenants]);
   const activeCount = tenants.filter((tenant) => tenant.workspace.status === "active").length;
   const connectedCount = tenants.reduce((total, tenant) => total + tenant.integrations.filter((item) => item.status === "connected").reduce((sum, item) => sum + item.count, 0), 0);
+  const countries = useMemo(() => countryOptions(newClient.defaultLocale), [newClient.defaultLocale]);
+  const currencies = useMemo(() => currencyOptions(newClient.defaultLocale), [newClient.defaultLocale]);
+  const timeZones = useMemo(() => timeZoneOptions(), []);
 
   function select(tenant: ManagedTenant) {
     setSelectedId(tenant.externalTenantId);
@@ -150,19 +171,20 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          defaultCurrency: "INR",
-          defaultLocale: "en-IN",
-          defaultTimezone: "Asia/Kolkata",
-          externalTenantId: `tenant-${slug}-${crypto.randomUUID().slice(0, 8)}`,
+          defaultCurrency: newClient.defaultCurrency,
+          defaultLocale: newClient.defaultLocale,
+          defaultTimezone: newClient.defaultTimezone,
+          externalTenantId: `tenant-${slug}-${provisionKey.slice(0, 8)}`,
           firstLegalEntity: {
-            baseCurrency: "INR",
+            baseCurrency: newClient.defaultCurrency,
             code: legalCode(newClient.name),
-            countryCode: "IN",
+            countryCode: newClient.countryCode,
             displayName: newClient.name,
-            locale: "en-IN",
+            locale: newClient.defaultLocale,
             registeredName: newClient.name,
-            timezone: "Asia/Kolkata",
+            timezone: newClient.defaultTimezone,
           },
+          idempotencyKey: provisionKey,
           name: newClient.name,
           owner: { displayName: newClient.ownerName, email: newClient.ownerEmail },
           slug,
@@ -174,13 +196,15 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
       const detailsResponse = await fetch(`/api/internal/tenants/${encodeURIComponent(created.externalTenantId)}`);
       const details = await payload(detailsResponse) as ManagedTenant;
       setTenants((items) => [details, ...items]);
+      setNewTenantId(details.externalTenantId);
       select(details);
       if (created.ownerInvitation.invitationToken) {
         setActivationLink(`${location.origin}/login?tenant=${encodeURIComponent(created.workspace.slug)}&invitation=${encodeURIComponent(created.ownerInvitation.invitationToken)}`);
       }
       setNewClient(blankClient);
+      setProvisionKey(crypto.randomUUID());
       setCreateOpen(false);
-      setNotice("Tenant created. Share the activation link with the owner.");
+      setNotice("Customer account and its default organization are ready. Share the activation link with the owner.");
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
@@ -217,7 +241,7 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
       </header>
       <section className={styles.content}>
         <div className={styles.pageHeader}><div><p className={styles.eyebrow}>Wodana control</p><h1>Tenants</h1><p>Provision workspaces and manage account access and billing.</p></div>
-          <Button className={styles.primaryButton} onPress={() => { setCreateOpen(true); setError(""); setActivationLink(""); }}><Plus size={16}/>Add tenant</Button>
+          <Button className={styles.primaryButton} onPress={() => { setCreateOpen(true); setProvisionKey(crypto.randomUUID()); setError(""); setActivationLink(""); }}><Plus size={16}/>Add customer</Button>
         </div>
         <div className={styles.metrics} aria-label="Tenant summary">
           <div><strong>{tenants.length}</strong><span>Total tenants</span></div>
@@ -233,7 +257,7 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
             <div className={styles.tableWrap}><table><thead><tr><th>Tenant</th><th>Plan</th><th>Usage</th><th>Integrations</th><th>Status</th></tr></thead><tbody>
               {filtered.map((tenant) => {
                 const connected = tenant.integrations.filter((item) => item.status === "connected").reduce((sum, item) => sum + item.count, 0);
-                return <tr data-selected={tenant.externalTenantId === selectedId || undefined} key={tenant.externalTenantId}>
+                return <tr data-new={tenant.externalTenantId === newTenantId || undefined} data-selected={tenant.externalTenantId === selectedId || undefined} key={tenant.externalTenantId}>
                   <td><button aria-expanded={tenant.externalTenantId === selectedId} aria-label={`Manage ${tenant.workspace.name}`} className={styles.clientButton} onClick={() => select(tenant)}><span style={identityStyle(tenant.workspace.id)}>{identityInitials(tenant.workspace.name)}</span><span><strong>{tenant.workspace.name}</strong><small>{tenant.owner?.email ?? tenant.workspace.slug}</small></span><ChevronRight size={15}/></button></td>
                   <td><strong>{planLabel[tenant.subscription.planCode]}</strong><small>{statusLabel[tenant.subscription.status]}</small></td>
                   <td><strong>{tenant.usage.members}/{tenant.subscription.seatLimit} seats</strong><small>{tenant.usage.projects}/{tenant.subscription.projectLimit} projects</small></td>
@@ -248,6 +272,9 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
         {selected && draft ? <><button aria-label="Close tenant details" className={styles.drawerScrim} onClick={closeDetails}/><aside className={styles.detail} aria-label={`${selected.workspace.name} tenant details`}>
             <div className={styles.detailHeader}><div className={styles.clientTitle}><span style={identityStyle(selected.workspace.id)}>{identityInitials(selected.workspace.name)}</span><div><h2>{selected.workspace.name}</h2><p>{selected.workspace.slug}</p></div></div><div className={styles.detailActions}><a aria-label="Open tenant sign-in" href={`/login?tenant=${encodeURIComponent(selected.workspace.slug)}`} target="_blank"><ExternalLink size={16}/></a><button aria-label="Close tenant details" className={styles.iconButton} onClick={closeDetails}><X size={17}/></button></div></div>
             <div className={styles.owner}><span><Users size={16}/></span><div><small>Tenant owner</small><strong>{selected.owner?.name ?? "Owner invitation pending"}</strong><p>{selected.owner?.email ?? "No owner email"}</p></div></div>
+            {selected.account ? <section className={styles.detailSection}><div className={styles.sectionHeading}><h3>Customer account</h3><span>{selected.account.status}</span></div>
+              <div className={styles.accountFacts}><div><small>Account</small><strong>{selected.account.displayName}</strong></div><div><small>Organizations</small><strong>{selected.account.organizationCount} of {selected.account.organizationLimit}</strong></div><div><small>This workspace</small><strong>{selected.account.isDefaultOrganization ? "Default organization" : "Additional organization"}</strong></div></div>
+            </section> : null}
             <section className={styles.detailSection}><div className={styles.sectionHeading}><h3>Access</h3><span>{selected.onboarding.status === "completed" ? "Onboarding complete" : "Setup in progress"}</span></div>
               <label>Workspace access<select value={draft.workspaceStatus} onChange={(event) => setDraft({ ...draft, workspaceStatus: event.target.value })}><option value="active">Active</option><option value="suspended">Suspended</option></select></label>
               {selected.ownerInvitation?.status !== "accepted" ? <button className={styles.secondaryButton} disabled={busy} onClick={() => void refreshInvitation()}>Create owner activation link</button> : null}
@@ -263,9 +290,14 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
           </aside></> : null}
       </section>
     </main>
-    <ModalOverlay className={styles.modalOverlay} isDismissable={!busy} isOpen={createOpen} onOpenChange={setCreateOpen}><Modal className={styles.modal}><Dialog aria-label="Add tenant" className={styles.dialog}>
-      <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>New workspace</p><Heading slot="title">Add tenant</Heading></div><Button aria-label="Close" className={styles.iconButton} isDisabled={busy} onPress={() => setCreateOpen(false)}><X size={17}/></Button></div>
-      <form onSubmit={(event) => void createClient(event)}><label>Business name<input autoFocus required value={newClient.name} onChange={(event) => setNewClient({ ...newClient, name: event.target.value, slug: slugify(event.target.value) })}/></label><label>Workspace address<input pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={newClient.slug} onChange={(event) => setNewClient({ ...newClient, slug: slugify(event.target.value) })}/><small>{newClient.slug || "tenant"}.wodana.ai</small></label><div className={styles.fieldGrid}><label>Owner name<input required value={newClient.ownerName} onChange={(event) => setNewClient({ ...newClient, ownerName: event.target.value })}/></label><label>Owner email<input required type="email" value={newClient.ownerEmail} onChange={(event) => setNewClient({ ...newClient, ownerEmail: event.target.value })}/></label></div>{error ? <p className={styles.error} role="alert">{error}</p> : null}<div className={styles.dialogActions}><Button className={styles.secondaryButton} isDisabled={busy} onPress={() => setCreateOpen(false)}>Cancel</Button><button className={styles.primaryButton} disabled={busy} type="submit">{busy ? "Creating…" : "Create tenant"}</button></div></form>
+    <ModalOverlay className={styles.modalOverlay} isDismissable={!busy} isOpen={createOpen} onOpenChange={setCreateOpen}><Modal className={styles.modal}><Dialog aria-label="Add customer account" className={styles.dialog}>
+      <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>New customer</p><Heading slot="title">Add customer account</Heading></div><Button aria-label="Close" className={styles.iconButton} isDisabled={busy} onPress={() => setCreateOpen(false)}><X size={17}/></Button></div>
+      <form onSubmit={(event) => void createClient(event)}>
+        <fieldset><legend>Business</legend><label>Business name<input autoFocus required value={newClient.name} onChange={(event) => setNewClient({ ...newClient, name: event.target.value, slug: slugify(event.target.value) })}/></label><label>Workspace address<input pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={newClient.slug} onChange={(event) => setNewClient({ ...newClient, slug: slugify(event.target.value) })}/><small>{newClient.slug || "tenant"}.wodana.ai</small></label></fieldset>
+        <fieldset><legend>Owner</legend><div className={styles.fieldGrid}><label>Owner name<input required value={newClient.ownerName} onChange={(event) => setNewClient({ ...newClient, ownerName: event.target.value })}/></label><label>Owner email<input required type="email" value={newClient.ownerEmail} onChange={(event) => setNewClient({ ...newClient, ownerEmail: event.target.value })}/></label></div></fieldset>
+        <fieldset><legend>Regional defaults</legend><div className={styles.fieldGrid}><label>Country / region<select required value={newClient.countryCode} onChange={(event) => { const countryCode = event.target.value; setNewClient({ ...newClient, countryCode, ...(regionalPresets[countryCode] ?? {}) }); }}><option value="">Choose country</option>{countries.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Base currency<select required value={newClient.defaultCurrency} onChange={(event) => setNewClient({ ...newClient, defaultCurrency: event.target.value })}>{currencies.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Language &amp; format<select required value={newClient.defaultLocale} onChange={(event) => setNewClient({ ...newClient, defaultLocale: event.target.value })}>{localeOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Time zone<select required value={newClient.defaultTimezone} onChange={(event) => setNewClient({ ...newClient, defaultTimezone: event.target.value })}>{timeZones.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div></fieldset>
+        {error ? <p className={styles.error} role="alert">{error}</p> : null}<div className={styles.dialogActions}><Button className={styles.secondaryButton} isDisabled={busy} onPress={() => setCreateOpen(false)}>Cancel</Button><button className={styles.primaryButton} disabled={busy} type="submit">{busy ? "Creating account…" : "Create account"}</button></div>
+      </form>
     </Dialog></Modal></ModalOverlay>
   </div>;
 }

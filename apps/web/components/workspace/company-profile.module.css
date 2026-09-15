@@ -27,12 +27,25 @@
 .detail dd { margin: .28rem 0 0; overflow-wrap: anywhere; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
 .missing { color: var(--wd-color-text-tertiary) !important; font-style: normal; font-weight: var(--wd-weight-regular) !important; }
 .permissionNote { margin: 1.25rem 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.appearanceSummary { display: flex; min-block-size: 2.5rem; align-items: center; gap: .75rem; }
+.appearanceSummary > div { display: grid; gap: .15rem; }
+.appearanceSummary strong { color: var(--wd-color-text); font-family: var(--wd-font-mono); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.appearanceSummary small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.colourSwatch { inline-size: 2.25rem; block-size: 2.25rem; flex: 0 0 auto; border: 1px solid var(--wd-color-border-control); border-radius: 50%; }
 
 .logoEditor { display: grid; justify-items: center; gap: .75rem; text-align: center; }
 .logoDialogPreview { display: grid; inline-size: 7.5rem; block-size: 7.5rem; place-items: center; overflow: hidden; border: 1px solid var(--wd-color-border-control); border-radius: 50%; background: var(--wd-color-surface-subtle); color: var(--wd-color-text); font-size: var(--wd-text-xl); font-weight: var(--wd-weight-bold); }
 .logoDialogPreview img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: .65rem; }
 .logoEditor p { margin: .25rem 0 .5rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .logoEditor small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
+.appearanceEditor { display: grid; gap: .75rem; }
+.appearanceEditor > label { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.appearanceEditor > p { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.appearanceEditor > :global(.wd-button) { justify-self: start; }
+.colourInputRow { min-block-size: var(--wd-control-standard); display: flex; align-items: center; gap: .75rem; }
+.colourInputRow input { inline-size: 3rem; block-size: 2.25rem; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); padding: .15rem; background: var(--wd-color-surface); cursor: pointer; }
+.colourInputRow input:focus-visible { outline: 0; box-shadow: var(--wd-focus-ring); }
+.colourInputRow code { color: var(--wd-color-text); font-family: var(--wd-font-mono); font-size: var(--wd-text-sm); }
 
 .editor { display: grid; gap: 1.5rem; }
 .editor fieldset { min-inline-size: 0; padding: 0; border: 0; margin: 0; }

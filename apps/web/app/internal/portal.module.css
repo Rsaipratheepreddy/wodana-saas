@@ -48,6 +48,7 @@
 .tableWrap td { block-size: 3.85rem; padding: .45rem .85rem; border-block-end: 1px solid var(--wd-color-structural-divider); font-size: .76rem; white-space: nowrap; }
 .tableWrap td strong,.tableWrap td small { display: block; }
 .tableWrap tr[data-selected] td { background: var(--wd-color-surface-selected); }
+.tableWrap tr[data-new] td { animation: tenant-ready 1.2s var(--wd-ease-out); }
 .clientButton { inline-size: 100%; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: .65rem; padding: 0; border: 0; background: transparent; text-align: start; }
 .clientButton strong { overflow: hidden; text-overflow: ellipsis; }
 .status { display: inline-flex; padding: .2rem .45rem; border-radius: 999px; background: var(--wd-color-success-subtle); color: var(--wd-color-success); font-size: .67rem; text-transform: capitalize; }
@@ -68,9 +69,14 @@
 .sectionHeading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .sectionHeading h3 { margin: 0; font-size: .8rem; }
 .sectionHeading span { color: var(--wd-color-text-tertiary); font-size: .66rem; }
+.accountFacts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .5rem; }
+.accountFacts > div { min-inline-size: 0; display: grid; gap: .2rem; padding: .65rem; border-radius: .55rem; background: var(--wd-color-surface-muted); }
+.accountFacts small { color: var(--wd-color-text-tertiary); font-size: .65rem; }
+.accountFacts strong { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .fieldGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .65rem; }
 .detail label,.dialog label { display: grid; gap: .3rem; color: var(--wd-color-text-secondary); font-size: .7rem; font-weight: 550; }
-.detail input,.detail select,.detail textarea,.dialog input { inline-size: 100%; min-block-size: 2.25rem; padding: .5rem .6rem; border: 1px solid var(--wd-color-border-control); border-radius: .45rem; background: var(--wd-color-surface); color: var(--wd-color-text); font-size: .78rem; }
+.detail input,.detail select,.detail textarea,.dialog input,.dialog select { inline-size: 100%; min-block-size: 2.5rem; padding: .5rem .6rem; border: 1px solid var(--wd-color-border-control); border-radius: .55rem; background: var(--wd-color-surface); color: var(--wd-color-text); font-size: .78rem; }
+.detail input:focus-visible,.detail select:focus-visible,.detail textarea:focus-visible,.dialog input:focus-visible,.dialog select:focus-visible { outline: 0; border-color: var(--wd-color-focus); box-shadow: var(--wd-focus-ring); }
 .detail textarea { min-block-size: 4.25rem; resize: vertical; }
 .empty { padding: 2rem 1rem; color: var(--wd-color-text-secondary); font-size: .8rem; text-align: center; }
 .modalOverlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 1rem; background: var(--wd-color-overlay); }
@@ -79,6 +85,9 @@
 .dialogHeader { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.15rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
 .dialogHeader h2 { margin: 0; font-size: 1.1rem; }
 .dialog form { display: grid; gap: .85rem; padding: 1.15rem; }
+.dialog fieldset { min-inline-size: 0; display: grid; gap: .7rem; padding: 0; border: 0; margin: 0; }
+.dialog fieldset + fieldset { padding-block-start: .9rem; border-block-start: 1px solid var(--wd-color-structural-divider); }
+.dialog legend { inline-size: 100%; padding: 0 0 .2rem; color: var(--wd-color-text); font-size: .75rem; font-weight: 700; }
 .dialogActions { display: flex; justify-content: flex-end; gap: .6rem; padding-block-start: .25rem; }
 .scrim { display: none; }
 .visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -99,10 +108,11 @@
   .tableWrap th:nth-child(2),.tableWrap th:nth-child(3),.tableWrap th:nth-child(4),.tableWrap td:nth-child(2),.tableWrap td:nth-child(3),.tableWrap td:nth-child(4) { display: none; }
 }
 @media (max-width: 34rem) {
-  .fieldGrid { grid-template-columns: 1fr; }
+  .fieldGrid,.accountFacts { grid-template-columns: 1fr; }
   .activation { align-items: stretch; flex-direction: column; }
 }
 @keyframes detail-in { from { opacity: 0; transform: translateX(1rem); } }
+@keyframes tenant-ready { from { background: var(--wd-color-action-primary-subtle); } }
 [dir="rtl"] .detail { animation-name: detail-in-rtl; }
 @keyframes detail-in-rtl { from { opacity: 0; transform: translateX(-1rem); } }
-@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } .detail { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } .detail,.tableWrap tr[data-new] td { animation: none; } }

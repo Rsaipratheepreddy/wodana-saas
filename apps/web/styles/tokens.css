@@ -18,17 +18,17 @@
   --wd-identity-gradient-5: linear-gradient(135deg, var(--wd-brand-rose), var(--wd-brand-lilac) 55%, var(--wd-brand-peach));
 
   /* Brand palette. Components consume semantic tokens below, not these raw steps. */
-  --wd-brand-50: #eefbf6;
-  --wd-brand-100: #d7f5e8;
-  --wd-brand-200: #afead3;
-  --wd-brand-300: #79d9b7;
-  --wd-brand-400: #3fbd92;
-  --wd-brand-500: #199d75;
-  --wd-brand-600: #0b7f5d;
-  --wd-brand-700: #08684d;
-  --wd-brand-800: #08523f;
-  --wd-brand-900: #074436;
-  --wd-brand-950: #03261f;
+  --wd-brand-50: var(--wd-workspace-brand-light-50, #eefbf6);
+  --wd-brand-100: var(--wd-workspace-brand-light-100, #d7f5e8);
+  --wd-brand-200: var(--wd-workspace-brand-light-200, #afead3);
+  --wd-brand-300: var(--wd-workspace-brand-light-300, #79d9b7);
+  --wd-brand-400: var(--wd-workspace-brand-light-400, #3fbd92);
+  --wd-brand-500: var(--wd-workspace-brand-light-500, #199d75);
+  --wd-brand-600: var(--wd-workspace-brand-light-600, #0b7f5d);
+  --wd-brand-700: var(--wd-workspace-brand-light-700, #08684d);
+  --wd-brand-800: var(--wd-workspace-brand-light-800, #08523f);
+  --wd-brand-900: var(--wd-workspace-brand-light-900, #074436);
+  --wd-brand-950: var(--wd-workspace-brand-light-950, #03261f);
   --wd-aqua-500: #08717c;
   --wd-lime-400: #b8ee46;
 
@@ -80,11 +80,11 @@
   --wd-color-action-primary-hover: var(--wd-brand-700);
   --wd-color-action-primary-pressed: var(--wd-brand-800);
   --wd-color-action-primary-subtle: var(--wd-brand-50);
-  --wd-color-action-on-primary: #ffffff;
-  --wd-color-link: #087056;
-  --wd-color-link-hover: #065a45;
-  --wd-color-focus: #0b7f5d;
-  --wd-focus-ring: 0 0 0 3px rgb(11 127 93 / 20%);
+  --wd-color-action-on-primary: var(--wd-workspace-brand-light-on, #ffffff);
+  --wd-color-link: var(--wd-workspace-brand-light-700, #087056);
+  --wd-color-link-hover: var(--wd-workspace-brand-light-800, #065a45);
+  --wd-color-focus: var(--wd-workspace-brand-light-600, #0b7f5d);
+  --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
 
   /* Status colors include both text/icon and quiet background values. */
   --wd-color-success: #116b4d;
@@ -215,11 +215,17 @@
 [data-theme="dark"],
 [data-wd-theme="dark"] {
   color-scheme: dark;
-  --wd-brand-50: #183d30;
-  --wd-brand-100: #204c3d;
-  --wd-brand-600: #54c99e;
-  --wd-brand-700: #70d7b2;
-  --wd-brand-800: #94e2c6;
+  --wd-brand-50: var(--wd-workspace-brand-dark-50, #183d30);
+  --wd-brand-100: var(--wd-workspace-brand-dark-100, #204c3d);
+  --wd-brand-200: var(--wd-workspace-brand-dark-200, #afead3);
+  --wd-brand-300: var(--wd-workspace-brand-dark-300, #79d9b7);
+  --wd-brand-400: var(--wd-workspace-brand-dark-400, #3fbd92);
+  --wd-brand-500: var(--wd-workspace-brand-dark-500, #199d75);
+  --wd-brand-600: var(--wd-workspace-brand-dark-600, #54c99e);
+  --wd-brand-700: var(--wd-workspace-brand-dark-700, #70d7b2);
+  --wd-brand-800: var(--wd-workspace-brand-dark-800, #94e2c6);
+  --wd-brand-900: var(--wd-workspace-brand-dark-900, #074436);
+  --wd-brand-950: var(--wd-workspace-brand-dark-950, #03261f);
   --wd-aqua-500: #78ccd5;
   --wd-color-canvas: #111111;
   --wd-color-surface: #181818;
@@ -247,15 +253,15 @@
   --wd-color-sidebar-active: #2f2f2f;
   --wd-color-structural-divider: #303030;
   --wd-color-breadcrumb: #b5b5b5;
-  --wd-color-action-primary: #54c99e;
-  --wd-color-action-primary-hover: #6fd5b0;
-  --wd-color-action-primary-pressed: #8bdec0;
-  --wd-color-action-primary-subtle: #183d30;
-  --wd-color-action-on-primary: #092018;
-  --wd-color-link: #70d7b2;
-  --wd-color-link-hover: #94e2c6;
-  --wd-color-focus: #70d7b2;
-  --wd-focus-ring: 0 0 0 3px rgb(112 215 178 / 30%);
+  --wd-color-action-primary: var(--wd-workspace-brand-dark-600, #54c99e);
+  --wd-color-action-primary-hover: var(--wd-workspace-brand-dark-700, #6fd5b0);
+  --wd-color-action-primary-pressed: var(--wd-workspace-brand-dark-800, #8bdec0);
+  --wd-color-action-primary-subtle: var(--wd-workspace-brand-dark-50, #183d30);
+  --wd-color-action-on-primary: var(--wd-workspace-brand-dark-on, #092018);
+  --wd-color-link: var(--wd-workspace-brand-dark-700, #70d7b2);
+  --wd-color-link-hover: var(--wd-workspace-brand-dark-800, #94e2c6);
+  --wd-color-focus: var(--wd-workspace-brand-dark-700, #70d7b2);
+  --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 30%, transparent);
   --wd-color-success: #79d9b4;
   --wd-color-success-subtle: #173a2e;
   --wd-color-warning: #f1c66e;
@@ -282,6 +288,17 @@
   --wd-identity-gradient-3: none;
   --wd-identity-gradient-4: none;
   --wd-identity-gradient-5: none;
+  --wd-brand-50: #eefbf6;
+  --wd-brand-100: #d7f5e8;
+  --wd-brand-200: #afead3;
+  --wd-brand-300: #79d9b7;
+  --wd-brand-400: #3fbd92;
+  --wd-brand-500: #199d75;
+  --wd-brand-600: #0b7f5d;
+  --wd-brand-700: #08684d;
+  --wd-brand-800: #08523f;
+  --wd-brand-900: #074436;
+  --wd-brand-950: #03261f;
   --wd-color-canvas: #ffffff;
   --wd-color-surface: #ffffff;
   --wd-color-surface-subtle: #ffffff;

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   ACCESS_COOKIE,
+  ACTIVE_WORKSPACE_COOKIE,
   MFA_CHALLENGE_COOKIE,
   MFA_REVOKE_COOKIE,
   REFRESH_COOKIE,
@@ -120,6 +121,10 @@ export async function POST(request: Request) {
     maxAge: session.refreshTokenExpiresIn,
   });
   response.cookies.set(TENANT_COOKIE, tenantSlug, {
+    ...authCookieOptions,
+    maxAge: session.refreshTokenExpiresIn,
+  });
+  response.cookies.set(ACTIVE_WORKSPACE_COOKIE, session.selectedWorkspaceId, {
     ...authCookieOptions,
     maxAge: session.refreshTokenExpiresIn,
   });

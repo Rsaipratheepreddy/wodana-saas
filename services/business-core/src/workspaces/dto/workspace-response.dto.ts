@@ -118,9 +118,15 @@ export class WorkspaceDetailResponseDto {
   @ApiProperty({ type: [LegalEntityResponseDto] }) legalEntities!: LegalEntityResponseDto[];
   @ApiProperty({ type: [BusinessUnitResponseDto] }) businessUnits!: BusinessUnitResponseDto[];
   @ApiProperty({ type: "object", additionalProperties: true })
-  branding!: { logoAssetId: string | null; logoUrl: string | null; logoUpdatedAt: string | null };
+  branding!: { logoAssetId: string | null; logoUrl: string | null; logoUpdatedAt: string | null; primaryColor: string | null };
   @ApiProperty({ type: "object", additionalProperties: true })
   terminology!: Record<string, { visibleName: string; visibleNamePlural: string }>;
+}
+
+export class WorkspaceAppearanceResponseDto {
+  @ApiProperty({ type: WorkspaceResponseDto }) workspace!: WorkspaceResponseDto;
+  @ApiPropertyOptional({ example: "#0B7F5D", type: String, nullable: true })
+  primaryColor!: string | null;
 }
 
 export class CompanyProfileUpdateResponseDto {

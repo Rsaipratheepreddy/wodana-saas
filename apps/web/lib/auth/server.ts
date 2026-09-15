@@ -20,7 +20,14 @@ export type AuthProfile = {
     workspaceName: string;
     workspaceSlug: string;
     workspaceLogoUrl: string | null;
+    workspacePrimaryColor: string | null;
     roles: string[];
+    onboarding: {
+      status: "not_started" | "in_progress" | "completed";
+      currentStep: "workspace_profile" | "organization" | "team" | "integrations" | null;
+      completedSteps: Array<"workspace_profile" | "organization" | "team" | "integrations">;
+      version: number;
+    };
   }>;
   nextAction: string;
 };
@@ -61,7 +68,14 @@ export const getAuthenticatedProfile = cache(async (): Promise<AuthProfile> => {
         workspaceName: "Iglo Architects",
         workspaceSlug: "iglo-architects",
         workspaceLogoUrl: null,
+        workspacePrimaryColor: null,
         roles: ["owner"],
+        onboarding: {
+          status: "completed",
+          currentStep: null,
+          completedSteps: ["workspace_profile", "organization", "team", "integrations"],
+          version: 1,
+        },
       }],
     };
   }

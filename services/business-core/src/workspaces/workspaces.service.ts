@@ -37,6 +37,7 @@ import { UpdateRoleDto } from "./dto/update-role.dto";
 import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
+import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
 import { WorkspaceAccessService } from "./workspace-access.service";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "../crm/automations/default-automation-templates";
 import {
@@ -844,9 +845,11 @@ export class WorkspacesService {
       const branding = await client.query<{
         logoAssetId: string | null;
         logoUpdatedAt: Date | null;
+        primaryColor: string | null;
       }>(
         `SELECT branding.logo_asset_id AS "logoAssetId",
-                asset.updated_at AS "logoUpdatedAt"
+                asset.updated_at AS "logoUpdatedAt",
+                branding.primary_color AS "primaryColor"
          FROM tenant_login_branding branding
          LEFT JOIN workspace_brand_assets asset ON asset.id = branding.logo_asset_id
          WHERE branding.workspace_id = $1`,
@@ -866,6 +869,62 @@ export class WorkspacesService {
   async terminology(actor: RequestActor, workspaceId: string) {
     return this.access.asMember(actor, workspaceId, (client) =>
       this.resolvedTerminology(client, workspaceId));
+  }
+
+  async updateAppearance(
+    actor: RequestActor,
+    workspaceId: string,
+    input: UpdateWorkspaceAppearanceDto,
+  ) {
+    return this.access.withAnyPermission(
+      actor,
+      workspaceId,
+      ["module.organization.edit", "workspace.settings.manage"],
+      async (client, actorUser) => {
+        await this.lockWorkspace(client, workspaceId);
+        const beforeWorkspace = await this.requireWorkspace(client, workspaceId);
+        const beforeBranding = await client.query<{ primaryColor: string | null }>(
+          `SELECT primary_color AS "primaryColor"
+           FROM tenant_login_branding
+           WHERE workspace_id = $1`,
+          [workspaceId],
+        );
+        const workspace = await client.query<WorkspaceRow>(
+          `UPDATE workspaces
+           SET version = version + 1, updated_at = now()
+           WHERE id = $1 AND version = $2
+           RETURNING *`,
+          [workspaceId, input.workspaceVersion],
+        );
+        if (!workspace.rowCount) {
+          throw new ConflictException("Workspace appearance changed; reload and try again");
+        }
+        await client.query(
+          `INSERT INTO tenant_login_branding
+             (workspace_id, login_slug, display_name, primary_color)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (workspace_id)
+           DO UPDATE SET primary_color = EXCLUDED.primary_color, updated_at = now()`,
+          [workspaceId, beforeWorkspace.slug, beforeWorkspace.name, input.primaryColor],
+        );
+        const response = {
+          workspace: this.mapWorkspace(workspace.rows[0]),
+          primaryColor: input.primaryColor,
+        };
+        await this.recordChange(client, {
+          workspaceId,
+          actorUserId: actorUser.userId,
+          action: input.primaryColor
+            ? "workspace.appearance_updated"
+            : "workspace.appearance_restored",
+          entityType: "workspace_branding",
+          entityId: workspaceId,
+          before: { primaryColor: beforeBranding.rows[0]?.primaryColor ?? null },
+          after: { primaryColor: input.primaryColor },
+        });
+        return response;
+      },
+    );
   }
 
   async updateTerminology(
@@ -3592,7 +3651,7 @@ export class WorkspacesService {
 
   private mapBranding(
     loginSlug: string,
-    row?: { logoAssetId: string | null; logoUpdatedAt: Date | null },
+    row?: { logoAssetId: string | null; logoUpdatedAt: Date | null; primaryColor: string | null },
   ) {
     return {
       logoAssetId: row?.logoAssetId ?? null,
@@ -3600,6 +3659,7 @@ export class WorkspacesService {
         ? `/api/auth/tenant-logo/${loginSlug}?v=${row.logoAssetId}`
         : null,
       logoUpdatedAt: row?.logoUpdatedAt ?? null,
+      primaryColor: row?.primaryColor ?? null,
     };
   }
 

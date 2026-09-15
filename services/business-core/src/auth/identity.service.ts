@@ -10,6 +10,14 @@ export type AuthBootstrapNextAction =
   | "enter_workspace"
   | "await_invitation";
 
+export function deriveWorkspaceOnboardingNextAction(
+  status: string | null | undefined,
+): Extract<AuthBootstrapNextAction, "start_onboarding" | "resume_onboarding" | "enter_workspace"> {
+  if (status === "completed") return "enter_workspace";
+  if (!status || status === "not_started") return "start_onboarding";
+  return "resume_onboarding";
+}
+
 export function deriveAuthBootstrapNextAction(
   memberships: Array<{ onboarding: { status: string } }>,
   pendingInvitationCount: number,
@@ -19,9 +27,7 @@ export function deriveAuthBootstrapNextAction(
   }
   const unfinished = memberships.find(({ onboarding }) => onboarding.status !== "completed");
   if (!unfinished) return "enter_workspace";
-  return unfinished.onboarding.status === "not_started"
-    ? "start_onboarding"
-    : "resume_onboarding";
+  return deriveWorkspaceOnboardingNextAction(unfinished.onboarding.status);
 }
 
 @Injectable()
@@ -106,6 +112,7 @@ export class IdentityService {
         workspaceSlug: string;
         workspaceStatus: string;
         workspaceLogoUrl: string | null;
+        workspacePrimaryColor: string | null;
         accountId: string | null;
         accountName: string | null;
         accountRole: string | null;
@@ -120,7 +127,8 @@ export class IdentityService {
                 COALESCE(linked.is_default, false) AS "isDefaultOrganization",
                 CASE WHEN branding.logo_asset_id IS NOT NULL
                      THEN '/api/auth/tenant-logo/' || workspace.slug || '?v=' || branding.logo_asset_id::text
-                     ELSE branding.logo_url END AS "workspaceLogoUrl"
+                     ELSE branding.logo_url END AS "workspaceLogoUrl",
+                branding.primary_color AS "workspacePrimaryColor"
          FROM workspace_memberships membership
          JOIN workspaces workspace ON workspace.id = membership.workspace_id
          LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
@@ -173,6 +181,7 @@ export class IdentityService {
         workspaceSlug: membership.workspaceSlug,
         workspaceStatus: membership.workspaceStatus,
         workspaceLogoUrl: membership.workspaceLogoUrl,
+        workspacePrimaryColor: membership.workspacePrimaryColor,
         accountId: membership.accountId,
         accountName: membership.accountName,
         accountRole: membership.accountRole,

@@ -9,6 +9,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     id: membership.workspaceId,
     imageUrl: membership.workspaceLogoUrl ?? undefined,
     name: membership.workspaceName,
+    primaryColor: membership.workspacePrimaryColor,
   }));
   const user = { email: profile.primaryEmail, name: profile.displayName, platformRole: profile.platformRole };
   return (

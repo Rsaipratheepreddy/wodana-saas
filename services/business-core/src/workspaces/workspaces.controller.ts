@@ -40,6 +40,7 @@ import { UpdateRoleDto } from "./dto/update-role.dto";
 import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
+import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
 import { CompleteOnboardingDto, UpdateOnboardingDto } from "./dto/update-onboarding.dto";
 import { VersionDto } from "./dto/version.dto";
 import {
@@ -63,6 +64,7 @@ import {
   WorkspaceTeamResponseDto,
   WorkspaceTerminologyResponseDto,
   WorkspaceTerminologyItemResponseDto,
+  WorkspaceAppearanceResponseDto,
 } from "./dto/workspace-response.dto";
 import { WorkspacesService } from "./workspaces.service";
 import { InitiateCompanyLogoUploadDto } from "./dto/company-logo.dto";
@@ -116,6 +118,17 @@ export class WorkspacesController {
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
   ) {
     return this.workspaces.get(actor, workspaceId);
+  }
+
+  @Put(":workspaceId/appearance")
+  @ApiOperation({ summary: "Set or restore the workspace primary colour" })
+  @ApiOkResponse({ type: WorkspaceAppearanceResponseDto })
+  updateAppearance(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Body() input: UpdateWorkspaceAppearanceDto,
+  ) {
+    return this.workspaces.updateAppearance(actor, workspaceId, input);
   }
 
   @Patch(":workspaceId/company-profile")

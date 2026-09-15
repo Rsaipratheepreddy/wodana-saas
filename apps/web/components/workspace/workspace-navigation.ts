@@ -71,6 +71,7 @@ export type WorkspaceIdentity = {
   id: string;
   imageUrl?: string;
   name: string;
+  primaryColor?: string | null;
 };
 
 export type WorkspaceUser = {

@@ -19,6 +19,8 @@ export class MembershipSummaryResponseDto {
   @ApiProperty() workspaceSlug!: string;
   @ApiProperty() workspaceStatus!: string;
   @ApiPropertyOptional({ type: String, nullable: true }) workspaceLogoUrl!: string | null;
+  @ApiPropertyOptional({ example: "#0B7F5D", type: String, nullable: true })
+  workspacePrimaryColor!: string | null;
   @ApiPropertyOptional({ type: String, format: "uuid", nullable: true }) accountId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) accountName!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true, enum: ["owner", "administrator", "member"] })

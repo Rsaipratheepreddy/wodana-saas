@@ -9,7 +9,7 @@ import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import { WODDY_MARK_SRC } from "@/lib/brand/identity";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
@@ -26,6 +26,10 @@ import { preProjectNavigation } from "@/lib/pre-project/navigation";
 import { DEMO_PROJECT, demoProjectNavigation, demoProjectSection, realProjectRoute, projectNavigation } from "@/lib/projects/demo";
 import styles from "./workspace.module.css";
 import { WorkspaceFocusProvider, useWorkspaceFocus } from "./workspace-focus";
+import {
+  WORKSPACE_PRIMARY_COLOR_EVENT,
+  workspacePrimaryColorStyle,
+} from "@/lib/workspace/primary-color";
 
 export type WorkspaceShellProps = {
   children: ReactNode;
@@ -69,6 +73,31 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
   const woddy = useWoddy();
   const { theme, toggleTheme } = useWorkspaceTheme();
   const mobileOpen = mobileNavigationPath === pathname;
+  const [primaryOverride, setPrimaryOverride] = useState<{ primaryColor: string | null; workspaceId: string } | null>(null);
+  const primaryColor = primaryOverride?.workspaceId === workspaceId
+    ? primaryOverride.primaryColor
+    : workspaces[0]?.primaryColor ?? null;
+  const primaryColorStyle = useMemo(() => workspacePrimaryColorStyle(primaryColor), [primaryColor]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const entries = Object.entries(primaryColorStyle ?? {});
+    const previous = new Map(entries.map(([key]) => [key, root.style.getPropertyValue(key)]));
+    entries.forEach(([key, value]) => root.style.setProperty(key, String(value)));
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ primaryColor?: string | null }>).detail;
+      setPrimaryOverride({ primaryColor: detail?.primaryColor ?? null, workspaceId });
+    };
+    window.addEventListener(WORKSPACE_PRIMARY_COLOR_EVENT, listener);
+    return () => {
+      entries.forEach(([key]) => {
+        const value = previous.get(key);
+        if (value) root.style.setProperty(key, value);
+        else root.style.removeProperty(key);
+      });
+      window.removeEventListener(WORKSPACE_PRIMARY_COLOR_EVENT, listener);
+    };
+  }, [primaryColorStyle, workspaceId]);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -81,7 +110,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
 
 
   return (
-    <div className={styles.shell} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || !!projectSection || undefined}>
+    <div className={styles.shell} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || !!projectSection || undefined} style={primaryColorStyle}>
       {!moduleSelector ? <div className={styles.desktopSidebar}>
         <WorkspaceSidebar
           activeModule={activeModule}

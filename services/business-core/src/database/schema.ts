@@ -569,13 +569,20 @@ export const tenantLoginBranding = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     loginSlug: varchar("login_slug", { length: 80 }).notNull(),
     displayName: varchar("display_name", { length: 160 }).notNull(),
+    primaryColor: varchar("primary_color", { length: 7 }),
     logoUrl: text("logo_url"),
     logoAssetId: uuid("logo_asset_id").references(() => workspaceBrandAssets.id, {
       onDelete: "set null",
     }),
     ...auditColumns,
   },
-  (table) => [uniqueIndex("tenant_login_branding_slug_uidx").on(table.loginSlug)],
+  (table) => [
+    uniqueIndex("tenant_login_branding_slug_uidx").on(table.loginSlug),
+    check(
+      "tenant_login_branding_primary_color_check",
+      sql`${table.primaryColor} IS NULL OR ${table.primaryColor} ~ '^#[0-9A-F]{6}$'`,
+    ),
+  ],
 );
 
 export const workspaceBrandAssets = pgTable(

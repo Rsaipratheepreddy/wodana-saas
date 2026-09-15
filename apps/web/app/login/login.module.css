@@ -3,8 +3,8 @@
   --login-lilac: #d6b9f3;
   --login-rose: #e4a2bc;
   --login-peach: #f39b54;
-  --login-accent: #694f7a;
-  --login-accent-soft: #f0e8fa;
+  --login-accent: var(--wd-workspace-brand-light-600, #694f7a);
+  --login-accent-soft: var(--wd-workspace-brand-light-50, #f0e8fa);
   --login-brand-gradient: linear-gradient(120deg, var(--login-lilac) 0%, var(--login-rose) 48%, var(--login-peach) 100%);
   --login-backdrop:
     linear-gradient(180deg, rgb(255 255 255 / 0), #ffffff 44%),
@@ -488,8 +488,8 @@
   border-color: transparent !important;
   border-radius: 0.75rem !important;
   justify-content: center;
-  background: var(--login-brand-gradient) !important;
-  color: var(--login-ink) !important;
+  background: var(--wd-workspace-brand-light-600, var(--login-brand-gradient)) !important;
+  color: var(--wd-workspace-brand-light-on, var(--login-ink)) !important;
   font-size: .875rem !important;
   font-weight: 650 !important;
   box-shadow: none !important;
@@ -498,7 +498,7 @@
 
 .submitButton:hover {
   border-color: var(--login-accent) !important;
-  background: var(--login-brand-gradient) !important;
+  background: var(--wd-workspace-brand-light-700, var(--login-brand-gradient)) !important;
   box-shadow: none !important;
   transform: none !important;
 }

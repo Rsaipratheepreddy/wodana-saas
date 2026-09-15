@@ -60,6 +60,7 @@ export type CompanyProfileData = {
     logoAssetId: string | null;
     logoUrl: string | null;
     logoUpdatedAt: string | null;
+    primaryColor: string | null;
   };
 };
 
@@ -111,5 +112,6 @@ export const companyProfileFixture: CompanyProfileData = {
     logoAssetId: null,
     logoUrl: null,
     logoUpdatedAt: null,
+    primaryColor: null,
   },
 };

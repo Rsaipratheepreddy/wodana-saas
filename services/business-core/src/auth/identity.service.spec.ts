@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deriveAuthBootstrapNextAction } from "./identity.service";
+import {
+  deriveAuthBootstrapNextAction,
+  deriveWorkspaceOnboardingNextAction,
+} from "./identity.service";
 
 describe("deriveAuthBootstrapNextAction", () => {
   it("routes a first owner through invitation acceptance and onboarding", () => {
@@ -14,5 +17,12 @@ describe("deriveAuthBootstrapNextAction", () => {
     expect(deriveAuthBootstrapNextAction([
       { onboarding: { status: "completed" } },
     ], 0)).toBe("enter_workspace");
+  });
+
+  it("derives onboarding from the organization the user selected", () => {
+    expect(deriveWorkspaceOnboardingNextAction("not_started")).toBe("start_onboarding");
+    expect(deriveWorkspaceOnboardingNextAction("in_progress")).toBe("resume_onboarding");
+    expect(deriveWorkspaceOnboardingNextAction("completed")).toBe("enter_workspace");
+    expect(deriveWorkspaceOnboardingNextAction(undefined)).toBe("start_onboarding");
   });
 });

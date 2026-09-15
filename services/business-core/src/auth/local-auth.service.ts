@@ -14,7 +14,7 @@ import { ConfigService } from "@nestjs/config";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as jwt from "jsonwebtoken";
 import { DatabaseService } from "../database/database.service";
-import { IdentityService } from "./identity.service";
+import { deriveWorkspaceOnboardingNextAction, IdentityService } from "./identity.service";
 import { RequestActor } from "./actor";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { hashOpaqueToken, hashPassword, verifyPassword } from "./local-password";
@@ -86,11 +86,13 @@ export class LocalAuthService {
       displayName: string;
       loginSlug: string;
       logoUrl: string | null;
+      primaryColor: string | null;
     }>(
       `SELECT display_name AS "displayName", login_slug AS "loginSlug",
               CASE WHEN logo_asset_id IS NOT NULL
                    THEN '/api/auth/tenant-logo/' || login_slug || '?v=' || logo_asset_id::text
-                   ELSE logo_url END AS "logoUrl"
+                   ELSE logo_url END AS "logoUrl",
+              primary_color AS "primaryColor"
        FROM tenant_login_branding WHERE login_slug = $1`,
       [loginSlug.toLowerCase()],
     );
@@ -834,6 +836,15 @@ export class LocalAuthService {
   ) {
     const user = await this.identities.resolveActor(actor);
     const profile = await this.identities.getProfile(actor);
+    const selectedMembership = profile.memberships.find(
+      (membership) => membership.workspaceId === selectedWorkspaceId,
+    );
+    const selectedProfile = selectedMembership
+      ? {
+          ...profile,
+          nextAction: deriveWorkspaceOnboardingNextAction(selectedMembership.onboarding?.status),
+        }
+      : profile;
     const result = await this.database.transaction(async (client) => {
       await this.lockSessions(client, user.userId);
       if (metadata.verifiedPasswordHash) {
@@ -910,7 +921,7 @@ export class LocalAuthService {
       accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
       refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       selectedWorkspaceId,
-      profile,
+      profile: selectedProfile,
       mfa: {
         verified: Boolean(assurance.mfaVerifiedAt),
         authenticationMethods: assurance.authenticationMethods ?? ["pwd"],

@@ -14,6 +14,10 @@ import {
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions, type RegionalOption } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
+import {
+  announceWorkspacePrimaryColor,
+  DEFAULT_WORKSPACE_PRIMARY_COLOR,
+} from "@/lib/workspace/primary-color";
 
 type ProfileForm = {
   name: string; registeredName: string; countryCode: string;
@@ -136,13 +140,17 @@ export function CompanyProfile({ canManage, initialData }: { canManage: boolean;
   const [isOpen, setIsOpen] = useState(false);
   const [editorSection, setEditorSection] = useState<EditorSection>("all");
   const [logoEditorOpen, setLogoEditorOpen] = useState(false);
+  const [appearanceEditorOpen, setAppearanceEditorOpen] = useState(false);
+  const [appearanceColor, setAppearanceColor] = useState<string | null>(initialData.branding.primaryColor);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [removeLogoOpen, setRemoveLogoOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isRemovingLogo, setIsRemovingLogo] = useState(false);
+  const [isSavingAppearance, setIsSavingAppearance] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [logoError, setLogoError] = useState("");
+  const [appearanceError, setAppearanceError] = useState("");
   const [status, setStatus] = useState("");
   const [regions, setRegions] = useState<RegionalOption[]>([]);
   const [cities, setCities] = useState<RegionalOption[]>([]);
@@ -272,7 +280,7 @@ export function CompanyProfile({ canManage, initialData }: { canManage: boolean;
       const completed = await fetch(`/api/workspace/company-profile/logo-uploads/${session.assetId}/complete?workspaceId=${data.workspace.id}`, { method: "POST" });
       if (!completed.ok) throw new Error(await responseMessage(completed, "The logo could not be verified."));
       const branding = await completed.json() as { assetId: string; logoUrl: string; updatedAt: string };
-      setData((current) => ({ ...current, branding: { logoAssetId: branding.assetId, logoUrl: branding.logoUrl, logoUpdatedAt: branding.updatedAt } }));
+      setData((current) => ({ ...current, branding: { ...current.branding, logoAssetId: branding.assetId, logoUrl: branding.logoUrl, logoUpdatedAt: branding.updatedAt } }));
       setStatus("Company logo updated."); setLogoEditorOpen(false); router.refresh();
     } catch (error) { setLogoError(error instanceof Error ? error.message : "The logo could not be uploaded."); }
     finally { setIsUploadingLogo(false); }
@@ -284,10 +292,54 @@ export function CompanyProfile({ canManage, initialData }: { canManage: boolean;
     try {
       const response = await fetch(`/api/workspace/company-profile/logo?workspaceId=${data.workspace.id}`, { method: "DELETE" });
       if (!response.ok) throw new Error(await responseMessage(response, "The logo could not be removed."));
-      setData((current) => ({ ...current, branding: { logoAssetId: null, logoUrl: null, logoUpdatedAt: null } }));
+      setData((current) => ({ ...current, branding: { ...current.branding, logoAssetId: null, logoUrl: null, logoUpdatedAt: null } }));
       setRemoveLogoOpen(false); setStatus("Company logo removed."); router.refresh();
     } catch (error) { setLogoError(error instanceof Error ? error.message : "The logo could not be removed."); setRemoveLogoOpen(false); }
     finally { setIsRemovingLogo(false); }
+  };
+
+  const openAppearanceEditor = () => {
+    setAppearanceColor(data.branding.primaryColor);
+    setAppearanceError("");
+    setAppearanceEditorOpen(true);
+  };
+
+  const saveAppearance = async () => {
+    if (isSavingAppearance) return;
+    setIsSavingAppearance(true); setAppearanceError(""); setStatus("");
+    try {
+      const response = await fetch("/api/workspace/appearance", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: data.workspace.id,
+          workspaceVersion: data.workspace.version,
+          primaryColor: appearanceColor,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        message?: string;
+        primaryColor?: string | null;
+        workspace?: CompanyProfileData["workspace"];
+      } | null;
+      if (!response.ok || !payload?.workspace || payload.primaryColor === undefined) {
+        setAppearanceError(payload?.message ?? "The workspace appearance could not be saved.");
+        return;
+      }
+      setData((current) => ({
+        ...current,
+        workspace: payload.workspace!,
+        branding: { ...current.branding, primaryColor: payload.primaryColor ?? null },
+      }));
+      announceWorkspacePrimaryColor(payload.primaryColor ?? null);
+      setAppearanceEditorOpen(false);
+      setStatus(payload.primaryColor ? "Workspace colour updated." : "Wodana default colour restored.");
+      router.refresh();
+    } catch {
+      setAppearanceError("The workspace appearance service is unavailable. Try again.");
+    } finally {
+      setIsSavingAppearance(false);
+    }
   };
 
   const editorTitle: Record<EditorSection, string> = {
@@ -325,6 +377,7 @@ export function CompanyProfile({ canManage, initialData }: { canManage: boolean;
           <section aria-labelledby="legal-details-heading" className={styles.detailSection} id="legal-tax"><header><h2 id="legal-details-heading">Legal &amp; tax</h2>{canManage ? <IconButton aria-label="Edit legal and tax details" onPress={() => openEditor("legal")}><Pencil aria-hidden="true" size={16} /></IconButton> : null}</header><dl className={styles.detailGrid}><Detail label="Country / region" value={`${displayName(entity.countryCode, "region")} · ${entity.countryCode}`} /><Detail label="Entity status" value={entity.status === "active" ? "Active" : entity.status} /><Detail label="Registration number" ltr value={optionalValue(entity.registrationNumber)} /><Detail label="Tax registration number" ltr value={optionalValue(entity.taxRegistrationNumber)} /></dl></section>
           <section aria-labelledby="address-details-heading" className={styles.detailSection} id="registered-office"><header><h2 id="address-details-heading">Registered office</h2>{canManage ? <IconButton aria-label="Edit registered office" onPress={() => openEditor("address")}><Pencil aria-hidden="true" size={16} /></IconButton> : null}</header>{hasAddress ? <dl className={styles.detailGrid}><Detail label="Address" value={optionalValue(address)} /><Detail label="City" value={optionalValue(entity.address.city)} /><Detail label={administrativeAreaLabel(entity.countryCode)} value={optionalValue(entity.address.region)} />{entity.countryCode === "AE" ? null : <Detail label="Postal code" ltr value={optionalValue(entity.address.postalCode)} />}<Detail label="Country / region" value={displayName(entity.countryCode, "region")} /></dl> : <p className={styles.missing}>Not provided</p>}</section>
           <section aria-labelledby="defaults-heading" className={styles.detailSection} id="regional-settings"><header><h2 id="defaults-heading">Regional settings</h2>{canManage ? <IconButton aria-label="Edit regional settings" onPress={() => openEditor("regional")}><Pencil aria-hidden="true" size={16} /></IconButton> : null}</header><dl className={styles.detailGrid}><Detail label="Base currency" ltr value={`${data.workspace.defaultCurrency} · ${displayName(data.workspace.defaultCurrency, "currency")}`} /><Detail label="Language & format" ltr value={data.workspace.defaultLocale} /><Detail label="Time zone" ltr value={data.workspace.defaultTimezone} /><Detail label="Measurement system" value={data.workspace.unitSystem[0].toUpperCase() + data.workspace.unitSystem.slice(1)} /><Detail label="Week starts on" value={["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][data.workspace.weekStartsOn] ?? "Monday"} /></dl></section>
+          <section aria-labelledby="appearance-heading" className={styles.detailSection} id="workspace-appearance"><header><h2 id="appearance-heading">Workspace appearance</h2>{canManage ? <IconButton aria-label="Edit workspace appearance" onPress={openAppearanceEditor}><Pencil aria-hidden="true" size={16} /></IconButton> : null}</header><div className={styles.appearanceSummary}><span aria-hidden="true" className={styles.colourSwatch} style={{ backgroundColor: data.branding.primaryColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR }} /><div><strong>{data.branding.primaryColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR}</strong><small>{data.branding.primaryColor ? "Custom primary colour" : "Wodana default"}</small></div></div></section>
         </div>}
         {!canManage ? <p className={styles.permissionNote}>Only workspace owners and administrators can edit this profile.</p> : null}
       </section>
@@ -339,6 +392,18 @@ export function CompanyProfile({ canManage, initialData }: { canManage: boolean;
           {editorSection === "all" || editorSection === "regional" ? <fieldset><legend>Regional settings</legend><p className={styles.fieldsetDescription}>Applied to new records. Existing documents keep their saved values.</p><div className={styles.formGrid}><ComboboxField errorMessage={errors.defaultCurrency} isInvalid={Boolean(errors.defaultCurrency)} isRequired items={currencies} label="Base currency" onSelectionChange={(key) => key && updateField("defaultCurrency", String(key))} placeholder="Search currencies" selectedKey={form.defaultCurrency} /><SelectField errorMessage={errors.defaultLocale} isInvalid={Boolean(errors.defaultLocale)} isRequired items={locales} label="Language & number format" onSelectionChange={(key) => key && updateField("defaultLocale", String(key))} selectedKey={form.defaultLocale} /><div className={styles.fullField}><ComboboxField errorMessage={errors.defaultTimezone} isInvalid={Boolean(errors.defaultTimezone)} isRequired items={timeZones} label="Time zone" onSelectionChange={(key) => key && updateField("defaultTimezone", String(key))} placeholder="Search time zones" selectedKey={form.defaultTimezone} /></div><SelectField items={[{ id: "metric", label: "Metric" }, { id: "imperial", label: "Imperial" }, { id: "mixed", label: "Mixed" }]} label="Measurement system" onSelectionChange={(key) => key && updateField("unitSystem", String(key))} selectedKey={form.unitSystem} /><SelectField items={[{ id: "0", label: "Sunday" }, { id: "1", label: "Monday" }, { id: "6", label: "Saturday" }]} label="Week starts on" onSelectionChange={(key) => key && updateField("weekStartsOn", String(key))} selectedKey={form.weekStartsOn} /></div></fieldset> : null}
         </form>
       </ControlledModalDialog> : null}
+      <ControlledModalDialog description="Used for primary actions, links, focus, and selected states in this workspace." footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingAppearance} onPress={() => setAppearanceEditorOpen(false)}>Cancel</Button><Button isLoading={isSavingAppearance} onPress={saveAppearance} variant="primary">Save colour</Button></div>} isOpen={appearanceEditorOpen} onOpenChange={setAppearanceEditorOpen} title="Workspace appearance">
+        <div className={styles.appearanceEditor} data-wd-density="compact">
+          {appearanceError ? <Callout title="Could not save colour" tone="danger">{appearanceError}</Callout> : null}
+          <label htmlFor="workspace-primary-colour">Primary colour</label>
+          <div className={styles.colourInputRow}>
+            <input aria-label="Primary colour" id="workspace-primary-colour" onChange={(event) => { setAppearanceColor(event.target.value.toUpperCase()); setAppearanceError(""); }} type="color" value={appearanceColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR} />
+            <code data-ltr>{appearanceColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR}</code>
+          </div>
+          <p>Accessible light and dark variants are created automatically.</p>
+          <Button isDisabled={appearanceColor === null || isSavingAppearance} onPress={() => setAppearanceColor(null)} variant="quiet">Use Wodana default</Button>
+        </div>
+      </ControlledModalDialog>
       <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button onPress={() => setLogoEditorOpen(false)}>Done</Button></div>} isOpen={logoEditorOpen} onOpenChange={setLogoEditorOpen} title="Company logo">
         <div className={styles.logoEditor}>
           <div className={styles.logoDialogPreview} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>{data.branding.logoUrl ? <Image alt={`${data.workspace.name} logo`} height={120} src={data.branding.logoUrl} unoptimized width={120} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}</div>

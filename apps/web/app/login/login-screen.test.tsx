@@ -73,6 +73,15 @@ describe("login progress and failure feedback", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Signed in. Opening your workspace");
     expect(screen.getByRole("link", { name: "Open workspace" })).toHaveAttribute("href", "/workspace");
   });
+  it("sends a first-time owner into resumable onboarding", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, nextAction: "start_onboarding" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = renderLogin();
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/onboarding"));
+  });
   it.each([
     { label: "invalid JSON", login: { ok: true, status: 200, json: async () => null }, session: null, message: "incomplete response" },
     { label: "missing authentication result", login: { ok: true, status: 200, json: async () => ({}) }, session: null, message: "could not be completed" },

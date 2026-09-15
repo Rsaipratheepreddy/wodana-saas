@@ -18,8 +18,9 @@ import type { SecuritySession } from "@/lib/workspace/security";
 import { authRequest, confirmBrowserSession, openAuthenticatedWorkspace } from "@/lib/auth/client";
 import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./login.module.css";
+import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 
-type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null };
+type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null; primaryColor?: string | null };
 type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
 type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
 
@@ -63,6 +64,7 @@ export function LoginScreen({
   const [mfaQrCode, setMfaQrCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [recoveryCodesSaved, setRecoveryCodesSaved] = useState(false);
+  const [authenticatedDestination, setAuthenticatedDestination] = useState(nextPath);
   const requestInFlight = useRef(false);
   const navigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (navigationTimer.current) clearTimeout(navigationTimer.current); }, []);
@@ -91,6 +93,10 @@ export function LoginScreen({
   };
 
   const finishAuthenticatedSignIn = async (payload: Record<string, unknown>, path: string) => {
+    const destination = payload.nextAction === "start_onboarding" || payload.nextAction === "resume_onboarding"
+      ? "/onboarding"
+      : path;
+    setAuthenticatedDestination(destination);
     if (payload.mfaEnrollmentRequired === true && typeof payload.selectedWorkspaceId === "string") {
       const enrollmentDeadline = typeof payload.mfaEnrollmentDeadline === "string"
         ? payload.mfaEnrollmentDeadline
@@ -109,7 +115,7 @@ export function LoginScreen({
     setStatus("Confirming your browser session…");
     await confirmBrowserSession();
     setPassword("");
-    openWorkspace(path);
+    openWorkspace(destination);
     return true;
   };
 
@@ -237,7 +243,7 @@ export function LoginScreen({
     try {
       setStatus("Confirming your browser session…");
       await confirmBrowserSession();
-      openWorkspace(nextPath);
+      openWorkspace(authenticatedDestination);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Your session could not be confirmed.");
       requestInFlight.current = false;
@@ -255,7 +261,7 @@ export function LoginScreen({
     try {
       setStatus("Confirming your secure session…");
       await confirmBrowserSession();
-      openWorkspace(nextPath);
+      openWorkspace(authenticatedDestination);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Your session could not be confirmed.");
       requestInFlight.current = false;
@@ -297,7 +303,7 @@ export function LoginScreen({
         const { ok, payload } = await authRequest(passwordResetToken ? "/api/auth/reset-password" : "/api/auth/invitations/activate", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(passwordResetToken ? { resetToken: passwordResetToken, password } : { invitationToken, password }),
+          body: JSON.stringify(passwordResetToken ? { resetToken: passwordResetToken, password } : { invitationToken, password, tenantSlug: tenant.loginSlug }),
         });
         if (!ok) {
           setStatus(typeof payload.message === "string" ? payload.message : (passwordResetToken ? "Unable to reset this password." : "Unable to activate this invitation."));
@@ -439,7 +445,7 @@ export function LoginScreen({
             : passwordResetToken ? "Save new password" : invitationToken ? "Activate invitation" : "Sign in";
 
   return (
-    <DesignSystemProvider className={styles.loginRoot} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer}>
+    <DesignSystemProvider className={styles.loginRoot} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant.primaryColor)}>
       <main className={styles.loginLayout}>
         <section aria-labelledby="welcome-heading" className={styles.brandPanel}>
           <div className={styles.brandStory}>
@@ -613,7 +619,7 @@ export function LoginScreen({
               {limitedSessions ? "" : status || "Ready"}
             </p>
 
-            {isOpening ? <a className={styles.continueLink} href={nextPath}>Open workspace</a> : null}
+            {isOpening ? <a className={styles.continueLink} href={authenticatedDestination}>{authenticatedDestination === "/onboarding" ? "Continue setup" : "Open workspace"}</a> : null}
 
             <p className={styles.supportCopy}>
               {mfaStage !== "credentials" ? null : settingPassword ? (

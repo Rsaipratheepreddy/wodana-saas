@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "Sign in to your Wodana business workspace.",
 };
 
-type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null };
+type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null };
 
 async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding> {
   const loginSlug = requestedSlug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug)
@@ -25,7 +25,7 @@ async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding
       logoUrl: branding.logoUrl ? `/api/auth/tenant-logo/${branding.loginSlug}` : null,
     };
   }
-  return { displayName: "Iglo Architects", loginSlug, logoUrl: null };
+  return { displayName: "Iglo Architects", loginSlug, logoUrl: null, primaryColor: null };
 }
 
 export default async function LoginPage({
