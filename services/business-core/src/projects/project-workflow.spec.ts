@@ -276,4 +276,43 @@ describe("project workflow templates", () => {
       note: "Warranty correction needs delivery-team action",
     });
   });
+
+  it("does not make the existing closeout command depend on a new UI transition", () => {
+    const data = emptyProject();
+    data.phase = "handover";
+    data.workflow = adoptProjectWorkflow(
+      builtInProjectWorkflow(),
+      "2026-09-15T08:00:00.000Z",
+      "user-1",
+      "Project Manager",
+    );
+    data.tasks = [{ id: "task-1", status: "completed" } as Task];
+    data.handovers = [{ id: "handover-1", status: "accepted" } as never];
+    data.financeClosed = true;
+    const reviewer: ExecutionActor = {
+      id: "member-2",
+      userId: "user-2",
+      name: "Reviewer",
+      manage: true,
+      review: true,
+      report: true,
+      buy: true,
+      memberIds: ["member-2"],
+      resourceIds: [],
+      now: "2026-09-15T10:00:00.000Z",
+      released: true,
+    };
+    applyExecution(data, "complete_project", { note: "Closeout approved" }, reviewer);
+    expect(data.workflow.currentStageKey).toBe("completed");
+    expect(data.workflow.history.at(-1)).toMatchObject({
+      action: "completed",
+      fromStageKey: "planning",
+      gateResults: expect.arrayContaining([
+        { key: "tasks_planned", passed: false },
+        { key: "all_tasks_closed", passed: true },
+        { key: "all_handovers_accepted", passed: true },
+        { key: "finance_closed", passed: true },
+      ]),
+    });
+  });
 });

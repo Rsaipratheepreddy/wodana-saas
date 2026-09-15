@@ -52,7 +52,7 @@ No live deployment or production-data mutation is part of B0.
 
 ## Current regression status after the B1-B9 backend slices
 
-- Business Core: 372 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 373 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
 - Clean database replay: all 60 registered migrations passed; migration 0060 is exercised by the
   disposable funnel and the new workspace-scoped table passes the RLS manifest.

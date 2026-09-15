@@ -64,8 +64,11 @@ honestly rather than erased.
 
 The Completed stage remains reachable only through the existing project-completion command. That
 command still enforces work, handover, snag, procurement, milestone, stock-transfer, payment and
-finance closure before adding the final workflow history event. Reopening moves the workflow back
-to its preceding stage with the required reopening reason.
+finance closure before adding the final workflow history event. Until the workflow UI is connected,
+a valid existing closeout may synchronize directly from its current management stage to Completed;
+the history records the observed configured gate results without weakening the authoritative
+closeout checks. Reopening moves the workflow back to its preceding stage with the required
+reopening reason.
 
 Every stage movement records actor, time, from/to keys, note and evaluated gate results. Portfolio
 responses include the current and next visible stages, accountable role/member and current gate

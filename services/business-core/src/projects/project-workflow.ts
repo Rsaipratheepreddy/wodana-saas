@@ -522,15 +522,17 @@ export function completeProjectWorkflow(
   const workflow = ensureProjectWorkflow(data);
   const current = currentStage(workflow);
   const finalIndex = workflow.template.stages.length - 1;
-  if (current.index !== finalIndex - 1)
-    throw new ConflictException(
-      "Move through the remaining project stages before completion.",
-    );
   if (data.controls?.onHold)
     throw new ConflictException("Release the project hold before completion.");
-  assertStageOwner(data, current.stage);
-  const gateResults = projectWorkflowGateResults(data, current.stage);
-  assertPassed(gateResults);
+  const seen = new Set<ProjectWorkflowGateKey>();
+  const gateResults = workflow.template.stages
+    .slice(current.index, finalIndex)
+    .flatMap((stage) => projectWorkflowGateResults(data, stage))
+    .filter((result) => {
+      if (seen.has(result.key)) return false;
+      seen.add(result.key);
+      return true;
+    });
   const final = workflow.template.stages[finalIndex];
   const entry = historyEntry(
     "completed",
