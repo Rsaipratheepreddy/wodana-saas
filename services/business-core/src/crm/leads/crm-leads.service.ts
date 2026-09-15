@@ -26,6 +26,7 @@ import {
   UpsertQualificationDto,
 } from "./dto/leads.dto";
 import { normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
+import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -61,6 +62,7 @@ export class CrmLeadsService {
     private readonly database: DatabaseService,
     private readonly access: WorkspaceAccessService,
     private readonly events: CrmEventsService,
+    private readonly slas: CrmSlaLifecycleService = new CrmSlaLifecycleService(),
   ) {}
 
   processDueSlasInternal(workspaceId: string, limit = 100) {
@@ -68,7 +70,7 @@ export class CrmLeadsService {
       const safeLimit = Math.min(Math.max(limit, 1), 500);
       const breached = await client.query<Record<string, unknown>>(
         `WITH due AS (
-           SELECT id FROM crm_sla_instances
+           SELECT id,status FROM crm_sla_instances
            WHERE workspace_id = $1 AND status IN ('active', 'warning') AND due_at <= now()
            ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $2
          )
@@ -76,11 +78,12 @@ export class CrmLeadsService {
             SET status = 'breached', breached_at = COALESCE(breached_at, now()), version = version + 1
            FROM due
           WHERE instance.id = due.id
-         RETURNING instance.id, instance.lead_id AS "leadId", instance.target_type AS "targetType",
+         RETURNING instance.id, due.status AS "fromStatus", instance.lead_id AS "leadId", instance.target_type AS "targetType",
                    instance.target_id AS "targetId", instance.due_at AS "dueAt", instance.status, instance.version`,
         [workspaceId, safeLimit],
       );
       for (const row of breached.rows) {
+        await this.slas.recordTransition(client, workspaceId, String(row.id), "breached", String(row.fromStatus), "breached", "SLA deadline elapsed", { dueAt: row.dueAt }, null);
         await this.events.record(client, {
           workspaceId,
           actorUserId: null,
@@ -95,7 +98,7 @@ export class CrmLeadsService {
       const warnings = remaining > 0
         ? await client.query<Record<string, unknown>>(
           `WITH due AS (
-             SELECT id FROM crm_sla_instances
+             SELECT id,status FROM crm_sla_instances
              WHERE workspace_id = $1 AND status = 'active' AND warning_at <= now() AND due_at > now()
              ORDER BY warning_at FOR UPDATE SKIP LOCKED LIMIT $2
            )
@@ -103,13 +106,14 @@ export class CrmLeadsService {
               SET status = 'warning', warned_at = COALESCE(warned_at, now()), version = version + 1
              FROM due
             WHERE instance.id = due.id
-           RETURNING instance.id, instance.lead_id AS "leadId", instance.target_type AS "targetType",
+           RETURNING instance.id, due.status AS "fromStatus", instance.lead_id AS "leadId", instance.target_type AS "targetType",
                      instance.target_id AS "targetId", instance.warning_at AS "warningAt",
                      instance.due_at AS "dueAt", instance.status, instance.version`,
           [workspaceId, remaining],
         )
         : { rows: [], rowCount: 0 };
       for (const row of warnings.rows) {
+        await this.slas.recordTransition(client, workspaceId, String(row.id), "warning", String(row.fromStatus), "warning", "SLA warning threshold elapsed", { warningAt: row.warningAt, dueAt: row.dueAt }, null);
         await this.events.record(client, {
           workspaceId,
           actorUserId: null,
@@ -473,6 +477,11 @@ export class CrmLeadsService {
       if (input.breachAfterMinutes <= input.warningAfterMinutes) {
         throw new UnprocessableEntityException("Breach time must be later than warning time");
       }
+      const existingActive = await client.query(
+        `SELECT 1 FROM crm_sla_policies WHERE workspace_id=$1 AND event_type=$2 AND status='active' LIMIT 1`,
+        [workspaceId, input.eventType.trim()],
+      );
+      if (existingActive.rowCount) throw new ConflictException("An active SLA policy already exists for this event type");
       let schedule: SlaSchedule;
       try {
         schedule = normalizeSlaSchedule(input.schedule, input.calculationMode);
@@ -524,6 +533,16 @@ export class CrmLeadsService {
       const warning = input.warningAfterMinutes ?? Number(before.warning_after_minutes);
       const breach = input.breachAfterMinutes ?? Number(before.breach_after_minutes);
       if (breach <= warning) throw new UnprocessableEntityException("Breach time must be later than warning time");
+      const resultingEventType = input.eventType?.trim() ?? String(before.event_type);
+      const resultingStatus = input.status ?? String(before.status);
+      if (resultingStatus === "active") {
+        const conflicting = await client.query(
+          `SELECT 1 FROM crm_sla_policies
+           WHERE workspace_id=$1 AND event_type=$2 AND status='active' AND id<>$3 LIMIT 1`,
+          [workspaceId, resultingEventType, policyId],
+        );
+        if (conflicting.rowCount) throw new ConflictException("An active SLA policy already exists for this event type");
+      }
       let schedule = before.schedule;
       let calculationMode = String(before.calculation_mode);
       if (input.schedule !== undefined || input.calculationMode !== undefined) {
@@ -596,6 +615,11 @@ export class CrmLeadsService {
     }, actorUserId, "manual", "Selected during creation");
   }
 
+  async startSlaOnIntake(client: PoolClient, workspaceId: string, leadId: string, actorUserId: string | null) {
+    const lead = await this.requireLead(client, workspaceId, leadId, false);
+    return this.startFirstResponseSla(client, workspaceId, leadId, lead.owner_membership_id, actorUserId, false, "Lead became ready after intake");
+  }
+
   async autoAssignForAutomation(client: PoolClient, workspaceId: string, leadId: string) {
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:lead-assignment`]);
     const lead = await this.requireLead(client, workspaceId, leadId, true);
@@ -657,8 +681,53 @@ export class CrmLeadsService {
       );
       if (!result.rowCount) throw new ConflictException("Lead changed; reload and try again");
       const response = this.mapLead(result.rows[0] as LeadContext);
-      if (["connected", "nurturing", "qualified", "disqualified", "paused"].includes(input.status)) {
-        await client.query(`UPDATE crm_sla_instances SET status = 'stopped', stopped_at = now(), version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND status IN ('active', 'warning', 'breached')`, [workspaceId, leadId]);
+      if (input.status === "paused") {
+        const paused = await this.slas.pauseFirstResponse(client, workspaceId, leadId, actorUser.userId, input.reason?.trim() || "Lead paused");
+        if (paused) {
+          await client.query(
+            `UPDATE crm_activities SET due_at=NULL,is_next_action=false,version=version+1,updated_at=now()
+             WHERE workspace_id=$1 AND sla_instance_id=$2 AND status='pending'`,
+            [workspaceId, paused.id],
+          );
+        }
+      } else if (before.status === "paused" && ["new", "attempting_contact"].includes(input.status)) {
+        const resumed = await this.slas.resumeFirstResponse(client, workspaceId, leadId, actorUser.userId, "Lead reopened from pause");
+        if (resumed) {
+          const makeNextAction = !input.nextActionAt;
+          await client.query(
+            `UPDATE crm_activities SET due_at=$3,is_next_action=$4,version=version+1,updated_at=now()
+             WHERE workspace_id=$1 AND sla_instance_id=$2 AND status='pending'`,
+            [workspaceId, resumed.id, resumed.warning_at, makeNextAction],
+          );
+          if (makeNextAction) await client.query(`UPDATE crm_leads SET next_action_at=$3 WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId, resumed.warning_at]);
+        }
+      } else if (["connected", "nurturing", "qualified", "disqualified"].includes(input.status)) {
+        const stopped = await this.slas.stopFirstResponse(client, workspaceId, leadId, actorUser.userId, `lead_status_${input.status}`, {
+          type: "lead_status",
+          fromStatus: before.status,
+          toStatus: input.status,
+        });
+        if (stopped) {
+          const completed = ["connected", "nurturing"].includes(input.status);
+          await client.query(
+            `UPDATE crm_activities SET status=$3::crm_activity_status,
+               completed_at=CASE WHEN $3='completed' THEN now() ELSE completed_at END,
+               completion_outcome=CASE WHEN $3='completed' THEN 'Lead response recorded' ELSE completion_outcome END,
+               is_next_action=false,version=version+1,updated_at=now()
+             WHERE workspace_id=$1 AND sla_instance_id=$2 AND status='pending'`,
+            [workspaceId, stopped.id, completed ? "completed" : "cancelled"],
+          );
+          await client.query(
+            `UPDATE crm_leads SET next_action_at=(
+               SELECT due_at FROM crm_activities
+               WHERE workspace_id=$1 AND lead_id=$2 AND status='pending' AND is_next_action
+               ORDER BY due_at NULLS LAST,id LIMIT 1
+             ) WHERE workspace_id=$1 AND id=$2`,
+            [workspaceId, leadId],
+          );
+        }
+      } else if (["qualified", "disqualified"].includes(before.status) && ["new", "attempting_contact"].includes(input.status)) {
+        await this.startFirstResponseSla(client, workspaceId, leadId, response.ownerMembershipId as string | null, actorUser.userId, true, "Closed lead reopened for a new response cycle");
       }
       if (["qualified", "disqualified"].includes(input.status)) {
         await client.query(`UPDATE crm_enquiries SET status = $3, closed_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = (SELECT enquiry_id FROM crm_leads WHERE workspace_id = $1 AND id = $2)`, [workspaceId, leadId, input.status]);
@@ -878,38 +947,34 @@ export class CrmLeadsService {
     return { ...response, assignment: selection };
   }
 
-  private async startFirstResponseSla(client: PoolClient, workspaceId: string, leadId: string, ownerMembershipId: string | null, actorUserId: string | null) {
-    const existing = await client.query(`SELECT 1 FROM crm_sla_instances WHERE workspace_id = $1 AND lead_id = $2 LIMIT 1`, [workspaceId, leadId]);
-    if (existing.rowCount) return;
-    const policy = await client.query<{ id: string; warning_after_minutes: number; breach_after_minutes: number }>(
-      `SELECT id, warning_after_minutes, breach_after_minutes
-       FROM crm_sla_policies WHERE workspace_id = $1 AND status = 'active'
-         AND event_type = 'first_response' ORDER BY created_at LIMIT 1`, [workspaceId],
-    );
-    if (!policy.rowCount) return;
-    const selected = policy.rows[0];
-    await client.query(`UPDATE crm_sla_instances SET status = 'stopped', stopped_at = now(), version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND status = 'active'`, [workspaceId, leadId]);
-    await client.query(
-      `INSERT INTO crm_sla_instances
-        (workspace_id, policy_id, lead_id, target_type, target_id,
-         started_at, warning_at, due_at)
-       VALUES ($1, $2, $3, 'lead', $3, now(),
-               now() + ($4 || ' minutes')::interval,
-               now() + ($5 || ' minutes')::interval)`,
-      [workspaceId, selected.id, leadId, selected.warning_after_minutes, selected.breach_after_minutes],
-    );
-    const dueAt = new Date(Date.now() + selected.warning_after_minutes * 60_000);
+  private async startFirstResponseSla(
+    client: PoolClient,
+    workspaceId: string,
+    leadId: string,
+    ownerMembershipId: string | null,
+    actorUserId: string | null,
+    newCycle = false,
+    reason = "Lead assigned for first response",
+  ) {
+    const instance = await this.slas.startFirstResponse(client, workspaceId, leadId, {
+      actorUserId,
+      ownerMembershipId,
+      reason,
+      newCycle,
+    });
+    if (!instance) return null;
     const next = await client.query(`SELECT id FROM crm_activities WHERE workspace_id = $1 AND lead_id = $2 AND is_next_action AND status = 'pending' LIMIT 1`, [workspaceId, leadId]);
-    if (next.rowCount) return;
+    if (next.rowCount) return instance;
     await client.query(
       `INSERT INTO crm_activities
-        (workspace_id, lead_id, type, title, owner_membership_id,
+        (workspace_id, lead_id, sla_instance_id, type, title, owner_membership_id,
          priority, due_at, is_next_action, created_by, party_id)
-       VALUES ($1, $2, 'task', 'Respond to new enquiry', $3, 'high', $4, true, $5,
+       VALUES ($1, $2, $6, 'task', 'Respond to new enquiry', $3, 'high', $4, true, $5,
          (SELECT party_id FROM crm_leads WHERE workspace_id = $1 AND id = $2))`,
-      [workspaceId, leadId, ownerMembershipId, dueAt, actorUserId],
+      [workspaceId, leadId, ownerMembershipId, instance.warningAt, actorUserId, instance.id],
     );
-    await client.query(`UPDATE crm_leads SET next_action_at = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId, dueAt]);
+    await client.query(`UPDATE crm_leads SET next_action_at = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId, instance.warningAt]);
+    return instance;
   }
 
   private matchesRule(conditions: Record<string, unknown>, context: Record<string, unknown>): boolean {

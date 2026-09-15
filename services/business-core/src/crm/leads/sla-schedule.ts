@@ -376,6 +376,25 @@ export function addSlaMinutes(start: Date, minutes: number, schedule: SlaSchedul
   return new Date(cursor);
 }
 
+export function remainingSlaMinutes(from: Date, deadline: Date, schedule: SlaSchedule): number {
+  if (!(from instanceof Date) || !Number.isFinite(from.getTime())) fail("SLA remaining-time start must be a valid instant");
+  if (!(deadline instanceof Date) || !Number.isFinite(deadline.getTime())) fail("SLA deadline must be a valid instant");
+  if (deadline <= from) return 0;
+  if (schedule.mode === "elapsed") return Math.ceil((deadline.getTime() - from.getTime()) / 60_000);
+
+  let cursor = from.getTime();
+  let businessMilliseconds = 0;
+  while (cursor < deadline.getTime()) {
+    const interval = nextBusinessInterval(schedule, cursor);
+    if (interval.start >= deadline.getTime()) break;
+    const usableStart = Math.max(cursor, interval.start);
+    const usableEnd = Math.min(deadline.getTime(), interval.end);
+    if (usableEnd > usableStart) businessMilliseconds += usableEnd - usableStart;
+    cursor = Math.max(interval.end, usableStart + 1);
+  }
+  return Math.ceil(businessMilliseconds / 60_000);
+}
+
 export function calculateSlaDeadlines(
   startedAt: Date,
   warningAfterMinutes: number,

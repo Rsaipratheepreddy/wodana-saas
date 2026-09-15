@@ -3,6 +3,7 @@ import {
   addSlaMinutes,
   calculateSlaDeadlines,
   normalizeSlaSchedule,
+  remainingSlaMinutes,
   SlaScheduleValidationError,
 } from "./sla-schedule";
 
@@ -152,6 +153,22 @@ describe("SLA deadline calculation", () => {
   it("keeps a zero-minute warning at the exact received instant", () => {
     const startedAt = new Date("2026-09-21T05:00:37.500Z");
     expect(addSlaMinutes(startedAt, 0, dubaiWeek()).toISOString()).toBe(startedAt.toISOString());
+  });
+
+  it("calculates remaining business time without counting closed periods", () => {
+    expect(remainingSlaMinutes(
+      new Date("2026-09-18T12:30:00.000Z"),
+      new Date("2026-09-21T06:30:00.000Z"),
+      dubaiWeek(),
+    )).toBe(120);
+  });
+
+  it("rounds a partial remaining minute up so a pause cannot shorten the SLA", () => {
+    expect(remainingSlaMinutes(
+      new Date("2026-09-21T05:00:30.000Z"),
+      new Date("2026-09-21T05:02:00.000Z"),
+      dubaiWeek(),
+    )).toBe(2);
   });
 
   it("rejects invalid deadline inputs", () => {

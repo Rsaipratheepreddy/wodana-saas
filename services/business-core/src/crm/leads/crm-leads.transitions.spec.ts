@@ -13,8 +13,14 @@ function setup(status: string, options: { converted?: boolean; unassigned?: bool
   });
   const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })) };
   const events = { record: vi.fn().mockResolvedValue(undefined) };
-  const service = new CrmLeadsService({} as never, access as never, events as never);
-  return { service, query, events, access };
+  const slas = {
+    pauseFirstResponse: vi.fn().mockResolvedValue(null),
+    resumeFirstResponse: vi.fn().mockResolvedValue(null),
+    stopFirstResponse: vi.fn().mockResolvedValue(null),
+    startFirstResponse: vi.fn().mockResolvedValue(null),
+  };
+  const service = new CrmLeadsService({} as never, access as never, events as never, slas as never);
+  return { service, query, events, access, slas };
 }
 
 describe("CRM lead status moves", () => {
@@ -61,5 +67,45 @@ describe("CRM lead status moves", () => {
     const { service } = setup("disqualified", { unassigned: true, noAction: true });
     await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" })).rejects.toThrow("requires a next action or assignment");
     expect(await service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", nextActionAt: "2026-09-20T09:30:00Z" })).toMatchObject({ status: "connected", nextActionAt: new Date("2026-09-20T09:30:00Z") });
+  });
+
+  it("pauses and resumes the existing first-response clock", async () => {
+    const paused = setup("new");
+    await paused.service.transition({} as never, "workspace", "lead", { version: 5, status: "paused", reason: "Waiting for client" });
+    expect(paused.slas.pauseFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", "user", "Waiting for client");
+
+    const resumed = setup("paused");
+    await resumed.service.transition({} as never, "workspace", "lead", { version: 5, status: "attempting_contact" });
+    expect(resumed.slas.resumeFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", "user", "Lead reopened from pause");
+  });
+
+  it("stops on a response-bearing status and creates a new cycle only after reopening a closed lead", async () => {
+    const connected = setup("new");
+    await connected.service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" });
+    expect(connected.slas.stopFirstResponse).toHaveBeenCalledWith(
+      expect.anything(), "workspace", "lead", "user", "lead_status_connected",
+      { type: "lead_status", fromStatus: "new", toStatus: "connected" },
+    );
+
+    const reopened = setup("disqualified");
+    await reopened.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" });
+    expect(reopened.slas.startFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", expect.objectContaining({ newCycle: true }));
+  });
+
+  it("keeps the generated response task consistent across pause, resume, and stop", async () => {
+    const paused = setup("new");
+    paused.slas.pauseFirstResponse.mockResolvedValue({ id: "sla" });
+    await paused.service.transition({} as never, "workspace", "lead", { version: 5, status: "paused", reason: "Waiting" });
+    expect(paused.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("due_at=NULL") && params?.[1] === "sla")).toBe(true);
+
+    const resumed = setup("paused");
+    resumed.slas.resumeFirstResponse.mockResolvedValue({ id: "sla", warning_at: new Date("2026-09-21T09:00:00Z") });
+    await resumed.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" });
+    expect(resumed.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("is_next_action=$4") && params?.[1] === "sla" && params?.[3] === true)).toBe(true);
+
+    const stopped = setup("new");
+    stopped.slas.stopFirstResponse.mockResolvedValue({ id: "sla" });
+    await stopped.service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" });
+    expect(stopped.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("completion_outcome") && params?.[2] === "completed")).toBe(true);
   });
 });

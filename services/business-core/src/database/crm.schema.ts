@@ -571,6 +571,7 @@ export const crmSlaPolicies = pgTable(
     check("crm_sla_policy_calculation_mode_check", sql`${table.calculationMode} IN ('elapsed','business')`),
     check("crm_sla_policy_schedule_version_check", sql`${table.scheduleVersion} = 1`),
     check("crm_sla_policy_schedule_object_check", sql`jsonb_typeof(${table.schedule}) = 'object'`),
+    uniqueIndex("crm_sla_policies_active_event_uidx").on(table.workspaceId, table.eventType).where(sql`${table.status} = 'active'`),
   ],
 );
 
@@ -594,6 +595,9 @@ export const crmSlaInstances = pgTable(
     warnedAt: timestamp("warned_at", { withTimezone: true }),
     breachedAt: timestamp("breached_at", { withTimezone: true }),
     pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pausedFromStatus: varchar("paused_from_status", { length: 30 }),
+    remainingWarningMinutes: integer("remaining_warning_minutes"),
+    remainingBreachMinutes: integer("remaining_breach_minutes"),
     stoppedAt: timestamp("stopped_at", { withTimezone: true }),
     totalPausedMinutes: integer("total_paused_minutes").notNull().default(0),
     stopReason: varchar("stop_reason", { length: 120 }),
@@ -610,6 +614,16 @@ export const crmSlaInstances = pgTable(
     check("crm_sla_instances_policy_snapshot_check", sql`jsonb_typeof(${table.policySnapshot}) = 'object'`),
     check("crm_sla_instances_paused_minutes_check", sql`${table.totalPausedMinutes} >= 0`),
     check("crm_sla_instances_response_evidence_check", sql`${table.responseEvidence} IS NULL OR jsonb_typeof(${table.responseEvidence}) = 'object'`),
+    check("crm_sla_instances_paused_from_status_check", sql`${table.pausedFromStatus} IS NULL OR ${table.pausedFromStatus} IN ('active','warning')`),
+    check("crm_sla_instances_remaining_warning_check", sql`${table.remainingWarningMinutes} IS NULL OR ${table.remainingWarningMinutes} >= 0`),
+    check("crm_sla_instances_remaining_breach_check", sql`${table.remainingBreachMinutes} IS NULL OR ${table.remainingBreachMinutes} >= 0`),
+    check("crm_sla_instances_pause_state_check", sql`(
+      ${table.status} = 'paused' AND ${table.pausedAt} IS NOT NULL AND ${table.pausedFromStatus} IS NOT NULL
+      AND ${table.remainingWarningMinutes} IS NOT NULL AND ${table.remainingBreachMinutes} IS NOT NULL
+    ) OR (
+      ${table.status} <> 'paused' AND ${table.pausedAt} IS NULL AND ${table.pausedFromStatus} IS NULL
+      AND ${table.remainingWarningMinutes} IS NULL AND ${table.remainingBreachMinutes} IS NULL
+    )`),
   ],
 );
 
@@ -649,6 +663,7 @@ export const crmActivities = pgTable(
     partyId: uuid("party_id").references(() => crmParties.id, { onDelete: "set null" }),
     leadId: uuid("lead_id").references(() => crmLeads.id, { onDelete: "cascade" }),
     opportunityId: uuid("opportunity_id"),
+    slaInstanceId: uuid("sla_instance_id"),
     type: crmActivityType("type").notNull(),
     status: crmActivityStatus("status").notNull().default("pending"),
     title: varchar("title", { length: 240 }).notNull(),
@@ -666,6 +681,12 @@ export const crmActivities = pgTable(
     ...auditColumns,
   },
   (table) => [
+    foreignKey({
+      name: "crm_activities_sla_instance_fk",
+      columns: [table.workspaceId, table.slaInstanceId],
+      foreignColumns: [crmSlaInstances.workspaceId, crmSlaInstances.id],
+    }).onDelete("restrict"),
+    uniqueIndex("crm_activities_sla_instance_uidx").on(table.workspaceId, table.slaInstanceId).where(sql`${table.slaInstanceId} IS NOT NULL`),
     index("crm_activities_owner_due_idx").on(table.workspaceId, table.ownerMembershipId, table.status, table.dueAt),
     index("crm_activities_lead_idx").on(table.workspaceId, table.leadId, table.createdAt),
     index("crm_activities_party_idx").on(table.workspaceId, table.partyId, table.createdAt),

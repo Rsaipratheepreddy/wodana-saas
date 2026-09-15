@@ -642,6 +642,7 @@ export class CrmIntakeService {
       [leadId, workspaceId, enquiryId, input.partyId],
     );
     if (original.assignment) await this.leads.assignOnIntake(client, workspaceId, leadId, actorUserId, original.assignment);
+    await this.leads.startSlaOnIntake(client, workspaceId, leadId, actorUserId);
     for (const touch of input.attribution) {
       await client.query(
         `INSERT INTO crm_attribution_touches
