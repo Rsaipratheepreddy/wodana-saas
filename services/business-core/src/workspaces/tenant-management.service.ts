@@ -247,7 +247,7 @@ export class TenantManagementService {
           WHERE workspace_id = $1 AND status IN ('active', 'invited'))
          + (SELECT count(*)::int FROM workspace_invitations
             WHERE workspace_id = $1 AND status = 'pending' AND expires_at > now())) AS "reservedSeats",
-        (SELECT count(*)::int FROM pre_project_cases WHERE workspace_id = $1 AND status <> 'archived') AS projects`,
+        (SELECT count(*)::int FROM pre_project_cases WHERE workspace_id = $1 AND status <> 'cancelled') AS projects`,
       [workspaceId],
     );
     return result.rows[0] ?? { members: 0, pendingInvitations: 0, reservedSeats: 0, projects: 0 };

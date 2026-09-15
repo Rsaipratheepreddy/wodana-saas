@@ -1,22 +1,36 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import { canonicalHash } from "../crm/shared/crm-types";
-import { ListPreProjectsDto, StartFromQualifiedLeadDto } from "./pre-projects.dto";
+import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
+import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
 
 const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
   o.id AS "opportunityId", o.title, o.description, o.status::text AS "opportunityStatus",
   o.party_id AS "customerId", p.display_name AS "customerName", o.lead_id AS "leadId",
   o.amount, o.currency_code AS "currencyCode", u.display_name AS "leadManagerName",
-  false AS "qualifiedLead", NULL::int AS "leadVersion", o.owner_membership_id AS "ownerMembershipId"
+  false AS "qualifiedLead", NULL::int AS "leadVersion", c.owner_membership_id AS "ownerMembershipId",
+  c.phase, c.version, c.target_date::text AS "targetDate", c.priority, c.risk_level AS "riskLevel",
+  c.activated_at AS "activatedAt", c.hold_reason AS "holdReason", c.held_at AS "heldAt", c.held_by AS "heldBy",
+  c.status = 'on_hold' AS "isOnHold", c.cancellation_reason AS "cancellationReason",
+  c.cancelled_at AS "cancelledAt", c.cancelled_by AS "cancelledBy", c.released_at AS "releasedAt",
+  c.released_by AS "releasedBy", engagement_owner.display_name AS "engagementOwnerName"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
   LEFT JOIN workspace_memberships m ON m.id = o.owner_membership_id AND m.workspace_id = c.workspace_id
-  LEFT JOIN users u ON u.id = m.user_id`;
+  LEFT JOIN users u ON u.id = m.user_id
+  LEFT JOIN workspace_memberships engagement_membership ON engagement_membership.id = c.owner_membership_id AND engagement_membership.workspace_id = c.workspace_id
+  LEFT JOIN users engagement_owner ON engagement_owner.id = engagement_membership.user_id`;
+
+type LifecycleRow = EngagementLifecycleState & {
+  id: string;
+  version: number;
+  opportunityStatus: string;
+};
 
 @Injectable()
 export class PreProjectsService {
@@ -24,16 +38,20 @@ export class PreProjectsService {
 
   list(actor: RequestActor, workspaceId: string, query: ListPreProjectsDto) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => {
-      const values = [workspaceId, query.search?.trim() ?? "", query.status ?? "all"];
+      const status = query.status === "archived" ? "cancelled" : (query.status ?? "all");
+      const values = [workspaceId, query.search?.trim() ?? "", status];
       // Qualified leads are visible immediately, including records qualified before this release.
-      // A linked case replaces its incoming lead row; archived cases never reappear as new leads.
+      // A linked case replaces its incoming lead row; cancelled cases never reappear as new leads.
       const records = `WITH records AS (
         ${caseSelect} WHERE c.workspace_id = $1
         UNION ALL
         SELECT lead.id, 'qualified', COALESCE(lead.qualified_at, lead.created_at), lead.updated_at,
           opportunity.id, COALESCE(opportunity.title, enquiry.title), COALESCE(opportunity.description, enquiry.summary), opportunity.status::text,
           party.id, party.display_name, lead.id, opportunity.amount, opportunity.currency_code,
-          manager.display_name, true, lead.version, COALESCE(opportunity.owner_membership_id, lead.owner_membership_id)
+          manager.display_name, true, lead.version, COALESCE(opportunity.owner_membership_id, lead.owner_membership_id),
+          'discover', 1, NULL::text, 'normal', 'none', NULL::timestamptz, NULL::varchar, NULL::timestamptz,
+          NULL::uuid, false, NULL::varchar, NULL::timestamptz, NULL::uuid, NULL::timestamptz, NULL::uuid,
+          manager.display_name
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
@@ -113,7 +131,14 @@ export class PreProjectsService {
         opportunityId = String(opportunity.id);
         await client.query(`UPDATE crm_leads SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, lead.id]);
       }
-      const created = await client.query(`INSERT INTO pre_project_cases (workspace_id, opportunity_id, created_by) VALUES ($1, $2, $3) RETURNING id`, [workspaceId, opportunityId, user.userId]);
+      const created = await client.query(`INSERT INTO pre_project_cases (workspace_id, opportunity_id, owner_membership_id, activated_at, created_by)
+        SELECT opportunity.workspace_id, opportunity.id, COALESCE(CASE WHEN active_owner_account.id IS NOT NULL THEN active_owner.id END, actor_membership.id), now(), $3
+        FROM crm_opportunities opportunity
+        JOIN workspace_memberships actor_membership ON actor_membership.workspace_id = opportunity.workspace_id AND actor_membership.user_id = $3 AND actor_membership.status = 'active'
+        LEFT JOIN workspace_memberships active_owner ON active_owner.workspace_id = opportunity.workspace_id AND active_owner.id = opportunity.owner_membership_id AND active_owner.status = 'active'
+        LEFT JOIN users active_owner_account ON active_owner_account.id = active_owner.user_id AND active_owner_account.status = 'active'
+        WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
+        RETURNING id`, [workspaceId, opportunityId, user.userId]);
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id } });
       return result;
@@ -132,10 +157,82 @@ export class PreProjectsService {
       const existing = await client.query(`SELECT id FROM pre_project_cases WHERE workspace_id = $1 AND opportunity_id = $2`, [workspaceId, opportunityId]);
       if (existing.rowCount) return this.read(client, workspaceId, existing.rows[0].id);
       if (!["open", "won"].includes(source.rows[0].status)) throw new ConflictException("Reopen the opportunity in CRM before starting a pre-execution.");
-      const created = await client.query(`INSERT INTO pre_project_cases (workspace_id, opportunity_id, created_by)
-        VALUES ($1, $2, $3) RETURNING id`, [workspaceId, opportunityId, user.userId]);
+      const created = await client.query(`INSERT INTO pre_project_cases (workspace_id, opportunity_id, owner_membership_id, activated_at, created_by)
+        SELECT opportunity.workspace_id, opportunity.id, COALESCE(CASE WHEN active_owner_account.id IS NOT NULL THEN active_owner.id END, actor_membership.id), now(), $3
+        FROM crm_opportunities opportunity
+        JOIN workspace_memberships actor_membership ON actor_membership.workspace_id = opportunity.workspace_id AND actor_membership.user_id = $3 AND actor_membership.status = 'active'
+        LEFT JOIN workspace_memberships active_owner ON active_owner.workspace_id = opportunity.workspace_id AND active_owner.id = opportunity.owner_membership_id AND active_owner.status = 'active'
+        LEFT JOIN users active_owner_account ON active_owner_account.id = active_owner.user_id AND active_owner_account.status = 'active'
+        WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
+        RETURNING id`, [workspaceId, opportunityId, user.userId]);
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId } });
+      return result;
+    });
+  }
+
+  updateProfile(actor: RequestActor, workspaceId: string, id: string, input: UpdateEngagementProfileDto) {
+    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.manage_lifecycle"], async (client, user) => {
+      const hash = canonicalHash({ action: "update_profile", caseId: id, ...input });
+      const replay = await this.replay(client, workspaceId, id, input.requestId, "update_profile", hash);
+      if (replay) return replay;
+      const before = await this.lifecycleRecord(client, workspaceId, id, true);
+      const concurrentReplay = await this.reserve(client, workspaceId, id, input.requestId, "update_profile", hash, user.userId);
+      if (concurrentReplay) return concurrentReplay;
+      this.assertVersion(before.version, input.version);
+      if (!["draft", "active", "on_hold"].includes(before.status)) {
+        throw new ConflictException("Released or cancelled pre-execution details cannot be changed.");
+      }
+      const hasOwner = input.ownerMembershipId !== undefined;
+      const hasTargetDate = input.targetDate !== undefined;
+      const hasPriority = input.priority !== undefined;
+      const hasRisk = input.riskLevel !== undefined;
+      if (!hasOwner && !hasTargetDate && !hasPriority && !hasRisk) {
+        throw new BadRequestException("Choose at least one pre-execution detail to update.");
+      }
+      if (input.ownerMembershipId) {
+        const owner = await client.query(`SELECT 1 FROM workspace_memberships membership JOIN users account ON account.id = membership.user_id WHERE membership.workspace_id = $1 AND membership.id = $2 AND membership.status = 'active' AND account.status = 'active'`, [workspaceId, input.ownerMembershipId]);
+        if (!owner.rowCount) throw new BadRequestException("Choose an active member from this organisation as the pre-execution owner.");
+      }
+      const updated = await client.query(`UPDATE pre_project_cases SET
+          owner_membership_id = CASE WHEN $3 THEN $4::uuid ELSE owner_membership_id END,
+          target_date = CASE WHEN $5 THEN $6::date ELSE target_date END,
+          priority = CASE WHEN $7 THEN $8::varchar ELSE priority END,
+          risk_level = CASE WHEN $9 THEN $10::varchar ELSE risk_level END,
+          version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2 AND version = $11
+        RETURNING id`, [workspaceId, id, hasOwner, input.ownerMembershipId ?? null, hasTargetDate, input.targetDate ?? null, hasPriority, input.priority ?? null, hasRisk, input.riskLevel ?? null, input.version]);
+      if (!updated.rowCount) throw new ConflictException("This pre-execution changed. Reload it before saving.");
+      const result = await this.read(client, workspaceId, id);
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.engagement_profile_updated.v1", entityType: "pre_project_case", entityId: id, correlationId: input.requestId, before, after: result });
+      await this.complete(client, workspaceId, input.requestId, result);
+      return result;
+    });
+  }
+
+  transition(actor: RequestActor, workspaceId: string, id: string, input: TransitionEngagementDto) {
+    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.manage_lifecycle"], async (client, user) => {
+      const hash = canonicalHash({ caseId: id, ...input });
+      const replay = await this.replay(client, workspaceId, id, input.requestId, input.action, hash);
+      if (replay) return replay;
+      const before = await this.lifecycleRecord(client, workspaceId, id, true);
+      const concurrentReplay = await this.reserve(client, workspaceId, id, input.requestId, input.action, hash, user.userId);
+      if (concurrentReplay) return concurrentReplay;
+      this.assertVersion(before.version, input.version);
+      if (input.action === "reopen" && !["open", "won"].includes(before.opportunityStatus)) {
+        throw new ConflictException("Reopen the linked CRM opportunity before reopening this pre-execution.");
+      }
+      const next = transitionEngagement(before, input.action, { phase: input.phase, reason: input.reason }, user.userId);
+      const updated = await client.query(`UPDATE pre_project_cases SET
+          status = $3, phase = $4, activated_at = $5, hold_reason = $6, held_at = $7, held_by = $8,
+          cancellation_reason = $9, cancelled_at = $10, cancelled_by = $11,
+          version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2 AND version = $12
+        RETURNING id`, [workspaceId, id, next.status, next.phase, next.activatedAt, next.holdReason, next.heldAt, next.heldBy, next.cancellationReason, next.cancelledAt, next.cancelledBy, input.version]);
+      if (!updated.rowCount) throw new ConflictException("This pre-execution changed. Reload it before continuing.");
+      const result = await this.read(client, workspaceId, id);
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: `pre_project.${next.event}.v1`, entityType: "pre_project_case", entityId: id, correlationId: input.requestId, before, after: { ...result, transitionReason: next.reason } });
+      await this.complete(client, workspaceId, input.requestId, result);
       return result;
     });
   }
@@ -144,5 +241,42 @@ export class PreProjectsService {
     const result = await client.query(`${caseSelect} WHERE c.workspace_id = $1 AND c.id = $2`, [workspaceId, id]);
     if (!result.rowCount) throw new NotFoundException("Pre-execution not found");
     return result.rows[0];
+  }
+
+  private async lifecycleRecord(client: PoolClient, workspaceId: string, id: string, lock = false): Promise<LifecycleRow> {
+    const result = await client.query(`SELECT engagement.id, engagement.status::text AS status, engagement.phase,
+      engagement.version, engagement.activated_at AS "activatedAt", engagement.hold_reason AS "holdReason",
+      engagement.held_at AS "heldAt", engagement.held_by AS "heldBy",
+      engagement.cancellation_reason AS "cancellationReason", engagement.cancelled_at AS "cancelledAt",
+      engagement.cancelled_by AS "cancelledBy", opportunity.status::text AS "opportunityStatus"
+      FROM pre_project_cases engagement
+      JOIN crm_opportunities opportunity ON opportunity.workspace_id = engagement.workspace_id AND opportunity.id = engagement.opportunity_id
+      WHERE engagement.workspace_id = $1 AND engagement.id = $2${lock ? " FOR UPDATE OF engagement" : ""}`, [workspaceId, id]);
+    if (!result.rowCount) throw new NotFoundException("Pre-execution not found");
+    return result.rows[0] as LifecycleRow;
+  }
+
+  private assertVersion(actual: number, expected: number) {
+    if (Number(actual) !== expected) throw new ConflictException("This pre-execution changed. Reload it before continuing.");
+  }
+
+  private async replay(client: PoolClient, workspaceId: string, caseId: string, requestId: string, action: string, hash: string): Promise<Record<string, unknown> | undefined> {
+    const result = await client.query(`SELECT case_id AS "caseId", action, request_hash AS "requestHash", response_body AS "responseBody" FROM pre_project_lifecycle_commands WHERE workspace_id = $1 AND request_id = $2`, [workspaceId, requestId]);
+    if (!result.rowCount) return undefined;
+    const prior = result.rows[0];
+    if (prior.caseId !== caseId || prior.action !== action || prior.requestHash !== hash) {
+      throw new ConflictException("This request ID was already used for a different pre-execution change.");
+    }
+    if (!prior.responseBody) throw new ConflictException("This pre-execution change is still being processed.");
+    return prior.responseBody as Record<string, unknown>;
+  }
+
+  private async reserve(client: PoolClient, workspaceId: string, caseId: string, requestId: string, action: string, hash: string, actorUserId: string): Promise<Record<string, unknown> | undefined> {
+    const inserted = await client.query(`INSERT INTO pre_project_lifecycle_commands (workspace_id, request_id, case_id, action, request_hash, actor_user_id) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(workspace_id, request_id) DO NOTHING RETURNING request_id`, [workspaceId, requestId, caseId, action, hash, actorUserId]);
+    return inserted.rowCount ? undefined : this.replay(client, workspaceId, caseId, requestId, action, hash);
+  }
+
+  private complete(client: PoolClient, workspaceId: string, requestId: string, response: Record<string, unknown>) {
+    return client.query(`UPDATE pre_project_lifecycle_commands SET response_body = $3 WHERE workspace_id = $1 AND request_id = $2 AND response_body IS NULL`, [workspaceId, requestId, response]);
   }
 }

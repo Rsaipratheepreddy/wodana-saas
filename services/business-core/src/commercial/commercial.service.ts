@@ -76,6 +76,8 @@ export class CommercialService {
     );
     if (!result.rowCount)
       throw new NotFoundException("Pre-execution not found.");
+    if (lock && !["active", "released"].includes(result.rows[0].status))
+      throw new ConflictException("This pre-execution is not active. Resume or reopen it before making commercial changes.");
     return result.rows[0];
   }
   private async designReadiness(

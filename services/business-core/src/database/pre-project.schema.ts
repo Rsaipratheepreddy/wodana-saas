@@ -1,14 +1,29 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { workspaceCatalogRecords } from "./catalog.schema";
 import { crmOpportunities } from "./crm.schema";
-import { users, workspaces } from "./schema";
+import { users, workspaceMemberships, workspaces } from "./schema";
 
 export const preProjectCases = pgTable("pre_project_cases", {
   id: uuid("id").primaryKey().defaultRandom(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
   opportunityId: uuid("opportunity_id").notNull().references(() => crmOpportunities.id),
   status: varchar("status", { length: 24 }).notNull().default("active"),
+  phase: varchar("phase", { length: 20 }).notNull().default("discover"),
+  version: integer("version").notNull().default(1),
+  ownerMembershipId: uuid("owner_membership_id"),
+  targetDate: date("target_date"),
+  priority: varchar("priority", { length: 16 }).notNull().default("normal"),
+  riskLevel: varchar("risk_level", { length: 16 }).notNull().default("none"),
+  activatedAt: timestamp("activated_at", { withTimezone: true }),
+  holdReason: varchar("hold_reason", { length: 500 }),
+  heldAt: timestamp("held_at", { withTimezone: true }),
+  heldBy: uuid("held_by").references(() => users.id),
+  cancellationReason: varchar("cancellation_reason", { length: 500 }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelledBy: uuid("cancelled_by").references(() => users.id),
+  releasedAt: timestamp("released_at", { withTimezone: true }),
+  releasedBy: uuid("released_by").references(() => users.id),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -16,7 +31,35 @@ export const preProjectCases = pgTable("pre_project_cases", {
   uniqueIndex("pre_project_cases_workspace_id_id_key").on(table.workspaceId, table.id),
   uniqueIndex("pre_project_cases_workspace_id_opportunity_id_key").on(table.workspaceId, table.opportunityId),
   index("pre_project_cases_workspace_updated_idx").on(table.workspaceId, table.updatedAt.desc(), table.id.desc()),
-  check("pre_project_cases_status_check", sql`${table.status} IN ('active', 'released', 'archived')`),
+  index("pre_project_cases_owner_status_idx").on(table.workspaceId, table.ownerMembershipId, table.status, table.updatedAt.desc()),
+  index("pre_project_cases_target_date_idx").on(table.workspaceId, table.status, table.targetDate).where(sql`${table.targetDate} IS NOT NULL`),
+  foreignKey({ name: "pre_project_cases_owner_membership_fk", columns: [table.workspaceId, table.ownerMembershipId], foreignColumns: [workspaceMemberships.workspaceId, workspaceMemberships.id] }),
+  check("pre_project_cases_status_check", sql`${table.status} IN ('draft', 'active', 'on_hold', 'released', 'cancelled')`),
+  check("pre_project_cases_phase_check", sql`${table.phase} IN ('discover', 'define', 'design', 'price', 'agree', 'release')`),
+  check("pre_project_cases_version_check", sql`${table.version} > 0`),
+  check("pre_project_cases_priority_check", sql`${table.priority} IN ('low', 'normal', 'high', 'urgent')`),
+  check("pre_project_cases_risk_check", sql`${table.riskLevel} IN ('none', 'low', 'medium', 'high', 'critical')`),
+  check("pre_project_cases_hold_state_check", sql`(${table.status} = 'on_hold' AND ${table.heldAt} IS NOT NULL AND ${table.heldBy} IS NOT NULL AND ${table.holdReason} IS NOT NULL AND length(trim(${table.holdReason})) > 0) OR (${table.status} <> 'on_hold' AND ${table.heldAt} IS NULL AND ${table.heldBy} IS NULL AND ${table.holdReason} IS NULL)`),
+  check("pre_project_cases_cancel_state_check", sql`(${table.status} = 'cancelled' AND ${table.cancelledAt} IS NOT NULL AND ${table.cancellationReason} IS NOT NULL AND length(trim(${table.cancellationReason})) > 0) OR (${table.status} <> 'cancelled' AND ${table.cancelledAt} IS NULL AND ${table.cancelledBy} IS NULL AND ${table.cancellationReason} IS NULL)`),
+  check("pre_project_cases_release_state_check", sql`(${table.status} = 'released' AND ${table.phase} = 'release' AND ${table.releasedAt} IS NOT NULL) OR (${table.status} <> 'released' AND ${table.releasedAt} IS NULL AND ${table.releasedBy} IS NULL)`),
+]);
+
+export const preProjectLifecycleCommands = pgTable("pre_project_lifecycle_commands", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  requestId: uuid("request_id").notNull(),
+  caseId: uuid("case_id").notNull(),
+  action: varchar("action", { length: 40 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  responseBody: jsonb("response_body").$type<Record<string, unknown>>(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.workspaceId, table.requestId] }),
+  foreignKey({ columns: [table.workspaceId, table.caseId], foreignColumns: [preProjectCases.workspaceId, preProjectCases.id] }),
+  index("pre_project_lifecycle_commands_case_idx").on(table.workspaceId, table.caseId, table.createdAt.desc()),
+  check("pre_project_lifecycle_commands_action_check", sql`length(trim(${table.action})) > 0`),
+  check("pre_project_lifecycle_commands_hash_check", sql`${table.requestHash} ~ '^[0-9a-f]{64}$'`),
+  check("pre_project_lifecycle_commands_response_check", sql`${table.responseBody} IS NULL OR jsonb_typeof(${table.responseBody}) = 'object'`),
 ]);
 
 // Definitions mirror the additive brief, design and specification migrations.

@@ -136,8 +136,8 @@ export async function releaseDeliveryProject(
     [workspaceId, caseId, p.id],
   );
   await client.query(
-    "UPDATE pre_project_cases SET status='released',updated_at=now() WHERE workspace_id=$1 AND id=$2",
-    [workspaceId, caseId],
+    "UPDATE pre_project_cases SET status='released',phase='release',released_at=COALESCE(released_at,now()),released_by=COALESCE(released_by,$3),version=version+1,updated_at=now() WHERE workspace_id=$1 AND id=$2",
+    [workspaceId, caseId, userId],
   );
   const crmLink = await client.query(
     `INSERT INTO crm_project_links(workspace_id,opportunity_id,project_id,mode,promoted_at) SELECT $1,opportunity_id,$3,'delivery',now() FROM pre_project_cases WHERE workspace_id=$1 AND id=$2 ON CONFLICT(workspace_id,opportunity_id) DO UPDATE SET mode='delivery',promoted_at=COALESCE(crm_project_links.promoted_at,now()) WHERE crm_project_links.project_id=EXCLUDED.project_id RETURNING id`,

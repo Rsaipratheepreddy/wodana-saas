@@ -247,7 +247,7 @@ export class BriefService {
   edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string)=>Promise<T>) {
     return this.access.withPermissions(actor,workspaceId,["pre_projects.view","pre_projects.edit"],async (client,user)=>{
       const record=await this.case(client,workspaceId,caseId,true);
-      if (record.status!=="active") throw new ConflictException("This pre-execution is read-only because it has been released or archived.");
+      if (record.status!=="active") throw new ConflictException("This pre-execution is read-only. Resume or reopen it before making changes.");
       const result=await work(client,user.userId);
       await client.query(`UPDATE pre_project_cases SET updated_at=now() WHERE workspace_id=$1 AND id=$2`,[workspaceId,caseId]);
       return result;

@@ -1,10 +1,10 @@
 import {AssetMarkupService,AssetMarkupController} from './asset-markup.service';
-import { Body, Controller, Get, Module, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Module, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
-import { ListPreProjectsDto, StartPreProjectDto, StartFromQualifiedLeadDto } from "./pre-projects.dto";
+import { ListPreProjectsDto, StartPreProjectDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
 import { CrmOpportunitiesModule } from "../crm/opportunities/crm-opportunities.module";
 import { PreProjectsService } from "./pre-projects.service";
 import { ItemSpecificationService } from "./item-specification.service";
@@ -26,6 +26,8 @@ export class PreProjectsController {
   @Post("from-lead") startFromLead(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() body: StartFromQualifiedLeadDto) { return this.service.startFromLead(actor, workspaceId, body); }
   @Get(":id") get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string) { return this.service.get(actor, workspaceId, id); }
   @Post() start(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() body: StartPreProjectDto) { return this.service.start(actor, workspaceId, body.opportunityId); }
+  @Patch(":id/profile") updateProfile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateEngagementProfileDto) { return this.service.updateProfile(actor, workspaceId, id, body); }
+  @Post(":id/lifecycle") transition(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: TransitionEngagementDto) { return this.service.transition(actor, workspaceId, id, body); }
 }
 @Module({ imports: [WorkspacesModule, CrmOpportunitiesModule], controllers: [PreProjectsController,CaseContentController,SiteController,AssetMarkupController], providers: [PreProjectsService,BriefService,DesignService,BrandAssetStorageService,ItemSpecificationService,SiteService,AssetMarkupService] })
 export class PreProjectsModule {}

@@ -45,6 +45,15 @@ async function request(
   return payload;
 }
 
+async function rawRequest(path, { body, headers = owner, method = "POST" } = {}) {
+  const response = await fetch(`${api}${path}`, {
+    method,
+    headers: { ...headers, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { status: response.status, body: await response.json().catch(() => null) };
+}
+
 const workspace = await request("/workspaces", {
   body: {
     name: "Generic Funnel Verification",
@@ -289,6 +298,90 @@ const preparationReplay = await request(`/workspaces/${workspaceId}/pre-projects
 });
 assert.equal(preparationReplay.id, prepared.id);
 const caseId = prepared.id;
+assert.equal(prepared.status, "active");
+assert.equal(prepared.phase, "discover");
+assert.equal(prepared.version, 1);
+assert.equal(prepared.ownerMembershipId, ownerMember.id);
+
+const profileRequestId = randomUUID();
+const profileInput = {
+  requestId: profileRequestId,
+  version: prepared.version,
+  targetDate: "2026-10-15",
+  priority: "high",
+  riskLevel: "medium",
+};
+const profiled = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/profile`, {
+  method: "PATCH",
+  body: profileInput,
+});
+assert.equal(profiled.version, 2);
+assert.equal(profiled.targetDate, profileInput.targetDate);
+assert.equal(profiled.priority, "high");
+assert.equal(profiled.riskLevel, "medium");
+const preparationList = await request(`/workspaces/${workspaceId}/pre-projects`);
+assert.equal(preparationList.items.find((item) => item.id === caseId)?.targetDate, profileInput.targetDate);
+const profileReplay = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/profile`, {
+  method: "PATCH",
+  body: profileInput,
+});
+assert.equal(profileReplay.version, profiled.version);
+await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/profile`, {
+  method: "PATCH",
+  expected: 409,
+  body: { ...profileInput, riskLevel: "high" },
+});
+await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/profile`, {
+  method: "PATCH",
+  expected: 409,
+  body: { requestId: randomUUID(), version: prepared.version, priority: "urgent" },
+});
+const concurrentProfiles = await Promise.all([
+  rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/profile`, { method: "PATCH", body: { requestId: randomUUID(), version: profiled.version, riskLevel: "high" } }),
+  rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/profile`, { method: "PATCH", body: { requestId: randomUUID(), version: profiled.version, riskLevel: "critical" } }),
+]);
+assert.deepEqual(concurrentProfiles.map((result) => result.status).sort(), [200, 409]);
+const afterConcurrentProfile = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}`);
+assert.equal(afterConcurrentProfile.version, profiled.version + 1);
+
+const defined = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
+  body: { requestId: randomUUID(), version: afterConcurrentProfile.version, action: "set_phase", phase: "define" },
+});
+assert.equal(defined.phase, "define");
+await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
+  expected: 400,
+  body: { requestId: randomUUID(), version: defined.version, action: "set_phase", phase: "price" },
+});
+const holdRequest = { requestId: randomUUID(), version: defined.version, action: "hold", reason: "Waiting for a client decision" };
+const duplicateHolds = await Promise.all([
+  rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, { body: holdRequest }),
+  rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, { body: holdRequest }),
+]);
+assert.deepEqual(duplicateHolds.map((result) => result.status), [201, 201]);
+const held = duplicateHolds[0].body;
+assert.equal(held.status, "on_hold");
+assert.equal(held.phase, "define");
+assert.equal(held.isOnHold, true);
+assert.equal(duplicateHolds[1].body.version, held.version);
+await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/rooms`, {
+  method: "PUT",
+  expected: 409,
+  body: { id: randomUUID(), version: 0, name: "Blocked while held" },
+});
+const resumed = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
+  body: { requestId: randomUUID(), version: held.version, action: "resume", reason: "Client replied" },
+});
+assert.equal(resumed.status, "active");
+assert.equal(resumed.phase, "define");
+const cancelled = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
+  body: { requestId: randomUUID(), version: resumed.version, action: "cancel", reason: "Cancellation recovery verification" },
+});
+assert.equal(cancelled.status, "cancelled");
+const reopened = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
+  body: { requestId: randomUUID(), version: cancelled.version, action: "reopen", reason: "Client confirmed continuation" },
+});
+assert.equal(reopened.status, "active");
+assert.equal(reopened.phase, "define");
 const plannedProject = await request(
   `/workspaces/${workspaceId}/projects/planning`,
   { body: { caseId } },
@@ -975,6 +1068,11 @@ process.stdout.write(
         qualificationEvidenceSafe: true,
         conversionReplaySafe: true,
         preparationReplaySafe: true,
+        engagementProfileReplaySafe: true,
+        engagementConcurrencySafe: true,
+        engagementPhaseGovernanceSafe: true,
+        engagementHoldWriteSafe: true,
+        engagementCancellationRecoverySafe: true,
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,
         projectReleaseReplaySafe: true,
