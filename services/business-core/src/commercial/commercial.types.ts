@@ -11,7 +11,53 @@ export type CatalogSelection = {
     catalogId: string;
     catalogName?: string;
     configuration?: Record<string, string | number>;
+    commerce?: { pricingMode: CatalogPricingMode };
   };
+};
+export type CatalogPricingMode = "unpriced" | "fixed" | "on_request";
+export type CatalogPriceSnapshot = {
+  status: "resolved" | "price_required" | "unpriced" | "stale";
+  source: "catalog" | "manual_override";
+  mode: CatalogPricingMode;
+  catalogId: string;
+  work: { id: string; version: number };
+  variant?: { id: string; version: number };
+  unit?: { id: string; version: number };
+  unitLabel?: string;
+  rateZone?: { id: string; version: number };
+  quantity: number;
+  currency: string;
+  pricingDate: string;
+  taxRate: number;
+  resolvedAt: string;
+  issue?: { code: string; message: string };
+  rateCard?: {
+    id: string;
+    version: number;
+    amount: number;
+    baseUnitRate: number;
+    appliedUnitRate: number;
+    effectiveFrom: string;
+    effectiveTo?: string;
+    taxIncluded: boolean;
+    costIncludes: string;
+    minimumQuantity?: number;
+    minimumCharge?: number;
+    reference?: string;
+  };
+  override?: {
+    amount: number;
+    reason: string;
+    by: string;
+    at: string;
+  };
+};
+export type CatalogPriceRequest = {
+  action: "resolve" | "override";
+  pricingDate?: string;
+  rateZoneId?: string;
+  rateZoneVersion?: number;
+  reason?: string;
 };
 export type PaymentTerm = {
   id: string;
@@ -57,6 +103,9 @@ export type QuoteLine = {
   pricingMode?: "item" | "materials";
   materialRows?: QuotationMaterialRow[];
   catalogLinks?: CatalogSelection[];
+  catalogPrice?: CatalogPriceSnapshot;
+  /** Command-only intent. Removed before the quotation is persisted. */
+  catalogPriceRequest?: CatalogPriceRequest;
   customMaterials?: QuotationMaterial[];
   deductsLineId?:string;
   scopeId?: string;
@@ -309,6 +358,7 @@ export type CommercialState = {
   contacts: PortalGrant[];
   canEdit: boolean;
   canApprove: boolean;
+  canOverridePrice?: boolean;
   canRelease: boolean;
   canManagePortal: boolean;
   portalSlug: string | null;
@@ -331,6 +381,8 @@ export type ClientQuote = Omit<
     | "scopeVersion"
     | "specificationVersion"
     | "catalogLinks"
+    | "catalogPrice"
+    | "catalogPriceRequest"
   > & { variantLabel?: string })[];
   canDecide: boolean;
 };

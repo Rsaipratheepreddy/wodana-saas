@@ -12,7 +12,7 @@ import { ArchiveBriefEntryDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } fr
 
 export const BRIEF_MAX_BYTES = 20 * 1024 * 1024;
 export const emptyBrief = { goals: "", propertyType: "", location: "", area: "", budget: "", timeline: "", decisionMakers: "", people: "", preferences: "", retainedItems: "", exclusions: "", constraints: "" };
-type CatalogSnapshot={catalogName:string;id:string;name:string;kind:string;code:string;version:number;catalogId:string;configuration:Record<string,unknown>|null};
+type CatalogSnapshot={catalogName:string;id:string;name:string;kind:string;code:string;version:number;catalogId:string;configuration:Record<string,unknown>|null;commerce?:{pricingMode:"unpriced"|"fixed"|"on_request"}};
 type Context = { status: string; description: string | null; amount: string | null; currencyCode: string | null; leadId: string | null };
 type BriefUpload = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 const entrySelect = `SELECT (SELECT content || jsonb_build_object('version',s.version,'createdAt',s.created_at,'designRefs',COALESCE((SELECT jsonb_agg(ref || jsonb_build_object('currentStatus',v.status)) FROM jsonb_array_elements(s.content->'designRefs') ref JOIN pre_project_design_versions v ON v.workspace_id=s.workspace_id AND v.case_id=s.case_id AND v.id=(ref->>'versionId')::uuid),'[]'::jsonb)) FROM pre_project_item_specifications s WHERE s.workspace_id=e.workspace_id AND s.case_id=e.case_id AND s.entry_id=e.id ORDER BY s.version DESC LIMIT 1) AS specification,e.id,e.kind,e.title,e.note,e.note_document AS document,e.pinned,e.category,e.priority,e.source,e.version,
@@ -148,7 +148,7 @@ export class BriefService {
       const checkConnection=async(from:{recordId:string}|undefined,to:{recordId:string}|undefined,relation:string,message:string)=>{
         if(!from||!to)return;
         const targets=await client.query(`SELECT target_id FROM workspace_catalog_links WHERE workspace_id=$1 AND record_id=$2 AND relation=$3`,[workspaceId,from.recordId,relation]);
-        if(targets.rowCount&&!targets.rows.some(row=>row.target_id===to.recordId))throw new BadRequestException(message);
+        if(!targets.rows.some(row=>row.target_id===to.recordId))throw new BadRequestException(message);
       };
       await checkConnection(variant,work,'work','This variant belongs to a different catalog item.');
       await checkConnection(selected('material'),selected('brand'),'brand','Choose a brand linked to the selected material, or clear the brand.');
@@ -222,7 +222,7 @@ export class BriefService {
     if(search.length>180) throw new BadRequestException("Search is too long.");
     return this.access.withPermission(actor,workspaceId,"pre_projects.view",async client=>{
       await this.case(client,workspaceId,caseId);
-      const rows=await client.query(`SELECT r.id,r.name,r.kind,r.code,r.version,r.content->'configuration' AS configuration,c.name AS "catalogName",r.catalog_id AS "catalogId",
+      const rows=await client.query(`SELECT r.id,r.name,r.kind,r.code,r.version,r.content->'configuration' AS configuration,r.content->'commerce' AS commerce,c.name AS "catalogName",r.catalog_id AS "catalogId",
         COALESCE((SELECT jsonb_agg(jsonb_build_object('role',l.relation,'recordId',t.id,'snapshot',jsonb_build_object('id',t.id,'name',t.name,'code',t.code,'kind',t.kind,'version',t.version,'catalogId',t.catalog_id,'catalogName',tc.name,'configuration',t.content->'configuration'))) FROM workspace_catalog_links l JOIN workspace_catalog_records t ON t.workspace_id=l.workspace_id AND t.id=l.target_id JOIN workspace_catalog_records tc ON tc.workspace_id=t.workspace_id AND tc.id=t.catalog_id WHERE l.workspace_id=r.workspace_id AND l.record_id=r.id AND l.relation IN ('brand','finish') AND NOT t.archived AND NOT tc.archived),'[]'::jsonb) AS links
         FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id
         WHERE r.workspace_id=$1 AND (r.kind=$2 OR ($2='material' AND r.kind IN ('sku','hardware','consumable'))) AND NOT r.archived AND NOT c.archived
@@ -232,7 +232,7 @@ export class BriefService {
     });
   }
   async catalogRecord(client:PoolClient,workspaceId:string,id:string,role:string):Promise<CatalogSnapshot> {
-    const result=await client.query(`SELECT r.id,r.name,r.kind,r.code,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",r.content->'configuration' AS configuration
+    const result=await client.query(`SELECT r.id,r.name,r.kind,r.code,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",r.content->'configuration' AS configuration,r.content->'commerce' AS commerce
       FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id
       WHERE r.workspace_id=$1 AND r.id=$2 AND NOT r.archived AND NOT c.archived`,[workspaceId,id]);
     const record=result.rows[0];

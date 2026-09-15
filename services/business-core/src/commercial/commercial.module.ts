@@ -21,6 +21,7 @@ import type { RequestActor } from "../auth/actor";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
 import { CommercialService } from "./commercial.service";
 import { ClientPortalService } from "./client-portal.service";
+import { CatalogSellingPriceService } from "./catalog-selling-price.service";
 @Controller("workspaces/:workspaceId/commercial")
 export class CommercialController {
   constructor(private readonly service: CommercialService) {}
@@ -31,6 +32,7 @@ export class CommercialController {
   @Get("cases/:caseId/catalog-options") catalogOptions(@CurrentActor() a:RequestActor,@Param("workspaceId",ParseUUIDPipe) w:string,@Param("caseId",ParseUUIDPipe) c:string,@Query() q:Record<string,string>){return this.service.catalogOptions(a,w,c,q);}
   @Get("cases/:caseId/master-catalog") masterCatalog(@CurrentActor() a:RequestActor,@Param("workspaceId",ParseUUIDPipe) w:string,@Param("caseId",ParseUUIDPipe) c:string){return this.service.masterCatalog(a,w,c);}
   @Get("cases/:caseId/catalog-item-context") catalogItemContext(@CurrentActor() a:RequestActor,@Param("workspaceId",ParseUUIDPipe) w:string,@Param("caseId",ParseUUIDPipe) c:string,@Query("workId",ParseUUIDPipe) work:string){return this.service.catalogItemContext(a,w,c,work);}
+  @Post("cases/:caseId/catalog-price") catalogPrice(@CurrentActor() a:RequestActor,@Param("workspaceId",ParseUUIDPipe) w:string,@Param("caseId",ParseUUIDPipe) c:string,@Body() b:unknown){return this.service.catalogPrice(a,w,c,b);}
   @Get("payment-templates") templates(
     @CurrentActor() a: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
@@ -138,6 +140,6 @@ export class InternalAccountingReconciliationController {
 @Module({
   imports: [WorkspacesModule],
   controllers: [InternalAccountingReconciliationController,CommercialController, ClientPortalController],
-  providers: [AccountingReconciliationService,InternalServiceGuard,CommercialService, ClientPortalService, BrandAssetStorageService],
+  providers: [AccountingReconciliationService,InternalServiceGuard,CatalogSellingPriceService,CommercialService, ClientPortalService, BrandAssetStorageService],
 })
 export class CommercialModule {}

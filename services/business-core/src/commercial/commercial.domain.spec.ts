@@ -98,15 +98,70 @@ describe("Commercial boundaries", () => {
     expect(phone("+91501234567")).not.toBe(phone("+971501234567"));
   });
   it("does not expose internal costs or catalog snapshots in client projections", () => {
-    const q = clientQuote(quote(), "client");
+    const source = quote();
+    source.lines[0].catalogPrice = {
+      status: "resolved",
+      source: "manual_override",
+      mode: "on_request",
+      catalogId: "secret-catalog",
+      work: { id: "secret-work", version: 1 },
+      quantity: 3,
+      currency: "AED",
+      pricingDate: "2026-09-15",
+      taxRate: 5,
+      resolvedAt: "2026-09-15T00:00:00.000Z",
+      override: {
+        amount: 20.15,
+        reason: "private commercial reason",
+        by: "Internal approver",
+        at: "2026-09-15T00:00:00.000Z",
+      },
+    };
+    const q = clientQuote(source, "client");
     const json = JSON.stringify(q);
     expect(json).not.toContain("unitCost");
     expect(json).not.toContain("catalogLinks");
     expect(json).not.toContain("secret-ref");
     expect(json).not.toContain("Internal approver");
     expect(json).not.toContain("requestIds");
+    expect(json).not.toContain("catalogPrice");
     expect(q.canDecide).toBe(true);
     expect(clientQuote(quote(), "viewer").canDecide).toBe(false);
+  });
+  it("accepts only explicit, versioned catalog pricing commands", () => {
+    const parsed = parseLines([
+      {
+        ...quote().lines[0],
+        catalogPriceRequest: {
+          action: "resolve",
+          pricingDate: "2026-09-15",
+          rateZoneId: "zone",
+          rateZoneVersion: 2,
+        },
+      },
+    ]);
+    expect(parsed[0].catalogPriceRequest).toEqual({
+      action: "resolve",
+      pricingDate: "2026-09-15",
+      rateZoneId: "zone",
+      rateZoneVersion: 2,
+    });
+    expect(() =>
+      parseLines([
+        {
+          ...quote().lines[0],
+          catalogPriceRequest: { action: "override", reason: "" },
+        },
+      ]),
+    ).toThrow(/Explain why/);
+    expect(() =>
+      parseLines([
+        {
+          ...quote().lines[0],
+          catalogPriceRequest: { action: "resolve", rateZoneId: "zone" },
+        },
+      ]),
+    ).toThrow(/current version/);
   });
   it("blocks editing issued versions and acting on expired versions", () => {
     expect(() => editable(quote())).toThrow();

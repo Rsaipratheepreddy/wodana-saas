@@ -138,6 +138,7 @@ describe("connected quotation recipes", () => {
         amount: 100,
         currency: "INR",
         effectiveFrom: "2026-09-01",
+        priceType: "cost",
         costIncludes: "supply_only",
         taxIncluded: "no",
       },
@@ -185,6 +186,19 @@ describe("connected quotation recipes", () => {
     expect(
       previewRecipe(configured, { ...input, pricingDate: "2026-01-01" })
         .priceBeforeTax,
+    ).toBeNull();
+    expect(
+      previewRecipe(
+        configured.map((row) =>
+          row.id === rate.id
+            ? {
+                ...row,
+                configuration: { ...row.configuration, priceType: "selling" },
+              }
+            : row,
+        ),
+        input,
+      ).directCost,
     ).toBeNull();
   });
   it("rejects foreign selections, duplicate inputs and invalid dates", () => {

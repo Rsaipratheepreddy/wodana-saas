@@ -244,10 +244,11 @@ export function validateCatalogRecord(input: SaveCatalogRecordDto) {
       !config.effectiveFrom ||
       !config.costIncludes ||
       config.costIncludes === "unconfirmed" ||
-      !config.taxIncluded
+      !config.taxIncluded ||
+      !config.priceType
     )
       throw new BadRequestException(
-        "Set a rate, currency, effective date, cost inclusions and tax treatment.",
+        "Set a rate, currency, effective date, price type, cost inclusions and tax treatment.",
       );
   }
   if (input.specificationStatus === "workspace_verified") {

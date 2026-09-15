@@ -173,6 +173,48 @@ export function parseLines(input: unknown): QuoteLine[] {
         };
       });
     }
+    if (l.catalogPriceRequest !== undefined) {
+      const request = object(l.catalogPriceRequest);
+      if (request.action !== "resolve" && request.action !== "override")
+        throw new BadRequestException(
+          "Choose resolve or override for catalog pricing.",
+        );
+      line.catalogPriceRequest = {
+        action: request.action,
+        ...(request.pricingDate !== undefined
+          ? { pricingDate: date(request.pricingDate) }
+          : {}),
+        ...(request.rateZoneId !== undefined
+          ? { rateZoneId: text(request.rateZoneId, 80, true) }
+          : {}),
+        ...(request.rateZoneVersion !== undefined
+          ? {
+              rateZoneVersion: number(
+                request.rateZoneVersion,
+                1e8,
+                1,
+              ),
+            }
+          : {}),
+        ...(request.reason !== undefined
+          ? { reason: text(request.reason, 500) }
+          : {}),
+      };
+      if (
+        Boolean(line.catalogPriceRequest.rateZoneId) !==
+        Boolean(line.catalogPriceRequest.rateZoneVersion)
+      )
+        throw new BadRequestException(
+          "Select the current version of the pricing zone.",
+        );
+      if (
+        line.catalogPriceRequest.action === "override" &&
+        !line.catalogPriceRequest.reason
+      )
+        throw new BadRequestException(
+          "Explain why the catalog selling price is being overridden.",
+        );
+    }
     return line;
   });
   if (new Set(lines.map((l) => l.id)).size !== lines.length)

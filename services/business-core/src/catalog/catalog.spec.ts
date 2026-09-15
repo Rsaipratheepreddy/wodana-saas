@@ -75,7 +75,7 @@ describe("factory and on-site master structure",()=>{
  });
  it("requires one rate target, explicit currency, dates and inclusions",()=>{
   const process=row("FP-CUT-PANEL");
-  const rate={...room,kind:"rate_card",links:[process.links.find(l=>l.relation==="unit")!,{relation:"factory_process",targetId:process.id}],configuration:{amount:50,currency:"INR",effectiveFrom:"2026-09-07",costIncludes:"labour_and_machine",taxIncluded:"no"}};
+  const rate={...room,kind:"rate_card",links:[process.links.find(l=>l.relation==="unit")!,{relation:"factory_process",targetId:process.id}],configuration:{amount:50,currency:"INR",effectiveFrom:"2026-09-07",priceType:"cost",costIncludes:"labour_and_machine",taxIncluded:"no"}};
   expect(()=>validateCatalogRecord(rate)).not.toThrow();
   expect(()=>validateCatalogRecord({...rate,links:rate.links.filter(l=>l.relation!=="unit")})).toThrow("measurement unit");
   expect(()=>validateCatalogRecord({...rate,links:rate.links.slice(0,1)})).toThrow("exactly one");

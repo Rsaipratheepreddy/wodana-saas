@@ -25,6 +25,7 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { ConfigService } from "@nestjs/config";
+import { CatalogSellingPriceService } from "./catalog-selling-price.service";
 import {
   actionable,
   date,
@@ -50,6 +51,7 @@ import type {
   Quote,
   QuotationTemplate,
   CatalogSelection,
+  CatalogPriceSnapshot,
 } from "./commercial.types";
 
 @Injectable()
@@ -57,6 +59,7 @@ export class CommercialService {
   constructor(
     private readonly access: WorkspaceAccessService,
     private readonly config: ConfigService,
+    private readonly sellingPrices: CatalogSellingPriceService,
   ) {}
   get testMode() {
     return (
@@ -79,6 +82,14 @@ export class CommercialService {
     if (lock && !["active", "released"].includes(result.rows[0].status))
       throw new ConflictException("This pre-execution is not active. Resume or reopen it before making commercial changes.");
     return result.rows[0];
+  }
+  private async workspaceDate(client: PoolClient, workspaceId: string) {
+    const result = await client.query(
+      `SELECT to_char(now() AT TIME ZONE default_timezone,'YYYY-MM-DD') AS date
+       FROM workspaces WHERE id=$1`,
+      [workspaceId],
+    );
+    return String(result.rows[0]?.date ?? new Date().toISOString().slice(0, 10));
   }
   private async designReadiness(
     client: PoolClient,
@@ -348,6 +359,12 @@ export class CommercialService {
             workspaceId,
             user.userId,
             "commercial.approve",
+          ),
+          canOverridePrice: await this.access.hasPermission(
+            client,
+            workspaceId,
+            user.userId,
+            "commercial.override_price",
           ),
           canRelease: await this.access.hasPermission(
             client,
@@ -697,7 +714,7 @@ export class CommercialService {
         ];
         const records = (
           await c.query(
-            `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id WHERE r.workspace_id=$1 AND r.id=ANY($2::uuid[]) AND NOT r.archived AND NOT c.archived`,
+            `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration,r.content->'commerce' AS commerce FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id WHERE r.workspace_id=$1 AND r.id=ANY($2::uuid[]) AND NOT r.archived AND NOT c.archived`,
             [w, [...new Set(refs.map((r) => r.recordId))]],
           )
         ).rows;
@@ -719,7 +736,9 @@ export class CommercialService {
           }
           if (current.version !== ref.version)
             warnings.add(
-              `${current.name} uses the latest catalog version. Review the specification; the template price is unchanged.`,
+              current.commerce
+                ? `${current.name} uses the latest catalog version. Review the specification; its current verified selling price will be resolved when the quotation is saved.`
+                : `${current.name} uses the latest catalog version. Review the specification; the template price is unchanged.`,
             );
           return {
             role: ref.role,
@@ -923,7 +942,7 @@ export class CommercialService {
         return {
           items: (
             await client.query(
-              `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration,r.content->>'description' AS description,
+              `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration,r.content->'commerce' AS commerce,r.content->>'description' AS description,
       coalesce((SELECT jsonb_agg(jsonb_build_object('role',l.relation,'recordId',t.id,'snapshot',jsonb_build_object('id',t.id,'name',t.name,'code',t.code,'kind',t.kind,'version',t.version,'catalogId',t.catalog_id,'catalogName',tc.name,'configuration',CASE WHEN t.kind='unit' THEN coalesce(t.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(t.content->'configuration'->>'symbol',t.content->'aliases'->>0,t.code)) ELSE t.content->'configuration' END))) FROM workspace_catalog_links l JOIN workspace_catalog_records t ON t.workspace_id=l.workspace_id AND t.id=l.target_id JOIN workspace_catalog_records tc ON tc.workspace_id=t.workspace_id AND tc.id=t.catalog_id WHERE l.workspace_id=r.workspace_id AND l.record_id=r.id AND l.relation IN ('unit','work','variant','material','finish','brand','construction') AND NOT t.archived AND NOT tc.archived),'[]'::jsonb) AS links
       FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id WHERE r.workspace_id=$1 AND (r.kind=$2 OR ($2='material' AND r.kind IN ('sku','hardware','consumable'))) AND NOT r.archived AND NOT c.archived AND ($3='' OR strpos(lower(r.name||' '||r.code||' '||c.name),lower($3))>0) AND ($4='' OR r.catalog_id::text=$4) AND ($5='' OR EXISTS(SELECT 1 FROM workspace_catalog_links l WHERE l.workspace_id=r.workspace_id AND ((l.record_id=r.id AND l.target_id::text=$5) OR (l.target_id=r.id AND l.record_id::text=$5)))) ORDER BY r.name,r.id LIMIT 100`,
               [w, kind, search, catalog, linked],
@@ -1038,6 +1057,64 @@ export class CommercialService {
           links,
           totalCatalogRecords: catalogs.rowCount,
         };
+      },
+    );
+  }
+  async catalogPrice(
+    actor: RequestActor,
+    w: string,
+    caseId: string,
+    input: unknown,
+  ) {
+    const b = object(input);
+    for (const [id, version, label] of [
+      [b.variantId, b.variantVersion, "variant"],
+      [b.unitId, b.unitVersion, "unit"],
+      [b.rateZoneId, b.rateZoneVersion, "pricing zone"],
+    ] as const)
+      if (Boolean(id) !== Boolean(version))
+        throw new BadRequestException(
+          `Select the current version of the ${label}.`,
+        );
+    return this.access.withPermission(
+      actor,
+      w,
+      "pre_projects.view",
+      async (client) => {
+        await this.caseRecord(client, w, caseId);
+        return this.sellingPrices.resolve(client, w, {
+          catalogId: uuid(b.catalogId, "catalog"),
+          workId: uuid(b.workId, "catalog item"),
+          workVersion: number(b.workVersion, 1e8, 1),
+          ...(b.variantId !== undefined
+            ? {
+                variantId: uuid(b.variantId, "variant"),
+                variantVersion: number(b.variantVersion, 1e8, 1),
+              }
+            : {}),
+          ...(b.unitId !== undefined
+            ? {
+                unitId: uuid(b.unitId, "unit"),
+                unitVersion: number(b.unitVersion, 1e8, 1),
+              }
+            : {}),
+          ...(b.unitLabel !== undefined
+            ? { unitLabel: text(b.unitLabel, 20, true) }
+            : {}),
+          ...(b.rateZoneId !== undefined
+            ? {
+                rateZoneId: uuid(b.rateZoneId, "pricing zone"),
+                rateZoneVersion: number(b.rateZoneVersion, 1e8, 1),
+              }
+            : {}),
+          quantity: number(b.quantity, 1e6, 0.0001),
+          currency: currency(b.currency),
+          pricingDate:
+            b.pricingDate === undefined
+              ? await this.workspaceDate(client, w)
+              : date(b.pricingDate),
+          taxRate: number(b.taxRate ?? 0, 100),
+        });
       },
     );
   }
@@ -1231,7 +1308,7 @@ export class CommercialService {
               }
               const selected = (
                 await client.query(
-                  `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id WHERE r.workspace_id=$1 AND r.id=$2 AND NOT r.archived AND NOT c.archived`,
+                      `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration,r.content->'commerce' AS commerce FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id WHERE r.workspace_id=$1 AND r.id=$2 AND NOT r.archived AND NOT c.archived`,
                   [workspaceId, selection.recordId],
                 )
               ).rows[0];
@@ -1251,6 +1328,15 @@ export class CommercialService {
             }
           }
           for (const line of lines) {
+            for (const role of ["work", "variant", "unit"])
+              if (
+                (line.catalogLinks ?? []).filter(
+                  (selection) => selection.role === role,
+                ).length > 1
+              )
+                throw new BadRequestException(
+                  `Choose only one catalog ${role} per quotation item.`,
+                );
             const work = line.catalogLinks?.find((c) => c.role === "work"),
               variant = line.catalogLinks?.find((c) => c.role === "variant");
             if (!variant) continue;
@@ -1258,28 +1344,11 @@ export class CommercialService {
               throw new BadRequestException(
                 "Choose the catalog item before selecting its variant.",
               );
-            const previous = q.lines.find((l) => l.id === line.id);
-            if (
-              previous?.catalogLinks?.some(
-                (c) =>
-                  c.role === "work" &&
-                  c.recordId === work.recordId &&
-                  c.version === work.version,
-              ) &&
-              previous.catalogLinks.some(
-                (c) =>
-                  c.role === "variant" &&
-                  c.recordId === variant.recordId &&
-                  c.version === variant.version,
-              )
-            )
-              continue;
             const linked = await client.query(
               `SELECT target_id FROM workspace_catalog_links WHERE workspace_id=$1 AND record_id=$2 AND relation='work'`,
               [workspaceId, variant.recordId],
             );
             if (
-              linked.rowCount &&
               !linked.rows.some((r) => r.target_id === work.recordId)
             )
               throw new BadRequestException(
@@ -1299,13 +1368,140 @@ export class CommercialService {
                 specificationVersion: old.specificationVersion,
               });
           }
-          const currency = text(v.currency, 3, true).toUpperCase();
-          if (
-            !["AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].includes(
-              currency,
+          const quoteCurrency = currency(v.currency),
+            quoteTaxRate = number(v.taxRate, 100);
+          let canOverridePrice: boolean | undefined;
+          let defaultPricingDate: string | undefined;
+          for (const line of lines) {
+            const old = known.get(line.id),
+              priceRequest = line.catalogPriceRequest,
+              work = line.catalogLinks?.find(
+                (selection) => selection.role === "work",
+              ),
+              variant = line.catalogLinks?.find(
+                (selection) => selection.role === "variant",
+              ),
+              unit = line.catalogLinks?.find(
+                (selection) => selection.role === "unit",
+              );
+            delete line.catalogPriceRequest;
+            const managed = Boolean(
+              priceRequest ||
+                old?.catalogPrice ||
+                (line.pricingMode !== "materials" &&
+                  (work?.snapshot.commerce || variant?.snapshot.commerce)),
+            );
+            if (!managed) continue;
+            if (!work)
+              throw new BadRequestException(
+                "Choose a catalog item before resolving its selling price.",
+              );
+            if (
+              line.pricingMode === "materials" &&
+              priceRequest?.action !== "override"
             )
-          )
-            throw new BadRequestException("Choose a supported currency.");
+              throw new BadRequestException(
+                "Catalog rate resolution applies to item-rate lines. Use an authorized override for a custom material build-up.",
+              );
+
+            const sameSelection = old?.catalogPrice
+              ? sameCatalogPriceSelection(old.catalogPrice, line)
+              : false;
+            if (!priceRequest && old?.catalogPrice && sameSelection) {
+              const unchangedBasis =
+                old.catalogPrice.quantity === line.quantity &&
+                old.catalogPrice.currency === quoteCurrency &&
+                old.catalogPrice.taxRate === quoteTaxRate &&
+                (old.catalogPrice.unitLabel === undefined ||
+                  old.catalogPrice.unitLabel === line.unit);
+              line.catalogPrice = unchangedBasis
+                ? structuredClone(old.catalogPrice)
+                : {
+                    ...structuredClone(old.catalogPrice),
+                    status: "stale",
+                    issue: {
+                      code: "stale",
+                      message:
+                        "Refresh this price after changing quantity, currency or tax.",
+                    },
+                  };
+              line.rate = catalogSnapshotRate(line.catalogPrice);
+              continue;
+            }
+
+            const pricingDate =
+              priceRequest?.pricingDate ??
+              (defaultPricingDate ??=
+                await this.workspaceDate(client, workspaceId));
+            const resolution = await this.sellingPrices.resolve(
+              client,
+              workspaceId,
+              {
+                catalogId: work.snapshot.catalogId,
+                workId: work.recordId,
+                workVersion: work.version,
+                ...(variant
+                  ? {
+                      variantId: variant.recordId,
+                      variantVersion: variant.version,
+                    }
+                  : {}),
+                ...(unit
+                  ? { unitId: unit.recordId, unitVersion: unit.version }
+                  : {}),
+                unitLabel: line.unit,
+                ...(priceRequest?.rateZoneId
+                  ? {
+                      rateZoneId: priceRequest.rateZoneId,
+                      rateZoneVersion: priceRequest.rateZoneVersion,
+                    }
+                  : {}),
+                quantity: line.quantity,
+                currency: quoteCurrency,
+                pricingDate,
+                taxRate: quoteTaxRate,
+              },
+            );
+            if (priceRequest?.action === "override") {
+              canOverridePrice ??= await this.access.hasPermission(
+                client,
+                workspaceId,
+                user.userId,
+                "commercial.override_price",
+              );
+              if (!canOverridePrice)
+                throw new ForbiddenException(
+                  "Commercial price override permission is required.",
+                );
+              if (line.rate <= 0)
+                throw new BadRequestException(
+                  "An overridden selling price must be greater than zero.",
+                );
+              line.catalogPrice = {
+                ...resolution.snapshot,
+                status: "resolved",
+                source: "manual_override",
+                issue: undefined,
+                override: {
+                  amount: line.rate,
+                  reason: priceRequest.reason!,
+                  by: user.displayName,
+                  at: now,
+                },
+              };
+              data.audit.push({
+                id: randomUUID(),
+                at: now,
+                actor: user.displayName,
+                action: "catalog_price_override",
+                quoteId: q.id,
+                note: `${line.title}: ${quoteCurrency} ${line.rate} — ${priceRequest.reason}`,
+              });
+            } else {
+              line.catalogPrice = resolution.snapshot;
+              line.rate = catalogSnapshotRate(resolution.snapshot);
+            }
+          }
           const requestIds = Array.isArray(v.requestIds)
             ? v.requestIds.map((id) => text(id, 80, true))
             : [];
@@ -1324,10 +1520,10 @@ export class CommercialService {
             title: text(v.title, 240, true),
             ...(v.cover ? { cover: parseCover(v.cover) } : {}),
             inclusions: text(v.inclusions ?? "", 6000),
-            currency,
+            currency: quoteCurrency,
             validUntil: date(v.validUntil),
             discount: roundAmount(v.discount),
-            taxRate: number(v.taxRate, 100),
+            taxRate: quoteTaxRate,
             terms: text(v.terms, 10000),
             exclusions: text(v.exclusions, 6000),
             lines,
@@ -1375,6 +1571,16 @@ export class CommercialService {
             if (q.direction !== "deduction")
               parsePaymentTerms(q.paymentTerms, true);
             validateDeduction(data, q);
+            const pricingIssue = q.lines.find(
+              (line) =>
+                line.catalogPrice && line.catalogPrice.status !== "resolved",
+            );
+            if (pricingIssue)
+              throw new ConflictException(
+                pricingIssue.catalogPrice?.status === "stale"
+                  ? `Refresh the catalog selling price for ${pricingIssue.title} after changing its quantity, currency or tax.`
+                  : `Confirm a selling price for ${pricingIssue.title} before submitting for review.`,
+              );
             if (!q.lines.length || q.lines.some((l) => l.rate <= 0))
               throw new ConflictException(
                 "Add items and selling rates before submitting for review.",
@@ -2005,4 +2211,41 @@ export class CommercialService {
 }
 function roundAmount(value: unknown) {
   return Math.round(number(value) * 100) / 100;
+}
+function uuid(value: unknown, label: string) {
+  const id = text(value, 36, true);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
+    throw new BadRequestException(`Choose a valid ${label}.`);
+  return id;
+}
+function currency(value: unknown) {
+  const code = text(value, 3, true).toUpperCase();
+  if (!["AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].includes(code))
+    throw new BadRequestException("Choose a supported currency.");
+  return code;
+}
+function catalogSnapshotRate(snapshot: CatalogPriceSnapshot) {
+  if (snapshot.status !== "resolved") return 0;
+  return snapshot.override?.amount ?? snapshot.rateCard?.appliedUnitRate ?? 0;
+}
+function sameCatalogPriceSelection(
+  snapshot: CatalogPriceSnapshot,
+  line: import("./commercial.types").QuoteLine,
+) {
+  const selected = (role: string) =>
+    line.catalogLinks?.find((selection) => selection.role === role);
+  const work = selected("work"),
+    variant = selected("variant"),
+    unit = selected("unit");
+  return Boolean(
+    work &&
+      snapshot.catalogId === work.snapshot.catalogId &&
+      snapshot.work.id === work.recordId &&
+      snapshot.work.version === work.version &&
+      snapshot.variant?.id === variant?.recordId &&
+      snapshot.variant?.version === variant?.version &&
+      (!unit ||
+        (snapshot.unit?.id === unit.recordId &&
+          snapshot.unit?.version === unit.version)),
+  );
 }

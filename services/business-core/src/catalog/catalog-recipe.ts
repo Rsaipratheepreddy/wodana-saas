@@ -358,6 +358,7 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
             !r.archived &&
             r.kind === "rate_card" &&
             r.specificationStatus === "workspace_verified" &&
+            ["purchase", "cost"].includes(String(cfg(r).priceType)) &&
             r.links.some(
               (l) => l.targetId === source.id && l.relation === source.kind,
             ) &&

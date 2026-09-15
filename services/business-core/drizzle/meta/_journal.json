@@ -498,6 +498,13 @@
       "when": 1789448400000,
       "tag": "0071_catalog_adoption",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789452000000,
+      "tag": "0072_commercial_price_override",
+      "breakpoints": true
     }
   ]
 }
