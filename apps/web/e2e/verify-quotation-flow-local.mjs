@@ -18,7 +18,7 @@ try{
  const membership=(await db.query('SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2',[workspaceId,profile.id])).rows[0].id;
  const qualify={leadVersion:1,partyId:source.party_id,pipelineId:source.pipeline_id,stageId:source.stage_id,ownerMembershipId:membership,title:'Commercial automated verification '+caseId,amount:100,currencyCode:'AED',nextActionAt:new Date(Date.now()+86400000).toISOString(),expectedCloseAt:new Date(Date.now()+7*86400000).toISOString()};
  opportunityId=(await request(`/workspaces/${workspaceId}/crm/leads/${leadId}/qualify`,'POST',qualify,token,201)).id;
- await request(`/workspaces/${workspaceId}/crm/leads/${leadId}/qualify`,'POST',qualify,token,409);
+ assert.equal((await request(`/workspaces/${workspaceId}/crm/leads/${leadId}/qualify`,'POST',qualify,token,201)).id,opportunityId);
  const converted=await request(`/workspaces/${workspaceId}/crm/leads/${leadId}`);assert.equal(converted.status,'qualified');assert.equal(converted.opportunities[0].id,opportunityId);
  caseId=(await request(`/workspaces/${workspaceId}/pre-projects`,'POST',{opportunityId},token,201)).id;
  assert.equal((await request(`/workspaces/${workspaceId}/pre-projects`,'POST',{opportunityId},token,201)).id,caseId);

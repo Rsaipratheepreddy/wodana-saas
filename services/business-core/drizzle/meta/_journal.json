@@ -463,6 +463,13 @@
       "when": 1789430400000,
       "tag": "0066_crm_intake_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789434000000,
+      "tag": "0067_crm_qualification_conversion",
+      "breakpoints": true
     }
   ]
 }

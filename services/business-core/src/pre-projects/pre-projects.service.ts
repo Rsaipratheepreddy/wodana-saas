@@ -4,6 +4,7 @@ import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
+import { canonicalHash } from "../crm/shared/crm-types";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto } from "./pre-projects.dto";
 
 const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
@@ -91,13 +92,24 @@ export class PreProjectsService {
         opportunityId = linked.rows[0].id;
       } else {
         if (!input.ownerMembershipId || !input.nextActionAt || Number.isNaN(Date.parse(input.nextActionAt))) throw new UnprocessableEntityException("Choose a lead manager and the next follow-up date.");
+        if (!lead.qualification_evidence || !lead.qualification_evidence_hash) {
+          throw new ConflictException("Qualification evidence is missing. Reopen and qualify the lead again before starting pre-execution.");
+        }
         const pipeline = await client.query(`SELECT pipeline.id FROM crm_pipelines pipeline WHERE pipeline.workspace_id = $1 AND pipeline.status = 'active' AND EXISTS (SELECT 1 FROM crm_pipeline_stages stage WHERE stage.workspace_id = pipeline.workspace_id AND stage.pipeline_id = pipeline.id AND stage.status = 'active') ORDER BY pipeline.is_default DESC, pipeline.created_at, pipeline.id LIMIT 1 FOR SHARE`, [workspaceId]);
         if (!pipeline.rowCount) throw new UnprocessableEntityException("A workspace administrator needs to configure an active CRM pipeline before this pre-execution can start.");
         const opportunity = await this.opportunities.createQualifiedHandoff(client, workspaceId, {
           partyId: lead.party_id, leadId: lead.id, pipelineId: pipeline.rows[0].id,
           title: lead.title, description: lead.summary ?? undefined,
           ownerMembershipId: input.ownerMembershipId, nextActionAt: input.nextActionAt,
-        }, user.userId);
+        }, user.userId, {
+          origin: "pre_project_start",
+          requestHash: canonicalHash({
+            leadId: lead.id, leadVersion: input.version, pipelineId: pipeline.rows[0].id,
+            ownerMembershipId: input.ownerMembershipId, nextActionAt: input.nextActionAt,
+          }),
+          qualificationEvidence: lead.qualification_evidence,
+          qualificationEvidenceHash: String(lead.qualification_evidence_hash),
+        });
         opportunityId = String(opportunity.id);
         await client.query(`UPDATE crm_leads SET version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, lead.id]);
       }

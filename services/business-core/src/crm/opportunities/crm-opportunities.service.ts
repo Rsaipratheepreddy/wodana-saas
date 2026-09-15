@@ -9,8 +9,9 @@ import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
-import { decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
+import { canonicalHash, decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
+import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -27,6 +28,12 @@ import {
 } from "./dto/opportunities.dto";
 
 type Row = Record<string, unknown>;
+export type ConversionContext = {
+  origin: "lead_qualification" | "pre_project_start";
+  requestHash: string;
+  qualificationEvidence: QualificationEvidence | Record<string, unknown>;
+  qualificationEvidenceHash: string;
+};
 
 @Injectable()
 export class CrmOpportunitiesService {
@@ -233,17 +240,44 @@ export class CrmOpportunitiesService {
       const lead = await client.query<Row>(`SELECT * FROM crm_leads WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, leadId]);
       if (!lead.rowCount) throw new NotFoundException("Lead not found");
       const row = lead.rows[0];
+      const requestHash = canonicalHash({ leadId, ...input });
+      const existing = await client.query<{ id: string; conversion_request_hash: string | null }>(
+        `SELECT id,conversion_request_hash FROM crm_opportunities WHERE workspace_id=$1 AND lead_id=$2`,
+        [workspaceId, leadId],
+      );
+      if (existing.rowCount) {
+        if (existing.rows[0].conversion_request_hash !== requestHash) {
+          throw new ConflictException("This lead was already converted with different details");
+        }
+        const replay = await this.requireOpportunity(client, workspaceId, existing.rows[0].id, false);
+        const canViewSensitiveValues = permissions.includes("crm.opportunities.sensitive_values")
+          || await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
+        return { ...this.presentOpportunity(replay, canViewSensitiveValues), conversionReplay: true };
+      }
       if (Number(row.version) !== input.leadVersion) throw new ConflictException("Lead changed; reload and try again");
       if (["disqualified", "paused"].includes(String(row.status))) throw new UnprocessableEntityException("Reopen the lead before qualification");
       if (input.leadId && input.leadId !== leadId) throw new UnprocessableEntityException("leadId does not match the route");
       if (String(row.party_id) !== input.partyId) throw new UnprocessableEntityException("Opportunity party must match the lead party");
-      const existing = await client.query(`SELECT id FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2`, [workspaceId, leadId]);
-      if (existing.rowCount) throw new ConflictException("This lead already has an opportunity");
-      const opportunity = await this.createInTransaction(client, workspaceId, { ...input, leadId }, actorUser.userId, true);
+      const qualification = row.status === "qualified" && row.qualification_evidence && row.qualification_evidence_hash
+        ? {
+          evidence: row.qualification_evidence as Record<string, unknown>,
+          evidenceHash: String(row.qualification_evidence_hash),
+        }
+        : await evaluateQualification(client, workspaceId, leadId, {}, true);
+      const conversion: ConversionContext = {
+        origin: "lead_qualification",
+        requestHash,
+        qualificationEvidence: qualification.evidence,
+        qualificationEvidenceHash: qualification.evidenceHash,
+      };
+      const opportunity = await this.createInTransaction(client, workspaceId, { ...input, leadId }, actorUser.userId, true, conversion);
       const updated = await client.query(
-        `UPDATE crm_leads SET status = 'qualified', next_action_at = NULL, qualified_at = COALESCE(qualified_at, now()), closed_at = now(), version = version + 1
+        `UPDATE crm_leads SET status='qualified',next_action_at=NULL,
+           qualified_at=COALESCE(qualified_at,now()),qualification_evidence=$4,
+           qualification_evidence_hash=$5,qualified_by=COALESCE(qualified_by,$6),
+           closed_at=now(),version=version+1
          WHERE workspace_id = $1 AND id = $2 AND version = $3 RETURNING *`,
-        [workspaceId, leadId, input.leadVersion],
+        [workspaceId, leadId, input.leadVersion, qualification.evidence, qualification.evidenceHash, actorUser.userId],
       );
       if (!updated.rowCount) throw new ConflictException("Lead changed; reload and try again");
       await client.query(`UPDATE crm_enquiries SET status = 'qualified', closed_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, row.enquiry_id]);
@@ -255,6 +289,10 @@ export class CrmOpportunitiesService {
         details: { fromStatus: row.status, toStatus: "qualified", opportunityId: opportunity.id },
       });
       await client.query(`UPDATE crm_activities SET opportunity_id = $3, is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND opportunity_id IS NULL`, [workspaceId, leadId, opportunity.id]);
+      // SLA reconciliation may derive the lead's next action before its activities
+      // are transferred. A converted lead is closed, so its follow-up belongs only
+      // to the opportunity created above.
+      await client.query(`UPDATE crm_leads SET next_action_at=NULL WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.qualified.v1", entityType: "crm_lead", entityId: leadId, before: row, after: updated.rows[0] as Row });
       return this.presentOpportunity(opportunity, permissions.includes("crm.opportunities.sensitive_values"));
     });
@@ -448,13 +486,28 @@ export class CrmOpportunitiesService {
   }
 
   /** Called only inside the permission-checked, lead-locked Pre-execution handoff transaction. */
-  async createQualifiedHandoff(client: PoolClient, workspaceId: string, input: CreateOpportunityDto, actorUserId: string) {
-    const opportunity = await this.createInTransaction(client, workspaceId, input, actorUserId, true);
+  async createQualifiedHandoff(
+    client: PoolClient,
+    workspaceId: string,
+    input: CreateOpportunityDto,
+    actorUserId: string,
+    conversion: ConversionContext,
+  ) {
+    const opportunity = await this.createInTransaction(client, workspaceId, input, actorUserId, true, conversion);
     await client.query(`UPDATE crm_activities SET opportunity_id = $3, is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND opportunity_id IS NULL`, [workspaceId, input.leadId, opportunity.id]);
+    await client.query(`UPDATE crm_leads SET next_action_at=NULL WHERE workspace_id=$1 AND id=$2`, [workspaceId, input.leadId]);
     return opportunity;
   }
 
-  private async createInTransaction(client: PoolClient, workspaceId: string, input: CreateOpportunityDto, actorUserId: string, skipLeadValidation: boolean) {
+  private async createInTransaction(
+    client: PoolClient,
+    workspaceId: string,
+    input: CreateOpportunityDto,
+    actorUserId: string,
+    skipLeadValidation: boolean,
+    conversion?: ConversionContext,
+  ) {
+    if (input.leadId && !conversion) throw new UnprocessableEntityException("Lead conversion evidence is required");
     const pipeline = await client.query(`SELECT 1 FROM crm_pipelines WHERE workspace_id = $1 AND id = $2 AND status = 'active' FOR SHARE`, [workspaceId, input.pipelineId]);
     if (!pipeline.rowCount) throw new UnprocessableEntityException("Choose an active pipeline");
     const party = await client.query(`SELECT 1 FROM crm_parties WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, input.partyId]);
@@ -479,17 +532,34 @@ export class CrmOpportunitiesService {
         (workspace_id, legal_entity_id, business_unit_id, party_id, lead_id, pipeline_id, stage_id,
          owner_membership_id, title, description, amount, currency_code, probability,
          forecast_category, expected_close_at, next_action_at, reporting_currency_code,
-         reporting_amount, exchange_rate, exchange_rate_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         reporting_amount, exchange_rate, exchange_rate_at,conversion_origin,
+         conversion_request_hash,qualification_evidence,qualification_evidence_hash,
+         converted_by,converted_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+               $21,$22,$23,$24,$25,CASE WHEN $5::uuid IS NULL THEN NULL ELSE now() END)
        RETURNING *`,
-      [workspaceId, input.legalEntityId ?? null, input.businessUnitId ?? null, input.partyId, input.leadId ?? null, input.pipelineId, stage.id, input.ownerMembershipId ?? null, input.title, input.description ?? null, input.amount ?? null, currency ?? null, input.probability ?? stage.probability, stage.forecast_category, expectedCloseAt, nextActionAt, sameCurrency ? reportingCurrency : null, sameCurrency ? input.amount ?? null : null, sameCurrency ? 1 : null, sameCurrency ? new Date() : null],
+      [
+        workspaceId, input.legalEntityId ?? null, input.businessUnitId ?? null, input.partyId,
+        input.leadId ?? null, input.pipelineId, stage.id, input.ownerMembershipId ?? null,
+        input.title, input.description ?? null, input.amount ?? null, currency ?? null,
+        input.probability ?? stage.probability, stage.forecast_category, expectedCloseAt, nextActionAt,
+        sameCurrency ? reportingCurrency : null, sameCurrency ? input.amount ?? null : null,
+        sameCurrency ? 1 : null, sameCurrency ? new Date() : null,
+        conversion?.origin ?? null, conversion?.requestHash ?? null,
+        conversion?.qualificationEvidence ?? null, conversion?.qualificationEvidenceHash ?? null,
+        conversion ? actorUserId : null,
+      ],
     );
     const response = result.rows[0] as Row;
     await this.assertEntryRequirements(client, workspaceId, response, stage);
     await client.query(`INSERT INTO crm_activities (workspace_id, party_id, opportunity_id, type, title, owner_membership_id, due_at, is_next_action, created_by) VALUES ($1,$2,$3,'task','Follow up on opportunity',$4,$5,true,$6)`, [workspaceId, input.partyId, response.id, input.ownerMembershipId ?? null, nextActionAt, actorUserId]);
     await client.query(`INSERT INTO crm_stage_history (workspace_id, opportunity_id, to_stage_id, to_status, reason, changed_by) VALUES ($1,$2,$3,'open','created',$4)`, [workspaceId, response.id, stage.id, actorUserId]);
     await this.snapshot(client, workspaceId, response, "created");
-    await this.events.record(client, { workspaceId, actorUserId, source: "user", action: "crm.opportunity.created.v1", entityType: "crm_opportunity", entityId: String(response.id), after: response });
+    await this.events.record(client, {
+      workspaceId, actorUserId, source: "user", action: "crm.opportunity.created.v1",
+      entityType: "crm_opportunity", entityId: String(response.id),
+      after: conversion ? { ...response, conversionEvidenceHash: conversion.qualificationEvidenceHash } : response,
+    });
     return response;
   }
 
@@ -522,9 +592,11 @@ export class CrmOpportunitiesService {
   private presentOpportunity(opportunity: Row, canViewSensitiveValues: boolean): Row {
     // Keep mutation and list/detail responses consistent for every linked CRM screen.
     const presented = { ...opportunity };
-    for (const [source, target] of Object.entries({ party_id: "partyId", lead_id: "leadId", pipeline_id: "pipelineId", stage_id: "stageId", owner_membership_id: "ownerMembershipId", currency_code: "currencyCode", reporting_currency_code: "reportingCurrencyCode", reporting_amount: "reportingAmount", next_action_at: "nextActionAt", expected_close_at: "expectedCloseAt", paused_reason: "pausedReason", outcome_reason: "outcomeReason", created_at: "createdAt", updated_at: "updatedAt" })) {
+    for (const [source, target] of Object.entries({ party_id: "partyId", lead_id: "leadId", pipeline_id: "pipelineId", stage_id: "stageId", owner_membership_id: "ownerMembershipId", currency_code: "currencyCode", reporting_currency_code: "reportingCurrencyCode", reporting_amount: "reportingAmount", next_action_at: "nextActionAt", expected_close_at: "expectedCloseAt", paused_reason: "pausedReason", outcome_reason: "outcomeReason", conversion_origin: "conversionOrigin", qualification_evidence: "qualificationEvidence", qualification_evidence_hash: "qualificationEvidenceHash", converted_by: "convertedBy", converted_at: "convertedAt", created_at: "createdAt", updated_at: "updatedAt" })) {
       if (Object.hasOwn(opportunity, source)) presented[target] = opportunity[source];
     }
+    // The fingerprint is an internal replay guard, not part of the public CRM model.
+    delete presented.conversion_request_hash;
     if (canViewSensitiveValues) return presented;
     const redacted = { ...presented };
     for (const key of [

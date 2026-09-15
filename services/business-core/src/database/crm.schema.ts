@@ -537,6 +537,9 @@ export const crmLeads = pgTable(
     pausedReason: varchar("paused_reason", { length: 160 }),
     nextActionAt: timestamp("next_action_at", { withTimezone: true }),
     qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
+    qualificationEvidence: jsonb("qualification_evidence").$type<Record<string, unknown>>(),
+    qualificationEvidenceHash: varchar("qualification_evidence_hash", { length: 64 }),
+    qualifiedBy: uuid("qualified_by").references(() => users.id, { onDelete: "set null" }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     ...versionColumn,
     ...auditColumns,
@@ -546,6 +549,15 @@ export const crmLeads = pgTable(
     index("crm_leads_owner_status_idx").on(table.workspaceId, table.ownerMembershipId, table.status),
     index("crm_leads_queue_status_idx").on(table.workspaceId, table.queueId, table.status),
     index("crm_leads_next_action_idx").on(table.workspaceId, table.nextActionAt),
+    check("crm_leads_qualification_evidence_check", sql`${table.qualificationEvidence} IS NULL OR jsonb_typeof(${table.qualificationEvidence}) = 'object'`),
+    check("crm_leads_qualification_hash_check", sql`${table.qualificationEvidenceHash} IS NULL OR ${table.qualificationEvidenceHash} ~ '^[0-9a-f]{64}$'`),
+    check("crm_leads_qualification_state_check", sql`(
+      ${table.status} = 'qualified' AND ${table.qualifiedAt} IS NOT NULL
+      AND ${table.qualificationEvidence} IS NOT NULL AND ${table.qualificationEvidenceHash} IS NOT NULL
+    ) OR (
+      ${table.status} <> 'qualified' AND ${table.qualifiedAt} IS NULL
+      AND ${table.qualificationEvidence} IS NULL AND ${table.qualificationEvidenceHash} IS NULL AND ${table.qualifiedBy} IS NULL
+    )`),
   ],
 );
 
@@ -969,6 +981,12 @@ export const crmOpportunities = pgTable(
     reportingAmount: numeric("reporting_amount", { precision: 20, scale: 4 }),
     exchangeRate: numeric("exchange_rate", { precision: 24, scale: 12 }),
     exchangeRateAt: timestamp("exchange_rate_at", { withTimezone: true }),
+    conversionOrigin: varchar("conversion_origin", { length: 30 }),
+    conversionRequestHash: varchar("conversion_request_hash", { length: 64 }),
+    qualificationEvidence: jsonb("qualification_evidence").$type<Record<string, unknown>>(),
+    qualificationEvidenceHash: varchar("qualification_evidence_hash", { length: 64 }),
+    convertedBy: uuid("converted_by").references(() => users.id, { onDelete: "set null" }),
+    convertedAt: timestamp("converted_at", { withTimezone: true }),
     ...versionColumn,
     ...auditColumns,
   },
@@ -976,8 +994,18 @@ export const crmOpportunities = pgTable(
     index("crm_opportunities_stage_idx").on(table.workspaceId, table.pipelineId, table.stageId, table.status),
     index("crm_opportunities_owner_idx").on(table.workspaceId, table.ownerMembershipId, table.status),
     index("crm_opportunities_party_idx").on(table.workspaceId, table.partyId, table.createdAt),
+    uniqueIndex("crm_opportunities_lead_uidx").on(table.workspaceId, table.leadId).where(sql`${table.leadId} IS NOT NULL`),
     check("crm_opportunities_amount_currency_check", sql`(${table.amount} IS NULL AND ${table.currencyCode} IS NULL) OR (${table.amount} IS NOT NULL AND ${table.currencyCode} IS NOT NULL)`),
     check("crm_opportunities_probability_check", sql`${table.probability} IS NULL OR (${table.probability} >= 0 AND ${table.probability} <= 100)`),
+    check("crm_opportunities_conversion_origin_check", sql`${table.conversionOrigin} IS NULL OR ${table.conversionOrigin} IN ('legacy','lead_qualification','pre_project_start')`),
+    check("crm_opportunities_conversion_request_hash_check", sql`${table.conversionRequestHash} IS NULL OR ${table.conversionRequestHash} ~ '^[0-9a-f]{64}$'`),
+    check("crm_opportunities_qualification_evidence_check", sql`${table.qualificationEvidence} IS NULL OR jsonb_typeof(${table.qualificationEvidence}) = 'object'`),
+    check("crm_opportunities_qualification_hash_check", sql`${table.qualificationEvidenceHash} IS NULL OR ${table.qualificationEvidenceHash} ~ '^[0-9a-f]{64}$'`),
+    check("crm_opportunities_lead_conversion_check", sql`${table.leadId} IS NULL OR (
+      ${table.conversionOrigin} IS NOT NULL AND ${table.conversionRequestHash} IS NOT NULL
+      AND ${table.qualificationEvidence} IS NOT NULL AND ${table.qualificationEvidenceHash} IS NOT NULL
+      AND ${table.convertedAt} IS NOT NULL
+    )`),
   ],
 );
 
@@ -1146,7 +1174,12 @@ export const crmQualificationForms = pgTable(
     ...versionColumn,
     ...auditColumns,
   },
-  (table) => [uniqueIndex("crm_qualification_forms_code_uidx").on(table.workspaceId, table.code)],
+  (table) => [
+    uniqueIndex("crm_qualification_forms_code_uidx").on(table.workspaceId, table.code),
+    uniqueIndex("crm_qualification_forms_active_scope_uidx")
+      .on(table.workspaceId, sql`COALESCE(${table.serviceType}, '')`).where(sql`${table.status} = 'active'`),
+    check("crm_qualification_forms_status_check", sql`${table.status} IN ('draft','active','archived')`),
+  ],
 );
 
 export const crmQualificationQuestions = pgTable(
@@ -1168,6 +1201,9 @@ export const crmQualificationQuestions = pgTable(
   (table) => [
     uniqueIndex("crm_qualification_questions_key_uidx").on(table.workspaceId, table.formId, table.key),
     uniqueIndex("crm_qualification_questions_position_uidx").on(table.workspaceId, table.formId, table.position),
+    check("crm_qualification_questions_data_type_check", sql`${table.dataType} IN ('text','number','boolean','date','select','multi_select')`),
+    check("crm_qualification_questions_scoring_check", sql`jsonb_typeof(${table.scoring}) = 'object'`),
+    check("crm_qualification_questions_configuration_check", sql`jsonb_typeof(${table.configuration}) = 'object'`),
   ],
 );
 

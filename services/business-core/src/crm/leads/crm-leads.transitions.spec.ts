@@ -7,8 +7,11 @@ function setup(status: string, options: { converted?: boolean; unassigned?: bool
   const before = { id: "lead", party_id: "party", owner_membership_id: options.unassigned ? null : "owner", queue_id: null, status, version: 5, next_action_at: options.noAction ? null : "2026-09-20T09:30:00Z" };
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("SELECT lead.*")) return { rows: [before], rowCount: 1 };
+    if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: null }], rowCount: 1 };
+    if (sql.includes("FROM crm_qualification_forms")) return { rows: [], rowCount: 0 };
+    if (sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
     if (sql.includes("SELECT 1 FROM crm_opportunities")) return { rows: options.converted ? [{}] : [], rowCount: options.converted ? 1 : 0 };
-    if (sql.includes("UPDATE crm_leads")) return { rows: [{ ...before, status: params[0], next_action_at: params[2], version: 6 }], rowCount: 1 };
+    if (sql.includes("UPDATE crm_leads")) return { rows: [{ ...before, status: params[0], next_action_at: params[2], qualification_evidence: params[6], qualification_evidence_hash: params[7], qualified_by: params[8], version: 6 }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   });
   const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })) };
@@ -33,8 +36,19 @@ describe("CRM lead status moves", () => {
     expect(result).toMatchObject({ status: to, version: 6 });
     expect(access.withPermission).toHaveBeenCalledWith({}, "workspace", "crm.leads.manage", expect.any(Function));
     const update = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_leads"));
-    expect(update?.[1]?.slice(3)).toEqual(["lead", "workspace", 5]);
+    expect(update?.[1]?.slice(3, 6)).toEqual(["lead", "workspace", 5]);
     expect(update?.[0]).toContain("qualified_at = CASE WHEN $1 = 'qualified' THEN now() ELSE NULL END");
+    if (to === "qualified") {
+      expect(update?.[1]?.[6]).toMatchObject({ leadId: "lead", selection: "none" });
+      expect(update?.[1]?.[7]).toMatch(/^[0-9a-f]{64}$/);
+      expect(update?.[1]?.[8]).toBe("user");
+    } else {
+      expect(update?.[1]?.slice(6, 8)).toEqual([null, null]);
+    }
+    if (["qualified", "disqualified"].includes(to)) {
+      expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_activities SET is_next_action=false"))).toBe(true);
+      expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_leads SET next_action_at=NULL"))).toBe(true);
+    }
     expect(events.record).toHaveBeenCalledOnce();
     if (["qualified", "disqualified"].includes(from) && !["qualified", "disqualified"].includes(to)) {
       expect(query.mock.calls.some(([sql, params]) => sql.includes("SET status = 'open', closed_at = NULL") && params?.[0] === "workspace" && params?.[1] === "lead")).toBe(true);

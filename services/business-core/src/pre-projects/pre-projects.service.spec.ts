@@ -45,4 +45,50 @@ describe("pre-project case boundary", () => {
     await expect(service.start(actor, "workspace-1", "opportunity-1")).rejects.toThrow("Opportunity not found");
     expect(events.record).not.toHaveBeenCalled();
   });
+
+  it("copies frozen qualification evidence when a qualified lead starts pre-execution", async () => {
+    const evidence = { version: 1, leadId: "lead-1", selection: "global" };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{
+        id: "lead-1", status: "qualified", version: 4, party_id: "party-1",
+        title: "Design enquiry", summary: "Two rooms",
+        qualification_evidence: evidence, qualification_evidence_hash: "a".repeat(64),
+      }], rowCount: 1 };
+      if (sql.includes("SELECT id, status FROM crm_opportunities")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT pipeline.id")) return { rows: [{ id: "pipeline-1" }], rowCount: 1 };
+      if (sql.includes("INSERT INTO pre_project_cases")) return { rows: [{ id: "case-1" }], rowCount: 1 };
+      if (sql.includes("FROM pre_project_cases c")) return { rows: [{ id: "case-1", opportunityId: "opportunity-1" }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const withPermissions = vi.fn(async (_actor, _workspace, _permissions, callback) => callback({ query }, { userId: "user-1" }));
+    const opportunities = { createQualifiedHandoff: vi.fn().mockResolvedValue({ id: "opportunity-1" }) };
+    const service = new PreProjectsService({ withPermissions } as never, { record: vi.fn() } as never, opportunities as never);
+    await expect(service.startFromLead(actor, "workspace-1", {
+      leadId: "lead-1", version: 4, ownerMembershipId: "owner-1", nextActionAt: "2026-09-20T09:00:00.000Z",
+    })).resolves.toMatchObject({ id: "case-1" });
+    expect(opportunities.createQualifiedHandoff).toHaveBeenCalledWith(
+      expect.anything(), "workspace-1", expect.objectContaining({ leadId: "lead-1", pipelineId: "pipeline-1" }), "user-1",
+      expect.objectContaining({
+        origin: "pre_project_start", qualificationEvidence: evidence, qualificationEvidenceHash: "a".repeat(64),
+        requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    );
+  });
+
+  it("refuses to create a linked opportunity when frozen qualification evidence is missing", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{
+        id: "lead-1", status: "qualified", version: 4, party_id: "party-1", title: "Design enquiry",
+      }], rowCount: 1 };
+      if (sql.includes("SELECT id, status FROM crm_opportunities")) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 0 };
+    });
+    const withPermissions = vi.fn(async (_actor, _workspace, _permissions, callback) => callback({ query }, { userId: "user-1" }));
+    const opportunities = { createQualifiedHandoff: vi.fn() };
+    const service = new PreProjectsService({ withPermissions } as never, { record: vi.fn() } as never, opportunities as never);
+    await expect(service.startFromLead(actor, "workspace-1", {
+      leadId: "lead-1", version: 4, ownerMembershipId: "owner-1", nextActionAt: "2026-09-20T09:00:00.000Z",
+    })).rejects.toThrow("Qualification evidence is missing");
+    expect(opportunities.createQualifiedHandoff).not.toHaveBeenCalled();
+  });
 });

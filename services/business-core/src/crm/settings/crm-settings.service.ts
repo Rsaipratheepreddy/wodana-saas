@@ -3,6 +3,7 @@ import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
+import { validateQualificationQuestionDefinitions } from "../leads/qualification-evidence";
 import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
 
 type Row = Record<string, unknown>;
@@ -122,10 +123,11 @@ export class CrmSettingsService {
 
   createForm(actor: RequestActor, workspaceId: string, input: CreateQualificationFormDto) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      validateQualificationQuestionDefinitions(input.questions);
       const keys = new Set(input.questions.map((question) => question.key));
       const positions = new Set(input.questions.map((question) => question.position));
       if (keys.size !== input.questions.length || positions.size !== input.questions.length) throw new UnprocessableEntityException("Question keys and positions must be unique");
-      const result = await client.query(`INSERT INTO crm_qualification_forms (workspace_id, code, name, service_type) VALUES ($1,lower($2),$3,$4) RETURNING id, code, name, status, service_type AS "serviceType", version`, [workspaceId, input.code, input.name, input.serviceType ?? null]);
+      const result = await client.query(`INSERT INTO crm_qualification_forms (workspace_id, code, name, service_type) VALUES ($1,lower($2),$3,$4) RETURNING id, code, name, status, service_type AS "serviceType", version`, [workspaceId, input.code, input.name, input.serviceType?.trim() || null]);
       const form = result.rows[0] as Row;
       const questions: Row[] = [];
       for (const question of input.questions) {
@@ -145,16 +147,44 @@ export class CrmSettingsService {
       const before = existing.rows[0];
       if (Number(before.version) !== input.version) throw new ConflictException("Qualification form changed; reload and try again");
       if (input.questions) {
+        validateQualificationQuestionDefinitions(input.questions);
         const keys = new Set(input.questions.map((question) => question.key));
         const positions = new Set(input.questions.map((question) => question.position));
         if (keys.size !== input.questions.length || positions.size !== input.questions.length) throw new UnprocessableEntityException("Question keys and positions must be unique");
       }
-      const result = await client.query(
-        `UPDATE crm_qualification_forms SET name = COALESCE($1, name), service_type = CASE WHEN $2::boolean THEN $3 ELSE service_type END, status = COALESCE($4, status), version = version + 1, updated_at = now()
-         WHERE workspace_id = $5 AND id = $6 AND version = $7
-         RETURNING id, code, name, status, service_type AS "serviceType", version`,
-        [input.name?.trim() ?? null, input.serviceType !== undefined, input.serviceType?.trim() || null, input.status ?? null, workspaceId, formId, input.version],
-      );
+      const resultingStatus = input.status ?? String(before.status);
+      const resultingServiceType = input.serviceType !== undefined ? input.serviceType?.trim() || null : before.service_type as string | null;
+      if (resultingStatus === "active") {
+        const questionCount = input.questions?.length ?? Number((await client.query(
+          `SELECT count(*)::int AS count FROM crm_qualification_questions WHERE workspace_id=$1 AND form_id=$2`,
+          [workspaceId, formId],
+        )).rows[0]?.count ?? 0);
+        if (!questionCount) throw new UnprocessableEntityException("An active qualification form needs at least one question");
+        const conflicting = await client.query(
+          `SELECT 1 FROM crm_qualification_forms
+           WHERE workspace_id=$1 AND id<>$2 AND status='active'
+             AND service_type IS NOT DISTINCT FROM $3::text LIMIT 1`,
+          [workspaceId, formId, resultingServiceType],
+        );
+        if (conflicting.rowCount) {
+          throw new ConflictException("Only one active qualification form is allowed for each enquiry type");
+        }
+      }
+      let result;
+      try {
+        result = await client.query(
+          `UPDATE crm_qualification_forms SET name = COALESCE($1, name), service_type = CASE WHEN $2::boolean THEN $3 ELSE service_type END, status = COALESCE($4, status), version = version + 1, updated_at = now()
+           WHERE workspace_id = $5 AND id = $6 AND version = $7
+           RETURNING id, code, name, status, service_type AS "serviceType", version`,
+          [input.name?.trim() ?? null, input.serviceType !== undefined, resultingServiceType, input.status ?? null, workspaceId, formId, input.version],
+        );
+      } catch (error) {
+        if ((error as { code?: string; constraint?: string }).code === "23505"
+          && (error as { constraint?: string }).constraint === "crm_qualification_forms_active_scope_uidx") {
+          throw new ConflictException("Only one active qualification form is allowed for each enquiry type");
+        }
+        throw error;
+      }
       if (!result.rowCount) throw new ConflictException("Qualification form changed; reload and try again");
       if (input.questions) {
         await client.query(`UPDATE crm_qualification_questions SET position = position + 1000000, updated_at = now() WHERE workspace_id = $1 AND form_id = $2`, [workspaceId, formId]);

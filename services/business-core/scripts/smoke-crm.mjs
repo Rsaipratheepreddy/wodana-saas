@@ -59,7 +59,7 @@ assert.equal(updatedQueue.name, "Global enquiries");
 const assignmentPolicy = await request(`/workspaces/${workspaceId}/crm/assignment-policies`, { body: { name: "Balanced global assignment", priority: 1, fallbackQueueId: queue.id, preserveRelationshipOwner: true, rules: [{ name: "Interior design", priority: 1, queueId: queue.id, conditions: { serviceType: "interior_design" } }] } });
 const updatedAssignmentPolicy = await request(`/workspaces/${workspaceId}/crm/assignment-policies/${assignmentPolicy.id}`, { method: "PATCH", expected: 200, body: { version: assignmentPolicy.version, name: "Balanced global routing", rules: [{ name: "Interior design", priority: 1, queueId: queue.id, conditions: { serviceType: ["interior_design", "fit_out"] } }] } });
 assert.equal(updatedAssignmentPolicy.rules.length, 1);
-const slaPolicy = await request(`/workspaces/${workspaceId}/crm/sla-policies`, { body: { name: "First response", eventType: "first_response", warningAfterMinutes: 0, breachAfterMinutes: 30, schedule: { timezone: "workspace" } } });
+const slaPolicy = await request(`/workspaces/${workspaceId}/crm/sla-policies`, { body: { name: "First response", eventType: "first_response", warningAfterMinutes: 0, breachAfterMinutes: 30, schedule: { mode: "elapsed" } } });
 const updatedSlaPolicy = await request(`/workspaces/${workspaceId}/crm/sla-policies/${slaPolicy.id}`, { method: "PATCH", expected: 200, body: { version: slaPolicy.version, name: "First response SLA", warningAfterMinutes: 0, breachAfterMinutes: 45 } });
 assert.equal(updatedSlaPolicy.breachAfterMinutes, 45);
 
@@ -74,6 +74,8 @@ assert.equal(archivedTestStage.status, "archived");
 const taxonomy = await request(`/workspaces/${workspaceId}/crm/taxonomies`, { body: { code: "lead_source", name: "Lead source", options: [{ code: "referral", label: "Referral" }, { code: "web", label: "Web" }] } });
 const updatedTaxonomy = await request(`/workspaces/${workspaceId}/crm/taxonomies/${taxonomy.id}`, { method: "PATCH", expected: 200, body: { version: taxonomy.version, name: "Enquiry source", options: [{ code: "referral", label: "Client referral", position: 1 }, { code: "web", label: "Website", position: 2 }] } });
 assert.equal(updatedTaxonomy.options.filter((option) => option.status === "active").length, 2);
+await request(`/workspaces/${workspaceId}/crm/taxonomies`, { body: { code: "lead_channel_web", name: "Website channel", options: [{ code: "website", label: "Website form" }] } });
+await request(`/workspaces/${workspaceId}/crm/taxonomies`, { body: { code: "enquiry_type", name: "Enquiry type", options: [{ code: "not_sure", label: "Not sure yet" }, { code: "interior_design", label: "Interior design" }, { code: "fit_out", label: "Fit-out" }] } });
 const customField = await request(`/workspaces/${workspaceId}/crm/custom-fields`, { body: { entityType: "party", key: "preferred_style", label: "Preferred style", dataType: "select", configuration: { options: ["modern", "classic"] } } });
 const updatedCustomField = await request(`/workspaces/${workspaceId}/crm/custom-fields/${customField.id}`, { method: "PATCH", expected: 200, body: { version: customField.version, label: "Preferred design style", searchable: true, configuration: { options: ["modern", "classic", "transitional"] } } });
 assert.equal(updatedCustomField.searchable, true);
@@ -105,8 +107,8 @@ erasureParty = await request(`/workspaces/${workspaceId}/crm/parties/${erasurePa
 assert.equal(erasureParty.erased, true);
 
 const intakeBody = {
-  source: "website",
-  channel: "web",
+  source: "web",
+  channel: "website",
   intakeMethod: "form",
   externalEventId: `web-${runId}`,
   party: { displayName: "مريم أحمد", email: `maryam-${runId}@example.com`, phone: "+971501234567", preferredLocale: "ar-AE", preferredTimezone: "Asia/Dubai" },
@@ -243,11 +245,25 @@ const archivedSequence = await request(`/workspaces/${workspaceId}/crm/sequences
 assert.equal(archivedSequence.status, "archived");
 
 const refreshedLead = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}`);
-let opportunity = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, { body: { leadVersion: refreshedLead.version, partyId: lead.partyId, pipelineId: pipeline.id, ownerMembershipId, title: "مريم — full home interiors", amount: 250000, currencyCode: "AED", expectedCloseAt: new Date(Date.now() + 30 * 86_400_000).toISOString(), nextActionAt: new Date(Date.now() + 86_400_000).toISOString() } });
+const capturedQualification = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, { method: "PUT", body: { version: refreshedLead.version, values: { budget_confirmed: true, timeline: "Within three months" } } });
+assert.equal(capturedQualification.qualificationState.ready, true);
+const conversionBody = { leadVersion: capturedQualification.version, partyId: lead.partyId, pipelineId: pipeline.id, ownerMembershipId, title: "مريم — full home interiors", amount: 250000, currencyCode: "AED", expectedCloseAt: new Date(Date.now() + 30 * 86_400_000).toISOString(), nextActionAt: new Date(Date.now() + 86_400_000).toISOString() };
+let opportunity = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, { body: conversionBody });
+assert.match(opportunity.qualificationEvidenceHash, /^[0-9a-f]{64}$/);
+assert.equal(Object.hasOwn(opportunity, "conversion_request_hash"), false);
+const replayedOpportunity = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, { body: conversionBody });
+assert.equal(replayedOpportunity.id, opportunity.id);
+assert.equal(replayedOpportunity.conversionReplay, true);
 const convertedLead = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}`);
 assert.equal(convertedLead.nextActionAt, null);
 assert.equal(convertedLead.sla.every((timer) => timer.status === "stopped"), true);
 assert.equal(convertedLead.opportunities[0].id, opportunity.id);
+assert.equal(convertedLead.qualificationEvidenceHash, opportunity.qualificationEvidenceHash);
+await request(`/workspaces/${workspaceId}/crm/qualification-forms/${qualificationForm.id}`, { method: "PATCH", expected: 200, body: { version: updatedQualificationForm.version, name: "Later qualification policy" } });
+const leadAfterPolicyChange = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}`);
+assert.equal(leadAfterPolicyChange.qualificationState.frozen, true);
+assert.equal(leadAfterPolicyChange.qualificationState.form.name, updatedQualificationForm.name, "A later form edit must not rewrite the conversion basis");
+assert.equal(leadAfterPolicyChange.qualificationState.form.version, updatedQualificationForm.version);
 const carriedActivities = await request(`/workspaces/${workspaceId}/crm/activities?opportunityId=${opportunity.id}`);
 assert.ok(carriedActivities.data.some((a) => a.id === concurrentActions[0].id));
 assert.equal(carriedActivities.data.filter((a) => a.isNextAction).length, 1);

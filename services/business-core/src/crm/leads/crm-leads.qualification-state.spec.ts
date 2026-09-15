@@ -1,0 +1,52 @@
+import { describe, expect, it, vi } from "vitest";
+import { CrmLeadsService } from "./crm-leads.service";
+
+describe("CRM lead qualification presentation", () => {
+  it("presents the frozen decision snapshot without consulting a later active form", async () => {
+    const evidence = {
+      version: 1,
+      leadId: "lead",
+      serviceType: "interior_design",
+      selection: "service_specific",
+      form: { id: "original-form", code: "original", name: "Original form", serviceType: "interior_design", version: 2, questions: [] },
+      answers: [],
+      requiredKeys: [],
+      evaluatedAt: "2026-09-15T08:00:00.000Z",
+    };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) {
+        return {
+          rows: [{
+            id: "lead", party_id: "party", owner_membership_id: null, queue_id: null,
+            status: "qualified", version: 5, source: "company", channel: "website",
+            service_type: "interior_design", business_unit_id: null, preferred_locale: "en-AE",
+            party_owner_membership_id: null, qualification_evidence: evidence,
+            qualification_evidence_hash: "a".repeat(64),
+          }],
+          rowCount: 1,
+        };
+      }
+      if (sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
+      if (sql.includes("FROM crm_assignment_history")) return { rows: [], rowCount: 0 };
+      if (sql.includes("FROM crm_sla_instances")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const access = {
+      withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })),
+      hasPermission: vi.fn().mockResolvedValue(false),
+    };
+    const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
+
+    const result = await service.get({} as never, "workspace", "lead");
+
+    expect(result.qualificationState).toEqual({
+      ready: true,
+      missingRequired: [],
+      selection: "service_specific",
+      form: evidence.form,
+      frozen: true,
+    });
+    expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
+  });
+});

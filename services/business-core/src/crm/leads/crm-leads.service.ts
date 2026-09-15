@@ -27,6 +27,7 @@ import {
 } from "./dto/leads.dto";
 import { normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
+import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -54,6 +55,9 @@ interface LeadContext {
   business_unit_id: string | null;
   preferred_locale: string | null;
   party_owner_membership_id: string | null;
+  qualification_evidence?: Record<string, unknown> | null;
+  qualification_evidence_hash?: string | null;
+  qualified_by?: string | null;
 }
 
 @Injectable()
@@ -280,7 +284,25 @@ export class CrmLeadsService {
         WHERE lead.workspace_id=$1 AND lead.id=$2`, [workspaceId, leadId]);
       const canViewOpportunities = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.view");
       const opportunities = canViewOpportunities ? await client.query(`SELECT id, title, status FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2`, [workspaceId, leadId]) : { rows: [] };
-      return { ...this.mapLead(lead), enquiry: enquiry.rows[0], opportunities: opportunities.rows, qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows };
+      const frozenQualification = lead.status === "qualified" && lead.qualification_evidence
+        ? lead.qualification_evidence as Record<string, unknown>
+        : null;
+      // Once qualified, always show the exact form snapshot used for the decision.
+      // Later settings edits must not rewrite the apparent conversion basis.
+      const qualificationState = frozenQualification
+        ? null
+        : await evaluateQualification(client, workspaceId, leadId);
+      return {
+        ...this.mapLead(lead), enquiry: enquiry.rows[0], opportunities: opportunities.rows,
+        qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows,
+        qualificationState: {
+          ready: frozenQualification ? true : qualificationState!.ready,
+          missingRequired: frozenQualification ? [] : qualificationState!.missingRequired,
+          selection: frozenQualification?.selection ?? qualificationState!.evidence.selection,
+          form: frozenQualification?.form ?? qualificationState!.evidence.form,
+          frozen: Boolean(frozenQualification),
+        },
+      };
     });
   }
 
@@ -706,6 +728,9 @@ export class CrmLeadsService {
       if (["disqualified", "paused"].includes(input.status) && !input.reason?.trim()) {
         throw new UnprocessableEntityException("A reason is required for this status");
       }
+      const qualification: QualificationEvaluation | null = input.status === "qualified"
+        ? await evaluateQualification(client, workspaceId, leadId, {}, true)
+        : null;
       const retainedAction = (before as unknown as Record<string, unknown>).next_action_at;
       const nextActionAt = ["qualified", "disqualified", "paused"].includes(input.status) ? null : input.nextActionAt ? new Date(input.nextActionAt) : retainedAction ? new Date(String(retainedAction)) : null;
       if (nextActionAt && Number.isNaN(nextActionAt.getTime())) throw new BadRequestException("nextActionAt is invalid");
@@ -718,11 +743,17 @@ export class CrmLeadsService {
            paused_reason = CASE WHEN $1 = 'paused' THEN $2 ELSE NULL END,
            next_action_at = $3,
            qualified_at = CASE WHEN $1 = 'qualified' THEN now() ELSE NULL END,
+           qualification_evidence = CASE WHEN $1 = 'qualified' THEN $7::jsonb ELSE NULL END,
+           qualification_evidence_hash = CASE WHEN $1 = 'qualified' THEN $8 ELSE NULL END,
+           qualified_by = CASE WHEN $1 = 'qualified' THEN $9::uuid ELSE NULL END,
            closed_at = CASE WHEN $1 IN ('qualified', 'disqualified') THEN now() ELSE NULL END,
            version = version + 1
          WHERE id = $4 AND workspace_id = $5 AND version = $6
          RETURNING *`,
-        [input.status, input.reason ?? null, nextActionAt, leadId, workspaceId, input.version],
+        [
+          input.status, input.reason?.trim() || null, nextActionAt, leadId, workspaceId, input.version,
+          qualification?.evidence ?? null, qualification?.evidenceHash ?? null, actorUser.userId,
+        ],
       );
       if (!result.rowCount) throw new ConflictException("Lead changed; reload and try again");
       const response = this.mapLead(result.rows[0] as LeadContext);
@@ -783,6 +814,15 @@ export class CrmLeadsService {
         await this.startFirstResponseSla(client, workspaceId, leadId, response.ownerMembershipId as string | null, actorUser.userId, true, "Closed lead reopened for a new response cycle");
       }
       if (["qualified", "disqualified"].includes(input.status)) {
+        // Response reconciliation can derive a pending follow-up after the status
+        // update. Closed leads keep their activities as history, but no activity or
+        // denormalized timestamp may remain as the lead's next action.
+        await client.query(
+          `UPDATE crm_activities SET is_next_action=false,version=version+1,updated_at=now()
+           WHERE workspace_id=$1 AND lead_id=$2 AND status='pending' AND is_next_action`,
+          [workspaceId, leadId],
+        );
+        await client.query(`UPDATE crm_leads SET next_action_at=NULL WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId]);
         await client.query(`UPDATE crm_enquiries SET status = $3, closed_at = now(), version = version + 1 WHERE workspace_id = $1 AND id = (SELECT enquiry_id FROM crm_leads WHERE workspace_id = $1 AND id = $2)`, [workspaceId, leadId, input.status]);
       } else if (["qualified", "disqualified"].includes(before.status)) {
         // Reopening a lead must reopen the same enquiry as well; history remains in audit events.
@@ -806,9 +846,13 @@ export class CrmLeadsService {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
       const lead = await this.requireLead(client, workspaceId, leadId, true);
       if (lead.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
+      if (lead.status === "qualified") throw new ConflictException("Reopen the lead before changing its frozen qualification");
+      const converted = await client.query(`SELECT 1 FROM crm_opportunities WHERE workspace_id=$1 AND lead_id=$2 LIMIT 1`, [workspaceId, leadId]);
+      if (converted.rowCount) throw new ConflictException("This lead has been converted; its qualification evidence is frozen");
       const keys = Object.keys(input.values);
       if (keys.some(key => key === 'requirement_notes' || key.startsWith('requirement_asset_'))) throw new UnprocessableEntityException('Use Requirement notes to edit shared notes.');
       if (keys.length > 200) throw new UnprocessableEntityException("Too many qualification answers");
+      const qualificationState = await evaluateQualification(client, workspaceId, leadId, input.values);
       for (const [key, value] of Object.entries(input.values)) {
         if (!/^[a-z][a-z0-9_.-]{0,99}$/.test(key)) throw new UnprocessableEntityException(`Invalid question key: ${key}`);
         await client.query(
@@ -818,7 +862,7 @@ export class CrmLeadsService {
            ON CONFLICT (workspace_id, lead_id, question_key)
            DO UPDATE SET value = EXCLUDED.value, captured_by = EXCLUDED.captured_by,
                          captured_at = now()`,
-          [workspaceId, leadId, key, value, actorUser.userId],
+          [workspaceId, leadId, key, JSON.stringify(value), actorUser.userId],
         );
       }
       const result = await client.query(
@@ -835,7 +879,16 @@ export class CrmLeadsService {
         action: "crm.lead.qualification_updated.v1", entityType: "crm_lead", entityId: leadId,
         after: { ...response, updatedKeys: keys },
       });
-      return response;
+      return {
+        ...response,
+        qualificationState: {
+          ready: qualificationState.ready,
+          missingRequired: qualificationState.missingRequired,
+          selection: qualificationState.evidence.selection,
+          form: qualificationState.evidence.form,
+          frozen: false,
+        },
+      };
     });
   }
 
@@ -1201,6 +1254,9 @@ export class CrmLeadsService {
       disqualificationReason: source.disqualification_reason,
       pausedReason: source.paused_reason,
       qualifiedAt: source.qualified_at,
+      qualificationEvidence: source.qualification_evidence,
+      qualificationEvidenceHash: source.qualification_evidence_hash,
+      qualifiedBy: source.qualified_by,
       closedAt: source.closed_at,
       createdAt: source.created_at,
       updatedAt: source.updated_at,

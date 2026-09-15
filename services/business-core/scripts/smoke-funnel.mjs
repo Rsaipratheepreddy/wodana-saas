@@ -175,6 +175,21 @@ const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
     ],
   },
 });
+const qualificationDraft = await request(`/workspaces/${workspaceId}/crm/qualification-forms`, {
+  body: {
+    code: "funnel_qualification",
+    name: "Funnel qualification",
+    serviceType: "not_sure",
+    questions: [
+      { key: "scope_confirmed", label: "Scope confirmed", dataType: "boolean", required: true, position: 1 },
+      { key: "property_type", label: "Property type", dataType: "select", required: true, position: 2, configuration: { options: ["villa", "apartment"] } },
+    ],
+  },
+});
+await request(`/workspaces/${workspaceId}/crm/qualification-forms/${qualificationDraft.id}`, {
+  method: "PATCH",
+  body: { version: qualificationDraft.version, status: "active" },
+});
 
 const intakeBody = {
   source: "company",
@@ -221,24 +236,51 @@ assert.equal(intakeDetail.resolutionEvidence.matchStrength, "none");
 const leads = await request(`/workspaces/${workspaceId}/crm/leads`);
 const lead = leads.data.find((candidate) => candidate.partyId === intake.partyId);
 assert(lead, "CRM intake must create a queryable lead.");
+const initialConversion = {
+  leadVersion: lead.version,
+  partyId: lead.partyId,
+  pipelineId: pipeline.id,
+  stageId: pipeline.stages[0].id,
+  ownerMembershipId: ownerMember.id,
+  title: "Generic Client — interior project",
+  description: "Qualified from the generic intake path.",
+  amount: 1500,
+  currencyCode: "AED",
+  expectedCloseAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+  nextActionAt: new Date(Date.now() + 86_400_000).toISOString(),
+};
+await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, {
+  body: initialConversion,
+  expected: 422,
+});
+await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, {
+  method: "PUT",
+  body: { version: lead.version, values: { scope_confirmed: "yes", property_type: "villa" } },
+  expected: 422,
+});
+const qualifiedLead = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, {
+  method: "PUT",
+  body: { version: lead.version, values: { scope_confirmed: true, property_type: "villa" } },
+});
+assert.equal(qualifiedLead.qualificationState.ready, true);
+assert.equal(qualifiedLead.qualificationState.selection, "service_specific");
+const conversionInput = { ...initialConversion, leadVersion: qualifiedLead.version };
 const opportunity = await request(
   `/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`,
-  {
-    body: {
-      leadVersion: lead.version,
-      partyId: lead.partyId,
-      pipelineId: pipeline.id,
-      stageId: pipeline.stages[0].id,
-      ownerMembershipId: ownerMember.id,
-      title: "Generic Client — interior project",
-      description: "Qualified from the generic intake path.",
-      amount: 1500,
-      currencyCode: "AED",
-      expectedCloseAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
-      nextActionAt: new Date(Date.now() + 86_400_000).toISOString(),
-    },
-  },
+  { body: conversionInput },
 );
+assert.equal(opportunity.conversionOrigin, "lead_qualification");
+assert.match(opportunity.qualificationEvidenceHash, /^[0-9a-f]{64}$/);
+const conversionReplay = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, { body: conversionInput });
+assert.equal(conversionReplay.id, opportunity.id);
+assert.equal(conversionReplay.conversionReplay, true);
+await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, {
+  body: { ...conversionInput, title: "Changed retry" },
+  expected: 409,
+});
+const convertedLead = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}`);
+assert.equal(convertedLead.qualificationEvidenceHash, opportunity.qualificationEvidenceHash);
+assert.equal(convertedLead.qualificationState.frozen, true);
 const prepared = await request(`/workspaces/${workspaceId}/pre-projects`, {
   body: { opportunityId: opportunity.id },
 });
@@ -930,6 +972,8 @@ process.stdout.write(
         apiBusinessRecordsOnly: true,
         intakeReplaySafe: true,
         intakeResolutionEvidenceSafe: true,
+        qualificationEvidenceSafe: true,
+        conversionReplaySafe: true,
         preparationReplaySafe: true,
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,
