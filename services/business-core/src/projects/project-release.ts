@@ -1,4 +1,4 @@
-import { quotationMaterialText } from "../commercial/quotation-material-text";
+import { freezeHash } from "../commercial/commercial.domain";
 import { commercialReleaseReady } from "../commercial/release-integrity";
 import type { PoolClient } from "pg";
 import { ConflictException } from "@nestjs/common";
@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { CommercialData } from "../commercial/commercial.types";
 import { emptyProject } from "./execution.domain";
 import type { ProjectData } from "./execution.types";
+import { releasedScopeLine } from "./released-scope-line";
 // Called inside the same transaction and pre-execution row lock as commercial approval.
 export async function releaseDeliveryProject(
   client: PoolClient,
@@ -20,6 +21,14 @@ export async function releaseDeliveryProject(
   if (!quote || !dealFile || !commercialReleaseReady(data))
     throw new ConflictException(
       "Complete the commercial release checklist before starting execution.",
+    );
+  const acceptedHash = freezeHash(quote);
+  if (
+    dealFile.quoteHash !== acceptedHash ||
+    data.ownerReview?.quoteHash !== acceptedHash
+  )
+    throw new ConflictException(
+      "The accepted quotation no longer matches the approved Deal File. Complete a new owner review before release.",
     );
   const linked = quote.lines.filter((l) => l.scopeId);
   for (const line of linked) {
@@ -89,17 +98,15 @@ export async function releaseDeliveryProject(
       }));
     execution.scope = {
       quoteId: quote.id,
+      quoteHash: acceptedHash,
       quoteNumber: quote.number,
+      dealFileId: dealFile.id,
+      dealFileReference: dealFile.reference,
+      releaseId: data.release!.id,
+      releasedAt: data.release!.at,
       currency: quote.currency,
       value: quote.total,
-      lines: quote.lines.map((l) => ({
-        id: l.id,
-        title: l.title,
-        room: l.room,
-        material: quotationMaterialText(l),
-        quantity: l.quantity,
-        unit: l.unit,
-      })),
+      lines: quote.lines.map(releasedScopeLine),
     };
     execution.phase = "active";
     execution.revision++;

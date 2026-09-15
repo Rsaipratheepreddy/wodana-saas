@@ -52,7 +52,7 @@ No live deployment or production-data mutation is part of B0.
 
 ## Current regression status after the B1-B9 backend slices
 
-- Business Core: 355 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 359 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
 - Clean database replay: all 59 registered migrations passed; the schema contains 156 public
   tables.
@@ -79,6 +79,8 @@ No live deployment or production-data mutation is part of B0.
 - Existing-installation MFA rehearsal applied migration 0059 over a populated 0058 schema and
   confirmed that both the administrator requirement and an active refresh-session deadline were
   backfilled without moving tenant data.
+- Commercial-to-project release tests prove accepted-quote hash validation, immutable client-safe
+  scope/catalog/specification lineage, stale preparation rejection, and retry-safe baseline reuse.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.

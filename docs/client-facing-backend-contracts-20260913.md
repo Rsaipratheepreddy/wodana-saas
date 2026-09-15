@@ -83,6 +83,19 @@ Each existing project row now also contains:
 Access remains tenant-scoped. A member without `projects.manage` only receives assigned projects.
 Incomplete historical execution JSON is treated as empty summary data instead of breaking the list.
 
+## Accepted commercial handoff
+
+Starting execution recomputes the accepted quotation hash and requires it to match both the approved
+Owner Review and active Deal File. A changed selling price, specification, material breakdown,
+catalog selection, or other frozen quotation field is rejected before a delivery project is created.
+
+The first successful release stores a client-safe immutable execution baseline with the quotation,
+Deal File and release identities; preparation scope and specification versions; catalog snapshots;
+materials; quantities; selling rates; and rounded line totals. Internal unit cost and quotation
+photos are deliberately excluded. A safe retry reuses the existing project without rewriting its
+baseline. Accepted variations use the same line-snapshot shape and hash-drift protection. Existing
+project JSON remains valid because all new provenance fields are additive.
+
 ## Full department calendar
 
 `GET /api/v1/workspaces/:workspaceId/projects/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD&businessUnitId=<optional UUID>`

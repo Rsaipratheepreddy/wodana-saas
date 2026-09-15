@@ -6,6 +6,58 @@ export type TaskStatus =
   | "awaiting_inspection"
   | "completed"
   | "cancelled";
+export type ReleasedCatalogSelection = {
+  role: string;
+  recordId: string;
+  version: number;
+  snapshot: {
+    id: string;
+    name: string;
+    code: string;
+    kind: string;
+    version: number;
+    catalogId: string;
+    catalogName?: string;
+    configuration?: Record<string, string | number>;
+  };
+};
+export type ReleasedScopeLine = {
+  id: string;
+  deductsLineId?: string;
+  sourceScopeId?: string;
+  sourceScopeVersion?: number;
+  sourceSpecificationVersion?: number;
+  title: string;
+  room: string;
+  specification?: string;
+  material: string;
+  finish?: string;
+  quantity: number;
+  unit: string;
+  rate?: number;
+  lineTotal?: number;
+  variant?: string;
+  pricingMode?: "item" | "materials";
+  materialRows?: {
+    id: string;
+    name: string;
+    type: "material" | "finish" | "labour" | "other";
+    specification: string;
+    quantity: number;
+    unit: string;
+    rate: number;
+    suppliedByClient: boolean;
+  }[];
+  customMaterials?: {
+    id: string;
+    name: string;
+    code: string;
+    brand: string;
+    specification: string;
+    suppliedByClient: boolean;
+  }[];
+  catalogSelections?: ReleasedCatalogSelection[];
+};
 export type Task = {
   id: string;
   parentId: string;
@@ -260,17 +312,12 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
   variations?: {
     direction?:"addition"|"deduction";
     quoteId: string;
+    quoteHash?: string;
+    currency?: string;
+    releasedAt?: string;
     number: number;
     value: number;
-    lines: {
-      id: string;
-      deductsLineId?:string;
-      title: string;
-      room: string;
-      material: string;
-      quantity: number;
-      unit: string;
-    }[];
+    lines: ReleasedScopeLine[];
   }[];
   files?: {
     id: string;
@@ -286,17 +333,15 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
   phase: "planning" | "active" | "handover" | "completed";
   scope: {
     quoteId: string;
+    quoteHash?: string;
     quoteNumber: number;
+    dealFileId?: string;
+    dealFileReference?: string;
+    releaseId?: string;
+    releasedAt?: string;
     currency: string;
     value: number;
-    lines: {
-      id: string;
-      title: string;
-      room: string;
-      material: string;
-      quantity: number;
-      unit: string;
-    }[];
+    lines: ReleasedScopeLine[];
   } | null;
   tasks: Task[];
   reports: DailyReport[];

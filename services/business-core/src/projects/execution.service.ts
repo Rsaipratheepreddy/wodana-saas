@@ -1,5 +1,6 @@
 import { commercialExecutionReady } from "./project-readiness";
 import { paymentIsVerified } from "../commercial/accounting-invoice";
+import { freezeHash } from "../commercial/commercial.domain";
 import { previewReschedule } from "./project-reschedule";
 import { notifyProject } from "./project-notifications";
 import {
@@ -40,6 +41,7 @@ import type {
 import { projectPortfolioSummary } from "./project-portfolio";
 import { portfolioCalendarEvents, type PortfolioBookingRow } from "./project-portfolio-calendar";
 import type { PortfolioCalendarQueryDto } from "./projects.dto";
+import { releasedScopeLine } from "./released-scope-line";
 @Injectable()
 export class ExecutionService {
   constructor(private readonly access: HrmsAccessService) {}
@@ -393,6 +395,11 @@ export class ExecutionService {
             !d.variations!.some((v) => v.quoteId === q.id),
         ) as Quote[];
         for (const q of changes) {
+          const variationHash = freezeHash(q);
+          if (q.hash && q.hash !== variationHash)
+            throw new ConflictException(
+              `Accepted variation V${q.number} changed after client acceptance. Issue a new variation before release.`,
+            );
           if (
             row.commercial.payments.some(
               (p: {
@@ -465,18 +472,13 @@ export class ExecutionService {
           }
           d.variations.push({
             quoteId: q.id,
+            quoteHash: variationHash,
+            currency: q.currency,
+            releasedAt: new Date().toISOString(),
             number: q.number,
             direction: q.direction,
             value: q.direction === "deduction" ? -q.total : q.total,
-            lines: q.lines.map((l) => ({
-              id: l.id,
-              deductsLineId: l.deductsLineId,
-              title: l.title,
-              room: l.room,
-              material: quotationMaterialText(l),
-              quantity: l.quantity,
-              unit: l.unit,
-            })),
+            lines: q.lines.map(releasedScopeLine),
           });
         }
         d.audit.push({
@@ -952,4 +954,3 @@ export class ExecutionService {
     });
   }
 }
-import { quotationMaterialText } from "../commercial/quotation-material-text";
