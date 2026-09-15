@@ -208,8 +208,15 @@ const intakeReplay = await request(`/workspaces/${workspaceId}/crm/intake-events
   headers: { ...intakeHeaders, "x-correlation-id": randomUUID() },
 });
 assert(intake.intakeEventId);
+assert.equal(intake.resolutionType, "new_identity");
 assert.equal(intakeReplay.intakeEventId, intake.intakeEventId);
 assert.equal(intakeReplay.enquiryId, intake.enquiryId);
+assert.equal(intakeReplay.resolutionType, "new_identity");
+assert.equal(intakeReplay.resolvedPartyId, intake.partyId);
+const intakeDetail = await request(`/workspaces/${workspaceId}/crm/intake-events/${intake.intakeEventId}`);
+assert.equal(intakeDetail.resolutionType, "new_identity");
+assert.equal(intakeDetail.resolvedPartyId, intake.partyId);
+assert.equal(intakeDetail.resolutionEvidence.matchStrength, "none");
 
 const leads = await request(`/workspaces/${workspaceId}/crm/leads`);
 const lead = leads.data.find((candidate) => candidate.partyId === intake.partyId);
@@ -922,6 +929,7 @@ process.stdout.write(
       assertions: {
         apiBusinessRecordsOnly: true,
         intakeReplaySafe: true,
+        intakeResolutionEvidenceSafe: true,
         preparationReplaySafe: true,
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,

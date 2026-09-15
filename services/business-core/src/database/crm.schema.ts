@@ -315,6 +315,7 @@ export const crmIntakeEvents = pgTable(
     externalEventId: varchar("external_event_id", { length: 255 }),
     idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
     payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+    payloadHashVersion: smallint("payload_hash_version").notNull().default(2),
     originalPayload: jsonb("original_payload").$type<Record<string, unknown>>().notNull(),
     payloadReference: varchar("payload_reference", { length: 500 }),
     status: crmIntakeStatus("status").notNull().default("received"),
@@ -323,6 +324,11 @@ export const crmIntakeEvents = pgTable(
     correlationId: uuid("correlation_id").notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     processedAt: timestamp("processed_at", { withTimezone: true }),
+    resolutionType: varchar("resolution_type", { length: 40 }),
+    resolvedPartyId: uuid("resolved_party_id").references(() => crmParties.id, { onDelete: "restrict" }),
+    resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolutionEvidence: jsonb("resolution_evidence").$type<Record<string, unknown>>(),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     ...versionColumn,
     ...auditColumns,
@@ -331,6 +337,16 @@ export const crmIntakeEvents = pgTable(
     uniqueIndex("crm_intake_events_idempotency_uidx").on(table.workspaceId, table.idempotencyKey),
     uniqueIndex("crm_intake_events_external_uidx").on(table.workspaceId, table.source, table.externalEventId),
     index("crm_intake_events_inbox_idx").on(table.workspaceId, table.status, table.receivedAt),
+    index("crm_intake_events_resolution_idx").on(table.workspaceId, table.resolvedPartyId, table.resolvedAt).where(sql`${table.resolvedPartyId} IS NOT NULL`),
+    check("crm_intake_events_payload_hash_version_check", sql`${table.payloadHashVersion} IN (1,2)`),
+    check("crm_intake_events_resolution_type_check", sql`${table.resolutionType} IS NULL OR ${table.resolutionType} IN ('legacy_ready','verified_contact','new_identity','review_attach','review_create_new')`),
+    check("crm_intake_events_resolution_evidence_check", sql`${table.resolutionEvidence} IS NULL OR jsonb_typeof(${table.resolutionEvidence}) = 'object'`),
+    check("crm_intake_events_resolution_fields_check", sql`(
+      ${table.resolutionType} IS NULL AND ${table.resolvedPartyId} IS NULL AND ${table.resolvedAt} IS NULL AND ${table.resolutionEvidence} IS NULL
+    ) OR (
+      ${table.resolutionType} IS NOT NULL AND ${table.resolvedPartyId} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL AND ${table.resolutionEvidence} IS NOT NULL
+    )`),
+    check("crm_intake_events_ready_resolution_check", sql`${table.status} <> 'ready' OR (${table.resolutionType} IS NOT NULL AND ${table.resolvedPartyId} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL)`),
   ],
 );
 
@@ -402,13 +418,29 @@ export const crmIdentityCandidates = pgTable(
     reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     decisionReason: text("decision_reason"),
+    decision: varchar("decision", { length: 30 }),
+    resolvedPartyId: uuid("resolved_party_id").references(() => crmParties.id, { onDelete: "restrict" }),
     ...versionColumn,
     ...auditColumns,
   },
   (table) => [
     uniqueIndex("crm_identity_candidate_uidx").on(table.workspaceId, table.intakeEventId, table.candidatePartyId),
     index("crm_identity_candidate_review_idx").on(table.workspaceId, table.status, table.createdAt),
+    index("crm_identity_candidates_resolved_party_idx").on(table.workspaceId, table.resolvedPartyId, table.reviewedAt).where(sql`${table.resolvedPartyId} IS NOT NULL`),
     check("crm_identity_candidate_score_check", sql`${table.score} >= 0 AND ${table.score} <= 1`),
+    check("crm_identity_candidates_strength_check", sql`${table.strength} IN ('exact','fuzzy')`),
+    check("crm_identity_candidates_status_check", sql`${table.status} IN ('pending','accepted','rejected')`),
+    check("crm_identity_candidates_reasons_check", sql`jsonb_typeof(${table.reasons}) = 'array'`),
+    check("crm_identity_candidates_decision_check", sql`${table.decision} IS NULL OR ${table.decision} IN ('attach','create_new','reject','resolved_elsewhere')`),
+    check("crm_identity_candidates_review_state_check", sql`(
+      ${table.status} = 'pending' AND ${table.decision} IS NULL AND ${table.reviewedAt} IS NULL AND ${table.resolvedPartyId} IS NULL
+    ) OR (
+      ${table.status} = 'accepted' AND ${table.decision} = 'attach' AND ${table.reviewedAt} IS NOT NULL AND ${table.resolvedPartyId} IS NOT NULL
+    ) OR (
+      ${table.status} = 'rejected' AND ${table.decision} = 'reject' AND ${table.reviewedAt} IS NOT NULL AND ${table.resolvedPartyId} IS NULL
+    ) OR (
+      ${table.status} = 'rejected' AND ${table.decision} IN ('create_new','resolved_elsewhere') AND ${table.reviewedAt} IS NOT NULL AND ${table.resolvedPartyId} IS NOT NULL
+    )`),
   ],
 );
 

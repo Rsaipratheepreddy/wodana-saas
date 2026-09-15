@@ -13,6 +13,7 @@ import { DatabaseService } from "../../database/database.service";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import {
+  canonicalHash,
   correlationId,
   decodeCursor,
   encodeCursor,
@@ -95,8 +96,7 @@ export class CrmIntakeService {
 
   listEnquiries(actor: RequestActor, workspaceId: string, query: ListEnquiriesQueryDto) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
-      const cursor = decodeCursor(query.cursor);
-      if (query.cursor && !cursor) throw new BadRequestException("Invalid page cursor");
+      const cursor = this.intakeCursor(query.cursor);
       const values: unknown[] = [workspaceId];
       const clauses = ["enquiry.workspace_id = $1"];
       for (const [column, value] of [
@@ -177,8 +177,7 @@ export class CrmIntakeService {
 
   list(actor: RequestActor, workspaceId: string, query: ListIntakeQueryDto) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
-      const cursor = decodeCursor(query.cursor);
-      if (query.cursor && !cursor) throw new BadRequestException("Invalid page cursor");
+      const cursor = this.intakeCursor(query.cursor);
       const values: unknown[] = [workspaceId];
       const clauses = ["intake.workspace_id = $1"];
       if (query.status) {
@@ -197,10 +196,13 @@ export class CrmIntakeService {
                 intake.failure_code AS "failureCode", intake.failure_message AS "failureMessage",
                 intake.correlation_id AS "correlationId", intake.received_at AS "receivedAt",
                 intake.processed_at AS "processedAt", intake.version,
+                intake.resolution_type AS "resolutionType",
+                intake.resolved_party_id AS "resolvedPartyId", intake.resolved_at AS "resolvedAt",
                 enquiry.id AS "enquiryId", enquiry.title,
                 enquiry.party_id AS "partyId", lead.id AS "leadId",
                 (SELECT count(*)::int FROM crm_identity_candidates candidate
-                  WHERE candidate.intake_event_id = intake.id AND candidate.status = 'pending') AS "candidateCount"
+                  WHERE candidate.workspace_id=intake.workspace_id
+                    AND candidate.intake_event_id = intake.id AND candidate.status = 'pending') AS "candidateCount"
          FROM crm_intake_events intake
          LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id = intake.id
            AND enquiry.workspace_id = intake.workspace_id
@@ -225,9 +227,20 @@ export class CrmIntakeService {
 
   get(actor: RequestActor, workspaceId: string, intakeEventId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
-      const result = await client.query(`SELECT id, status, source, channel, original_payload AS payload, version FROM crm_intake_events WHERE workspace_id = $1 AND id = $2`, [workspaceId, intakeEventId]);
+      const result = await client.query(`SELECT id,status,source,channel,original_payload AS payload,version,
+        resolution_type AS "resolutionType",resolved_party_id AS "resolvedPartyId",
+        resolved_at AS "resolvedAt",resolution_evidence AS "resolutionEvidence"
+        FROM crm_intake_events WHERE workspace_id = $1 AND id = $2`, [workspaceId, intakeEventId]);
       if (!result.rowCount) throw new NotFoundException("Intake event not found");
-      const candidates = await client.query(`SELECT candidate.id, candidate.candidate_party_id AS "partyId", party.display_name AS "partyName", candidate.status, candidate.version FROM crm_identity_candidates candidate JOIN crm_parties party ON party.id = candidate.candidate_party_id AND party.workspace_id = candidate.workspace_id WHERE candidate.workspace_id = $1 AND candidate.intake_event_id = $2 ORDER BY candidate.id`, [workspaceId, intakeEventId]);
+      const candidates = await client.query(`SELECT candidate.id,candidate.candidate_party_id AS "partyId",
+        party.display_name AS "partyName",party.status AS "partyStatus",candidate.strength,candidate.score,
+        candidate.reasons,candidate.status,candidate.decision,
+        candidate.resolved_party_id AS "resolvedPartyId",candidate.reviewed_at AS "reviewedAt",
+        candidate.decision_reason AS "decisionReason",candidate.version
+        FROM crm_identity_candidates candidate
+        JOIN crm_parties party ON party.id = candidate.candidate_party_id AND party.workspace_id = candidate.workspace_id
+        WHERE candidate.workspace_id = $1 AND candidate.intake_event_id = $2
+        ORDER BY candidate.score DESC,candidate.id`, [workspaceId, intakeEventId]);
       return { ...result.rows[0], candidates: candidates.rows };
     });
   }
@@ -273,10 +286,12 @@ export class CrmIntakeService {
     input: ReviewDuplicateDto,
   ) {
     return this.access.withPermission(actor, workspaceId, "crm.parties.merge", async (client, actorUser) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
       const found = await client.query<Record<string, any>>(
         `SELECT candidate.*, intake.original_payload, intake.source, intake.channel,
                 intake.intake_method, intake.received_at, intake.legal_entity_id,
-                intake.business_unit_id, intake.version AS intake_version
+                intake.business_unit_id, intake.version AS intake_version,
+                intake.status AS intake_status, intake.correlation_id
          FROM crm_identity_candidates candidate
          JOIN crm_intake_events intake ON intake.id = candidate.intake_event_id
            AND intake.workspace_id = candidate.workspace_id
@@ -285,33 +300,55 @@ export class CrmIntakeService {
       );
       if (!found.rowCount) throw new NotFoundException("Duplicate candidate not found");
       const candidate = found.rows[0];
-      if (candidate.status !== "pending") throw new ConflictException("Candidate was already reviewed");
+      if (candidate.status !== "pending") {
+        return this.duplicateDecisionReplay(client, workspaceId, candidateId, candidate, input);
+      }
+      if (candidate.intake_status !== "duplicate_candidate") {
+        throw new ConflictException("Intake is no longer awaiting duplicate review");
+      }
       if (Number(candidate.version) !== input.version) throw new ConflictException("Candidate changed; reload and try again");
       if (input.decision === "attach" && !input.partyId) {
         throw new UnprocessableEntityException("partyId is required when attaching");
       }
-      if (input.decision === "attach" && input.partyId !== candidate.candidate_party_id) {
-        const party = await client.query(
-          `SELECT 1 FROM crm_parties WHERE id = $1 AND workspace_id = $2 AND status = 'active'`,
-          [input.partyId, workspaceId],
-        );
-        if (!party.rowCount) throw new UnprocessableEntityException("Selected party is not active");
+      if (input.decision !== "attach" && input.partyId) {
+        throw new UnprocessableEntityException("partyId is only allowed when attaching to an existing customer");
       }
-      await client.query(
-        `UPDATE crm_identity_candidates SET status = $1, reviewed_by = $2,
-           reviewed_at = now(), decision_reason = $3, version = version + 1
-         WHERE id = $4 AND workspace_id = $5`,
-        [input.decision === "attach" ? "accepted" : "rejected", actorUser.userId, input.reason ?? null, candidateId, workspaceId],
-      );
+      const reason = input.reason?.trim() || null;
+      if (["create_new", "reject"].includes(input.decision) && !reason) {
+        throw new UnprocessableEntityException("A review reason is required for this decision");
+      }
       if (input.decision === "reject") {
+        const rejected = await client.query(
+          `UPDATE crm_identity_candidates SET status='rejected',decision='reject',resolved_party_id=NULL,
+             reviewed_by=$1,reviewed_at=now(),decision_reason=$2,version=version+1,updated_at=now()
+           WHERE workspace_id=$3 AND id=$4 AND status='pending' AND version=$5 RETURNING version`,
+          [actorUser.userId, reason, workspaceId, candidateId, input.version],
+        );
+        if (!rejected.rowCount) throw new ConflictException("Candidate changed; reload and try again");
         const pending = await client.query(`SELECT 1 FROM crm_identity_candidates WHERE workspace_id = $1 AND intake_event_id = $2 AND status = 'pending' LIMIT 1`, [workspaceId, candidate.intake_event_id]);
         if (!pending.rowCount) throw new UnprocessableEntityException("This is the last possible match. Choose the existing customer or create a separate customer to resolve the intake.");
-        return { candidateId, decision: "reject", intakeEventId: candidate.intake_event_id };
+        await this.events.record(client, {
+          workspaceId, actorUserId: actorUser.userId, source: "user",
+          action: "crm.identity.candidate_rejected.v1", entityType: "crm_intake",
+          entityId: String(candidate.intake_event_id), correlationId: String(candidate.correlation_id),
+          before: { candidateId, status: "pending", version: input.version },
+          after: { candidateId, status: "rejected", reason, version: rejected.rows[0].version },
+        });
+        return { candidateId, decision: "reject", intakeEventId: candidate.intake_event_id, version: rejected.rows[0].version };
       }
       const original = candidate.original_payload as Record<string, any>;
-      const partyId = input.decision === "attach"
-        ? String(input.partyId)
-        : await this.createPartyFromPayload(client, workspaceId, actorUser.userId, original.party ?? {});
+      let partyId: string;
+      if (input.decision === "attach") {
+        const party = await client.query<{ id: string }>(
+          `SELECT id FROM crm_parties
+           WHERE id=$1 AND workspace_id=$2 AND status='active' FOR KEY SHARE`,
+          [input.partyId, workspaceId],
+        );
+        if (!party.rowCount) throw new UnprocessableEntityException("Selected party is no longer active");
+        partyId = party.rows[0].id;
+      } else {
+        partyId = await this.createPartyFromPayload(client, workspaceId, actorUser.userId, original.party ?? {});
+      }
       const records = await this.createReadyRecords(client, workspaceId, actorUser.userId, {
         intakeEventId: String(candidate.intake_event_id),
         partyId,
@@ -325,18 +362,42 @@ export class CrmIntakeService {
         consents: Array.isArray(original.consents) ? original.consents : [],
         legalEntityId: candidate.legal_entity_id as string | null,
       });
-      await client.query(
-        `UPDATE crm_intake_events SET status = 'ready', processed_at = now(), version = version + 1
-         WHERE id = $1 AND workspace_id = $2`,
-        [candidate.intake_event_id, workspaceId],
+      const selectedStatus = input.decision === "attach" ? "accepted" : "rejected";
+      const selected = await client.query(
+        `UPDATE crm_identity_candidates SET status=$1,decision=$2,resolved_party_id=$3,
+           reviewed_by=$4,reviewed_at=now(),decision_reason=$5,version=version+1,updated_at=now()
+         WHERE workspace_id=$6 AND id=$7 AND status='pending' AND version=$8 RETURNING version`,
+        [selectedStatus, input.decision, partyId, actorUser.userId, reason, workspaceId, candidateId, input.version],
       );
+      if (!selected.rowCount) throw new ConflictException("Candidate changed; reload and try again");
       await client.query(
-        `UPDATE crm_identity_candidates SET status = 'rejected', reviewed_by = $1,
-           reviewed_at = now(), decision_reason = 'resolved_by_other_candidate', version = version + 1
-         WHERE workspace_id = $2 AND intake_event_id = $3 AND id <> $4 AND status = 'pending'`,
-        [actorUser.userId, workspaceId, candidate.intake_event_id, candidateId],
+        `UPDATE crm_identity_candidates SET status='rejected',decision='resolved_elsewhere',
+           resolved_party_id=$1,reviewed_by=$2,reviewed_at=now(),
+           decision_reason='resolved_by_other_candidate',version=version+1,updated_at=now()
+         WHERE workspace_id = $3 AND intake_event_id = $4 AND id <> $5 AND status = 'pending'`,
+        [partyId, actorUser.userId, workspaceId, candidate.intake_event_id, candidateId],
       );
-      return { candidateId, decision: input.decision, ...records };
+      await this.resolveIntake(client, workspaceId, {
+        intakeEventId: String(candidate.intake_event_id),
+        expectedStatus: "duplicate_candidate",
+        resolutionType: input.decision === "attach" ? "review_attach" : "review_create_new",
+        partyId,
+        actorUserId: actorUser.userId,
+        source: "user",
+        correlationId: String(candidate.correlation_id),
+        evidence: {
+          candidateId,
+          candidatePartyId: String(candidate.candidate_party_id),
+          decision: input.decision,
+          reason,
+        },
+      });
+      return {
+        candidateId,
+        decision: input.decision,
+        resolutionType: input.decision === "attach" ? "review_attach" : "review_create_new",
+        ...records,
+      };
     });
   }
 
@@ -364,7 +425,8 @@ export class CrmIntakeService {
     requestedCorrelationId: string | undefined,
     input: CreateIntakeEventDto,
   ) {
-    if (!idempotencyKey?.trim() || idempotencyKey.length > 160) {
+    const normalizedIdempotencyKey = idempotencyKey?.trim();
+    if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 160) {
       throw new BadRequestException("A valid Idempotency-Key header is required");
     }
     if (input.workspaceId && input.workspaceId !== workspaceId) {
@@ -372,14 +434,15 @@ export class CrmIntakeService {
     }
     if (!input.party?.displayName?.trim()) throw new UnprocessableEntityException("Enter a customer name");
     if (input.party.email?.trim() && !/^\S+@\S+\.\S+$/.test(input.party.email.trim())) throw new UnprocessableEntityException("Email address is invalid");
-    const requestHash = stableHash(input);
-    const existing = await client.query<{ id: string; payload_hash: string }>(
-      `SELECT id, payload_hash FROM crm_intake_events
+    const requestHash = canonicalHash(input);
+    const legacyRequestHash = stableHash(input);
+    const existing = await client.query<{ id: string; payload_hash: string; payload_hash_version: number }>(
+      `SELECT id,payload_hash,payload_hash_version FROM crm_intake_events
        WHERE workspace_id = $1 AND idempotency_key = $2`,
-      [workspaceId, idempotencyKey],
+      [workspaceId, normalizedIdempotencyKey],
     );
     if (existing.rowCount) {
-      if (existing.rows[0].payload_hash !== requestHash) {
+      if (!this.payloadHashMatches(existing.rows[0], requestHash, legacyRequestHash)) {
         throw new ConflictException("Idempotency key was already used with different content");
       }
       return this.intakeResult(client, workspaceId, existing.rows[0].id);
@@ -387,8 +450,12 @@ export class CrmIntakeService {
     await this.assertScope(client, workspaceId, input.legalEntityId, input.businessUnitId);
     const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
     if (Number.isNaN(receivedAt.getTime())) throw new BadRequestException("receivedAt is invalid");
+    if (receivedAt.getTime() > Date.now() + 5 * 60_000) {
+      throw new UnprocessableEntityException("receivedAt cannot be in the future");
+    }
     const intakeEventId = randomUUID();
     const eventCorrelationId = correlationId(requestedCorrelationId);
+    const externalEventId = input.externalEventId?.trim() || null;
     const originalPayload = {
       ...input.originalPayload,
       party: input.party,
@@ -407,27 +474,27 @@ export class CrmIntakeService {
       `INSERT INTO crm_intake_events
         (id, workspace_id, legal_entity_id, business_unit_id, source, channel,
          intake_method, external_event_id, idempotency_key, payload_hash,
-         original_payload, payload_reference, status, correlation_id,
+         payload_hash_version, original_payload, payload_reference, status, correlation_id,
          received_at, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 2, $11, $12,
                'processing', $13, $14, $15)
        ON CONFLICT DO NOTHING RETURNING id`,
       [
         intakeEventId, workspaceId, input.legalEntityId ?? null,
         input.businessUnitId ?? null, input.source, input.channel,
-        input.intakeMethod, input.externalEventId ?? null, idempotencyKey,
+        input.intakeMethod, externalEventId, normalizedIdempotencyKey,
         requestHash, originalPayload, input.payloadReference ?? null,
         eventCorrelationId, receivedAt, actorUserId,
       ],
     );
     if (!inserted.rowCount) {
-      const prior = await client.query<{ id: string; payload_hash: string }>(
-        `SELECT id, payload_hash FROM crm_intake_events
+      const prior = await client.query<{ id: string; payload_hash: string; payload_hash_version: number }>(
+        `SELECT id,payload_hash,payload_hash_version FROM crm_intake_events
          WHERE workspace_id = $1 AND (idempotency_key = $2
            OR (source = $3 AND external_event_id = $4))`,
-        [workspaceId, idempotencyKey, input.source, input.externalEventId ?? null],
+        [workspaceId, normalizedIdempotencyKey, input.source, externalEventId],
       );
-      if (prior.rowCount === 1 && prior.rows[0].payload_hash === requestHash) {
+      if (prior.rowCount === 1 && this.payloadHashMatches(prior.rows[0], requestHash, legacyRequestHash)) {
         return this.intakeResult(client, workspaceId, prior.rows[0].id);
       }
       throw new ConflictException("Request or external event identifier was already used with different content");
@@ -452,12 +519,17 @@ export class CrmIntakeService {
         attribution: input.attribution ?? [], consents: input.consents ?? [],
         legalEntityId: input.legalEntityId ?? null,
       });
-      await client.query(
-        `UPDATE crm_intake_events SET status = 'ready', processed_at = now(), version = version + 1
-         WHERE id = $1 AND workspace_id = $2`,
-        [intakeEventId, workspaceId],
-      );
-      return { intakeEventId, status: "ready", matchedExistingParty: true, ...records };
+      await this.resolveIntake(client, workspaceId, {
+        intakeEventId,
+        expectedStatus: "processing",
+        resolutionType: "verified_contact",
+        partyId: exact[0].partyId,
+        actorUserId,
+        source: sourceActor,
+        correlationId: eventCorrelationId,
+        evidence: { matchStrength: "exact", reasons: exact[0].reasons },
+      });
+      return { intakeEventId, status: "ready", resolutionType: "verified_contact", matchedExistingParty: true, ...records };
     }
     if (matches.length) {
       for (const match of matches) {
@@ -490,12 +562,17 @@ export class CrmIntakeService {
       serviceType: input.serviceType ?? null, attribution: input.attribution ?? [],
       consents: input.consents ?? [], legalEntityId: input.legalEntityId ?? null,
     });
-    await client.query(
-      `UPDATE crm_intake_events SET status = 'ready', processed_at = now(), version = version + 1
-       WHERE id = $1 AND workspace_id = $2`,
-      [intakeEventId, workspaceId],
-    );
-    return { intakeEventId, status: "ready", matchedExistingParty: false, ...records };
+    await this.resolveIntake(client, workspaceId, {
+      intakeEventId,
+      expectedStatus: "processing",
+      resolutionType: "new_identity",
+      partyId,
+      actorUserId,
+      source: sourceActor,
+      correlationId: eventCorrelationId,
+      evidence: { matchStrength: "none" },
+    });
+    return { intakeEventId, status: "ready", resolutionType: "new_identity", matchedExistingParty: false, ...records };
   }
 
   private async identityMatches(client: PoolClient, workspaceId: string, party: CreateIntakeEventDto["party"]) {
@@ -683,9 +760,89 @@ export class CrmIntakeService {
     return { partyId: input.partyId, enquiryId, leadId, reference: enquiry.rows[0].reference };
   }
 
+  private async resolveIntake(
+    client: PoolClient,
+    workspaceId: string,
+    input: {
+      intakeEventId: string;
+      expectedStatus: "processing" | "duplicate_candidate";
+      resolutionType: "verified_contact" | "new_identity" | "review_attach" | "review_create_new";
+      partyId: string;
+      actorUserId: string | null;
+      source: "user" | "integration";
+      correlationId: string;
+      evidence: Record<string, unknown>;
+    },
+  ) {
+    const result = await client.query<{ version: number; resolved_at: Date }>(
+      `UPDATE crm_intake_events SET status='ready',processed_at=now(),failure_code=NULL,failure_message=NULL,
+         resolution_type=$3,resolved_party_id=$4,resolved_by=$5,resolved_at=now(),resolution_evidence=$6,
+         version=version+1,updated_at=now()
+       WHERE workspace_id=$1 AND id=$2 AND status=$7::crm_intake_status
+       RETURNING version,resolved_at`,
+      [
+        workspaceId, input.intakeEventId, input.resolutionType, input.partyId,
+        input.actorUserId, input.evidence, input.expectedStatus,
+      ],
+    );
+    if (!result.rowCount) throw new ConflictException("Intake changed while identity resolution was being completed");
+    await this.events.record(client, {
+      workspaceId,
+      actorUserId: input.actorUserId,
+      source: input.source,
+      action: "crm.identity.resolved.v1",
+      entityType: "crm_intake",
+      entityId: input.intakeEventId,
+      correlationId: input.correlationId,
+      before: { status: input.expectedStatus },
+      after: {
+        status: "ready",
+        resolutionType: input.resolutionType,
+        resolvedPartyId: input.partyId,
+        resolvedAt: result.rows[0].resolved_at,
+        evidence: input.evidence,
+        version: Number(result.rows[0].version),
+      },
+    });
+    return result.rows[0];
+  }
+
+  private async duplicateDecisionReplay(
+    client: PoolClient,
+    workspaceId: string,
+    candidateId: string,
+    candidate: Record<string, any>,
+    input: ReviewDuplicateDto,
+  ) {
+    const sameAttach = input.decision === "attach"
+      && candidate.decision === "attach"
+      && Boolean(input.partyId)
+      && input.partyId === candidate.resolved_party_id;
+    const sameCreate = input.decision === "create_new" && candidate.decision === "create_new" && !input.partyId;
+    const sameReject = input.decision === "reject"
+      && candidate.decision === "reject"
+      && candidate.intake_status === "duplicate_candidate"
+      && !input.partyId;
+    if (!sameAttach && !sameCreate && !sameReject) {
+      throw new ConflictException("Candidate was already reviewed with a different decision");
+    }
+    const result = await this.intakeResult(client, workspaceId, String(candidate.intake_event_id));
+    return { candidateId, decision: input.decision, ...result, reviewReplay: true };
+  }
+
+  private payloadHashMatches(
+    row: { payload_hash: string; payload_hash_version?: number },
+    canonicalRequestHash: string,
+    legacyRequestHash: string,
+  ) {
+    return row.payload_hash === (Number(row.payload_hash_version ?? 1) === 2 ? canonicalRequestHash : legacyRequestHash);
+  }
+
   private async intakeResult(client: PoolClient, workspaceId: string, intakeEventId: string) {
     const result = await client.query(
       `SELECT intake.id AS "intakeEventId", intake.status,
+              intake.resolution_type AS "resolutionType",
+              intake.resolved_party_id AS "resolvedPartyId",intake.resolved_at AS "resolvedAt",
               enquiry.party_id AS "partyId", enquiry.id AS "enquiryId", enquiry.reference, lead.id AS "leadId"
        FROM crm_intake_events intake
        LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id = intake.id
@@ -697,6 +854,18 @@ export class CrmIntakeService {
     );
     if (!result.rowCount) throw new NotFoundException("Intake event not found");
     return { ...result.rows[0], idempotentReplay: true };
+  }
+
+  private intakeCursor(value?: string) {
+    const cursor = decodeCursor(value);
+    if (value && (
+      !cursor
+      || Number.isNaN(Date.parse(cursor.value))
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cursor.id)
+    )) {
+      throw new BadRequestException("Invalid page cursor");
+    }
+    return cursor;
   }
 
   private async assertScope(
