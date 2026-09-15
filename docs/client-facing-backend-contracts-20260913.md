@@ -149,3 +149,7 @@ another client's transaction state.
 Run `npm run verify:backend` from the repository root. For an isolated HTTP/database exercise of the
 new project overview contract, run the documented disposable environment followed by
 `npm --workspace @wodana/business-core run test:smoke:portfolio-calendar`.
+
+Run `npm run test:smoke:funnel` for the complete disposable funnel proof. It creates a temporary
+local database and API, creates every business record through authenticated endpoints, and removes
+the database and local files after the run.

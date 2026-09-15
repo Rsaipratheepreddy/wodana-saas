@@ -31,9 +31,9 @@ contract so historical projects continue to load. No schema migration or data re
 build, 67 Intelligence/Automation tests, strict mypy, and Ruff. Four focused project-release tests
 cover the immutable snapshot, price drift, stale Preparation versions, and idempotent retry.
 
-## Next backend slice
+## Completed follow-up
 
-Add one isolated, deterministic API/database golden path beginning at real CRM intake and ending at
-delivery release. It must prove IDs and tenant ownership through Intake, Enquiry, Lead, Opportunity,
+The isolated API/database golden path is now available as `npm run test:smoke:funnel`. It begins at
+real CRM intake and proves IDs and ownership through Intake, Enquiry, Lead, Opportunity,
 Preparation, accepted Quotation, Owner Review, Deal File, and Project without direct SQL creation of
-the business records under test.
+the business records under test. The wrapper force-removes its disposable database and file root.

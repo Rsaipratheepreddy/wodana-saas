@@ -81,6 +81,9 @@ No live deployment or production-data mutation is part of B0.
   backfilled without moving tenant data.
 - Commercial-to-project release tests prove accepted-quote hash validation, immutable client-safe
   scope/catalog/specification lineage, stale preparation rejection, and retry-safe baseline reuse.
+- The disposable full-funnel API smoke passes using two independent owner identities and no direct
+  SQL business fixtures: Intake → Enquiry → Lead → Opportunity → Preparation → verified site and
+  design controls → accepted Quotation → Agreement → Owner Review → Deal File → Delivery Project.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.

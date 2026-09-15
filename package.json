@@ -19,6 +19,7 @@
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify:backend": "bash ./scripts/verify-backend.sh",
+    "test:smoke:funnel": "bash ./scripts/smoke-funnel-isolated.sh",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down"
   },
