@@ -7,6 +7,11 @@ export class ListPreProjectsDto {
   @IsOptional() @IsIn(["all", "qualified", "draft", "active", "on_hold", "released", "cancelled", "archived"]) status?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10000) page?: number;
 }
+
+export class PreProjectReadinessQueryDto {
+  @IsOptional() @IsIn(["pricing"]) target?: "pricing";
+}
+
 export class StartPreProjectDto { @IsUUID() opportunityId!: string; }
 
 export class StartFromQualifiedLeadDto {

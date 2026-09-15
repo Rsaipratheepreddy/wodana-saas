@@ -22,6 +22,7 @@ import { WorkspacesModule } from "../workspaces/workspaces.module";
 import { CommercialService } from "./commercial.service";
 import { ClientPortalService } from "./client-portal.service";
 import { CatalogSellingPriceService } from "./catalog-selling-price.service";
+import { PreProjectsModule } from "../pre-projects/pre-projects.module";
 @Controller("workspaces/:workspaceId/commercial")
 export class CommercialController {
   constructor(private readonly service: CommercialService) {}
@@ -138,7 +139,7 @@ export class InternalAccountingReconciliationController {
  @Post("result") result(@Body() b:unknown){return this.service.finish(b);}
 }
 @Module({
-  imports: [WorkspacesModule],
+  imports: [WorkspacesModule, PreProjectsModule],
   controllers: [InternalAccountingReconciliationController,CommercialController, ClientPortalController],
   providers: [AccountingReconciliationService,InternalServiceGuard,CatalogSellingPriceService,CommercialService, ClientPortalService, BrandAssetStorageService],
 })

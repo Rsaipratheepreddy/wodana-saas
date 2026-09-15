@@ -23,10 +23,12 @@ database or port names.
 6. Verify the generated Enquiry and Lead, then qualify the Lead into an Opportunity.
 7. Start and idempotently replay Preparation from the Opportunity, and create its pre-release
    planning project.
-8. Create the room, included requirement and current site plan.
-9. Upload the linked design, save its controlled specification, record and independently verify the
-   site measurement, then pass internal and recorded client design approval.
-10. Import Preparation into a quotation, set selling terms, pass internal approval, issue through the
+8. Create the room and included requirement, then prove that pricing readiness returns the ordered
+   missing site-plan, specification, measurement, and design actions.
+9. Add the current site plan, upload the linked design, save its controlled specification, record
+   and independently verify the site measurement, pass internal and recorded client design
+   approval, then prove that Preparation is pricing-ready with a deterministic state hash.
+10. Import Preparation into a quotation, set selling terms, pass the same readiness gate and internal approval, issue through the
    enabled client portal, and record OTP-backed client acceptance.
 11. Record and execute the agreement, submit owner review, approve it with the second owner, create
     the Deal File, and release the delivery project.

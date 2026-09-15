@@ -52,8 +52,8 @@ No live deployment or production-data mutation is part of B0.
 
 ## Current regression status after the B1-B9 backend slices
 
-- Business Core: 382 tests passed and 10 skipped; type-check and production build passed.
-- Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
+- Business Core: 550 tests passed and 10 skipped; type-check and production build passed.
+- Intelligence/Automation: 70 tests passed; strict mypy and Ruff passed.
 - Clean database replay: all 61 registered migrations passed; migration 0061 is exercised by the
   disposable funnel and the new workspace-scoped scheduling tables pass the RLS manifest.
 - Lead-flow HTTP/database smoke: 29 of 29 checks passed on a clean generic workspace.
@@ -81,6 +81,9 @@ No live deployment or production-data mutation is part of B0.
   backfilled without moving tenant data.
 - Commercial-to-project release tests prove accepted-quote hash validation, immutable client-safe
   scope/catalog/specification lineage, stale preparation rejection, and retry-safe baseline reuse.
+- Preparation pricing readiness provides one tenant-safe web/mobile contract for deterministic
+  blockers, warnings and ordered next actions. Quotation submission uses the same evaluator inside
+  its transaction, preventing read/write policy drift.
 - The disposable full-funnel API smoke passes using two independent owner identities and no direct
   SQL business fixtures: Intake → Enquiry → Lead → Opportunity → Preparation → verified site and
   design controls → accepted Quotation → Agreement → Owner Review → Deal File → Delivery Project.

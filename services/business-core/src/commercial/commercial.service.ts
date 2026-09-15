@@ -26,6 +26,7 @@ import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { ConfigService } from "@nestjs/config";
 import { CatalogSellingPriceService } from "./catalog-selling-price.service";
+import { PreProjectReadinessService } from "../pre-projects/pre-project-readiness.service";
 import {
   actionable,
   date,
@@ -60,6 +61,7 @@ export class CommercialService {
     private readonly access: WorkspaceAccessService,
     private readonly config: ConfigService,
     private readonly sellingPrices: CatalogSellingPriceService,
+    private readonly preparationReadiness: PreProjectReadinessService,
   ) {}
   get testMode() {
     return (
@@ -1587,41 +1589,23 @@ export class CommercialService {
               );
             if (q.kind === "quotation") {
               const linked = q.lines.filter((line) => line.scopeId);
-              const sitePlan = await client.query(
-                `SELECT 1 FROM pre_project_brief_entries e JOIN pre_project_entry_assets a ON a.workspace_id=e.workspace_id AND a.case_id=e.case_id AND a.entry_id=e.id WHERE e.workspace_id=$1 AND e.case_id=$2 AND e.kind='file' AND e.archived_at IS NULL LIMIT 1`,
-                [workspaceId, caseId],
+              const readiness = await this.preparationReadiness.evaluate(
+                client,
+                workspaceId,
+                caseId,
+                {
+                  target: "pricing",
+                  requireIncludedScope: linked.length > 0,
+                  scopeReferences: linked.map((line) => ({
+                    scopeId: line.scopeId!,
+                    title: line.title,
+                    scopeVersion: line.scopeVersion,
+                    specificationVersion: line.specificationVersion,
+                  })),
+                },
               );
-              if (!sitePlan.rowCount)
-                throw new ConflictException(
-                  "Add the current site plan before submitting the quotation for review.",
-                );
-              for (const line of linked) {
-                const measurement = await client.query(
-                  `SELECT 1 FROM pre_project_site_records WHERE workspace_id=$1 AND case_id=$2 AND kind='measurement' AND entry_id=$3 AND status='verified' LIMIT 1`,
-                  [workspaceId, caseId, line.scopeId],
-                );
-                if (!measurement.rowCount)
-                  throw new ConflictException(
-                    `Verify the site measurements for ${line.title} before quotation review.`,
-                  );
-                const design = await client.query(
-                  `SELECT count(*)::int AS total,count(*) FILTER (WHERE v.status='approved' AND NOT EXISTS(SELECT 1 FROM pre_project_design_threads t WHERE t.workspace_id=v.workspace_id AND t.version_id=v.id AND t.blocking AND t.status='open'))::int AS approved FROM pre_project_item_design_refs r JOIN pre_project_design_versions v ON v.workspace_id=r.workspace_id AND v.id=r.design_version_id WHERE r.workspace_id=$1 AND r.case_id=$2 AND r.entry_id=$3 AND r.version=$4`,
-                  [
-                    workspaceId,
-                    caseId,
-                    line.scopeId,
-                    line.specificationVersion ?? 0,
-                  ],
-                );
-                const readiness = design.rows[0] as {
-                  total: number;
-                  approved: number;
-                };
-                if (!readiness.total || readiness.approved !== readiness.total)
-                  throw new ConflictException(
-                    `Approve the linked design revision for ${line.title} before quotation review.`,
-                  );
-              }
+              if (!readiness.ready)
+                throw new ConflictException(readiness.blockers[0].detail);
             }
             q.total = totals(q).total;
             q.status = "internal_review";

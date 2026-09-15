@@ -447,6 +447,18 @@ await request(`${contentPath}/entries`, {
   method: "PUT",
 });
 
+const incompleteReadiness = await request(`${contentPath}/readiness?target=pricing`);
+assert.equal(incompleteReadiness.ready, false);
+assert.deepEqual(
+  incompleteReadiness.nextActions.map((next) => next.code),
+  [
+    "ADD_SITE_PLAN",
+    "CREATE_SPECIFICATION",
+    "RECORD_MEASUREMENT",
+    "LINK_DESIGN_REVISION",
+  ],
+);
+
 const png = readFileSync(
   new URL("../../../apps/web/public/brand/wodana/woddy-mark-v4.png", import.meta.url),
 );
@@ -570,6 +582,13 @@ await designActivity("approved", owner, {
   decisionSource: "meeting",
   decisionAt: new Date().toISOString(),
 });
+
+const preparationReadiness = await request(`${contentPath}/readiness?target=pricing`);
+assert.equal(preparationReadiness.ready, true);
+assert.equal(preparationReadiness.summary.evaluatedItemCount, 1);
+assert.equal(preparationReadiness.summary.blockerCount, 0);
+assert.match(preparationReadiness.stateHash, /^[0-9a-f]{64}$/);
+assert.equal(preparationReadiness.items[0].scopeItemId, scopeId);
 
 let quoteId;
 async function commercial(action, body = {}, headers = owner) {
@@ -1073,6 +1092,7 @@ process.stdout.write(
         engagementPhaseGovernanceSafe: true,
         engagementHoldWriteSafe: true,
         engagementCancellationRecoverySafe: true,
+        preparationReadinessSafe: true,
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,
         projectReleaseReplaySafe: true,
