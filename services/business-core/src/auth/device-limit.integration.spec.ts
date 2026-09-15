@@ -39,7 +39,13 @@ integration("two-device authentication with PostgreSQL", () => {
     db = new DatabaseService(config);
     service = new LocalAuthService(db, config, {
       resolveActor: async () => ({ ...actor, userId }), getProfile: async () => ({ nextAction: "enter_workspace" }),
-    } as never, {} as never);
+    } as never, {} as never, {
+      beginPrimaryAuthentication: async () => ({
+        challengeRequired: false,
+        assurance: { authenticationMethods: ["pwd"], mfaSessionVersion: 0 },
+      }),
+      status: async () => ({ enabled: false, required: false }),
+    } as never);
     guard = new AuthGuard({ getAllAndOverride: () => false } as never, config, db);
     const encoded = await hashPassword(password);
     await db.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Device test'),($3,'other@example.com','Other user')", [userId, actor.email, otherUserId]);

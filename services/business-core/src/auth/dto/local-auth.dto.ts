@@ -126,3 +126,47 @@ export class ResetPasswordDto {
   @Matches(/[^A-Za-z0-9]/, { message: passwordMessage })
   password!: string;
 }
+
+export class VerifyMfaChallengeDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(20)
+  @MaxLength(256)
+  challengeToken!: string;
+
+  @ApiProperty({ description: "Six-digit authenticator code or one recovery code" })
+  @Transform(({ value }) => String(value).trim())
+  @IsString()
+  @MinLength(6)
+  @MaxLength(32)
+  code!: string;
+
+  @ApiPropertyOptional({ format: "uuid" })
+  @IsOptional()
+  @IsUUID()
+  revokeFamilyId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MinLength(20)
+  @MaxLength(256)
+  currentRefreshToken?: string;
+}
+
+export class MfaWorkspaceQueryDto {
+  @ApiProperty({ format: "uuid" })
+  @IsUUID()
+  workspaceId!: string;
+}
+
+export class MfaSessionDto extends SessionSecurityDto {}
+
+export class MfaFactorDto extends SessionSecurityDto {
+  @ApiProperty({ description: "Six-digit authenticator code or one recovery code" })
+  @Transform(({ value }) => String(value).trim())
+  @IsString()
+  @MinLength(6)
+  @MaxLength(32)
+  code!: string;
+}

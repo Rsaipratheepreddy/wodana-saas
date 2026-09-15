@@ -36,6 +36,7 @@ describe("validateRuntimeConfig", () => {
       DATABASE_URL: "postgresql://production", NODE_ENV: "production", AUTH_MODE: "password",
       LOCAL_AUTH_JWT_SECRET: "a-production-password-secret-longer-than-32-characters",
       LOCAL_AUTH_ISSUER: "https://admin.example.com", LOCAL_AUTH_AUDIENCE: "wodana-web",
+      MFA_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       BUSINESS_CORE_INTERNAL_TOKEN: "a-separate-internal-token-longer-than-32-characters",
       WODANA_RELEASE_ID: "test-release", INTELLIGENCE_API_URL: "http://intelligence:8001/api/v1",
     };
@@ -44,6 +45,7 @@ describe("validateRuntimeConfig", () => {
     expect(() => validateRuntimeConfig({ ...config, LOCAL_AUTH_JWT_SECRET: "short" })).toThrow("LOCAL_AUTH_JWT_SECRET");
     expect(() => validateRuntimeConfig({ ...config, LOCAL_AUTH_ISSUER: "http://localhost" })).toThrow("LOCAL_AUTH_ISSUER");
     expect(() => validateRuntimeConfig({ ...config, LOCAL_AUTH_AUDIENCE: "" })).toThrow("LOCAL_AUTH_AUDIENCE");
+    expect(() => validateRuntimeConfig({ ...config, MFA_ENCRYPTION_KEY: "short" })).toThrow("MFA_ENCRYPTION_KEY");
     for (const flag of ["EXPOSE_DEMO_AUTH_TOKENS", "PORTAL_DEMO_OTP", "DEMO_TENANT_ENABLED"]) {
       expect(() => validateRuntimeConfig({ ...config, [flag]: "true" })).toThrow(flag);
     }

@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -14,12 +15,23 @@ import { sessionDeviceLimit } from "./session-policy";
 import { RequestActor } from "./actor";
 import { AuthenticatedRequest } from "./authenticated-request";
 import { IS_PUBLIC_KEY } from "./public.decorator";
+import {
+  MFA_ACTION_KEY,
+  MFA_ENROLLMENT_ALLOWED_KEY,
+} from "./mfa-step-up.decorator";
 
 interface WodanaJwtPayload extends JwtPayload {
   sid?: string;
   email?: string;
   email_verified?: boolean;
   name?: string;
+  amr?: string[];
+  auth_time?: number;
+  mfa?: boolean;
+  mfa_at?: number;
+  mfa_version?: number;
+  mfa_enrollment_required?: boolean;
+  mfa_enrollment_deadline?: number;
 }
 
 export function hasVerifiedOidcIdentity(
@@ -65,6 +77,7 @@ export class AuthGuard implements CanActivate {
       : authMode === "local" || authMode === "password"
         ? await this.verifyLocalActor(request)
         : await this.verifyOidcActor(request);
+    this.enforceMfaRequirements(context, request.actor);
     return true;
   }
 
@@ -110,11 +123,17 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException("A verified email claim is required");
       }
 
+      const authenticationMethods = Array.isArray(claims.amr) ? claims.amr : [];
+      const mfaVerified = authenticationMethods.some((method) => ["mfa", "otp", "totp"].includes(method));
       return {
         subject: claims.sub,
         email: claims.email.toLowerCase(),
         displayName: claims.name ?? claims.email,
         provider: claims.iss ?? "oidc",
+        authenticationMethods,
+        ...(mfaVerified && typeof claims.auth_time === "number"
+          ? { mfaVerifiedAt: new Date(claims.auth_time * 1000) }
+          : {}),
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) {
@@ -149,8 +168,19 @@ export class AuthGuard implements CanActivate {
       if (!claims.sid || !/^[0-9a-f-]{36}$/i.test(claims.sid)) {
         throw new UnauthorizedException("Sign in again to secure this device.");
       }
-      const active = await this.database.query(
-        `SELECT 1 FROM auth_refresh_sessions session
+      const active = await this.database.query<{
+        authenticationMethods: string[];
+        mfaVerifiedAt: Date | null;
+        sessionMfaVersion: number;
+        currentMfaVersion: number;
+        mfaEnrollmentDeadline: Date | null;
+      }>(
+        `SELECT session.authentication_methods AS "authenticationMethods",
+                session.mfa_verified_at AS "mfaVerifiedAt",
+                session.mfa_session_version AS "sessionMfaVersion",
+                app_user.mfa_session_version AS "currentMfaVersion",
+                session.mfa_enrollment_deadline AS "mfaEnrollmentDeadline"
+         FROM auth_refresh_sessions session
          JOIN users app_user ON app_user.id = session.user_id AND app_user.status = 'active'
          WHERE session.family_id = $1 AND 'local:' || session.user_id::text = $2
            AND session.revoked_at IS NULL AND session.expires_at > now()
@@ -159,15 +189,63 @@ export class AuthGuard implements CanActivate {
         [claims.sid, claims.sub, sessionDeviceLimit(claims.sub.replace(/^local:/, ""), this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""))],
       );
       if (!active.rowCount) throw new UnauthorizedException("This device was logged out or its session expired.");
+      const assurance = active.rows[0];
+      const claimVersion = claims.mfa_version ?? 0;
+      if (claimVersion !== assurance.sessionMfaVersion
+        || assurance.sessionMfaVersion !== assurance.currentMfaVersion) {
+        throw new UnauthorizedException("Security settings changed. Sign in again");
+      }
+      const verifiedAt = assurance.mfaVerifiedAt ?? undefined;
+      if (Boolean(claims.mfa) !== Boolean(verifiedAt)) {
+        throw new UnauthorizedException("Authentication assurance is invalid");
+      }
+      if (verifiedAt && claims.mfa_at !== Math.floor(verifiedAt.getTime() / 1000)) {
+        throw new UnauthorizedException("Authentication assurance is invalid");
+      }
       return {
         subject: claims.sub,
         email: claims.email.toLowerCase(),
         displayName: claims.name ?? claims.email,
         provider: "local",
+        sessionId: claims.sid,
+        authenticationMethods: assurance.authenticationMethods,
+        mfaVerifiedAt: verifiedAt,
+        mfaSessionVersion: assurance.sessionMfaVersion,
+        mfaEnrollmentDeadline: assurance.mfaEnrollmentDeadline ?? undefined,
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException("Bearer token is invalid or expired");
+    }
+  }
+
+  private enforceMfaRequirements(context: ExecutionContext, actor: RequestActor) {
+    const enrollmentAllowed = this.reflector.getAllAndOverride<boolean>(MFA_ENROLLMENT_ALLOWED_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (actor.mfaEnrollmentDeadline
+      && actor.mfaEnrollmentDeadline.getTime() <= Date.now()
+      && !enrollmentAllowed) {
+      throw new ForbiddenException({
+        code: "MFA_ENROLLMENT_REQUIRED",
+        message: "MFA enrollment is required before continuing",
+        enrollmentDeadline: actor.mfaEnrollmentDeadline,
+      });
+    }
+    const action = this.reflector.getAllAndOverride<string>(MFA_ACTION_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!action) return;
+    const maximumAgeMinutes = Number(this.config.get<string>("MFA_STEP_UP_MINUTES", "10"));
+    const maximumAgeMs = (Number.isFinite(maximumAgeMinutes) ? maximumAgeMinutes : 10) * 60_000;
+    if (!actor.mfaVerifiedAt || Date.now() - actor.mfaVerifiedAt.getTime() > maximumAgeMs) {
+      throw new ForbiddenException({
+        code: "MFA_STEP_UP_REQUIRED",
+        message: "Recent MFA verification is required",
+        action,
+      });
     }
   }
 

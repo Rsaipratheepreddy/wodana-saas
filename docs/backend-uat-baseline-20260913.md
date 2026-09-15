@@ -50,11 +50,11 @@ at a time.
 
 No live deployment or production-data mutation is part of B0.
 
-## Current regression status after the B2-B9 backend slices
+## Current regression status after the B1-B9 backend slices
 
-- Business Core: 350 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 355 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
-- Clean database replay: all 58 registered migrations passed; the schema contains 151 public
+- Clean database replay: all 59 registered migrations passed; the schema contains 156 public
   tables.
 - Lead-flow HTTP/database smoke: 29 of 29 checks passed on a clean generic workspace.
 - Workspace HTTP/database smoke passes 19 safeguards, including business-unit color and
@@ -71,6 +71,14 @@ No live deployment or production-data mutation is part of B0.
   idempotency and mutation rejection, no access before approval, organization-limit enforcement,
   atomic provisioning, approval replay, account switch metadata, active-member discovery,
   default preservation, and cross-account denial.
+- MFA HTTP/database smoke passed 13 safeguards under the restricted application database role:
+  required administrator enrollment and grace, expired-grace route restriction, encrypted TOTP,
+  authenticator replay rejection, one-use recovery codes, old-token invalidation, login challenge,
+  challenge replay rejection, refresh assurance, recent-MFA recovery rotation, required-policy
+  disable denial, bounded factor-attempt locking, and absence of plaintext factors in PostgreSQL.
+- Existing-installation MFA rehearsal applied migration 0059 over a populated 0058 schema and
+  confirmed that both the administrator requirement and an active refresh-session deadline were
+  backfilled without moving tenant data.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.

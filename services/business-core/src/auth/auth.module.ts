@@ -7,6 +7,7 @@ import { AuthController } from "./auth.controller";
 import { LocalAuthService } from "./local-auth.service";
 import { SecurityController } from "./security.controller";
 import { EmailModule } from "../email/email.module";
+import { MfaService } from "./mfa.service";
 
 @Global()
 @Module({
@@ -14,6 +15,7 @@ import { EmailModule } from "../email/email.module";
   controllers: [AuthController, MeController, SecurityController],
   providers: [
     IdentityService,
+    MfaService,
     LocalAuthService,
     {
       provide: APP_GUARD,

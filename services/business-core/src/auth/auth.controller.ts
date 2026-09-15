@@ -15,6 +15,7 @@ import {
   LogoutDto,
   RefreshSessionDto,
   ResetPasswordDto,
+  VerifyMfaChallengeDto,
 } from "./dto/local-auth.dto";
 
 @ApiTags("authentication")
@@ -70,6 +71,17 @@ export class AuthController {
   @ApiCreatedResponse()
   resetPassword(@Body() input: ResetPasswordDto) {
     return this.auth.resetPassword(input.resetToken, input.password);
+  }
+
+  @Post("mfa/verify")
+  @ApiOperation({ summary: "Complete a password sign-in with TOTP or a recovery code" })
+  @ApiCreatedResponse()
+  verifyMfa(@Body() input: VerifyMfaChallengeDto, @Req() request: Request) {
+    return this.auth.verifyMfaLogin(input.challengeToken, input.code, {
+      ...this.metadata(request),
+      currentRefreshToken: input.currentRefreshToken,
+      revokeFamilyId: input.revokeFamilyId,
+    });
   }
 
   private metadata(request: Request) {

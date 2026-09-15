@@ -3,6 +3,32 @@
 These contracts are the stable backend inputs for the later frontend cleanup. They are additive;
 existing project, quotation, and execution routes remain available.
 
+## Multi-factor authentication
+
+Password sign-in now returns either a normal session or a five-minute MFA challenge. The challenge
+accepts a six-digit authenticator code or one recovery code and can be consumed only once. Confirmed
+TOTP secrets are encrypted with AES-256-GCM; recovery codes are returned once and stored only as
+keyed hashes.
+
+Customer accounts require MFA for owners and administrators by default, with a seven-day enrollment
+grace period. Existing active administrator sessions receive the same deadline during migration.
+After the deadline, ordinary application routes are denied while MFA status, setup and confirmation
+remain reachable. Enabling or disabling MFA increments the user's security version, invalidating old
+access tokens. Refresh rotation preserves the verified methods and MFA time.
+
+The web application can connect these stable routes:
+
+- `POST /api/v1/auth/mfa/verify`
+- `GET /api/v1/security/mfa/status?workspaceId=<UUID>`
+- `POST /api/v1/security/mfa/totp/setup`
+- `POST /api/v1/security/mfa/totp/confirm`
+- `POST /api/v1/security/mfa/step-up`
+- `POST /api/v1/security/mfa/recovery-codes/regenerate`
+- `POST /api/v1/security/mfa/disable`
+
+Recovery-code replacement and optional MFA disablement require a recently MFA-verified token.
+Mandatory account policy prevents an administrator from disabling the factor.
+
 ## Customer accounts and independent organizations
 
 Every existing or newly provisioned workspace is the default organization of one customer account.

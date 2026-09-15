@@ -1,6 +1,6 @@
 # Tenant-isolation exceptions
 
-Workspace-owned business tables use PostgreSQL row-level security. Six tables intentionally remain
+Workspace-owned business tables use PostgreSQL row-level security. Eight tables intentionally remain
 outside RLS because the workspace is discovered from an untrusted public capability or a protected
 cross-tenant worker request before a tenant transaction can be established.
 
@@ -12,6 +12,8 @@ cross-tenant worker request before a tenant transaction can be established.
 | `project_vendor_access` | 256-bit random capability token stored only as SHA-256, expiry, revocation and rate limit | Resolve the tenant for a restricted vendor order link |
 | `commercial_reconciliation_jobs` | `InternalServiceGuard`, short lease token and expiry | Claim cross-tenant accounting jobs before processing each in a tenant transaction |
 | `customer_account_organizations` | Authenticated customer-account membership or `InternalServiceGuard` | Discover the independently isolated workspaces grouped under one customer account |
+| `auth_mfa_challenges` | 256-bit random token stored only as SHA-256, five-minute expiry, bounded attempts and one-time consumption | Resolve the selected workspace only after password verification and before the second factor is accepted |
+| `mfa_security_events` | Authentication service writes only; no public read route | Record factor enrollment and challenge outcomes that occur before a tenant request can be authenticated |
 
 After discovery, business data must be read or written through `tenantTransaction` with the resolved
 workspace. These exceptions may not be used for general business queries, reporting, or UI access.

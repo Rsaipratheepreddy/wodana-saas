@@ -25,7 +25,14 @@ function serviceFixture() {
   };
   const config = { get: vi.fn((key: string, fallback: unknown) => key === "AUTH_MODE" ? "local" : fallback) };
   const identities = { resolveActor: vi.fn().mockResolvedValue({ ...actor, userId }) };
-  const service = new LocalAuthService(database as never, config as never, identities as never, {} as never);
+  const mfa = { status: vi.fn().mockResolvedValue({ enabled: false, required: false }) };
+  const service = new LocalAuthService(
+    database as never,
+    config as never,
+    identities as never,
+    {} as never,
+    mfa as never,
+  );
   return { actorQuery, auditQuery, database, service };
 }
 

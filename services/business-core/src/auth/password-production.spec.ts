@@ -19,7 +19,20 @@ function config(overrides: Record<string, unknown> = {}) {
 function authRequest(headers: Record<string, string>, mode = "password") {
   const request = { headers, actor: undefined as unknown };
   const context = { getHandler: () => undefined, getClass: () => undefined, switchToHttp: () => ({ getRequest: () => request }) };
-  const guard = new AuthGuard({ getAllAndOverride: () => false } as never, config({ AUTH_MODE: mode }) as never, { query: vi.fn().mockResolvedValue({ rowCount: 1 }) } as never);
+  const guard = new AuthGuard(
+    { getAllAndOverride: () => false } as never,
+    config({ AUTH_MODE: mode }) as never,
+    { query: vi.fn().mockResolvedValue({
+      rowCount: 1,
+      rows: [{
+        authenticationMethods: ["pwd"],
+        mfaVerifiedAt: null,
+        sessionMfaVersion: 0,
+        currentMfaVersion: 0,
+        mfaEnrollmentDeadline: null,
+      }],
+    }) } as never,
+  );
   return { request, authenticate: () => guard.canActivate(context as never) };
 }
 function token(options: jwt.SignOptions = {}, signingSecret = secret) {
@@ -51,7 +64,7 @@ describe("production password authentication", () => {
       actorTransaction: vi.fn(async (_id, callback) => callback({ query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }) })),
     };
     const identities = { resolveActor: vi.fn() };
-    const service = new LocalAuthService(database as never, config() as never, identities as never, {} as never);
+    const service = new LocalAuthService(database as never, config() as never, identities as never, {} as never, {} as never);
     await expect(service.login("owner@example.com", password, "other-tenant")).rejects.toThrow("Email, password, or tenant is incorrect");
     expect(identities.resolveActor).not.toHaveBeenCalled();
   });
@@ -61,7 +74,7 @@ describe("production password authentication", () => {
       .mockResolvedValue({ rows: [], rowCount: 1 });
     const database = { query, actorTransaction: vi.fn(async (_id, callback) => callback({ query: vi.fn().mockResolvedValue({ rowCount: 1, rows: [] }) })) };
     const email = { sendPasswordReset: vi.fn().mockResolvedValue({ status: "sent" }) };
-    const service = new LocalAuthService(database as never, config() as never, {} as never, email as never);
+    const service = new LocalAuthService(database as never, config() as never, {} as never, email as never, {} as never);
     const response = await service.forgotPassword("Owner@example.com", "iglo-architects");
     expect(response).toMatchObject({ accepted: true });
     expect(response).not.toHaveProperty("developmentResetToken");

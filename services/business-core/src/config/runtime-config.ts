@@ -35,6 +35,21 @@ export function validateRuntimeConfig(
     if (!String(config.LOCAL_AUTH_AUDIENCE ?? "").trim()) {
       throw new Error("Production password authentication requires LOCAL_AUTH_AUDIENCE");
     }
+    const mfaKey = String(config.MFA_ENCRYPTION_KEY ?? "").trim();
+    const decodedMfaKey = /^[0-9a-f]{64}$/i.test(mfaKey)
+      ? Buffer.from(mfaKey, "hex")
+      : Buffer.from(mfaKey, "base64url");
+    if (decodedMfaKey.length !== 32) {
+      throw new Error("Production password authentication requires a 32-byte MFA_ENCRYPTION_KEY");
+    }
+  }
+  const mfaKeyVersion = Number(config.MFA_ENCRYPTION_KEY_VERSION ?? 1);
+  if (!Number.isInteger(mfaKeyVersion) || mfaKeyVersion < 1) {
+    throw new Error("MFA_ENCRYPTION_KEY_VERSION must be a positive integer");
+  }
+  const mfaStepUpMinutes = Number(config.MFA_STEP_UP_MINUTES ?? 10);
+  if (!Number.isFinite(mfaStepUpMinutes) || mfaStepUpMinutes < 1 || mfaStepUpMinutes > 60) {
+    throw new Error("MFA_STEP_UP_MINUTES must be between 1 and 60");
   }
   if (nodeEnv === "production") {
     if (!String(config.WODANA_RELEASE_ID ?? "").trim()) {

@@ -7,9 +7,11 @@ if (!databaseUrl) {
 }
 
 const intentionalExceptions = [
+  "auth_mfa_challenges",
   "client_portal_settings",
   "commercial_reconciliation_jobs",
   "customer_account_organizations",
+  "mfa_security_events",
   "project_vendor_access",
   "tenant_login_branding",
   "tenant_provisioning_requests",

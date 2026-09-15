@@ -18,6 +18,7 @@ import { IdentityService } from "./identity.service";
 import { RequestActor } from "./actor";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { hashOpaqueToken, hashPassword, verifyPassword } from "./local-password";
+import { MfaService, MfaSessionAssurance } from "./mfa.service";
 
 interface LoginMetadata {
   ipAddress?: string;
@@ -36,6 +37,7 @@ interface LocalUserRow {
   passwordSalt: string;
   failedAttempts: number;
   lockedUntil: Date | null;
+  passwordChangedAt: Date;
 }
 
 interface RefreshRow {
@@ -47,6 +49,11 @@ interface RefreshRow {
   email: string;
   displayName: string;
   subject: string;
+  authenticationMethods: string[];
+  mfaVerifiedAt: Date | null;
+  mfaSessionVersion: number;
+  currentMfaSessionVersion: number;
+  mfaEnrollmentDeadline: Date | null;
 }
 
 export interface SecuritySessionRow {
@@ -71,6 +78,7 @@ export class LocalAuthService {
     private readonly config: ConfigService,
     private readonly identities: IdentityService,
     private readonly email: TransactionalEmailService,
+    private readonly mfa: MfaService,
   ) {}
 
   async getTenantBranding(loginSlug: string) {
@@ -98,7 +106,8 @@ export class LocalAuthService {
               credential.password_hash AS "passwordHash",
               credential.password_salt AS "passwordSalt",
               credential.failed_attempts AS "failedAttempts",
-              credential.locked_until AS "lockedUntil"
+              credential.locked_until AS "lockedUntil",
+              credential.password_changed_at AS "passwordChangedAt"
        FROM users app_user
        JOIN local_auth_credentials credential ON credential.user_id = app_user.id
        WHERE app_user.primary_email = $1`,
@@ -159,7 +168,13 @@ export class LocalAuthService {
       [`local:${user.id}`],
     );
 
-    return this.issueSession(this.actorFor(user), branding.rows[0].workspaceId, { ...metadata, verifiedPasswordHash: user.passwordHash });
+    return this.completePrimaryAuthentication(
+      this.actorFor(user),
+      user.id,
+      branding.rows[0].workspaceId,
+      user.passwordChangedAt,
+      { ...metadata, verifiedPasswordHash: user.passwordHash },
+    );
   }
 
   async activateInvitation(invitationToken: string, password: string, metadata: LoginMetadata = {}) {
@@ -202,12 +217,13 @@ export class LocalAuthService {
         throw new GoneException("Invitation is no longer active");
       }
       const encoded = await hashPassword(password);
-      await client.query(
+      const credential = await client.query<{ passwordChangedAt: Date }>(
         `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
          VALUES ($1, $2, $3)
          ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
            password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
-           password_changed_at = now(), updated_at = now()`,
+           password_changed_at = now(), updated_at = now()
+         RETURNING password_changed_at AS "passwordChangedAt"`,
         [row.userId, encoded.hash, encoded.salt],
       );
       await client.query(
@@ -238,15 +254,29 @@ export class LocalAuthService {
          WHERE id = $1`,
         [row.id],
       );
-      return row;
+      return { ...row, passwordChangedAt: credential.rows[0].passwordChangedAt, passwordHash: encoded.hash };
     });
 
-    return this.issueSession({
+    return this.completePrimaryAuthentication({
       subject: `local:${activated.userId}`,
       provider: "local",
       email: activated.email.toLowerCase(),
       displayName: activated.displayName,
-    }, activated.workspaceId, metadata);
+    }, activated.userId, activated.workspaceId, activated.passwordChangedAt, {
+      ...metadata,
+      verifiedPasswordHash: activated.passwordHash,
+    });
+  }
+
+  async verifyMfaLogin(challengeToken: string, code: string, metadata: LoginMetadata = {}) {
+    this.assertLocalAuthAvailable();
+    const verified = await this.mfa.consumeLoginChallenge(challengeToken, code);
+    return this.issueSession(
+      verified.actor,
+      verified.workspaceId,
+      { ...metadata, verifiedPasswordHash: verified.passwordHash },
+      verified.assurance,
+    );
   }
 
   async refresh(refreshToken: string, metadata: LoginMetadata = {}) {
@@ -262,7 +292,12 @@ export class LocalAuthService {
         `SELECT session.id, session.user_id AS "userId", session.family_id AS "familyId",
                 session.expires_at AS "expiresAt", session.revoked_at AS "revokedAt",
                 app_user.primary_email AS email, app_user.display_name AS "displayName",
-                identity.provider_subject AS subject
+                identity.provider_subject AS subject,
+                session.authentication_methods AS "authenticationMethods",
+                session.mfa_verified_at AS "mfaVerifiedAt",
+                session.mfa_session_version AS "mfaSessionVersion",
+                app_user.mfa_session_version AS "currentMfaSessionVersion",
+                session.mfa_enrollment_deadline AS "mfaEnrollmentDeadline"
          FROM auth_refresh_sessions session
          JOIN users app_user ON app_user.id = session.user_id
          JOIN user_identities identity ON identity.user_id = app_user.id AND identity.provider = 'local'
@@ -282,6 +317,9 @@ export class LocalAuthService {
         );
         return { reuseDetected: true as const };
       }
+      if (prior.mfaSessionVersion !== prior.currentMfaSessionVersion) {
+        throw new UnauthorizedException("Security settings changed. Sign in again");
+      }
 
       const active = await this.activeSessions(client, prior.userId);
       const deviceLimit = this.deviceLimit(prior.userId);
@@ -292,11 +330,14 @@ export class LocalAuthService {
       const nextId = randomUUID();
       await client.query(
         `INSERT INTO auth_refresh_sessions
-          (id, user_id, family_id, token_hash, expires_at, user_agent, ip_address)
-         VALUES ($1, $2, $3, $4, now() + ($5 * interval '1 day'), $6, $7)`,
+          (id, user_id, family_id, token_hash, expires_at, user_agent, ip_address,
+           authentication_methods, mfa_verified_at, mfa_session_version, mfa_enrollment_deadline)
+         VALUES ($1, $2, $3, $4, now() + ($5 * interval '1 day'), $6, $7, $8::jsonb, $9, $10, $11)`,
         [nextId, prior.userId, prior.familyId, hashOpaqueToken(nextToken), REFRESH_TOKEN_DAYS,
           metadata.userAgent ?? active.find((session) => session.familyId === prior.familyId)?.userAgent ?? null,
-          metadata.ipAddress ?? active.find((session) => session.familyId === prior.familyId)?.ipAddress ?? null],
+          metadata.ipAddress ?? active.find((session) => session.familyId === prior.familyId)?.ipAddress ?? null,
+          JSON.stringify(prior.authenticationMethods), prior.mfaVerifiedAt, prior.mfaSessionVersion,
+          prior.mfaEnrollmentDeadline],
       );
       await client.query(
         `UPDATE auth_refresh_sessions SET revoked_at = now(), replaced_by_session_id = $2
@@ -312,7 +353,12 @@ export class LocalAuthService {
       };
       return {
         reuseDetected: false as const,
-        accessToken: this.signAccessToken(actor, prior.familyId),
+        accessToken: this.signAccessToken(actor, prior.familyId, {
+          authenticationMethods: prior.authenticationMethods,
+          mfaVerifiedAt: prior.mfaVerifiedAt ?? undefined,
+          mfaSessionVersion: prior.mfaSessionVersion,
+          mfaEnrollmentDeadline: prior.mfaEnrollmentDeadline ?? undefined,
+        }),
         refreshToken: nextToken,
         accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
         refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
@@ -344,6 +390,107 @@ export class LocalAuthService {
     return { signedOut: true };
   }
 
+  async mfaStatus(actor: RequestActor, workspaceId: string) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    return this.mfa.status(actorUser.userId, workspaceId);
+  }
+
+  async startTotpEnrollment(
+    actor: RequestActor,
+    refreshToken: string,
+    workspaceId: string,
+  ) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    await this.currentSession(actorUser.userId, refreshToken);
+    return this.mfa.startTotpEnrollment(actorUser.userId, workspaceId);
+  }
+
+  async confirmTotpEnrollment(
+    actor: RequestActor,
+    refreshToken: string,
+    workspaceId: string,
+    code: string,
+  ) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    const current = await this.currentSession(actorUser.userId, refreshToken);
+    const confirmed = await this.mfa.confirmTotpEnrollment(actorUser.userId, workspaceId, code);
+    await this.updateSessionAssurance(actorUser.userId, current.familyId, confirmed.assurance);
+    return {
+      enabled: true,
+      recoveryCodes: confirmed.recoveryCodes,
+      accessToken: this.signAccessToken(actor, current.familyId, confirmed.assurance),
+      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+    };
+  }
+
+  async stepUpMfa(
+    actor: RequestActor,
+    refreshToken: string,
+    workspaceId: string,
+    code: string,
+  ) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    const current = await this.currentSession(actorUser.userId, refreshToken);
+    const assurance = await this.mfa.verifyForStepUp(actorUser.userId, workspaceId, code);
+    await this.updateSessionAssurance(actorUser.userId, current.familyId, assurance);
+    return {
+      accessToken: this.signAccessToken(actor, current.familyId, assurance),
+      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      verifiedAt: assurance.mfaVerifiedAt,
+      authenticationMethods: assurance.authenticationMethods,
+    };
+  }
+
+  async rotateRecoveryCodes(actor: RequestActor, refreshToken: string, workspaceId: string) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    await this.currentSession(actorUser.userId, refreshToken);
+    const recoveryCodes = await this.mfa.rotateRecoveryCodes(actorUser.userId, workspaceId);
+    return { recoveryCodes };
+  }
+
+  async disableMfa(actor: RequestActor, refreshToken: string, workspaceId: string) {
+    this.assertLocalAuthAvailable();
+    const actorUser = await this.identities.resolveActor(actor);
+    await this.assertWorkspaceMembership(actorUser.userId, workspaceId);
+    const current = await this.currentSession(actorUser.userId, refreshToken);
+    const mfaSessionVersion = await this.mfa.disable(actorUser.userId, workspaceId);
+    const assurance: MfaSessionAssurance = {
+      authenticationMethods: ["pwd"],
+      mfaSessionVersion,
+    };
+    await this.database.transaction(async (client) => {
+      await this.lockSessions(client, actorUser.userId);
+      await client.query(
+        `UPDATE auth_refresh_sessions
+         SET revoked_at = COALESCE(revoked_at, now())
+         WHERE user_id = $1 AND family_id <> $2 AND revoked_at IS NULL`,
+        [actorUser.userId, current.familyId],
+      );
+      await client.query(
+        `UPDATE auth_refresh_sessions
+         SET authentication_methods = '["pwd"]'::jsonb, mfa_verified_at = NULL,
+             mfa_session_version = $3, mfa_enrollment_deadline = NULL
+         WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL`,
+        [actorUser.userId, current.familyId, mfaSessionVersion],
+      );
+    });
+    return {
+      enabled: false,
+      accessToken: this.signAccessToken(actor, current.familyId, assurance),
+      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+    };
+  }
+
   async securityOverview(actor: RequestActor, refreshToken: string, workspaceId: string) {
     this.assertLocalAuthAvailable();
     const actorUser = await this.identities.resolveActor(actor);
@@ -370,6 +517,7 @@ export class LocalAuthService {
         minimumPasswordLength: 10,
         maxActiveDevices: this.deviceLimit(actorUser.userId),
       },
+      mfa: await this.mfa.status(actorUser.userId, workspaceId),
       sessions: sessions.rows,
     };
   }
@@ -593,6 +741,29 @@ export class LocalAuthService {
     return current.rows[0];
   }
 
+  private async updateSessionAssurance(
+    userId: string,
+    familyId: string,
+    assurance: MfaSessionAssurance,
+  ) {
+    const updated = await this.database.query(
+      `UPDATE auth_refresh_sessions
+       SET authentication_methods = $3::jsonb, mfa_verified_at = $4,
+           mfa_session_version = $5, mfa_enrollment_deadline = $6
+       WHERE user_id = $1 AND family_id = $2 AND revoked_at IS NULL AND expires_at > now()
+       RETURNING id`,
+      [
+        userId,
+        familyId,
+        JSON.stringify(assurance.authenticationMethods ?? ["pwd"]),
+        assurance.mfaVerifiedAt ?? null,
+        assurance.mfaSessionVersion,
+        assurance.mfaEnrollmentDeadline ?? null,
+      ],
+    );
+    if (!updated.rowCount) throw new UnauthorizedException("The current session is no longer active");
+  }
+
   private async recordSecurityAudit(
     actorUserId: string,
     workspaceId: string,
@@ -629,7 +800,38 @@ export class LocalAuthService {
     return result.rows;
   }
 
-  private async issueSession(actor: RequestActor, selectedWorkspaceId: string, metadata: LoginMetadata) {
+  private async completePrimaryAuthentication(
+    actor: RequestActor,
+    userId: string,
+    workspaceId: string,
+    passwordChangedAt: Date,
+    metadata: LoginMetadata,
+  ) {
+    const decision = await this.mfa.beginPrimaryAuthentication({
+      userId,
+      workspaceId,
+      passwordChangedAt,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
+    });
+    if (decision.challengeRequired) {
+      return {
+        mfaRequired: true,
+        challengeToken: decision.challengeToken,
+        challengeExpiresIn: decision.expiresInSeconds,
+        methods: ["totp", "recovery_code"],
+        selectedWorkspaceId: workspaceId,
+      };
+    }
+    return this.issueSession(actor, workspaceId, metadata, decision.assurance);
+  }
+
+  private async issueSession(
+    actor: RequestActor,
+    selectedWorkspaceId: string,
+    metadata: LoginMetadata,
+    assurance: MfaSessionAssurance,
+  ) {
     const user = await this.identities.resolveActor(actor);
     const profile = await this.identities.getProfile(actor);
     const result = await this.database.transaction(async (client) => {
@@ -684,10 +886,13 @@ export class LocalAuthService {
       const familyId = randomUUID();
       await client.query(
         `INSERT INTO auth_refresh_sessions
-          (user_id, family_id, token_hash, expires_at, user_agent, ip_address)
-         VALUES ($1, $2, $3, now() + ($4 * interval '1 day'), $5, $6)`,
+          (user_id, family_id, token_hash, expires_at, user_agent, ip_address,
+           authentication_methods, mfa_verified_at, mfa_session_version, mfa_enrollment_deadline)
+         VALUES ($1, $2, $3, now() + ($4 * interval '1 day'), $5, $6, $7::jsonb, $8, $9, $10)`,
         [user.userId, familyId, hashOpaqueToken(refreshToken), REFRESH_TOKEN_DAYS,
-          metadata.userAgent ?? null, metadata.ipAddress ?? null],
+          metadata.userAgent ?? null, metadata.ipAddress ?? null,
+          JSON.stringify(assurance.authenticationMethods ?? ["pwd"]), assurance.mfaVerifiedAt ?? null,
+          assurance.mfaSessionVersion, assurance.mfaEnrollmentDeadline ?? null],
       );
       return { blocked: false as const, refreshToken, familyId };
     });
@@ -700,7 +905,7 @@ export class LocalAuthService {
       });
     }
     return {
-      accessToken: this.signAccessToken(actor, result.familyId),
+      accessToken: this.signAccessToken(actor, result.familyId, assurance),
       refreshToken: result.refreshToken,
       accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
       refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
@@ -709,9 +914,31 @@ export class LocalAuthService {
     };
   }
 
-  private signAccessToken(actor: RequestActor, familyId: string) {
+  private signAccessToken(
+    actor: RequestActor,
+    familyId: string,
+    assurance: MfaSessionAssurance,
+  ) {
+    const mfaVerifiedAt = assurance.mfaVerifiedAt
+      ? Math.floor(assurance.mfaVerifiedAt.getTime() / 1000)
+      : undefined;
+    const enrollmentDeadline = assurance.mfaEnrollmentDeadline
+      ? Math.floor(assurance.mfaEnrollmentDeadline.getTime() / 1000)
+      : undefined;
     return jwt.sign(
-      { email: actor.email, email_verified: true, name: actor.displayName, provider: "local", sid: familyId },
+      {
+        email: actor.email,
+        email_verified: true,
+        name: actor.displayName,
+        provider: "local",
+        sid: familyId,
+        amr: assurance.authenticationMethods ?? ["pwd"],
+        mfa: Boolean(mfaVerifiedAt),
+        mfa_at: mfaVerifiedAt,
+        mfa_version: assurance.mfaSessionVersion,
+        mfa_enrollment_required: Boolean(enrollmentDeadline),
+        mfa_enrollment_deadline: enrollmentDeadline,
+      },
       this.config.getOrThrow<string>("LOCAL_AUTH_JWT_SECRET"),
       {
         algorithm: "HS256",

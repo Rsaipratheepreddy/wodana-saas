@@ -1,5 +1,6 @@
 import {
   AnyPgColumn,
+  bigint,
   boolean,
   char,
   check,
@@ -91,9 +92,13 @@ export const users = pgTable(
     preferredLocale: varchar("preferred_locale", { length: 35 }).notNull().default("en"),
     preferredTimezone: varchar("preferred_timezone", { length: 64 }).notNull().default("UTC"),
     status: userStatus("status").notNull().default("active"),
+    mfaSessionVersion: integer("mfa_session_version").notNull().default(0),
     ...auditColumns,
   },
-  (table) => [uniqueIndex("users_primary_email_uidx").on(table.primaryEmail)],
+  (table) => [
+    uniqueIndex("users_primary_email_uidx").on(table.primaryEmail),
+    check("users_mfa_session_version_check", sql`${table.mfaSessionVersion} >= 0`),
+  ],
 );
 
 export const platformAdministrators = pgTable(
@@ -170,12 +175,24 @@ export const authRefreshSessions = pgTable(
     ),
     userAgent: text("user_agent"),
     ipAddress: varchar("ip_address", { length: 64 }),
+    authenticationMethods: jsonb("authentication_methods").$type<string[]>().notNull().default(["pwd"]),
+    mfaVerifiedAt: timestamp("mfa_verified_at", { withTimezone: true }),
+    mfaSessionVersion: integer("mfa_session_version").notNull().default(0),
+    mfaEnrollmentDeadline: timestamp("mfa_enrollment_deadline", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("auth_refresh_sessions_token_uidx").on(table.tokenHash),
     index("auth_refresh_sessions_user_idx").on(table.userId),
     index("auth_refresh_sessions_family_idx").on(table.familyId),
+    check(
+      "auth_refresh_sessions_authentication_methods_check",
+      sql`jsonb_typeof(${table.authenticationMethods}) = 'array'`,
+    ),
+    check(
+      "auth_refresh_sessions_mfa_session_version_check",
+      sql`${table.mfaSessionVersion} >= 0`,
+    ),
   ],
 );
 
@@ -194,6 +211,113 @@ export const passwordResetTokens = pgTable(
   (table) => [
     uniqueIndex("password_reset_tokens_token_uidx").on(table.tokenHash),
     index("password_reset_tokens_user_idx").on(table.userId),
+  ],
+);
+
+export const userMfaCredentials = pgTable(
+  "user_mfa_credentials",
+  {
+    userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    encryptedTotpSecret: text("encrypted_totp_secret").notNull(),
+    encryptionNonce: varchar("encryption_nonce", { length: 32 }).notNull(),
+    encryptionAuthTag: varchar("encryption_auth_tag", { length: 32 }).notNull(),
+    encryptionKeyVersion: integer("encryption_key_version").notNull().default(1),
+    setupExpiresAt: timestamp("setup_expires_at", { withTimezone: true }).notNull(),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    lastUsedStep: bigint("last_used_step", { mode: "number" }),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    ...auditColumns,
+  },
+  (table) => [
+    check("user_mfa_credentials_key_version_check", sql`${table.encryptionKeyVersion} > 0`),
+    check("user_mfa_credentials_failed_attempts_check", sql`${table.failedAttempts} >= 0`),
+    check(
+      "user_mfa_credentials_state_check",
+      sql`NOT (${table.confirmedAt} IS NOT NULL AND ${table.disabledAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+export const userMfaRecoveryCodes = pgTable(
+  "user_mfa_recovery_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => userMfaCredentials.userId, { onDelete: "cascade" }),
+    codeHash: char("code_hash", { length: 64 }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("user_mfa_recovery_codes_user_hash_uidx").on(table.userId, table.codeHash),
+    index("user_mfa_recovery_codes_available_idx").on(table.userId, table.usedAt),
+  ],
+);
+
+export const mfaEnrollmentRequirements = pgTable(
+  "mfa_enrollment_requirements",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id").notNull().references(() => customerAccounts.id, { onDelete: "cascade" }),
+    requiredSince: timestamp("required_since", { withTimezone: true }).notNull().defaultNow(),
+    graceExpiresAt: timestamp("grace_expires_at", { withTimezone: true }).notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    ...auditColumns,
+  },
+  (table) => [
+    primaryKey({ name: "mfa_enrollment_requirements_pk", columns: [table.userId, table.accountId] }),
+    index("mfa_enrollment_requirements_account_idx").on(table.accountId, table.resolvedAt),
+    check(
+      "mfa_enrollment_requirements_grace_check",
+      sql`${table.graceExpiresAt} >= ${table.requiredSince}`,
+    ),
+  ],
+);
+
+export const authMfaChallenges = pgTable(
+  "auth_mfa_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: char("token_hash", { length: 64 }).notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    purpose: varchar("purpose", { length: 20 }).notNull().default("login"),
+    credentialChangedAt: timestamp("credential_changed_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    ipAddress: varchar("ip_address", { length: 64 }),
+    userAgent: text("user_agent"),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("auth_mfa_challenges_token_uidx").on(table.tokenHash),
+    index("auth_mfa_challenges_active_idx").on(table.userId, table.consumedAt, table.expiresAt),
+    check("auth_mfa_challenges_purpose_check", sql`${table.purpose} IN ('login')`),
+    check(
+      "auth_mfa_challenges_attempts_check",
+      sql`${table.failedAttempts} >= 0 AND ${table.maxAttempts} BETWEEN 1 AND 20`,
+    ),
+  ],
+);
+
+export const mfaSecurityEvents = pgTable(
+  "mfa_security_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    ipAddress: varchar("ip_address", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("mfa_security_events_user_created_idx").on(table.userId, table.createdAt),
+    index("mfa_security_events_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    check("mfa_security_events_metadata_check", sql`jsonb_typeof(${table.metadata}) = 'object'`),
   ],
 );
 
@@ -227,6 +351,12 @@ export const customerAccounts = pgTable(
     displayName: varchar("display_name", { length: 160 }).notNull(),
     status: varchar("status", { length: 20 }).notNull().default("active"),
     organizationLimit: integer("organization_limit").notNull().default(1),
+    securityPolicy: jsonb("security_policy").$type<Record<string, unknown>>().notNull().default({
+      requireMfaForAdmins: true,
+      requireMfaForAllUsers: false,
+      recoveryCodeCount: 10,
+      enrollmentGraceDays: 7,
+    }),
     version: integer("version").notNull().default(1),
     createdBy: uuid("created_by").notNull().references(() => users.id),
     ...auditColumns,
@@ -237,6 +367,14 @@ export const customerAccounts = pgTable(
       .where(sql`${table.externalCustomerId} IS NOT NULL`),
     check("customer_accounts_status_check", sql`${table.status} IN ('active', 'suspended', 'archived')`),
     check("customer_accounts_organization_limit_check", sql`${table.organizationLimit} > 0`),
+    check(
+      "customer_accounts_security_policy_check",
+      sql`jsonb_typeof(${table.securityPolicy}) = 'object'
+        AND jsonb_typeof(${table.securityPolicy}->'requireMfaForAdmins') = 'boolean'
+        AND jsonb_typeof(${table.securityPolicy}->'requireMfaForAllUsers') = 'boolean'
+        AND (${table.securityPolicy}->>'recoveryCodeCount')::integer BETWEEN 5 AND 20
+        AND (${table.securityPolicy}->>'enrollmentGraceDays')::integer BETWEEN 0 AND 30`,
+    ),
     check("customer_accounts_version_check", sql`${table.version} > 0`),
   ],
 );
