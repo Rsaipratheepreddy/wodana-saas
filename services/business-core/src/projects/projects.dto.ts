@@ -40,4 +40,16 @@ export class PortfolioCalendarQueryDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) from!: string;
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) to!: string;
   @IsOptional() @IsUUID() businessUnitId?: string;
+  @IsOptional() @IsUUID() resourceId?: string;
+  @IsOptional() @IsUUID() projectId?: string;
+  @IsOptional() @IsUUID() memberId?: string;
+  @IsOptional() @IsIn(["confirmed", "tentative", "active"]) bookingStatus?: "confirmed" | "tentative" | "active";
+  @IsOptional() @IsString() @MaxLength(160) search?: string;
+}
+
+export class ScheduleAvailabilityQueryDto {
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) from!: string;
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) to!: string;
+  @IsOptional() @IsUUID() businessUnitId?: string;
+  @IsOptional() @IsUUID() resourceId?: string;
 }

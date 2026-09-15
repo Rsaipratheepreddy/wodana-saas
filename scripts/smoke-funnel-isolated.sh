@@ -31,12 +31,18 @@ temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/wodana-funnel.XXXXXX")"
 server_pid=""
 
 cleanup() {
+  exit_status=$?
   if [[ -n "$server_pid" ]] && kill -0 "$server_pid" >/dev/null 2>&1; then
     kill "$server_pid" >/dev/null 2>&1 || true
     wait "$server_pid" 2>/dev/null || true
   fi
+  if [[ "$exit_status" -ne 0 && -f "$temporary_root/business-core.log" ]]; then
+    echo "Business Core log from failed funnel smoke:" >&2
+    tail -120 "$temporary_root/business-core.log" >&2 || true
+  fi
   dropdb --force --if-exists "$database_name" >/dev/null 2>&1 || true
   rm -rf "$temporary_root"
+  return "$exit_status"
 }
 trap cleanup EXIT INT TERM
 

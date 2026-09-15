@@ -98,23 +98,35 @@ project JSON remains valid because all new provenance fields are additive.
 
 ## Full department calendar
 
-`GET /api/v1/workspaces/:workspaceId/projects/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD&businessUnitId=<optional UUID>`
+`GET /api/v1/workspaces/:workspaceId/projects/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
-The inclusive range is limited to 93 days. The response contains:
+The inclusive range is limited to 93 days. Optional filters cover department, resource, project,
+member, confirmed/tentative/active booking status, and text search. The response contains:
 
 - `range`: requested dates and the workspace timezone.
 - `departments`: active department IDs, names, and configurable colors.
-- `events`: one event per confirmed booking slot, with project, deal reference, client, task,
-  department, resource, members, date, start/end time, display title, and `overlapIds`.
-- `overlapCount`: number of events that overlap another event in the same department.
+- `events`: one event per matching booking slot, with project, deal reference, client, task,
+  department, resource, members, date/time, status, units, display title, department `overlapIds`,
+  and hard `conflictIds`.
+- `items`: milestones, promised procurement dates, deliveries, inspections, snags, site visits,
+  next actions, handover, and target completion.
+- `overlapCount` and `conflictCount`: department concurrency and real resource/member/capacity
+  conflicts are reported separately.
 
-Overlap detection is deliberately department-specific: simultaneous Design and Production work is
-valid, while two overlapping Design bookings are surfaced for capacity review. The backend title is
-assembled as `Deal reference — Client — Department — Resource — Assigned people`; the frontend can
-append localized booking wording without reconstructing business data.
+The backend title is assembled as
+`Deal reference — Client — Department — Resource — Assigned people`; the frontend can append
+localized booking wording without reconstructing business data.
 
-Project resources accept an optional `businessUnitId`. The database validates that the department
-belongs to the same workspace. Unassigned resources remain visible under neutral `#64748B`.
+`GET /api/v1/workspaces/:workspaceId/projects/schedule/availability` exposes per-resource segments
+and department gap/capacity summaries. Booking preview, save, cancel, and complete routes live under
+`/projects/:projectId/bookings`. They support draft/tentative/confirmed/completed/cancelled
+lifecycle, exclusive and pooled capacity, working calendars, approved leave, timezone snapshots,
+project holds, authorized documented exceptions, idempotency, optimistic locking, immutable history,
+notifications, and serialized cross-project conflict checks.
+
+Project resources accept optional department/team, capacity, and timezone settings. The database
+validates same-workspace references. People and crews remain exclusive; factories and vendors may
+use pooled capacity. Unassigned resources remain visible under neutral `#64748B`.
 
 ## Project file index
 

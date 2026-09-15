@@ -421,6 +421,13 @@
       "when": 1789326000000,
       "tag": "0060_project_workflow_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789329600000,
+      "tag": "0061_project_schedule_capacity",
+      "breakpoints": true
     }
   ]
 }

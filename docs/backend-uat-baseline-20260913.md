@@ -52,10 +52,10 @@ No live deployment or production-data mutation is part of B0.
 
 ## Current regression status after the B1-B9 backend slices
 
-- Business Core: 373 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 382 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
-- Clean database replay: all 60 registered migrations passed; migration 0060 is exercised by the
-  disposable funnel and the new workspace-scoped table passes the RLS manifest.
+- Clean database replay: all 61 registered migrations passed; migration 0061 is exercised by the
+  disposable funnel and the new workspace-scoped scheduling tables pass the RLS manifest.
 - Lead-flow HTTP/database smoke: 29 of 29 checks passed on a clean generic workspace.
 - Workspace HTTP/database smoke passes 19 safeguards, including business-unit color and
   `visibleName`, terminology default fallback, optimistic locking, tenant isolation,
@@ -89,6 +89,11 @@ No live deployment or production-data mutation is part of B0.
 - Project workflow API verification also proves that release freezes the selected tenant template,
   later template edits affect only future projects, stage gates read existing project facts, holds
   block forward movement, and place/release history retains its reason and owner.
+- Project schedule verification proves draft/tentative/confirmed lifecycle, exclusive and pooled
+  capacity, overnight work, calendar and leave rules, project holds, department concurrency versus
+  hard conflicts, availability gaps, informational dates, immutable history, retry safety, and
+  workspace-wide serialization: two parallel conflicting confirmations produce one success and one
+  conflict.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.

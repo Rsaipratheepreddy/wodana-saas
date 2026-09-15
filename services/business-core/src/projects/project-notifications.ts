@@ -20,7 +20,10 @@ export async function notifyProject(
     report = d.reports.find((r) => r.id === recordId),
     snag = d.snags.find((s) => s.id === recordId),
     query = d.technicalQueries?.find((q) => q.id === recordId);
-  if (task && ["task", "task_status", "inspect"].includes(action)) {
+  if (
+    task &&
+    ["task", "task_status", "inspect", "booking", "cancel_booking", "reschedule"].includes(action)
+  ) {
     people.add(task.ownerId);
     task.assigneeIds.forEach((id) => people.add(id));
   }

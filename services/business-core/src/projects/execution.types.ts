@@ -376,6 +376,11 @@ export type ProjectResource = {
   members: string[];
   active: boolean;
   businessUnitId?: string | null;
+  workspaceTeamId?: string | null;
+  capacityMode?: "exclusive" | "pooled";
+  capacity?: number;
+  timezone?: string | null;
+  version?: number;
   calendar?: import("./project-calendar").WorkCalendar;
 };
 export type ProjectBooking = {
@@ -387,9 +392,14 @@ export type ProjectBooking = {
   resourceId: string;
   start: string;
   end: string;
-  status: "confirmed" | "cancelled";
+  status: import("./project-schedule-capacity").ScheduleBookingStatus;
   acknowledgement: string;
-  startTime?: string; endTime?: string;
+  units?: number;
+  timezone?: string;
+  version?: number;
+  cancellationReason?: string | null;
+  startTime?: string;
+  endTime?: string;
 };
 export type ProjectState = {
   legacyImports?:{id:string;sourceProject:string;createdAt:string}[];

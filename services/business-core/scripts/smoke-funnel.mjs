@@ -66,6 +66,16 @@ const workspace = await request("/workspaces", {
   },
 });
 const workspaceId = workspace.workspace.id;
+const designUnit = await request(`/workspaces/${workspaceId}/business-units`, {
+  body: {
+    legalEntityId: workspace.legalEntities[0].id,
+    code: "DESIGN",
+    name: "Design",
+    type: "department",
+    timezone: "Asia/Dubai",
+    color: "#DC2626",
+  },
+});
 let members = await request(`/workspaces/${workspaceId}/members`);
 const ownerMember = members.find((member) => member.roles.includes("owner"));
 assert(ownerMember);
@@ -588,6 +598,26 @@ async function projectCommand(action, body = {}, expected = 201) {
 await projectCommand("project_roles", {
   assignments: [{ role: "project_manager", memberId: ownerMember.id }],
 });
+const designResourceId = randomUUID();
+await projectCommand("resource", {
+  resource: {
+    id: designResourceId,
+    name: "Design Team",
+    kind: "crew",
+    members: [ownerMember.id],
+    active: true,
+    businessUnitId: designUnit.id,
+    capacityMode: "exclusive",
+    capacity: 1,
+    timezone: "Asia/Dubai",
+    calendar: {
+      weekdays: [1, 2, 3, 4, 5],
+      startTime: "08:00",
+      endTime: "18:00",
+      holidays: [],
+    },
+  },
+});
 const deliveryTaskId = randomUUID();
 await projectCommand("task", {
   task: {
@@ -600,7 +630,7 @@ await projectCommand("task", {
     location: "office",
     ownerId: ownerMember.id,
     assigneeIds: [],
-    resourceId: "",
+    resourceId: designResourceId,
     start: "2026-09-16",
     end: "2026-09-17",
     predecessors: [],
@@ -614,6 +644,167 @@ await projectCommand("task", {
     readiness: { scope: true, access: true, materials: true },
   },
 });
+await projectCommand("milestone", {
+  milestone: {
+    id: randomUUID(),
+    title: "Design coordination complete",
+    dueDate: "2026-09-17",
+    ownerId: ownerMember.id,
+    taskIds: [deliveryTaskId],
+    visibleToClient: true,
+  },
+});
+let scheduleState = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/execution`,
+);
+const bookingRequestId = randomUUID();
+const bookingInput = {
+  taskId: deliveryTaskId,
+  status: "confirmed",
+  units: 1,
+  startTime: "09:00",
+  endTime: "12:00",
+  note: "Design capacity confirmed for delivery planning.",
+};
+const bookingPreview = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
+  { body: bookingInput },
+);
+assert.equal(bookingPreview.canConfirm, true);
+assert.equal(bookingPreview.blockers.length, 0);
+const savedBooking = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings`,
+  {
+    method: "PUT",
+    body: {
+      ...bookingInput,
+      projectRevision: scheduleState.data.revision,
+      bookingVersion: 0,
+      requestId: bookingRequestId,
+    },
+  },
+);
+assert.equal(savedBooking.status, "confirmed");
+assert.equal(savedBooking.version, 1);
+assert.equal(
+  (
+    await request(`/workspaces/${workspaceId}/projects/${projectId}/bookings`, {
+      method: "PUT",
+      body: {
+        ...bookingInput,
+        projectRevision: scheduleState.data.revision,
+        bookingVersion: 0,
+        requestId: bookingRequestId,
+      },
+    })
+  ).id,
+  savedBooking.id,
+);
+const availability = await request(
+  `/workspaces/${workspaceId}/projects/schedule/availability?from=2026-09-16&to=2026-09-17&businessUnitId=${designUnit.id}`,
+);
+assert.equal(availability.resources.length, 1);
+assert(availability.availability[0].segments.some((segment) =>
+  segment.confirmed === 1 && segment.remaining === 0));
+const projectCalendar = await request(
+  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&businessUnitId=${designUnit.id}`,
+);
+assert.equal(projectCalendar.events.length, 2);
+assert(projectCalendar.events.every((event) => event.department.color === "#DC2626"));
+assert(projectCalendar.items.some((item) => item.kind === "milestone" && item.projectId === projectId));
+const alternateResourceId = randomUUID();
+await projectCommand("resource", {
+  resource: {
+    id: alternateResourceId,
+    name: "Alternate Design Team",
+    kind: "crew",
+    members: [ownerMember.id],
+    active: true,
+    businessUnitId: designUnit.id,
+    capacityMode: "exclusive",
+    capacity: 1,
+    timezone: "Asia/Dubai",
+    calendar: {
+      weekdays: [1, 2, 3, 4, 5],
+      startTime: "08:00",
+      endTime: "18:00",
+      holidays: [],
+    },
+  },
+});
+const overlappingTaskId = randomUUID();
+await projectCommand("task", {
+  task: {
+    id: overlappingTaskId,
+    parentId: "",
+    package: "Delivery planning",
+    title: "Overlapping design review",
+    description: "Confirms member-level capacity across two crews.",
+    area: "Project-wide",
+    location: "office",
+    ownerId: ownerMember.id,
+    assigneeIds: [],
+    resourceId: alternateResourceId,
+    start: "2026-09-16",
+    end: "2026-09-17",
+    predecessors: [],
+    quantity: 1,
+    unit: "item",
+    weight: 1,
+    priority: "normal",
+    inspectionRequired: false,
+    scopeIds: [releasedLine.id],
+    drawingId: "",
+    readiness: { scope: true, access: true, materials: true },
+  },
+});
+const hardConflict = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
+  { body: { taskId: overlappingTaskId, status: "confirmed", startTime: "10:00", endTime: "11:00" } },
+);
+assert.equal(hardConflict.canConfirm, false);
+assert(hardConflict.blockers.some((message) => message.includes("team member")));
+const tentativePreview = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
+  { body: { taskId: overlappingTaskId, status: "tentative", startTime: "10:00", endTime: "11:00" } },
+);
+assert.equal(tentativePreview.blockers.length, 0);
+assert(tentativePreview.warnings.some((message) => message.includes("team member")));
+scheduleState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
+const tentativeBooking = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings`,
+  {
+    method: "PUT",
+    body: {
+      taskId: overlappingTaskId,
+      status: "tentative",
+      startTime: "10:00",
+      endTime: "11:00",
+      note: "Awaiting final design allocation.",
+      units: 1,
+      projectRevision: scheduleState.data.revision,
+      bookingVersion: 0,
+      requestId: randomUUID(),
+    },
+  },
+);
+assert.equal(tentativeBooking.status, "tentative");
+const activeCalendar = await request(
+  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&bookingStatus=active`,
+);
+assert.equal(activeCalendar.events.length, 4);
+assert(activeCalendar.events.some((event) => event.bookingStatus === "tentative"));
+const cancelledTentative = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings/${overlappingTaskId}/cancel`,
+  {
+    body: {
+      bookingVersion: tentativeBooking.version,
+      requestId: randomUUID(),
+      reason: "Design allocation changed after capacity review.",
+    },
+  },
+);
+assert.equal(cancelledTentative.status, "cancelled");
 let workflowState = await projectCommand("workflow_transition", {
   toStageKey: "delivery",
   note: "Delivery plan and ownership reviewed.",
@@ -630,6 +821,11 @@ workflowState = await projectCommand("project_controls", {
   },
 });
 assert.equal(workflowState.data.holdHistory.at(-1).action, "placed");
+const holdPreview = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
+  { body: { taskId: overlappingTaskId, status: "confirmed", startTime: "10:00", endTime: "11:00" } },
+);
+assert(holdPreview.blockers.some((message) => message.includes("project hold")));
 await projectCommand(
   "workflow_transition",
   { toStageKey: "handover", note: "" },
@@ -648,6 +844,54 @@ assert.equal(
   workflowState.data.holdHistory.at(-1).reason,
   "Awaiting client access",
 );
+
+const releasedBooking = await request(
+  `/workspaces/${workspaceId}/projects/${projectId}/bookings/${deliveryTaskId}/cancel`,
+  {
+    body: {
+      bookingVersion: savedBooking.version,
+      requestId: randomUUID(),
+      reason: "Release capacity before the concurrency check.",
+    },
+  },
+);
+assert.equal(releasedBooking.status, "cancelled");
+scheduleState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
+const parallelConfirm = (taskId) => fetch(
+  `${api}/workspaces/${workspaceId}/projects/${projectId}/bookings`,
+  {
+    method: "PUT",
+    headers: { ...owner, "content-type": "application/json" },
+    body: JSON.stringify({
+      taskId,
+      status: "confirmed",
+      units: 1,
+      startTime: "10:00",
+      endTime: "11:00",
+      note: "Concurrent capacity verification.",
+      projectRevision: scheduleState.data.revision,
+      bookingVersion: 0,
+      requestId: randomUUID(),
+    }),
+  },
+);
+const parallelResults = await Promise.all([
+  parallelConfirm(deliveryTaskId),
+  parallelConfirm(overlappingTaskId),
+]);
+assert.deepEqual(parallelResults.map((response) => response.status).sort(), [200, 409]);
+const confirmedResponse = parallelResults.find((response) => response.status === 200);
+assert(confirmedResponse);
+const concurrentlyConfirmed = await confirmedResponse.json();
+await projectCommand("task_status", {
+  id: concurrentlyConfirmed.taskId,
+  status: "cancelled",
+  note: "Cancellation verifies task and booking lifecycle stay aligned.",
+});
+const calendarAfterTaskCancellation = await request(
+  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&bookingStatus=active`,
+);
+assert.equal(calendarAfterTaskCancellation.events.length, 0);
 
 const linkedOpportunity = await request(
   `/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`,
@@ -688,6 +932,14 @@ process.stdout.write(
         workflowTemplateFrozenPerProject: true,
         workflowTransitionGatesSafe: true,
         projectHoldHistorySafe: true,
+        projectScheduleCapacitySafe: true,
+        projectScheduleReplaySafe: true,
+        projectScheduleConflictSafe: true,
+        projectScheduleHistorySafe: true,
+        projectScheduleHoldSafe: true,
+        projectScheduleInformationSafe: true,
+        projectScheduleConcurrentWriteSafe: true,
+        projectScheduleTaskLifecycleSafe: true,
         preReleasePlanningPreserved: true,
       },
     },

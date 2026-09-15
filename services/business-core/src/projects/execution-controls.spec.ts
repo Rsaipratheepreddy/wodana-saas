@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { applyControls, assertCloseout } from "./execution-controls";
 import { emptyProject, type ExecutionActor } from "./execution.domain";
-import { validateCalendar, bookingSlots, slotsClash } from "./project-calendar";
+import { validateCalendar, bookingSlots, slotsClash, calendarContainsSlot } from "./project-calendar";
 import type { Task } from "./execution.types";
 const actor: ExecutionActor = {
   id: "manager",
@@ -554,5 +554,15 @@ describe("work calendars and capacity slots", () => {
         holidays: [{ date: "2026-02-30", reason: "Invalid" }],
       }),
     ).toThrow(/valid/);
+  });
+  it("checks ordinary and overnight slots against the same calendar boundary", () => {
+    expect(calendarContainsSlot(cal, { date: "2026-09-07", startTime: "08:00", endTime: "12:00" })).toBe(true);
+    expect(calendarContainsSlot(cal, { date: "2026-09-07", startTime: "07:00", endTime: "12:00" })).toBe(false);
+    const night = validateCalendar({ weekdays: [1], startTime: "20:00", endTime: "06:00", holidays: [] });
+    expect(calendarContainsSlot(night, { date: "2026-09-07", endDate: "2026-09-08", startTime: "22:00", endTime: "02:00" })).toBe(true);
+    expect(slotsClash(
+      [{ date: "2026-09-07", endDate: "2026-09-08", startTime: "22:00", endTime: "02:00" }],
+      [{ date: "2026-09-08", startTime: "01:00", endTime: "03:00" }],
+    )).toBe(true);
   });
 });

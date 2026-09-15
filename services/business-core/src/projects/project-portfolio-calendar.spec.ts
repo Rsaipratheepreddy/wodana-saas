@@ -51,4 +51,41 @@ describe("portfolio calendar events", () => {
     expect(events).toHaveLength(1);
     expect(events[0].department).toEqual({ id: "unassigned", code: "UNASSIGNED", name: "Unassigned", visibleName: "Unassigned", color: "#64748B" });
   });
+
+  it("separates valid department concurrency from hard resource conflicts", () => {
+    const events = portfolioCalendarEvents([
+      booking("A"),
+      booking("B", { resourceId: "resource-B", members: [{ id: "member-B", name: "Designer B" }] }),
+      booking("C", { resourceId: "resource-A", members: [{ id: "member-C", name: "Designer C" }] }),
+    ], "2026-09-08", "2026-09-08");
+    expect(events.find((event) => event.bookingId === "A")?.overlapIds).toHaveLength(2);
+    expect(events.find((event) => event.bookingId === "A")?.conflictIds).toEqual(["C:2026-09-08"]);
+    expect(events.find((event) => event.bookingId === "B")?.conflictIds).toEqual([]);
+  });
+
+  it("keeps overnight work visible and preserves shared-member conflicts for pooled capacity", () => {
+    const events = portfolioCalendarEvents([
+      booking("A", {
+        resourceId: "factory",
+        resourceKind: "factory",
+        capacityMode: "pooled",
+        capacity: 4,
+        units: 1,
+        members: [{ id: "member-shared", name: "Alex" }],
+        slots: [{ date: "2026-09-06", endDate: "2026-09-07", startTime: "22:00", endTime: "02:00" }],
+      }),
+      booking("B", {
+        resourceId: "factory",
+        resourceKind: "factory",
+        capacityMode: "pooled",
+        capacity: 4,
+        units: 1,
+        members: [{ id: "member-shared", name: "Alex" }],
+        slots: [{ date: "2026-09-07", startTime: "01:00", endTime: "03:00" }],
+      }),
+    ], "2026-09-07", "2026-09-07");
+
+    expect(events).toHaveLength(2);
+    expect(events.every((event) => event.conflictIds.length === 1)).toBe(true);
+  });
 });

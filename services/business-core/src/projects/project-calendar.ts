@@ -5,7 +5,12 @@ export type WorkCalendar = {
   endTime: string;
   holidays: { date: string; reason: string }[];
 };
-export type BookingSlot = { date: string; startTime: string; endTime: string };
+export type BookingSlot = {
+  date: string;
+  endDate?: string;
+  startTime: string;
+  endTime: string;
+};
 export const fullCalendar: WorkCalendar = {
   weekdays: [0, 1, 2, 3, 4, 5, 6],
   startTime: "00:00",
@@ -32,9 +37,9 @@ export function validateCalendar(value: unknown): WorkCalendar {
     throw new BadRequestException("Choose at least one working day.");
   const startTime = clockTime(v.startTime),
     endTime = clockTime(v.endTime, true);
-  if (startTime >= endTime)
+  if (startTime === endTime)
     throw new BadRequestException(
-      "The shift must end after it starts. Split overnight work into dated shifts.",
+      "The shift start and end cannot be the same.",
     );
   if (!Array.isArray(v.holidays) || v.holidays.length > 366)
     throw new BadRequestException("Limit calendar exceptions to 366 dates.");
@@ -70,7 +75,23 @@ export function bookingSlots(
 ): BookingSlot[] {
   clockTime(from);
   clockTime(to, true);
-  if (from >= to || from < calendar.startTime || to > calendar.endTime)
+  const minutes = (value: string) => value === "24:00"
+    ? 1440
+    : Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  const shiftStart = minutes(calendar.startTime);
+  const shiftEnd = minutes(calendar.endTime) <= shiftStart
+    ? minutes(calendar.endTime) + 1440
+    : minutes(calendar.endTime);
+  const requestedStart = minutes(from);
+  const requestedEnd = minutes(to) <= requestedStart
+    ? minutes(to) + 1440
+    : minutes(to);
+  if (
+    requestedStart < shiftStart ||
+    requestedStart >= shiftEnd ||
+    requestedEnd <= requestedStart ||
+    requestedEnd > shiftEnd
+  )
     throw new ConflictException(
       "Choose hours within the resource working shift.",
     );
@@ -92,7 +113,12 @@ export function bookingSlots(
       calendar.weekdays.includes(new Date(n).getUTCDay()) &&
       !calendar.holidays.some((x) => x.date === date)
     )
-      slots.push({ date, startTime: from, endTime: to });
+      slots.push({
+        date,
+        ...(to === "24:00" || requestedEnd > 1440 ? { endDate: plusCalendarDay(date) } : {}),
+        startTime: from,
+        endTime: to === "24:00" ? "00:00" : to,
+      });
   }
   if (!slots.length)
     throw new ConflictException(
@@ -100,12 +126,44 @@ export function bookingSlots(
     );
   return slots;
 }
+
+export function plusCalendarDay(date: string): string {
+  return new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10);
+}
+
+export function slotMinutes(slot: BookingSlot): { start: number; end: number } {
+  const minutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  const start = minutes(slot.startTime);
+  let end = minutes(slot.endTime);
+  if ((slot.endDate && slot.endDate > slot.date) || end <= start) end += 1440;
+  return { start, end };
+}
+
+export function calendarContainsSlot(calendar: WorkCalendar, slot: BookingSlot): boolean {
+  if (
+    !calendar.weekdays.includes(new Date(slot.date).getUTCDay()) ||
+    calendar.holidays.some((holiday) => holiday.date === slot.date)
+  ) return false;
+  const shift = slotMinutes({
+    date: slot.date,
+    ...(calendar.endTime <= calendar.startTime ? { endDate: plusCalendarDay(slot.date) } : {}),
+    startTime: calendar.startTime,
+    endTime: calendar.endTime === "24:00" ? "00:00" : calendar.endTime,
+  });
+  const requested = slotMinutes(slot);
+  return requested.start >= shift.start && requested.end <= shift.end;
+}
 export function slotsClash(a: BookingSlot[], b: BookingSlot[]): boolean {
-  const byDate = new Map<string, BookingSlot[]>();
-  for (const s of b) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s]);
-  return a.some((x) =>
-    byDate
-      .get(x.date)
-      ?.some((y) => x.startTime < y.endTime && y.startTime < x.endTime),
-  );
+  const absolute = (slot: BookingSlot) => {
+    const span = slotMinutes(slot);
+    const midnight = Date.parse(slot.date) / 60000;
+    return { start: midnight + span.start, end: midnight + span.end };
+  };
+  return a.some((left) => {
+    const x = absolute(left);
+    return b.some((right) => {
+      const y = absolute(right);
+      return x.start < y.end && y.start < x.end;
+    });
+  });
 }

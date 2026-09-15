@@ -5,6 +5,7 @@ import { previewReschedule } from "./project-reschedule";
 import { notifyProject } from "./project-notifications";
 import {
   validateCalendar,
+  calendarContainsSlot,
   bookingSlots,
   slotsClash,
   fullCalendar,
@@ -40,6 +41,8 @@ import type {
 } from "./execution.types";
 import { projectPortfolioSummary } from "./project-portfolio";
 import { portfolioCalendarEvents, type PortfolioBookingRow } from "./project-portfolio-calendar";
+import { capacityConfiguration, exceedsPooledCapacity } from "./project-schedule-capacity";
+import { projectScheduleItems } from "./project-schedule-items";
 import type { PortfolioCalendarQueryDto } from "./projects.dto";
 import { releasedScopeLine } from "./released-scope-line";
 import { adoptProjectWorkflow, ensureProjectWorkflow } from "./project-workflow";
@@ -134,6 +137,9 @@ export class ExecutionService {
         'SELECT default_timezone AS timezone FROM workspaces WHERE id=$1',
         [w],
       );
+      const canSeeAll = ctx.permissions.has("projects.manage")
+        || ctx.permissions.has("projects.schedule.view")
+        || ctx.permissions.has("projects.schedule.manage");
       const bookings = await ctx.client.query<PortfolioBookingRow>(
         `SELECT booking.id, booking.project_id AS "projectId", project.name AS "projectName",
                 COALESCE(NULLIF(execution.content->'controls'->>'reference',''), opportunity.title, project.name) AS "dealReference",
@@ -142,6 +148,8 @@ export class ExecutionService {
                 resource.id AS "resourceId", resource.name AS "resourceName", resource.kind AS "resourceKind",
                 unit.id AS "businessUnitId", unit.code AS "businessUnitCode",
                 unit.name AS "businessUnitName", unit.color AS "businessUnitColor",
+                booking.status,booking.units::float8 AS units,
+                resource.capacity_mode AS "capacityMode",resource.capacity::float8 AS capacity,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id',membership.id,'name',app_user.display_name) ORDER BY app_user.display_name)
                   FROM workspace_memberships membership JOIN users app_user ON app_user.id=membership.user_id
                   WHERE membership.workspace_id=booking.workspace_id
@@ -155,12 +163,28 @@ export class ExecutionService {
          JOIN project_resources resource ON resource.workspace_id=booking.workspace_id AND resource.id=booking.resource_id
          LEFT JOIN business_units unit ON unit.workspace_id=resource.workspace_id AND unit.id=resource.business_unit_id
          LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
-         WHERE booking.workspace_id=$1 AND booking.status='confirmed' AND project.status<>'archived'
+         WHERE booking.workspace_id=$1
+           AND (($7::text='active' AND booking.status IN ('tentative','confirmed')) OR booking.status=$7::varchar)
+           AND project.status<>'archived'
            AND booking.ends_on >= $2::date AND booking.starts_on <= $3::date
            AND ($4::uuid IS NULL OR resource.business_unit_id=$4)
-           AND ($6 OR EXISTS(SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id=project.workspace_id AND assignment.project_id=project.id AND assignment.membership_id=$5 AND assignment.active))
+           AND ($8::uuid IS NULL OR resource.id=$8)
+           AND ($9::uuid IS NULL OR project.id=$9)
+           AND ($10::uuid IS NULL OR $10=ANY(booking.member_ids))
+           AND ($11='' OR concat_ws(' ',project.name,opportunity.title,party.display_name,resource.name,unit.name) ILIKE '%'||$11||'%')
+           AND ($6
+             OR $5=ANY(booking.member_ids)
+             OR EXISTS(SELECT 1 FROM project_assignments assignment
+               WHERE assignment.workspace_id=project.workspace_id AND assignment.project_id=project.id
+                 AND assignment.membership_id=$5 AND assignment.active AND assignment.is_manager)
+             OR EXISTS(SELECT 1 FROM workspace_team_members lead
+               JOIN workspace_teams team ON team.workspace_id=lead.workspace_id AND team.id=lead.team_id
+               WHERE lead.workspace_id=booking.workspace_id AND lead.membership_id=$5 AND lead.is_lead
+                 AND team.status='active' AND team.business_unit_id=resource.business_unit_id))
          ORDER BY booking.starts_on, booking.id`,
-        [w, from, to, query.businessUnitId ?? null, ctx.membershipId, ctx.permissions.has("projects.manage")],
+        [w, from, to, query.businessUnitId ?? null, ctx.membershipId, canSeeAll,
+          query.bookingStatus ?? "confirmed", query.resourceId ?? null, query.projectId ?? null,
+          query.memberId ?? null, query.search?.trim() ?? ""],
       );
       const events = portfolioCalendarEvents(bookings.rows, from, to);
       const departments = await ctx.client.query<{ id: string; code: string; name: string; visibleName: string; color: string }>(
@@ -172,11 +196,85 @@ export class ExecutionService {
       const legend = [...departments.rows];
       if (events.some((event) => event.department.id === "unassigned"))
         legend.push({ id: "unassigned", code: "UNASSIGNED", name: "Unassigned", visibleName: "Unassigned", color: "#64748B" });
+      const managedProjects = canSeeAll ? [] : (await ctx.client.query<{ projectId: string }>(
+        `SELECT project_id AS "projectId" FROM project_assignments
+         WHERE workspace_id=$1 AND membership_id=$2 AND active AND is_manager`,
+        [w, ctx.membershipId],
+      )).rows.map((row) => row.projectId);
+      const ledDepartments = canSeeAll ? [] : (await ctx.client.query<{ businessUnitId: string }>(
+        `SELECT DISTINCT team.business_unit_id AS "businessUnitId"
+         FROM workspace_team_members member
+         JOIN workspace_teams team ON team.workspace_id=member.workspace_id AND team.id=member.team_id
+         WHERE member.workspace_id=$1 AND member.membership_id=$2 AND member.is_lead AND team.status='active'`,
+        [w, ctx.membershipId],
+      )).rows.map((row) => row.businessUnitId);
+      let items: Array<Record<string, unknown>> = [];
+      if (canSeeAll || managedProjects.length || ledDepartments.length) {
+        const scheduleResources = (await ctx.client.query(
+          `SELECT resource.id,resource.name,resource.kind,resource.members,resource.active,resource.calendar,
+                  resource.business_unit_id AS "businessUnitId",
+                  CASE WHEN unit.id IS NULL THEN NULL ELSE jsonb_build_object(
+                    'id',unit.id,'code',unit.code,'name',unit.name,'visibleName',unit.name,'color',unit.color
+                  ) END AS department
+           FROM project_resources resource
+           LEFT JOIN business_units unit ON unit.workspace_id=resource.workspace_id AND unit.id=resource.business_unit_id
+           WHERE resource.workspace_id=$1`,
+          [w],
+        )).rows;
+        const scheduleProjects = (await ctx.client.query(
+          `SELECT project.id,project.name,
+                  COALESCE(NULLIF(execution.content->'controls'->>'reference',''),opportunity.title,project.name) AS "dealReference",
+                  party.display_name AS "clientName",execution.content AS data
+           FROM delivery_projects project
+           JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
+           JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
+           JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
+           JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+           WHERE project.workspace_id=$1 AND project.status<>'archived'
+             AND ($2 OR project.id=ANY($3::uuid[]) OR cardinality($4::uuid[])>0)`,
+          [w, canSeeAll, managedProjects, ledDepartments],
+        )).rows;
+        items = scheduleProjects.flatMap((project) => projectScheduleItems(project, scheduleResources, from, to))
+          .filter((item) => canSeeAll || managedProjects.includes(String(item.projectId))
+            || (item.department && ledDepartments.includes(String(item.department.id))));
+        const visitProjects = canSeeAll ? null : managedProjects;
+        if (canSeeAll || managedProjects.length) {
+          const visits = (await ctx.client.query(
+            `SELECT 'site_visit:'||visit.id AS id,'site_visit' AS kind,'pre_project' AS source,
+                    project.id AS "projectId",project.name AS "projectName",
+                    COALESCE(NULLIF(execution.content->'controls'->>'reference',''),opportunity.title,project.name) AS "dealReference",
+                    party.display_name AS "clientName",visit.title,visit.status,
+                    visit.content->>'scheduledAt' AS "startsAt",visit.content->>'timezone' AS timezone,
+                    COALESCE((visit.content->>'durationMinutes')::int,60) AS "durationMinutes",
+                    ((visit.content->>'scheduledAt')::timestamptz AT TIME ZONE workspace.default_timezone)::date::text AS date,
+                    NULL::jsonb AS department
+             FROM pre_project_site_records visit
+             JOIN delivery_projects project ON project.workspace_id=visit.workspace_id AND project.case_id=visit.case_id
+             JOIN workspaces workspace ON workspace.id=project.workspace_id
+             JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
+             JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
+             JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
+             LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+             WHERE visit.workspace_id=$1 AND visit.kind='visit' AND visit.status<>'cancelled'
+               AND visit.content->>'scheduledAt' IS NOT NULL
+               AND ((visit.content->>'scheduledAt')::timestamptz AT TIME ZONE workspace.default_timezone)::date BETWEEN $2::date AND $3::date
+               AND ($4::uuid[] IS NULL OR project.id=ANY($4::uuid[]))`,
+            [w, from, to, visitProjects],
+          )).rows.map((visit) => ({
+            ...visit,
+            allDay: false,
+            title: [visit.dealReference, visit.clientName, visit.title].filter(Boolean).join(" — "),
+          }));
+          items.push(...visits);
+        }
+      }
       return {
         range: { from, to, timezone: workspace.rows[0]?.timezone ?? "UTC" },
         departments: legend,
         events,
         overlapCount: events.filter((event) => event.overlapIds.length > 0).length,
+        conflictCount: events.filter((event) => event.conflictIds.length > 0).length,
+        items: items.sort((left, right) => `${left.date}:${left.kind}`.localeCompare(`${right.date}:${right.kind}`)),
       };
     });
   }
@@ -220,13 +318,16 @@ export class ExecutionService {
     ).rows;
     const resources = (
       await ctx.client.query(
-        'SELECT id,name,kind,members,active,calendar,business_unit_id AS "businessUnitId" FROM project_resources WHERE workspace_id=$1 ORDER BY name',
+        `SELECT id,name,kind,members,active,calendar,business_unit_id AS "businessUnitId",
+                workspace_team_id AS "workspaceTeamId",capacity_mode AS "capacityMode",
+                capacity::float8 AS capacity,timezone,version
+         FROM project_resources WHERE workspace_id=$1 ORDER BY name`,
         [ctx.workspaceId],
       )
     ).rows;
     const bookings = (
       await ctx.client.query(
-        `SELECT b.id,b.project_id AS "projectId",p.name AS "projectName",b.task_id AS "taskId",coalesce((SELECT t->>'title' FROM project_execution e, jsonb_array_elements(e.content->'tasks') t WHERE e.project_id=b.project_id AND t->>'id'=b.task_id),'Booked work') AS "taskTitle",b.resource_id AS "resourceId",b.starts_on::text AS start,b.ends_on::text AS end,b.status,b.acknowledgement,b.slots,b.slots->0->>'startTime' AS "startTime",b.slots->0->>'endTime' AS "endTime" FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status='confirmed' ORDER BY b.starts_on`,
+        `SELECT b.id,b.project_id AS "projectId",p.name AS "projectName",b.task_id AS "taskId",coalesce((SELECT t->>'title' FROM project_execution e, jsonb_array_elements(e.content->'tasks') t WHERE e.project_id=b.project_id AND t->>'id'=b.task_id),'Booked work') AS "taskTitle",b.resource_id AS "resourceId",b.starts_on::text AS start,b.ends_on::text AS end,b.status,b.acknowledgement,b.slots,b.units::float8 AS units,b.timezone,b.version,b.cancellation_reason AS "cancellationReason",b.slots->0->>'startTime' AS "startTime",b.slots->0->>'endTime' AS "endTime" FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status IN ('draft','tentative','confirmed') ORDER BY b.starts_on`,
         [ctx.workspaceId],
       )
     ).rows;
@@ -278,6 +379,9 @@ export class ExecutionService {
         throw new BadRequestException("Use a stable request identifier.");
       const row = await this.row(ctx, id, true),
         d = await this.load(ctx, id);
+      const previousTaskStatuses = new Map(
+        d.tasks.map((task) => [task.id, task.status]),
+      );
       let changedRecordId = str(b.id, 80);
       if (d.processed.includes(retry)) return { data: d };
       if (b.revision !== d.revision)
@@ -313,6 +417,7 @@ export class ExecutionService {
           "resource",
           "task",
           "task_status",
+          "complete_project",
         ].includes(action)
       )
         await ctx.client.query(
@@ -327,7 +432,10 @@ export class ExecutionService {
       ).rows;
       const resources = (
       await ctx.client.query(
-          'SELECT id,name,kind,members,active,calendar,business_unit_id AS "businessUnitId" FROM project_resources WHERE workspace_id=$1',
+          `SELECT id,name,kind,members,active,calendar,business_unit_id AS "businessUnitId",
+                  workspace_team_id AS "workspaceTeamId",capacity_mode AS "capacityMode",
+                  capacity::float8 AS capacity,timezone,version
+           FROM project_resources WHERE workspace_id=$1`,
           [w],
         )
       ).rows as ProjectResource[];
@@ -362,7 +470,9 @@ export class ExecutionService {
             "The forecast is already on these dates.",
           );
         const bookings = await ctx.client.query(
-          "SELECT task_id FROM project_bookings WHERE workspace_id=$1 AND project_id=$2 AND task_id=ANY($3::text[]) AND status='confirmed'",
+          `SELECT id,task_id,status,resource_id,starts_on,ends_on,slots,units,timezone,member_ids
+           FROM project_bookings WHERE workspace_id=$1 AND project_id=$2
+             AND task_id=ANY($3::text[]) AND status IN ('draft','tentative','confirmed')`,
           [w, id, changes.map((c) => c.id)],
         );
         if (bookings.rowCount && b.releaseBookings !== true)
@@ -370,10 +480,25 @@ export class ExecutionService {
             "Confirm release of the affected bookings before moving their dates. Rebook the work after reviewing availability.",
           );
         str(b.note, 3000, true);
+        const rescheduleReason = str(b.note, 1000, true);
         await ctx.client.query(
-          "UPDATE project_bookings SET status='cancelled' WHERE workspace_id=$1 AND project_id=$2 AND task_id=ANY($3::text[]) AND status='confirmed'",
-          [w, id, changes.map((c) => c.id)],
+          `UPDATE project_bookings SET status='cancelled',cancellation_reason=$4,
+                  cancelled_at=now(),updated_by=$5,version=version+1
+           WHERE workspace_id=$1 AND project_id=$2 AND task_id=ANY($3::text[])
+             AND status IN ('draft','tentative','confirmed')`,
+          [w, id, changes.map((c) => c.id), rescheduleReason, ctx.userId],
         );
+        for (const booking of bookings.rows)
+          await ctx.client.query(
+            `INSERT INTO project_booking_history(
+               workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id
+             ) VALUES($1,$2,'rescheduled',$3,'cancelled',$4,$5,$6)`,
+            [w, booking.id, booking.status, rescheduleReason, JSON.stringify({
+              projectId: id, taskId: booking.task_id, resourceId: booking.resource_id,
+              startsOn: booking.starts_on, endsOn: booking.ends_on, slots: booking.slots,
+              units: Number(booking.units), timezone: booking.timezone, memberIds: booking.member_ids,
+            }), ctx.userId],
+          );
         for (const change of changes) {
           const task = get(d.tasks, change.id);
           task.start = change.start;
@@ -518,7 +643,7 @@ export class ExecutionService {
             current &&
             (
               await ctx.client.query(
-                "SELECT 1 FROM project_bookings WHERE workspace_id=$1 AND resource_id=$2 AND status='confirmed' AND ends_on>=CURRENT_DATE",
+                "SELECT 1 FROM project_bookings WHERE workspace_id=$1 AND resource_id=$2 AND status IN ('draft','tentative','confirmed') AND ends_on>=CURRENT_DATE",
                 [w, rid],
               )
             ).rowCount
@@ -531,8 +656,35 @@ export class ExecutionService {
             throw new BadRequestException(
               "Choose the members so team clashes can be checked.",
             );
+          const { capacityMode, capacity } = capacityConfiguration(
+            kind,
+            v.capacityMode ?? current?.capacityMode ?? "exclusive",
+            v.capacity ?? current?.capacity ?? 1,
+          );
+          const timezone = v.timezone === undefined
+            ? (current?.timezone ?? null)
+            : str(v.timezone, 64) || null;
+          if (timezone && !(await ctx.client.query("SELECT 1 FROM pg_timezone_names WHERE name=$1", [timezone])).rowCount)
+            throw new BadRequestException("Choose a valid IANA timezone.");
+          const workspaceTeamId = v.workspaceTeamId === undefined
+            ? (current?.workspaceTeamId ?? null)
+            : str(v.workspaceTeamId, 36) || null;
+          if (workspaceTeamId && !(await ctx.client.query(
+            `SELECT 1 FROM workspace_teams
+             WHERE workspace_id=$1 AND id=$2 AND status='active'
+               AND ($3::uuid IS NULL OR business_unit_id=$3)`,
+            [w, workspaceTeamId, businessUnitId],
+          )).rowCount)
+            throw new BadRequestException("Choose an active team from the selected department.");
           await ctx.client.query(
-            "INSERT INTO project_resources(id,workspace_id,name,kind,members,active,calendar,business_unit_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET name=$3,kind=$4,members=$5,active=$6,calendar=$7,business_unit_id=$8 WHERE project_resources.workspace_id=$2",
+            `INSERT INTO project_resources(
+               id,workspace_id,name,kind,members,active,calendar,business_unit_id,
+               workspace_team_id,capacity_mode,capacity,timezone,updated_by
+             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+             ON CONFLICT(id) DO UPDATE SET name=$3,kind=$4,members=$5,active=$6,
+               calendar=$7,business_unit_id=$8,workspace_team_id=$9,capacity_mode=$10,
+               capacity=$11,timezone=$12,updated_by=$13,version=project_resources.version+1
+             WHERE project_resources.workspace_id=$2`,
             [
               rid,
               w,
@@ -544,14 +696,46 @@ export class ExecutionService {
                 ? JSON.stringify(validateCalendar(v.calendar))
                 : (current?.calendar ?? null),
               businessUnitId,
+              workspaceTeamId,
+              capacityMode,
+              capacity,
+              timezone,
+              ctx.userId,
             ],
           );
         } else {
           const task = get(d.tasks, b.taskId);
+          changedRecordId = task.id;
           if (action === "cancel_booking") {
+            const reason = str(b.note, 1000) || "Released from the project schedule";
+            const cancelled = await ctx.client.query(
+              `WITH active AS (
+                 SELECT id,status AS previous_status
+                 FROM project_bookings
+                 WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3
+                   AND status IN ('draft','tentative','confirmed')
+                 FOR UPDATE
+               )
+               UPDATE project_bookings booking SET status='cancelled',cancellation_reason=$4,
+                      cancelled_at=now(),updated_by=$5,version=booking.version+1,request_id=$6
+               FROM active
+               WHERE booking.workspace_id=$1 AND booking.id=active.id
+               RETURNING booking.id,booking.resource_id,booking.starts_on,booking.ends_on,
+                         booking.slots,booking.units,booking.timezone,booking.member_ids,
+                         active.previous_status`,
+              [w, id, task.id, reason, ctx.userId, retry],
+            );
+            if (!cancelled.rowCount) throw new NotFoundException("Active booking not found.");
+            const booking = cancelled.rows[0];
             await ctx.client.query(
-              "UPDATE project_bookings SET status='cancelled' WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3 AND status='confirmed'",
-              [w, id, task.id],
+              `INSERT INTO project_booking_history(
+                 workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id,request_id
+               ) VALUES($1,$2,'cancelled',$3,'cancelled',$4,$5,$6,$7)`,
+              [w, booking.id, booking.previous_status, reason, JSON.stringify({
+                projectId: id, taskId: task.id, resourceId: booking.resource_id,
+                startsOn: booking.starts_on, endsOn: booking.ends_on, slots: booking.slots,
+                units: Number(booking.units), timezone: booking.timezone, memberIds: booking.member_ids,
+              }), ctx.userId, retry],
             );
           } else {
             if (task.status === "cancelled" || task.status === "completed")
@@ -568,6 +752,17 @@ export class ExecutionService {
               throw new ConflictException(
                 "Record the external factory or vendor acknowledgement before booking.",
               );
+            const { capacityMode, capacity } = capacityConfiguration(
+              resource.kind,
+              resource.capacityMode ?? "exclusive",
+              resource.capacity ?? 1,
+            );
+            const units = Number(b.units ?? 1);
+            if (!Number.isFinite(units) || units <= 0 || units > capacity)
+              throw new BadRequestException("Choose booking capacity within the resource limit.");
+            if (capacityMode === "exclusive" && units !== 1)
+              throw new BadRequestException("Exclusive resources use one capacity unit.");
+            const timezone = resource.timezone ?? row.timezone ?? "UTC";
             const employeeCalendars = (
               await ctx.client.query(
                 `SELECT e.membership_id,e.enabled,e.active_from::text,e.active_to::text,c.working_days,c.holidays::text[],c.day_start::text,c.day_end::text,c.timezone FROM hrms_employees e JOIN hrms_calendars c ON c.workspace_id=e.workspace_id AND c.id=e.calendar_id WHERE e.workspace_id=$1 AND e.membership_id=ANY($2::uuid[])`,
@@ -616,18 +811,17 @@ export class ExecutionService {
                 throw new ConflictException(
                   "A resource member is not active for these working dates.",
                 );
-              if (c.timezone !== (row.timezone ?? "UTC"))
+              if (c.timezone !== timezone)
                 throw new ConflictException(
                   "Review the employee and project timezone mapping before booking this crew.",
                 );
               if (
-                slots.some(
-                  (s) =>
-                    !c.working_days.includes(new Date(s.date).getUTCDay()) ||
-                    c.holidays.includes(s.date) ||
-                    s.startTime < c.day_start.slice(0, 5) ||
-                    s.endTime > c.day_end.slice(0, 5),
-                )
+                slots.some((slot) => !calendarContainsSlot({
+                  weekdays: c.working_days,
+                  startTime: c.day_start.slice(0, 5),
+                  endTime: c.day_end.slice(0, 5),
+                  holidays: (c.holidays as string[]).map((date) => ({ date, reason: "Employee non-working date" })),
+                }, slot))
               ) {
                 if (b.calendarOverride !== true || !str(b.note, 3000))
                   throw new ConflictException(
@@ -637,7 +831,13 @@ export class ExecutionService {
             }
 
             const clashes = await ctx.client.query(
-              `SELECT p.name,b.starts_on::text AS start,b.ends_on::text AS end,b.slots FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status='confirmed' AND b.starts_on<=$4::date AND b.ends_on>=$3::date AND (b.resource_id=$2 OR b.member_ids && $5::uuid[]) AND NOT(b.project_id=$6 AND b.task_id=$7)`,
+              `SELECT p.name,b.resource_id AS "resourceId",b.member_ids AS "memberIds",
+                      b.units::float8 AS units,b.starts_on::text AS start,b.ends_on::text AS end,b.slots
+               FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id
+               WHERE b.workspace_id=$1 AND b.status='confirmed'
+                 AND b.starts_on<=$4::date AND b.ends_on>=$3::date
+                 AND (b.resource_id=$2 OR b.member_ids && $5::uuid[])
+                 AND NOT(b.project_id=$6 AND b.task_id=$7)`,
               [
                 w,
                 resource.id,
@@ -654,9 +854,26 @@ export class ExecutionService {
                 c.slots?.length ? c.slots : bookingSlots(c.start, c.end),
               ),
             );
-            if (conflicts.length)
+            const memberConflict = conflicts.some((conflict) =>
+              (conflict.memberIds as string[]).some((memberId) => resource.members.includes(memberId)),
+            );
+            const resourceConflicts = conflicts.filter((conflict) => conflict.resourceId === resource.id);
+            const capacityConflict = capacityMode === "exclusive"
+              ? resourceConflicts.length > 0
+              : exceedsPooledCapacity(
+                  slots,
+                  units,
+                  resourceConflicts.map((conflict) => ({
+                    units: Number(conflict.units),
+                    slots: conflict.slots?.length
+                      ? conflict.slots
+                      : bookingSlots(conflict.start, conflict.end),
+                  })),
+                  capacity,
+                );
+            if (memberConflict || capacityConflict)
               throw new ConflictException(
-                `Booking clash: ${conflicts.map((c) => `${c.name} (${c.start}–${c.end})`).join(", ")}. Choose another resource or dates.`,
+                `Booking clash: ${conflicts.map((c) => `${c.name} (${c.start}–${c.end})`).join(", ")}. Choose another resource, capacity or dates.`,
               );
             if (resource.members.length) {
               const leave = await ctx.client.query(
@@ -690,12 +907,33 @@ export class ExecutionService {
                   "A team member has approved leave during these dates.",
                 );
             }
-            await ctx.client.query(
-              "UPDATE project_bookings SET status='cancelled' WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3 AND status='confirmed'",
-              [w, id, task.id],
+            const replaced = await ctx.client.query(
+              `UPDATE project_bookings SET status='cancelled',cancellation_reason='Replaced by a new confirmed booking',
+                      cancelled_at=now(),updated_by=$4,version=version+1
+               WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3
+                 AND status IN ('draft','tentative','confirmed') RETURNING id,status`,
+              [w, id, task.id, ctx.userId],
             );
-            await ctx.client.query(
-              "INSERT INTO project_bookings(workspace_id,project_id,task_id,resource_id,starts_on,ends_on,status,acknowledgement,member_ids,slots) VALUES($1,$2,$3,$4,$5,$6,'confirmed',$7,$8,$9)",
+            for (const previous of replaced.rows)
+              await ctx.client.query(
+                `INSERT INTO project_booking_history(
+                   workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id
+                 ) VALUES($1,$2,'cancelled',$3,'cancelled','Replaced by a new confirmed booking',$4,$5)`,
+                [w, previous.id, previous.status, JSON.stringify({ projectId: id, taskId: task.id }), ctx.userId],
+              );
+            const calendarSnapshot = {
+              source: resource.calendar ? "resource" : employeeCalendars.length ? "employees" : "workspace_default",
+              timezone,
+              calendar,
+              employeeCalendarCount: employeeCalendars.length,
+            };
+            const created = await ctx.client.query(
+              `INSERT INTO project_bookings(
+                 workspace_id,project_id,task_id,resource_id,starts_on,ends_on,status,
+                 acknowledgement,member_ids,slots,units,timezone,calendar_snapshot,request_id,
+                 created_by,updated_by,confirmed_at
+               ) VALUES($1,$2,$3,$4,$5,$6,'confirmed',$7,$8,$9,$10,$11,$12,$13,$14,$14,now())
+               RETURNING id`,
               [
                 w,
                 id,
@@ -706,7 +944,35 @@ export class ExecutionService {
                 acknowledgement,
                 resource.members,
                 JSON.stringify(slots),
+                units,
+                timezone,
+                JSON.stringify(calendarSnapshot),
+                retry,
+                ctx.userId,
               ],
+            );
+            const bookingId = created.rows[0].id;
+            for (const slot of slots) {
+              const endDate = slot.endDate ?? slot.date;
+              await ctx.client.query(
+                `INSERT INTO project_booking_slots(
+                   workspace_id,booking_id,project_id,task_id,resource_id,local_date,end_date,
+                   start_time,end_time,starts_at,ends_at,timezone,units,member_ids,calendar_snapshot
+                 ) VALUES($1,$2,$3,$4,$5,$6::date,$7::date,$8::time,$9::time,
+                   ($6::date+$8::time) AT TIME ZONE $10,
+                   ($7::date+$9::time) AT TIME ZONE $10,$10,$11,$12,$13)`,
+                [w, bookingId, id, task.id, resource.id, slot.date, endDate, slot.startTime,
+                  slot.endTime, timezone, units, resource.members, JSON.stringify(calendarSnapshot)],
+              );
+            }
+            await ctx.client.query(
+              `INSERT INTO project_booking_history(
+                 workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id,request_id
+               ) VALUES($1,$2,'created',NULL,'confirmed',$3,$4,$5,$6)`,
+              [w, bookingId, acknowledgement, JSON.stringify({
+                projectId: id, taskId: task.id, resourceId: resource.id, startsOn: task.start,
+                endsOn: task.end, slots, units, timezone, memberIds: resource.members,
+              }), ctx.userId, retry],
             );
           }
         }
@@ -800,7 +1066,7 @@ export class ExecutionService {
               old.resourceId !== v.resourceId) &&
             (
               await ctx.client.query(
-                "SELECT 1 FROM project_bookings WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3 AND status='confirmed'",
+                "SELECT 1 FROM project_bookings WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3 AND status IN ('draft','tentative','confirmed')",
                 [w, id, old.id],
               )
             ).rowCount
@@ -809,6 +1075,19 @@ export class ExecutionService {
               "Release the existing booking before rescheduling or reassigning this task.",
             );
         }
+        if (
+          action === "complete_project" &&
+          (
+            await ctx.client.query(
+              `SELECT 1 FROM project_bookings
+               WHERE workspace_id=$1 AND project_id=$2 AND status IN ('draft','tentative')`,
+              [w, id],
+            )
+          ).rowCount
+        )
+          throw new ConflictException(
+            "Resolve draft and tentative resource bookings before completing the project.",
+          );
         if (action === "task_status" && b.status === "in_progress") {
           this.access.require(ctx, "projects.manage");
           const t = get(d.tasks, b.id);
@@ -901,16 +1180,122 @@ export class ExecutionService {
             [w, id, str(value.ownerId, 80, true)],
           );
       }
-      if (action === "task_status" && b.status === "cancelled")
-        await ctx.client.query(
-          "UPDATE project_bookings SET status='cancelled' WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3",
-          [w, id, b.id],
+      const completedTaskIds = d.tasks
+        .filter(
+          (task) =>
+            task.status === "completed" &&
+            previousTaskStatuses.get(task.id) !== "completed",
+        )
+        .map((task) => task.id);
+      if (completedTaskIds.length) {
+        if (
+          (
+            await ctx.client.query(
+              `SELECT 1 FROM project_bookings
+               WHERE workspace_id=$1 AND project_id=$2 AND task_id=ANY($3::text[])
+                 AND status IN ('draft','tentative')`,
+              [w, id, completedTaskIds],
+            )
+          ).rowCount
+        )
+          throw new ConflictException(
+            "Resolve draft and tentative resource bookings before completing this work.",
+          );
+        const completedBookings = await ctx.client.query(
+          `WITH active AS (
+             SELECT id,status AS previous_status,task_id,resource_id,starts_on,ends_on,slots,units,timezone,member_ids
+             FROM project_bookings
+             WHERE workspace_id=$1 AND project_id=$2 AND task_id=ANY($3::text[])
+               AND status='confirmed'
+             FOR UPDATE
+           )
+           UPDATE project_bookings booking SET status='completed',version=booking.version+1,
+                  updated_by=$4,completed_at=now()
+           FROM active
+           WHERE booking.workspace_id=$1 AND booking.id=active.id
+           RETURNING booking.id,active.previous_status,active.task_id,active.resource_id,
+                     active.starts_on,active.ends_on,active.slots,active.units,
+                     active.timezone,active.member_ids`,
+          [w, id, completedTaskIds, ctx.userId],
         );
-      if (action === "complete_project")
+        for (const booking of completedBookings.rows)
+          await ctx.client.query(
+            `INSERT INTO project_booking_history(
+               workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id
+             ) VALUES($1,$2,'completed',$3,'completed','Task completed',$4,$5)`,
+            [w, booking.id, booking.previous_status, JSON.stringify({
+              projectId: id, taskId: booking.task_id, resourceId: booking.resource_id,
+              startsOn: booking.starts_on, endsOn: booking.ends_on, slots: booking.slots,
+              units: Number(booking.units), timezone: booking.timezone, memberIds: booking.member_ids,
+            }), ctx.userId],
+          );
+      }
+      if (
+        action === "task_status" &&
+        b.status === "cancelled"
+      ) {
+        const reason = str(b.note, 1000) || "Task cancelled";
+        const transitioned = await ctx.client.query(
+          `WITH active AS (
+             SELECT id,status AS previous_status,resource_id,starts_on,ends_on,slots,units,timezone,member_ids
+             FROM project_bookings
+             WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3
+               AND status IN ('draft','tentative','confirmed')
+             FOR UPDATE
+           )
+           UPDATE project_bookings booking SET status='cancelled',version=booking.version+1,
+             updated_by=$4,cancellation_reason=$5,cancelled_at=now()
+           FROM active
+           WHERE booking.workspace_id=$1 AND booking.id=active.id
+           RETURNING booking.id,active.previous_status,active.resource_id,active.starts_on,
+                     active.ends_on,active.slots,active.units,active.timezone,active.member_ids`,
+          [w, id, str(b.id, 80, true), ctx.userId, reason],
+        );
+        for (const booking of transitioned.rows)
+          await ctx.client.query(
+            `INSERT INTO project_booking_history(
+               workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id
+             ) VALUES($1,$2,$3,$4,$3,$5,$6,$7)`,
+            [w, booking.id, "cancelled", booking.previous_status, reason, JSON.stringify({
+              projectId: id, taskId: b.id, resourceId: booking.resource_id,
+              startsOn: booking.starts_on, endsOn: booking.ends_on, slots: booking.slots,
+              units: Number(booking.units), timezone: booking.timezone, memberIds: booking.member_ids,
+            }), ctx.userId],
+          );
+      }
+      if (action === "complete_project") {
+        const completed = await ctx.client.query(
+          `WITH active AS (
+             SELECT id,status AS previous_status,task_id,resource_id,starts_on,ends_on,slots,units,timezone,member_ids
+             FROM project_bookings
+             WHERE workspace_id=$1 AND project_id=$2 AND status='confirmed'
+             FOR UPDATE
+           )
+           UPDATE project_bookings booking SET status='completed',version=booking.version+1,
+                  updated_by=$3,completed_at=now()
+           FROM active
+           WHERE booking.workspace_id=$1 AND booking.id=active.id
+           RETURNING booking.id,active.previous_status,active.task_id,active.resource_id,
+                     active.starts_on,active.ends_on,active.slots,active.units,
+                     active.timezone,active.member_ids`,
+          [w, id, ctx.userId],
+        );
+        for (const booking of completed.rows)
+          await ctx.client.query(
+            `INSERT INTO project_booking_history(
+               workspace_id,booking_id,action,from_status,to_status,reason,snapshot,actor_user_id
+             ) VALUES($1,$2,'completed',$3,'completed','Project completed',$4,$5)`,
+            [w, booking.id, booking.previous_status, JSON.stringify({
+              projectId: id, taskId: booking.task_id, resourceId: booking.resource_id,
+              startsOn: booking.starts_on, endsOn: booking.ends_on, slots: booking.slots,
+              units: Number(booking.units), timezone: booking.timezone, memberIds: booking.member_ids,
+            }), ctx.userId],
+          );
         await ctx.client.query(
           "UPDATE delivery_projects SET status='completed',version=version+1 WHERE workspace_id=$1 AND id=$2",
           [w, id],
         );
+      }
       if (action === "reopen_project")
         await ctx.client.query(
           "UPDATE delivery_projects SET status='active',version=version+1 WHERE workspace_id=$1 AND id=$2",

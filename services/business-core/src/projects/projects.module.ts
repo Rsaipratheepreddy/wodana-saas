@@ -28,12 +28,14 @@ import {
   AssignmentDto,
   PortfolioCalendarQueryDto,
   ReleaseProjectDto,
+  ScheduleAvailabilityQueryDto,
   WorkLocationDto,
 } from "./projects.dto";
 import { ProjectAttendanceDto } from "./project-attendance.dto";
 import { ExecutionService } from "./execution.service";
 import { ProjectsService } from "./projects.service";
 import { ProjectWorkflowService } from "./project-workflow.service";
+import { ProjectScheduleService } from "./project-schedule.service";
 @ApiTags("projects-sites")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/projects")
@@ -45,6 +47,7 @@ export class ProjectsController {
     private readonly files: ProjectFilesService,
     private readonly stock: ProjectStockService,
     private readonly workflows: ProjectWorkflowService,
+    private readonly schedule: ProjectScheduleService,
   ) {}
   @Get("workflow-templates")
   workflowTemplates(
@@ -148,6 +151,47 @@ export class ProjectsController {
     @Query() query: PortfolioCalendarQueryDto,
   ) {
     return this.execution.portfolioCalendar(actor, w, query);
+  }
+  @Get("schedule/availability") scheduleAvailability(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Query() query: ScheduleAvailabilityQueryDto,
+  ) {
+    return this.schedule.availability(actor, workspaceId, query);
+  }
+  @Post(":projectId/bookings/preview") previewBooking(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Body() body: unknown,
+  ) {
+    return this.schedule.preview(actor, workspaceId, projectId, body);
+  }
+  @Put(":projectId/bookings") saveBooking(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Body() body: unknown,
+  ) {
+    return this.schedule.save(actor, workspaceId, projectId, body);
+  }
+  @Post(":projectId/bookings/:taskId/cancel") cancelBooking(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("taskId") taskId: string,
+    @Body() body: unknown,
+  ) {
+    return this.schedule.cancel(actor, workspaceId, projectId, taskId, body);
+  }
+  @Post(":projectId/bookings/:taskId/complete") completeBooking(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("taskId") taskId: string,
+    @Body() body: unknown,
+  ) {
+    return this.schedule.complete(actor, workspaceId, projectId, taskId, body);
   }
   @Get("candidates") candidates(
     @CurrentActor() actor: RequestActor,
@@ -260,6 +304,7 @@ class InternalProjectRemindersController {
     BrandAssetStorageService,
     HrmsAccessService,
     ProjectWorkflowService,
+    ProjectScheduleService,
   ],
   exports: [ProjectsService],
 })
