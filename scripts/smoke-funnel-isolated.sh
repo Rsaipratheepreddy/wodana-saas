@@ -46,6 +46,8 @@ database_url="postgresql://127.0.0.1/${database_name}"
 DATABASE_URL="$database_url" \
 MIGRATION_DATABASE_URL="$database_url" \
   npm run db:migrate --workspace @wodana/business-core >/dev/null
+DATABASE_URL="$database_url" \
+  npm run test:smoke:tenant-isolation --workspace @wodana/business-core >/dev/null
 npm run build --workspace @wodana/business-core >/dev/null
 
 (

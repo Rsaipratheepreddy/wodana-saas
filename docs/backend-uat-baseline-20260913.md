@@ -52,10 +52,10 @@ No live deployment or production-data mutation is part of B0.
 
 ## Current regression status after the B1-B9 backend slices
 
-- Business Core: 359 tests passed and 10 skipped; type-check and production build passed.
+- Business Core: 367 tests passed and 10 skipped; type-check and production build passed.
 - Intelligence/Automation: 67 tests passed; strict mypy and Ruff passed.
-- Clean database replay: all 59 registered migrations passed; the schema contains 156 public
-  tables.
+- Clean database replay: all 60 registered migrations passed; migration 0060 is exercised by the
+  disposable funnel and the new workspace-scoped table passes the RLS manifest.
 - Lead-flow HTTP/database smoke: 29 of 29 checks passed on a clean generic workspace.
 - Workspace HTTP/database smoke passes 19 safeguards, including business-unit color and
   `visibleName`, terminology default fallback, optimistic locking, tenant isolation,
@@ -84,6 +84,8 @@ No live deployment or production-data mutation is part of B0.
 - The disposable full-funnel API smoke passes using two independent owner identities and no direct
   SQL business fixtures: Intake → Enquiry → Lead → Opportunity → Preparation → verified site and
   design controls → accepted Quotation → Agreement → Owner Review → Deal File → Delivery Project.
+- The same disposable API smoke proves project workflow built-in fallback, tenant default creation,
+  optimistic stale-write rejection, non-destructive archival and fallback restoration.
 - Existing-installation rehearsal: a schema-only copy with 53 historical migration records accepted
   migrations 0053–0057. The terminology table remained empty, so existing tenants resolve the
   current product defaults without a data rewrite.

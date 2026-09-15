@@ -475,6 +475,62 @@ export const workspaceTerminology = pgTable(
   ],
 );
 
+export const projectWorkflowTemplates = pgTable(
+  "project_workflow_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    code: varchar("code", { length: 64 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: varchar("description", { length: 1000 }).notNull().default(""),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    isDefault: boolean("is_default").notNull().default(false),
+    version: integer("version").notNull().default(1),
+    stages: jsonb("stages").$type<Record<string, unknown>[]>().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("project_workflow_templates_workspace_id").on(table.workspaceId, table.id),
+    uniqueIndex("project_workflow_templates_active_code_uidx")
+      .on(table.workspaceId, table.code)
+      .where(sql`${table.status} = 'active'`),
+    uniqueIndex("project_workflow_templates_default_uidx")
+      .on(table.workspaceId)
+      .where(sql`${table.status} = 'active' AND ${table.isDefault} = true`),
+    index("project_workflow_templates_list_idx").on(
+      table.workspaceId,
+      table.status,
+      table.isDefault,
+      table.name,
+    ),
+    check(
+      "project_workflow_templates_code_check",
+      sql`${table.code} ~ '^[a-z][a-z0-9_]{0,63}$'`,
+    ),
+    check(
+      "project_workflow_templates_name_check",
+      sql`length(btrim(${table.name})) BETWEEN 1 AND 120`,
+    ),
+    check(
+      "project_workflow_templates_status_check",
+      sql`${table.status} IN ('active','archived')`,
+    ),
+    check("project_workflow_templates_version_check", sql`${table.version} > 0`),
+    check(
+      "project_workflow_templates_stages_check",
+      sql`jsonb_typeof(${table.stages}) = 'array' AND jsonb_array_length(${table.stages}) BETWEEN 2 AND 12`,
+    ),
+    check(
+      "project_workflow_templates_default_check",
+      sql`${table.status} = 'active' OR ${table.isDefault} = false`,
+    ),
+  ],
+);
+
 export const workspaceSubscriptions = pgTable(
   "workspace_subscriptions",
   {

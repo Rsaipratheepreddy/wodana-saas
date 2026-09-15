@@ -87,6 +87,49 @@ const reviewerMember = members.find(
 );
 assert(reviewerMember?.roles.includes("owner"));
 
+const workflowPath = `/workspaces/${workspaceId}/projects/workflow-templates`;
+const workflowFallback = await request(workflowPath);
+assert.equal(workflowFallback.defaultTemplate.source, "built_in");
+assert.equal(workflowFallback.defaultTemplate.version, 0);
+assert.equal(workflowFallback.templates.length, 0);
+const workflowTemplateId = randomUUID();
+const savedWorkflow = await request(`${workflowPath}/${workflowTemplateId}`, {
+  method: "PUT",
+  body: {
+    version: 0,
+    code: "generic_delivery",
+    name: "Generic delivery",
+    description: "A tenant-owned vocabulary around the shared execution engine.",
+    isDefault: true,
+    stages: workflowFallback.defaultTemplate.stages,
+  },
+});
+assert.equal(savedWorkflow.version, 1);
+assert.equal(savedWorkflow.source, "workspace");
+assert.equal(
+  (await request(workflowPath)).defaultTemplate.id,
+  workflowTemplateId,
+);
+await request(`${workflowPath}/${workflowTemplateId}`, {
+  method: "PUT",
+  expected: 409,
+  body: {
+    version: 0,
+    code: "generic_delivery",
+    name: "Stale write must fail",
+    description: "",
+    isDefault: true,
+    stages: workflowFallback.defaultTemplate.stages,
+  },
+});
+const archivedWorkflow = await request(
+  `${workflowPath}/${workflowTemplateId}/archive`,
+  { body: { version: 1 } },
+);
+assert.equal(archivedWorkflow.status, "archived");
+assert.equal(archivedWorkflow.version, 2);
+assert.equal((await request(workflowPath)).defaultTemplate.source, "built_in");
+
 const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
   body: {
     code: "sales",
@@ -508,6 +551,9 @@ process.stdout.write(
         acceptedHashPreserved: true,
         scopeLineagePreserved: true,
         projectReleaseReplaySafe: true,
+        workflowTemplateFallbackSafe: true,
+        workflowTemplateVersionSafe: true,
+        workflowTemplateArchiveSafe: true,
       },
     },
     null,

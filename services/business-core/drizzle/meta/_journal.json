@@ -414,6 +414,13 @@
       "when": 1789322400000,
       "tag": "0059_mfa_authentication",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789326000000,
+      "tag": "0060_project_workflow_templates",
+      "breakpoints": true
     }
   ]
 }

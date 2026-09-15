@@ -33,6 +33,7 @@ import {
 import { ProjectAttendanceDto } from "./project-attendance.dto";
 import { ExecutionService } from "./execution.service";
 import { ProjectsService } from "./projects.service";
+import { ProjectWorkflowService } from "./project-workflow.service";
 @ApiTags("projects-sites")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/projects")
@@ -43,7 +44,33 @@ export class ProjectsController {
     private readonly vendor: VendorOrderService,
     private readonly files: ProjectFilesService,
     private readonly stock: ProjectStockService,
+    private readonly workflows: ProjectWorkflowService,
   ) {}
+  @Get("workflow-templates")
+  workflowTemplates(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.workflows.list(actor, workspaceId);
+  }
+  @Put("workflow-templates/:templateId")
+  saveWorkflowTemplate(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("templateId", ParseUUIDPipe) templateId: string,
+    @Body() body: unknown,
+  ) {
+    return this.workflows.save(actor, workspaceId, templateId, body);
+  }
+  @Post("workflow-templates/:templateId/archive")
+  archiveWorkflowTemplate(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("templateId", ParseUUIDPipe) templateId: string,
+    @Body() body: unknown,
+  ) {
+    return this.workflows.archive(actor, workspaceId, templateId, body);
+  }
   @Post(":projectId/files/:recordId/:fileId")
   @UseInterceptors(
     FileInterceptor("file", {
@@ -232,6 +259,7 @@ class InternalProjectRemindersController {
     ProjectFilesService,
     BrandAssetStorageService,
     HrmsAccessService,
+    ProjectWorkflowService,
   ],
   exports: [ProjectsService],
 })
