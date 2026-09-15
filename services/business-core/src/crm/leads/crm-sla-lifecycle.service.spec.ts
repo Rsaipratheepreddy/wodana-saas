@@ -19,6 +19,10 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   response_source_type: null,
   response_source_id: null,
   response_actor_user_id: null,
+  response_elapsed_minutes: null,
+  response_evidence: null,
+  owner_membership_id: "owner",
+  queue_id: "queue",
   paused_at: null,
   paused_from_status: null,
   remaining_warning_minutes: null,
@@ -38,7 +42,10 @@ describe("CrmSlaLifecycleService", () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("pg_advisory_xact_lock")) return { rows: [], rowCount: 1 };
       if (sql.includes("FROM crm_sla_instances")) return { rows: [], rowCount: 0 };
-      if (sql.includes("FROM crm_leads lead")) return { rows: [{ received_at: receivedAt, intake_method: "form" }], rowCount: 1 };
+      if (sql.includes("FROM crm_leads lead")) return { rows: [{
+        received_at: receivedAt, intake_method: "form",
+        owner_membership_id: "owner", queue_id: "queue",
+      }], rowCount: 1 };
       if (sql.includes("FROM crm_sla_policies")) return { rows: [{
         id: "policy-1", name: "First response", event_type: "first_response",
         warning_after_minutes: 30, breach_after_minutes: 120,
@@ -62,6 +69,7 @@ describe("CrmSlaLifecycleService", () => {
     expect(insert?.[1]?.[6]).toEqual(receivedAt);
     expect(insert?.[1]?.[7]).toEqual(new Date("2026-09-15T08:30:00.000Z"));
     expect(insert?.[1]?.[8]).toEqual(new Date("2026-09-15T10:00:00.000Z"));
+    expect(insert?.[1]?.slice(9, 11)).toEqual(["owner", "queue"]);
     expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO crm_sla_history"))).toBe(true);
   });
 
@@ -182,7 +190,7 @@ describe("CrmSlaLifecycleService", () => {
     expect(update?.[1]).toEqual([
       "workspace", "sla-1", respondedAt,
       expect.objectContaining({ sourceType: "activity", sourceId: "activity", actorUserId: "user", activityType: "call" }),
-      "activity", null, null, "activity", "user",
+      "activity", null, null, "activity", "user", 30,
     ]);
     expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_activities SET status='completed'"))).toBe(true);
     expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_leads SET next_action_at"))).toBe(true);
@@ -205,6 +213,62 @@ describe("CrmSlaLifecycleService", () => {
     const update = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_sla_instances SET status='stopped'"));
     expect(update?.[1]?.[5]).toEqual(new Date("2026-09-15T09:00:00.000Z"));
     expect(update?.[1]?.[6]).toEqual(new Date("2026-09-15T10:00:00.000Z"));
+    expect(update?.[1]?.[9]).toBe(150);
+  });
+
+  it("freezes response elapsed time at the pause boundary", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-15T12:00:00.000Z").getTime());
+    const respondedAt = new Date("2026-09-15T09:30:00.000Z");
+    const pausedAt = new Date("2026-09-15T08:30:00.000Z");
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_sla_instances")) return { rows: [row({
+        status: "paused", paused_at: pausedAt, paused_from_status: "active",
+        remaining_warning_minutes: 30, remaining_breach_minutes: 90,
+      })], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    await new CrmSlaLifecycleService().recordFirstResponse({ query } as never, "workspace", "lead", {
+      sourceType: "message", sourceId: "message", actorUserId: "user", respondedAt,
+    });
+    const update = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_sla_instances SET status='stopped'"));
+    expect(update?.[1]?.[9]).toBe(30);
+    expect(update?.[1]?.[3]).toMatchObject({
+      responseElapsedMinutes: 30,
+      slaPausedAt: "2026-09-15T08:30:00.000Z",
+    });
+  });
+
+  it("moves active accountability with reassignment and preserves history", async () => {
+    const before = row();
+    const after = row({ owner_membership_id: "owner-2", queue_id: "queue-2" });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_sla_instances")) return { rows: [before], rowCount: 1 };
+      if (sql.includes("UPDATE crm_sla_instances")) return { rows: [after], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    expect(await new CrmSlaLifecycleService().transferFirstResponseResponsibility(
+      { query } as never, "workspace", "lead",
+      { ownerMembershipId: "owner-2", queueId: "queue-2", actorUserId: "user", reason: "Reassigned" },
+    )).toMatchObject({ owner_membership_id: "owner-2", queue_id: "queue-2" });
+    const history = query.mock.calls.find(([sql]) => sql.includes("INSERT INTO crm_sla_history"));
+    expect(history?.[1]).toEqual(expect.arrayContaining([
+      "ownership_changed",
+      expect.objectContaining({
+        previousOwnerMembershipId: "owner", ownerMembershipId: "owner-2",
+        previousQueueId: "queue", queueId: "queue-2",
+      }),
+    ]));
+  });
+
+  it("does not rewrite accountability after the response SLA has stopped", async () => {
+    const query = vi.fn(async (sql: string) => sql.includes("FROM crm_sla_instances")
+      ? { rows: [], rowCount: 0 }
+      : { rows: [], rowCount: 1 });
+    expect(await new CrmSlaLifecycleService().transferFirstResponseResponsibility(
+      { query } as never, "workspace", "lead",
+      { ownerMembershipId: "owner-2", queueId: null, actorUserId: "user", reason: "Reassigned" },
+    )).toBeNull();
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_sla_instances"))).toBe(false);
   });
 
   it("ignores duplicate, pre-start, and post-closure evidence without changing the SLA", async () => {

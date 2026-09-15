@@ -606,6 +606,9 @@ export const crmSlaInstances = pgTable(
     responseSourceType: varchar("response_source_type", { length: 30 }),
     responseSourceId: uuid("response_source_id"),
     responseActorUserId: uuid("response_actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    ownerMembershipId: uuid("owner_membership_id").references(() => workspaceMemberships.id, { onDelete: "set null" }),
+    queueId: uuid("queue_id").references(() => crmQueues.id, { onDelete: "set null" }),
+    responseElapsedMinutes: integer("response_elapsed_minutes"),
     ...versionColumn,
     ...auditColumns,
   },
@@ -634,7 +637,9 @@ export const crmSlaInstances = pgTable(
     ) OR (
       ${table.respondedAt} IS NOT NULL AND ${table.responseSourceType} IS NOT NULL AND ${table.responseSourceId} IS NOT NULL
     )`),
+    check("crm_sla_instances_response_elapsed_minutes_check", sql`${table.responseElapsedMinutes} IS NULL OR ${table.responseElapsedMinutes} >= 0`),
     index("crm_sla_instances_response_reporting_idx").on(table.workspaceId, table.eventType, table.respondedAt).where(sql`${table.respondedAt} IS NOT NULL`),
+    index("crm_sla_instances_accountability_idx").on(table.workspaceId, table.ownerMembershipId, table.queueId, table.startedAt),
   ],
 );
 
@@ -659,7 +664,7 @@ export const crmSlaHistory = pgTable(
       foreignColumns: [crmSlaInstances.workspaceId, crmSlaInstances.id],
     }).onDelete("restrict"),
     index("crm_sla_history_instance_idx").on(table.workspaceId, table.instanceId, table.occurredAt),
-    check("crm_sla_history_transition_check", sql`${table.transition} IN ('migrated','started','warning','breached','paused','resumed','stopped','response_recorded')`),
+    check("crm_sla_history_transition_check", sql`${table.transition} IN ('migrated','started','warning','breached','paused','resumed','stopped','response_recorded','ownership_changed')`),
     check("crm_sla_history_from_status_check", sql`${table.fromStatus} IS NULL OR ${table.fromStatus} IN ('active','warning','breached','paused','stopped')`),
     check("crm_sla_history_to_status_check", sql`${table.toStatus} IN ('active','warning','breached','paused','stopped')`),
     check("crm_sla_history_evidence_check", sql`jsonb_typeof(${table.evidence}) = 'object'`),

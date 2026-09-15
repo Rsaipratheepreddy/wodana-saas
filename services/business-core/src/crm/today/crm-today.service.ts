@@ -88,7 +88,8 @@ export class CrmTodayService {
            FROM crm_sla_instances sla
            JOIN crm_leads lead ON lead.id = sla.lead_id AND lead.workspace_id = sla.workspace_id
            JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
-           WHERE sla.workspace_id = $1 AND sla.status = 'breached' AND ($2::uuid IS NULL OR lead.owner_membership_id = $2)
+           WHERE sla.workspace_id = $1 AND sla.status = 'breached'
+             AND ($2::uuid IS NULL OR sla.owner_membership_id = $2 OR sla.owner_membership_id IS NULL)
            UNION ALL
            SELECT 3, 'overdue_activity', activity.id, activity.title,
                   'Commitment is overdue', activity.due_at, '/crm/activities/' || activity.id,

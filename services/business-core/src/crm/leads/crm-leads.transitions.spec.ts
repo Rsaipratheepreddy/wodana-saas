@@ -19,6 +19,7 @@ function setup(status: string, options: { converted?: boolean; unassigned?: bool
     stopFirstResponse: vi.fn().mockResolvedValue(null),
     startFirstResponse: vi.fn().mockResolvedValue(null),
     recordFirstResponse: vi.fn().mockResolvedValue(null),
+    transferFirstResponseResponsibility: vi.fn().mockResolvedValue(null),
   };
   const service = new CrmLeadsService({} as never, access as never, events as never, slas as never);
   return { service, query, events, access, slas };

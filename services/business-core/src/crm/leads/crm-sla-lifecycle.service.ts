@@ -22,6 +22,10 @@ type SlaRow = {
   response_source_type: "message" | "activity" | "lead_status" | null;
   response_source_id: string | null;
   response_actor_user_id: string | null;
+  response_elapsed_minutes: number | null;
+  response_evidence: Record<string, unknown> | null;
+  owner_membership_id: string | null;
+  queue_id: string | null;
   paused_at: Date | null;
   paused_from_status: "active" | "warning" | null;
   remaining_warning_minutes: number | null;
@@ -39,6 +43,8 @@ type StartedSla = {
   startedAt: Date;
   warningAt: Date;
   dueAt: Date;
+  ownerMembershipId: string | null;
+  queueId: string | null;
 };
 
 @Injectable()
@@ -67,8 +73,14 @@ export class CrmSlaLifecycleService {
     if (latest.rowCount && latest.rows[0].status !== "stopped") return this.mapStarted(latest.rows[0]);
     if (latest.rowCount && !input.newCycle) return null;
 
-    const context = await client.query<{ received_at: Date; intake_method: string }>(
-      `SELECT enquiry.received_at,intake.intake_method
+    const context = await client.query<{
+      received_at: Date;
+      intake_method: string;
+      owner_membership_id: string | null;
+      queue_id: string | null;
+    }>(
+      `SELECT enquiry.received_at,intake.intake_method,
+              lead.owner_membership_id,lead.queue_id
        FROM crm_leads lead
        JOIN crm_enquiries enquiry ON enquiry.workspace_id=lead.workspace_id AND enquiry.id=lead.enquiry_id
        JOIN crm_intake_events intake ON intake.workspace_id=lead.workspace_id AND intake.id=enquiry.intake_event_id
@@ -107,6 +119,8 @@ export class CrmSlaLifecycleService {
       schedule,
     );
     const cycle = latest.rowCount ? Number(latest.rows[0].cycle) + 1 : 1;
+    const ownerMembershipId = context.rows[0].owner_membership_id;
+    const queueId = context.rows[0].queue_id;
     const snapshot = {
       policyId: policy.id,
       policyVersion: Number(policy.version),
@@ -117,25 +131,75 @@ export class CrmSlaLifecycleService {
       calculationMode: schedule.mode,
       scheduleVersion: Number(policy.schedule_version),
       schedule,
-      ownerMembershipId: input.ownerMembershipId,
+      ownerMembershipId,
+      queueId,
       capturedAt: new Date().toISOString(),
     };
     const inserted = await client.query<SlaRow>(
       `INSERT INTO crm_sla_instances(
          workspace_id,policy_id,lead_id,target_type,target_id,event_type,cycle,
-         calculation_mode,policy_snapshot,status,started_at,warning_at,due_at
-       ) VALUES($1,$2,$3,'lead',$3,'first_response',$4,$5,$6,'active',$7,$8,$9)
+         calculation_mode,policy_snapshot,status,started_at,warning_at,due_at,
+         owner_membership_id,queue_id
+       ) VALUES($1,$2,$3,'lead',$3,'first_response',$4,$5,$6,'active',$7,$8,$9,$10,$11)
        RETURNING *`,
-      [workspaceId, policy.id, leadId, cycle, schedule.mode, snapshot, startedAt, warningAt, dueAt],
+      [workspaceId, policy.id, leadId, cycle, schedule.mode, snapshot, startedAt, warningAt, dueAt, ownerMembershipId, queueId],
     );
     await this.recordTransition(client, workspaceId, inserted.rows[0].id, "started", null, "active", input.reason, {
       cycle,
       startedAt,
       warningAt,
       dueAt,
-      ownerMembershipId: input.ownerMembershipId,
+      ownerMembershipId,
+      queueId,
     }, input.actorUserId);
     return this.mapStarted(inserted.rows[0]);
+  }
+
+  async transferFirstResponseResponsibility(
+    client: PoolClient,
+    workspaceId: string,
+    leadId: string,
+    input: {
+      ownerMembershipId: string | null;
+      queueId: string | null;
+      actorUserId: string | null;
+      reason: string;
+    },
+  ): Promise<SlaRow | null> {
+    await this.lock(client, workspaceId, leadId, "first_response");
+    const current = await client.query<SlaRow>(
+      `SELECT * FROM crm_sla_instances
+       WHERE workspace_id=$1 AND lead_id=$2 AND event_type='first_response'
+         AND status IN ('active','warning','breached','paused')
+       ORDER BY cycle DESC LIMIT 1 FOR UPDATE`,
+      [workspaceId, leadId],
+    );
+    if (!current.rowCount) return null;
+    const before = current.rows[0];
+    if (before.owner_membership_id === input.ownerMembershipId && before.queue_id === input.queueId) return before;
+    const updated = await client.query<SlaRow>(
+      `UPDATE crm_sla_instances
+       SET owner_membership_id=$3,queue_id=$4,version=version+1,updated_at=now()
+       WHERE workspace_id=$1 AND id=$2 RETURNING *`,
+      [workspaceId, before.id, input.ownerMembershipId, input.queueId],
+    );
+    await this.recordTransition(
+      client,
+      workspaceId,
+      before.id,
+      "ownership_changed",
+      before.status,
+      before.status,
+      input.reason,
+      {
+        previousOwnerMembershipId: before.owner_membership_id,
+        ownerMembershipId: input.ownerMembershipId,
+        previousQueueId: before.queue_id,
+        queueId: input.queueId,
+      },
+      input.actorUserId,
+    );
+    return updated.rows[0];
   }
 
   async pauseFirstResponse(
@@ -157,23 +221,35 @@ export class CrmSlaLifecycleService {
     if (!result.rowCount) return null;
     let current = result.rows[0];
     if (now >= new Date(current.due_at)) {
+      if (current.status === "active" && !current.warned_at) {
+        await this.recordTransition(
+          client, workspaceId, current.id, "warning", "active", "warning",
+          "SLA warning threshold elapsed before pause", { warningAt: current.warning_at },
+          actorUserId, new Date(current.warning_at),
+        );
+      }
       const breached = await client.query<SlaRow>(
-        `UPDATE crm_sla_instances SET status='breached',breached_at=COALESCE(breached_at,$3),
+        `UPDATE crm_sla_instances SET status='breached',
+           warned_at=COALESCE(warned_at,warning_at),breached_at=COALESCE(breached_at,due_at),
            version=version+1,updated_at=now()
          WHERE workspace_id=$1 AND id=$2 RETURNING *`,
-        [workspaceId, current.id, now],
+        [workspaceId, current.id],
       );
-      await this.recordTransition(client, workspaceId, current.id, "breached", current.status, "breached", "Deadline elapsed before pause", { dueAt: current.due_at }, actorUserId, now);
+      await this.recordTransition(
+        client, workspaceId, current.id, "breached", current.status === "active" ? "warning" : current.status,
+        "breached", "Deadline elapsed before pause", { dueAt: current.due_at },
+        actorUserId, new Date(current.due_at),
+      );
       return breached.rows[0];
     }
     if (current.status === "active" && now >= new Date(current.warning_at)) {
       const warned = await client.query<SlaRow>(
-        `UPDATE crm_sla_instances SET status='warning',warned_at=COALESCE(warned_at,$3),
+        `UPDATE crm_sla_instances SET status='warning',warned_at=COALESCE(warned_at,warning_at),
            version=version+1,updated_at=now()
          WHERE workspace_id=$1 AND id=$2 RETURNING *`,
-        [workspaceId, current.id, now],
+        [workspaceId, current.id],
       );
-      await this.recordTransition(client, workspaceId, current.id, "warning", "active", "warning", "Warning elapsed before pause", { warningAt: current.warning_at }, actorUserId, now);
+      await this.recordTransition(client, workspaceId, current.id, "warning", "active", "warning", "Warning elapsed before pause", { warningAt: current.warning_at }, actorUserId, new Date(current.warning_at));
       current = warned.rows[0];
     }
     const schedule = this.snapshotSchedule(current);
@@ -328,6 +404,16 @@ export class CrmSlaLifecycleService {
     }
 
     const isCorrection = Boolean(before.responded_at);
+    const priorPausedAt = typeof before.response_evidence?.slaPausedAt === "string"
+      ? new Date(before.response_evidence.slaPausedAt)
+      : null;
+    const pausedAt = before.status === "paused" && before.paused_at
+      ? new Date(before.paused_at)
+      : priorPausedAt && Number.isFinite(priorPausedAt.getTime())
+        ? priorPausedAt
+        : null;
+    const responseClockAt = pausedAt && input.respondedAt >= pausedAt ? pausedAt : input.respondedAt;
+    const responseElapsedMinutes = this.elapsedMinutesAt(before, responseClockAt);
     const evidence = {
       ...(input.details ?? {}),
       sourceType: input.sourceType,
@@ -335,6 +421,8 @@ export class CrmSlaLifecycleService {
       actorUserId: input.actorUserId,
       actorUserAvailable: Boolean(persistedActorUserId),
       respondedAt: input.respondedAt.toISOString(),
+      responseElapsedMinutes,
+      ...(pausedAt ? { slaPausedAt: pausedAt.toISOString() } : {}),
       ...(isCorrection ? {
         correction: true,
         previousRespondedAt: new Date(before.responded_at as Date).toISOString(),
@@ -348,10 +436,11 @@ export class CrmSlaLifecycleService {
          stopped_at=CASE WHEN stopped_at IS NULL OR $3<stopped_at THEN $3 ELSE stopped_at END,
          stop_reason='first_response_recorded',response_evidence=$4,
          responded_at=$3,response_source_type=$5,response_source_id=$8,response_actor_user_id=$9,
+         response_elapsed_minutes=$10,
          paused_at=NULL,paused_from_status=NULL,remaining_warning_minutes=NULL,remaining_breach_minutes=NULL,
          version=version+1,updated_at=now()
        WHERE workspace_id=$1 AND id=$2 RETURNING *`,
-      [workspaceId, before.id, input.respondedAt, evidence, input.sourceType, warnedAt, breachedAt, input.sourceId, persistedActorUserId],
+      [workspaceId, before.id, input.respondedAt, evidence, input.sourceType, warnedAt, breachedAt, input.sourceId, persistedActorUserId, responseElapsedMinutes],
     );
     await this.recordTransition(
       client,
@@ -386,6 +475,20 @@ export class CrmSlaLifecycleService {
   private snapshotSchedule(row: SlaRow): SlaSchedule {
     const snapshot = row.policy_snapshot ?? {};
     return this.schedule(snapshot.schedule, snapshot.calculationMode ?? row.calculation_mode);
+  }
+
+  private elapsedMinutesAt(row: SlaRow, at: Date): number {
+    const schedule = this.snapshotSchedule(row);
+    const startedAt = new Date(row.started_at);
+    const dueAt = new Date(row.due_at);
+    const configuredTarget = Number(row.policy_snapshot?.breachAfterMinutes);
+    const targetMinutes = Number.isInteger(configuredTarget) && configuredTarget > 0
+      ? configuredTarget
+      : remainingSlaMinutes(startedAt, dueAt, schedule);
+    if (at <= dueAt) {
+      return Math.max(0, targetMinutes - remainingSlaMinutes(at, dueAt, schedule));
+    }
+    return targetMinutes + remainingSlaMinutes(dueAt, at, schedule);
   }
 
   private schedule(value: unknown, mode: unknown): SlaSchedule {
@@ -431,6 +534,8 @@ export class CrmSlaLifecycleService {
       startedAt: new Date(row.started_at),
       warningAt: new Date(row.warning_at),
       dueAt: new Date(row.due_at),
+      ownerMembershipId: row.owner_membership_id,
+      queueId: row.queue_id,
     };
   }
 }

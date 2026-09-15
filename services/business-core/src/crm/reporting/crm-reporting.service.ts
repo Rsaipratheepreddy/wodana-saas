@@ -54,9 +54,77 @@ export class CrmReportingService {
           WHERE intake.workspace_id=$1 AND intake.source='company' AND intake.channel='walk_in' AND intake.received_at >= $2 AND intake.received_at < $3 GROUP BY intake.intake_method`, [workspaceId, from, to]);
         return { report, from: from.toISOString(), to: to.toISOString(), groupBy: query.groupBy ?? "source", rows: grouped.rows, processing: processing.rows, walkIns: walkIns.rows };
       }
+      if (report === "sla") {
+        const withinTarget = `(instance.responded_at IS NOT NULL AND
+          CASE
+            WHEN instance.response_elapsed_minutes IS NOT NULL
+              AND (instance.policy_snapshot->>'breachAfterMinutes') ~ '^[0-9]+$'
+              THEN instance.response_elapsed_minutes < (instance.policy_snapshot->>'breachAfterMinutes')::int
+            ELSE instance.responded_at < instance.due_at
+          END)`;
+        const effectiveBreach = `(instance.breached_at IS NOT NULL
+          OR (instance.responded_at IS NOT NULL AND NOT ${withinTarget})
+          OR (instance.responded_at IS NULL AND instance.status IN ('active','warning','breached') AND instance.due_at <= now()))`;
+        const rows = await client.query(
+          `SELECT instance.status,count(*)::int AS count,
+             count(*) FILTER (WHERE instance.responded_at IS NOT NULL)::int AS responded,
+             count(*) FILTER (WHERE ${withinTarget})::int AS "withinTarget",
+             count(*) FILTER (WHERE ${effectiveBreach})::int AS breached,
+             round((avg(instance.response_elapsed_minutes) FILTER (WHERE instance.responded_at IS NOT NULL))::numeric,2) AS "averageMinutes"
+           FROM crm_sla_instances instance
+           WHERE instance.workspace_id=$1 AND instance.started_at >= $2 AND instance.started_at < $3
+           GROUP BY instance.status ORDER BY instance.status`,
+          [workspaceId, from, to],
+        );
+        const summary = await client.query(
+          `SELECT count(*)::int AS total,
+             count(*) FILTER (WHERE instance.responded_at IS NOT NULL)::int AS responded,
+             count(*) FILTER (WHERE ${withinTarget})::int AS "withinTarget",
+             count(*) FILTER (WHERE ${effectiveBreach})::int AS breached,
+             count(*) FILTER (WHERE instance.status IN ('active','warning','breached','paused'))::int AS open,
+             count(*) FILTER (WHERE instance.status='paused')::int AS paused,
+             count(*) FILTER (WHERE instance.status='stopped' AND instance.responded_at IS NULL)::int AS "noResponseStops",
+             round(100.0*count(*) FILTER (WHERE ${withinTarget})
+               / NULLIF(count(*) FILTER (WHERE instance.responded_at IS NOT NULL),0),1) AS "responseComplianceRate",
+             round((avg(instance.response_elapsed_minutes) FILTER (WHERE instance.responded_at IS NOT NULL))::numeric,2) AS "averageResponseMinutes",
+             round((percentile_cont(0.5) WITHIN GROUP (ORDER BY instance.response_elapsed_minutes)
+               FILTER (WHERE instance.responded_at IS NOT NULL))::numeric,2) AS "medianResponseMinutes",
+             round((percentile_cont(0.9) WITHIN GROUP (ORDER BY instance.response_elapsed_minutes)
+               FILTER (WHERE instance.responded_at IS NOT NULL))::numeric,2) AS "p90ResponseMinutes"
+           FROM crm_sla_instances instance
+           WHERE instance.workspace_id=$1 AND instance.started_at >= $2 AND instance.started_at < $3`,
+          [workspaceId, from, to],
+        );
+        const owners = await client.query(
+          `SELECT instance.owner_membership_id AS "ownerMembershipId",
+             COALESCE(account.display_name,'Unassigned') AS owner,
+             instance.queue_id AS "queueId",COALESCE(queue.name,'No queue') AS queue,
+             count(*)::int AS total,
+             count(*) FILTER (WHERE instance.responded_at IS NOT NULL)::int AS responded,
+             count(*) FILTER (WHERE ${withinTarget})::int AS "withinTarget",
+             count(*) FILTER (WHERE ${effectiveBreach})::int AS breached,
+             round((avg(instance.response_elapsed_minutes) FILTER (WHERE instance.responded_at IS NOT NULL))::numeric,2) AS "averageResponseMinutes"
+           FROM crm_sla_instances instance
+           LEFT JOIN workspace_memberships membership
+             ON membership.workspace_id=instance.workspace_id AND membership.id=instance.owner_membership_id
+           LEFT JOIN users account ON account.id=membership.user_id
+           LEFT JOIN crm_queues queue ON queue.workspace_id=instance.workspace_id AND queue.id=instance.queue_id
+           WHERE instance.workspace_id=$1 AND instance.started_at >= $2 AND instance.started_at < $3
+           GROUP BY instance.owner_membership_id,account.display_name,instance.queue_id,queue.name
+           ORDER BY breached DESC,total DESC,owner`,
+          [workspaceId, from, to],
+        );
+        return {
+          report,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          rows: rows.rows,
+          summary: summary.rows[0] ?? {},
+          owners: owners.rows,
+        };
+      }
       const reports: Record<string, { sql: string; values: unknown[] }> = {
         funnel: { sql: `SELECT history.to_status AS status, COALESCE(stage.name, history.to_status::text) AS stage, count(*)::int AS count FROM crm_stage_history history LEFT JOIN crm_pipeline_stages stage ON stage.id = history.to_stage_id WHERE history.workspace_id = $1 AND history.changed_at >= $2 AND history.changed_at < $3 GROUP BY history.to_status, stage.name ORDER BY count DESC`, values: [workspaceId, from, to] },
-        sla: { sql: `SELECT status, count(*)::int AS count, round(avg(extract(epoch FROM (COALESCE(stopped_at, breached_at, now()) - started_at))/60)::numeric, 2) AS "averageMinutes" FROM crm_sla_instances WHERE workspace_id = $1 AND started_at >= $2 AND started_at < $3 GROUP BY status ORDER BY status`, values: [workspaceId, from, to] },
         sources: { sql: `SELECT enquiry.source, enquiry.channel, count(DISTINCT enquiry.id)::int AS enquiries, count(DISTINCT lead.id)::int AS leads, count(DISTINCT opportunity.id)::int AS opportunities, count(DISTINCT opportunity.id) FILTER (WHERE opportunity.status = 'won')::int AS won FROM crm_enquiries enquiry LEFT JOIN crm_leads lead ON lead.enquiry_id = enquiry.id AND lead.workspace_id = enquiry.workspace_id LEFT JOIN crm_opportunities opportunity ON opportunity.lead_id = lead.id AND opportunity.workspace_id = lead.workspace_id WHERE enquiry.workspace_id = $1 AND enquiry.created_at >= $2 AND enquiry.created_at < $3 GROUP BY enquiry.source, enquiry.channel ORDER BY enquiries DESC`, values: [workspaceId, from, to] },
         assignment: { sql: `SELECT history.assignment_method AS method, account.display_name AS owner, count(*)::int AS count FROM crm_assignment_history history LEFT JOIN workspace_memberships membership ON membership.id = history.owner_membership_id LEFT JOIN users account ON account.id = membership.user_id WHERE history.workspace_id = $1 AND history.assigned_at >= $2 AND history.assigned_at < $3 GROUP BY history.assignment_method, account.display_name ORDER BY count DESC`, values: [workspaceId, from, to] },
         pipeline: { sql: `SELECT pipeline.name AS pipeline, stage.name AS stage, opportunity.status, count(*)::int AS count, opportunity.currency_code AS currency, sum(opportunity.amount) AS value FROM crm_opportunities opportunity JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id WHERE opportunity.workspace_id = $1 AND opportunity.created_at >= $2 AND opportunity.created_at < $3 GROUP BY pipeline.name, stage.name, stage.position, opportunity.status, opportunity.currency_code ORDER BY pipeline.name, stage.position`, values: [workspaceId, from, to] },

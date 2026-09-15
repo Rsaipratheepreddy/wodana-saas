@@ -75,15 +75,42 @@ export class CrmLeadsService {
            ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $2
          )
          UPDATE crm_sla_instances instance
-            SET status = 'breached', breached_at = COALESCE(breached_at, now()), version = version + 1
+            SET status = 'breached',
+                warned_at = COALESCE(instance.warned_at, instance.warning_at),
+                breached_at = COALESCE(instance.breached_at, instance.due_at),
+                version = version + 1, updated_at = now()
            FROM due
           WHERE instance.id = due.id
          RETURNING instance.id, due.status AS "fromStatus", instance.lead_id AS "leadId", instance.target_type AS "targetType",
-                   instance.target_id AS "targetId", instance.due_at AS "dueAt", instance.status, instance.version`,
+                   instance.target_id AS "targetId", instance.event_type AS "eventType",
+                   instance.warning_at AS "warningAt", instance.due_at AS "dueAt",
+                   instance.owner_membership_id AS "ownerMembershipId", instance.queue_id AS "queueId",
+                   instance.status, instance.version`,
         [workspaceId, safeLimit],
       );
       for (const row of breached.rows) {
-        await this.slas.recordTransition(client, workspaceId, String(row.id), "breached", String(row.fromStatus), "breached", "SLA deadline elapsed", { dueAt: row.dueAt }, null);
+        const escalation = row.leadId && row.eventType === "first_response"
+          ? await this.escalateFirstResponseTask(client, workspaceId, {
+            instanceId: String(row.id), leadId: String(row.leadId),
+            ownerMembershipId: row.ownerMembershipId ? String(row.ownerMembershipId) : null,
+            queueId: row.queueId ? String(row.queueId) : null,
+            dueAt: new Date(row.dueAt as string | Date), level: "breach",
+          })
+          : null;
+        if (row.fromStatus === "active") {
+          await this.slas.recordTransition(
+            client, workspaceId, String(row.id), "warning", "active", "warning",
+            "SLA warning threshold elapsed before the deadline worker ran",
+            { warningAt: row.warningAt, dueAt: row.dueAt, delayedProcessing: true },
+            null, new Date(row.warningAt as string | Date),
+          );
+        }
+        await this.slas.recordTransition(
+          client, workspaceId, String(row.id), "breached",
+          row.fromStatus === "active" ? "warning" : String(row.fromStatus), "breached",
+          "SLA deadline elapsed", { dueAt: row.dueAt, escalation }, null,
+          new Date(row.dueAt as string | Date),
+        );
         await this.events.record(client, {
           workspaceId,
           actorUserId: null,
@@ -91,7 +118,7 @@ export class CrmLeadsService {
           action: "crm.sla.breached.v1",
           entityType: row.leadId ? "crm_lead" : `crm_${String(row.targetType)}`,
           entityId: String(row.leadId ?? row.targetId),
-          after: row,
+          after: { ...row, escalation },
         });
       }
       const remaining = safeLimit - (breached.rowCount ?? 0);
@@ -103,17 +130,31 @@ export class CrmLeadsService {
              ORDER BY warning_at FOR UPDATE SKIP LOCKED LIMIT $2
            )
            UPDATE crm_sla_instances instance
-              SET status = 'warning', warned_at = COALESCE(warned_at, now()), version = version + 1
+              SET status = 'warning', warned_at = COALESCE(instance.warned_at, instance.warning_at),
+                  version = version + 1, updated_at = now()
              FROM due
             WHERE instance.id = due.id
            RETURNING instance.id, due.status AS "fromStatus", instance.lead_id AS "leadId", instance.target_type AS "targetType",
-                     instance.target_id AS "targetId", instance.warning_at AS "warningAt",
-                     instance.due_at AS "dueAt", instance.status, instance.version`,
+                     instance.target_id AS "targetId", instance.event_type AS "eventType", instance.warning_at AS "warningAt",
+                     instance.due_at AS "dueAt", instance.owner_membership_id AS "ownerMembershipId",
+                     instance.queue_id AS "queueId", instance.status, instance.version`,
           [workspaceId, remaining],
         )
         : { rows: [], rowCount: 0 };
       for (const row of warnings.rows) {
-        await this.slas.recordTransition(client, workspaceId, String(row.id), "warning", String(row.fromStatus), "warning", "SLA warning threshold elapsed", { warningAt: row.warningAt, dueAt: row.dueAt }, null);
+        const escalation = row.leadId && row.eventType === "first_response"
+          ? await this.escalateFirstResponseTask(client, workspaceId, {
+            instanceId: String(row.id), leadId: String(row.leadId),
+            ownerMembershipId: row.ownerMembershipId ? String(row.ownerMembershipId) : null,
+            queueId: row.queueId ? String(row.queueId) : null,
+            dueAt: new Date(row.warningAt as string | Date), level: "warning",
+          })
+          : null;
+        await this.slas.recordTransition(
+          client, workspaceId, String(row.id), "warning", String(row.fromStatus), "warning",
+          "SLA warning threshold elapsed", { warningAt: row.warningAt, dueAt: row.dueAt, escalation },
+          null, new Date(row.warningAt as string | Date),
+        );
         await this.events.record(client, {
           workspaceId,
           actorUserId: null,
@@ -121,7 +162,7 @@ export class CrmLeadsService {
           action: "crm.sla.warning.v1",
           entityType: row.leadId ? "crm_lead" : `crm_${String(row.targetType)}`,
           entityId: String(row.leadId ?? row.targetId),
-          after: row,
+          after: { ...row, escalation },
         });
       }
       return { warnings: warnings.rows, breaches: breached.rows };
@@ -217,7 +258,11 @@ export class CrmLeadsService {
         );
       const sla = await client.query(
           `SELECT id, status, started_at AS "startedAt", warning_at AS "warningAt",
-                  due_at AS "dueAt", warned_at AS "warnedAt", breached_at AS "breachedAt"
+                  due_at AS "dueAt", warned_at AS "warnedAt", breached_at AS "breachedAt",
+                  stopped_at AS "stoppedAt", responded_at AS "respondedAt",
+                  response_source_type AS "responseSourceType", response_source_id AS "responseSourceId",
+                  response_elapsed_minutes AS "responseElapsedMinutes",
+                  owner_membership_id AS "ownerMembershipId", queue_id AS "queueId", cycle
            FROM crm_sla_instances WHERE workspace_id = $1 AND lead_id = $2
            ORDER BY started_at DESC`, [workspaceId, leadId],
         );
@@ -944,6 +989,12 @@ export class CrmLeadsService {
       ],
     );
     await client.query(`UPDATE crm_activities SET owner_membership_id = $3, version = version + 1 WHERE workspace_id = $1 AND lead_id = $2 AND opportunity_id IS NULL AND status = 'pending' AND (owner_membership_id IS NULL OR owner_membership_id IS NOT DISTINCT FROM $4::uuid)`, [workspaceId, lead.id, selection.ownerMembershipId, lead.owner_membership_id]);
+    await this.slas.transferFirstResponseResponsibility(client, workspaceId, lead.id, {
+      ownerMembershipId: selection.ownerMembershipId,
+      queueId: selection.queueId,
+      actorUserId,
+      reason: reason || "Lead responsibility changed",
+    });
     if (["new", "attempting_contact"].includes(lead.status)) await this.startFirstResponseSla(client, workspaceId, lead.id, selection.ownerMembershipId, actorUserId);
     const response = this.mapLead(await this.requireLead(client, workspaceId, lead.id, false));
     await this.events.record(client, {
@@ -971,18 +1022,128 @@ export class CrmLeadsService {
       newCycle,
     });
     if (!instance) return null;
-    const next = await client.query(`SELECT id FROM crm_activities WHERE workspace_id = $1 AND lead_id = $2 AND is_next_action AND status = 'pending' LIMIT 1`, [workspaceId, leadId]);
-    if (next.rowCount) return instance;
-    await client.query(
-      `INSERT INTO crm_activities
+    const linked = await client.query<{ id: string; status: string }>(
+      `SELECT id,status FROM crm_activities
+       WHERE workspace_id=$1 AND sla_instance_id=$2 LIMIT 1 FOR UPDATE`,
+      [workspaceId, instance.id],
+    );
+    const next = await client.query<{ id: string; due_at: Date | null }>(
+      `SELECT id,due_at FROM crm_activities
+       WHERE workspace_id=$1 AND lead_id=$2 AND is_next_action AND status='pending' LIMIT 1 FOR UPDATE`,
+      [workspaceId, leadId],
+    );
+    const currentNext = next.rows[0];
+    const makeNextAction = !currentNext
+      || currentNext.id === linked.rows[0]?.id
+      || !currentNext.due_at
+      || instance.warningAt < new Date(currentNext.due_at);
+    if (makeNextAction && currentNext && currentNext.id !== linked.rows[0]?.id) {
+      await client.query(
+        `UPDATE crm_activities SET is_next_action=false,version=version+1,updated_at=now()
+         WHERE workspace_id=$1 AND id=$2 AND status='pending'`,
+        [workspaceId, currentNext.id],
+      );
+    }
+    let responseTask: { rows: { id: string }[]; rowCount: number | null } = linked;
+    if (linked.rowCount) {
+      responseTask = await client.query<{ id: string }>(
+        `UPDATE crm_activities SET status='pending',completed_at=NULL,completion_outcome=NULL,
+           owner_membership_id=$3,priority='high',due_at=$4,
+           is_next_action=$5,version=version+1,updated_at=now()
+         WHERE workspace_id=$1 AND id=$2 RETURNING id`,
+        [workspaceId, linked.rows[0].id, instance.ownerMembershipId, instance.warningAt, makeNextAction],
+      );
+    } else {
+      responseTask = await client.query<{ id: string }>(
+        `INSERT INTO crm_activities
         (workspace_id, lead_id, sla_instance_id, type, title, owner_membership_id,
          priority, due_at, is_next_action, created_by, party_id)
-       VALUES ($1, $2, $6, 'task', 'Respond to new enquiry', $3, 'high', $4, true, $5,
-         (SELECT party_id FROM crm_leads WHERE workspace_id = $1 AND id = $2))`,
-      [workspaceId, leadId, ownerMembershipId, instance.warningAt, actorUserId, instance.id],
-    );
-    await client.query(`UPDATE crm_leads SET next_action_at = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId, instance.warningAt]);
+       SELECT $1,$2,$6,'task','Respond to new enquiry',$3,'high',$4,$7,$5,party_id
+       FROM crm_leads WHERE workspace_id=$1 AND id=$2
+       ON CONFLICT (workspace_id,sla_instance_id) WHERE sla_instance_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+        [workspaceId, leadId, instance.ownerMembershipId, instance.warningAt, actorUserId, instance.id, makeNextAction],
+      );
+    }
+    if (responseTask.rowCount || currentNext) {
+      await client.query(
+        `UPDATE crm_leads SET next_action_at=(
+           SELECT due_at FROM crm_activities
+           WHERE workspace_id=$1 AND lead_id=$2 AND status='pending' AND is_next_action
+           ORDER BY due_at NULLS LAST,id LIMIT 1
+         ) WHERE workspace_id=$1 AND id=$2`,
+        [workspaceId, leadId],
+      );
+    }
     return instance;
+  }
+
+  private async escalateFirstResponseTask(
+    client: PoolClient,
+    workspaceId: string,
+    input: {
+      instanceId: string;
+      leadId: string;
+      ownerMembershipId: string | null;
+      queueId: string | null;
+      dueAt: Date;
+      level: "warning" | "breach";
+    },
+  ) {
+    const priority = input.level === "breach" ? "urgent" : "high";
+    let task = await client.query<{ id: string }>(
+      `UPDATE crm_activities SET owner_membership_id=$3,priority=$4,due_at=$5,
+         version=version+1,updated_at=now()
+       WHERE workspace_id=$1 AND sla_instance_id=$2 AND status='pending'
+       RETURNING id`,
+      [workspaceId, input.instanceId, input.ownerMembershipId, priority, input.dueAt],
+    );
+    if (!task.rowCount) {
+      task = await client.query<{ id: string }>(
+        `INSERT INTO crm_activities(
+           workspace_id,lead_id,sla_instance_id,type,title,owner_membership_id,
+           priority,due_at,is_next_action,party_id
+         )
+         SELECT $1,$2,$3,'task','Respond to new enquiry',$4,$5,$6,false,party_id
+         FROM crm_leads WHERE workspace_id=$1 AND id=$2
+         ON CONFLICT (workspace_id,sla_instance_id) WHERE sla_instance_id IS NOT NULL DO NOTHING
+         RETURNING id`,
+        [workspaceId, input.leadId, input.instanceId, input.ownerMembershipId, priority, input.dueAt],
+      );
+    }
+    if (!task.rowCount) {
+      task = await client.query<{ id: string }>(
+        `UPDATE crm_activities SET status='pending',completed_at=NULL,completion_outcome=NULL,
+           owner_membership_id=$3,priority=$4,due_at=$5,is_next_action=false,
+           version=version+1,updated_at=now()
+         WHERE workspace_id=$1 AND sla_instance_id=$2 RETURNING id`,
+        [workspaceId, input.instanceId, input.ownerMembershipId, priority, input.dueAt],
+      );
+    }
+    if (task.rowCount) {
+      await client.query(
+        `UPDATE crm_activities SET is_next_action=false,version=version+1,updated_at=now()
+         WHERE workspace_id=$1 AND lead_id=$2 AND status='pending' AND is_next_action AND id<>$3`,
+        [workspaceId, input.leadId, task.rows[0].id],
+      );
+      await client.query(
+        `UPDATE crm_activities SET is_next_action=true,version=version+1,updated_at=now()
+         WHERE workspace_id=$1 AND id=$2 AND status='pending'`,
+        [workspaceId, task.rows[0].id],
+      );
+      await client.query(
+        `UPDATE crm_leads SET next_action_at=$3,updated_at=now()
+         WHERE workspace_id=$1 AND id=$2`,
+        [workspaceId, input.leadId, input.dueAt],
+      );
+    }
+    return {
+      level: input.level,
+      taskId: task.rows[0]?.id ?? null,
+      ownerMembershipId: input.ownerMembershipId,
+      queueId: input.queueId,
+      dueAt: input.dueAt,
+    };
   }
 
   private matchesRule(conditions: Record<string, unknown>, context: Record<string, unknown>): boolean {
