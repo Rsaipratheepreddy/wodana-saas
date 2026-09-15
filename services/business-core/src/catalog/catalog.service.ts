@@ -567,6 +567,13 @@ export class CatalogService {
         }
         if (!input.archived && current.catalogId) await this.assertCatalog(client, workspaceId, current.catalogId);
         if (input.archived) {
+          const activeOffers = await client.query(
+            `SELECT 1 FROM workspace_supplier_offers
+             WHERE workspace_id=$1 AND status='active' AND (catalog_record_id=$2 OR unit_record_id=$2) LIMIT 1`,
+            [workspaceId, id],
+          );
+          if (activeOffers.rowCount)
+            throw new ConflictException("Archive active supplier offers using this catalog record first.");
           const used = await client.query<{ name: string }>(
             `SELECT r.name FROM workspace_catalog_links l JOIN workspace_catalog_records r ON r.workspace_id=l.workspace_id AND r.id=l.record_id WHERE l.workspace_id=$1 AND l.target_id=$2 AND NOT r.archived LIMIT 3`,
             [workspaceId, id],

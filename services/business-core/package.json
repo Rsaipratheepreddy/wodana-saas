@@ -19,6 +19,7 @@
     "test:smoke:customer-accounts": "node scripts/smoke-customer-accounts.mjs",
     "test:smoke:mfa": "node scripts/smoke-mfa.mjs",
     "test:smoke:vendors": "node scripts/smoke-vendor-directory.mjs",
+    "test:smoke:supplier-offers": "node scripts/smoke-supplier-offers.mjs",
     "test:smoke:google": "node scripts/smoke-google-integration.mjs",
     "test:smoke:crm": "node scripts/smoke-crm.mjs",
     "test:smoke:funnel": "node scripts/smoke-funnel.mjs",

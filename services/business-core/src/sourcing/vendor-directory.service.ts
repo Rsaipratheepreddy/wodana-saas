@@ -265,6 +265,8 @@ export class VendorDirectoryService {
         if (before.status === "archived") throw new ConflictException("This vendor is already archived.");
         const reason = input.reason?.trim();
         if (!reason) throw new BadRequestException("Explain why this vendor is being archived.");
+        const activeOffers = await client.query(`SELECT 1 FROM workspace_supplier_offers WHERE workspace_id=$1 AND vendor_id=$2 AND status='active' LIMIT 1`, [workspaceId, vendorId]);
+        if (activeOffers.rowCount) throw new ConflictException("Archive this vendor's active supplier offers first.");
         await client.query(`UPDATE workspace_vendors SET status='archived',archived_reason=$3,archived_at=now(),archived_by=$4,version=version+1,updated_by=$4,updated_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, vendorId, reason, user.userId]);
         event = "vendor.archived.v1";
       } else {
@@ -371,6 +373,8 @@ export class VendorDirectoryService {
       const before = await this.aggregate(client, workspaceId, vendorId);
       if (input.action === "archive") {
         if (current.status === "archived") throw new ConflictException("This vendor location is already archived.");
+        const activeOffers = await client.query(`SELECT 1 FROM workspace_supplier_offers WHERE workspace_id=$1 AND vendor_id=$2 AND vendor_site_id=$3 AND status='active' LIMIT 1`, [workspaceId, vendorId, siteId]);
+        if (activeOffers.rowCount) throw new ConflictException("Archive this location's active supplier offers first.");
         await client.query(`UPDATE workspace_vendor_sites SET status='archived',is_primary=false,archived_reason=$4,archived_at=now(),archived_by=$5,version=version+1,updated_by=$5,updated_at=now() WHERE workspace_id=$1 AND vendor_id=$2 AND id=$3`, [workspaceId, vendorId, siteId, reason, user.userId]);
       } else {
         if (current.status !== "archived") throw new ConflictException("Only an archived vendor location can be restored.");

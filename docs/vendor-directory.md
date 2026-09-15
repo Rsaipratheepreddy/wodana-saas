@@ -6,7 +6,7 @@ Implemented as the first backend checkpoint of Catalog and Sourcing. Vendor iden
 
 - A vendor may exist without a catalog offer, store, contact or address. Draft records need only a name. Activation requires at least one capability.
 - A vendor can have multiple supplier-owned branches, stores, offices, warehouses or factories. These locations are not Wodana inventory locations.
-- Catalog products and services are not forced to have a vendor. The next checkpoint will connect zero or more dated supplier offers to an active catalog record and active vendor.
+- Catalog products and services are not forced to have a vendor. The supplier-offer checkpoint connects zero or more dated purchase offers to an active catalog record and active vendor.
 - Customer quotations never expose this directory. Purchase costs, selling prices and procurement commitments remain separate records.
 - No bank or payment credentials are stored in this directory.
 
