@@ -17,11 +17,30 @@ export type SecurityPolicy = {
   maxActiveDevices: number | null;
 };
 
+export type MfaSecurityPolicy = {
+  requireMfaForAdmins: boolean;
+  requireMfaForAllUsers: boolean;
+  recoveryCodeCount: number;
+  enrollmentGraceDays: number;
+  stepUpMinutes: number;
+};
+
+export type MfaSecurityStatus = {
+  enabled: boolean;
+  setupPending: boolean;
+  confirmedAt: string | null;
+  recoveryCodesRemaining: number;
+  required: boolean;
+  enrollmentDeadline: string | null;
+  policy: MfaSecurityPolicy;
+};
+
 export type SecurityPageData = {
   authenticationMethod: string;
   currentUserEmail: string;
   currentUserName: string;
   passwordChangedAt: string | null;
+  mfa: MfaSecurityStatus;
   policy: SecurityPolicy;
   referenceTime: string;
   sessions: SecuritySession[];
@@ -33,6 +52,21 @@ export const securityPageFixture: SecurityPageData = {
   currentUserEmail: "admin@igloarchitects.com",
   currentUserName: "Iglo Administrator",
   passwordChangedAt: "2026-08-28T06:00:00.000Z",
+  mfa: {
+    enabled: true,
+    setupPending: false,
+    confirmedAt: "2026-09-05T08:30:00.000Z",
+    recoveryCodesRemaining: 9,
+    required: true,
+    enrollmentDeadline: null,
+    policy: {
+      requireMfaForAdmins: true,
+      requireMfaForAllUsers: false,
+      recoveryCodeCount: 10,
+      enrollmentGraceDays: 7,
+      stepUpMinutes: 10,
+    },
+  },
   policy: {
     accessTokenMinutes: 15,
     refreshSessionDays: 30,

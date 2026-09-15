@@ -187,6 +187,180 @@
   gap: 0.9rem;
 }
 
+.mfaForm {
+  display: grid;
+  justify-items: stretch;
+  gap: 0.85rem;
+}
+
+.securityMark {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  border-radius: 50%;
+  background: var(--login-accent-soft);
+  color: var(--login-accent);
+}
+
+.otpField {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.otpField > span {
+  color: var(--login-ink);
+  font-size: 0.75rem;
+  font-weight: 550;
+}
+
+.otpField > span i {
+  color: var(--wd-danger);
+  font-style: normal;
+}
+
+.otpField :global(.wd-otp) {
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.otpField :global(.wd-otp input) {
+  inline-size: 2.6rem;
+  block-size: 2.8rem;
+  border-color: var(--login-line);
+  border-radius: 0.7rem;
+  background: #ffffff;
+  color: var(--login-ink);
+}
+
+.mfaLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.mfaLinks .textButton,
+.manualKey .textButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.securityBenefits {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding-inline-start: 1.2rem;
+  color: var(--login-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.deadlineNotice {
+  margin: 0;
+  border-radius: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  background: color-mix(in srgb, var(--login-peach) 12%, #ffffff);
+  color: var(--login-ink);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.qrPanel {
+  min-block-size: 12.5rem;
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  overflow: hidden;
+  border: 1px solid var(--login-line);
+  border-radius: 0.8rem;
+  background: #ffffff;
+}
+
+.qrPanel span {
+  padding: 1rem;
+  color: var(--login-muted);
+  font-size: 0.75rem;
+}
+
+.manualKey {
+  min-inline-size: 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  border-radius: 0.7rem;
+  padding: 0.65rem;
+  background: color-mix(in srgb, var(--login-lilac) 10%, #ffffff);
+  text-align: center;
+}
+
+.manualKey > span {
+  color: var(--login-muted);
+  font-size: 0.68rem;
+}
+
+.manualKey code {
+  max-inline-size: 100%;
+  color: var(--login-ink);
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.recoveryHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--login-accent-soft);
+  color: var(--login-ink);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.recoveryHeader svg {
+  flex: 0 0 auto;
+  color: var(--login-accent);
+}
+
+.recoveryCodes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 0.75rem;
+  margin: 0;
+  padding: 0.75rem 0.75rem 0.75rem 2.25rem;
+  border: 1px solid var(--login-line);
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: var(--login-muted);
+  font-size: 0.68rem;
+}
+
+.recoveryCodes code {
+  color: var(--login-ink);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.025em;
+  user-select: all;
+}
+
+.copyCodes {
+  justify-self: start;
+}
+
+.mfaForm :global(.wd-checkbox) {
+  align-items: flex-start;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .loginForm :global(.wd-field-label) {
   color: var(--login-ink);
   font-size: 0.75rem;
@@ -435,6 +609,18 @@
 
   .formIntro h1 {
     font-size: 1.7rem;
+  }
+
+  .otpField :global(.wd-otp) {
+    gap: 0.3rem;
+  }
+
+  .otpField :global(.wd-otp input) {
+    inline-size: 2.35rem;
+  }
+
+  .recoveryCodes {
+    grid-template-columns: 1fr;
   }
 
   .googleButton {

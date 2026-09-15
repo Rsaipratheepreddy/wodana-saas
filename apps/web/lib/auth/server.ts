@@ -7,6 +7,8 @@ export const ACCESS_COOKIE = "wodana_access";
 export const REFRESH_COOKIE = "wodana_refresh";
 export const TENANT_COOKIE = "wodana_tenant";
 export const ACTIVE_WORKSPACE_COOKIE = "wodana_workspace";
+export const MFA_CHALLENGE_COOKIE = "wodana_mfa_challenge";
+export const MFA_REVOKE_COOKIE = "wodana_mfa_revoke_family";
 
 export type AuthProfile = {
   id: string;

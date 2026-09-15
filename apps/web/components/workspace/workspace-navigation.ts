@@ -139,7 +139,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             href: "/workspace/settings/security",
             icon: "security",
             id: "security",
-            label: "Active Sessions",
+            label: "Security",
             showInSidebar: false,
           },
           {

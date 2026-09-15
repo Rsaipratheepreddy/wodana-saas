@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Copy, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { WodanaLogo } from "@/components/brand";
 import {
   Button,
+  Checkbox,
   ControlledModalDialog,
   DesignSystemProvider,
   InputAction,
+  OtpInput,
   TextInput,
 } from "@/design-system";
 import type { SecuritySession } from "@/lib/workspace/security";
@@ -18,6 +20,8 @@ import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./login.module.css";
 
 type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null };
+type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
+type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
 
 export function LoginScreen({
   demoCredentials,
@@ -49,9 +53,28 @@ export function LoginScreen({
   const [limitedSessions, setLimitedSessions] = useState<SecuritySession[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
+  const [mfaStage, setMfaStage] = useState<MfaStage>("credentials");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaRecoveryMode, setMfaRecoveryMode] = useState(false);
+  const [mfaWorkspaceId, setMfaWorkspaceId] = useState("");
+  const [mfaEnrollmentDeadline, setMfaEnrollmentDeadline] = useState<string | null>(null);
+  const [canDeferMfaEnrollment, setCanDeferMfaEnrollment] = useState(false);
+  const [mfaSetup, setMfaSetup] = useState<MfaSetup | null>(null);
+  const [mfaQrCode, setMfaQrCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [recoveryCodesSaved, setRecoveryCodesSaved] = useState(false);
   const requestInFlight = useRef(false);
   const navigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (navigationTimer.current) clearTimeout(navigationTimer.current); }, []);
+  useEffect(() => {
+    if (!mfaSetup?.otpauthUri) return;
+    let mounted = true;
+    import("qrcode")
+      .then((module) => module.toDataURL(mfaSetup.otpauthUri, { width: 240, margin: 2, errorCorrectionLevel: "M" }))
+      .then((value) => { if (mounted) setMfaQrCode(value); })
+      .catch(() => { if (mounted) setStatus("The QR code could not be displayed. Enter the setup key manually."); });
+    return () => { mounted = false; };
+  }, [mfaSetup]);
 
   const openWorkspace = (path: string) => {
     setIsOpening(true);
@@ -67,10 +90,190 @@ export function LoginScreen({
     openAuthenticatedWorkspace(path);
   };
 
+  const finishAuthenticatedSignIn = async (payload: Record<string, unknown>, path: string) => {
+    if (payload.mfaEnrollmentRequired === true && typeof payload.selectedWorkspaceId === "string") {
+      const enrollmentDeadline = typeof payload.mfaEnrollmentDeadline === "string"
+        ? payload.mfaEnrollmentDeadline
+        : null;
+      setMfaWorkspaceId(payload.selectedWorkspaceId);
+      setMfaEnrollmentDeadline(enrollmentDeadline);
+      setCanDeferMfaEnrollment(Boolean(
+        enrollmentDeadline && new Date(enrollmentDeadline).getTime() > Date.now(),
+      ));
+      setMfaStage("enrollment");
+      setMfaCode("");
+      setPassword("");
+      setStatus("Secure your account with an authenticator app.");
+      return false;
+    }
+    setStatus("Confirming your browser session…");
+    await confirmBrowserSession();
+    setPassword("");
+    openWorkspace(path);
+    return true;
+  };
+
+  const resetMfaFlow = () => {
+    setMfaStage("credentials");
+    setMfaCode("");
+    setMfaRecoveryMode(false);
+    setMfaWorkspaceId("");
+    setMfaEnrollmentDeadline(null);
+    setCanDeferMfaEnrollment(false);
+    setMfaSetup(null);
+    setMfaQrCode("");
+    setRecoveryCodes([]);
+    setRecoveryCodesSaved(false);
+    setStatus("");
+  };
+
+  const verifyMfaChallenge = async () => {
+    if (mfaCode.trim().length < 6) {
+      setStatus(mfaRecoveryMode ? "Enter one of your recovery codes." : "Enter the six-digit code from your authenticator app.");
+      return;
+    }
+    requestInFlight.current = true;
+    setIsSubmitting(true);
+    setStatus("Verifying your code…");
+    let navigating = false;
+    try {
+      const { ok, payload } = await authRequest("/api/auth/mfa/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: mfaCode }),
+      });
+      if (!ok) {
+        if (payload.code === "DEVICE_LIMIT_REACHED" && Array.isArray(payload.sessions) && payload.sessions.length) {
+          setMfaStage("credentials");
+          setMfaCode("");
+          setLimitedSessions(payload.sessions as SecuritySession[]);
+        }
+        setStatus(typeof payload.message === "string" ? payload.message : "The verification code could not be accepted.");
+        return;
+      }
+      if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
+      navigating = await finishAuthenticatedSignIn(payload, nextPath);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The verification code could not be accepted.");
+    } finally {
+      if (!navigating) {
+        requestInFlight.current = false;
+        setIsSubmitting(false);
+      }
+    }
+  };
+
+  const startMfaEnrollment = async () => {
+    if (!mfaWorkspaceId) {
+      setStatus("Your workspace could not be identified. Sign in again.");
+      return;
+    }
+    requestInFlight.current = true;
+    setIsSubmitting(true);
+    setStatus("Creating your authenticator setup…");
+    try {
+      const { ok, payload } = await authRequest("/api/auth/mfa/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: mfaWorkspaceId }),
+      });
+      if (!ok || typeof payload.secret !== "string" || typeof payload.otpauthUri !== "string") {
+        setStatus(typeof payload.message === "string" ? payload.message : "Authenticator setup could not be started.");
+        return;
+      }
+      setMfaSetup({
+        secret: payload.secret,
+        otpauthUri: payload.otpauthUri,
+        setupExpiresInSeconds: Number(payload.setupExpiresInSeconds),
+      });
+      setMfaQrCode("");
+      setMfaCode("");
+      setStatus("Scan the QR code, then enter the six-digit code from your app.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Authenticator setup could not be started.");
+    } finally {
+      requestInFlight.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmMfaEnrollment = async () => {
+    if (!/^\d{6}$/.test(mfaCode)) {
+      setStatus("Enter the six-digit code from your authenticator app.");
+      return;
+    }
+    requestInFlight.current = true;
+    setIsSubmitting(true);
+    setStatus("Confirming your authenticator…");
+    try {
+      const { ok, payload } = await authRequest("/api/auth/mfa/confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: mfaWorkspaceId, code: mfaCode }),
+      });
+      if (!ok || !Array.isArray(payload.recoveryCodes)
+        || !payload.recoveryCodes.every((code) => typeof code === "string")) {
+        setStatus(typeof payload.message === "string" ? payload.message : "Authenticator setup could not be confirmed.");
+        return;
+      }
+      setRecoveryCodes(payload.recoveryCodes as string[]);
+      setRecoveryCodesSaved(false);
+      setMfaStage("recovery");
+      setMfaQrCode("");
+      setMfaCode("");
+      setStatus("Your authenticator is active. Save these recovery codes now.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Authenticator setup could not be confirmed.");
+    } finally {
+      requestInFlight.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  const skipMfaEnrollment = async () => {
+    if (!mfaEnrollmentDeadline || new Date(mfaEnrollmentDeadline).getTime() <= Date.now()) return;
+    requestInFlight.current = true;
+    setIsSubmitting(true);
+    try {
+      setStatus("Confirming your browser session…");
+      await confirmBrowserSession();
+      openWorkspace(nextPath);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Your session could not be confirmed.");
+      requestInFlight.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
+  const continueAfterRecovery = async () => {
+    if (!recoveryCodesSaved) {
+      setStatus("Confirm that you saved the recovery codes before continuing.");
+      return;
+    }
+    requestInFlight.current = true;
+    setIsSubmitting(true);
+    try {
+      setStatus("Confirming your secure session…");
+      await confirmBrowserSession();
+      openWorkspace(nextPath);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Your session could not be confirmed.");
+      requestInFlight.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isOpening) { openWorkspace(nextPath); return; }
     if (requestInFlight.current) return;
+    if (mfaStage === "challenge") { await verifyMfaChallenge(); return; }
+    if (mfaStage === "enrollment") {
+      if (mfaSetup) await confirmMfaEnrollment();
+      else await startMfaEnrollment();
+      return;
+    }
+    if (mfaStage === "recovery") { await continueAfterRecovery(); return; }
     if (settingPassword) {
       const nextPasswordError = password.length >= 10
         && /[a-z]/.test(password)
@@ -107,10 +310,7 @@ export function LoginScreen({
           router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}&reason=password-reset`);
         } else {
           if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
-          setStatus("Confirming your browser session…");
-          await confirmBrowserSession();
-          navigating = true;
-          openWorkspace("/workspace");
+          navigating = await finishAuthenticatedSignIn(payload, "/workspace");
         }
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Unable to sign in. Please try again.");
@@ -160,12 +360,16 @@ export function LoginScreen({
         setStatus(message);
         return;
       }
+      if (payload.mfaRequired === true) {
+        setMfaStage("challenge");
+        setMfaCode("");
+        setMfaRecoveryMode(false);
+        setLimitedSessions(null);
+        setStatus("Enter the code from your authenticator app.");
+        return;
+      }
       if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
-      setStatus("Confirming your browser session…");
-      await confirmBrowserSession();
-      setPassword("");
-      navigating = true;
-      openWorkspace(nextPath);
+      navigating = await finishAuthenticatedSignIn(payload, nextPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sign in. Please try again.";
       if (limitedSessions) setDeviceFailure(message);
@@ -190,6 +394,49 @@ export function LoginScreen({
       ? "If this account exists, password recovery instructions are ready."
       : "Password recovery is unavailable. Please try again.");
   };
+
+  const canSkipEnrollment = canDeferMfaEnrollment;
+  const heading = mfaStage === "challenge"
+    ? "Verify it’s you"
+    : mfaStage === "enrollment"
+      ? mfaSetup ? "Connect your authenticator" : "Protect your account"
+      : mfaStage === "recovery"
+        ? "Save your recovery codes"
+        : passwordResetToken
+          ? "Reset your password"
+          : invitationToken
+            ? "Create your password"
+            : "Welcome back";
+  const intro = mfaStage === "challenge"
+    ? "Use your authenticator app or one of your saved recovery codes."
+    : mfaStage === "enrollment"
+      ? mfaSetup
+        ? "Scan this code with your authenticator app, then confirm the six-digit code."
+        : "Add a second verification step so a password alone cannot access your work."
+      : mfaStage === "recovery"
+        ? "Each code works once if you lose access to your authenticator app."
+        : passwordResetToken
+          ? "Choose a new password to secure your account."
+          : invitationToken
+            ? `Activate your invitation to ${tenant.displayName}.`
+            : "Sign in to continue to your Wodana workspace.";
+  const submitLabel = isOpening
+    ? "Open workspace"
+    : isSubmitting
+      ? mfaStage === "challenge"
+        ? "Verifying"
+        : mfaStage === "enrollment"
+          ? mfaSetup ? "Confirming" : "Preparing"
+          : mfaStage === "recovery"
+            ? "Opening workspace"
+            : passwordResetToken ? "Saving password" : invitationToken ? "Activating" : "Signing in"
+      : mfaStage === "challenge"
+        ? "Verify and sign in"
+        : mfaStage === "enrollment"
+          ? mfaSetup ? "Confirm authenticator" : "Set up authenticator"
+          : mfaStage === "recovery"
+            ? "Continue to workspace"
+            : passwordResetToken ? "Save new password" : invitationToken ? "Activate invitation" : "Sign in";
 
   return (
     <DesignSystemProvider className={styles.loginRoot} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer}>
@@ -225,79 +472,139 @@ export function LoginScreen({
                 <span aria-hidden="true">×</span>
                 <strong>{tenant.displayName}</strong>
               </div>
-              <h1 id="login-heading">{passwordResetToken ? "Reset your password" : invitationToken ? "Create your password" : "Welcome back"}</h1>
-              <p>{passwordResetToken ? "Choose a new password to secure your account." : invitationToken ? `Activate your invitation to ${tenant.displayName}.` : "Sign in to continue to your Wodana workspace."}</p>
+              <h1 id="login-heading">{heading}</h1>
+              <p>{intro}</p>
             </div>
 
             <form className={styles.loginForm} noValidate onSubmit={submit}>
-              {!settingPassword ? <TextInput
-                errorMessage={emailError}
-                inputType="email"
-                isInvalid={Boolean(emailError)}
-                isRequired
-                label="Work email"
-                name="email"
-                onChange={(value) => {
-                  setEmail(value);
-                  setLimitedSessions(null);
-                  if (emailError) setEmailError("");
-                }}
-                placeholder="you@company.com"
-                value={email}
-              /> : null}
+              {mfaStage === "credentials" ? <>
+                {!settingPassword ? <TextInput
+                  errorMessage={emailError}
+                  inputType="email"
+                  isInvalid={Boolean(emailError)}
+                  isRequired
+                  label="Work email"
+                  name="email"
+                  onChange={(value) => {
+                    setEmail(value);
+                    setLimitedSessions(null);
+                    if (emailError) setEmailError("");
+                  }}
+                  placeholder="you@company.com"
+                  value={email}
+                /> : null}
 
-              <TextInput
-                errorMessage={passwordError}
-                inputType={showPassword ? "text" : "password"}
-                isInvalid={Boolean(passwordError)}
-                isRequired
-                label={settingPassword ? "New password" : "Password"}
-                name="password"
-                onChange={(value) => {
-                  setPassword(value);
-                  setLimitedSessions(null);
-                  if (passwordError) setPasswordError("");
-                }}
-                placeholder="Enter your password"
-                suffix={
-                  <InputAction
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className={styles.passwordToggle}
-                    onPress={() => setShowPassword((current) => !current)}
+                <TextInput
+                  errorMessage={passwordError}
+                  inputType={showPassword ? "text" : "password"}
+                  isInvalid={Boolean(passwordError)}
+                  isRequired
+                  label={settingPassword ? "New password" : "Password"}
+                  name="password"
+                  onChange={(value) => {
+                    setPassword(value);
+                    setLimitedSessions(null);
+                    if (passwordError) setPasswordError("");
+                  }}
+                  placeholder="Enter your password"
+                  suffix={
+                    <InputAction
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className={styles.passwordToggle}
+                      onPress={() => setShowPassword((current) => !current)}
+                    >
+                      {showPassword ? <EyeOff aria-hidden="true" size={17} /> : <Eye aria-hidden="true" size={17} />}
+                    </InputAction>
+                  }
+                  value={password}
+                />
+
+                {settingPassword ? <TextInput
+                  errorMessage={confirmPasswordError}
+                  inputType={showPassword ? "text" : "password"}
+                  isInvalid={Boolean(confirmPasswordError)}
+                  isRequired
+                  label="Confirm password"
+                  name="confirm-password"
+                  onChange={(value) => {
+                    setConfirmPassword(value);
+                    if (confirmPasswordError) setConfirmPasswordError("");
+                  }}
+                  placeholder="Enter the password again"
+                  value={confirmPassword}
+                /> : null}
+
+                {!settingPassword ? <div className={styles.formOptions}>
+                  <button
+                    className={styles.textButton}
+                    disabled={isSubmitting} onClick={startRecovery}
+                    type="button"
                   >
-                    {showPassword ? <EyeOff aria-hidden="true" size={17} /> : <Eye aria-hidden="true" size={17} />}
-                  </InputAction>
-                }
-                value={password}
-              />
+                    Forgot password?
+                  </button>
+                </div> : null}
+              </> : null}
 
-              {settingPassword ? <TextInput
-                errorMessage={confirmPasswordError}
-                inputType={showPassword ? "text" : "password"}
-                isInvalid={Boolean(confirmPasswordError)}
-                isRequired
-                label="Confirm password"
-                name="confirm-password"
-                onChange={(value) => {
-                  setConfirmPassword(value);
-                  if (confirmPasswordError) setConfirmPasswordError("");
-                }}
-                placeholder="Enter the password again"
-                value={confirmPassword}
-              /> : null}
+              {mfaStage === "challenge" ? <div className={styles.mfaForm}>
+                <span className={styles.securityMark}><ShieldCheck aria-hidden="true" size={20} /></span>
+                {mfaRecoveryMode ? <TextInput
+                  autoComplete="one-time-code"
+                  isRequired
+                  label="Recovery code"
+                  onChange={(value) => { setMfaCode(value.toUpperCase()); setStatus(""); }}
+                  placeholder="XXXX-XXXX-XXXX-XXXX"
+                  value={mfaCode}
+                /> : <div className={styles.otpField}>
+                  <span>Authenticator code <i aria-hidden="true">*</i></span>
+                  <OtpInput onChange={(value) => { setMfaCode(value); setStatus(""); }} value={mfaCode} />
+                </div>}
+                <div className={styles.mfaLinks}>
+                  <button className={styles.textButton} disabled={isSubmitting} onClick={() => { setMfaRecoveryMode((value) => !value); setMfaCode(""); setStatus(""); }} type="button">
+                    {mfaRecoveryMode ? "Use authenticator code" : "Use a recovery code"}
+                  </button>
+                  <button className={styles.textButton} disabled={isSubmitting} onClick={resetMfaFlow} type="button"><ArrowLeft size={13} />Back to sign in</button>
+                </div>
+              </div> : null}
 
-              {!settingPassword ? <div className={styles.formOptions}>
-                <button
-                  className={styles.textButton}
-                  disabled={isSubmitting} onClick={startRecovery}
-                  type="button"
-                >
-                  Forgot password?
-                </button>
+              {mfaStage === "enrollment" ? <div className={styles.mfaForm}>
+                {!mfaSetup ? <>
+                  <span className={styles.securityMark}><ShieldCheck aria-hidden="true" size={22} /></span>
+                  <ul className={styles.securityBenefits}>
+                    <li>Use any standard authenticator app.</li>
+                    <li>Recovery codes keep access available if your phone is lost.</li>
+                    <li>Your projects and client information get an extra sign-in check.</li>
+                  </ul>
+                  {mfaEnrollmentDeadline ? <p className={styles.deadlineNotice}>
+                    {canSkipEnrollment
+                      ? `Complete setup by ${new Date(mfaEnrollmentDeadline).toLocaleDateString()}.`
+                      : "Setup is required before you can enter the workspace."}
+                  </p> : null}
+                </> : <>
+                  <div className={styles.qrPanel}>
+                    {mfaQrCode ? <Image alt="Authenticator setup QR code" height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">Preparing QR code…</span>}
+                  </div>
+                  <div className={styles.manualKey}>
+                    <span>Can’t scan it? Enter this setup key</span>
+                    <code>{mfaSetup.secret}</code>
+                    <button className={styles.textButton} onClick={() => void navigator.clipboard?.writeText(mfaSetup.secret).then(() => setStatus("Setup key copied.")).catch(() => setStatus("Select and copy the setup key manually."))} type="button"><Copy size={13} />Copy key</button>
+                  </div>
+                  <div className={styles.otpField}>
+                    <span>Six-digit code <i aria-hidden="true">*</i></span>
+                    <OtpInput onChange={(value) => { setMfaCode(value); setStatus(""); }} value={mfaCode} />
+                  </div>
+                </>}
+                {!mfaSetup && canSkipEnrollment ? <button className={styles.textButton} disabled={isSubmitting} onClick={() => void skipMfaEnrollment()} type="button">Set up later</button> : null}
+              </div> : null}
+
+              {mfaStage === "recovery" ? <div className={styles.mfaForm}>
+                <div className={styles.recoveryHeader}><ShieldCheck aria-hidden="true" size={18} /><span>Store these somewhere safe. They will not be shown again.</span></div>
+                <ol aria-label="Recovery codes" className={styles.recoveryCodes}>{recoveryCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ol>
+                <Button className={styles.copyCodes} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.")).catch(() => setStatus("Select and copy the recovery codes manually."))} size="compact" variant="quiet"><Copy size={14} />Copy all codes</Button>
+                <Checkbox isSelected={recoveryCodesSaved} onChange={setRecoveryCodesSaved}>I saved these recovery codes</Checkbox>
               </div> : null}
 
               <Button className={styles.submitButton} isLoading={isSubmitting} size="large" type="submit">
-                {isOpening ? "Open workspace" : isSubmitting ? (passwordResetToken ? "Saving password" : invitationToken ? "Activating" : "Signing in") : (passwordResetToken ? "Save new password" : invitationToken ? "Activate invitation" : "Sign in")}
+                {submitLabel}
                 <ArrowUpRight aria-hidden="true" size={15} />
               </Button>
             </form>
@@ -309,7 +616,7 @@ export function LoginScreen({
             {isOpening ? <a className={styles.continueLink} href={nextPath}>Open workspace</a> : null}
 
             <p className={styles.supportCopy}>
-              {settingPassword ? (
+              {mfaStage !== "credentials" ? null : settingPassword ? (
                 <button onClick={() => router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}`)} type="button">Back to sign in</button>
               ) : demoCredentials ? (
                 <>Demo tenant: <strong>{tenant.displayName}</strong></>

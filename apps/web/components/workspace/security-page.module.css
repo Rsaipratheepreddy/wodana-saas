@@ -1,5 +1,19 @@
 .provider, .page { min-inline-size: 0; background: var(--wd-color-surface); }
 .liveStatus { margin: 0; padding: .75rem 1.5rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.mfaCard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 1rem; margin: 1.25rem 1.5rem; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-lg); padding: 1.25rem; background: var(--wd-color-surface-raised); }
+.mfaIcon { inline-size: 2.5rem; block-size: 2.5rem; display: grid; place-items: center; border-radius: 50%; background: var(--wd-brand-100); color: var(--wd-brand-700); }
+.mfaSummary { min-inline-size: 0; }
+.mfaTitleRow { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.mfaTitleRow h2, .sessionsHeader h2 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-md); font-weight: 600; }
+.mfaSummary > p, .sessionsHeader p { margin: .35rem 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.5; }
+.enabled, .disabled { border-radius: 999px; padding: .2rem .5rem; font-size: .6875rem; font-weight: 600; }
+.enabled { background: var(--wd-success-soft); color: var(--wd-success); }
+.disabled { background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
+.mfaFacts { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin-block-start: .8rem; color: var(--wd-color-text-secondary); font-size: .72rem; }
+.mfaFacts strong { color: var(--wd-color-text); }
+.deadline { color: var(--wd-warning) !important; }
+.mfaActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.sessionsHeader { border-block-start: 1px solid var(--wd-color-structural-divider); padding: 1rem 1.5rem .6rem; }
 .tableScroll { overflow-x: auto; }
 .tableScroll:focus-visible { outline: 2px solid var(--wd-color-text); outline-offset: -2px; }
 .sessionTable { inline-size: 100%; min-inline-size: 40rem; border-collapse: collapse; }
@@ -14,3 +28,25 @@
 
 .provider :global(.wd-dialog > footer .wd-button) { min-block-size: 2.75rem; }
 @media (max-width: 48rem) { .sessionTable :global(.wd-button) { min-block-size: 2.75rem; } }
+
+.mfaDialogBody { display: grid; gap: 1rem; min-inline-size: 0; }
+.qrPanel { inline-size: 12.75rem; min-block-size: 12.75rem; display: grid; place-items: center; justify-self: center; overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); background: #fff; }
+.qrPanel span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.manualKey { min-inline-size: 0; display: grid; justify-items: center; gap: .4rem; border-radius: var(--wd-radius-md); padding: .75rem; background: var(--wd-color-surface-muted); text-align: center; }
+.manualKey > span { color: var(--wd-color-text-secondary); font-size: .7rem; }
+.manualKey code { max-inline-size: 100%; color: var(--wd-color-text); font-size: .78rem; font-weight: 650; letter-spacing: .08em; overflow-wrap: anywhere; user-select: all; }
+.otpField { display: grid; gap: .5rem; color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: 550; }
+.otpField :global(.wd-otp) { justify-content: center; }
+.recoveryCodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem 1rem; margin: 0; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); padding: 1rem 1rem 1rem 2.5rem; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: .72rem; }
+.recoveryCodes code { color: var(--wd-color-text); font-size: .74rem; font-weight: 600; user-select: all; }
+
+@media (max-width: 48rem) {
+  .mfaCard { grid-template-columns: auto minmax(0, 1fr); margin-inline: 1rem; }
+  .mfaActions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+@media (max-width: 30rem) {
+  .mfaCard { grid-template-columns: 1fr; }
+  .mfaIcon { display: none; }
+  .recoveryCodes { grid-template-columns: 1fr; }
+}

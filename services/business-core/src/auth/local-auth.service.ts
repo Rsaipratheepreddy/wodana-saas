@@ -911,6 +911,12 @@ export class LocalAuthService {
       refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       selectedWorkspaceId,
       profile,
+      mfa: {
+        verified: Boolean(assurance.mfaVerifiedAt),
+        authenticationMethods: assurance.authenticationMethods ?? ["pwd"],
+        enrollmentRequired: Boolean(assurance.mfaEnrollmentDeadline),
+        enrollmentDeadline: assurance.mfaEnrollmentDeadline ?? null,
+      },
     };
   }
 

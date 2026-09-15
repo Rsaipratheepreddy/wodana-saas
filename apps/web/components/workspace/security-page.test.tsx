@@ -11,6 +11,9 @@ afterEach(() => {
 describe("SecurityPage", () => {
   it("shows active sessions directly with a current-device label", () => {
     render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
+    expect(screen.getByRole("heading", { name: "Authenticator verification" })).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "9 recovery codes remaining")).toBeInTheDocument();
+    expect(screen.getByText("Required by account policy")).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
     expect(screen.getByText("This device")).toBeInTheDocument();
   });
@@ -31,6 +34,28 @@ describe("SecurityPage", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ workspaceId: securityPageFixture.workspaceId });
     expect(await screen.findByText("Safari on iPhone or iPad was signed out.")).toBeInTheDocument();
     expect(screen.queryByText("iPhone or iPad")).not.toBeInTheDocument();
+  });
+
+  it("requires a fresh factor before replacing recovery codes", async () => {
+    const interaction = userEvent.setup();
+    const codes = ["AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ accessToken: "new-access" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recoveryCodes: codes }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
+
+    await interaction.click(screen.getByRole("button", { name: "New recovery codes" }));
+    const dialog = await screen.findByRole("dialog", { name: "Generate new recovery codes" });
+    await interaction.type(within(dialog).getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
+    await interaction.click(within(dialog).getByRole("button", { name: "Generate new codes" }));
+
+    expect(await screen.findByRole("dialog", { name: "Save your recovery codes" })).toBeInTheDocument();
+    expect(screen.getByText(codes[0])).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/auth/mfa/step-up",
+      "/api/auth/mfa/recovery",
+    ]);
   });
 
 });

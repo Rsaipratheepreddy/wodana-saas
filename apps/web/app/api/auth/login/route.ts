@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   ACCESS_COOKIE,
+  MFA_CHALLENGE_COOKIE,
+  MFA_REVOKE_COOKIE,
   REFRESH_COOKIE,
   TENANT_COOKIE,
   authCookieOptions,
@@ -16,6 +18,17 @@ type LoginResponse = {
   refreshTokenExpiresIn: number;
   selectedWorkspaceId: string;
   profile: { nextAction: string };
+  mfa?: {
+    enrollmentRequired?: boolean;
+    enrollmentDeadline?: string | null;
+  };
+};
+
+type LoginChallengeResponse = {
+  mfaRequired: true;
+  challengeToken: string;
+  challengeExpiresIn: number;
+  methods: string[];
 };
 
 export async function POST(request: Request) {
@@ -49,6 +62,40 @@ export async function POST(request: Request) {
     );
   }
 
+  if (payload?.mfaRequired === true) {
+    if (typeof payload.challengeToken !== "string" || !payload.challengeToken
+      || !Number.isFinite(payload.challengeExpiresIn) || payload.challengeExpiresIn <= 0
+      || !Array.isArray(payload.methods)) {
+      return NextResponse.json({ message: "The sign-in service returned an incomplete MFA challenge. Please try again." }, { status: 502 });
+    }
+    const challenge = payload as LoginChallengeResponse;
+    const response = NextResponse.json({
+      mfaRequired: true,
+      challengeExpiresIn: challenge.challengeExpiresIn,
+      methods: challenge.methods,
+    });
+    response.cookies.set(MFA_CHALLENGE_COOKIE, challenge.challengeToken, {
+      ...authCookieOptions,
+      maxAge: challenge.challengeExpiresIn,
+    });
+    response.cookies.set(TENANT_COOKIE, tenantSlug, {
+      ...authCookieOptions,
+      maxAge: challenge.challengeExpiresIn,
+    });
+    const revokeFamilyId = typeof body?.revokeFamilyId === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.revokeFamilyId)
+      ? body.revokeFamilyId
+      : null;
+    if (revokeFamilyId) {
+      response.cookies.set(MFA_REVOKE_COOKIE, revokeFamilyId, {
+        ...authCookieOptions,
+        maxAge: challenge.challengeExpiresIn,
+      });
+    } else response.cookies.delete(MFA_REVOKE_COOKIE);
+    response.headers.set("cache-control", "no-store");
+    return response;
+  }
+
   if (!payload || typeof payload.accessToken !== "string" || !payload.accessToken
     || typeof payload.refreshToken !== "string" || !payload.refreshToken
     || !Number.isFinite(payload.accessTokenExpiresIn) || payload.accessTokenExpiresIn <= 0
@@ -61,6 +108,8 @@ export async function POST(request: Request) {
     authenticated: true,
     nextAction: session.profile.nextAction,
     selectedWorkspaceId: session.selectedWorkspaceId,
+    mfaEnrollmentRequired: session.mfa?.enrollmentRequired === true,
+    mfaEnrollmentDeadline: session.mfa?.enrollmentDeadline ?? null,
   });
   response.cookies.set(ACCESS_COOKIE, session.accessToken, {
     ...authCookieOptions,
@@ -74,6 +123,8 @@ export async function POST(request: Request) {
     ...authCookieOptions,
     maxAge: session.refreshTokenExpiresIn,
   });
+  response.cookies.delete(MFA_CHALLENGE_COOKIE);
+  response.cookies.delete(MFA_REVOKE_COOKIE);
   response.headers.set("cache-control", "no-store");
   return response;
 }

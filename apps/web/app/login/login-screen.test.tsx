@@ -87,3 +87,88 @@ describe("login progress and failure feedback", () => {
     expect(openAuthenticatedWorkspace).not.toHaveBeenCalled();
   });
 });
+
+describe("login MFA flow", () => {
+  function renderLogin() {
+    render(<LoginScreen demoCredentials={{ email: "owner@example.com", password: "DemoPassword#2026" }} nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    return userEvent.setup();
+  }
+
+  async function enterOtp(user: ReturnType<typeof userEvent.setup>, code: string) {
+    for (const [index, digit] of [...code].entries()) {
+      await user.type(screen.getByLabelText(`Digit ${index + 1}`), digit);
+    }
+  }
+
+  it("completes a second-factor challenge before opening the workspace", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ mfaRequired: true, methods: ["totp", "recovery_code"] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: "00000000-0000-4000-8000-000000000002" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { name: "Verify it’s you" })).toBeInTheDocument();
+    expect(openAuthenticatedWorkspace).not.toHaveBeenCalled();
+    await enterOtp(user, "123456");
+    await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+
+    await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({ code: "123456" });
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/mfa/verify");
+  });
+
+  it("keeps the selected device logout through a second MFA challenge", async () => {
+    const sessions = securityPageFixture.sessions.slice(0, 2);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ mfaRequired: true }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "DEVICE_LIMIT_REACHED", message: "Log out a device to continue.", sessions }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ mfaRequired: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: securityPageFixture.workspaceId }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await enterOtp(user, "123456");
+    await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+    const dialog = await screen.findByRole("dialog", { name: "Device limit reached" });
+    await user.click(within(dialog).getAllByRole("button", { name: "Log out device" })[1]);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await enterOtp(user, "654321");
+    await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+
+    await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1].body))).toMatchObject({ revokeFamilyId: sessions[1].familyId });
+  });
+
+  it("enrolls a required account and requires recovery-code acknowledgement", async () => {
+    const workspaceId = "00000000-0000-4000-8000-000000000002";
+    const codes = ["AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"];
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: workspaceId, mfaEnrollmentRequired: true, mfaEnrollmentDeadline: "2026-09-22T00:00:00.000Z" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ secret: "ABCDEFGHIJKLMNOP", otpauthUri: "otpauth://totp/Wodana:test?secret=ABCDEFGHIJKLMNOP", setupExpiresInSeconds: 600 }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ enabled: true, recoveryCodes: codes }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { name: "Protect your account" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    expect(await screen.findByText("ABCDEFGHIJKLMNOP")).toBeInTheDocument();
+    await enterOtp(user, "654321");
+    await user.click(screen.getByRole("button", { name: "Confirm authenticator" }));
+
+    expect(await screen.findByRole("heading", { name: "Save your recovery codes" })).toBeInTheDocument();
+    expect(screen.getByText(codes[0])).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue to workspace" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Continue to workspace" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Confirm that you saved");
+    expect(openAuthenticatedWorkspace).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("checkbox", { name: "I saved these recovery codes" }));
+    await user.click(screen.getByRole("button", { name: "Continue to workspace" }));
+    await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+  });
+});

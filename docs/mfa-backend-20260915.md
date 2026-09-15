@@ -1,7 +1,8 @@
 # MFA backend release contract — 15 September 2026
 
 This slice adds generic staff multi-factor authentication to Wodana Business Core. It does not
-change client-portal OTP behavior and does not connect the web screens yet.
+change client-portal OTP behavior. The staff web screens are connected in the follow-on frontend
+slice documented in `mfa-web-20260915.md`.
 
 ## Behavior
 
@@ -49,10 +50,9 @@ test covers policy grace, enrollment, replay defenses, recovery, challenge, refr
 session invalidation, bounded factor-attempt locking, required-policy disable denial, and
 plaintext-storage checks.
 
-## Frontend handoff
+## Frontend connection
 
-The next slice is limited to the login challenge, mandatory-enrollment gate, authenticator setup,
-one-time recovery-code acknowledgement, security status, step-up prompt, and friendly expired or
-locked states. The frontend must replace its stored access token whenever confirm or step-up returns
-a new token, while keeping the current refresh token unless the login challenge returns a new
-session.
+The web application now covers login challenge, mandatory enrollment, authenticator setup,
+one-time recovery-code acknowledgement, security status, step-up verification, recovery-code
+replacement, and policy-aware disablement. Returned access tokens are installed by same-origin
+server routes; challenge and refresh tokens remain in HttpOnly cookies.

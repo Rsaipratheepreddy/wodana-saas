@@ -69,6 +69,45 @@ export async function authenticatedBackendFetch(
   };
 }
 
+export async function authenticatedBackendPost(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<AuthenticatedBackendResult> {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(ACCESS_COOKIE)?.value;
+  const refreshToken = cookieStore.get(REFRESH_COOKIE)?.value;
+  if (!accessToken || !refreshToken) return { upstream: null, unauthenticated: true };
+
+  const invoke = (token: string, currentRefreshToken: string) => fetch(
+    businessApiUrl(path),
+    withBearer({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...body, refreshToken: currentRefreshToken }),
+    }, token),
+  ).catch(() => null);
+
+  let upstream = await invoke(accessToken, refreshToken);
+  if (upstream?.status !== 401) {
+    return { upstream, unauthenticated: upstream?.status === 401 };
+  }
+
+  const refreshResponse = await fetch(businessApiUrl("/auth/refresh"), {
+    method: "POST",
+    headers: { "content-type": "application/json", ...forwardedDeviceHeaders(await headers()) },
+    body: JSON.stringify({ refreshToken }),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!refreshResponse?.ok) return { upstream: refreshResponse, unauthenticated: true };
+  const rotatedSession = await refreshResponse.json() as RotatedSession;
+  upstream = await invoke(rotatedSession.accessToken, rotatedSession.refreshToken);
+  return {
+    upstream,
+    rotatedSession,
+    unauthenticated: upstream?.status === 401,
+  };
+}
+
 export function applyRotatedSession(
   response: NextResponse,
   session?: RotatedSession,
