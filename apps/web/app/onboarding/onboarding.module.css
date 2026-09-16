@@ -6,32 +6,40 @@
   background: #fff;
   color: var(--wd-color-text);
 }
-.welcome { position: relative; min-block-size: 100dvh; display: grid; place-items: center; overflow: hidden; padding: 2rem; background: #fff; text-align: center; }
-.welcomeAura { position: absolute; inline-size: min(72vw, 54rem); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--welcome-lilac) 27%, transparent), color-mix(in srgb, var(--welcome-rose) 11%, transparent) 42%, transparent 70%); animation: welcome-aura 1.2s var(--wd-ease-out) both; pointer-events: none; }
-.welcomeContent { position: relative; display: grid; justify-items: center; }
-.welcomeMark { inline-size: 3.25rem; block-size: 3.25rem; display: grid; place-items: center; border-radius: .9rem; background: var(--wd-brand-gradient); color: var(--wd-brand-ink); font-size: 1rem; font-weight: 800; animation: welcome-mark 680ms var(--wd-ease-out) both; }
-.welcomeContent > p { margin: 2rem 0 .65rem; color: var(--wd-color-text-tertiary); font-size: .76rem; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; animation: welcome-line 580ms 240ms var(--wd-ease-out) both; }
-.welcomeContent h1 { max-inline-size: 52rem; margin: 0; font-size: clamp(2.4rem, 7vw, 5.5rem); font-weight: 590; letter-spacing: -.06em; line-height: .98; text-wrap: balance; animation: welcome-line 680ms 480ms var(--wd-ease-out) both; }
-.welcomeContent > span { margin-block-start: 1.25rem; color: var(--wd-color-text-secondary); font-size: clamp(.9rem, 1.5vw, 1.05rem); animation: welcome-line 580ms 760ms var(--wd-ease-out) both; }
-.welcomeContent :global(.wd-button) { margin-block-start: 2.5rem; animation: welcome-line 580ms 1s var(--wd-ease-out) both; }
+.welcome { min-block-size: 100dvh; display: grid; grid-template-columns: minmax(0, 52%) minmax(22rem, 48%); overflow: hidden; background: #f8f5f1; }
+.welcomeContent { position: relative; z-index: 1; display: grid; align-content: center; justify-items: start; padding: clamp(2rem, 7vw, 8rem); background: radial-gradient(circle at 35% 44%, color-mix(in srgb, var(--welcome-lilac) 18%, transparent), transparent 40%), linear-gradient(145deg, #fff 0%, #fbf7f4 68%, color-mix(in srgb, var(--welcome-peach) 12%, #fff)); text-align: start; }
+.welcomeLogo { inline-size: clamp(7.5rem, 10vw, 9.25rem); block-size: auto; object-fit: contain; animation: welcome-logo 700ms var(--wd-ease-out) both; }
+.welcomeContent > p { margin: clamp(3.5rem, 9vh, 7rem) 0 .75rem; color: var(--wd-color-text-tertiary); font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; animation: welcome-line 580ms 180ms var(--wd-ease-out) both; }
+.welcomeContent h1 { max-inline-size: 43rem; margin: 0; font-size: clamp(2.6rem, 5.2vw, 5rem); font-weight: 570; letter-spacing: -.058em; line-height: .98; text-wrap: balance; animation: welcome-line 680ms 380ms var(--wd-ease-out) both; }
+.welcomeContent > span { margin-block-start: 1.15rem; color: var(--wd-color-text-secondary); font-size: clamp(.95rem, 1.4vw, 1.1rem); animation: welcome-line 580ms 620ms var(--wd-ease-out) both; }
+.welcomeContent :global(.wd-button) { margin-block-start: 2.25rem; animation: welcome-line 580ms 820ms var(--wd-ease-out) both; }
+.welcomeContent > small { margin-block-start: 1rem; color: var(--wd-color-text-tertiary); font-size: .68rem; animation: welcome-line 580ms 980ms var(--wd-ease-out) both; }
+.welcomeMedia { position: relative; min-block-size: 100dvh; overflow: hidden; animation: welcome-media 1.1s var(--wd-ease-out) both; }
+.welcomeMedia img { object-fit: cover; object-position: 48% center; scale: 1.025; animation: welcome-photo 1.8s var(--wd-ease-out) both; }
+.welcomeMedia > div { position: absolute; inset: 0; background: linear-gradient(90deg, rgb(248 245 241 / 34%), transparent 24%), linear-gradient(180deg, transparent 60%, rgb(47 35 45 / 12%)); }
 .layout { min-block-size: 100dvh; display: grid; grid-template-columns: clamp(15rem, 22vw, 19rem) minmax(0, 1fr); }
-.story { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: clamp(1.5rem, 3vw, 2.25rem); background: linear-gradient(160deg, color-mix(in srgb, var(--welcome-lilac) 30%, #fff), color-mix(in srgb, var(--welcome-rose) 13%, #fff) 48%, color-mix(in srgb, var(--welcome-peach) 18%, #fff)); color: #2f232d; }
+.story { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: clamp(1.5rem, 3vw, 2.25rem); background: linear-gradient(160deg, color-mix(in srgb, var(--welcome-lilac) 24%, #f9fbf7), color-mix(in srgb, var(--welcome-rose) 9%, #f8faf6) 48%, color-mix(in srgb, var(--welcome-peach) 12%, #fbf9f5)); color: #2f232d; }
 .story::after { position: absolute; inset: auto -15% -28% 20%; block-size: 55%; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--welcome-peach) 38%, transparent), transparent 68%); content: ""; pointer-events: none; }
-.wordmark { position: relative; z-index: 1; display: flex; align-items: center; gap: .65rem; }
-.wordmark > span { inline-size: 2rem; block-size: 2rem; display: grid; place-items: center; border-radius: .55rem; background: var(--wd-brand-gradient); color: var(--wd-brand-ink); font-size: .8rem; font-weight: 800; }
-.wordmark strong { font-size: .9rem; letter-spacing: -.015em; }
+.wordmark { position: relative; z-index: 1; }
+.wordmark img { inline-size: 6.4rem; block-size: auto; object-fit: contain; }
 .storyBody { position: relative; z-index: 1; margin-block: auto; }
 .storyCopy { margin-block-end: 2rem; }
 .storyCopy > p { margin: 0 0 .4rem; color: color-mix(in srgb, #2f232d 62%, #fff); font-size: .64rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .storyCopy h1 { overflow: hidden; margin: 0; font-size: 1.15rem; font-weight: 620; letter-spacing: -.025em; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.storyCopy > div { block-size: 3px; overflow: hidden; margin-block-start: .9rem; border-radius: 999px; background: rgb(47 35 45 / 10%); }
-.storyCopy > div span { block-size: 100%; display: block; border-radius: inherit; background: #2f232d; transition: inline-size var(--wd-duration-slow) var(--wd-ease-out); }
-.progress { display: grid; gap: .2rem; padding: 0; margin: 0; list-style: none; }
-.progress li { min-block-size: 2.65rem; display: flex; align-items: center; gap: .7rem; border-radius: .65rem; padding: .35rem .45rem; color: color-mix(in srgb, #2f232d 56%, #fff); transition: background var(--wd-duration-base), color var(--wd-duration-base), transform var(--wd-duration-base) var(--wd-ease-out); }
-.progress li[data-active] { background: rgb(255 255 255 / 64%); color: #2f232d; transform: translateX(.2rem); }
-.progress li > span { inline-size: 1.55rem; block-size: 1.55rem; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid color-mix(in srgb, #2f232d 18%, transparent); border-radius: 50%; font-size: .65rem; font-weight: 700; }
-.progress li[data-done] > span { border-color: transparent; background: #2f232d; color: #fff; }
-.progress strong { font-size: .73rem; font-weight: 610; }
+.storyCopy > div { display: none; }
+.progress { display: grid; padding: 0; margin: 0; list-style: none; }
+.progress li { position: relative; min-block-size: 3.35rem; display: flex; align-items: flex-start; gap: .85rem; padding: .1rem .25rem; color: color-mix(in srgb, #2f232d 45%, #fff); animation: timeline-item 440ms var(--wd-ease-out) both; transition: color var(--wd-duration-base); }
+.progress li:nth-child(2) { animation-delay: 70ms; }
+.progress li:nth-child(3) { animation-delay: 140ms; }
+.progress li:nth-child(4) { animation-delay: 210ms; }
+.progress li:not(:last-child)::after { position: absolute; inset: 1.6rem auto auto 1rem; inline-size: 1px; block-size: calc(100% - .1rem); background: color-mix(in srgb, #2f232d 18%, transparent); content: ""; transform-origin: top; animation: timeline-line 520ms 160ms var(--wd-ease-out) both; }
+.progress li[data-done]:not(:last-child)::after { background: #2f232d; }
+.progress li[data-active] { color: #2f232d; }
+.progress li > span { position: relative; z-index: 1; inline-size: 1.55rem; block-size: 1.55rem; display: grid; flex: 0 0 auto; place-items: center; border: 1.5px solid color-mix(in srgb, #2f232d 24%, transparent); border-radius: 50%; background: color-mix(in srgb, #fff 76%, transparent); color: #fff; transition: border-color var(--wd-duration-base), background var(--wd-duration-base), box-shadow var(--wd-duration-base); }
+.progress li[data-active] > span { border-color: #2f232d; box-shadow: 0 0 0 4px rgb(255 255 255 / 70%); }
+.progress li[data-active] > span::after { inline-size: .42rem; block-size: .42rem; border-radius: 50%; background: #2f232d; content: ""; animation: timeline-pulse 1.8s ease-in-out infinite; }
+.progress li[data-done] > span { border-color: transparent; background: #2f232d; }
+.progress strong { padding-block-start: .19rem; font-size: .75rem; font-weight: 580; }
 .stepCount { position: relative; z-index: 1; color: color-mix(in srgb, #2f232d 52%, #fff); font-size: .64rem; }
 .panel { min-inline-size: 0; display: grid; place-items: center; overflow: auto; padding: clamp(1.5rem, 5vw, 4.5rem); background: #fff; }
 .step { inline-size: min(100%, 39rem); display: grid; gap: 1.5rem; animation: step-in var(--wd-duration-slow) var(--wd-ease-out); }
@@ -99,9 +107,13 @@
 @keyframes step-in { from { opacity: 0; transform: translateY(.45rem); } }
 @keyframes mark-in { from { opacity: 0; transform: scale(.75); } }
 @keyframes glow-in { from { opacity: 0; transform: scale(.88); } }
-@keyframes welcome-aura { from { opacity: 0; transform: scale(.72); } }
-@keyframes welcome-mark { from { opacity: 0; transform: scale(.72); filter: blur(8px); } }
+@keyframes welcome-logo { from { opacity: 0; transform: translateY(-.4rem); filter: blur(6px); } }
 @keyframes welcome-line { from { opacity: 0; transform: translateY(.65rem); filter: blur(7px); } }
+@keyframes welcome-media { from { opacity: 0; clip-path: inset(0 0 0 100%); } }
+@keyframes welcome-photo { from { scale: 1.08; } }
+@keyframes timeline-item { from { opacity: 0; transform: translateY(.35rem); } }
+@keyframes timeline-line { from { transform: scaleY(0); } }
+@keyframes timeline-pulse { 50% { transform: scale(.72); opacity: .7; } }
 @media (max-width: 58rem) {
   .layout { grid-template-columns: 13.5rem minmax(0, 1fr); }
   .story { padding: 1.5rem; }
@@ -110,6 +122,15 @@
   .inviteFields :global(.wd-button) { grid-column: 1 / -1; justify-self: start; }
 }
 @media (max-width: 42rem) {
+  .welcome { position: relative; grid-template-columns: 1fr; align-items: end; padding: 1rem; background: #eee8e2; }
+  .welcomeMedia { position: absolute; inset: 0; min-block-size: 100%; }
+  .welcomeMedia img { object-position: 45% center; }
+  .welcomeMedia > div { background: linear-gradient(180deg, rgb(27 20 24 / 5%) 0%, rgb(27 20 24 / 12%) 38%, rgb(238 232 226 / 88%) 72%, #eee8e2 100%); }
+  .welcomeContent { align-content: end; min-block-size: auto; border: 1px solid rgb(255 255 255 / 72%); border-radius: 1.35rem; padding: 1.75rem 1.5rem; background: rgb(255 255 255 / 88%); box-shadow: 0 1.5rem 4rem rgb(47 35 45 / 14%); backdrop-filter: blur(16px); }
+  .welcomeLogo { inline-size: 6.8rem; }
+  .welcomeContent > p { margin-block-start: 2.75rem; }
+  .welcomeContent h1 { font-size: clamp(2.4rem, 13vw, 3.6rem); }
+  .welcomeContent :global(.wd-button) { inline-size: 100%; justify-content: center; }
   .layout { display: block; }
   .story { display: none; }
   .panel { min-block-size: 100dvh; display: block; padding: 1.25rem; }
@@ -126,5 +147,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .progress li, .storyCopy > div span, .mobileProgress b { transition: none; }
-  .welcomeAura, .welcomeMark, .welcomeContent > p, .welcomeContent h1, .welcomeContent > span, .welcomeContent :global(.wd-button), .step, .completeGlow, .completeMark { animation: none; }
+  .welcomeLogo, .welcomeContent > p, .welcomeContent h1, .welcomeContent > span, .welcomeContent :global(.wd-button), .welcomeContent > small, .welcomeMedia, .welcomeMedia img, .progress li, .progress li::after, .progress li[data-active] > span::after, .step, .completeGlow, .completeMark { animation: none; }
 }

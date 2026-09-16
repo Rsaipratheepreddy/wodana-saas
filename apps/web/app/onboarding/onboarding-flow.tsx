@@ -453,13 +453,17 @@ export function OnboardingFlow({
     return (
       <DesignSystemProvider className={styles.root} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
         <main className={styles.welcome}>
-          <div className={styles.welcomeAura} aria-hidden="true" />
-          <div className={styles.welcomeContent}>
-            <div className={styles.welcomeMark} aria-hidden="true">W</div>
+          <section className={styles.welcomeContent}>
+            <Image alt="Wodana" className={styles.welcomeLogo} height={50} priority src="/brand/wodana/wodana-logo-v4.png" width={150} />
             <p>Welcome to</p>
             <h1>{form.name || "your new workspace"}</h1>
-            <span>Let’s make great work feel effortless.</span>
+            <span>Great work starts here.</span>
             <Button onPress={beginSetup} size="large" variant="primary">Begin setup<ArrowRight aria-hidden="true" size={16} /></Button>
+            <small>Four quick steps. Your progress saves automatically.</small>
+          </section>
+          <div className={styles.welcomeMedia} aria-hidden="true">
+            <Image alt="" fill priority sizes="(max-width: 42rem) 100vw, 48vw" src="/quotation/cover-interior.png" />
+            <div />
           </div>
         </main>
       </DesignSystemProvider>
@@ -470,7 +474,7 @@ export function OnboardingFlow({
     <DesignSystemProvider className={styles.root} currency={form.defaultCurrency} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
       <main className={styles.layout}>
         <aside className={styles.story}>
-          <div className={styles.wordmark}><span>W</span><strong>Wodana</strong></div>
+          <div className={styles.wordmark}><Image alt="Wodana" height={34} priority src="/brand/wodana/wodana-logo-v4.png" width={102} /></div>
           <div className={styles.storyBody}>
             <div className={styles.storyCopy}>
               <p>Workspace setup</p>
@@ -478,11 +482,11 @@ export function OnboardingFlow({
               <div aria-hidden="true"><span style={{ inlineSize: `${((currentIndex + 1) / STEPS.length) * 100}%` }} /></div>
             </div>
             <ol className={styles.progress} aria-label="Setup progress">
-              {STEPS.map((item, index) => {
+              {STEPS.map((item) => {
                 const done = onboarding.completedSteps.includes(item.id);
                 const active = item.id === step;
                 const state = done ? "complete" : active ? "current" : "upcoming";
-                return <li aria-current={active ? "step" : undefined} aria-label={`${item.shortLabel}, ${state}`} data-active={active || undefined} data-done={done || undefined} key={item.id}><span>{done ? <Check size={13} /> : index + 1}</span><strong>{item.shortLabel}</strong></li>;
+                return <li aria-current={active ? "step" : undefined} aria-label={`${item.shortLabel}, ${state}`} data-active={active || undefined} data-done={done || undefined} key={item.id}><span>{done ? <Check size={13} /> : null}</span><strong>{item.shortLabel}</strong></li>;
               })}
             </ol>
           </div>
