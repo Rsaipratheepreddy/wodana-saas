@@ -27,6 +27,7 @@ import {
   workPackageForTask,
 } from "./project-work-packages";
 import { designReadinessForTask } from "./project-design-control";
+import { workPackageReadiness } from "./project-package-readiness";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
   phase: "planning",
@@ -814,6 +815,13 @@ export function applyExecution(
     const plannedStart = day(value.plannedStart);
     const plannedEnd = day(value.plannedEnd);
     const blocker = str(value.blocker, 1000);
+    const deliveryRoute = choice(value.deliveryRoute, [
+      "site",
+      "factory",
+      "vendor",
+      "office",
+      "mixed",
+    ] as const);
     if (plannedStart && plannedEnd && plannedEnd < plannedStart)
       throw new BadRequestException("Package finish must be on or after start.");
     if (status === "ready" && !ownerId)
@@ -823,6 +831,16 @@ export function applyExecution(
     if (["on_hold", "blocked", "cancelled"].includes(status) && !blocker)
       throw new BadRequestException("Record why this work package is unavailable.");
     const linkedTasks = d.tasks.filter((task) => task.packageId === workPackage.id);
+    if (status === "ready") {
+      const issues = workPackageReadiness(d, {
+        ...workPackage,
+        ownerId,
+        deliveryRoute,
+        plannedStart,
+        plannedEnd,
+      });
+      if (issues.length) throw new ConflictException(issues[0].detail);
+    }
     if (
       status === "completed" &&
       (!linkedTasks.length ||
@@ -845,13 +863,7 @@ export function applyExecution(
     Object.assign(workPackage, {
       title: str(value.title, 240, true),
       area: str(value.area, 160),
-      deliveryRoute: choice(value.deliveryRoute, [
-        "site",
-        "factory",
-        "vendor",
-        "office",
-        "mixed",
-      ] as const),
+      deliveryRoute,
       status,
       ownerId,
       plannedStart,

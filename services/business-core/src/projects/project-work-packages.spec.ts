@@ -131,16 +131,18 @@ describe("released scope work packages", () => {
     expect(() => command(data, "work_package", {
       workPackage: { ...workPackage, status: "ready", ownerId: "" },
     })).toThrow(/accountable owner/);
-    data = command(data, "work_package", {
+    expect(() => command(data, "work_package", {
       workPackage: {
         ...workPackage,
         status: "ready",
         ownerId: "manager",
         deliveryRoute: "factory",
       },
+    })).toThrow(/does not match this package/);
+    data = command(data, "work_package", {
+      workPackage: { ...workPackage, status: "ready", ownerId: "manager", deliveryRoute: "site" },
     });
-    expect(() => command(data, "task_status", { id: "task-1", status: "in_progress" }))
-      .toThrow(/delivery route/);
+    expect(data.workPackages![0].status).toBe("ready");
   });
 
   it("requires an actual vendor resource for vendor-route work", () => {

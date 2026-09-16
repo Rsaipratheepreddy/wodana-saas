@@ -77,6 +77,13 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - Accepted variation scope uses the same design capture and cannot enter delivery planning without its corresponding approved design evidence. The baseline keeps earlier accepted evidence while adding new variation evidence.
 - The execution pulse now surfaces missing design evidence as an actionable item before it offers a task as start-ready. Focused tests, the full business-core suite (605 passed, 10 skipped) and root typechecking passed. No project UI or UAT-complete claim has been made.
 
+### Slice 4 — Executable work-package readiness (backend completed 16 September 2026)
+
+- `Ready` is now an operational decision, not a label. Before a package can become ready it needs planned work, an accountable package owner and task owners, consistent delivery route, no recorded task blocker, and each task's scope/access/material-readiness checks.
+- A site/factory package additionally needs the approved captured design evidence for its scoped tasks. Company-supplied requirements need enough recorded available stock; vendor-supplied requirements need an acknowledged vendor commitment. Client-supplied materials remain governed by the explicit task material-readiness confirmation.
+- The project execution pulse uses the same evaluator, so it tells the project manager the first concrete missing condition rather than a generic “prepare package” instruction.
+- Focused readiness, design, package and full-suite tests passed (607 passed, 10 skipped), with root typechecking clean. Resource booking and customer-promise escalation remain separate command-centre work; they are not being claimed as complete.
+
 ### Next locked slice — Project command centre
 
 1. Define the one live project operating view from the initiation baseline, execution pulse, scope packages, approvals and commercial readiness.

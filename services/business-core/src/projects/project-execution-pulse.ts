@@ -8,6 +8,7 @@ import type {
 } from "./execution.types";
 import { routeSupportsLocation, workPackageForTask } from "./project-work-packages";
 import { designReadinessForTask } from "./project-design-control";
+import { workPackageReadiness } from "./project-package-readiness";
 
 const rank: Record<ProjectExecutionAction["priority"], number> = {
   critical: 0,
@@ -51,15 +52,17 @@ export function projectExecutionPulse(
   const workPackages = data.workPackages ?? [];
 
   for (const workPackage of workPackages) {
-    if (workPackage.status === "planning")
+    if (workPackage.status === "planning") {
+      const issue = workPackageReadiness(data, workPackage)[0];
       actions.push(action({
         kind: "prepare_package",
         priority: "normal",
         title: `Prepare ${workPackage.title}`,
-        detail: "Assign an owner and confirm the delivery route before scheduling work.",
+        detail: issue?.detail ?? "Review the package plan before authorising delivery work.",
         workPackageId: workPackage.id,
         recordId: workPackage.id,
       }));
+    }
     if (["blocked", "on_hold"].includes(workPackage.status))
       actions.push(action({
         kind: "resolve_package",
