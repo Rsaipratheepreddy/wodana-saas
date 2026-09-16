@@ -116,11 +116,21 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - The project action contract marks a partial site start honestly, including the accepted quantity and instruction to keep approved installation output within that limit.
 - Full business-core tests passed (614 passed, 10 skipped), the focused project web tests passed and root typechecking was clean. This is backend verification, not tenant UAT completion.
 
-### Next locked slice — Site daily evidence and quality decision flow
+### Slice 8b — Daily evidence, quality decisions and safe automation hooks (backend completed 16 September 2026)
 
-1. Audit daily site reports as an operational loop: evidence/no-work reason → submitted report → independent quantity/evidence decision → current forecast and client-safe progress.
-2. Define control for failed/returned reports, missing photo or site reference, partial output, weather/access delays, safety incidents, correction reports and changes after installation without mutating approved history.
-3. Connect approved site output to inspection/commissioning eligibility, then use the same exception reasons in the execution pulse. Do not redesign the full UI until this backend loop is complete and tested.
+- A daily report still requires evidence (uploaded file or signed/reference record) and measured work or a no-work explanation. It now records an explicit safety state and a forecast state: **none**, **watch** or **blocked**. A safety observation/incident needs a description; an incident must state whether it affects the schedule.
+- A delayed or blocked report must include the impact, a recovery plan, one accountable member and a next-update date that is not before the shift. This is a structured internal commitment; it never auto-blocks work, rewrites dates or changes approved quantities without a reviewer.
+- Returned reports become a named, owned correction action. Submitted schedule-risk and safety-incident reports become critical review/recovery actions ahead of ordinary work. Correction reports still supersede approved output rather than mutating approved history.
+- Commissioning remains linked to completed/awaiting-inspection site work and independently reviewed. The execution pulse now makes overdue draft checks, returned checks and submitted reviews explicit; scheduled reminders cover due/overdue commissioning as well as tasks, snags, technical queries, milestones, released dispatches and dispatched deliveries.
+- Project actions now emit concise durable events for daily-report submission/return/approval, schedule risk, safety incidents, task schedule changes, dispatch transitions and commissioning transitions. The existing automation worker can use these event names for tenant-configured follow-up, webhook or email flows; events do not include full report text, readings or private task descriptions.
+- In-app project updates continue immediately. Email is deliberately opt-in: the tenant must approve a `project.update` email template using only the documented safe variables, and the individual recipient must enable the matching email preference. The existing notification queue then handles quiet hours, frequency policy, retries and delivery records. Missing/broken mail configuration cannot roll back a project command.
+- Focused report, pulse and event tests passed; full regression and UAT confirmation remain required before a delivery claim.
+
+### Next locked slice — Site closeout and client handover decision flow
+
+1. Audit the path from inspected work and passed commissioning through snags, area handover, client acceptance, documents/manuals, outstanding items, warranty and final account. Preserve partial-area delivery and do not conflate physical acceptance with payment closure.
+2. Make every exception owned and visible: failed inspection, failed/retest commissioning, rejected handover, outstanding documents, client hold points, warranty defects and retention conditions.
+3. Reuse the same calendar/reminder/event controls only where a dated commitment exists. Then test the complete released-quote → project → factory → site → handover route before beginning the project UI redesign.
 
 ## Do not lose these client requirements
 

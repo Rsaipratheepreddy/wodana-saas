@@ -3,7 +3,7 @@ import { paymentIsVerified } from "../commercial/accounting-invoice";
 import { controlledChangeCanRelease } from "../commercial/change-control";
 import { freezeHash } from "../commercial/commercial.domain";
 import { previewReschedule } from "./project-reschedule";
-import { notifyProject } from "./project-notifications";
+import { ProjectNotificationsService } from "./project-notifications";
 import {
   validateCalendar,
   calendarContainsSlot,
@@ -55,9 +55,15 @@ import {
   mergeDesignBaseline,
   synchroniseApprovedDesignDocuments,
 } from "./project-design-control";
+import { CrmEventsService } from "../crm/shared/crm-events.service";
+import { projectExecutionEvents } from "./project-execution-events";
 @Injectable()
 export class ExecutionService {
-  constructor(private readonly access: HrmsAccessService) {}
+  constructor(
+    private readonly access: HrmsAccessService,
+    private readonly projectNotifications: ProjectNotificationsService,
+    private readonly events: CrmEventsService,
+  ) {}
   async row(ctx: HrmsContext, id: string, lock = false) {
     const r = await ctx.client.query(
       `SELECT p.id,p.case_id AS "caseId",p.name,p.status,party.display_name AS customer,cc.content AS commercial,(SELECT default_timezone FROM workspaces WHERE id=p.workspace_id) AS timezone FROM delivery_projects p JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id LEFT JOIN commercial_cases cc ON cc.workspace_id=p.workspace_id AND cc.case_id=p.case_id WHERE p.workspace_id=$1 AND p.id=$2 ${lock ? "FOR UPDATE OF p" : ""}`,
@@ -1429,9 +1435,38 @@ export class ExecutionService {
           "UPDATE delivery_projects SET status='active',version=version+1 WHERE workspace_id=$1 AND id=$2",
           [w, id],
         );
-      await notifyProject(ctx, id, row.name, d, action, changedRecordId, retry);
+      await this.projectNotifications.notify(
+        ctx,
+        id,
+        row.name,
+        d,
+        action,
+        changedRecordId,
+        retry,
+      );
       d.processed.push(retry);
       await this.store(ctx, id, d);
+      const correlationId = randomUUID();
+      let causationId: string | undefined;
+      for (const event of projectExecutionEvents(
+        id,
+        row.name,
+        d,
+        action,
+        changedRecordId,
+      )) {
+        causationId = await this.events.record(ctx.client, {
+          workspaceId: ctx.workspaceId,
+          actorUserId: ctx.userId,
+          source: "user",
+          action: event.action,
+          entityType: "delivery_project",
+          entityId: id,
+          correlationId,
+          causationId,
+          after: event.data,
+        });
+      }
       await this.access.audit(ctx, `project_${action}`, id, {
         recordId: b.id ?? "",
         revision: d.revision,

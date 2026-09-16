@@ -222,4 +222,61 @@ describe("project execution pulse", () => {
       kind: "start_task", taskId: "task-1",
     }));
   });
+
+  it("keeps returned reports, schedule risks and safety incidents in the operational queue", () => {
+    const data = emptyProject();
+    data.reports = [
+      {
+        id: "returned", date: "2026-09-15", shift: "Day", location: "site",
+        authorId: "foreman", author: "Foreman", status: "returned", entries: [],
+        hours: 0, people: 0, materials: "", issues: "", tomorrow: "", evidence: "SITE-1",
+        note: "Add the missing measurement photo.",
+      },
+      {
+        id: "incident", date: "2026-09-16", shift: "Day", location: "site",
+        authorId: "foreman", author: "Foreman", status: "submitted", entries: [],
+        hours: 0, people: 0, materials: "", issues: "Access stopped", tomorrow: "", evidence: "SITE-2",
+        note: "", safetyStatus: "incident", safety: "A minor incident stopped work.",
+        scheduleImpact: "blocked", impactReason: "Site access is closed.",
+        recoveryPlan: "Confirm safe access before the next shift.", nextUpdateOwnerId: "manager",
+        nextUpdateDate: "2026-09-17",
+      },
+    ];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16");
+
+    expect(pulse.health).toBe("blocked");
+    expect(pulse.nextActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "correct_report", ownerId: "foreman", recordId: "returned" }),
+      expect.objectContaining({ kind: "recover_site_update", priority: "critical", ownerId: "manager", recordId: "incident" }),
+      expect.objectContaining({ kind: "review_site_incident", priority: "critical", recordId: "incident" }),
+      expect.objectContaining({ kind: "review_report", recordId: "incident" }),
+    ]));
+  });
+
+  it("does not lose commissioning work after installation is independently approved", () => {
+    const data = emptyProject();
+    data.commissioning = [
+      {
+        id: "due", title: "Kitchen lighting test", taskId: "install", area: "Kitchen", system: "Lighting",
+        ownerId: "electrician", dueDate: "2026-09-15", readings: [], status: "draft", evidence: "", note: "", authorId: "electrician",
+      },
+      {
+        id: "returned", title: "Wardrobe alignment", taskId: "install", area: "Bedroom", system: "Joinery",
+        ownerId: "foreman", dueDate: "2026-09-16", readings: [], status: "returned", evidence: "", note: "Add a calibrated reading.", authorId: "foreman",
+      },
+      {
+        id: "submitted", title: "Water pressure test", taskId: "install", area: "Bathroom", system: "Plumbing",
+        ownerId: "plumber", dueDate: "2026-09-16", readings: [], status: "submitted", evidence: "TEST-1", note: "", authorId: "plumber",
+      },
+    ];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16");
+
+    expect(pulse.nextActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "commission_site", priority: "critical", ownerId: "electrician", recordId: "due" }),
+      expect.objectContaining({ kind: "correct_commissioning", ownerId: "foreman", recordId: "returned" }),
+      expect.objectContaining({ kind: "review_commissioning", ownerId: "plumber", recordId: "submitted" }),
+    ]));
+  });
 });

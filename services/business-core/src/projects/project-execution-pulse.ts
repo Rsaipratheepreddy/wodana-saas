@@ -275,14 +275,52 @@ export function projectExecutionPulse(
       }));
   }
 
-  for (const report of data.reports.filter((report) => report.status === "submitted"))
+  for (const report of data.reports) {
+    if (report.status === "returned") {
+      actions.push(action({
+        kind: "correct_report",
+        priority: "high",
+        title: `Correct ${report.date} ${report.shift} report`,
+        detail: report.note || "Address the review feedback and resubmit the site evidence.",
+        ownerId: report.authorId,
+        recordId: report.id,
+      }));
+      continue;
+    }
+    if (report.status !== "submitted") continue;
+    const impact = report.scheduleImpact ?? "none";
+    const incident = report.safetyStatus === "incident";
+    if (incident)
+      actions.push(action({
+        kind: "review_site_incident",
+        priority: "critical",
+        title: `Review safety incident · ${report.date}`,
+        detail: report.safety || "A safety incident needs an independent decision before work continues.",
+        ownerId: report.nextUpdateOwnerId || projectOwner,
+        recordId: report.id,
+      }));
+    if (impact !== "none")
+      actions.push(action({
+        kind: "recover_site_update",
+        priority: impact === "blocked" ? "critical" : "high",
+        title: impact === "blocked"
+          ? `Recover blocked site work · ${report.date}`
+          : `Protect site forecast · ${report.date}`,
+        detail: report.impactReason || "A submitted site update needs a recovery decision.",
+        ownerId: report.nextUpdateOwnerId || projectOwner,
+        recordId: report.id,
+      }));
     actions.push(action({
       kind: "review_report",
-      priority: "high",
+      priority: incident || impact === "blocked" ? "critical" : "high",
       title: `Review ${report.date} ${report.shift} report`,
-      detail: "Verify quantities and evidence before updating the project forecast.",
+      detail: impact === "none"
+        ? "Verify quantities and evidence before updating the project forecast."
+        : `Verify evidence, impact and recovery plan before accepting this ${impact === "blocked" ? "blocked" : "at-risk"} update.`,
+      ownerId: report.nextUpdateOwnerId || undefined,
       recordId: report.id,
     }));
+  }
 
   for (const order of data.orders.filter((order) => ["submitted", "approved"].includes(order.status)))
     actions.push(action({
@@ -293,6 +331,46 @@ export function projectExecutionPulse(
       taskId: order.taskId || undefined,
       recordId: order.id,
     }));
+
+  for (const check of data.commissioning ?? []) {
+    if (check.status === "passed") continue;
+    if (check.status === "returned") {
+      actions.push(action({
+        kind: "correct_commissioning",
+        priority: "high",
+        title: `Correct ${check.title}`,
+        detail: check.note || "Correct the returned readings or evidence and submit a new check.",
+        ownerId: check.authorId,
+        taskId: check.taskId,
+        recordId: check.id,
+      }));
+      continue;
+    }
+    if (check.status === "submitted") {
+      actions.push(action({
+        kind: "review_commissioning",
+        priority: "high",
+        title: `Review ${check.title}`,
+        detail: "Verify the readings and test evidence before accepting commissioning.",
+        ownerId: check.ownerId || projectOwner,
+        taskId: check.taskId,
+        recordId: check.id,
+      }));
+      continue;
+    }
+    if (check.dueDate && check.dueDate <= today)
+      actions.push(action({
+        kind: "commission_site",
+        priority: check.dueDate < today ? "critical" : "high",
+        title: `Commission ${check.title}`,
+        detail: check.dueDate < today
+          ? `Commissioning was due ${check.dueDate}. Record readings and test evidence.`
+          : "Commissioning is due today. Record readings and test evidence.",
+        ownerId: check.ownerId || projectOwner,
+        taskId: check.taskId,
+        recordId: check.id,
+      }));
+  }
 
   for (const task of data.tasks.filter((task) =>
     task.location === "factory" && task.status === "completed",

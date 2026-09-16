@@ -1,4 +1,5 @@
 import { ProjectRemindersService } from "./project-reminders.service";
+import { ProjectNotificationsService } from "./project-notifications";
 import { InternalServiceGuard } from "../auth/internal-service.guard";
 import { UseGuards } from "@nestjs/common";
 import { ProjectStockService } from "./project-stock.service";
@@ -36,6 +37,7 @@ import { ExecutionService } from "./execution.service";
 import { ProjectsService } from "./projects.service";
 import { ProjectWorkflowService } from "./project-workflow.service";
 import { ProjectScheduleService } from "./project-schedule.service";
+import { CrmNotificationsModule } from "../crm/notifications/crm-notifications.module";
 @ApiTags("projects-sites")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/projects")
@@ -280,7 +282,7 @@ class InternalProjectRemindersController {
 }
 
 @Module({
-  imports: [WorkspacesModule],
+  imports: [WorkspacesModule, CrmNotificationsModule],
   controllers: [
     InternalProjectRemindersController,
     ProjectsController,
@@ -288,6 +290,7 @@ class InternalProjectRemindersController {
   ],
   providers: [
     ProjectRemindersService,
+    ProjectNotificationsService,
     InternalServiceGuard,
     ProjectStockService,
     ProjectsService,

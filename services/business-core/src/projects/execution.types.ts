@@ -92,6 +92,14 @@ export type DailyReport = {
   summary?: string;
   weather?: string;
   safety?: string;
+  /** Explicitly distinguishes an observation from a safety incident. */
+  safetyStatus?: "none" | "observation" | "incident";
+  /** The reporter's forecast judgement; reviewed work never changes itself. */
+  scheduleImpact?: "none" | "watch" | "blocked";
+  impactReason?: string;
+  recoveryPlan?: string;
+  nextUpdateOwnerId?: string;
+  nextUpdateDate?: string;
   workforce?: {trade:string;people:number;hours:number}[];
   clientFileIds?:string[];
   id: string;
@@ -545,6 +553,12 @@ export type ProjectExecutionAction = {
     | "resolve_factory_rejection"
     | "start_task"
     | "review_report"
+    | "correct_report"
+    | "recover_site_update"
+    | "review_site_incident"
+    | "commission_site"
+    | "review_commissioning"
+    | "correct_commissioning"
     | "confirm_order";
   priority: "critical" | "high" | "normal";
   title: string;

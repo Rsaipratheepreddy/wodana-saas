@@ -240,6 +240,44 @@ export function refreshProgress(d: ProjectData) {
       t.status = "planned";
   }
 }
+
+function assertSubmittableDailyReport(d: ProjectData, r: DailyReport) {
+  if (!r.evidence.trim() && !d.files?.some((file) => file.recordId === r.id))
+    throw new BadRequestException(
+      "Add evidence or a site record reference before submitting.",
+    );
+  if (!r.entries.length && !r.issues.trim() && !r.summary?.trim())
+    throw new BadRequestException(
+      "Add work output or explain the no-work shift before submitting.",
+    );
+  if (r.safetyStatus !== "none" && !r.safety?.trim())
+    throw new BadRequestException(
+      "Describe the safety observation or incident before submitting.",
+    );
+  if (r.safetyStatus === "incident" && r.scheduleImpact === "none")
+    throw new BadRequestException(
+      "Record whether a safety incident puts the schedule at risk.",
+    );
+  if (r.scheduleImpact !== "none") {
+    if (!r.impactReason?.trim())
+      throw new BadRequestException(
+        "Explain the schedule impact before submitting.",
+      );
+    if (!r.recoveryPlan?.trim())
+      throw new BadRequestException(
+        "Record the recovery plan before submitting.",
+      );
+    if (!r.nextUpdateOwnerId || !r.nextUpdateDate)
+      throw new BadRequestException(
+        "Assign the next update owner and date for a schedule risk.",
+      );
+    if (r.nextUpdateDate < r.date)
+      throw new BadRequestException(
+        "The next risk update cannot be before this shift report.",
+      );
+  }
+}
+
 export function publicProject(
   id: string,
   name: string,
@@ -1016,6 +1054,14 @@ export function applyExecution(
     });
     if (new Set(entries.map((e) => e.taskId)).size !== entries.length)
       throw new BadRequestException("Include each task once per report.");
+    const safetyStatus = choice(
+      v.safetyStatus ?? old?.safetyStatus ?? "none",
+      ["none", "observation", "incident"] as const,
+    );
+    const scheduleImpact = choice(
+      v.scheduleImpact ?? old?.scheduleImpact ?? "none",
+      ["none", "watch", "blocked"] as const,
+    );
     const r: DailyReport = {
       id: recordId,
       date: day(v.date, true),
@@ -1030,6 +1076,12 @@ export function applyExecution(
       summary: str(v.summary, 240),
       weather: str(v.weather, 500),
       safety: str(v.safety, 3000),
+      safetyStatus,
+      scheduleImpact,
+      impactReason: str(v.impactReason ?? old?.impactReason, 3000),
+      recoveryPlan: str(v.recoveryPlan ?? old?.recoveryPlan, 3000),
+      nextUpdateOwnerId: member(v.nextUpdateOwnerId ?? old?.nextUpdateOwnerId) || undefined,
+      nextUpdateDate: day(v.nextUpdateDate ?? old?.nextUpdateDate),
       materials: str(v.materials, 3000),
       issues: str(v.issues, 3000),
       tomorrow: str(v.tomorrow, 3000),
@@ -1067,14 +1119,7 @@ export function applyExecution(
     }
     if (action === "report_submit") {
       active();
-      if (!r.evidence.trim() && !d.files?.some((f) => f.recordId === r.id))
-        throw new BadRequestException(
-          "Add evidence or a site record reference before submitting.",
-        );
-      if (!r.entries.length && !r.issues.trim() && !r.summary?.trim())
-        throw new BadRequestException(
-          "Add work output or explain the no-work shift before submitting.",
-        );
+      assertSubmittableDailyReport(d, r);
       r.status = "submitted";
     }
     if (old) Object.assign(old, r);
@@ -1093,14 +1138,7 @@ export function applyExecution(
       active();
       if (r.authorId !== a.id || !["draft", "returned"].includes(r.status))
         throw new ConflictException("Submit your draft report.");
-      if (!r.evidence.trim() && !d.files?.some((f) => f.recordId === r.id))
-        throw new BadRequestException(
-          "Add evidence or a site record reference before submitting.",
-        );
-      if (!r.entries.length && !r.issues.trim() && !r.summary?.trim())
-        throw new BadRequestException(
-          "Add work output or explain the no-work shift before submitting.",
-        );
+      assertSubmittableDailyReport(d, r);
       r.status = "submitted";
     } else if (action === "unpublish_report") {
       review();
