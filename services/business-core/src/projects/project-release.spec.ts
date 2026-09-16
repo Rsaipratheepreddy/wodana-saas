@@ -275,6 +275,18 @@ describe("commercial project release", () => {
         deliveryRoute: "mixed",
       }),
     ]);
+    expect(db.stored()?.initiation).toMatchObject({
+      status: "not_started",
+      commercial: {
+        quoteId: "quote-1",
+        quoteHash: data.dealFile?.quoteHash,
+        quoteNumber: 7,
+        dealFileReference: "DF-2026-CASE",
+        agreementReference: "AGR-1",
+        currency: "AED",
+        value: 1312.5,
+      },
+    });
   });
 
   it("rejects accepted-price drift against the approved Deal File", async () => {
@@ -306,12 +318,15 @@ describe("commercial project release", () => {
       value: 1000,
       lines: [],
     };
-    const db = database({ existing });
+    const db = database({ existing }), data = fixture();
 
-    await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", fixture());
+    await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", data);
 
     expect(existing.scope.quoteHash).toBe("original-hash");
-    expect(db.query.mock.calls.some(([sql]) => String(sql).startsWith("INSERT INTO project_execution"))).toBe(false);
+    expect(db.stored()?.initiation).toMatchObject({
+      status: "not_started",
+      commercial: { quoteId: "quote-1", quoteHash: "original-hash" },
+    });
   });
 
   it("backfills only missing work packages on a safe retry of a historical release", async () => {

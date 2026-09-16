@@ -5,11 +5,51 @@ import { ConflictException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { CommercialData } from "../commercial/commercial.types";
 import { emptyProject } from "./execution.domain";
-import type { ProjectData } from "./execution.types";
+import type { ProjectData, ProjectInitiation } from "./execution.types";
 import { releasedScopeLine } from "./released-scope-line";
 import { adoptProjectWorkflow } from "./project-workflow";
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { syncScopeWorkPackages } from "./project-work-packages";
+
+function releasedInitiation(
+  data: CommercialData,
+  quote: NonNullable<CommercialData["quotes"]>[number],
+  quoteHash: string,
+  frozenScope?: NonNullable<ProjectData["scope"]>,
+): ProjectInitiation {
+  const dealFile = data.dealFile!;
+  return {
+    status: "not_started",
+    commercial: {
+      quoteId: frozenScope?.quoteId ?? quote.id,
+      quoteHash: frozenScope?.quoteHash ?? quoteHash,
+      quoteNumber: frozenScope?.quoteNumber ?? quote.number,
+      dealFileId: frozenScope?.dealFileId ?? dealFile.id,
+      dealFileReference: frozenScope?.dealFileReference ?? dealFile.reference,
+      agreementReference: data.agreement?.reference ?? dealFile.agreementReference,
+      currency: frozenScope?.currency ?? quote.currency,
+      value: frozenScope?.value ?? quote.total,
+      paymentMilestones: data.payments
+        .filter(
+          (payment) =>
+            payment.sourceQuoteId === (frozenScope?.quoteId ?? quote.id),
+        )
+        .map((payment) => ({
+          id: payment.id,
+          title: payment.title,
+          amount: payment.amount,
+          dueDate: payment.dueDate,
+          trigger: payment.trigger ?? "",
+          requiredForRelease: payment.requiredForRelease,
+        })),
+    },
+    baseline: null,
+    confirmedAt: "",
+    confirmedById: "",
+    confirmedByName: "",
+    revisions: [],
+  };
+}
 // Called inside the same transaction and pre-execution row lock as commercial approval.
 export async function releaseDeliveryProject(
   client: PoolClient,
@@ -106,6 +146,11 @@ export async function releaseDeliveryProject(
         approvedAt: approval.decidedAt!,
         approvedBy: approval.decidedBy!,
       }));
+    execution.initiation = releasedInitiation(
+      data,
+      quote,
+      acceptedHash,
+    );
     execution.scope = {
       quoteId: quote.id,
       quoteHash: acceptedHash,
@@ -122,10 +167,19 @@ export async function releaseDeliveryProject(
     syncScopeWorkPackages(execution, data.release!.at);
     execution.phase = "active";
     executionChanged = true;
-  } else if (syncScopeWorkPackages(execution, data.release!.at).length) {
-    // A safe retry upgrades a historical release with the new package links,
-    // while preserving the original accepted quote snapshot unchanged.
-    executionChanged = true;
+  } else {
+    // A safe retry upgrades historical releases independently for every
+    // additive projection, while preserving the original scope snapshot.
+    const neededInitiation = !execution.initiation;
+    if (neededInitiation)
+      execution.initiation = releasedInitiation(
+        data,
+        quote,
+        acceptedHash,
+        execution.scope,
+      );
+    const createdPackages = syncScopeWorkPackages(execution, data.release!.at);
+    executionChanged = neededInitiation || createdPackages.length > 0;
   }
   if (executionChanged) {
     execution.revision++;

@@ -8,6 +8,8 @@ import {
 import { randomUUID } from "node:crypto";
 import type {
   ProjectData,
+  ProjectInitiationBaseline,
+  ProjectRoleAssignment,
   Task,
   DailyReport,
   PublicProject,
@@ -103,6 +105,20 @@ export function day(v: unknown, required = false) {
     throw new BadRequestException("Choose a valid date.");
   return s;
 }
+const projectRoles = [
+  "sales_manager",
+  "senior_designer",
+  "junior_designer",
+  "technical_designer",
+  "visualizer",
+  "project_manager",
+  "creative_director",
+  "finance",
+  "procurement_production",
+  "crm_owner",
+  "sales_assistant",
+  "surveyor",
+] as const;
 export function url(v: unknown) {
   const s = str(v, 2000);
   if (s) {
@@ -310,6 +326,8 @@ export type ExecutionActor = {
   memberIds: string[];
   resourceIds: string[];
   resourceKinds?: Record<string, "crew" | "person" | "factory" | "vendor">;
+  /** Project-owned sites prevalidated by the command handler. */
+  siteIds?: string[];
   now: string;
   released: boolean;
 };
@@ -428,34 +446,193 @@ export function applyExecution(
     manage();
     if (!Array.isArray(b.assignments) || b.assignments.length > 12)
       throw new BadRequestException("Choose one person for each project role.");
-    const roles = [
-      "sales_manager",
-      "senior_designer",
-      "junior_designer",
-      "technical_designer",
-      "visualizer",
-      "project_manager",
-      "creative_director",
-      "finance",
-      "procurement_production",
-      "crm_owner",
-      "sales_assistant",
-      "surveyor",
-    ] as const;
-    d.roleAssignments = b.assignments.map((input) => {
+    const assignments: ProjectRoleAssignment[] = b.assignments.map((input) => {
       const assignment = obj(input);
       return {
-        role: choice(assignment.role, roles),
+        role: choice(assignment.role, projectRoles),
         memberId: member(assignment.memberId),
       };
     });
     if (
-      d.roleAssignments.some((assignment) => !assignment.memberId) ||
-      new Set(d.roleAssignments.map((assignment) => assignment.role)).size !==
-        d.roleAssignments.length
+      assignments.some((assignment) => !assignment.memberId) ||
+      new Set(assignments.map((assignment) => assignment.role)).size !==
+        assignments.length
     )
       throw new BadRequestException("Give every selected role one active member.");
+    if (
+      d.initiation?.status === "confirmed" &&
+      d.initiation.baseline &&
+      !assignments.some(
+        (assignment) =>
+          assignment.role === "project_manager" &&
+          assignment.memberId === d.initiation!.baseline!.projectOwnerId,
+      )
+    )
+      throw new ConflictException(
+        "Keep the confirmed project owner in place or record a controlled initiation rebaseline.",
+      );
+    d.roleAssignments = assignments;
     recordId = "project-roles";
+  } else if (
+    action === "project_initiation" ||
+    action === "revise_project_initiation"
+  ) {
+    manage();
+    active();
+    if (!d.scope || !d.initiation)
+      throw new ConflictException(
+        "Release the approved quotation before confirming project initiation.",
+      );
+    if (
+      d.initiation.commercial.quoteId !== d.scope.quoteId ||
+      (d.scope.quoteHash &&
+        d.initiation.commercial.quoteHash !== d.scope.quoteHash)
+    )
+      throw new ConflictException(
+        "The commercial release record is inconsistent. Reconcile the release before planning delivery.",
+      );
+    const value = obj(b.initiation);
+    if (!Array.isArray(value.roleAssignments) || !value.roleAssignments.length || value.roleAssignments.length > projectRoles.length)
+      throw new BadRequestException("Assign the project roles before confirming initiation.");
+    const roleAssignments: ProjectRoleAssignment[] = value.roleAssignments.map(
+      (input) => {
+        const assignment = obj(input);
+        return {
+          role: choice(assignment.role, projectRoles),
+          memberId: member(assignment.memberId),
+        };
+      },
+    );
+    if (
+      new Set(roleAssignments.map((assignment) => assignment.role)).size !==
+      roleAssignments.length
+    )
+      throw new BadRequestException("Give every selected role one active member.");
+    const projectOwnerId = member(value.projectOwnerId);
+    if (
+      roleAssignments.filter((assignment) => assignment.role === "project_manager")
+        .length !== 1 ||
+      !roleAssignments.some(
+        (assignment) =>
+          assignment.role === "project_manager" &&
+          assignment.memberId === projectOwnerId,
+      )
+    )
+      throw new BadRequestException(
+        "The project owner must be the assigned project manager.",
+      );
+    const teamMemberIds = ids(value.teamMemberIds).map(member);
+    if (!teamMemberIds.length || !teamMemberIds.includes(projectOwnerId))
+      throw new BadRequestException(
+        "Include the project owner in the initial delivery team.",
+      );
+    if (
+      roleAssignments.some(
+        (assignment) => !teamMemberIds.includes(assignment.memberId),
+      )
+    )
+      throw new BadRequestException(
+        "Include every assigned role holder in the initial delivery team.",
+      );
+    const siteReadiness = choice(value.siteReadiness, [
+      "not_required",
+      "to_confirm",
+      "confirmed",
+    ] as const);
+    const siteIds = ids(value.siteIds);
+    if (
+      siteIds.some((siteId) => !a.siteIds?.includes(siteId)) ||
+      new Set(siteIds).size !== siteIds.length
+    )
+      throw new BadRequestException("Choose active sites that belong to this project.");
+    if (siteReadiness === "not_required" && siteIds.length)
+      throw new BadRequestException(
+        "A project without site work cannot include project sites.",
+      );
+    if (siteReadiness === "confirmed" && !siteIds.length)
+      throw new BadRequestException(
+        "Confirm at least one active project site or mark site readiness to confirm.",
+      );
+    const clientContactEmail = str(value.clientContactEmail, 254);
+    if (
+      clientContactEmail &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(clientContactEmail)
+    )
+      throw new BadRequestException("Enter a valid client contact email.");
+    const operationalStart = day(value.operationalStart, true);
+    const targetCompletion = day(value.targetCompletion, true);
+    const handoverDate = day(value.handoverDate);
+    if (targetCompletion < operationalStart)
+      throw new BadRequestException(
+        "Target completion must be on or after the operational start.",
+      );
+    if (handoverDate && handoverDate < targetCompletion)
+      throw new BadRequestException(
+        "Handover cannot be before the target completion.",
+      );
+    const baseline: ProjectInitiationBaseline = {
+      projectOwnerId,
+      teamMemberIds,
+      siteReadiness,
+      siteIds,
+      objective: str(value.objective, 1000, true),
+      clientPromise: str(value.clientPromise, 1000, true),
+      clientContactName: str(value.clientContactName, 240),
+      clientContactPhone: str(value.clientContactPhone, 80),
+      clientContactEmail,
+      accessNotes: str(value.accessNotes, 3000),
+      operationalStart,
+      targetCompletion,
+      handoverDate,
+    };
+    const current = d.initiation;
+    if (action === "project_initiation") {
+      if (current.status === "confirmed")
+        throw new ConflictException(
+          "Project initiation is already confirmed. Record a controlled rebaseline instead.",
+        );
+    } else {
+      if (current.status !== "confirmed" || !current.baseline)
+        throw new ConflictException(
+          "Confirm project initiation before revising its baseline.",
+        );
+      if (
+        d.tasks.length ||
+        d.reports.length ||
+        d.materials.length ||
+        d.orders.some((order) => !["enquiry", "draft", "cancelled"].includes(order.status)) ||
+        (d.workPackages ?? []).some((workPackage) => workPackage.status !== "planning")
+      )
+        throw new ConflictException(
+          "Detailed delivery planning has started. Use the project change process instead of revising initiation.",
+        );
+      if (!note)
+        throw new BadRequestException("Explain why the project baseline is changing.");
+      current.revisions.push({
+        id: randomUUID(),
+        baseline: structuredClone(current.baseline),
+        reason: note,
+        at: a.now,
+        byId: a.userId ?? a.id,
+        byName: a.name,
+      });
+    }
+    d.roleAssignments = roleAssignments;
+    d.initiation = {
+      ...current,
+      status: "confirmed",
+      baseline,
+      confirmedAt: a.now,
+      confirmedById: a.userId ?? a.id,
+      confirmedByName: a.name,
+    };
+    d.controls = {
+      ...(d.controls ?? emptyProject().controls!),
+      promise: baseline.clientPromise,
+      targetCompletion: baseline.targetCompletion,
+      handoverDate: baseline.handoverDate,
+    };
+    recordId = "project-initiation";
   } else if (action === "workflow_transition") {
     manage();
     recordId = transitionProjectWorkflow(d, b.toStageKey, b.note, {

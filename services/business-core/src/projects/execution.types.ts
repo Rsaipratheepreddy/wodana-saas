@@ -289,6 +289,61 @@ export type ProjectRole =
   | "sales_assistant"
   | "surveyor";
 export type ProjectRoleAssignment = { role: ProjectRole; memberId: string };
+/**
+ * The commercial facts frozen when a project is released. Operational planning
+ * reads this snapshot; it never rewrites the signed agreement or payment plan.
+ */
+export type ProjectInitiationCommercialBaseline = {
+  quoteId: string;
+  quoteHash: string;
+  quoteNumber: number;
+  dealFileId: string;
+  dealFileReference: string;
+  agreementReference: string;
+  currency: string;
+  value: number;
+  paymentMilestones: {
+    id: string;
+    title: string;
+    amount: number;
+    dueDate: string;
+    trigger: string;
+    requiredForRelease: boolean;
+  }[];
+};
+export type ProjectInitiationBaseline = {
+  projectOwnerId: string;
+  /** The initial delivery team. Membership removal is a separate, explicit access action. */
+  teamMemberIds: string[];
+  siteReadiness: "not_required" | "to_confirm" | "confirmed";
+  /** Active, project-owned work-location IDs; never free-text sites. */
+  siteIds: string[];
+  objective: string;
+  clientPromise: string;
+  clientContactName: string;
+  clientContactPhone: string;
+  clientContactEmail: string;
+  accessNotes: string;
+  operationalStart: string;
+  targetCompletion: string;
+  handoverDate: string;
+};
+export type ProjectInitiation = {
+  status: "not_started" | "confirmed";
+  commercial: ProjectInitiationCommercialBaseline;
+  baseline: ProjectInitiationBaseline | null;
+  confirmedAt: string;
+  confirmedById: string;
+  confirmedByName: string;
+  revisions: {
+    id: string;
+    baseline: ProjectInitiationBaseline;
+    reason: string;
+    at: string;
+    byId: string;
+    byName: string;
+  }[];
+};
 export type ApprovedMaterialSelection = {
   id: string;
   sourceApprovalId: string;
@@ -331,6 +386,7 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
   holdHistory?: ProjectHoldHistoryEntry[];
   workflow?: import("./project-workflow").ProjectWorkflowState;
   roleAssignments?: ProjectRoleAssignment[];
+  initiation?: ProjectInitiation;
   approvedMaterials?: ApprovedMaterialSelection[];
   workPackages?: ProjectWorkPackage[];
   milestones?: {

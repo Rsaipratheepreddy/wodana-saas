@@ -50,14 +50,21 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - Project state now includes a deterministic execution pulse for future UI: it ranks blocked packages/tasks, overdue work, inspection queues, supplier acknowledgements and genuinely start-ready work. It does not mutate data or pretend to be AI.
 - Live daily progress must remain review-derived and auditable. Browser-local storage is permitted only for an unsent local draft; it must never be represented as server-saved progress.
 
-## Next project slice (locked)
+## Project module implementation order
 
-**Project execution — foundation in progress; do not claim UI completion.**
+### Slice 1 — Project initiation (backend completed 16 September 2026)
 
-1. Provision one clean UAT tenant deliberately; it must become the sole test workspace rather than another seed/demo account.
-2. Connect a clean, compact project UI to the new work-package and execution-pulse contracts. The UI must offer package preparation, owner/route readiness, task hierarchy and clear recovery paths—without turning the project into a complicated planner.
-3. Compare the live project state/commands and UI sections against the project baseline: assignment vs booking, calendar conflicts, material responsibility, procurement/factory/site gates, daily-report review, snags, handover and financial separation.
-4. Prove the clean tenant path with automated API checks and a focused browser/mobile validation before calling the module ready.
+- Release now creates an immutable commercial initiation snapshot: accepted quote/version, Deal File, agreement reference, currency/value and payment milestones.
+- A project manager confirms the operational charter only after commercial release: accountable owner, role holders, initial team access, project-owned sites, client contact/access notes, objective, promise and dates.
+- The confirmed baseline seeds the live project forecast but remains separate from it. It cannot be silently replaced: a justified revision is retained in history and is blocked once detailed delivery planning starts.
+- Site IDs are verified against active sites belonging to the project; role holders and the initial team receive real project assignments in the same command transaction.
+- Focused initiation/release/work-package tests, full business-core tests (597 passed, 10 skipped) and root typechecking passed. No project UI claim has been made.
+
+### Next locked slice — Project command centre
+
+1. Define the one live project operating view from the initiation baseline, execution pulse, scope packages, approvals and commercial readiness.
+2. Make its `Now`, `Next`, risk, decision and client-promise states deterministic; it must not become another task list or duplicate financial truth.
+3. Add the minimum state/command contracts and tests first. UI follows only after the backend flow is proven.
 
 ## Do not lose these client requirements
 

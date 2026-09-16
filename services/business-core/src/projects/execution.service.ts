@@ -427,6 +427,32 @@ export class ExecutionService {
           [w],
         )
       ).rows as ProjectResource[];
+      let initiationSiteIds: string[] = [];
+      if (
+        action === "project_initiation" ||
+        action === "revise_project_initiation"
+      ) {
+        const initiation = obj(b.initiation);
+        initiationSiteIds = ids(initiation.siteIds);
+        if (
+          initiationSiteIds.some(
+            (siteId) => !/^[0-9a-f-]{36}$/iu.test(siteId),
+          )
+        )
+          throw new BadRequestException("Choose a valid project site.");
+        if (initiationSiteIds.length) {
+          const sites = await ctx.client.query<{ id: string }>(
+            `SELECT id FROM work_locations
+             WHERE workspace_id=$1 AND project_id=$2 AND kind='site' AND active
+               AND id=ANY($3::uuid[])`,
+            [w, id, initiationSiteIds],
+          );
+          if (sites.rowCount !== initiationSiteIds.length)
+            throw new BadRequestException(
+              "Choose active sites that belong to this project.",
+            );
+        }
+      }
       const name =
         members.find((m) => m.id === ctx.membershipId)?.name ??
         "Project member";
@@ -1142,6 +1168,7 @@ export class ExecutionService {
               .filter((resource) => resource.active)
               .map((resource) => [resource.id, resource.kind]),
           ),
+          siteIds: initiationSiteIds,
           now: new Date().toISOString(),
           released: commercialExecutionReady(row.commercial),
           today: localDate(new Date(), row.timezone ?? "UTC"),
@@ -1155,6 +1182,37 @@ export class ExecutionService {
           )
         )
           d.phase = "active";
+      }
+      if (
+        action === "project_initiation" ||
+        action === "revise_project_initiation" ||
+        action === "project_roles"
+      ) {
+        const projectOwnerId = d.initiation?.baseline?.projectOwnerId;
+        const roster = new Set([
+          ...(d.initiation?.baseline?.teamMemberIds ?? []),
+          ...(d.roleAssignments ?? []).map((assignment) => assignment.memberId),
+        ]);
+        for (const membershipId of roster) {
+          await ctx.client.query(
+            `INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active)
+             VALUES($1,$2,$3,$4,true)
+             ON CONFLICT(workspace_id,project_id,membership_id) WHERE project_id IS NOT NULL
+             DO UPDATE SET active=true,
+               is_manager=project_assignments.is_manager OR EXCLUDED.is_manager`,
+            [
+              w,
+              id,
+              membershipId,
+              membershipId === projectOwnerId ||
+                d.roleAssignments?.some(
+                  (assignment) =>
+                    assignment.role === "project_manager" &&
+                    assignment.memberId === membershipId,
+                ) === true,
+            ],
+          );
+        }
       }
       if (action === "task") {
         const t = obj(b.task);
