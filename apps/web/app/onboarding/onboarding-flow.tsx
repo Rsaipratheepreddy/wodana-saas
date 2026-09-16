@@ -103,6 +103,7 @@ export function OnboardingFlow({
   const [welcomeOpen, setWelcomeOpen] = useState(
     initialOnboarding.status === "not_started" && initialOnboarding.completedSteps.length === 0,
   );
+  const [letterOpen, setLetterOpen] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isRemovingLogo, setIsRemovingLogo] = useState(false);
   const [logoError, setLogoError] = useState("");
@@ -452,19 +453,37 @@ export function OnboardingFlow({
   if (welcomeOpen) {
     return (
       <DesignSystemProvider className={styles.root} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
-        <main className={styles.welcome}>
-          <section className={styles.welcomeContent}>
-            <Image alt="Wodana" className={styles.welcomeLogo} height={50} priority src="/brand/wodana/wodana-logo-v4.png" width={150} />
-            <p>Welcome to</p>
-            <h1>{form.name || "your new workspace"}</h1>
-            <span>Great work starts here.</span>
-            <Button onPress={beginSetup} size="large" variant="primary">Begin setup<ArrowRight aria-hidden="true" size={16} /></Button>
-            <small>Four quick steps. Your progress saves automatically.</small>
-          </section>
-          <div className={styles.welcomeMedia} aria-hidden="true">
-            <Image alt="" fill priority sizes="(max-width: 42rem) 100vw, 48vw" src="/quotation/cover-interior.png" />
-            <div />
+        <main className={styles.welcome} data-letter-open={letterOpen || undefined}>
+          <Image alt="Wodana" className={styles.welcomeLogo} height={44} priority src="/brand/wodana/wodana-logo-v4.png" width={132} />
+          <div className={styles.welcomeHeading}>
+            <p>{letterOpen ? "A note from our team" : "Something for you"}</p>
+            <h1>{letterOpen ? `Welcome, ${form.name || "we’re glad you’re here"}.` : `A welcome note for ${form.name || "your team"}`}</h1>
           </div>
+
+          <div className={styles.envelopeScene}>
+            <div className={styles.celebration} data-side="left" aria-hidden="true"><i /><i /><i /><i /></div>
+            <div className={styles.celebration} data-side="right" aria-hidden="true"><i /><i /><i /><i /></div>
+            <div className={styles.envelope}>
+              <div className={styles.envelopeBack} aria-hidden="true" />
+              <article aria-hidden={!letterOpen} className={styles.welcomeLetter}>
+                <Image alt="" height={30} src="/brand/wodana/wodana-logo-v4.png" width={90} />
+                <strong>Dear {form.name || "team"},</strong>
+                <p>Thank you for choosing Wodana. We’re delighted to help your team bring every client, idea, and project into one clear flow.</p>
+                <p>Here’s to great work ahead.</p>
+                <span>Warmly,<br /><b>The Wodana team</b></span>
+              </article>
+              <div className={styles.envelopeFlap} aria-hidden="true" />
+              <div className={styles.envelopeFront} aria-hidden="true" />
+            </div>
+          </div>
+
+          <div className={styles.welcomeActions}>
+            {!letterOpen
+              ? <Button onPress={() => setLetterOpen(true)} size="large" variant="primary">Open your welcome</Button>
+              : <Button onPress={beginSetup} size="large" variant="primary">Set up your workspace<ArrowRight aria-hidden="true" size={16} /></Button>}
+            <small>{letterOpen ? "Four quick steps. Your progress saves automatically." : "A little note from Wodana"}</small>
+          </div>
+          <p className={styles.welcomeAnnouncement} aria-live="polite">{letterOpen ? `Welcome letter from the Wodana team opened for ${form.name}.` : ""}</p>
         </main>
       </DesignSystemProvider>
     );
