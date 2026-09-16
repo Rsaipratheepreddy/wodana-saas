@@ -265,7 +265,10 @@ export function projectExecutionPulse(
         kind: "start_task",
         priority: "high",
         title: `Start ${task.title}`,
-        detail: "Scope, readiness and the scheduled team are in place.",
+        detail:
+          handoff.acceptedQuantity !== undefined && handoff.acceptedQuantity < task.quantity
+            ? `Phased start: ${handoff.acceptedQuantity} of ${task.quantity} ${task.unit} is accepted at site. Keep approved installation output within that received quantity.`
+            : "Scope, readiness and the scheduled team are in place.",
         workPackageId: workPackage?.id,
         taskId: task.id,
         recordId: task.id,

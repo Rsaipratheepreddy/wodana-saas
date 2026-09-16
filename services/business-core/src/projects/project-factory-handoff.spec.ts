@@ -79,6 +79,23 @@ function setup() {
     replaces: "",
     published: false,
   }];
+  data.reports = [{
+    id: "factory-output",
+    date: "2026-09-16",
+    shift: "Day",
+    location: "factory",
+    authorId: "manager",
+    author: "Manager",
+    status: "approved",
+    entries: [{ taskId: factory.id, quantity: 2 }],
+    hours: 8,
+    people: 1,
+    materials: "",
+    issues: "",
+    tomorrow: "",
+    evidence: "Factory quality record",
+    note: "",
+  }];
   return { data, factory, site };
 }
 
@@ -133,6 +150,7 @@ describe("factory-to-site hand-off", () => {
     };
 
     expect(factoryHandoffReadiness(data, site).ready).toBe(true);
+    expect(factoryHandoffReadiness(data, site).acceptedQuantity).toBe(2);
     applyExecution(data, "task_status", { id: site.id, status: "in_progress" }, actor);
     expect(data.tasks.find((candidate) => candidate.id === site.id)?.status).toBe("in_progress");
     expect(() => applyExecution(data, "task_status", {
@@ -193,5 +211,64 @@ describe("factory-to-site hand-off", () => {
     expect(projectExecutionPulse(data, "2026-09-16").nextActions).toContainEqual(
       expect.objectContaining({ kind: "plan_factory_dispatch", taskId: factory.id }),
     );
+  });
+
+  it("allows phased installation but never approves site output beyond accepted factory delivery", () => {
+    const { data, site } = setup();
+    const reviewer = { ...actor, id: "reviewer", name: "Reviewer" };
+    data.dispatches = [{
+      id: "dispatch-1",
+      title: "First joinery delivery",
+      taskId: "factory-1",
+      receivingTaskId: site.id,
+      destination: "Villa site",
+      quantity: 1,
+      unit: "nos",
+      dueDate: "2026-09-16",
+      carrier: "Carrier",
+      reference: "DN-1",
+      status: "received",
+      preparedBy: "manager",
+      accepted: 1,
+      rejected: 0,
+      receiptEvidence: "GRN-1",
+      receivedBy: "reviewer",
+    }];
+
+    expect(factoryHandoffReadiness(data, site)).toMatchObject({
+      ready: true,
+      acceptedQuantity: 1,
+    });
+    applyExecution(data, "task_status", { id: site.id, status: "in_progress" }, actor);
+    applyExecution(data, "report_submit", {
+      report: {
+        id: "site-output",
+        date: "2026-09-16",
+        shift: "Day",
+        location: "site",
+        entries: [{ taskId: site.id, quantity: 2 }],
+        hours: 8,
+        people: 1,
+        materials: "Installed first batch",
+        issues: "",
+        tomorrow: "Continue after next delivery",
+        evidence: "SITE-1",
+      },
+    }, actor);
+
+    expect(() => applyExecution(data, "approve_report", { id: "site-output" }, reviewer))
+      .toThrow(/Only 1 nos has been accepted at site/);
+    expect(data.reports.find((report) => report.id === "site-output")?.status)
+      .toBe("submitted");
+
+    data.dispatches.push({
+      ...data.dispatches[0],
+      id: "dispatch-2",
+      title: "Second joinery delivery",
+      reference: "DN-2",
+      receiptEvidence: "GRN-2",
+    });
+    applyExecution(data, "approve_report", { id: "site-output" }, reviewer);
+    expect(data.tasks.find((task) => task.id === site.id)?.approved).toBe(2);
   });
 });

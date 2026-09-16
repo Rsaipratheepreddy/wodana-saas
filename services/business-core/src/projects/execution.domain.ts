@@ -27,7 +27,10 @@ import {
   workPackageForTask,
 } from "./project-work-packages";
 import { designReadinessForTask } from "./project-design-control";
-import { factoryHandoffReadiness } from "./project-factory-handoff";
+import {
+  assertSiteOutputWithinFactoryReceipts,
+  factoryHandoffReadiness,
+} from "./project-factory-handoff";
 import { workPackageReadiness } from "./project-package-readiness";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
@@ -1158,14 +1161,20 @@ export function applyExecution(
             );
         }
         r.status = "approved";
-        for (const e of r.entries) {
-          if (
-            approvedQuantity(d, e.taskId) >
-            get(d.tasks, e.taskId).quantity + 0.00001
-          )
-            throw new ConflictException(
-              "Output exceeds the planned quantity. Review the change or correct this report.",
-            );
+        try {
+          for (const e of r.entries) {
+            const task = get(d.tasks, e.taskId);
+            const approved = approvedQuantity(d, e.taskId);
+            if (approved > task.quantity + 0.00001)
+              throw new ConflictException(
+                "Output exceeds the planned quantity. Review the change or correct this report.",
+              );
+            if (task.location === "site")
+              assertSiteOutputWithinFactoryReceipts(d, task, approved);
+          }
+        } catch (error) {
+          r.status = "submitted";
+          throw error;
         }
         r.reviewedBy = a.name;
         r.reviewedAt = a.now;

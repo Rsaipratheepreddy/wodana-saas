@@ -4,7 +4,15 @@ import type { ProjectData, Task } from "./execution.types";
 export type FactoryHandoffReadiness = {
   ready: boolean;
   missingFactoryTaskIds: string[];
+  /** The installable quantity constrained by the least-received factory input. */
+  acceptedQuantity?: number;
   detail: string;
+};
+
+export type FactoryReceipt = {
+  factoryTaskId: string;
+  title: string;
+  acceptedQuantity: number;
 };
 
 export function unresolvedFactoryDispatchRejections(
@@ -28,6 +36,29 @@ function directFactoryPredecessors(data: ProjectData, task: Task) {
 }
 
 /**
+ * Receipt totals are deliberately scoped to the exact receiving site task.
+ * A delivery for another room, even from the same factory task, cannot unlock
+ * this installation or be counted as its physical output.
+ */
+export function factoryReceiptsForSiteTask(
+  data: ProjectData,
+  task: Task,
+): FactoryReceipt[] {
+  return directFactoryPredecessors(data, task).map((factoryTask) => ({
+    factoryTaskId: factoryTask.id,
+    title: factoryTask.title,
+    acceptedQuantity: (data.dispatches ?? [])
+      .filter(
+        (dispatch) =>
+          dispatch.taskId === factoryTask.id &&
+          dispatch.receivingTaskId === task.id &&
+          dispatch.status === "received",
+      )
+      .reduce((total, dispatch) => total + dispatch.accepted, 0),
+  }));
+}
+
+/**
  * A site task can begin only after each directly linked factory predecessor has
  * at least one independently received, accepted delivery for that exact task.
  * Partial installation remains possible through planned task quantities; the
@@ -37,23 +68,41 @@ export function factoryHandoffReadiness(
   data: ProjectData,
   task: Task,
 ): FactoryHandoffReadiness {
-  const predecessors = directFactoryPredecessors(data, task);
-  const missing = predecessors.filter((factoryTask) =>
-    !(data.dispatches ?? []).some(
-      (dispatch) =>
-        dispatch.taskId === factoryTask.id &&
-        dispatch.receivingTaskId === task.id &&
-        dispatch.status === "received" &&
-        dispatch.accepted > 0,
-    ),
-  );
+  const receipts = factoryReceiptsForSiteTask(data, task);
+  const missing = receipts.filter((receipt) => receipt.acceptedQuantity <= 0);
+  const acceptedQuantity = receipts.length
+    ? Math.min(...receipts.map((receipt) => receipt.acceptedQuantity))
+    : undefined;
   if (!missing.length)
-    return { ready: true, missingFactoryTaskIds: [], detail: "" };
+    return { ready: true, missingFactoryTaskIds: [], acceptedQuantity, detail: "" };
   return {
     ready: false,
-    missingFactoryTaskIds: missing.map((task) => task.id),
-    detail: `Receive accepted factory output for ${missing.map((task) => task.title).join(", ")} before starting ${task.title}.`,
+    missingFactoryTaskIds: missing.map((receipt) => receipt.factoryTaskId),
+    acceptedQuantity,
+    detail: `Receive accepted factory output for ${missing.map((receipt) => receipt.title).join(", ")} before starting ${task.title}.`,
   };
+}
+
+/**
+ * A partial delivery may start a site task, but reviewed site progress can
+ * never run ahead of the accepted physical output for any direct factory
+ * predecessor. This preserves truthful room/area progress while still
+ * allowing phased installation.
+ */
+export function assertSiteOutputWithinFactoryReceipts(
+  data: ProjectData,
+  task: Task,
+  approvedQuantity: number,
+) {
+  const receipts = factoryReceiptsForSiteTask(data, task);
+  if (!receipts.length) return;
+  const limitingReceipt = receipts.reduce((lowest, receipt) =>
+    receipt.acceptedQuantity < lowest.acceptedQuantity ? receipt : lowest,
+  );
+  if (approvedQuantity <= limitingReceipt.acceptedQuantity + 0.00001) return;
+  throw new ConflictException(
+    `Only ${limitingReceipt.acceptedQuantity} ${task.unit} has been accepted at site from ${limitingReceipt.title}. Receive more factory output before approving ${approvedQuantity} ${task.unit} for ${task.title}.`,
+  );
 }
 
 /**

@@ -108,11 +108,19 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - The deterministic project pulse now exposes the real next factory/site action: plan or review a delivery, record dispatch, receive overdue delivery, or resolve rejection. It does not mutate project data or claim AI decisions.
 - Full business-core tests passed (613 passed, 10 skipped), the 14 focused project web tests passed and root typechecking was clean. This is backend/light-UI verification, not a claim of tenant UAT completion.
 
-### Next locked slice — Site execution, quality and handover control
+### Slice 8a — Site installation readiness and truthful partial progress (backend completed 16 September 2026)
 
-1. Audit the existing site-work path as one flow: accepted factory output/material readiness → installation task → progress evidence → independent inspection/commissioning → snag correction → area handover → warranty.
-2. Define controlled behaviour for partial installation, failed inspection, missing evidence, changes after installation, client punch lists, rework, phased area handover and final completion without losing commercial or delivery history.
-3. Reuse the existing commissioning, snag and handover contracts only where they pass the same end-to-end rules; add no disconnected CRUD screens.
+- A received factory delivery is now an explicit physical limit, not merely a start signal. A site task may start after at least one accepted unit from every directly linked factory predecessor, allowing phased installation.
+- Site progress is independently approved as before, but it can never exceed the least accepted quantity from the task's direct factory inputs. A receipt for a different room/task is excluded. This prevents a site team from reporting installation ahead of what has physically arrived.
+- The rule remains generic: site tasks without a direct factory predecessor continue to use their existing package material/readiness controls, while direct factory-to-site paths use the exact linked dispatch receipts.
+- The project action contract marks a partial site start honestly, including the accepted quantity and instruction to keep approved installation output within that limit.
+- Full business-core tests passed (614 passed, 10 skipped), the focused project web tests passed and root typechecking was clean. This is backend verification, not tenant UAT completion.
+
+### Next locked slice — Site daily evidence and quality decision flow
+
+1. Audit daily site reports as an operational loop: evidence/no-work reason → submitted report → independent quantity/evidence decision → current forecast and client-safe progress.
+2. Define control for failed/returned reports, missing photo or site reference, partial output, weather/access delays, safety incidents, correction reports and changes after installation without mutating approved history.
+3. Connect approved site output to inspection/commissioning eligibility, then use the same exception reasons in the execution pulse. Do not redesign the full UI until this backend loop is complete and tested.
 
 ## Do not lose these client requirements
 
