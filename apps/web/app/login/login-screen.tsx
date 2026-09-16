@@ -375,6 +375,11 @@ export function LoginScreen({
         return;
       }
       if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
+      // A reclaimed device slot can continue into onboarding or MFA enrollment
+      // without navigating away. Clear the old limit dialog before that state
+      // transition so it cannot retry with the password we intentionally erase.
+      setLimitedSessions(null);
+      setDeviceFailure("");
       navigating = await finishAuthenticatedSignIn(payload, nextPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to sign in. Please try again.";
@@ -425,7 +430,7 @@ export function LoginScreen({
           ? "Choose a new password to secure your account."
           : invitationToken
             ? `Activate your invitation to ${tenant.displayName}.`
-            : "Sign in to continue to your Wodana workspace.";
+            : `Sign in to continue to your ${tenant.displayName} workspace.`;
   const submitLabel = isOpening
     ? "Open workspace"
     : isSubmitting
@@ -449,12 +454,11 @@ export function LoginScreen({
       <main className={styles.loginLayout}>
         <section aria-labelledby="welcome-heading" className={styles.brandPanel}>
           <div className={styles.brandStory}>
-            <div aria-label={`Wodana and ${tenant.displayName}`} className={styles.coBrand}>
-              <WodanaLogo className={styles.brandLogo} size="large" />
-              <span aria-hidden="true" className={styles.brandTimes}>×</span>
+            <div aria-label={`${tenant.displayName} workspace`} className={styles.tenantBrand}>
+              <span className={styles.tenantEyebrow}>Your workspace</span>
               {tenant.logoUrl ? (
                 <span className={styles.tenantLogo}>
-                  <Image alt={tenant.displayName} fill sizes="144px" src={tenant.logoUrl} />
+                  <Image alt={tenant.displayName} fill priority sizes="224px" src={tenant.logoUrl} />
                 </span>
               ) : (
                 <strong className={styles.tenantName}>{tenant.displayName}</strong>
@@ -468,15 +472,23 @@ export function LoginScreen({
               Bring your team, CRM, pre-execution planning, and delivery into one clear operating view.
             </p>
           </div>
+          <div aria-label="Powered by Wodana" className={`${styles.poweredBy} ${styles.desktopPoweredBy}`}>
+            <span>Powered by</span>
+            <WodanaLogo className={styles.poweredLogo} />
+          </div>
         </section>
 
         <section aria-labelledby="login-heading" className={styles.loginPanel}>
           <div className={styles.formArea}>
             <div className={styles.formIntro}>
-              <div aria-label={`Wodana and ${tenant.displayName}`} className={styles.mobileLogo}>
-                <WodanaLogo size="large" />
-                <span aria-hidden="true">×</span>
-                <strong>{tenant.displayName}</strong>
+              <div aria-label={`${tenant.displayName} workspace`} className={styles.mobileTenantBrand}>
+                {tenant.logoUrl ? (
+                  <span className={styles.mobileTenantLogo}>
+                    <Image alt={tenant.displayName} fill priority sizes="176px" src={tenant.logoUrl} />
+                  </span>
+                ) : (
+                  <strong>{tenant.displayName}</strong>
+                )}
               </div>
               <h1 id="login-heading">{heading}</h1>
               <p>{intro}</p>
@@ -630,6 +642,10 @@ export function LoginScreen({
                 <>New to Wodana? Ask your administrator for an invitation.</>
               )}
             </p>
+            <div aria-label="Powered by Wodana" className={`${styles.poweredBy} ${styles.mobilePoweredBy}`}>
+              <span>Powered by</span>
+              <WodanaLogo className={styles.poweredLogo} />
+            </div>
           </div>
         </section>
       </main>

@@ -47,6 +47,30 @@ describe("login device limit modal", () => {
     expect(replace).not.toHaveBeenCalled();
     expect(within(dialog).getAllByRole("button", { name: "Log out device" })).toHaveLength(2);
   });
+  it("closes the reclaimed-device dialog before continuing into MFA enrollment", async () => {
+    const { user, fetchMock, dialog } = await limitedLogin();
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      authenticated: true,
+      selectedWorkspaceId: securityPageFixture.workspaceId,
+      mfaEnrollmentRequired: true,
+      mfaEnrollmentDeadline: "2026-09-22T00:00:00.000Z",
+    }) });
+
+    await user.click(within(dialog).getAllByRole("button", { name: "Log out device" })[0]);
+
+    expect(await screen.findByRole("heading", { name: "Protect your account" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Device limit reached" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeEnabled();
+  });
+});
+
+describe("login tenant branding", () => {
+  it("presents the tenant as the primary identity and Wodana as the platform provider", () => {
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null }} />);
+
+    expect(screen.getAllByLabelText("Palm Living workspace")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Powered by Wodana")).toHaveLength(2);
+  });
 });
 
 describe("login progress and failure feedback", () => {
