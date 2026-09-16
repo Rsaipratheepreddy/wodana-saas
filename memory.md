@@ -16,6 +16,13 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 3. Then connect and polish UI end-to-end from authentication through quotation. Do not add features merely because an old demo screen suggests them.
 4. Production infrastructure, backups, operational migration and AI-assisted import follow UAT, unless the user explicitly reprioritises them.
 
+## Clean-reset record
+
+- On 16 September 2026, the local `wodana` PostgreSQL database was confirmed to be on a local socket and reset with explicit user approval. It held 29 non-client workspaces (28 automated smoke workspaces and one disposable Iglo workspace).
+- The local database now has zero workspaces and zero user accounts. The cleaned migration history was reapplied successfully (72 migrations). No hosting or production system was accessed or changed.
+- Removed from source: automatic demo tenant seeding, demo-only Iglo/project seed and cutover scripts, legacy project-import endpoint/table/UI, obsolete Palm-specific legacy CRM taxonomy migrations, and the separate browser-only project demo route.
+- The application now has one project route family only: tenant-scoped live projects. A fresh UAT tenant must be provisioned deliberately before browser testing resumes.
+
 ## Verified foundations
 
 - Auth/onboarding: tenant-scoped login, MFA support, device limit handling, branded tenant onboarding and user-facing configuration fields exist. The internal Wodana portal is platform-admin-only.
@@ -36,7 +43,6 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 
 ### Not release-complete / must be treated as work remaining
 
-- Legacy demo project routes/components still exist (`/workspace/projects/demo`, `project-section-page`, `plan-teams-page`, `lib/projects/demo`, `lib/projects/planning`). They must not be reachable or presented as a customer project flow.
 - The live project workspace must be audited tab-by-tab against the project baseline. Existing APIs and widgets do not equal a coherent Palm Living delivery workflow.
 - Current project detail needs an end-to-end tenant UAT pass from released quotation to work package/task, materials, procurement, factory/site execution, progress, quality, handover and warranty. Empty states, permissions, errors and mobile usage must be checked.
 - The full departmental/resource overview needs a client-ready UI using the live portfolio calendar/capacity API. It must show cross-project overlaps by department; Design red, Production purple and Procurement grey are tenant-configurable defaults, not hard-coded Palm Living logic.
@@ -47,7 +53,7 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 
 **Project foundation consolidation — no new breadth.**
 
-1. Inventory every Projects entry route and eliminate or redirect demo-only entry points so there is exactly one live project experience.
+1. Provision one clean UAT tenant deliberately; it must become the sole test workspace rather than another seed/demo account.
 2. Compare the live project state/commands and UI sections against the project baseline: scope release, work package/task hierarchy, assignment vs booking, calendar conflicts, material responsibility, procurement/factory/site gates, daily-report review, snags, handover and financial separation.
 3. Turn identified gaps into a small ordered implementation backlog. Fix the first broken handoff before moving to a new module.
 4. Prove the clean tenant path with automated API checks and a focused browser/mobile validation before calling the module ready.

@@ -132,13 +132,6 @@ export class ProjectsController {
   ) {
     return this.stock.command(a, w, p, b);
   }
-  @Get(":projectId/legacy") legacy(
-    @CurrentActor() a: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) w: string,
-    @Param("projectId", ParseUUIDPipe) p: string,
-  ) {
-    return this.execution.legacy(a, w, p);
-  }
   @Get("portfolio") portfolio(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,

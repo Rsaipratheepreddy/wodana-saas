@@ -28,7 +28,7 @@ npm run build --workspace @wodana/business-core >/dev/null
 (
   cd services/business-core
   DATABASE_URL="$database_url" PORT="$test_port" AUTH_MODE="local" NODE_ENV="test" \
-  LOCAL_AUTH_JWT_SECRET="supplier-offer-smoke-secret-2026-at-least-32-bytes" DEMO_TENANT_ENABLED="true" \
+  LOCAL_AUTH_JWT_SECRET="supplier-offer-smoke-secret-2026-at-least-32-bytes" \
   REDIS_URL="" OBJECT_STORAGE_BUCKET="" BRAND_ASSET_STORAGE_DIR="$temporary_root/storage" \
   MAILGUN_API_KEY="" MAILGUN_DOMAIN="" DEPENDENCY_CHECKS_ENABLED="false" node dist/main.js
 ) >"$temporary_root/business-core.log" 2>&1 &

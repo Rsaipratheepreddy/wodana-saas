@@ -228,7 +228,6 @@ export type Handover = {
   published: boolean;
 };
 export type ProjectComment = {
-  legacy?:boolean;
   mentions?: string[];
   edits?: { text: string; at: string }[];
   id: string;
@@ -403,7 +402,6 @@ export type ProjectBooking = {
   endTime?: string;
 };
 export type ProjectState = {
-  legacyImports?:{id:string;sourceProject:string;createdAt:string}[];
   notifications?:{id:string;subject:string;body:string;deepLink:string;readAt:string|null;createdAt:string}[];
   timezone?:string;
   today?: string;

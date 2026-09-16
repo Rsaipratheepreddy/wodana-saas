@@ -24,7 +24,7 @@ import { WorkspaceAccountMenu } from "./workspace-account-menu";
 import { PreProjectProvider, usePreProject } from "@/components/pre-project/pre-project-context";
 import { caseRoute, PRE_PROJECT_ROOT } from "@/lib/pre-project/types";
 import { preProjectNavigation } from "@/lib/pre-project/navigation";
-import { DEMO_PROJECT, demoProjectNavigation, demoProjectSection, realProjectRoute, projectNavigation } from "@/lib/projects/demo";
+import { projectNavigation, realProjectRoute } from "@/lib/projects/routing";
 import styles from "./workspace.module.css";
 import { WorkspaceFocusProvider, useWorkspaceFocus } from "./workspace-focus";
 import {
@@ -47,7 +47,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
   const pathname = usePathname();
   const preProjectRoute = caseRoute(pathname);
   const projectRoute = realProjectRoute(pathname);
-  const projectSection = projectRoute?.section ?? demoProjectSection(pathname);
+  const projectSection = projectRoute?.section ?? null;
   const projectsSelector = pathname === "/workspace/projects";
   const moduleSelector = projectsSelector;
   const { selected } = usePreProject();
@@ -63,7 +63,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
   useEffect(()=>{if(!hrmsActive||!workspaceId)return;let active=true;hrmsRequest<HrmsBootstrap>(workspaceId,'bootstrap').then(boot=>{if(active)setHrmsAccess({workspaceId,permissions:boot.permissions});}).catch(()=>{});return()=>{active=false;};},[hrmsActive,workspaceId]);
   const activeModule = hrmsActive ? scopedHrmsNavigation(baseModule,hrmsAccess?.workspaceId===workspaceId?hrmsAccess.permissions:undefined) : baseModule.id === "pre-project"
     ? { ...baseModule, navigation: preProjectNavigation(baseModule.navigation, pathname, selectedCase?.search) }
-    : projectSection ? { ...baseModule, navigation: projectRoute ? projectNavigation(baseModule.navigation,projectRoute.root) : demoProjectNavigation(baseModule.navigation) } : baseModule;
+    : projectRoute ? { ...baseModule, navigation: projectNavigation(baseModule.navigation, projectRoute.root) } : baseModule;
   const currentScreen = preProjectRoute || projectSection ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
   const currentSection = activeModule.navigation.find((section) =>
     section.items.some((item) => item.href === currentScreen.href),
@@ -150,7 +150,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
         <header className={styles.topbar}>
           {moduleSelector ? <><WorkspaceModuleSwitcher activeModule={activeModule} modules={modules} /><strong className={styles.selectorTitle}>Projects</strong><span className={styles.selectorWorkspace}>{workspaces[0]?.name}</span></> : null}
           {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="Qualified leads" className={styles.focusBack} href={backHref}><ArrowLeft size={16} data-directional="true" /><span>Qualified leads</span></Link><div><strong>{selectedCase?.record.title ?? "Pre-execution"}</strong><small>{selectedCase?.record.customerName ?? "Loading case…"}</small></div></div> : null}
-          {projectSection ? <div className={styles.caseHeader}><Link aria-label="All projects" className={styles.focusBack} href="/workspace/projects"><ArrowLeft size={16} data-directional="true" /><span>All projects</span></Link><div><strong>{projectRoute ? "Project workspace" : DEMO_PROJECT.title}</strong><small>{projectRoute ? "Plan · deliver · hand over" : `${DEMO_PROJECT.customer} · Demo`}</small></div></div> : null}
+          {projectRoute ? <div className={styles.caseHeader}><Link aria-label="All projects" className={styles.focusBack} href="/workspace/projects"><ArrowLeft size={16} data-directional="true" /><span>All projects</span></Link><div><strong>Project workspace</strong><small>Plan · deliver · hand over</small></div></div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to pre-execution") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
           <button
             aria-expanded={mobileOpen}

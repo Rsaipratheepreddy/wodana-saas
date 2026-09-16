@@ -278,20 +278,6 @@ export class ExecutionService {
       };
     });
   }
-  legacy(actor: RequestActor, w: string, p: string) {
-    return this.access.run(actor, w, async (ctx) => {
-      this.access.require(ctx, "projects.manage");
-      await this.row(ctx, p);
-      return {
-        imports: (
-          await ctx.client.query(
-            "SELECT id,content,source_hash AS hash,created_at AS imported FROM project_legacy_imports WHERE workspace_id=$1 AND project_id=$2",
-            [w, p],
-          )
-        ).rows,
-      };
-    });
-  }
   candidates(actor: RequestActor, w: string) {
     return this.access.run(actor, w, async (ctx) => {
       this.access.require(ctx, "projects.manage");
@@ -332,14 +318,6 @@ export class ExecutionService {
       )
     ).rows;
     return {
-      legacyImports: ctx.permissions.has("projects.manage")
-        ? (
-            await ctx.client.query(
-              `SELECT id,source_project AS "sourceProject",created_at AS "createdAt" FROM project_legacy_imports WHERE workspace_id=$1 AND project_id=$2`,
-              [ctx.workspaceId, id],
-            )
-          ).rows
-        : [],
       notifications: (
         await ctx.client.query(
           `SELECT id,subject,body,deep_link AS "deepLink",read_at AS "readAt",created_at AS "createdAt" FROM notifications WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' AND deep_link LIKE $3 ORDER BY created_at DESC LIMIT 50`,

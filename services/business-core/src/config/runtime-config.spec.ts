@@ -56,7 +56,7 @@ describe("validateRuntimeConfig", () => {
     expect(() => validateRuntimeConfig({ ...config, LOCAL_AUTH_ISSUER: "http://localhost" })).toThrow("LOCAL_AUTH_ISSUER");
     expect(() => validateRuntimeConfig({ ...config, LOCAL_AUTH_AUDIENCE: "" })).toThrow("LOCAL_AUTH_AUDIENCE");
     expect(() => validateRuntimeConfig({ ...config, MFA_ENCRYPTION_KEY: "short" })).toThrow("MFA_ENCRYPTION_KEY");
-    for (const flag of ["EXPOSE_DEMO_AUTH_TOKENS", "PORTAL_DEMO_OTP", "DEMO_TENANT_ENABLED"]) {
+    for (const flag of ["EXPOSE_DEMO_AUTH_TOKENS", "PORTAL_DEMO_OTP"]) {
       expect(() => validateRuntimeConfig({ ...config, [flag]: "true" })).toThrow(flag);
     }
   });
@@ -92,20 +92,6 @@ describe("validateRuntimeConfig", () => {
       BUSINESS_CORE_INTERNAL_TOKEN: "short",
       WODANA_RELEASE_ID: "test-release", INTELLIGENCE_API_URL: "http://intelligence:8001/api/v1",
     })).toThrow("BUSINESS_CORE_INTERNAL_TOKEN");
-  });
-
-  it("never permits the demo tenant in production", () => {
-    expect(() => validateRuntimeConfig({
-      DATABASE_URL: "postgresql://production",
-      NODE_ENV: "production",
-      AUTH_MODE: "oidc",
-      OIDC_ISSUER: "https://issuer.example.com",
-      OIDC_AUDIENCE: "wodana-api",
-      OIDC_JWKS_URI: "https://issuer.example.com/.well-known/jwks.json",
-      BUSINESS_CORE_INTERNAL_TOKEN: "a-production-token-longer-than-thirty-two-characters",
-      WODANA_RELEASE_ID: "test-release", INTELLIGENCE_API_URL: "http://intelligence:8001/api/v1",
-      DEMO_TENANT_ENABLED: "true",
-    })).toThrow("DEMO_TENANT_ENABLED");
   });
 
   it("requires complete Mailgun credentials when transactional email is enabled", () => {

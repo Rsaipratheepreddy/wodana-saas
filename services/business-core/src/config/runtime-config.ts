@@ -66,9 +66,6 @@ export function validateRuntimeConfig(
       }
     }
   }
-  if (nodeEnv === "production" && String(config.DEMO_TENANT_ENABLED ?? "false") === "true") {
-    throw new Error("DEMO_TENANT_ENABLED cannot be enabled in production");
-  }
   if (
     nodeEnv === "production"
     && String(config.BUSINESS_CORE_INTERNAL_TOKEN ?? "").length < 32

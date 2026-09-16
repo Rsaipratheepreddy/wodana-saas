@@ -13,7 +13,6 @@ import { ControlledModalDialog } from "@/design-system";
 import { CatalogChoiceField } from "@/components/pre-project/case-controls";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { ProjectSchedule, type Milestone } from "./project-schedule";
-import { ProjectLegacy } from "./project-legacy";
 import { ProjectWarehouse } from "./project-warehouse";
 import { ProjectControls, type ControlKind } from "./project-controls";
 import { ProjectCalendar } from "./project-calendar";
@@ -1076,9 +1075,6 @@ export function ProjectWorkspace({
                           ["all", "Documents"],
                           ["technical_query", "Technical queries"],
                           ["transmittal", "Transmittals"],
-                          ...(state.legacyImports?.length
-                            ? [["legacy", "Imported records"]]
-                            : []),
                         ]
                       : section === "commercial"
                         ? [
@@ -1108,9 +1104,7 @@ export function ProjectWorkspace({
           </label>
         </div>
       )}
-      {view === "legacy" ? (
-        <ProjectLegacy state={state} />
-      ) : view === "warehouse" ? (
+      {view === "warehouse" ? (
         <ProjectWarehouse state={state} onRefresh={refresh} />
       ) : [
           "dispatch",

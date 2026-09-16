@@ -1410,10 +1410,6 @@ export function applyExecution(
     if (action === "comment_status") {
       comment.resolved = b.resolved === true;
     } else {
-      if (comment.legacy)
-        throw new ConflictException(
-          "Imported comments are fixed evidence. Add a reply to clarify the record.",
-        );
       if (comment.authorId !== a.id)
         throw new ForbiddenException("Only the author can edit a comment.");
       comment.edits ??= [];
