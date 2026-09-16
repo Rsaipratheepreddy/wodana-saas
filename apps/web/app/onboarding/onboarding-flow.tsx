@@ -100,6 +100,9 @@ export function OnboardingFlow({
   const [failure, setFailure] = useState("");
   const [status, setStatus] = useState("");
   const [complete, setComplete] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(
+    initialOnboarding.status === "not_started" && initialOnboarding.completedSteps.length === 0,
+  );
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isRemovingLogo, setIsRemovingLogo] = useState(false);
   const [logoError, setLogoError] = useState("");
@@ -112,6 +115,10 @@ export function OnboardingFlow({
   const currencies = useMemo(() => currencyOptions(form.defaultLocale), [form.defaultLocale]);
   const timeZones = useMemo(() => timeZoneOptions(), []);
   const logoUrl = previewLogoRemoved ? null : previewLogoUrl ?? data.branding.logoUrl;
+
+  const beginSetup = () => {
+    setWelcomeOpen(false);
+  };
 
   const update = (key: keyof Form, value: string | null) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -442,23 +449,44 @@ export function OnboardingFlow({
     );
   }
 
+  if (welcomeOpen) {
+    return (
+      <DesignSystemProvider className={styles.root} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
+        <main className={styles.welcome}>
+          <div className={styles.welcomeAura} aria-hidden="true" />
+          <div className={styles.welcomeContent}>
+            <div className={styles.welcomeMark} aria-hidden="true">W</div>
+            <p>Welcome to</p>
+            <h1>{form.name || "your new workspace"}</h1>
+            <span>Let’s make great work feel effortless.</span>
+            <Button onPress={beginSetup} size="large" variant="primary">Begin setup<ArrowRight aria-hidden="true" size={16} /></Button>
+          </div>
+        </main>
+      </DesignSystemProvider>
+    );
+  }
+
   return (
     <DesignSystemProvider className={styles.root} currency={form.defaultCurrency} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
       <main className={styles.layout}>
         <aside className={styles.story}>
           <div className={styles.wordmark}><span>W</span><strong>Wodana</strong></div>
-          <div className={styles.storyCopy}>
-            <p>Welcome to your new workspace</p>
-            <h1>Let’s make {form.name || "your company"} feel at home.</h1>
-            <span>Four short steps. Your progress is saved as you go.</span>
+          <div className={styles.storyBody}>
+            <div className={styles.storyCopy}>
+              <p>Workspace setup</p>
+              <h1>{form.name || "Your workspace"}</h1>
+              <div aria-hidden="true"><span style={{ inlineSize: `${((currentIndex + 1) / STEPS.length) * 100}%` }} /></div>
+            </div>
+            <ol className={styles.progress} aria-label="Setup progress">
+              {STEPS.map((item, index) => {
+                const done = onboarding.completedSteps.includes(item.id);
+                const active = item.id === step;
+                const state = done ? "complete" : active ? "current" : "upcoming";
+                return <li aria-current={active ? "step" : undefined} aria-label={`${item.shortLabel}, ${state}`} data-active={active || undefined} data-done={done || undefined} key={item.id}><span>{done ? <Check size={13} /> : index + 1}</span><strong>{item.shortLabel}</strong></li>;
+              })}
+            </ol>
           </div>
-          <ol className={styles.progress} aria-label="Setup progress">
-            {STEPS.map((item, index) => {
-              const done = onboarding.completedSteps.includes(item.id);
-              const active = item.id === step;
-              return <li aria-current={active ? "step" : undefined} data-active={active || undefined} data-done={done || undefined} key={item.id}><span>{done ? <Check size={13} /> : index + 1}</span><div><strong>{item.shortLabel}</strong><small>{done ? "Complete" : active ? "In progress" : "Not started"}</small></div></li>;
-            })}
-          </ol>
+          <small className={styles.stepCount}>Step {currentIndex + 1} of {STEPS.length}</small>
         </aside>
 
         <section className={styles.panel}>
