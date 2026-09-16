@@ -410,6 +410,15 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
     value: number;
     lines: ReleasedScopeLine[];
   }[];
+  /** Immutable projection of commercial Change Cases released into execution. */
+  changeCases?: {
+    requestId: string;
+    number: number;
+    kind: string;
+    quoteIds: string[];
+    sourceLineIds: string[];
+    releasedAt: string;
+  }[];
   files?: {
     id: string;
     recordId: string;

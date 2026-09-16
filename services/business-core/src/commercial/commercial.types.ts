@@ -179,6 +179,51 @@ export type CommercialComment = {
   at: string;
   visibility: "client" | "internal";
 };
+export type ControlledChangeKind =
+  | "addition"
+  | "removal"
+  | "replacement"
+  | "clarification"
+  | "date_change"
+  | "price_correction";
+export type ChangeImpactTarget = {
+  kind: "work_package" | "task" | "order" | "material" | "booking";
+  id: string;
+  title: string;
+  status: string;
+};
+export type ChangeImpact = {
+  assessedAt: string;
+  projectId: string;
+  sourceLineIds: string[];
+  targets: ChangeImpactTarget[];
+  bookingCount: number;
+  hasReportedOrCompletedWork: boolean;
+};
+export type ChangeDisposition = {
+  targetKind: ChangeImpactTarget["kind"];
+  targetId: string;
+  action:
+    | "cancel"
+    | "hold_and_replan"
+    | "return_or_credit"
+    | "retain_as_stock"
+    | "rework"
+    | "complete_as_client_owned";
+  note: string;
+};
+/**
+ * A formal change case joins the commercial offer and the operational impact.
+ * It deliberately lives on the existing request record so older client
+ * feedback remains compatible and every case retains the same audit history.
+ */
+export type ControlledChange = {
+  kind: ControlledChangeKind;
+  sourceLineIds: string[];
+  quoteIds: string[];
+  impact?: ChangeImpact;
+  dispositions: ChangeDisposition[];
+};
 export type ChangeRequest = {
   id: string;
   number: number;
@@ -197,6 +242,7 @@ export type ChangeRequest = {
   resolution: string;
   comments: CommercialComment[];
   createdAt: string;
+  control?: ControlledChange;
 };
 export type Agreement = {
   quoteId: string;

@@ -4,6 +4,17 @@ import {
 } from "./commercial-scope";
 import { quotationTemplateContent } from "./quotation-template";
 import { sameOffer, validateDeduction } from "./variation-controls";
+import {
+  controlledChangeCanRelease,
+  controlledChangeForQuote,
+  controlledChangeKinds,
+  deductionDraftLine,
+  dispositionsCoverImpact,
+  isNonFinancialControlledChange,
+  projectChangeImpact,
+  sourceLinesForChange,
+  validateControlledChangeSources,
+} from "./change-control";
 import { releaseDeliveryProject } from "../projects/project-release";
 import { verifiedInvoiceSnapshot } from "./accounting-invoice";
 import {
@@ -53,7 +64,10 @@ import type {
   QuotationTemplate,
   CatalogSelection,
   CatalogPriceSnapshot,
+  ChangeDisposition,
+  ControlledChangeKind,
 } from "./commercial.types";
+import type { ProjectData } from "../projects/execution.types";
 
 @Injectable()
 export class CommercialService {
@@ -1156,7 +1170,346 @@ export class CommercialService {
           ? data.quotes.find((q) => q.id === b.quoteId)
           : undefined;
         const now = new Date().toISOString();
-        if (["create", "revise", "variation"].includes(action)) {
+        if (action === "create_change_case") {
+          const kind = text(b.kind, 40, true) as ControlledChangeKind;
+          if (!controlledChangeKinds.includes(kind))
+            throw new BadRequestException("Choose a valid change type.");
+          if (!Array.isArray(b.sourceLineIds) || b.sourceLineIds.length > 100)
+            throw new BadRequestException("Choose up to 100 affected contract items.");
+          const sourceLineIds = b.sourceLineIds.map((id) => text(id, 80, true));
+          validateControlledChangeSources(data, kind, sourceLineIds);
+          const activeSources = new Set(
+            data.requests
+              .filter(
+                (request) =>
+                  request.control &&
+                  !["resolved", "declined", "withdrawn"].includes(
+                    request.status,
+                  ),
+              )
+              .flatMap((request) => request.control!.sourceLineIds),
+          );
+          if (sourceLineIds.some((id) => activeSources.has(id)))
+            throw new ConflictException(
+              "An open Change Case already controls one of those contract items.",
+            );
+          const request = newRequest(
+            data,
+            text(b.title, 240, true),
+            text(b.detail, 6000, true),
+          );
+          request.owner = text(b.owner ?? "", 160);
+          request.dueDate = b.dueDate ? date(b.dueDate) : "";
+          request.status = "under_review";
+          request.control = {
+            kind,
+            sourceLineIds,
+            quoteIds: [],
+            dispositions: [],
+          };
+        } else if (action === "assess_change_case") {
+          const request = data.requests.find((item) => item.id === b.requestId);
+          if (!request?.control)
+            throw new NotFoundException("Controlled Change Case not found.");
+          if (["resolved", "declined", "withdrawn"].includes(request.status))
+            throw new ConflictException("A closed Change Case cannot be reassessed.");
+          if (
+            request.control.quoteIds.some((quoteId) => {
+              const quote = data.quotes.find((item) => item.id === quoteId);
+              return quote && quote.status !== "draft";
+            })
+          )
+            throw new ConflictException(
+              "Return the linked draft documents before changing the impact assessment.",
+            );
+          const project = await client.query<{
+            id: string;
+            content: ProjectData | null;
+          }>(
+            `SELECT project.id,execution.content
+             FROM delivery_projects project
+             LEFT JOIN project_execution execution
+               ON execution.workspace_id=project.workspace_id
+              AND execution.project_id=project.id
+             WHERE project.workspace_id=$1 AND project.case_id=$2`,
+            [workspaceId, caseId],
+          );
+          if (!project.rowCount) {
+            request.control.impact = {
+              assessedAt: now,
+              projectId: "pre-execution",
+              sourceLineIds: [...request.control.sourceLineIds],
+              targets: [],
+              bookingCount: 0,
+              hasReportedOrCompletedWork: false,
+            };
+          } else {
+            const projectId = project.rows[0].id;
+            const bookingCount = await client.query<{ count: number }>(
+              `SELECT count(*)::int AS count
+               FROM project_bookings
+               WHERE workspace_id=$1 AND project_id=$2
+                 AND status IN ('tentative','confirmed')`,
+              [workspaceId, projectId],
+            );
+            const content = project.rows[0].content ?? ({} as ProjectData);
+            const projectData = {
+              ...content,
+              tasks: content.tasks ?? [],
+              reports: content.reports ?? [],
+              orders: content.orders ?? [],
+              materials: content.materials ?? [],
+              workPackages: content.workPackages ?? [],
+            } as ProjectData;
+            request.control.impact = projectChangeImpact(
+              projectId,
+              projectData,
+              request.control.sourceLineIds,
+              now,
+              bookingCount.rows[0]?.count ?? 0,
+            );
+          }
+          request.control.dispositions = [];
+        } else if (action === "set_change_dispositions") {
+          const request = data.requests.find((item) => item.id === b.requestId);
+          if (!request?.control)
+            throw new NotFoundException("Controlled Change Case not found.");
+          if (!request.control.impact)
+            throw new ConflictException(
+              "Assess the operational impact before recording dispositions.",
+            );
+          if (
+            request.control.quoteIds.some((quoteId) => {
+              const quote = data.quotes.find((item) => item.id === quoteId);
+              return quote && quote.status !== "draft";
+            })
+          )
+            throw new ConflictException(
+              "Return the linked draft documents before changing dispositions.",
+            );
+          if (!Array.isArray(b.dispositions) || b.dispositions.length > 300)
+            throw new BadRequestException("Provide the disposition for each impacted record.");
+          const dispositions = b.dispositions.map((input) => {
+            const value = object(input);
+            const targetKind = text(value.targetKind, 30, true);
+            if (![
+              "work_package",
+              "task",
+              "order",
+              "material",
+              "booking",
+            ].includes(targetKind))
+              throw new BadRequestException("Choose a valid impacted record type.");
+            const action = text(value.action, 40, true);
+            if (![
+              "cancel",
+              "hold_and_replan",
+              "return_or_credit",
+              "retain_as_stock",
+              "rework",
+              "complete_as_client_owned",
+            ].includes(action))
+              throw new BadRequestException("Choose a valid change disposition.");
+            return {
+              targetKind: targetKind as ChangeDisposition["targetKind"],
+              targetId: text(value.targetId, 120, true),
+              action: action as ChangeDisposition["action"],
+              note: text(value.note, 3000, true),
+            };
+          });
+          if (!dispositionsCoverImpact(request.control.impact, dispositions))
+            throw new ConflictException(
+              "Record one disposition for every impacted work package, task, order, material, and booking.",
+            );
+          request.control.dispositions = dispositions;
+        } else if (action === "withdraw_change_case") {
+          const request = data.requests.find((item) => item.id === b.requestId);
+          if (!request?.control)
+            throw new NotFoundException("Controlled Change Case not found.");
+          const caseQuotes = request.control.quoteIds
+            .map((quoteId) => data.quotes.find((quote) => quote.id === quoteId))
+            .filter((quote): quote is Quote => Boolean(quote));
+          if (caseQuotes.some((quote) => quote.status === "accepted"))
+            throw new ConflictException(
+              "An accepted Change Case cannot be withdrawn. Create a corrective Change Case instead.",
+            );
+          if (!caseQuotes.some((quote) => quote.status === "issued"))
+            throw new ConflictException("There is no issued Change Case document to withdraw.");
+          for (const quote of caseQuotes)
+            if (quote.status === "issued") quote.status = "withdrawn";
+          request.status = "under_review";
+          request.resolution = "";
+        } else if (action === "restart_change_case") {
+          const request = data.requests.find((item) => item.id === b.requestId);
+          if (!request?.control)
+            throw new NotFoundException("Controlled Change Case not found.");
+          if (["resolved", "declined", "withdrawn"].includes(request.status))
+            throw new ConflictException("A closed Change Case cannot be restarted.");
+          const caseQuotes = request.control.quoteIds
+            .map((quoteId) => data.quotes.find((quote) => quote.id === quoteId))
+            .filter((quote): quote is Quote => Boolean(quote));
+          if (caseQuotes.some((quote) => quote.status === "accepted"))
+            throw new ConflictException(
+              "This Change Case already has an accepted document. Create a corrective Change Case instead.",
+            );
+          if (
+            caseQuotes.some((quote) =>
+              ["issued", "internal_review", "internal_approved"].includes(
+                quote.status,
+              ),
+            )
+          )
+            throw new ConflictException(
+              "Withdraw or return every client document before restarting the Change Case.",
+            );
+          request.control.quoteIds = [];
+          delete request.quoteId;
+          delete request.control.impact;
+          request.control.dispositions = [];
+          request.status = "under_review";
+          request.resolution = "";
+        } else if (action === "prepare_change_variations") {
+          const request = data.requests.find((item) => item.id === b.requestId);
+          if (!request?.control)
+            throw new NotFoundException("Controlled Change Case not found.");
+          if (["resolved", "declined", "withdrawn"].includes(request.status))
+            throw new ConflictException("A closed Change Case cannot create new documents.");
+          if (request.control.quoteIds.length)
+            throw new ConflictException(
+              "This Change Case already has controlled draft documents. Create a new case for a materially different request.",
+            );
+          if (!request.control.impact)
+            throw new ConflictException(
+              "Assess the operational impact before preparing client documents.",
+            );
+          if (
+            !dispositionsCoverImpact(
+              request.control.impact,
+              request.control.dispositions,
+            )
+          )
+            throw new ConflictException(
+              "Record a disposition for every impacted item before preparing the client documents.",
+            );
+          if (
+            data.quotes.some((quote) =>
+              ["draft", "internal_review", "internal_approved"].includes(
+                quote.status,
+              ),
+            )
+          )
+            throw new ConflictException(
+              "Finish or return the existing working quotation before preparing a Change Case.",
+            );
+          validateControlledChangeSources(
+            data,
+            request.control.kind,
+            request.control.sourceLineIds,
+          );
+          const base = data.quotes.find(
+            (quote) => quote.kind === "quotation" && quote.status === "accepted",
+          );
+          if (!base)
+            throw new ConflictException(
+              "Accept the original quotation before preparing a controlled change.",
+            );
+          const financialDirection = text(b.financialDirection ?? "", 20);
+          if (
+            request.control.kind === "price_correction" &&
+            !["addition", "deduction"].includes(financialDirection)
+          )
+            throw new BadRequestException(
+              "Choose whether the price correction is an additional charge or a credit.",
+            );
+          const changeNeedsDeduction =
+            request.control.kind === "removal" ||
+            request.control.kind === "replacement" ||
+            (request.control.kind === "price_correction" &&
+              financialDirection === "deduction");
+          if (changeNeedsDeduction && !request.control.sourceLineIds.length)
+            throw new ConflictException(
+              "Choose the accepted contract item that this credit or replacement affects.",
+            );
+          const deductions = changeNeedsDeduction
+            ? sourceLinesForChange(data, request.control.sourceLineIds).map(
+                ({ line, remainingQuantity }) =>
+                  deductionDraftLine(line, remainingQuantity),
+              )
+            : [];
+          let nextVariationNumber = Math.max(
+            0,
+            ...data.quotes.map((quote) => quote.number),
+          );
+          const createVariation = (
+            direction: "addition" | "deduction",
+            title: string,
+            lines: Quote["lines"],
+            nonFinancial = false,
+          ): Quote => ({
+            id: randomUUID(),
+            number: ++nextVariationNumber,
+            kind: "variation",
+            direction,
+            familyId: base.familyId ?? base.id,
+            baselineId: base.id,
+            definitionBaseline: base.definitionBaseline,
+            status: "draft",
+            title,
+            cover: structuredClone(base.cover),
+            inclusions: base.inclusions,
+            currency: base.currency,
+            validUntil: new Date(Date.now() + 30 * 86400000)
+              .toISOString()
+              .slice(0, 10),
+            discount: 0,
+            taxRate: base.taxRate,
+            terms: `${base.terms}\n\nChange Case C${request.number}: ${request.title}\n${request.detail}`.slice(
+              0,
+              10000,
+            ),
+            exclusions: base.exclusions,
+            lines,
+            requestIds: [request.id],
+            paymentTerms:
+              direction === "deduction" || nonFinancial
+                ? []
+                : structuredClone(base.paymentTerms ?? []),
+            paymentTemplate: base.paymentTemplate,
+            rooms: [],
+            createdAt: now,
+            total: 0,
+          });
+          const nonFinancial = isNonFinancialControlledChange(
+            request.control.kind,
+          );
+          const variations: Quote[] =
+            request.control.kind === "replacement"
+              ? [
+                  createVariation(
+                    "deduction",
+                    `Change C${request.number} · remove / replace`,
+                    deductions,
+                  ),
+                  createVariation(
+                    "addition",
+                    `Change C${request.number} · replacement scope`,
+                    [],
+                  ),
+                ]
+              : [
+                  createVariation(
+                    changeNeedsDeduction ? "deduction" : "addition",
+                    `Change C${request.number} · ${request.title}`,
+                    deductions,
+                    nonFinancial,
+                  ),
+                ];
+          request.control.quoteIds = variations.map((variation) => variation.id);
+          request.quoteId = variations[0].id;
+          request.status = "under_review";
+          data.quotes.push(...variations);
+          q = variations[0];
+        } else if (["create", "revise", "variation"].includes(action)) {
           if (
             data.quotes.some((q) =>
               ["draft", "internal_review", "internal_approved"].includes(
@@ -1519,6 +1872,45 @@ export class CommercialService {
             )
           )
             throw new ConflictException("Choose open change requests.");
+          const controlledRequest = controlledChangeForQuote(data, q.id);
+          if (
+            controlledRequest &&
+            !requestIds.includes(controlledRequest.id)
+          )
+            throw new ConflictException(
+              "A controlled Change Case cannot be removed from its linked document.",
+            );
+          if (
+            controlledRequest &&
+            q.kind === "variation" &&
+            v.direction !== undefined &&
+            v.direction !== q.direction
+          )
+            throw new ConflictException(
+              "The financial direction is fixed by the controlled Change Case.",
+            );
+          if (
+            controlledRequest &&
+            q.direction === "deduction" &&
+            lines.some(
+              (line) =>
+                !line.deductsLineId ||
+                !controlledRequest.control!.sourceLineIds.includes(
+                  line.deductsLineId,
+                ),
+            )
+          )
+            throw new ConflictException(
+              "A controlled credit can only deduct the contract items selected in its Change Case.",
+            );
+          if (
+            controlledRequest &&
+            isNonFinancialControlledChange(controlledRequest.control!.kind) &&
+            (lines.length || (Array.isArray(v.paymentTerms) && v.paymentTerms.length))
+          )
+            throw new ConflictException(
+              "A clarification or schedule amendment cannot contain prices or payment terms.",
+            );
           Object.assign(q, {
             title: text(v.title, 240, true),
             ...(v.cover ? { cover: parseCover(v.cover) } : {}),
@@ -1533,11 +1925,14 @@ export class CommercialService {
             rooms: v.rooms === undefined ? q.rooms : rooms,
             requestIds,
             direction:
-              q.kind === "variation" && v.direction === "deduction"
-                ? "deduction"
-                : "addition",
+              controlledRequest && q.kind === "variation"
+                ? q.direction
+                : q.kind === "variation" && v.direction === "deduction"
+                  ? "deduction"
+                  : "addition",
             paymentTerms:
-              q.kind === "variation" && v.direction === "deduction"
+              (controlledRequest && q.direction === "deduction") ||
+              (q.kind === "variation" && v.direction === "deduction")
                 ? []
                 : parsePaymentTerms(v.paymentTerms ?? []),
           });
@@ -1571,7 +1966,12 @@ export class CommercialService {
           if (!q) throw new NotFoundException("Quotation not found.");
           if (action === "submit") {
             editable(q);
-            if (q.direction !== "deduction")
+            const controlledRequest = controlledChangeForQuote(data, q.id);
+            const nonFinancial = Boolean(
+              controlledRequest &&
+                isNonFinancialControlledChange(controlledRequest.control!.kind),
+            );
+            if (q.direction !== "deduction" && !nonFinancial)
               parsePaymentTerms(q.paymentTerms, true);
             validateDeduction(data, q);
             const pricingIssue = q.lines.find(
@@ -1584,9 +1984,16 @@ export class CommercialService {
                   ? `Refresh the catalog selling price for ${pricingIssue.title} after changing its quantity, currency or tax.`
                   : `Confirm a selling price for ${pricingIssue.title} before submitting for review.`,
               );
-            if (!q.lines.length || q.lines.some((l) => l.rate <= 0))
+            if (
+              !nonFinancial &&
+              (!q.lines.length || q.lines.some((l) => l.rate <= 0))
+            )
               throw new ConflictException(
                 "Add items and selling rates before submitting for review.",
+              );
+            if (nonFinancial && (q.lines.length || q.paymentTerms.length))
+              throw new ConflictException(
+                "A clarification or schedule amendment must remain a zero-value document.",
               );
             if (q.kind === "quotation") {
               const linked = q.lines.filter((line) => line.scopeId);
@@ -1648,6 +2055,10 @@ export class CommercialService {
               throw new ConflictException(
                 "Only a pending quotation can be withdrawn.",
               );
+            if (controlledChangeForQuote(data, q.id))
+              throw new ConflictException(
+                "A controlled Change Case cannot withdraw one document on its own. Withdraw the complete package or create a corrective Change Case.",
+              );
             q.status = "withdrawn";
           }
           if (action === "issue") {
@@ -1655,12 +2066,18 @@ export class CommercialService {
               throw new ConflictException(
                 "Internal approval is required before issue.",
               );
+            const controlledRequest = controlledChangeForQuote(data, q.id);
+            const isCaseSibling = (other: Quote) =>
+              Boolean(
+                controlledRequest && other.requestIds.includes(controlledRequest.id),
+              );
             if (
               data.quotes.some(
                 (other) =>
                   other.id !== q!.id &&
                   other.status === "accepted" &&
-                  sameOffer(other, q!),
+                  sameOffer(other, q!) &&
+                  !isCaseSibling(other),
               )
             )
               throw new ConflictException(
@@ -1689,7 +2106,11 @@ export class CommercialService {
                 "Update the quotation validity before issue.",
               );
             for (const previous of data.quotes)
-              if (previous.status === "issued" && sameOffer(previous, q))
+              if (
+                previous.status === "issued" &&
+                sameOffer(previous, q) &&
+                !isCaseSibling(previous)
+              )
                 previous.status = "superseded";
             validateDeduction(data, q);
             q.status = "issued";
@@ -1699,7 +2120,20 @@ export class CommercialService {
             q.hash = freezeHash(q);
             for (const id of q.requestIds) {
               const request = data.requests.find((r) => r.id === id);
-              if (request) request.status = "awaiting_decision";
+              if (!request) continue;
+              if (!request.control) {
+                request.status = "awaiting_decision";
+                continue;
+              }
+              const everyCaseDocumentIssued = request.control.quoteIds.every(
+                (quoteId) =>
+                  data.quotes.some(
+                    (quote) => quote.id === quoteId && quote.status === "issued",
+                  ),
+              );
+              request.status = everyCaseDocumentIssued
+                ? "awaiting_decision"
+                : "under_review";
             }
           }
         } else if (action === "submit_owner_review") {
@@ -1973,7 +2407,23 @@ export class CommercialService {
             !resolution
           )
             throw new BadRequestException("Add a closure reason.");
-          if (
+          if (r.control) {
+            if (status === "resolved" && !controlledChangeCanRelease(data, r.id))
+              throw new ConflictException(
+                "Accept every linked Change Case document and complete its impact dispositions before resolving it.",
+              );
+            if (
+              ["declined", "withdrawn"].includes(status) &&
+              r.control.quoteIds.some((quoteId) =>
+                data.quotes.some(
+                  (quote) => quote.id === quoteId && quote.status === "accepted",
+                ),
+              )
+            )
+              throw new ConflictException(
+                "This Change Case already has an accepted document. Create a corrective Change Case rather than closing it as declined or withdrawn.",
+              );
+          } else if (
             status === "resolved" &&
             r.quoteId &&
             !data.quotes.some(

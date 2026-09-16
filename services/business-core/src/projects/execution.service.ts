@@ -1,5 +1,6 @@
 import { commercialExecutionReady } from "./project-readiness";
 import { paymentIsVerified } from "../commercial/accounting-invoice";
+import { controlledChangeCanRelease } from "../commercial/change-control";
 import { freezeHash } from "../commercial/commercial.domain";
 import { previewReschedule } from "./project-reschedule";
 import { notifyProject } from "./project-notifications";
@@ -11,7 +12,7 @@ import {
   fullCalendar,
   type BookingSlot,
 } from "./project-calendar";
-import type { Quote } from "../commercial/commercial.types";
+import type { CommercialData, Quote } from "../commercial/commercial.types";
 import { localDate } from "../hrms/hrms-domain";
 import {
   Injectable,
@@ -531,12 +532,29 @@ export class ExecutionService {
         if (!d.scope)
           throw new ConflictException("Release the original BOQ first.");
         d.variations ??= [];
-        const changes = (row.commercial?.quotes ?? []).filter(
+        const commercial = row.commercial as CommercialData | undefined;
+        const changes = (commercial?.quotes ?? []).filter(
           (q: Quote) =>
             q.kind === "variation" &&
             q.status === "accepted" &&
             !d.variations!.some((v) => v.quoteId === q.id),
         ) as Quote[];
+        const releasedChangeCases = new Map(
+          (commercial?.requests ?? [])
+            .filter(
+              (request) =>
+                request.control &&
+                changes.some((quote) =>
+                  request.control!.quoteIds.includes(quote.id),
+                ),
+            )
+            .map((request) => [request.id, request]),
+        );
+        for (const request of releasedChangeCases.values())
+          if (!controlledChangeCanRelease(commercial!, request.id))
+            throw new ConflictException(
+              `Change Case C${request.number} cannot release until every linked client document is accepted and its operational dispositions are complete.`,
+            );
         for (const q of changes) {
           const variationHash = freezeHash(q);
           if (q.hash && q.hash !== variationHash)
@@ -632,6 +650,23 @@ export class ExecutionService {
             lines: q.lines.map(releasedScopeLine),
           });
           syncScopeWorkPackages(d, new Date().toISOString());
+        }
+        d.changeCases ??= [];
+        for (const request of releasedChangeCases.values()) {
+          if (d.changeCases.some((item) => item.requestId === request.id))
+            continue;
+          const allCaseVariationsReleased = request.control!.quoteIds.every(
+            (quoteId) => d.variations!.some((variation) => variation.quoteId === quoteId),
+          );
+          if (allCaseVariationsReleased)
+            d.changeCases.push({
+              requestId: request.id,
+              number: request.number,
+              kind: request.control!.kind,
+              quoteIds: [...request.control!.quoteIds],
+              sourceLineIds: [...request.control!.sourceLineIds],
+              releasedAt: new Date().toISOString(),
+            });
         }
         d.audit.push({
           id: randomUUID(),

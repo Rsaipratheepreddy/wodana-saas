@@ -1,4 +1,8 @@
 import {validateDeduction} from "./variation-controls";
+import {
+  controlledChangeCanRelease,
+  controlledChangeForQuote,
+} from "./change-control";
 import {decidePortalDesign,portalReviewDesign} from './portal-design-approval';
 import {deliverPortalOtp} from "./portal-otp-delivery";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
@@ -33,7 +37,7 @@ import {
   phone,
   text,
 } from "./commercial.domain";
-import type { PortalSettings } from "./commercial.types";
+import type { PortalSettings, Quote } from "./commercial.types";
 import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 const actorId = "00000000-0000-4000-8000-000000000000";
 const digest = (value: string) =>
@@ -433,6 +437,18 @@ export class ClientPortalService {
                   : "declined")
           )
             return { ok: true, replayed: true };
+          const controlledRequest = controlledChangeForQuote(data, q.id);
+          if (
+            controlledRequest &&
+            !controlledRequest.control!.quoteIds.every((quoteId) =>
+              data.quotes.some(
+                (quote) => quote.id === quoteId && quote.status === "issued",
+              ),
+            )
+          )
+            throw new ConflictException(
+              "The complete Change Case is still being prepared. Review it once every linked document has been issued.",
+            );
           actionable(q);
           const note = text(b.note ?? "", 6000, decision !== "accept");
           const mobile = await this.consume(
@@ -454,47 +470,90 @@ export class ClientPortalService {
           q.decidedAt = new Date().toISOString();
           q.decidedBy = grant.name;
           q.decisionChallengeId = String(b.challengeId);
-          if (
-            decision === "accept" &&
-            q.kind === "variation" &&
-            q.direction!=="deduction" &&
-            data.agreement
-          ) {
-            let allocated = 0;
-            for (const [i, m] of q.paymentTerms.entries()) {
-              const amount =
-                i === q.paymentTerms.length - 1
-                  ? Math.round((q.total - allocated) * 100) / 100
-                  : Math.round(q.total * m.percent) / 100;
-              allocated += amount;
-              data.payments.push({
-                id: randomUUID(),
-                sourceQuoteId: q.id,
-                title: `Variation V${q.number} · ${m.title}`,
-                trigger: m.trigger,
-                amount,
-                dueDate: "",
-                requiredForRelease: m.requiredForRelease,
-                status: "pending",
-                proof: "",
-                reference: "",
-              });
+          const acceptedForEffects = new Map([[q.id, q]]);
+          if (decision === "accept") {
+            for (const id of q.requestIds) {
+              const request = data.requests.find((item) => item.id === id);
+              if (!request || ["declined", "withdrawn", "resolved"].includes(request.status))
+                continue;
+              if (!request.control) {
+                request.status = "resolved";
+                request.resolution = `Applied in accepted V${q.number}`;
+                continue;
+              }
+              const caseQuotes = request.control.quoteIds
+                .map((quoteId) => data.quotes.find((quote) => quote.id === quoteId))
+                .filter((quote): quote is Quote => Boolean(quote));
+              if (
+                caseQuotes.length === request.control.quoteIds.length &&
+                caseQuotes.every((quote) => quote.status === "accepted")
+              ) {
+                if (!controlledChangeCanRelease(data, request.id))
+                  throw new ConflictException(
+                    "This Change Case is missing its approved operational disposition. Ask the project team to complete the case before approval.",
+                  );
+                request.status = "resolved";
+                request.resolution = `Applied through accepted Change Case C${request.number}`;
+                for (const caseQuote of caseQuotes)
+                  acceptedForEffects.set(caseQuote.id, caseQuote);
+              } else {
+                acceptedForEffects.delete(q.id);
+                request.status = "awaiting_decision";
+                request.resolution = "";
+              }
             }
+          } else if (controlledRequest) {
+            controlledRequest.status = "under_review";
+            controlledRequest.resolution = "";
           }
-          if(decision==="accept"&&q.kind==="variation"&&q.direction==="deduction"){
-            data.credits??=[];data.credits.push({id:randomUUID(),quoteId:q.id,amount:q.total,currency:q.currency,status:"pending",reference:"",evidence:""});
-          }
-          if (decision === "changes")
+          if (decision === "changes" && !controlledRequest)
             newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
           if (decision === "accept")
-            for (const id of q.requestIds) {
-              const r = data.requests.find((r) => r.id === id);
+            for (const acceptedQuote of acceptedForEffects.values()) {
               if (
-                r &&
-                !["declined", "withdrawn", "resolved"].includes(r.status)
+                acceptedQuote.kind === "variation" &&
+                acceptedQuote.direction !== "deduction" &&
+                data.agreement &&
+                !data.payments.some(
+                  (payment) => payment.sourceQuoteId === acceptedQuote.id,
+                )
               ) {
-                r.status = "resolved";
-                r.resolution = `Applied in accepted V${q.number}`;
+                let allocated = 0;
+                for (const [index, term] of acceptedQuote.paymentTerms.entries()) {
+                  const amount =
+                    index === acceptedQuote.paymentTerms.length - 1
+                      ? Math.round((acceptedQuote.total - allocated) * 100) / 100
+                      : Math.round(acceptedQuote.total * term.percent) / 100;
+                  allocated += amount;
+                  data.payments.push({
+                    id: randomUUID(),
+                    sourceQuoteId: acceptedQuote.id,
+                    title: `Variation V${acceptedQuote.number} · ${term.title}`,
+                    trigger: term.trigger,
+                    amount,
+                    dueDate: "",
+                    requiredForRelease: term.requiredForRelease,
+                    status: "pending",
+                    proof: "",
+                    reference: "",
+                  });
+                }
+              }
+              if (
+                acceptedQuote.kind === "variation" &&
+                acceptedQuote.direction === "deduction" &&
+                !data.credits?.some((credit) => credit.quoteId === acceptedQuote.id)
+              ) {
+                data.credits ??= [];
+                data.credits.push({
+                  id: randomUUID(),
+                  quoteId: acceptedQuote.id,
+                  amount: acceptedQuote.total,
+                  currency: acceptedQuote.currency,
+                  status: "pending",
+                  reference: "",
+                  evidence: "",
+                });
               }
             }
           await this.commercial.persist(

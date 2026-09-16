@@ -60,6 +60,15 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - Site IDs are verified against active sites belonging to the project; role holders and the initial team receive real project assignments in the same command transaction.
 - Focused initiation/release/work-package tests, full business-core tests (597 passed, 10 skipped) and root typechecking passed. No project UI claim has been made.
 
+### Slice 2 — Controlled commercial changes (backend completed 16 September 2026)
+
+- A formal Change Case now controls additions, removals, replacements, clarification/schedule amendments and price corrections. It retains the existing client-request history rather than creating a disconnected change record.
+- Before client documents can be prepared, the case captures the affected work packages, tasks, purchase orders, materials, confirmed bookings and reported/completed-work warning. Each visible impact requires an explicit, auditable disposition.
+- A replacement produces paired removal and addition variations. Neither money records nor project work are released until every linked document is accepted; a partial client acceptance stays pending safely.
+- Accepted deductions remain conservative: affected tasks and work packages are blocked for replanning rather than silently deleting or auto-segmenting live work. Supplier commitments and reported work still block release for reconciliation.
+- Project execution records the released Change Case reference alongside its variations. If the client rejects a complete, unaccepted package, it can be withdrawn and restarted from a fresh impact assessment; after any acceptance, a corrective Change Case is required.
+- Focused change-control, variation and work-package tests passed, as did business-core typechecking. Full-suite and UAT validation remain required before any delivery claim.
+
 ### Next locked slice — Project command centre
 
 1. Define the one live project operating view from the initiation baseline, execution pulse, scope packages, approvals and commercial readiness.
