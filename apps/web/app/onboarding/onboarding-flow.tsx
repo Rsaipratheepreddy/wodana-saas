@@ -68,10 +68,12 @@ function nextStep(step: Step): Step {
 export function OnboardingFlow({
   initialData,
   initialOnboarding,
+  isPreview = false,
   userName,
 }: {
   initialData: CompanyProfileData;
   initialOnboarding: Onboarding;
+  isPreview?: boolean;
   userName: string;
 }) {
   const [data, setData] = useState(initialData);
@@ -98,6 +100,31 @@ export function OnboardingFlow({
   };
 
   const saveProfile = async (): Promise<CompanyProfileData> => {
+    if (isPreview) {
+      const updated: CompanyProfileData = {
+        ...data,
+        workspace: {
+          ...data.workspace,
+          name: form.name.trim(),
+          defaultCurrency: form.defaultCurrency,
+          defaultLocale: form.defaultLocale,
+          defaultTimezone: form.defaultTimezone,
+          unitSystem: form.unitSystem,
+          weekStartsOn: Number(form.weekStartsOn),
+          version: data.workspace.version + 1,
+        },
+        legalEntities: data.legalEntities.map((item) => item.id === entity.id ? {
+          ...item,
+          registeredName: form.registeredName.trim(),
+          countryCode: form.countryCode,
+          version: item.version + 1,
+        } : item),
+        branding: { ...data.branding, primaryColor: form.primaryColor },
+      };
+      setData(updated);
+      announceWorkspacePrimaryColor(form.primaryColor);
+      return updated;
+    }
     const response = await fetch("/api/workspace/company-profile", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -161,6 +188,18 @@ export function OnboardingFlow({
   const advance = async (completedStep: Step) => {
     const completedSteps = Array.from(new Set([...onboarding.completedSteps, completedStep]));
     const upcoming = nextStep(completedStep);
+    if (isPreview) {
+      setOnboarding((current) => ({
+        ...current,
+        status: "in_progress",
+        currentStep: upcoming,
+        completedSteps,
+        version: current.version + 1,
+      }));
+      setStep(upcoming);
+      setStatus("Progress saved");
+      return;
+    }
     const response = await fetch("/api/onboarding", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -201,6 +240,11 @@ export function OnboardingFlow({
     }
     setBusy(true); setFailure(""); setStatus("Sending invitation…");
     try {
+      if (isPreview) {
+        setInvited((current) => [...current, inviteEmail.trim().toLowerCase()]);
+        setInviteName(""); setInviteEmail(""); setStatus("Invitation added for preview");
+        return;
+      }
       const response = await fetch("/api/workspace/members/invitations", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -223,6 +267,18 @@ export function OnboardingFlow({
     if (busy) return;
     setBusy(true); setFailure(""); setStatus("Finishing setup…");
     try {
+      if (isPreview) {
+        setOnboarding((current) => ({
+          ...current,
+          status: "completed",
+          currentStep: null,
+          completedSteps: STEPS.map((item) => item.id),
+          version: current.version + 1,
+        }));
+        setComplete(true);
+        setStatus("");
+        return;
+      }
       const completedSteps = Array.from(new Set([...onboarding.completedSteps, "integrations" as const]));
       let version = onboarding.version;
       if (!onboarding.completedSteps.includes("integrations")) {

@@ -44,4 +44,22 @@ describe("OnboardingFlow", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     await waitFor(() => expect(screen.getByRole("button", { name: /Enter workspace/ })).toBeEnabled());
   });
+
+  it("keeps the local visual preview interactive without writing to a fixture workspace", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
+
+    await user.click(screen.getByRole("button", { name: /Save and continue/ }));
+    expect(await screen.findByRole("heading", { name: "Set your workspace defaults" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Save and continue/ }));
+    expect(await screen.findByRole("heading", { name: "Bring your team with you" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Continue/ }));
+    expect(await screen.findByRole("heading", { name: "Connect the tools you use" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Finish setup/ }));
+
+    expect(await screen.findByRole("heading", { name: "Your workspace is ready, Katy." })).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

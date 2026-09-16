@@ -35,12 +35,14 @@ export function validateRuntimeConfig(
     if (!String(config.LOCAL_AUTH_AUDIENCE ?? "").trim()) {
       throw new Error("Production password authentication requires LOCAL_AUTH_AUDIENCE");
     }
+  }
+  if (["local", "password"].includes(authMode)) {
     const mfaKey = String(config.MFA_ENCRYPTION_KEY ?? "").trim();
     const decodedMfaKey = /^[0-9a-f]{64}$/i.test(mfaKey)
       ? Buffer.from(mfaKey, "hex")
       : Buffer.from(mfaKey, "base64url");
     if (decodedMfaKey.length !== 32) {
-      throw new Error("Production password authentication requires a 32-byte MFA_ENCRYPTION_KEY");
+      throw new Error("Password authentication requires a 32-byte MFA_ENCRYPTION_KEY");
     }
   }
   const mfaKeyVersion = Number(config.MFA_ENCRYPTION_KEY_VERSION ?? 1);

@@ -12,7 +12,16 @@ describe("validateRuntimeConfig", () => {
       DATABASE_URL: "postgresql://local",
       AUTH_MODE: "local",
       LOCAL_AUTH_JWT_SECRET: "a-local-secret-that-is-longer-than-32-characters",
+      MFA_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     })).toMatchObject({ AUTH_MODE: "local" });
+  });
+
+  it("fails at startup when password authentication cannot encrypt MFA secrets", () => {
+    expect(() => validateRuntimeConfig({
+      DATABASE_URL: "postgresql://local",
+      AUTH_MODE: "local",
+      LOCAL_AUTH_JWT_SECRET: "a-local-secret-that-is-longer-than-32-characters",
+    })).toThrow("MFA_ENCRYPTION_KEY");
   });
 
   it("requires a strong local signing secret", () => {
@@ -20,6 +29,7 @@ describe("validateRuntimeConfig", () => {
       DATABASE_URL: "postgresql://local",
       AUTH_MODE: "local",
       LOCAL_AUTH_JWT_SECRET: "short",
+      MFA_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     })).toThrow("LOCAL_AUTH_JWT_SECRET");
   });
 

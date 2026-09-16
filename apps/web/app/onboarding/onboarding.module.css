@@ -6,15 +6,15 @@
   background: #fff;
   color: var(--wd-color-text);
 }
-.layout { min-block-size: 100dvh; display: grid; grid-template-columns: minmax(19rem, 38%) minmax(0, 62%); }
+.layout { min-block-size: 100dvh; display: grid; grid-template-columns: minmax(18rem, 34%) minmax(0, 66%); }
 .story { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: clamp(1.5rem, 4vw, 3.5rem); background: linear-gradient(160deg, color-mix(in srgb, var(--welcome-lilac) 30%, #fff), color-mix(in srgb, var(--welcome-rose) 13%, #fff) 48%, color-mix(in srgb, var(--welcome-peach) 18%, #fff)); color: #2f232d; }
 .story::after { position: absolute; inset: auto -15% -28% 20%; block-size: 55%; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--welcome-peach) 38%, transparent), transparent 68%); content: ""; pointer-events: none; }
 .wordmark { position: relative; z-index: 1; display: flex; align-items: center; gap: .65rem; }
 .wordmark > span { inline-size: 2rem; block-size: 2rem; display: grid; place-items: center; border-radius: .55rem; background: var(--wd-brand-gradient); color: var(--wd-brand-ink); font-size: .8rem; font-weight: 800; }
 .wordmark strong { font-size: .9rem; letter-spacing: -.015em; }
-.storyCopy { position: relative; z-index: 1; max-inline-size: 30rem; margin-block: auto 3.5rem; }
+.storyCopy { position: relative; z-index: 1; max-inline-size: 27rem; margin-block: auto 2.75rem; }
 .storyCopy > p { margin: 0 0 .8rem; font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.storyCopy h1 { margin: 0; font-size: clamp(2.1rem, 4vw, 3.4rem); font-weight: 560; letter-spacing: -.05em; line-height: 1.04; }
+.storyCopy h1 { margin: 0; font-size: clamp(1.75rem, 2.6vw, 2.65rem); font-weight: 590; letter-spacing: -.042em; line-height: 1.1; }
 .storyCopy > span { display: block; margin-block-start: 1.15rem; font-size: .82rem; line-height: 1.55; }
 .progress { position: relative; z-index: 1; display: grid; gap: .35rem; padding: 0; margin: 0; list-style: none; }
 .progress li { min-block-size: 3rem; display: flex; align-items: center; gap: .65rem; border-radius: .65rem; padding: .45rem .55rem; color: color-mix(in srgb, #2f232d 63%, #fff); transition: background var(--wd-duration-base), color var(--wd-duration-base); }

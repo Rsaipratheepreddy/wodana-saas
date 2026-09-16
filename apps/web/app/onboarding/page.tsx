@@ -26,6 +26,7 @@ export default async function OnboardingPage() {
     <OnboardingFlow
       initialData={profile}
       initialOnboarding={onboarding}
+      isPreview={preview}
       userName={auth.displayName}
     />
   );

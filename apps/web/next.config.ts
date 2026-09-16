@@ -1,4 +1,13 @@
 import type { NextConfig } from "next";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Next loads app-local files automatically. The monorepo also has a shared,
+// server-only environment file used by the internal portal and integrations.
+// Existing process variables always win, so deployed configuration is unchanged.
+const sharedEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../.env");
+if (existsSync(sharedEnvPath)) process.loadEnvFile(sharedEnvPath);
 
 const scriptPolicy = process.env.NODE_ENV === "development"
   ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"

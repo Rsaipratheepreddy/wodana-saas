@@ -1,6 +1,7 @@
 import { CommercialModule } from "./commercial/commercial.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { resolve } from "node:path";
 import { AppController } from "./app.controller";
 import { AuthModule } from "./auth/auth.module";
 import { DatabaseModule } from "./database/database.module";
@@ -33,6 +34,13 @@ import { SourcingModule } from "./sourcing/sourcing.module";
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      // Local development keeps service-only credentials beside the service
+      // and shared integration/security credentials at the monorepo root.
+      // Deployed process environment variables still take precedence.
+      envFilePath: [
+        resolve(__dirname, "../.env"),
+        resolve(__dirname, "../../../.env"),
+      ],
       validate: validateRuntimeConfig,
     }),
     DatabaseModule,
