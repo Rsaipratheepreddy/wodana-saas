@@ -34,6 +34,20 @@
 .root :global(.wd-field-label) { color: var(--wd-color-text-secondary); font-size: .72rem; font-weight: 600; }
 .root :global(.wd-input-group), .root :global(.wd-picker-button) { min-block-size: 2.65rem; border-radius: .65rem; }
 .root :global(.wd-input), .root :global(.wd-picker-button) { font-size: .84rem; }
+.logoField { position: relative; display: grid; gap: .45rem; }
+.logoField > span { color: var(--wd-color-text-secondary); font-size: .72rem; font-weight: 600; }
+.logoField > span small { margin-inline-start: .3rem; color: var(--wd-color-text-tertiary); font-size: .63rem; font-weight: 500; }
+.logoControl { min-block-size: 5.25rem; display: flex; align-items: center; gap: .9rem; border: 1px solid var(--wd-color-border-control); border-radius: .75rem; padding: .7rem; background: var(--wd-color-surface); }
+.logoPreview { position: relative; inline-size: 4.25rem; block-size: 4.25rem; display: grid; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: .75rem; background: var(--wd-brand-gradient); color: var(--wd-identity-ink); font-size: 1rem; font-weight: 750; letter-spacing: -.03em; }
+.logoPreview[data-has-logo] { border: 1px solid var(--wd-color-structural-divider); background: #fff; }
+.logoPreview img { object-fit: contain; padding: .35rem; }
+.logoActions { min-inline-size: 0; display: grid; flex: 1; gap: .18rem; }
+.logoActions > strong { font-size: .75rem; }
+.logoActions > small { color: var(--wd-color-text-tertiary); font-size: .65rem; line-height: 1.4; }
+.logoActions > div { display: flex; flex-wrap: wrap; gap: .35rem; margin-block-start: .3rem; }
+.fileInput { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.logoField > small { color: var(--wd-color-text-tertiary); font-size: .64rem; line-height: 1.4; }
+.logoField > .logoError { color: var(--wd-color-danger); }
 .colourField { display: grid; gap: .4rem; }
 .colourField > label { color: var(--wd-color-text-secondary); font-size: .72rem; font-weight: 600; }
 .colourField > div { min-block-size: 2.65rem; display: flex; align-items: center; gap: .7rem; }
@@ -93,6 +107,8 @@
   .mobileProgress b { block-size: 100%; display: block; border-radius: inherit; background: var(--wd-brand-gradient); transition: inline-size var(--wd-duration-slow) var(--wd-ease-out); }
   .step { gap: 1.25rem; }
   .splitFields, .inviteFields { grid-template-columns: 1fr; }
+  .logoControl { align-items: flex-start; }
+  .logoActions > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inviteFields :global(.wd-button) { grid-column: auto; inline-size: 100%; }
   .step > footer { position: sticky; inset-block-end: 0; margin-inline: -1.25rem; padding: 1rem 1.25rem; background: rgb(255 255 255 / 94%); backdrop-filter: blur(10px); }
   .step > footer > span { display: none; }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { companyProfileFixture } from "@/lib/workspace/company-profile";
@@ -71,6 +71,8 @@ describe("OnboardingFlow", () => {
     expect(screen.getByRole("textbox", { name: "Company display name" })).toBeRequired();
     expect(screen.getByRole("textbox", { name: "Registered company name" })).toBeRequired();
     expect(screen.getByRole("combobox", { name: "Country / region" })).toBeRequired();
+    expect(screen.getByRole("button", { name: "Choose logo" })).toBeEnabled();
+    expect(screen.getByLabelText("Choose company logo")).toHaveAttribute("accept", "image/png,image/jpeg,image/webp");
     expect(screen.getByLabelText("Primary colour")).toHaveAttribute("type", "color");
 
     await user.click(screen.getByRole("button", { name: /Save and continue/ }));
@@ -81,5 +83,48 @@ describe("OnboardingFlow", () => {
     expect(screen.getByText("Language & number format")).toBeInTheDocument();
     expect(screen.getByText("Measurement system")).toBeInTheDocument();
     expect(screen.getByText("Week starts on")).toBeInTheDocument();
+  });
+
+  it("uploads and activates a company logo during onboarding", async () => {
+    const assetId = "00000000-0000-4000-8000-000000000099";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ assetId, uploadMode: "application", uploadUrl: null, uploadHeaders: { "content-type": "image/png" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ uploaded: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ assetId, logoUrl: "/api/auth/tenant-logo/iglo-architects?v=logo", updatedAt: "2026-09-16T01:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} userName="Katy Palmer" />);
+
+    await user.upload(screen.getByLabelText("Choose company logo"), new File(["logo"], "palm-living.png", { type: "image/png" }));
+
+    expect(await screen.findByText("Company logo saved")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Iglo Architects logo" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/company-profile/logo-uploads");
+    expect(String(fetchMock.mock.calls[1][0])).toContain(`/logo-uploads/${assetId}/content`);
+    expect(String(fetchMock.mock.calls[2][0])).toContain(`/logo-uploads/${assetId}/complete`);
+  });
+
+  it("keeps preview logo changes local and rejects unsupported files", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
+    const input = screen.getByLabelText("Choose company logo");
+
+    fireEvent.change(input, { target: { files: [new File(["not-an-image"], "logo.txt", { type: "text/plain" })] } });
+    expect(screen.getByRole("alert")).toHaveTextContent("PNG, JPEG, or WebP");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { files: [new File([], "empty.png", { type: "image/png" })] } });
+    expect(screen.getByRole("alert")).toHaveTextContent("not empty");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { files: [new File(["logo"], "logo.webp", { type: "image/webp" })] } });
+    expect(await screen.findByText("Company logo ready")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Iglo Architects logo" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.queryByRole("img", { name: "Iglo Architects logo" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

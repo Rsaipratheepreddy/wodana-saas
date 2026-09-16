@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Link2, Sparkles, UserPlus } from "lucide-react";
+import Image from "next/image";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Link2, Sparkles, Trash2, Upload, UserPlus } from "lucide-react";
 import {
   Button,
   Callout,
@@ -12,6 +13,7 @@ import {
 } from "@/design-system";
 import type { AuthProfile } from "@/lib/auth/server";
 import type { CompanyProfileData, CompanyProfileUpdate } from "@/lib/workspace/company-profile";
+import { identityInitials, identityStyle } from "@/lib/brand/identity";
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
 import {
   announceWorkspacePrimaryColor,
@@ -22,6 +24,7 @@ import styles from "./onboarding.module.css";
 
 type Step = "workspace_profile" | "organization" | "team" | "integrations";
 type Onboarding = AuthProfile["memberships"][number]["onboarding"];
+type UploadSession = { assetId: string; uploadMode: "signed" | "application"; uploadUrl: string | null; uploadHeaders: Record<string, string> };
 type Form = {
   countryCode: string;
   defaultCurrency: string;
@@ -61,6 +64,15 @@ async function responseMessage(response: Response, fallback: string): Promise<st
   return payload?.message ?? fallback;
 }
 
+function fileDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("The logo preview could not be created."));
+    reader.onerror = () => reject(new Error("The logo preview could not be created."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function nextStep(step: Step): Step {
   return STEPS[Math.min(STEPS.findIndex((item) => item.id === step) + 1, STEPS.length - 1)].id;
 }
@@ -88,15 +100,106 @@ export function OnboardingFlow({
   const [failure, setFailure] = useState("");
   const [status, setStatus] = useState("");
   const [complete, setComplete] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isRemovingLogo, setIsRemovingLogo] = useState(false);
+  const [logoError, setLogoError] = useState("");
+  const [previewLogoUrl, setPreviewLogoUrl] = useState<string | null>(null);
+  const [previewLogoRemoved, setPreviewLogoRemoved] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const entity = data.legalEntities[0];
   const currentIndex = STEPS.findIndex((item) => item.id === step);
   const countries = useMemo(() => countryOptions(form.defaultLocale), [form.defaultLocale]);
   const currencies = useMemo(() => currencyOptions(form.defaultLocale), [form.defaultLocale]);
   const timeZones = useMemo(() => timeZoneOptions(), []);
+  const logoUrl = previewLogoRemoved ? null : previewLogoUrl ?? data.branding.logoUrl;
 
   const update = (key: keyof Form, value: string | null) => {
     setForm((current) => ({ ...current, [key]: value }));
     setFailure("");
+  };
+
+  const uploadLogo = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || isUploadingLogo || isRemovingLogo) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setLogoError("Choose a PNG, JPEG, or WebP image.");
+      return;
+    }
+    if (file.size === 0) {
+      setLogoError("Choose a logo file that is not empty.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoError("Logo must be 5 MB or smaller.");
+      return;
+    }
+    setIsUploadingLogo(true);
+    setLogoError("");
+    setFailure("");
+    setStatus("Uploading company logo…");
+    try {
+      const localPreview = await fileDataUrl(file);
+      setPreviewLogoUrl(localPreview);
+      setPreviewLogoRemoved(false);
+      if (isPreview) {
+        setStatus("Company logo ready");
+        return;
+      }
+      const started = await fetch("/api/workspace/company-profile/logo-uploads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: data.workspace.id, filename: file.name, mimeType: file.type, byteSize: file.size }),
+      });
+      if (!started.ok) throw new Error(await responseMessage(started, "The logo upload could not be started."));
+      const session = await started.json() as UploadSession;
+      const uploadUrl = session.uploadMode === "signed" && session.uploadUrl
+        ? session.uploadUrl
+        : `/api/workspace/company-profile/logo-uploads/${session.assetId}/content?workspaceId=${data.workspace.id}`;
+      const uploaded = await fetch(uploadUrl, { method: "PUT", headers: session.uploadHeaders, body: file });
+      if (!uploaded.ok) throw new Error(await responseMessage(uploaded, "The logo could not be uploaded."));
+      const completed = await fetch(`/api/workspace/company-profile/logo-uploads/${session.assetId}/complete?workspaceId=${data.workspace.id}`, { method: "POST" });
+      if (!completed.ok) throw new Error(await responseMessage(completed, "The logo could not be verified."));
+      const branding = await completed.json() as { assetId: string; logoUrl: string; updatedAt: string };
+      setData((current) => ({
+        ...current,
+        branding: { ...current.branding, logoAssetId: branding.assetId, logoUrl: branding.logoUrl, logoUpdatedAt: branding.updatedAt },
+      }));
+      setPreviewLogoUrl(null);
+      setStatus("Company logo saved");
+    } catch (error) {
+      setPreviewLogoUrl(null);
+      setLogoError(error instanceof Error ? error.message : "The logo could not be uploaded.");
+      setStatus("");
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const removeLogo = async () => {
+    if (isUploadingLogo || isRemovingLogo) return;
+    setIsRemovingLogo(true);
+    setLogoError("");
+    setFailure("");
+    setStatus("Removing company logo…");
+    try {
+      if (!isPreview && data.branding.logoUrl) {
+        const response = await fetch(`/api/workspace/company-profile/logo?workspaceId=${data.workspace.id}`, { method: "DELETE" });
+        if (!response.ok) throw new Error(await responseMessage(response, "The logo could not be removed."));
+      }
+      setData((current) => ({
+        ...current,
+        branding: { ...current.branding, logoAssetId: null, logoUrl: null, logoUpdatedAt: null },
+      }));
+      setPreviewLogoUrl(null);
+      setPreviewLogoRemoved(true);
+      setStatus("Company logo removed");
+    } catch (error) {
+      setLogoError(error instanceof Error ? error.message : "The logo could not be removed.");
+      setStatus("");
+    } finally {
+      setIsRemovingLogo(false);
+    }
   };
 
   const saveProfile = async (): Promise<CompanyProfileData> => {
@@ -218,7 +321,7 @@ export function OnboardingFlow({
   };
 
   const continueFromProfile = async () => {
-    if (busy) return;
+    if (busy || isUploadingLogo || isRemovingLogo) return;
     if (step === "workspace_profile" && (form.name.trim().length < 2 || form.registeredName.trim().length < 2 || !form.countryCode)) {
       setFailure("Enter the company and registered names, then choose a country.");
       return;
@@ -372,6 +475,24 @@ export function OnboardingFlow({
               <TextInput isRequired label="Company display name" onChange={(value) => update("name", value)} value={form.name} />
               <TextInput isRequired label="Registered company name" onChange={(value) => update("registeredName", value)} value={form.registeredName} />
               <ComboboxField isRequired items={countries} label="Country / region" onSelectionChange={(key) => key && update("countryCode", String(key))} placeholder="Search countries" selectedKey={form.countryCode} />
+              <div className={styles.logoField}>
+                <span>Company logo <small>Optional</small></span>
+                <div className={styles.logoControl}>
+                  <div className={styles.logoPreview} data-has-logo={logoUrl ? true : undefined} style={logoUrl ? undefined : identityStyle(data.workspace.id)}>
+                    {logoUrl ? <Image alt={`${form.name || "Company"} logo`} fill sizes="72px" src={logoUrl} unoptimized /> : <span aria-hidden="true">{identityInitials(form.name || "Company")}</span>}
+                  </div>
+                  <div className={styles.logoActions}>
+                    <strong>{logoUrl ? "Logo ready" : "Add your company mark"}</strong>
+                    <small>Shown on your sign-in screen and throughout the workspace.</small>
+                    <div>
+                      <Button isDisabled={isRemovingLogo} isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()} size="compact" variant="quiet"><Upload aria-hidden="true" size={14} />{logoUrl ? "Replace logo" : "Choose logo"}</Button>
+                      {logoUrl ? <Button isDisabled={isUploadingLogo} isLoading={isRemovingLogo} onPress={() => void removeLogo()} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />Remove</Button> : null}
+                    </div>
+                  </div>
+                </div>
+                <input accept="image/png,image/jpeg,image/webp" aria-label="Choose company logo" className={styles.fileInput} disabled={isUploadingLogo || isRemovingLogo} onChange={(event) => void uploadLogo(event)} ref={fileInput} type="file" />
+                {logoError ? <small className={styles.logoError} role="alert">{logoError}</small> : <small>PNG, JPEG, or WebP · 64–4096 px · up to 5 MB</small>}
+              </div>
               <div className={styles.colourField}><label htmlFor="onboarding-primary-colour">Primary colour</label><div><input aria-label="Primary colour" id="onboarding-primary-colour" onChange={(event) => update("primaryColor", event.target.value.toUpperCase())} type="color" value={form.primaryColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR} /><code>{form.primaryColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR}</code><Button isDisabled={!form.primaryColor} onPress={() => update("primaryColor", null)} size="compact" variant="quiet">Use default</Button></div><small>Used for actions and selected states. Accessible shades are created automatically.</small></div>
             </div> : null}
 
@@ -393,9 +514,9 @@ export function OnboardingFlow({
             </div> : null}
 
             <footer>
-              <Button isDisabled={currentIndex === 0 || busy} onPress={goBack} variant="quiet"><ArrowLeft aria-hidden="true" size={15} />Back</Button>
+              <Button isDisabled={currentIndex === 0 || busy || isUploadingLogo || isRemovingLogo} onPress={goBack} variant="quiet"><ArrowLeft aria-hidden="true" size={15} />Back</Button>
               <span aria-live="polite">{status}</span>
-              {step === "workspace_profile" || step === "organization" ? <Button isLoading={busy} onPress={continueFromProfile} variant="primary">Save and continue<ArrowRight aria-hidden="true" size={15} /></Button>
+              {step === "workspace_profile" || step === "organization" ? <Button isDisabled={isUploadingLogo || isRemovingLogo} isLoading={busy} onPress={continueFromProfile} variant="primary">Save and continue<ArrowRight aria-hidden="true" size={15} /></Button>
                 : step === "team" ? <Button isLoading={busy} onPress={continueFromTeam} variant="primary">Continue<ArrowRight aria-hidden="true" size={15} /></Button>
                   : <Button isLoading={busy} onPress={finish} variant="primary"><Sparkles aria-hidden="true" size={15} />Finish setup</Button>}
             </footer>
