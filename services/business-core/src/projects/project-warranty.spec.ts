@@ -56,12 +56,12 @@ describe("project warranty coverage", () => {
     const first = addClientWarrantyClaim(data, {
       id: "claim", challengeId: "otp", handoverId: "bedroom", title: "Door alignment",
       detail: "The right door catches near the handle.", severity: "minor",
-      reportedBy: "Katy", reportedAt: "2026-09-16T10:00:00.000Z", ownerId: "manager",
+      reportedBy: "Katy", reportedAt: "2026-09-16T10:00:00.000Z", reportedDate: "2026-09-16", ownerId: "manager",
     });
     const replay = addClientWarrantyClaim(data, {
       id: "another", challengeId: "otp", handoverId: "bedroom", title: "Changed title",
       detail: "Ignored", severity: "critical", reportedBy: "Katy",
-      reportedAt: "2026-09-16T10:01:00.000Z", ownerId: "manager",
+      reportedAt: "2026-09-16T10:01:00.000Z", reportedDate: "2026-09-16", ownerId: "manager",
     });
     expect(first.claim).toMatchObject({
       id: "claim", handoverId: "bedroom", ownerId: "manager",

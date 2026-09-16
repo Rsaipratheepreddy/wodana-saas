@@ -63,6 +63,7 @@ export function addClientWarrantyClaim(
     severity: Snag["severity"];
     reportedBy: string;
     reportedAt: string;
+    reportedDate: string;
     ownerId: string;
   },
 ) {
@@ -74,7 +75,7 @@ export function addClientWarrantyClaim(
   const handover = assertWarrantyCoverage(data, {
     handoverId: input.handoverId,
     area: data.handovers.find((item) => item.id === input.handoverId)?.area ?? "",
-    onDate: input.reportedAt.slice(0, 10),
+    onDate: input.reportedDate,
   });
   const claim: Snag = {
     id: input.id,
@@ -84,7 +85,7 @@ export function addClientWarrantyClaim(
     area: handover.area,
     ownerId: input.ownerId,
     severity: input.severity,
-    dueDate: input.reportedAt.slice(0, 10),
+    dueDate: input.reportedDate,
     status: "open",
     evidence: "Client portal warranty report",
     resolution: "",

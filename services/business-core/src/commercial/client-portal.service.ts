@@ -12,6 +12,7 @@ import { addClientWarrantyClaim, assertWarrantyCoverage, warrantyOwnerId } from 
 import type { ProjectData } from "../projects/execution.types";
 import { ProjectNotificationsService } from "../projects/project-notifications";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
+import { localDate } from "../hrms/hrms-domain";
 import { parsePortalChallengePurpose } from "./client-portal-purpose";
 import {
   BadRequestException,
@@ -148,9 +149,10 @@ export class ClientPortalService {
               parsed.recordId,
             );
           else if (parsed.kind === "handover-decision" || parsed.kind === "warranty-claim") {
-            const project = await client.query<{ content: ProjectData }>(
-              `SELECT execution.content
+            const project = await client.query<{ content: ProjectData; timezone: string }>(
+              `SELECT execution.content, workspace.default_timezone AS timezone
                  FROM delivery_projects project
+                 JOIN workspaces workspace ON workspace.id=project.workspace_id
                  JOIN project_execution execution
                    ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
                 WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
@@ -171,7 +173,7 @@ export class ClientPortalService {
               assertWarrantyCoverage(project.rows[0].content, {
                 handoverId: handover.id,
                 area: handover.area,
-                onDate: new Date().toISOString().slice(0, 10),
+                onDate: localDate(new Date(), project.rows[0].timezone ?? "UTC"),
               });
               warrantyOwnerId(project.rows[0].content);
             }
@@ -340,7 +342,7 @@ export class ClientPortalService {
             s.workspaceId,
             grant.caseId,
           );
-        const project=(await client.query(`SELECT p.id,p.name,e.content FROM delivery_projects p JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.case_id=$2`,[s.workspaceId,grant.caseId])).rows[0];
+        const project=(await client.query(`SELECT p.id,p.name,e.content,workspace.default_timezone AS timezone FROM delivery_projects p JOIN workspaces workspace ON workspace.id=p.workspace_id JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.case_id=$2`,[s.workspaceId,grant.caseId])).rows[0];
         const designs=(await client.query(`SELECT v.id,d.title,d.document_type AS type,v.number,v.status,a.original_name AS name,a.mime_type AS "mimeType" FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.case_id=$2 AND d.archived_at IS NULL AND v.status IN ('client_review','approved') AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id) ORDER BY d.title,v.number DESC`,[s.workspaceId,grant.caseId])).rows;
         cases.push({
           definitionBaseline: await this.definitions.portalData(
@@ -362,7 +364,7 @@ export class ClientPortalService {
           project: project
             ? (() => {
                 const publicData = publicProject(project.id, project.name, project.content);
-                const today = new Date().toISOString().slice(0, 10);
+                const today = localDate(new Date(), project.timezone ?? "UTC");
                 let warrantyReportingReady = true;
                 try {
                   warrantyOwnerId(project.content);
@@ -508,9 +510,10 @@ export class ClientPortalService {
           const projectId = text(b.projectId, 80, true);
           const handoverId = text(b.handoverId, 80, true);
           const challengeId = text(b.challengeId, 80, true);
-          const project = await client.query<{ content: ProjectData; name: string }>(
-            `SELECT execution.content,project.name
+          const project = await client.query<{ content: ProjectData; name: string; timezone: string }>(
+            `SELECT execution.content,project.name,workspace.default_timezone AS timezone
                FROM delivery_projects project
+               JOIN workspaces workspace ON workspace.id=project.workspace_id
                JOIN project_execution execution
                  ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
               WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
@@ -530,7 +533,7 @@ export class ClientPortalService {
           assertWarrantyCoverage(execution, {
             handoverId,
             area: handover.area,
-            onDate: new Date().toISOString().slice(0, 10),
+            onDate: localDate(new Date(), project.rows[0].timezone ?? "UTC"),
           });
           const ownerId = warrantyOwnerId(execution);
           const activeOwner = await client.query(
@@ -564,6 +567,7 @@ export class ClientPortalService {
             })(),
             reportedBy: grant.name,
             reportedAt: now,
+            reportedDate: localDate(now, project.rows[0].timezone ?? "UTC"),
             ownerId,
           });
           execution.audit.push({
