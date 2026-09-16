@@ -23,6 +23,10 @@ import type {
   Retention,
   SupplierReturn,
 } from "./execution-controls.types";
+import {
+  assertFactoryDispatchReceiver,
+  unresolvedFactoryDispatchRejections,
+} from "./project-factory-handoff";
 
 export function applyControls(
   d: ProjectData,
@@ -120,10 +124,13 @@ export function applyControls(
       d.tasks.some((t) => t.parentId === task.id)
     )
       throw new ConflictException("Choose a measured factory operation.");
+    const receivingTaskId = str(v.receivingTaskId, 80);
+    assertFactoryDispatchReceiver(d, task, receivingTaskId);
     const value: Dispatch = {
       id,
       title: str(v.title, 240, true),
       taskId: task.id,
+      receivingTaskId,
       destination: str(v.destination, 240, true),
       quantity: num(v.quantity),
       unit: task.unit,
@@ -150,9 +157,14 @@ export function applyControls(
       ]);
     released();
     if (status === "ready") {
-      review();
+      independent(r.preparedBy);
       stage(r.status, "draft");
       const t = get(d.tasks, r.taskId);
+      assertFactoryDispatchReceiver(d, t, r.receivingTaskId);
+      if (unresolvedFactoryDispatchRejections(d, t.id).length)
+        throw new ConflictException(
+          "Correct and independently close the rejected factory delivery before approving a replacement dispatch.",
+        );
       const allocated = (d.dispatches ?? [])
         .filter(
           (x) =>
@@ -177,6 +189,7 @@ export function applyControls(
     if (status === "received") {
       independent(r.preparedBy);
       stage(r.status, "dispatched");
+      assertFactoryDispatchReceiver(d, get(d.tasks, r.taskId), r.receivingTaskId);
       r.accepted = num(b.accepted);
       r.rejected = num(b.rejected);
       if (Math.abs(r.accepted + r.rejected - r.quantity) > 0.0001)
@@ -186,8 +199,10 @@ export function applyControls(
       r.receiptEvidence = str(b.evidence, 3000, true);
       r.receivedBy = a.id;
       if (r.rejected) {
+        const rejectionSnagId = randomUUID();
+        r.rejectionSnagId = rejectionSnagId;
         d.snags.push({
-          id: randomUUID(),
+          id: rejectionSnagId,
           title: `Rejected dispatch: ${r.title}`,
           taskId: r.taskId,
           area: get(d.tasks, r.taskId).area,

@@ -27,6 +27,7 @@ import {
   workPackageForTask,
 } from "./project-work-packages";
 import { designReadinessForTask } from "./project-design-control";
+import { factoryHandoffReadiness } from "./project-factory-handoff";
 import { workPackageReadiness } from "./project-package-readiness";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
@@ -915,10 +916,15 @@ export function applyExecution(
         d.tasks.some((c) => c.parentId === t.id && c.status !== "cancelled") ||
         d.tasks.some(
           (c) => c.predecessors.includes(t.id) && c.status !== "cancelled",
+        ) ||
+        d.dispatches?.some(
+          (dispatch) =>
+            dispatch.receivingTaskId === t.id &&
+            ["ready", "dispatched", "received"].includes(dispatch.status),
         ))
     )
       throw new ConflictException(
-        "Resolve reported output, subtasks and dependent work before cancelling.",
+        "Resolve reported output, subtasks, dependent work and linked dispatches before cancelling.",
       );
     if (status === "in_progress") {
       active();
@@ -946,6 +952,8 @@ export function applyExecution(
       }
       if (t.predecessors.some((id) => get(d.tasks, id).status !== "completed"))
         throw new ConflictException("Complete the preceding tasks first.");
+      const handoff = factoryHandoffReadiness(d, t);
+      if (!handoff.ready) throw new ConflictException(handoff.detail);
       const workPackage = workPackageForTask(d, t);
       if (workPackage) {
         if (!routeSupportsLocation(workPackage.deliveryRoute, t.location))
@@ -1597,6 +1605,10 @@ export function applyExecution(
         throw new ConflictException(
           "Submit correction evidence before verification.",
         );
+      if (s.resolutionBy === a.id)
+        throw new ForbiddenException(
+          "Another reviewer must verify the correction before closing this snag.",
+        );
       s.verifiedBy = a.name;
     } else if (!a.manage && s.ownerId !== a.id)
       throw new ForbiddenException(
@@ -1608,6 +1620,11 @@ export function applyExecution(
       );
     s.status = status;
     s.resolution = note;
+    if (status === "ready") s.resolutionBy = a.id;
+    if (status === "open") {
+      delete s.resolutionBy;
+      delete s.verifiedBy;
+    }
   } else if (action === "handover") {
     manage();
     const v = obj(b.handover);

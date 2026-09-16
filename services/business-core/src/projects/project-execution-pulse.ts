@@ -8,6 +8,10 @@ import type {
 } from "./execution.types";
 import { routeSupportsLocation, workPackageForTask } from "./project-work-packages";
 import { designReadinessForTask } from "./project-design-control";
+import {
+  factoryHandoffReadiness,
+  unresolvedFactoryDispatchRejections,
+} from "./project-factory-handoff";
 import { workPackageReadiness } from "./project-package-readiness";
 
 const rank: Record<ProjectExecutionAction["priority"], number> = {
@@ -231,6 +235,19 @@ export function projectExecutionPulse(
       }));
       continue;
     }
+    const handoff = factoryHandoffReadiness(data, task);
+    if (task.status === "planned" && ready && !handoff.ready) {
+      actions.push(action({
+        kind: "receive_factory_output",
+        priority: "high",
+        title: `Receive output for ${task.title}`,
+        detail: handoff.detail,
+        workPackageId: workPackage?.id,
+        taskId: task.id,
+        recordId: task.id,
+      }));
+      continue;
+    }
     if (task.status === "planned" && ready && !resourceReady) {
       actions.push(action({
         kind: "resolve_booking",
@@ -273,6 +290,68 @@ export function projectExecutionPulse(
       taskId: order.taskId || undefined,
       recordId: order.id,
     }));
+
+  for (const task of data.tasks.filter((task) =>
+    task.location === "factory" && task.status === "completed",
+  )) {
+    const unresolvedRejections = unresolvedFactoryDispatchRejections(data, task.id);
+    const allocated = (data.dispatches ?? [])
+      .filter((dispatch) =>
+        dispatch.taskId === task.id &&
+        ["draft", "ready", "dispatched", "received"].includes(dispatch.status),
+      )
+      .reduce((total, dispatch) => total + dispatch.quantity - dispatch.rejected, 0);
+    if (unresolvedRejections.length)
+      actions.push(action({
+        kind: "resolve_factory_rejection",
+        priority: "critical",
+        title: `Correct rejected output for ${task.title}`,
+        detail: "A factory delivery was rejected. Record correction evidence and independent verification before releasing a replacement.",
+        taskId: task.id,
+        recordId: task.id,
+      }));
+    else if (task.approved > allocated + 0.00001)
+      actions.push(action({
+        kind: "plan_factory_dispatch",
+        priority: "high",
+        title: `Plan delivery for ${task.title}`,
+        detail: `${task.approved - allocated} ${task.unit} of inspected factory output has not been allocated to a delivery.`,
+        taskId: task.id,
+        recordId: task.id,
+      }));
+  }
+
+  for (const dispatch of data.dispatches ?? []) {
+    if (dispatch.status === "draft")
+      actions.push(action({
+        kind: "review_factory_dispatch",
+        priority: "normal",
+        title: `Review delivery plan for ${dispatch.title}`,
+        detail: "Confirm the receiving destination, quantity and planned arrival before releasing this dispatch.",
+        taskId: dispatch.taskId,
+        recordId: dispatch.id,
+      }));
+    if (dispatch.status === "ready")
+      actions.push(action({
+        kind: "record_dispatch",
+        priority: "high",
+        title: `Dispatch ${dispatch.title}`,
+        detail: "The delivery is approved. Record the carrier and delivery-note reference when it leaves.",
+        taskId: dispatch.taskId,
+        recordId: dispatch.id,
+      }));
+    if (dispatch.status === "dispatched")
+      actions.push(action({
+        kind: "receive_dispatch",
+        priority: dispatch.dueDate < today ? "critical" : "high",
+        title: `Receive ${dispatch.title}`,
+        detail: dispatch.dueDate < today
+          ? `Expected arrival was ${dispatch.dueDate}. Record the accepted and rejected quantities with receipt evidence.`
+          : "Record the accepted and rejected quantities with receipt evidence.",
+        taskId: dispatch.taskId,
+        recordId: dispatch.id,
+      }));
+  }
 
   const nextActions = actions
     .sort((left, right) => rank[left.priority] - rank[right.priority]

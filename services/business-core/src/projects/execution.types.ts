@@ -217,6 +217,8 @@ export type Snag = {
   status: "open" | "ready" | "closed";
   evidence: string;
   resolution: string;
+  /** Person who submitted the latest correction; a different reviewer closes it. */
+  resolutionBy?: string;
   verifiedBy?: string;
 };
 export type Handover = {
@@ -535,6 +537,12 @@ export type ProjectExecutionAction = {
     | "prepare_handover"
     | "complete_client_action"
     | "prepare_client_meeting"
+    | "receive_factory_output"
+    | "plan_factory_dispatch"
+    | "review_factory_dispatch"
+    | "record_dispatch"
+    | "receive_dispatch"
+    | "resolve_factory_rejection"
     | "start_task"
     | "review_report"
     | "confirm_order";

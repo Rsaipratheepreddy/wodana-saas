@@ -99,11 +99,20 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - The queue remains an internal operating view. It does not disclose margin, vendor negotiation or private notes to the client portal.
 - Focused tests, the full business-core suite (610 passed, 10 skipped), 14 project web-component tests and root typechecking passed. This verifies contracts and the existing form path; it is not a claim that the command-centre UX itself has completed UAT.
 
-### Next locked slice — Factory-to-site delivery hand-off
+### Slice 7 — Factory-to-site delivery hand-off (backend completed 16 September 2026)
 
-1. Audit the existing production controls as one connected chain: scoped factory task → confirmed factory commitment → approved measured output → dispatch → site receipt → site installation/inspection.
-2. For every link, define what can be edited, cancelled, split, rejected, reworked or delayed, and prevent progress from skipping a required upstream acceptance.
-3. Expose the resulting state and exception reasons as a small, auditable backend contract before redesigning the Production and Execution screens.
+- A linked production chain now enforces: scoped factory task → approved measured factory output → independently released dispatch → carrier record → independently received site delivery → site installation. A site task that directly depends on a factory task cannot start until it has a received dispatch with accepted quantity for that exact site task.
+- A linked recipient must be a live, measurable site task in the same project, with the factory task as a direct predecessor. The backend rejects the wrong task type, closed/parent task, absent dependency, unit mismatch, different work package or incompatible released scope. Warehouse/client deliveries remain supported without a receiving task.
+- Dispatch release and receipt are independently verified. A rejected quantity creates a linked major snag; the correction requires evidence and a different reviewer to close it. Replacement output cannot be released while that rejection remains unresolved.
+- Task cancellation now protects live receiving tasks with ready, dispatched or received deliveries. Production shows the linked site task for each dispatch and opens the correct receiver automatically when a factory job has exactly one valid site successor.
+- The deterministic project pulse now exposes the real next factory/site action: plan or review a delivery, record dispatch, receive overdue delivery, or resolve rejection. It does not mutate project data or claim AI decisions.
+- Full business-core tests passed (613 passed, 10 skipped), the 14 focused project web tests passed and root typechecking was clean. This is backend/light-UI verification, not a claim of tenant UAT completion.
+
+### Next locked slice — Site execution, quality and handover control
+
+1. Audit the existing site-work path as one flow: accepted factory output/material readiness → installation task → progress evidence → independent inspection/commissioning → snag correction → area handover → warranty.
+2. Define controlled behaviour for partial installation, failed inspection, missing evidence, changes after installation, client punch lists, rework, phased area handover and final completion without losing commercial or delivery history.
+3. Reuse the existing commissioning, snag and handover contracts only where they pass the same end-to-end rules; add no disconnected CRUD screens.
 
 ## Do not lose these client requirements
 

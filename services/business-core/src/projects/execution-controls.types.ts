@@ -2,6 +2,8 @@ export type Dispatch = {
   id: string;
   title: string;
   taskId: string;
+  /** Optional for warehouse/client deliveries; required to unlock a linked site task. */
+  receivingTaskId: string;
   destination: string;
   quantity: number;
   unit: string;
@@ -15,6 +17,7 @@ export type Dispatch = {
   rejected: number;
   receiptEvidence: string;
   receivedBy?: string;
+  rejectionSnagId?: string;
 };
 export type Commissioning = {
   revisions?:{readings:Commissioning["readings"];evidence:string;note:string;at:string;reviewedBy?:string}[];

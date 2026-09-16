@@ -121,6 +121,25 @@ export function ProjectControls({
         ),
       ),
       f("quantity", "Quantity", "number"),
+      f(
+        "receivingTaskId",
+        "Receiving site task (if applicable)",
+        "select",
+        tasks.filter((option) => {
+          const task = d.tasks.find(
+            (candidate) => candidate.id === option.value,
+          );
+          return (
+            task?.location === "site" &&
+            task.predecessors.some((id) =>
+              d.tasks.some(
+                (candidate) => candidate.id === id && candidate.location === "factory",
+              ),
+            )
+          );
+        }),
+        true,
+      ),
       f("destination", "Delivery destination"),
       f("dueDate", "Expected arrival", "date"),
       f("carrier", "Carrier / driver", "text", undefined, true),

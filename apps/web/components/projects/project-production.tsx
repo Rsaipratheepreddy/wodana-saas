@@ -262,7 +262,9 @@ export function ProjectProduction({
                     href={`/workspace/projects/${state.id}/production?view=dispatch&record=${x.id}`}
                   >
                     <Truck size={13} />
-                    {x.quantity} {x.unit} → {x.destination}
+                    {x.quantity} {x.unit} → {state.data.tasks.find(
+                      (task) => task.id === x.receivingTaskId,
+                    )?.title ?? x.destination}
                     <span>{label(x.status)}</span>
                   </Link>
                 ))}

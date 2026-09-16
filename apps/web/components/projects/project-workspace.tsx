@@ -1159,20 +1159,33 @@ export function ProjectWorkspace({
             }
             onReport={(t) => newReport(t)}
             onDispatch={(t) => {
+              const receivingTasks = d.tasks.filter(
+                (candidate) =>
+                  candidate.location === "site" &&
+                  !["completed", "cancelled"].includes(candidate.status) &&
+                  candidate.predecessors.includes(t.id),
+              );
+              const receivingTask =
+                receivingTasks.length === 1 ? receivingTasks[0] : undefined;
               setDispatchDraft({
                 title: `${t.title} · delivery`,
                 taskId: t.id,
+                receivingTaskId: receivingTask?.id ?? "",
                 quantity: Math.max(
                   0,
                   t.approved -
                     (d.dispatches ?? [])
                       .filter(
-                        (x) => x.taskId === t.id && x.status !== "cancelled",
+                        (x) =>
+                          x.taskId === t.id &&
+                          ["ready", "dispatched", "received"].includes(x.status),
                       )
-                      .reduce((n, x) => n + x.quantity, 0),
+                      .reduce((n, x) => n + x.quantity - x.rejected, 0),
                 ),
                 dueDate: t.end,
-                destination: state.name,
+                destination: receivingTask?.area
+                  ? `${state.name} · ${receivingTask.area}`
+                  : state.name,
               });
               setView("dispatch");
             }}

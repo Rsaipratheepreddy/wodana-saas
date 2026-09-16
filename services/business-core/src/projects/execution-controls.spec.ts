@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { applyControls, assertCloseout } from "./execution-controls";
-import { emptyProject, type ExecutionActor } from "./execution.domain";
+import { applyExecution, emptyProject, type ExecutionActor } from "./execution.domain";
 import { validateCalendar, bookingSlots, slotsClash, calendarContainsSlot } from "./project-calendar";
 import type { Task } from "./execution.types";
 const actor: ExecutionActor = {
@@ -53,6 +53,7 @@ function setup() {
       ownerId: "foreman",
       assigneeIds: [],
       parentId: "",
+      predecessors: ["factory"],
     } as Task,
   ];
   d.documents = [
@@ -68,11 +69,34 @@ function setup() {
       published: false,
     },
   ];
+  // Approved output is the source of truth for factory completion. Keeping
+  // this in the fixture means unrelated actions (such as closing a delivery
+  // snag) cannot accidentally erase the factory's verified output.
+  d.reports = [
+    {
+      id: "factory-output",
+      date: "2026-09-07",
+      shift: "Day",
+      location: "factory",
+      authorId: "foreman",
+      author: "Foreman",
+      status: "approved",
+      entries: [{ taskId: "factory", quantity: 4 }],
+      hours: 8,
+      people: 1,
+      materials: "",
+      issues: "",
+      tomorrow: "",
+      evidence: "Factory output record",
+      note: "",
+    },
+  ];
   return d;
 }
 describe("delivery closeout controls", () => {
   it("prevents excess dispatch and tracks rejection without accepting it as delivered", () => {
     const d = setup();
+    d.tasks[1].status = "planned";
     applyControls(
       d,
       "dispatch",
@@ -81,6 +105,7 @@ describe("delivery closeout controls", () => {
           id: "d1",
           title: "Wardrobes",
           taskId: "factory",
+          receivingTaskId: "site",
           quantity: 4,
           destination: "Site",
           dueDate: "2026-09-07",
@@ -88,6 +113,8 @@ describe("delivery closeout controls", () => {
       },
       actor,
     );
+    expect(() => applyControls(d, "dispatch_status", { id: "d1", status: "ready" }, actor))
+      .toThrow(/Another reviewer/);
     applyControls(
       d,
       "dispatch_status",
@@ -102,6 +129,7 @@ describe("delivery closeout controls", () => {
           id: "d2",
           title: "Duplicate",
           taskId: "factory",
+          receivingTaskId: "site",
           quantity: 1,
           destination: "Site",
           dueDate: "2026-09-07",
@@ -156,6 +184,15 @@ describe("delivery closeout controls", () => {
     );
     expect(d.dispatches![0].accepted).toBe(3);
     expect(d.snags[0].severity).toBe("major");
+    expect(d.dispatches![0].rejectionSnagId).toBe(d.snags[0].id);
+    expect(() => applyControls(d, "dispatch_status", { id: "d2", status: "ready" }, reviewer))
+      .toThrow(/Correct and independently close/);
+    applyExecution(d, "snag_status", { id: d.snags[0].id, status: "ready", note: "Refinished and photographed" }, actor);
+    expect(() => applyExecution(d, "snag_status", { id: d.snags[0].id, status: "closed", note: "Self-verified" }, actor))
+      .toThrow(/Another reviewer/);
+    applyExecution(d, "snag_status", { id: d.snags[0].id, status: "closed", note: "Replacement finish verified" }, reviewer);
+    expect(() => applyControls(d, "dispatch_status", { id: "d2", status: "ready" }, reviewer))
+      .not.toThrow();
     expect(() =>
       applyControls(
         d,
