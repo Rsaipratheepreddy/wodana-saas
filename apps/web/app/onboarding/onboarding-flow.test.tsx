@@ -62,4 +62,24 @@ describe("OnboardingFlow", () => {
     expect(await screen.findByRole("heading", { name: "Your workspace is ready, Katy." })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("renders one complete set of company and regional controls", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const user = userEvent.setup();
+    render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
+
+    expect(screen.getByRole("textbox", { name: "Company display name" })).toBeRequired();
+    expect(screen.getByRole("textbox", { name: "Registered company name" })).toBeRequired();
+    expect(screen.getByRole("combobox", { name: "Country / region" })).toBeRequired();
+    expect(screen.getByLabelText("Primary colour")).toHaveAttribute("type", "color");
+
+    await user.click(screen.getByRole("button", { name: /Save and continue/ }));
+
+    expect(await screen.findByRole("combobox", { name: "Base currency" })).toBeRequired();
+    expect(screen.getAllByRole("combobox", { name: "Time zone" })).toHaveLength(1);
+    expect(screen.getByRole("combobox", { name: "Time zone" })).toBeRequired();
+    expect(screen.getByText("Language & number format")).toBeInTheDocument();
+    expect(screen.getByText("Measurement system")).toBeInTheDocument();
+    expect(screen.getByText("Week starts on")).toBeInTheDocument();
+  });
 });
