@@ -146,6 +146,8 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 
 ### Next locked slice — End-to-end UAT journey and real delivery channels
 
+- The local-only commercial-project smoke harness now includes the generated sample lead → release → project path plus client-portal handover OTP acceptance, handover replay safety, a warranty-claim OTP/replay, owner in-app alert and independent remedy/verification before final financial closure. It cleans up the fixture when it runs. It has passed syntax validation but cannot be executed until the local API/database stack is running; it must not be pointed at production.
+
 1. Provision one disposable UAT tenant and run the full sample journey: lead → qualification → pre-execution → design/definition approval → catalogue/quote → agreement/release → project → procurement/factory/site → handover → warranty → closure. Verify revisions, rejections, returns, permissions, tenant separation, empty/error states and mobile paths; do not use a real customer record.
 2. Verify the operational channels with deliberate test credentials: portal login/decision/warranty OTP delivery, project email template/policy/preference/worker delivery and idempotent retries. The code currently has a generic push queue and device-endpoint schema, but **FCM delivery and mobile token registration are not implemented or configured**; they require the Firebase/Expo credential decision and a real test device. Do not claim FCM is live before that.
 3. Once the sample journey and real channel smoke tests are signed off, freeze backend scope and start the planned project/portfolio/frontend UX pass. Production backup/DR, live accounting/WhatsApp, migration tooling and AI-assisted imports remain separate post-UAT release work.
