@@ -42,6 +42,18 @@ const initial: ProjectState = {
   ],
   resources: [],
   bookings: [],
+  pulse: {
+    health: "clear",
+    counts: {
+      packages: 0,
+      readyPackages: 0,
+      activePackages: 0,
+      blockedPackages: 0,
+      overdueTasks: 0,
+      awaitingInspection: 0,
+    },
+    nextActions: [],
+  },
   data: {
     revision: 1,
     phase: "active",

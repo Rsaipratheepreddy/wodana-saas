@@ -29,7 +29,7 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - CRM: intake, identity resolution evidence, SLA/assignment, qualification and controlled conversion are implemented.
 - Pre-execution: case/brief, rooms, requirements, site evidence, designs, specifications, readiness and immutable client-confirmed definition baselines are implemented.
 - Catalogue/commercial: catalogue adoption, vendors/offers, selling-price links, quotation templates, definition-bound proposal composition and release lineage are implemented.
-- Tenant/project backend: planning projects, released scope lineage, workflow templates/history/gates, resources, cross-project capacity checks, bookings, portfolio calendar and execution command foundations exist.
+- Tenant/project backend: planning projects, released scope lineage, workflow templates/history/gates, resources, cross-project capacity checks, bookings, portfolio calendar and execution command foundations exist. Released quote lines now materialise authoritative work packages; accepted additions create new packages and deductions block affected packages rather than erase history.
 
 ## Project module: actual status
 
@@ -39,23 +39,24 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - A planning project can be created from an active Pre-execution; it is linked to that case.
 - A live project detail route reads `GET /workspaces/:workspaceId/projects/:projectId/execution` and sends state-changing commands to the same tenant-scoped backend.
 - The detail workspace has live sections for Overview, Schedules, Material planning, Procurement, Production, Execution, Daily progress, Snagging, Handover, Scope & Design, Budget and BOQ.
-- The project backend tests passed on 16 September 2026: 57 tests across workflow, release, schedule capacity, portfolio calendar, execution domain and execution controls.
+- The project backend tests passed on 16 September 2026: 60 focused tests across workflow, release, work packages, execution pulse, schedule capacity, portfolio calendar and execution domain. Root typechecking, the project component tests and a production web build also passed after this work.
 
 ### Not release-complete / must be treated as work remaining
 
 - The live project workspace must be audited tab-by-tab against the project baseline. Existing APIs and widgets do not equal a coherent Palm Living delivery workflow.
 - Current project detail needs an end-to-end tenant UAT pass from released quotation to work package/task, materials, procurement, factory/site execution, progress, quality, handover and warranty. Empty states, permissions, errors and mobile usage must be checked.
 - The full departmental/resource overview needs a client-ready UI using the live portfolio calendar/capacity API. It must show cross-project overlaps by department; Design red, Production purple and Procurement grey are tenant-configurable defaults, not hard-coded Palm Living logic.
-- Product workflow must use work packages → tasks → subtasks. Avoid old demo wording that incorrectly treats tasks as work packages.
+- Product workflow now starts with released-scope work packages → tasks → subtasks. A task with released scope derives its package link from that scope; it cannot claim another package's source line, and a subtask cannot move across its parent's package.
+- Project state now includes a deterministic execution pulse for future UI: it ranks blocked packages/tasks, overdue work, inspection queues, supplier acknowledgements and genuinely start-ready work. It does not mutate data or pretend to be AI.
 - Live daily progress must remain review-derived and auditable. Browser-local storage is permitted only for an unsent local draft; it must never be represented as server-saved progress.
 
 ## Next project slice (locked)
 
-**Project foundation consolidation — no new breadth.**
+**Project execution — foundation in progress; do not claim UI completion.**
 
 1. Provision one clean UAT tenant deliberately; it must become the sole test workspace rather than another seed/demo account.
-2. Compare the live project state/commands and UI sections against the project baseline: scope release, work package/task hierarchy, assignment vs booking, calendar conflicts, material responsibility, procurement/factory/site gates, daily-report review, snags, handover and financial separation.
-3. Turn identified gaps into a small ordered implementation backlog. Fix the first broken handoff before moving to a new module.
+2. Connect a clean, compact project UI to the new work-package and execution-pulse contracts. The UI must offer package preparation, owner/route readiness, task hierarchy and clear recovery paths—without turning the project into a complicated planner.
+3. Compare the live project state/commands and UI sections against the project baseline: assignment vs booking, calendar conflicts, material responsibility, procurement/factory/site gates, daily-report review, snags, handover and financial separation.
 4. Prove the clean tenant path with automated API checks and a focused browser/mobile validation before calling the module ready.
 
 ## Do not lose these client requirements

@@ -9,6 +9,7 @@ import type { ProjectData } from "./execution.types";
 import { releasedScopeLine } from "./released-scope-line";
 import { adoptProjectWorkflow } from "./project-workflow";
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
+import { syncScopeWorkPackages } from "./project-work-packages";
 // Called inside the same transaction and pre-execution row lock as commercial approval.
 export async function releaseDeliveryProject(
   client: PoolClient,
@@ -75,6 +76,7 @@ export async function releaseDeliveryProject(
     )
   ).rows[0]?.content as ProjectData | undefined;
   const execution = existing ?? emptyProject();
+  let executionChanged = false;
   if (!execution.scope) {
     execution.workflow ??= adoptProjectWorkflow(
       await resolvedProjectWorkflowTemplate(client, workspaceId),
@@ -117,7 +119,15 @@ export async function releaseDeliveryProject(
       value: quote.total,
       lines: quote.lines.map(releasedScopeLine),
     };
+    syncScopeWorkPackages(execution, data.release!.at);
     execution.phase = "active";
+    executionChanged = true;
+  } else if (syncScopeWorkPackages(execution, data.release!.at).length) {
+    // A safe retry upgrades a historical release with the new package links,
+    // while preserving the original accepted quote snapshot unchanged.
+    executionChanged = true;
+  }
+  if (executionChanged) {
     execution.revision++;
     await client.query(
       "INSERT INTO project_execution(project_id,workspace_id,revision,content) VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET revision=$3,content=$4,updated_at=now() WHERE project_execution.workspace_id=$2",

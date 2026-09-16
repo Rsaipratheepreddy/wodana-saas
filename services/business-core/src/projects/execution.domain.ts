@@ -18,6 +18,12 @@ import {
   reopenProjectWorkflow,
   transitionProjectWorkflow,
 } from "./project-workflow";
+import {
+  activeReleasedScopeLines,
+  assertUniqueWorkPackageScope,
+  routeSupportsLocation,
+  workPackageForTask,
+} from "./project-work-packages";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
   phase: "planning",
@@ -40,6 +46,7 @@ export const emptyProject = (): ProjectData => ({
   },
   roleAssignments: [],
   approvedMaterials: [],
+  workPackages: [],
   scope: null,
   tasks: [],
   reports: [],
@@ -302,6 +309,7 @@ export type ExecutionActor = {
   buy: boolean;
   memberIds: string[];
   resourceIds: string[];
+  resourceKinds?: Record<string, "crew" | "person" | "factory" | "vendor">;
   now: string;
   released: boolean;
 };
@@ -503,10 +511,52 @@ export function applyExecution(
       throw new BadRequestException(
         "Planned quantity must be greater than zero.",
       );
+    const requestedPackageId = str(v.packageId, 80);
+    const parent = str(v.parentId, 80)
+      ? get(d.tasks, str(v.parentId, 80))
+      : undefined;
+    if (
+      parent?.packageId &&
+      requestedPackageId &&
+      parent.packageId !== requestedPackageId
+    )
+      throw new ConflictException(
+        "A subtask must stay in its parent work package.",
+      );
+    const requestedScopeIds = ids(v.scopeIds);
+    let workPackage = requestedPackageId
+      ? workPackageForTask(d, { packageId: requestedPackageId } as Task)
+      : parent
+        ? workPackageForTask(d, parent)
+        : undefined;
+    if (!workPackage && requestedScopeIds.length) {
+      const matching = (d.workPackages ?? []).filter(
+        (candidate) =>
+          candidate.status !== "cancelled" &&
+          requestedScopeIds.every((scopeLineId) =>
+            candidate.scopeLineIds.includes(scopeLineId),
+          ),
+      );
+      if (matching.length === 1) workPackage = matching[0];
+      else if (matching.length > 1)
+        throw new ConflictException(
+          "Choose one work package before linking this task to released scope.",
+        );
+    }
+    if (
+      workPackage &&
+      requestedScopeIds.some(
+        (scopeLineId) => !workPackage!.scopeLineIds.includes(scopeLineId),
+      )
+    )
+      throw new BadRequestException(
+        "A task can only link scope that belongs to its work package.",
+      );
     const t: Task = {
       id: recordId,
-      parentId: str(v.parentId, 80),
-      package: str(v.package, 160, true),
+      parentId: parent?.id ?? "",
+      packageId: workPackage?.id,
+      package: workPackage?.title ?? str(v.package, 160, true),
       title: str(v.title, 240, true),
       description: str(v.description, 3000),
       area: str(v.area, 160),
@@ -526,7 +576,7 @@ export function applyExecution(
       status: old?.status ?? "planned",
       priority: choice(v.priority, ["normal", "high", "urgent"]),
       inspectionRequired: v.inspectionRequired === true,
-      scopeIds: ids(v.scopeIds),
+      scopeIds: requestedScopeIds,
       drawingId: str(v.drawingId, 80),
       readiness: {
         scope: obj(v.readiness).scope === true,
@@ -543,12 +593,7 @@ export function applyExecution(
     if (
       t.scopeIds.some(
         (id) =>
-          ![
-            ...(d.scope?.lines ?? []),
-            ...(d.variations ?? [])
-              .filter((v) => v.direction !== "deduction")
-              .flatMap((v) => v.lines),
-          ].some((l) => l.id === id),
+          !activeReleasedScopeLines(d).some((line) => line.id === id),
       )
     )
       throw new BadRequestException("Link a line from the released BOQ.");
@@ -575,6 +620,69 @@ export function applyExecution(
     assertGraph(next);
     if (old) Object.assign(old, t);
     else d.tasks.push(t);
+  } else if (action === "work_package") {
+    manage();
+    const value = obj(b.workPackage);
+    const workPackage = get(d.workPackages ?? [], str(value.id, 80, true));
+    const status = choice(value.status, [
+      "planning",
+      "ready",
+      "on_hold",
+      "blocked",
+      "completed",
+      "cancelled",
+    ] as const);
+    const ownerId = member(value.ownerId);
+    const plannedStart = day(value.plannedStart);
+    const plannedEnd = day(value.plannedEnd);
+    const blocker = str(value.blocker, 1000);
+    if (plannedStart && plannedEnd && plannedEnd < plannedStart)
+      throw new BadRequestException("Package finish must be on or after start.");
+    if (status === "ready" && !ownerId)
+      throw new ConflictException(
+        "Assign an accountable owner before marking a work package ready.",
+      );
+    if (["on_hold", "blocked", "cancelled"].includes(status) && !blocker)
+      throw new BadRequestException("Record why this work package is unavailable.");
+    const linkedTasks = d.tasks.filter((task) => task.packageId === workPackage.id);
+    if (
+      status === "completed" &&
+      (!linkedTasks.length ||
+        linkedTasks.some((task) => !["completed", "cancelled"].includes(task.status)))
+    )
+      throw new ConflictException(
+        "Complete or cancel every linked task before completing this work package.",
+      );
+    if (
+      status === "cancelled" &&
+      linkedTasks.some(
+        (task) =>
+          task.approved > 0 ||
+          !["planned", "blocked", "on_hold", "cancelled"].includes(task.status),
+      )
+    )
+      throw new ConflictException(
+        "Reported or active work cannot be removed from its released package.",
+      );
+    Object.assign(workPackage, {
+      title: str(value.title, 240, true),
+      area: str(value.area, 160),
+      deliveryRoute: choice(value.deliveryRoute, [
+        "site",
+        "factory",
+        "vendor",
+        "office",
+        "mixed",
+      ] as const),
+      status,
+      ownerId,
+      plannedStart,
+      plannedEnd,
+      blocker,
+      updatedAt: a.now,
+    });
+    for (const task of linkedTasks) task.package = workPackage.title;
+    recordId = workPackage.id;
   } else if (action === "task_status") {
     manage();
     const t = get(d.tasks, recordId);
@@ -617,6 +725,29 @@ export function applyExecution(
         );
       if (t.predecessors.some((id) => get(d.tasks, id).status !== "completed"))
         throw new ConflictException("Complete the preceding tasks first.");
+      const workPackage = workPackageForTask(d, t);
+      if (workPackage) {
+        if (!routeSupportsLocation(workPackage.deliveryRoute, t.location))
+          throw new ConflictException(
+            "This task location does not match its work package delivery route.",
+          );
+        if (
+          workPackage.deliveryRoute === "vendor" &&
+          a.resourceKinds &&
+          a.resourceKinds[t.resourceId] !== "vendor"
+        )
+          throw new ConflictException(
+            "Vendor-route work must be assigned to an active vendor resource.",
+          );
+        if (!["ready", "in_progress"].includes(workPackage.status))
+          throw new ConflictException(
+            "Mark the linked work package ready before starting its tasks.",
+          );
+        if (workPackage.status === "ready") {
+          workPackage.status = "in_progress";
+          workPackage.updatedAt = a.now;
+        }
+      }
     }
     t.status = status;
     if (status === "cancelled")
@@ -1377,6 +1508,9 @@ export function applyExecution(
       !d.handovers.length ||
       d.handovers.some((h) => h.status !== "accepted") ||
       d.tasks.some((t) => !["completed", "cancelled"].includes(t.status)) ||
+      (d.workPackages ?? []).some(
+        (workPackage) => !["completed", "cancelled"].includes(workPackage.status),
+      ) ||
       d.snags.some((s) => s.status !== "closed") ||
       !d.financeClosed
     )
@@ -1454,6 +1588,18 @@ export function applyExecution(
     });
   } else throw new BadRequestException("Unknown project action.");
   refreshProgress(d);
+  assertUniqueWorkPackageScope(d);
+  for (const workPackage of d.workPackages ?? []) {
+    const linkedTasks = d.tasks.filter((task) => task.packageId === workPackage.id);
+    if (
+      workPackage.status === "in_progress" &&
+      linkedTasks.length &&
+      linkedTasks.every((task) => ["completed", "cancelled"].includes(task.status))
+    ) {
+      workPackage.status = "completed";
+      workPackage.updatedAt = a.now;
+    }
+  }
   d.audit.push({
     id: randomUUID(),
     at: a.now,

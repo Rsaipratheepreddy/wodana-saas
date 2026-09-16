@@ -47,6 +47,8 @@ import type { PortfolioCalendarQueryDto } from "./projects.dto";
 import { releasedScopeLine } from "./released-scope-line";
 import { adoptProjectWorkflow, ensureProjectWorkflow } from "./project-workflow";
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
+import { blockWorkPackagesForDeduction, syncScopeWorkPackages } from "./project-work-packages";
+import { projectExecutionPulse } from "./project-execution-pulse";
 @Injectable()
 export class ExecutionService {
   constructor(private readonly access: HrmsAccessService) {}
@@ -80,6 +82,7 @@ export class ExecutionService {
       controls: { ...blank.controls!, ...(stored.controls ?? {}) },
       roleAssignments: stored.roleAssignments ?? [],
       approvedMaterials: stored.approvedMaterials ?? [],
+      workPackages: stored.workPackages ?? [],
     } as ProjectData;
     ensureProjectWorkflow(data);
     return data;
@@ -317,6 +320,9 @@ export class ExecutionService {
         [ctx.workspaceId],
       )
     ).rows;
+    const visibleBookings = ctx.permissions.has("projects.manage")
+      ? bookings
+      : bookings.filter((booking) => booking.projectId === id);
     return {
       notifications: (
         await ctx.client.query(
@@ -330,11 +336,15 @@ export class ExecutionService {
       name: r.name,
       customer: r.customer,
       data,
+      pulse: projectExecutionPulse(
+        data,
+        localDate(new Date(), r.timezone ?? "UTC"),
+        resources,
+        visibleBookings.filter((booking) => booking.projectId === id),
+      ),
       members,
       resources,
-      bookings: ctx.permissions.has("projects.manage")
-        ? bookings
-        : bookings.filter((b) => b.projectId === id),
+      bookings: visibleBookings,
       memberId: ctx.membershipId,
       canManage: ctx.permissions.has("projects.manage"),
       canReview: ctx.permissions.has("projects.review"),
@@ -576,6 +586,14 @@ export class ExecutionService {
               task.readiness.scope = false;
               task.blocker = `Accepted deduction V${q.number}. Review remaining scope and quantities.`;
             }
+            blockWorkPackagesForDeduction(
+              d,
+              q.lines
+                .map((line) => line.deductsLineId)
+                .filter((scopeLineId): scopeLineId is string => Boolean(scopeLineId)),
+              `Accepted deduction V${q.number}. Review remaining scope and quantities.`,
+              new Date().toISOString(),
+            );
           }
           d.variations.push({
             quoteId: q.id,
@@ -587,6 +605,7 @@ export class ExecutionService {
             value: q.direction === "deduction" ? -q.total : q.total,
             lines: q.lines.map(releasedScopeLine),
           });
+          syncScopeWorkPackages(d, new Date().toISOString());
         }
         d.audit.push({
           id: randomUUID(),
@@ -1118,6 +1137,11 @@ export class ExecutionService {
           buy: ctx.permissions.has("projects.buy"),
           memberIds: members.map((m) => m.id),
           resourceIds: resources.filter((r) => r.active).map((r) => r.id),
+          resourceKinds: Object.fromEntries(
+            resources
+              .filter((resource) => resource.active)
+              .map((resource) => [resource.id, resource.kind]),
+          ),
           now: new Date().toISOString(),
           released: commercialExecutionReady(row.commercial),
           today: localDate(new Date(), row.timezone ?? "UTC"),

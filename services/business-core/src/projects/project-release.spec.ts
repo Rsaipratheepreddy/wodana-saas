@@ -267,6 +267,14 @@ describe("commercial project release", () => {
       currentStageKey: "planning",
       template: { code: "standard_delivery", source: "built_in", version: 0 },
     });
+    expect(db.stored()?.workPackages).toEqual([
+      expect.objectContaining({
+        scopeLineIds: ["quote-line-1"],
+        title: "Wardrobe",
+        status: "planning",
+        deliveryRoute: "mixed",
+      }),
+    ]);
   });
 
   it("rejects accepted-price drift against the approved Deal File", async () => {
@@ -304,5 +312,32 @@ describe("commercial project release", () => {
 
     expect(existing.scope.quoteHash).toBe("original-hash");
     expect(db.query.mock.calls.some(([sql]) => String(sql).startsWith("INSERT INTO project_execution"))).toBe(false);
+  });
+
+  it("backfills only missing work packages on a safe retry of a historical release", async () => {
+    const existing = emptyProject();
+    existing.scope = {
+      quoteId: "quote-1",
+      quoteHash: "original-hash",
+      quoteNumber: 7,
+      currency: "AED",
+      value: 1000,
+      lines: [{
+        id: "quote-line-1",
+        title: "Wardrobe",
+        room: "Primary bedroom",
+        material: "Oak veneer",
+        quantity: 2,
+        unit: "nos",
+      }],
+    };
+    const db = database({ existing });
+
+    await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", fixture());
+
+    expect(db.stored()?.scope?.quoteHash).toBe("original-hash");
+    expect(db.stored()?.workPackages).toEqual([
+      expect.objectContaining({ scopeLineIds: ["quote-line-1"], title: "Wardrobe" }),
+    ]);
   });
 });

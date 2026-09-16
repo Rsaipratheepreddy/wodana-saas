@@ -61,6 +61,8 @@ export type ReleasedScopeLine = {
 export type Task = {
   id: string;
   parentId: string;
+  /** The released-scope work package this task belongs to, when it is delivery work. */
+  packageId?: string;
   package: string;
   title: string;
   description: string;
@@ -302,12 +304,35 @@ export type ApprovedMaterialSelection = {
   approvedAt: string;
   approvedBy: string;
 };
+export type ProjectWorkPackage = {
+  id: string;
+  /** Immutable links to the released quotation scope that this package delivers. */
+  scopeLineIds: string[];
+  title: string;
+  area: string;
+  deliveryRoute: "site" | "factory" | "vendor" | "office" | "mixed";
+  status:
+    | "planning"
+    | "ready"
+    | "in_progress"
+    | "on_hold"
+    | "blocked"
+    | "completed"
+    | "cancelled";
+  ownerId: string;
+  plannedStart: string;
+  plannedEnd: string;
+  blocker: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type ProjectData = import("./execution-controls.types").ExecutionControls & {
   controls?: ProjectControlSummary;
   holdHistory?: ProjectHoldHistoryEntry[];
   workflow?: import("./project-workflow").ProjectWorkflowState;
   roleAssignments?: ProjectRoleAssignment[];
   approvedMaterials?: ApprovedMaterialSelection[];
+  workPackages?: ProjectWorkPackage[];
   milestones?: {
     id: string;
     title: string;
@@ -401,6 +426,36 @@ export type ProjectBooking = {
   startTime?: string;
   endTime?: string;
 };
+export type ProjectExecutionAction = {
+  id: string;
+  kind:
+    | "prepare_package"
+    | "resolve_package"
+    | "recover_task"
+    | "resolve_task"
+    | "inspect_task"
+    | "start_task"
+    | "review_report"
+    | "confirm_order";
+  priority: "critical" | "high" | "normal";
+  title: string;
+  detail: string;
+  workPackageId?: string;
+  taskId?: string;
+  recordId: string;
+};
+export type ProjectExecutionPulse = {
+  health: "clear" | "watch" | "attention" | "blocked";
+  counts: {
+    packages: number;
+    readyPackages: number;
+    activePackages: number;
+    blockedPackages: number;
+    overdueTasks: number;
+    awaitingInspection: number;
+  };
+  nextActions: ProjectExecutionAction[];
+};
 export type ProjectState = {
   notifications?:{id:string;subject:string;body:string;deepLink:string;readAt:string|null;createdAt:string}[];
   timezone?:string;
@@ -411,6 +466,7 @@ export type ProjectState = {
   name: string;
   customer: string;
   data: ProjectData;
+  pulse: ProjectExecutionPulse;
   members: { id: string; name: string }[];
   resources: ProjectResource[];
   bookings: ProjectBooking[];
