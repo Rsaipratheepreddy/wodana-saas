@@ -84,11 +84,18 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - The project execution pulse uses the same evaluator, so it tells the project manager the first concrete missing condition rather than a generic “prepare package” instruction.
 - Focused readiness, design, package and full-suite tests passed (607 passed, 10 skipped), with root typechecking clean. Resource booking and customer-promise escalation remain separate command-centre work; they are not being claimed as complete.
 
-### Next locked slice — Project command centre
+### Slice 5 — Resource booking truth (backend completed 16 September 2026)
 
-1. Define the one live project operating view from the initiation baseline, execution pulse, scope packages, approvals and commercial readiness.
-2. Make its `Now`, `Next`, risk, decision and client-promise states deterministic; it must not become another task list or duplicate financial truth.
-3. Add the minimum state/command contracts and tests first. UI follows only after the backend flow is proven.
+- The project pulse and the task-start command now use the same operational rule. A site or factory task can show as start-ready only when its assigned active resource has a confirmed booking for that same task that covers the full planned task period.
+- A missing resource, an inactive resource, a draft/tentative booking, an old booking, a partial booking or a confirmed booking for another resource all produce one clear **Book work** action instead of a misleading start action.
+- The backend enforces the same resource, task and date-span check at command time, so a stale browser state or a direct API request cannot bypass the calendar commitment.
+- Focused pulse tests cover absent, old, partial and wrong-resource bookings. The full business-core suite passed (608 passed, 10 skipped) and root typechecking passed. This is backend control only; booking/calendar UI UAT is still required.
+
+### Next locked slice — Project command centre: client promises and decision queue
+
+1. Turn the existing project controls into deterministic escalation: project hold, overdue client promise/handover target, dated next action and overdue next client meeting must appear once, at the right priority and with a real owner.
+2. Preserve the operating hierarchy: a critical hold/risk beats package and task noise; package/design/procurement/booking work remains linked underneath rather than becoming a second task list.
+3. Add pure state contracts and tests first. UI follows only after the backend flow and permissions are proven.
 
 ## Do not lose these client requirements
 

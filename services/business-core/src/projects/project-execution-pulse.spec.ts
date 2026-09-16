@@ -83,6 +83,9 @@ describe("project execution pulse", () => {
       id: "crew-1", name: "Joinery team", kind: "crew", members: [], active: true,
     }]);
     expect(withoutBooking.nextActions.some((item) => item.kind === "start_task")).toBe(false);
+    expect(withoutBooking.nextActions).toContainEqual(expect.objectContaining({
+      kind: "resolve_booking", taskId: "task-1",
+    }));
 
     const withBooking = projectExecutionPulse(data, "2026-09-16", [{
       id: "crew-1", name: "Joinery team", kind: "crew", members: [], active: true,
@@ -92,6 +95,51 @@ describe("project execution pulse", () => {
       status: "confirmed", acknowledgement: "Confirmed",
     }]);
     expect(withBooking.nextActions).toContainEqual(expect.objectContaining({
+      kind: "start_task", taskId: "task-1",
+    }));
+  });
+
+  it("does not treat an old, wrong-resource or partial booking as authority to start work", () => {
+    const data = emptyProject();
+    data.workPackages = [{
+      id: "package-1", scopeLineIds: ["line-1"], title: "Joinery", area: "Living",
+      deliveryRoute: "site", status: "ready", ownerId: "manager", plannedStart: "",
+      plannedEnd: "", blocker: "", createdAt: "2026-09-16T10:00:00.000Z", updatedAt: "2026-09-16T10:00:00.000Z",
+    }];
+    data.tasks = [{
+      id: "task-1", parentId: "", packageId: "package-1", package: "Joinery",
+      title: "Install joinery", description: "", area: "Living", location: "site",
+      ownerId: "foreman", assigneeIds: [], resourceId: "crew-1", start: "2026-09-17",
+      end: "2026-09-18", baselineStart: "2026-09-17", baselineEnd: "2026-09-18",
+      predecessors: [], quantity: 1, unit: "nos", weight: 1, approved: 0,
+      status: "planned", priority: "normal", inspectionRequired: true, scopeIds: ["line-1"],
+      drawingId: "drawing-1", readiness: { scope: true, access: true, materials: true }, blocker: "",
+    }];
+    const resources = [{ id: "crew-1", name: "Joinery team", kind: "crew" as const, members: [], active: true }];
+    const bookings = [
+      {
+        id: "old-booking", projectId: "project-1", projectName: "Villa", taskId: "task-1",
+        taskTitle: "Install joinery", resourceId: "crew-1", start: "2026-09-10", end: "2026-09-11",
+        status: "confirmed" as const, acknowledgement: "Confirmed",
+      },
+      {
+        id: "wrong-resource", projectId: "project-1", projectName: "Villa", taskId: "task-1",
+        taskTitle: "Install joinery", resourceId: "crew-2", start: "2026-09-17", end: "2026-09-18",
+        status: "confirmed" as const, acknowledgement: "Confirmed",
+      },
+      {
+        id: "partial-booking", projectId: "project-1", projectName: "Villa", taskId: "task-1",
+        taskTitle: "Install joinery", resourceId: "crew-1", start: "2026-09-17", end: "2026-09-17",
+        status: "confirmed" as const, acknowledgement: "Confirmed",
+      },
+    ];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16", resources, bookings);
+
+    expect(pulse.nextActions).toContainEqual(expect.objectContaining({
+      kind: "resolve_booking", taskId: "task-1",
+    }));
+    expect(pulse.nextActions).not.toContainEqual(expect.objectContaining({
       kind: "start_task", taskId: "task-1",
     }));
   });

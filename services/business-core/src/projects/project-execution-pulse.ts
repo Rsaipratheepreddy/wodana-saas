@@ -22,9 +22,18 @@ function action(
   return { ...item, id: `${item.kind}:${item.recordId}` };
 }
 
-function confirmedBooking(taskId: string, bookings: ProjectBooking[]) {
+function confirmedBooking(task: Task, bookings: ProjectBooking[]) {
   return bookings.some(
-    (booking) => booking.taskId === taskId && booking.status === "confirmed",
+    (booking) =>
+      booking.taskId === task.id &&
+      booking.resourceId === task.resourceId &&
+      booking.status === "confirmed" &&
+      Boolean(task.start) &&
+      Boolean(task.end) &&
+      Boolean(booking.start) &&
+      Boolean(booking.end) &&
+      booking.start <= task.start &&
+      booking.end >= task.end,
   );
 }
 
@@ -119,8 +128,11 @@ export function projectExecutionPulse(
       && (!workPackage || routeSupportsLocation(workPackage.deliveryRoute, task.location));
     const resource = resources.find((candidate) => candidate.id === task.resourceId);
     const resourceReady = task.location === "office"
-      || !task.resourceId
-      || (resource?.active && confirmedBooking(task.id, bookings));
+      || Boolean(
+        task.resourceId &&
+        resource?.active &&
+        confirmedBooking(task, bookings),
+      );
     const designReady =
       task.location === "office" || designReadinessForTask(data, task).ready;
     if (task.status === "planned" && !designReady) {
@@ -129,6 +141,18 @@ export function projectExecutionPulse(
         priority: "high",
         title: `Link the approved design for ${task.title}`,
         detail: "Use the approved design revision captured with this released scope before starting delivery work.",
+        workPackageId: workPackage?.id,
+        taskId: task.id,
+        recordId: task.id,
+      }));
+      continue;
+    }
+    if (task.status === "planned" && ready && !resourceReady) {
+      actions.push(action({
+        kind: "resolve_booking",
+        priority: "high",
+        title: `Book ${task.title}`,
+        detail: "Assign an active team or factory and confirm a booking that covers the planned work dates.",
         workPackageId: workPackage?.id,
         taskId: task.id,
         recordId: task.id,

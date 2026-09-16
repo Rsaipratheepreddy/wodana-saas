@@ -527,6 +527,7 @@ export type ProjectExecutionAction = {
     | "resolve_task"
     | "inspect_task"
     | "resolve_design"
+    | "resolve_booking"
     | "start_task"
     | "review_report"
     | "confirm_order";

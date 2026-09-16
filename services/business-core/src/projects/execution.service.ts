@@ -1210,13 +1210,15 @@ export class ExecutionService {
             t.resourceId &&
             !(
               await ctx.client.query(
-                "SELECT 1 FROM project_bookings WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3 AND status='confirmed'",
-                [w, id, t.id],
+                `SELECT 1 FROM project_bookings
+                 WHERE workspace_id=$1 AND project_id=$2 AND task_id=$3 AND resource_id=$4
+                   AND status='confirmed' AND starts_on <= $5::date AND ends_on >= $6::date`,
+                [w, id, t.id, t.resourceId, t.start, t.end],
               )
             ).rowCount
           )
             throw new ConflictException(
-              "Confirm the assigned resource booking first.",
+              "Assign and confirm a current resource booking before starting work.",
             );
         }
         changedRecordId = applyExecution(d, action, b, {
