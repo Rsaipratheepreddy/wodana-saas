@@ -229,18 +229,74 @@ export type Snag = {
   resolutionBy?: string;
   verifiedBy?: string;
 };
+/** A named promise that survives physical handover instead of becoming a note. */
+export type HandoverOutstandingItem = {
+  id: string;
+  title: string;
+  kind: "punch" | "document" | "training" | "delivery" | "other";
+  /** Blocking items must be resolved before the client can accept the pack. */
+  blocking: boolean;
+  ownerId: string;
+  dueDate: string;
+  status: "open" | "ready" | "closed" | "warranty";
+  evidence: string;
+  resolution: string;
+  verifiedBy?: string;
+};
+
+/**
+ * Immutable, client-safe view of what was offered for acceptance. It is a
+ * snapshot, not a live query, so a later drawing or task change cannot alter
+ * a pack the client has already reviewed.
+ */
+export type HandoverPacket = {
+  id: string;
+  version: number;
+  createdAt: string;
+  preparedBy: string;
+  source: "area" | "work_package";
+  sourcePackageId?: string;
+  scopeLineIds: string[];
+  tasks: {
+    id: string;
+    title: string;
+    area: string;
+    location: Task["location"];
+    quantity: number;
+    unit: string;
+  }[];
+  documents: Pick<ProjectDocument, "id" | "title" | "kind" | "revision" | "url">[];
+  commissioningIds: string[];
+  dispatchIds: string[];
+};
+
 export type Handover = {
   id: string;
   area: string;
   title: string;
-  status: "draft" | "ready" | "accepted";
+  status: "draft" | "ready" | "returned" | "accepted";
+  /** The source drives automatic scope, document and evidence selection. */
+  source?: "area" | "work_package";
+  sourcePackageId?: string;
   documentIds: string[];
   taskIds: string[];
   evidence: string;
   acceptedBy: string;
   acceptedAt: string;
   warrantyUntil: string;
+  /** Legacy summary only. New work uses the owned items below. */
   outstanding: string;
+  outstandingItems?: HandoverOutstandingItem[];
+  packet?: HandoverPacket;
+  /** Earlier offered packs remain available after a client return. */
+  packets?: HandoverPacket[];
+  clientApproverId?: string;
+  clientReviewDueDate?: string;
+  returnedAt?: string;
+  returnedBy?: string;
+  returnedNote?: string;
+  decisionSource?: "client_portal" | "signed_record";
+  decisionChallengeId?: string;
   published: boolean;
 };
 export type ProjectComment = {
@@ -559,6 +615,9 @@ export type ProjectExecutionAction = {
     | "commission_site"
     | "review_commissioning"
     | "correct_commissioning"
+    | "review_handover"
+    | "correct_handover"
+    | "recover_handover_commitment"
     | "confirm_order";
   priority: "critical" | "high" | "normal";
   title: string;
@@ -592,6 +651,8 @@ export type ProjectState = {
   data: ProjectData;
   pulse: ProjectExecutionPulse;
   members: { id: string; name: string }[];
+  /** Active client contacts permitted to make portal acceptance decisions. */
+  clientApprovers?: { id: string; name: string }[];
   resources: ProjectResource[];
   bookings: ProjectBooking[];
   memberId: string;
@@ -625,7 +686,7 @@ export type PublicProject = {
     ProjectDocument,
     "id" | "title" | "kind" | "revision" | "url"
   >[];
-  handovers: Pick<
+  handovers: (Pick<
     Handover,
     | "id"
     | "area"
@@ -634,5 +695,13 @@ export type PublicProject = {
     | "acceptedAt"
     | "warrantyUntil"
     | "outstanding"
-  >[];
+    | "clientReviewDueDate"
+  > & {
+    canDecide?: boolean;
+    packet?: Pick<HandoverPacket, "id" | "version" | "tasks" | "documents">;
+    outstandingItems: Pick<
+      HandoverOutstandingItem,
+      "id" | "title" | "kind" | "dueDate" | "status"
+    >[];
+  })[];
 };

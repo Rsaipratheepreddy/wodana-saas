@@ -7,6 +7,8 @@ import {decidePortalDesign,portalReviewDesign} from './portal-design-approval';
 import {deliverPortalOtp} from "./portal-otp-delivery";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { publicProject } from "../projects/execution.domain";
+import { decideHandoverFromPortal } from "../projects/project-handover";
+import type { ProjectData } from "../projects/execution.types";
 import {
   BadRequestException,
   ConflictException,
@@ -323,7 +325,25 @@ export class ClientPortalService {
                 grant.role === "approver" &&
                 approverId === grant.id,
             })),
-          project:project?publicProject(project.id,project.name,project.content):undefined,
+          project: project
+            ? (() => {
+                const publicData = publicProject(project.id, project.name, project.content);
+                return {
+                  ...publicData,
+                  handovers: publicData.handovers.map((handover) => ({
+                    ...handover,
+                    canDecide:
+                      handover.status === "ready" &&
+                      grant.role === "approver" &&
+                      project.content.handovers.some(
+                        (candidate: ProjectData["handovers"][number]) =>
+                          candidate.id === handover.id &&
+                          candidate.clientApproverId === grant.id,
+                      ),
+                  })),
+                };
+              })()
+            : undefined,
           id: grant.caseId,
           title: record.title,
           customerName: record.customerName,
@@ -378,6 +398,62 @@ export class ClientPortalService {
             {baselineId,decision,note,challengeId},
             ()=>this.consume(client,s.workspaceId,challengeId,text(b.code,6,true),`definition-decision:${caseId}:${baselineId}:${decision}`,session.phone),
           );
+        }
+        if (action === "handover-decision") {
+          if (grant.role !== "approver")
+            throw new ForbiddenException("Only the assigned client approver can decide this handover.");
+          const projectId = text(b.projectId, 80, true);
+          const handoverId = text(b.handoverId, 80, true);
+          const decision = text(b.decision, 20, true);
+          if (decision !== "accept" && decision !== "changes")
+            throw new BadRequestException("Choose accept or request changes.");
+          const note = text(b.note ?? "", 5000, decision === "changes");
+          const challengeId = text(b.challengeId, 80, true);
+          const project = await client.query<{ content: ProjectData }>(
+            `SELECT execution.content
+               FROM delivery_projects project
+               JOIN project_execution execution
+                 ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+              WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
+              FOR UPDATE OF project,execution`,
+            [s.workspaceId, caseId, projectId],
+          );
+          if (!project.rowCount)
+            throw new NotFoundException("This project handover is not available.");
+          const execution = project.rows[0].content;
+          const existing = execution.handovers.find((handover) => handover.id === handoverId);
+          const expectedStatus = decision === "accept" ? "accepted" : "returned";
+          if (
+            existing?.decisionChallengeId === challengeId &&
+            existing.status === expectedStatus
+          )
+            return { ok: true, replayed: true };
+          const mobile = await this.consume(
+            client,
+            s.workspaceId,
+            challengeId,
+            text(b.code, 6, true),
+            `handover-decision:${caseId}:${projectId}:${handoverId}:${decision}`,
+            session.phone,
+          );
+          if (!mobile) return { invalidCode: true };
+          decideHandoverFromPortal(execution, {
+            handoverId,
+            grantId: grant.id,
+            grantName: grant.name,
+            decision,
+            note,
+            challengeId,
+            now: new Date().toISOString(),
+          });
+          execution.revision++;
+          await client.query(
+            `UPDATE project_execution
+                SET revision=$3,content=$4,updated_at=now()
+              WHERE workspace_id=$1 AND project_id=$2`,
+            [s.workspaceId, projectId, execution.revision, JSON.stringify(execution)],
+          );
+          return { ok: true };
         }
         const data = await this.commercial.load(client, s.workspaceId, caseId);
         let quoteId: string | undefined;

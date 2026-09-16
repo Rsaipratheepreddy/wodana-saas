@@ -165,6 +165,19 @@ export function ProjectWorkspace({
     taskOptions = d.tasks.map((t) => ({
       value: t.id,
       label: `${t.area ? `${t.area} · ` : ""}${t.title}`,
+    })),
+    handoverPackageOptions = (d.workPackages ?? [])
+      .filter((workPackage) => workPackage.status !== "cancelled")
+      .map((workPackage) => ({
+        value: workPackage.id,
+        label: `${workPackage.area ? `${workPackage.area} · ` : ""}${workPackage.title}`,
+      })),
+    handoverAreaOptions = [...new Set(d.tasks.map((task) => task.area).filter(Boolean))]
+      .sort()
+      .map((area) => ({ value: area, label: area })),
+    clientApproverOptions = (state.clientApprovers ?? []).map((contact) => ({
+      value: contact.id,
+      label: contact.name,
     }));
   const person = (id: string) =>
     state.members.find((m) => m.id === id)?.name ?? "Unassigned";
@@ -705,37 +718,48 @@ export function ProjectWorkspace({
   }
   function editHandover() {
     open({
-      title: "Prepare area handover",
+      title: "Generate handover pack",
       action: "handover",
       wrapper: "handover",
       value: {
-        title: "",
         area: "",
-        documentIds: [],
-        taskIds: [],
+        sourcePackageId: "",
         warrantyUntil: "",
-        outstanding: "",
-        evidence: "",
+        clientReviewDueDate: "",
+        clientApproverId: clientApproverOptions.length === 1 ? clientApproverOptions[0].value : "",
       },
       fields: [
-        f("title", "Handover title", "text", true),
-        f("area", "Room / area", "text", true),
-        f("taskIds", "Scope to hand over", "multi", true, taskOptions),
+        {
+          ...f(
+            "sourcePackageId",
+            "Delivery package",
+            "select",
+            false,
+            handoverPackageOptions,
+          ),
+          hint: "Best for a partial delivery. Scope, evidence and closeout documents are generated automatically.",
+        },
         f(
-          "documentIds",
-          "Closeout documents",
-          "multi",
-          true,
-          d.documents
-            .filter((x) => x.status === "approved")
-            .map((x) => ({ value: x.id, label: `${x.title} · ${x.revision}` })),
+          "area",
+          "Or hand over a full room / area",
+          "select",
+          false,
+          handoverAreaOptions,
         ),
         f("warrantyUntil", "Warranty until", "date"),
-        f(
-          "outstanding",
-          "Permitted outstanding items / obligations",
-          "textarea",
-        ),
+        f("clientReviewDueDate", "Client decision due", "date"),
+        {
+          ...f(
+            "clientApproverId",
+            "Client portal approver",
+            "select",
+            false,
+            clientApproverOptions,
+          ),
+          hint: clientApproverOptions.length
+            ? "Optional for a signed on-site handover. Choose the client contact when this pack should be approved in the portal."
+            : "No active client portal approver is configured. A signed acceptance record can still be used.",
+        },
       ],
     });
   }
@@ -2062,13 +2086,13 @@ export function ProjectWorkspace({
                               Warranty defect
                             </button>
                           )}
-                          {state.canReview && x.status === "draft" && (
+                          {state.canReview && ["draft", "returned"].includes(x.status) && (
                             <button
                               className={s.button}
                               disabled={busy}
                               onClick={() =>
                                 decision(
-                                  "Review handover readiness",
+                                  x.status === "returned" ? "Prepare corrected handover pack" : "Review generated handover pack",
                                   "handover_status",
                                   x.id,
                                   { status: "ready", confirmed: false },
@@ -2076,17 +2100,17 @@ export function ProjectWorkspace({
                                     {
                                       ...f(
                                         "confirmed",
-                                        "I reviewed completed work, inspections, published closeout documents, accepted materials and closed snags",
+                                        "I reviewed the generated scope, inspections, passed commissioning, published closeout documents, accepted materials and affected defects",
                                         "check",
                                         true,
                                       ),
-                                      hint: "Nothing changes until you explicitly confirm. The server rechecks every control when you save.",
+                                      hint: "The server regenerates the pack from live project records and rechecks every control before it becomes client-ready.",
                                     },
                                   ],
                                 )
                               }
                             >
-                              Review readiness
+                              {x.status === "returned" ? "Prepare correction" : "Prepare client review"}
                             </button>
                           )}
                           {state.canReview && x.status === "ready" && (
@@ -2100,6 +2124,12 @@ export function ProjectWorkspace({
                                   { status: "accepted", acceptedBy: "" },
                                   [
                                     f(
+                                      "signedRecord",
+                                      "I have a signed client acceptance record to attach",
+                                      "check",
+                                      true,
+                                    ),
+                                    f(
                                       "acceptedBy",
                                       "Client signatory",
                                       "text",
@@ -2107,7 +2137,7 @@ export function ProjectWorkspace({
                                     ),
                                     f(
                                       "note",
-                                      "Signed acceptance / evidence",
+                                      "Signed acceptance reference / evidence",
                                       "textarea",
                                       true,
                                     ),
@@ -2115,7 +2145,7 @@ export function ProjectWorkspace({
                                 )
                               }
                             >
-                              Record acceptance
+                              Record signed acceptance
                             </button>
                           )}
                           <button

@@ -317,6 +317,17 @@ export class ExecutionService {
         [ctx.workspaceId],
       )
     ).rows;
+    const clientApprovers = (
+      await ctx.client.query<{ id: string; name: string }>(
+        `SELECT grant.id,grant.name
+           FROM client_portal_settings settings
+           JOIN client_portal_grants grant ON grant.workspace_id=settings.workspace_id
+          WHERE settings.workspace_id=$1 AND settings.enabled=true
+            AND grant.case_id=$2 AND grant.active=true AND grant.role='approver'
+          ORDER BY grant.name`,
+        [ctx.workspaceId, r.caseId],
+      )
+    ).rows;
     const resources = (
       await ctx.client.query(
         `SELECT id,name,kind,members,active,calendar,business_unit_id AS "businessUnitId",
@@ -355,6 +366,7 @@ export class ExecutionService {
         visibleBookings.filter((booking) => booking.projectId === id),
       ),
       members,
+      clientApprovers,
       resources,
       bookings: visibleBookings,
       memberId: ctx.membershipId,
@@ -397,6 +409,7 @@ export class ExecutionService {
           "reopen_project",
           "warranty_snag",
           "snag_status",
+          "handover_outstanding_status",
           "notification_read",
           "follow",
           "retention_status",
@@ -468,6 +481,33 @@ export class ExecutionService {
       const name =
         members.find((m) => m.id === ctx.membershipId)?.name ??
         "Project member";
+      if (action === "handover_status" && b.status === "ready") {
+        const existingHandover = d.handovers.find(
+          (handover) => handover.id === str(b.id, 80),
+        );
+        const requestedApproverId =
+          str(b.clientApproverId, 80) || existingHandover?.clientApproverId || "";
+        const approvers = await ctx.client.query<{ id: string }>(
+          `SELECT grant.id
+             FROM client_portal_settings settings
+             JOIN client_portal_grants grant ON grant.workspace_id=settings.workspace_id
+            WHERE settings.workspace_id=$1 AND settings.enabled=true
+              AND grant.case_id=$2 AND grant.active=true AND grant.role='approver'
+            ORDER BY grant.created_at`,
+          [w, row.caseId],
+        );
+        if (requestedApproverId) {
+          if (!approvers.rows.some((grant) => grant.id === requestedApproverId))
+            throw new BadRequestException(
+              "Choose an active client-portal approver for this project.",
+            );
+        } else if (approvers.rowCount === 1) {
+          // One configured approver is a safe, friction-free default. With
+          // multiple approvers the UI can present a deliberate choice; with
+          // none, the signed-record path remains available.
+          b.clientApproverId = approvers.rows[0].id;
+        }
+      }
       if (action === "notification_read") {
         const result = await ctx.client.query(
           "UPDATE notifications SET read_at=coalesce(read_at,now()) WHERE workspace_id=$1 AND id=$2 AND recipient_type='user' AND recipient_id=$3 AND deep_link LIKE $4 RETURNING id",
@@ -1305,9 +1345,10 @@ export class ExecutionService {
           "snag",
           "warranty_snag",
           "milestone",
+          "handover_outstanding",
         ].includes(action)
       ) {
-        const value = obj(b.record ?? b.snag ?? b.milestone);
+        const value = obj(b.record ?? b.snag ?? b.milestone ?? b.item);
         if (value.ownerId)
           await ctx.client.query(
             `INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager) VALUES($1,$2,$3,false) ON CONFLICT(workspace_id,project_id,membership_id) WHERE project_id IS NOT NULL DO UPDATE SET active=true`,

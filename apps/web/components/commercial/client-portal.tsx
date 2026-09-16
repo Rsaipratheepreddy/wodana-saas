@@ -41,6 +41,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     [quoteId, setQuoteId] = useState(""),
     [designVersionId,setDesignVersionId] = useState(""),
     [materialApprovalId,setMaterialApprovalId] = useState(""),
+    [handoverId,setHandoverId] = useState(""),
     [country, setCountry] = useState("+971"),
     [mobile, setMobile] = useState(""),
     [code, setCode] = useState(""),
@@ -64,9 +65,11 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     brand = settings.brand;
   const selectedDesign=current?.designs?.find(d=>d.id===designVersionId);
   const selectedMaterial=current?.materials?.find(item=>item.id===materialApprovalId);
-  const decisionPurpose=`${dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':'decision'}:${current?.id}:${dialog==='material-decision'?selectedMaterial?.id:dialog==='design-decision'?selectedDesign?.id:quote?.id}:${decision}`;
+  const selectedHandover=current?.project?.handovers.find(item=>item.id===handoverId);
+  const decisionPurpose=`${dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':dialog==='handover-decision'?'handover-decision':'decision'}:${current?.id}:${dialog==='material-decision'?selectedMaterial?.id:dialog==='design-decision'?selectedDesign?.id:dialog==='handover-decision'?`${current?.project?.id}:${handoverId}`:quote?.id}:${decision}`;
   function openDesignDecision(id:string,value:string){setDesignVersionId(id);setDecision(value);setDialog('design-decision');setNote('');setCode('');setChallenge('');setError('');}
   function openMaterialDecision(id:string,value:string){setMaterialApprovalId(id);setDecision(value);setDialog('material-decision');setNote('');setCode('');setChallenge('');setError('');}
+  function openHandoverDecision(id:string,value:"accept"|"changes"){setHandoverId(id);setDecision(value);setDialog('handover-decision');setNote('');setCode('');setChallenge('');setError('');}
   const style = {
     "--portal-primary": brand.primaryColor,
     "--portal-accent": brand.accentColor,
@@ -619,7 +622,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 {current.project.milestones?.length ? <section className={p.progressSection} aria-labelledby="client-milestones-heading"><h2 id="client-milestones-heading">Project milestones</h2><ol className={p.clientTimeline}>{current.project.milestones.map(milestone=><li key={milestone.id} data-complete={Boolean(milestone.acceptedAt)}><span aria-hidden>{milestone.acceptedAt?<Check size={13}/>:null}</span><div><strong>{milestone.title}</strong><small>Due {milestone.dueDate}{milestone.acceptedAt?` · Accepted ${milestone.acceptedAt.slice(0,10)}`:` · ${milestone.progress}% complete`}</small></div></li>)}</ol></section>:null}
                 {current.project.reports.length ? <section className={p.progressSection} aria-labelledby="client-updates-heading"><h2 id="client-updates-heading">Recent updates</h2>{current.project.reports.slice().reverse().map(r=><div className={p.section} key={r.id}><span className={p.status}>Approved update · {r.location}</span><h3>{r.date}</h3>{r.work?.map((work,i)=><p key={i}>{work.title}<strong> · {work.quantity} {work.unit} completed</strong></p>)}{r.files?.map(file=><p key={file.id}><a className={p.button} href={`/api/client-portal/${settings.slug}/project-files/${current.project!.id}/${file.id}`} target="_blank" rel="noreferrer">{file.name} ↗</a></p>)}<p className={p.muted}>Next shift</p><p style={{whiteSpace:'pre-wrap'}}>{r.tomorrow||"Your team has shared an approved progress record."}</p></div>)}</section>:null}
                 {current.project.documents.length ? <section className={p.progressSection} aria-labelledby="client-documents-heading"><h2 id="client-documents-heading">Approved documents</h2>{current.project.documents.map(doc=><div className={p.section} key={doc.id}><h3>{doc.title} · {doc.revision}</h3>{doc.url?<a className={p.button} href={doc.url} target="_blank" rel="noreferrer">Open approved document ↗</a>:<p className={p.muted}>Ask your project team for the controlled document.</p>}</div>)}</section>:null}
-                {current.project.handovers.length ? <section className={p.progressSection} aria-labelledby="client-handover-heading"><h2 id="client-handover-heading">Handover</h2>{current.project.handovers.map(h=><div className={p.section} key={h.id}><span className={p.status}>{h.status}</span><h3>{h.title} · {h.area}</h3>{h.acceptedAt&&<p>Accepted {h.acceptedAt.slice(0,10)}</p>}{h.warrantyUntil&&<p className={p.muted}>Warranty until {h.warrantyUntil}</p>}{h.outstanding&&<p>{h.outstanding}</p>}</div>)}</section>:null}
+                {current.project.handovers.length ? <section className={p.progressSection} aria-labelledby="client-handover-heading"><h2 id="client-handover-heading">Handover</h2>{current.project.handovers.map(h=><div className={p.section} key={h.id}><span className={p.status}>{h.status}</span><h3>{h.title} · {h.area}</h3>{h.clientReviewDueDate&&h.status==='ready'&&<p className={p.muted}>Decision requested by {h.clientReviewDueDate}</p>}{h.acceptedAt&&<p>Accepted {h.acceptedAt.slice(0,10)}</p>}{h.warrantyUntil&&<p className={p.muted}>Warranty until {h.warrantyUntil}</p>}{h.packet&&<details><summary>Review handover pack · V{h.packet.version}</summary><p>{h.packet.tasks.map(task=>`${task.title} · ${task.quantity} ${task.unit}`).join(', ')}</p>{h.packet.documents.map(document=><p key={document.id}>{document.url?<a className={p.button} href={document.url} target="_blank" rel="noreferrer">{document.title} · {document.revision} ↗</a>:`${document.title} · ${document.revision}`}</p>)}</details>}{h.outstandingItems?.map(item=><p key={item.id} className={p.muted}>{item.title} · {item.status}{item.dueDate?` · due ${item.dueDate}`:''}</p>)}{h.outstanding&&<p>{h.outstanding}</p>}{h.canDecide&&<div className={p.actions}><button className={p.primary} onClick={()=>openHandoverDecision(h.id,'accept')}>Accept handover</button><button className={p.button} onClick={()=>openHandoverDecision(h.id,'changes')}>Request changes</button></div>}</div>)}</section>:null}
                 {!current.project.reports.length&&!current.project.documents.length&&!current.project.handovers.length&&!current.project.milestones?.length&&<Empty title="Your project workspace is ready" text="Your team will share approved progress updates and handover documents here."/>}
               </>:<Empty title="Project updates will appear here" text="Once your agreed scope is released, your team can share progress, approved documents and handover details."/>
             ) : tab === "payments" ? (
@@ -754,7 +757,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
           isOpen={Boolean(dialog)}
           onOpenChange={(open) => !open && setDialog("")}
           title={
-            dialog === 'material-decision' ? decision==='accept'?'Approve material':'Reject material / remarks' : dialog === 'design-decision' ? decision==='accept'?'Approve design':'Reject design / remarks' : dialog === "decision"
+            dialog === 'material-decision' ? decision==='accept'?'Approve material':'Reject material / remarks' : dialog === 'design-decision' ? decision==='accept'?'Approve design':'Reject design / remarks' : dialog === 'handover-decision' ? decision==='accept'?'Accept handover':'Request handover changes' : dialog === "decision"
               ? decision === "accept"
                 ? `Accept quotation V${quote?.number}`
                 : decision === "changes"
@@ -773,9 +776,9 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 {error}
               </p>
             )}
-            {dialog === "decision" || dialog === 'design-decision' || dialog === 'material-decision' ? (
+            {dialog === "decision" || dialog === 'design-decision' || dialog === 'material-decision' || dialog === 'handover-decision' ? (
               <>
-                {dialog==='material-decision'?<><p className={p.muted}>{selectedMaterial?.room} · {selectedMaterial?.item}</p><h3>{selectedMaterial?.name}</h3><p>{selectedMaterial?.specification}</p><p>{decision==='accept'?'You are approving this exact material selection.':'Your remarks will return this material selection to the team.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='design-decision'?<><p className={p.muted}>{selectedDesign?.title} · V{selectedDesign?.number}</p><p>{decision==='accept'?'You are approving this exact design file.':'Your remarks will return this file to the design team for revision.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:<>
+                {dialog==='handover-decision'?<><p className={p.muted}>{selectedHandover?.title} · {selectedHandover?.area}</p><p>{decision==='accept'?'You are accepting this exact, versioned handover pack. Warranty and any recorded follow-up will remain visible here.':'Your remarks will return this handover pack to the project team for correction.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='material-decision'?<><p className={p.muted}>{selectedMaterial?.room} · {selectedMaterial?.item}</p><h3>{selectedMaterial?.name}</h3><p>{selectedMaterial?.specification}</p><p>{decision==='accept'?'You are approving this exact material selection.':'Your remarks will return this material selection to the team.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='design-decision'?<><p className={p.muted}>{selectedDesign?.title} · V{selectedDesign?.number}</p><p>{decision==='accept'?'You are approving this exact design file.':'Your remarks will return this file to the design team for revision.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:<>
                 <p className={p.muted}>
                   {quote?.title} · V{quote?.number} ·{" "}
                   {money(quote?.total ?? 0, quote?.currency)}
@@ -836,8 +839,8 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                       disabled={busy || code.length !== 6}
                       onClick={() =>
                         void command({
-                          action: dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':"decision",
-                          ...(dialog==='material-decision'?{materialApprovalId:selectedMaterial?.id}:dialog==='design-decision'?{versionId:selectedDesign?.id}:{quoteId:quote?.id}),
+                          action: dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':dialog==='handover-decision'?'handover-decision':"decision",
+                          ...(dialog==='material-decision'?{materialApprovalId:selectedMaterial?.id}:dialog==='design-decision'?{versionId:selectedDesign?.id}:dialog==='handover-decision'?{projectId:current?.project?.id,handoverId}:{quoteId:quote?.id}),
                           decision,
                           challengeId: challenge,
                           code,

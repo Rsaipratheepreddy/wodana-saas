@@ -126,11 +126,20 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - In-app project updates continue immediately. Email is deliberately opt-in: the tenant must approve a `project.update` email template using only the documented safe variables, and the individual recipient must enable the matching email preference. The existing notification queue then handles quiet hours, frequency policy, retries and delivery records. Missing/broken mail configuration cannot roll back a project command.
 - Focused report, pulse and event tests passed; full regression and UAT confirmation remain required before a delivery claim.
 
-### Next locked slice — Site closeout and client handover decision flow
+### Slice 9a — Generated area acceptance packs (backend completed 16 September 2026)
 
-1. Audit the path from inspected work and passed commissioning through snags, area handover, client acceptance, documents/manuals, outstanding items, warranty and final account. Preserve partial-area delivery and do not conflate physical acceptance with payment closure.
-2. Make every exception owned and visible: failed inspection, failed/retest commissioning, rejected handover, outstanding documents, client hold points, warranty defects and retention conditions.
-3. Reuse the same calendar/reminder/event controls only where a dated commitment exists. Then test the complete released-quote → project → factory → site → handover route before beginning the project UI redesign.
+- An area handover is now generated from one authoritative source: either a complete area or a delivery work package for partial delivery. Staff do not select arbitrary tasks or documents. The system derives the exact leaf-task scope, applicable approved/published project documents, passed commissioning and received dispatches, then freezes those facts into a versioned packet.
+- A pack cannot become ready while its derived work is incomplete, source has drifted, a required document is stale or unpublished, a related snag/technical-query/dispatch/commissioning issue remains open, material receipt is incomplete, or a named blocking commitment is still open. Unrelated project snags do not block an area handover.
+- A returned pack retains its history and is corrected as a new frozen packet version. Every outstanding closeout item has a type, accountable owner, date, blocking status and resolution/evidence record. Final project completion continues to block on unresolved closeout work unless it has been deliberately transferred to warranty.
+- Client acceptance is identity-safe. A sole configured portal approver can be selected automatically; where several exist, a manager selects the approver deliberately. The selected person can accept or request changes through the authenticated client portal with the existing purpose-bound OTP challenge. A signed on-site record is an explicit, evidenced fallback, not a staff member typing a client name.
+- Handover packets are client-safe in the portal: no internal margin, private notes, evidence or staff ownership is exposed. Due client decisions and dated closeout commitments feed the existing decision pulse, reminders, assignments, notifications and safe project events without silently sending email.
+- Focused handover/domain/event/pulse tests passed. Full business-core regression passed (627 passed, 10 skipped); full web regression passed (538 passed); root typechecking passed. The welcome-envelope and device-refresh test fixtures were also updated to reflect the current approved product flow. No tenant UAT or deployment claim has been made.
+
+### Next locked slice — Warranty, retention and final project closure
+
+1. Use the accepted area packet as the source for warranty coverage, defects and client care: warranty dates, coverage/type, named owner, defect intake, inspection, remedy, client confirmation and safe communications. Do not create a second manual handover record.
+2. Separate physical acceptance from commercial closure. Retention/final-account conditions, remaining commercial change cases and payment milestones remain visible as explicit gates; no project is silently marked complete because one area was accepted.
+3. Cover partial-area warranty, rejected/reopened handover, transferred closeout items, multiple organisations/clients, client access revocation, overdue warranty tasks and all calendar/reminder/notification idempotency cases. Then test the released-quote → project → factory → site → acceptance → warranty route before beginning the project UI redesign.
 
 ## Do not lose these client requirements
 

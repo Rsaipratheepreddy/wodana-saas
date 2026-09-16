@@ -372,6 +372,46 @@ export function projectExecutionPulse(
       }));
   }
 
+  for (const handover of data.handovers) {
+    if (handover.status === "returned") {
+      actions.push(action({
+        kind: "correct_handover",
+        priority: "high",
+        title: `Correct ${handover.title} handover pack`,
+        detail: handover.returnedNote || "Address the client feedback and prepare a new reviewed pack.",
+        ownerId: projectOwner,
+        recordId: handover.id,
+      }));
+    } else if (
+      handover.status === "ready" &&
+      handover.clientReviewDueDate &&
+      handover.clientReviewDueDate <= today
+    ) {
+      actions.push(action({
+        kind: "review_handover",
+        priority: handover.clientReviewDueDate < today ? "critical" : "high",
+        title: `Confirm ${handover.title} handover`,
+        detail: handover.clientReviewDueDate < today
+          ? `Client acceptance was due ${handover.clientReviewDueDate}. Confirm the decision or update the commitment.`
+          : "Client acceptance is due today. Confirm the decision and any remaining commitments.",
+        ownerId: projectOwner,
+        recordId: handover.id,
+      }));
+    }
+    for (const item of handover.outstandingItems ?? [])
+      if (!["closed", "warranty"].includes(item.status) && item.dueDate && item.dueDate <= today)
+        actions.push(action({
+          kind: "recover_handover_commitment",
+          priority: item.dueDate < today ? "high" : "normal",
+          title: `Close ${item.title}`,
+          detail: item.dueDate < today
+            ? `Handover commitment was due ${item.dueDate}. Resolve it, verify evidence or transfer it to warranty.`
+            : "Handover commitment is due today. Record resolution evidence and client-safe status.",
+          ownerId: item.ownerId || projectOwner,
+          recordId: handover.id,
+        }));
+  }
+
   for (const task of data.tasks.filter((task) =>
     task.location === "factory" && task.status === "completed",
   )) {

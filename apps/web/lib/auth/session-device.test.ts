@@ -30,7 +30,10 @@ describe("device identity through session refresh", () => {
   });
   it("preserves browser and IP when opening a page after token expiry", async () => {
     vi.stubEnv("E2E_AUTH_BYPASS", "false");
-    const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 401 })).mockResolvedValueOnce(Response.json(rotated));
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(Response.json(rotated))
+      .mockResolvedValueOnce(Response.json({}));
     vi.stubGlobal("fetch", fetcher);
     const request = new NextRequest("http://localhost/workspace/crm/leads", { headers: browser });
     request.cookies.set("wodana_access", "expired"); request.cookies.set("wodana_refresh", "refresh");

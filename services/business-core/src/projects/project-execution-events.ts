@@ -21,6 +21,7 @@ export function projectExecutionEvents(
   const task = data.tasks.find((item) => item.id === recordId);
   const dispatch = data.dispatches?.find((item) => item.id === recordId);
   const commissioning = data.commissioning?.find((item) => item.id === recordId);
+  const handover = data.handovers.find((item) => item.id === recordId);
   const common = {
     projectId,
     projectName,
@@ -98,6 +99,33 @@ export function projectExecutionEvents(
         receivingTaskId: dispatch.receivingTaskId,
         dueDate: dispatch.dueDate,
         status: dispatch.status,
+      },
+    })];
+  }
+
+  if (handover) {
+    const status = handover.status;
+    const eventName = action === "handover_status"
+      ? `project.handover.${status}.v1`
+      : action === "handover_outstanding"
+        ? "project.handover.commitment_added.v1"
+        : action === "handover_outstanding_status"
+          ? "project.handover.commitment_updated.v1"
+          : action === "handover"
+            ? "project.handover.draft_prepared.v1"
+            : "project.handover.updated.v1";
+    return [event(eventName, {
+      handover: {
+        id: handover.id,
+        title: handover.title,
+        area: handover.area,
+        status,
+        packetVersion: handover.packet?.version ?? 0,
+        clientReviewDueDate: handover.clientReviewDueDate ?? "",
+        warrantyUntil: handover.warrantyUntil,
+        outstandingCount: (handover.outstandingItems ?? []).filter(
+          (item) => !["closed", "warranty"].includes(item.status),
+        ).length,
       },
     })];
   }

@@ -68,4 +68,31 @@ describe("project execution events", () => {
     expect(commissioning).toMatchObject({ action: "project.commissioning.passed.v1", data: { commissioning: { id: "commissioning-1", status: "passed" } } });
     expect(JSON.stringify(commissioning)).not.toContain("TEST-1");
   });
+
+  it("emits a concise handover event without leaking private acceptance evidence", () => {
+    const data = emptyProject();
+    data.handovers = [{
+      id: "handover-1", area: "Master bedroom", title: "Joinery acceptance",
+      status: "ready", source: "work_package", sourcePackageId: "package-1",
+      taskIds: ["task-1"], documentIds: ["doc-1"], evidence: "", acceptedBy: "",
+      acceptedAt: "", warrantyUntil: "2027-09-16", outstanding: "", published: true,
+      clientReviewDueDate: "2026-09-18", packet: {
+        id: "packet-1", version: 2, createdAt: "2026-09-16T10:00:00.000Z", preparedBy: "manager",
+        source: "work_package", sourcePackageId: "package-1", scopeLineIds: ["line-1"],
+        tasks: [], documents: [], commissioningIds: [], dispatchIds: [],
+      },
+      outstandingItems: [{
+        id: "commitment-1", title: "Client training", kind: "training", blocking: false,
+        ownerId: "manager", dueDate: "2026-09-19", status: "open", evidence: "Private training notes", resolution: "",
+      }],
+    }];
+
+    const [event] = projectExecutionEvents("project-1", "Villa project", data, "handover_status", "handover-1");
+
+    expect(event).toMatchObject({
+      action: "project.handover.ready.v1",
+      data: { handover: { id: "handover-1", packetVersion: 2, outstandingCount: 1 } },
+    });
+    expect(JSON.stringify(event)).not.toContain("Private training notes");
+  });
 });

@@ -32,6 +32,12 @@ import {
   factoryHandoffReadiness,
 } from "./project-factory-handoff";
 import { workPackageReadiness } from "./project-package-readiness";
+import {
+  addHandoverOutstandingItem,
+  createAutomaticHandover,
+  refreshHandoverPacket,
+  setHandoverOutstandingStatus,
+} from "./project-handover";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
   phase: "planning",
@@ -356,6 +362,22 @@ export function publicProject(
         acceptedAt: r.acceptedAt,
         warrantyUntil: r.warrantyUntil,
         outstanding: r.outstanding,
+        clientReviewDueDate: r.clientReviewDueDate,
+        packet: r.packet
+          ? {
+              id: r.packet.id,
+              version: r.packet.version,
+              tasks: r.packet.tasks,
+              documents: r.packet.documents,
+            }
+          : undefined,
+        outstandingItems: (r.outstandingItems ?? []).map((item) => ({
+          id: item.id,
+          title: item.title,
+          kind: item.kind,
+          dueDate: item.dueDate,
+          status: item.status,
+        })),
       })),
   };
 }
@@ -420,6 +442,7 @@ export function applyExecution(
       "reopen_project",
       "warranty_snag",
       "snag_status",
+      "handover_outstanding_status",
       "follow",
       "retention_status",
       "publish_report",
@@ -1674,41 +1697,65 @@ export function applyExecution(
     }
   } else if (action === "handover") {
     manage();
+    active();
     const v = obj(b.handover);
     recordId = str(v.id, 80) || randomUUID();
     const old = d.handovers.find((h) => h.id === recordId);
-    if (old && old.status !== "draft")
-      throw new ConflictException("Ready or accepted handovers are fixed.");
-    const taskIds = ids(v.taskIds),
-      documentIds = ids(v.documentIds);
-    taskIds.forEach((id) => {
-      if (get(d.tasks, id).area !== str(v.area, 160, true))
-        throw new BadRequestException("Choose tasks in the handover area.");
-    });
-    documentIds.forEach((id) => get(d.documents, id));
-    const value = {
+    if (old && !["draft", "returned"].includes(old.status))
+      throw new ConflictException("A client-ready or accepted handover pack is fixed.");
+    // Scope, documents and evidence intentionally come from the selected
+    // area/package. A user cannot hand-pick a flattering subset of work.
+    const value = createAutomaticHandover(d, {
       id: recordId,
-      area: str(v.area, 160, true),
-      title: str(v.title, 240, true),
-      status: "draft" as const,
-      documentIds,
-      taskIds,
-      evidence: str(v.evidence, 3000),
-      acceptedBy: "",
-      acceptedAt: "",
+      area: str(v.area, 160),
+      sourcePackageId: str(v.sourcePackageId, 80),
+      title: str(v.title, 240),
       warrantyUntil: day(v.warrantyUntil),
-      outstanding: str(v.outstanding, 3000),
-      published: false,
-    };
+      clientReviewDueDate: day(v.clientReviewDueDate),
+      clientApproverId: str(v.clientApproverId, 80),
+    });
+    if (old?.packets?.length) value.packets = old.packets;
+    if (old?.outstandingItems?.length) value.outstandingItems = old.outstandingItems;
     if (old) Object.assign(old, value);
     else d.handovers.push(value);
+  } else if (action === "handover_outstanding") {
+    manage();
+    const handover = get(d.handovers, str(b.handoverId, 80, true));
+    const value = obj(b.item);
+    const ownerId = member(value.ownerId);
+    if (!ownerId)
+      throw new BadRequestException("Choose an owner for the remaining handover item.");
+    const dueDate = day(value.dueDate, true);
+    addHandoverOutstandingItem(handover, {
+      id: str(value.id, 80) || randomUUID(),
+      title: str(value.title, 240, true),
+      kind: choice(value.kind, ["punch", "document", "training", "delivery", "other"] as const),
+      blocking: value.blocking === true,
+      ownerId,
+      dueDate,
+      status: "open",
+      evidence: str(value.evidence, 3000),
+      resolution: "",
+    });
+    recordId = handover.id;
+  } else if (action === "handover_outstanding_status") {
+    review();
+    const handover = get(d.handovers, str(b.handoverId, 80, true));
+    setHandoverOutstandingStatus(
+      handover,
+      str(b.itemId, 80, true),
+      choice(b.status, ["open", "ready", "closed", "warranty"] as const),
+      note,
+      a.id,
+    );
+    recordId = handover.id;
   } else if (action === "handover_status") {
     review();
     active();
     const h = get(d.handovers, recordId),
-      status = choice(b.status, ["ready", "accepted"]);
+      status = choice(b.status, ["ready", "accepted"] as const);
     if (
-      (status === "ready" && h.status !== "draft") ||
+      (status === "ready" && !["draft", "returned"].includes(h.status)) ||
       (status === "accepted" && h.status !== "ready")
     )
       throw new ConflictException("Review the current handover stage.");
@@ -1716,63 +1763,34 @@ export function applyExecution(
       throw new ConflictException(
         "Review the readiness checklist and confirm before changing this handover.",
       );
-    if (
-      !h.taskIds.length ||
-      h.taskIds.some((id) => get(d.tasks, id).status !== "completed")
-    )
-      throw new ConflictException(
-        "Complete and inspect the linked tasks first.",
-      );
-    if (
-      !h.documentIds.length ||
-      h.documentIds.some((id) => {
-        const document = get(d.documents, id);
-        return document.status !== "approved" || !document.published;
-      })
-    )
-      throw new ConflictException(
-        "Approve and publish the closeout documents to the client first.",
-      );
-    const open = d.snags.filter((s) => s.status !== "closed");
-    if (open.length)
-      throw new ConflictException(
-        "Close every project snag before confirming handover readiness.",
-      );
-    const tasks = h.taskIds.map((id) => get(d.tasks, id));
-    const materialTasks = tasks.filter((task) =>
-      task.scopeIds.some((scopeId) =>
-        Boolean(d.scope?.lines.find((line) => line.id === scopeId)?.material.trim()),
-      ),
-    );
-    for (const task of materialTasks) {
-      const planned = d.materials.filter((material) => material.taskId === task.id);
-      if (!planned.length)
-        throw new ConflictException(
-          `Add material planning and procurement evidence for ${task.title}.`,
+    if (status === "ready") {
+      h.clientApproverId = str(b.clientApproverId, 80) || h.clientApproverId || "";
+      h.clientReviewDueDate = day(b.clientReviewDueDate);
+      refreshHandoverPacket(d, h, a.id, a.now);
+      h.returnedAt = "";
+      h.returnedBy = "";
+      h.returnedNote = "";
+      h.decisionSource = undefined;
+      h.decisionChallengeId = undefined;
+      // A ready pack is client-visible only when it has an authenticated
+      // client approver. Signed on-site acceptance remains a deliberate
+      // fallback, not an accidental portal publication.
+      h.published = Boolean(h.clientApproverId);
+    } else {
+      if (b.signedRecord !== true)
+        throw new BadRequestException(
+          "Use the authenticated client portal or explicitly record a signed acceptance.",
         );
-      if (
-        planned.some(
-          (material) =>
-            material.movements
-              .filter((movement) => movement.kind === "receive")
-              .reduce((sum, movement) => sum + movement.quantity, 0) <
-            material.required,
-        )
-      )
-        throw new ConflictException(
-          `Receive the required accepted materials for ${task.title} before handover.`,
-        );
-    }
-    if (status === "accepted") {
+      refreshHandoverPacket(d, h, a.id, a.now);
       if (!note)
-        throw new BadRequestException("Record the client acceptance evidence.");
+        throw new BadRequestException("Attach the signed client acceptance evidence.");
       h.acceptedBy = str(b.acceptedBy, 240, true);
       h.acceptedAt = a.now;
       h.evidence = note;
+      h.decisionSource = "signed_record";
       h.published = true;
     }
     h.status = status;
-    assertCloseout(d, h.taskIds);
     if (
       d.handovers.length &&
       d.handovers.every((handover) => ["ready", "accepted"].includes(handover.status)) &&
@@ -1821,6 +1839,11 @@ export function applyExecution(
     if (
       !d.handovers.length ||
       d.handovers.some((h) => h.status !== "accepted") ||
+      d.handovers.some((h) =>
+        (h.outstandingItems ?? []).some(
+          (item) => !["closed", "warranty"].includes(item.status),
+        ),
+      ) ||
       d.tasks.some((t) => !["completed", "cancelled"].includes(t.status)) ||
       (d.workPackages ?? []).some(
         (workPackage) => !["completed", "cancelled"].includes(workPackage.status),

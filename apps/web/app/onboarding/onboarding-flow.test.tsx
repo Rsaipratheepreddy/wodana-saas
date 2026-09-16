@@ -6,6 +6,13 @@ import { OnboardingFlow } from "./onboarding-flow";
 
 afterEach(() => vi.unstubAllGlobals());
 
+async function openWelcomeNote() {
+  const openButton = screen.queryByRole("button", { name: "Open your welcome" });
+  if (!openButton) return;
+  await userEvent.click(openButton);
+  await userEvent.click(await screen.findByRole("button", { name: "Set up your workspace" }));
+}
+
 describe("OnboardingFlow", () => {
   it("saves the required company step and advances resumable progress", async () => {
     const updatedWorkspace = { ...companyProfileFixture.workspace, version: 2 };
@@ -16,7 +23,8 @@ describe("OnboardingFlow", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} userName="Katy Palmer" />);
 
-    expect(screen.getByRole("heading", { name: "Tell us about your company" })).toBeInTheDocument();
+    await openWelcomeNote();
+    expect(await screen.findByRole("heading", { name: "Tell us about your company" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Save and continue/ }));
 
     expect(await screen.findByRole("heading", { name: "Set your workspace defaults" })).toBeInTheDocument();
@@ -36,6 +44,7 @@ describe("OnboardingFlow", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "in_progress", currentStep: "team", completedSteps: ["workspace_profile", "organization"], version: 3 }} userName="Katy Palmer" />);
 
+    await openWelcomeNote();
     await userEvent.click(screen.getByRole("button", { name: /Continue/ }));
     expect(await screen.findByRole("heading", { name: "Connect the tools you use" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Finish setup/ }));
@@ -51,6 +60,7 @@ describe("OnboardingFlow", () => {
     const user = userEvent.setup();
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
 
+    await openWelcomeNote();
     await user.click(screen.getByRole("button", { name: /Save and continue/ }));
     expect(await screen.findByRole("heading", { name: "Set your workspace defaults" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Save and continue/ }));
@@ -68,6 +78,7 @@ describe("OnboardingFlow", () => {
     const user = userEvent.setup();
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
 
+    await openWelcomeNote();
     expect(screen.getByRole("textbox", { name: "Company display name" })).toBeRequired();
     expect(screen.getByRole("textbox", { name: "Registered company name" })).toBeRequired();
     expect(screen.getByRole("combobox", { name: "Country / region" })).toBeRequired();
@@ -95,6 +106,7 @@ describe("OnboardingFlow", () => {
     const user = userEvent.setup();
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} userName="Katy Palmer" />);
 
+    await openWelcomeNote();
     await user.upload(screen.getByLabelText("Choose company logo"), new File(["logo"], "palm-living.png", { type: "image/png" }));
 
     expect(await screen.findByText("Company logo saved")).toBeInTheDocument();
@@ -110,6 +122,7 @@ describe("OnboardingFlow", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
+    await openWelcomeNote();
     const input = screen.getByLabelText("Choose company logo");
 
     fireEvent.change(input, { target: { files: [new File(["not-an-image"], "logo.txt", { type: "text/plain" })] } });

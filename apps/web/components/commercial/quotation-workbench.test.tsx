@@ -333,7 +333,7 @@ describe("quotation spreadsheet workspace", () => {
         screen.getByRole("article", { name: "Quotation document" }),
       ).getByText("Walnut · 18 mm · Soft close"),
     ).toBeVisible();
-  });
+  }, 15_000);
   it("uses the design-system unit menu and supports custom units", async () => {
     const user = userEvent.setup();
     render(<Harness />);

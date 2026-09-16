@@ -77,7 +77,8 @@ export class ProjectNotificationsService {
     const task = d.tasks.find((t) => t.id === recordId),
       report = d.reports.find((r) => r.id === recordId),
       snag = d.snags.find((s) => s.id === recordId),
-      query = d.technicalQueries?.find((q) => q.id === recordId);
+      query = d.technicalQueries?.find((q) => q.id === recordId),
+      handover = d.handovers.find((h) => h.id === recordId);
     if (
       task &&
       ["task", "task_status", "inspect", "booking", "cancel_booking", "reschedule"].includes(action)
@@ -99,6 +100,16 @@ export class ProjectNotificationsService {
       if (report.nextUpdateOwnerId) people.add(report.nextUpdateOwnerId);
     }
     if (snag) people.add(snag.ownerId);
+    if (handover) {
+      handover.taskIds.forEach((taskId) => {
+        const linkedTask = d.tasks.find((task) => task.id === taskId);
+        if (linkedTask) {
+          people.add(linkedTask.ownerId);
+          linkedTask.assigneeIds.forEach((id) => people.add(id));
+        }
+      });
+      handover.outstandingItems?.forEach((item) => people.add(item.ownerId));
+    }
     if (query) {
       people.add(query.ownerId);
       people.add(query.authorId);
@@ -127,6 +138,7 @@ export class ProjectNotificationsService {
       task?.title ??
       snag?.title ??
       query?.title ??
+      handover?.title ??
       (report
         ? `Daily update · ${report.date}`
         : (d.orders.find((order) => order.id === recordId)?.title ?? projectName));
@@ -193,6 +205,7 @@ export class ProjectNotificationsService {
         scheduleImpact: report?.scheduleImpact,
         impactReason: report?.impactReason,
         recoveryPlan: report?.recoveryPlan,
+        dueDate: handover?.clientReviewDueDate,
       });
     }
   }

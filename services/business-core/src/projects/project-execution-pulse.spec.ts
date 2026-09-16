@@ -279,4 +279,32 @@ describe("project execution pulse", () => {
       expect.objectContaining({ kind: "review_commissioning", ownerId: "plumber", recordId: "submitted" }),
     ]));
   });
+
+  it("surfaces returned client packs and dated handover commitments with their owners", () => {
+    const data = emptyProject();
+    data.handovers = [
+      {
+        id: "returned", area: "Bedroom", title: "Bedroom handover", status: "returned",
+        documentIds: [], taskIds: [], evidence: "", acceptedBy: "", acceptedAt: "",
+        warrantyUntil: "", outstanding: "", published: false,
+        returnedNote: "Please correct the cabinet alignment.",
+      },
+      {
+        id: "accepted", area: "Kitchen", title: "Kitchen handover", status: "accepted",
+        documentIds: [], taskIds: [], evidence: "", acceptedBy: "Client", acceptedAt: "2026-09-15",
+        warrantyUntil: "2027-09-15", outstanding: "", published: true,
+        outstandingItems: [{
+          id: "training", title: "Appliance training", kind: "training", blocking: false,
+          ownerId: "trainer", dueDate: "2026-09-15", status: "open", evidence: "Meeting agreed", resolution: "",
+        }],
+      },
+    ];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16");
+
+    expect(pulse.nextActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "correct_handover", recordId: "returned" }),
+      expect.objectContaining({ kind: "recover_handover_commitment", recordId: "accepted", ownerId: "trainer" }),
+    ]));
+  });
 });
