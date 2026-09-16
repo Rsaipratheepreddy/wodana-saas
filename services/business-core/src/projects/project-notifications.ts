@@ -210,6 +210,78 @@ export class ProjectNotificationsService {
     }
   }
 
+  /**
+   * A client-raised warranty claim originates outside an employee session, so
+   * it uses the same preference/opt-in safeguards without fabricating one.
+   */
+  async notifyClientWarrantyClaim(
+    client: PoolClient,
+    input: {
+      workspaceId: string;
+      projectId: string;
+      projectName: string;
+      projectReference?: string;
+      ownerMembershipId: string;
+      claimId: string;
+      title: string;
+      handoverTitle: string;
+      dueDate: string;
+      idempotencyKey: string;
+    },
+  ) {
+    const recipient = await client.query<{ user_id: string }>(
+      `SELECT user_id FROM workspace_memberships
+        WHERE workspace_id=$1 AND id=$2 AND status='active'`,
+      [input.workspaceId, input.ownerMembershipId],
+    );
+    const userId = recipient.rows[0]?.user_id;
+    if (!userId) return { delivered: false, reason: "owner_not_active" };
+    const eventType = "project.warranty_claimed";
+    const deepLink = `/workspace/projects/${input.projectId}/handover?record=${encodeURIComponent(input.claimId)}`;
+    const subject = `Warranty claim · ${input.title}`;
+    const body = `${input.projectName} · client warranty claim for ${input.handoverTitle}`;
+    const preference = await client.query<{ enabled: boolean }>(
+      `SELECT enabled FROM notification_preferences
+        WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2
+          AND channel='in_app' AND event_type IN ($3,'project.*','*')
+        ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'project.*' THEN 1 ELSE 2 END LIMIT 1`,
+      [input.workspaceId, userId, eventType],
+    );
+    if (preference.rows[0]?.enabled !== false)
+      await client.query(
+        `INSERT INTO notifications(workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,delivered_at)
+         VALUES($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now())
+         ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
+        [
+          input.workspaceId,
+          userId,
+          eventType,
+          subject,
+          body,
+          deepLink,
+          `${input.idempotencyKey}:in-app:${userId}`,
+          randomUUID(),
+        ],
+      );
+    await this.queueOptionalEmailWithClient(client, {
+      workspaceId: input.workspaceId,
+      userId,
+      eventType,
+      projectId: input.projectId,
+      projectName: input.projectName,
+      projectReference: input.projectReference,
+      action: "client warranty claim",
+      recordId: input.claimId,
+      recordTitle: input.title,
+      body,
+      deepLink,
+      dueDate: input.dueDate,
+      idempotencyKey: `${input.idempotencyKey}:email:${userId}`,
+      correlationId: randomUUID(),
+    });
+    return { delivered: preference.rows[0]?.enabled !== false };
+  }
+
   async queueScheduledEmail(input: OptionalEmail) {
     return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) =>
       this.queueOptionalEmailWithClient(client, input),

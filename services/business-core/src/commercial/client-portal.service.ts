@@ -8,7 +8,11 @@ import {deliverPortalOtp} from "./portal-otp-delivery";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { publicProject } from "../projects/execution.domain";
 import { decideHandoverFromPortal } from "../projects/project-handover";
+import { addClientWarrantyClaim, assertWarrantyCoverage, warrantyOwnerId } from "../projects/project-warranty";
 import type { ProjectData } from "../projects/execution.types";
+import { ProjectNotificationsService } from "../projects/project-notifications";
+import { CrmEventsService } from "../crm/shared/crm-events.service";
+import { parsePortalChallengePurpose } from "./client-portal-purpose";
 import {
   BadRequestException,
   ConflictException,
@@ -53,6 +57,8 @@ export class ClientPortalService {
     private readonly storage: BrandAssetStorageService,
     private readonly config: ConfigService,
     private readonly definitions: PreProjectDefinitionService,
+    private readonly projectNotifications: ProjectNotificationsService,
+    private readonly events: CrmEventsService,
   ) {
     if (
       config.get("PORTAL_DEMO_OTP") === "true" &&
@@ -114,56 +120,84 @@ export class ClientPortalService {
       actorId,
       async (client) => {
         if (purpose !== "login") {
+          const parsed = parsePortalChallengePurpose(purpose);
+          if (!parsed)
+            throw new BadRequestException("Invalid portal verification challenge.");
           const s = await this.session(client, settings.workspaceId, token);
           if (s.phone !== mobile)
             throw new ForbiddenException("Use your signed-in mobile number.");
-          const parts = purpose.split(":");
-          if (
-            parts.length !== 4 ||
-            !['decision','design-decision','material-decision','definition-decision'].includes(parts[0]) ||
-            !(['design-decision','material-decision'].includes(parts[0])
-              || parts[0] === 'definition-decision'
-              ? ['accept','changes']
-              : ["accept", "changes", "decline"]).includes(parts[3])
-          )
-            throw new BadRequestException("Invalid approval challenge.");
           const grant = s.grants.find(
-            (g) => g.caseId === parts[1] && g.role === "approver",
+            (candidate) =>
+              candidate.caseId === parsed.caseId &&
+              (parsed.kind === "warranty-claim" || candidate.role === "approver"),
           );
           if (!grant)
             throw new ForbiddenException(
-              "Only the designated approver can decide.",
+              parsed.kind === "warranty-claim"
+                ? "This client contact cannot report warranty work for the project."
+                : "Only the designated approver can decide.",
             );
           grantId = grant.id;
-          if(parts[0]==='design-decision')await portalReviewDesign(client,settings.workspaceId,parts[1],parts[2]);
-          else if(parts[0]==='definition-decision')await this.definitions.assertPortalDecisionAvailable(client,settings.workspaceId,parts[1],parts[2]);
-          else {
-          const data = await this.commercial.load(
-            client,
-            settings.workspaceId,
-            parts[1],
-          );
-          if (parts[0] === 'material-decision') {
-            const approval = data.materialApprovals?.find(
-              (item) =>
-                item.id === parts[2] &&
-                item.approverId === grantId &&
-                item.status === 'client_review',
+          if (parsed.kind === "design-decision")
+            await portalReviewDesign(client, settings.workspaceId, parsed.caseId, parsed.recordId);
+          else if (parsed.kind === "definition-decision")
+            await this.definitions.assertPortalDecisionAvailable(
+              client,
+              settings.workspaceId,
+              parsed.caseId,
+              parsed.recordId,
             );
-            if (!approval)
-              throw new ForbiddenException(
-                "This material approval is not assigned to you.",
-              );
+          else if (parsed.kind === "handover-decision" || parsed.kind === "warranty-claim") {
+            const project = await client.query<{ content: ProjectData }>(
+              `SELECT execution.content
+                 FROM delivery_projects project
+                 JOIN project_execution execution
+                   ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+                WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
+                FOR UPDATE OF project,execution`,
+              [settings.workspaceId, parsed.caseId, parsed.projectId],
+            );
+            if (!project.rowCount)
+              throw new NotFoundException("This project handover is not available.");
+            const handover = project.rows[0].content.handovers.find(
+              (item) => item.id === parsed.handoverId,
+            );
+            if (!handover)
+              throw new NotFoundException("This project handover is not available.");
+            if (parsed.kind === "handover-decision") {
+              if (handover.status !== "ready" || handover.clientApproverId !== grant.id)
+                throw new ForbiddenException("This handover is not assigned to you.");
+            } else {
+              assertWarrantyCoverage(project.rows[0].content, {
+                handoverId: handover.id,
+                area: handover.area,
+                onDate: new Date().toISOString().slice(0, 10),
+              });
+              warrantyOwnerId(project.rows[0].content);
+            }
           } else {
-          const q = data.quotes.find(
-            (q) => q.id === parts[2] && q.approverId === grantId,
-          );
-          if (!q)
-            throw new ForbiddenException(
-              "This approval is not assigned to you.",
+            const data = await this.commercial.load(
+              client,
+              settings.workspaceId,
+              parsed.caseId,
             );
-          actionable(q);
-          }
+            if (parsed.kind === "material-decision") {
+              const approval = data.materialApprovals?.find(
+                (item) =>
+                  item.id === parsed.recordId &&
+                  item.approverId === grantId &&
+                  item.status === "client_review",
+              );
+              if (!approval)
+                throw new ForbiddenException("This material approval is not assigned to you.");
+            } else {
+              const quote = data.quotes.find(
+                (item) => item.id === parsed.recordId && item.approverId === grantId,
+              );
+              if (!quote)
+                throw new ForbiddenException("This approval is not assigned to you.");
+              actionable(quote);
+            }
           }
         }
         // Database lock and counters survive retries and multiple application processes.
@@ -328,6 +362,13 @@ export class ClientPortalService {
           project: project
             ? (() => {
                 const publicData = publicProject(project.id, project.name, project.content);
+                const today = new Date().toISOString().slice(0, 10);
+                let warrantyReportingReady = true;
+                try {
+                  warrantyOwnerId(project.content);
+                } catch {
+                  warrantyReportingReady = false;
+                }
                 return {
                   ...publicData,
                   handovers: publicData.handovers.map((handover) => ({
@@ -340,6 +381,11 @@ export class ClientPortalService {
                           candidate.id === handover.id &&
                           candidate.clientApproverId === grant.id,
                       ),
+                    canReportWarranty:
+                      warrantyReportingReady &&
+                      handover.status === "accepted" &&
+                      Boolean(handover.warrantyUntil) &&
+                      handover.warrantyUntil >= today,
                   })),
                 };
               })()
@@ -400,7 +446,10 @@ export class ClientPortalService {
           );
         }
         if (action === "handover-decision") {
-          if (grant.role !== "approver")
+          const approverGrant = session.grants.find(
+            (candidate) => candidate.caseId === caseId && candidate.role === "approver",
+          );
+          if (!approverGrant)
             throw new ForbiddenException("Only the assigned client approver can decide this handover.");
           const projectId = text(b.projectId, 80, true);
           const handoverId = text(b.handoverId, 80, true);
@@ -439,8 +488,8 @@ export class ClientPortalService {
           if (!mobile) return { invalidCode: true };
           decideHandoverFromPortal(execution, {
             handoverId,
-            grantId: grant.id,
-            grantName: grant.name,
+            grantId: approverGrant.id,
+            grantName: approverGrant.name,
             decision,
             note,
             challengeId,
@@ -454,6 +503,117 @@ export class ClientPortalService {
             [s.workspaceId, projectId, execution.revision, JSON.stringify(execution)],
           );
           return { ok: true };
+        }
+        if (action === "warranty-claim") {
+          const projectId = text(b.projectId, 80, true);
+          const handoverId = text(b.handoverId, 80, true);
+          const challengeId = text(b.challengeId, 80, true);
+          const project = await client.query<{ content: ProjectData; name: string }>(
+            `SELECT execution.content,project.name
+               FROM delivery_projects project
+               JOIN project_execution execution
+                 ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+              WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
+              FOR UPDATE OF project,execution`,
+            [s.workspaceId, caseId, projectId],
+          );
+          if (!project.rowCount)
+            throw new NotFoundException("This warranty area is not available.");
+          const execution = project.rows[0].content;
+          const existing = execution.snags.find(
+            (claim) => claim.warrantyClaimChallengeId === challengeId,
+          );
+          if (existing) return { ok: true, claimId: existing.id, replayed: true };
+          const handover = execution.handovers.find((item) => item.id === handoverId);
+          if (!handover)
+            throw new NotFoundException("This warranty area is not available.");
+          assertWarrantyCoverage(execution, {
+            handoverId,
+            area: handover.area,
+            onDate: new Date().toISOString().slice(0, 10),
+          });
+          const ownerId = warrantyOwnerId(execution);
+          const activeOwner = await client.query(
+            `SELECT 1 FROM workspace_memberships
+              WHERE workspace_id=$1 AND id=$2 AND status='active'`,
+            [s.workspaceId, ownerId],
+          );
+          if (!activeOwner.rowCount)
+            throw new ConflictException("The project team needs an active warranty owner before reporting can begin.");
+          const mobile = await this.consume(
+            client,
+            s.workspaceId,
+            challengeId,
+            text(b.code, 6, true),
+            `warranty-claim:${caseId}:${projectId}:${handoverId}`,
+            session.phone,
+          );
+          if (!mobile) return { invalidCode: true };
+          const now = new Date().toISOString();
+          const { claim } = addClientWarrantyClaim(execution, {
+            id: randomUUID(),
+            challengeId,
+            handoverId,
+            title: text(b.title, 240, true),
+            detail: text(b.detail, 5000, true),
+            severity: (() => {
+              const value = text(b.severity ?? "minor", 20, true);
+              if (!(["minor", "major", "critical"] as string[]).includes(value))
+                throw new BadRequestException("Choose a valid urgency.");
+              return value as "minor" | "major" | "critical";
+            })(),
+            reportedBy: grant.name,
+            reportedAt: now,
+            ownerId,
+          });
+          execution.audit.push({
+            id: randomUUID(),
+            at: now,
+            author: grant.name,
+            action: "warranty_claim",
+            recordId: claim.id,
+            note: "Client portal warranty report",
+          });
+          execution.revision++;
+          await client.query(
+            `UPDATE project_execution
+                SET revision=$3,content=$4,updated_at=now()
+              WHERE workspace_id=$1 AND project_id=$2`,
+            [s.workspaceId, projectId, execution.revision, JSON.stringify(execution)],
+          );
+          await this.projectNotifications.notifyClientWarrantyClaim(client, {
+            workspaceId: s.workspaceId,
+            projectId,
+            projectName: project.rows[0].name,
+            projectReference: execution.controls?.reference,
+            ownerMembershipId: ownerId,
+            claimId: claim.id,
+            title: claim.title,
+            handoverTitle: handover.title,
+            dueDate: claim.dueDate,
+            idempotencyKey: `portal-warranty:${projectId}:${challengeId}`,
+          });
+          await this.events.record(client, {
+            workspaceId: s.workspaceId,
+            actorUserId: null,
+            source: "system",
+            action: "project.warranty.claimed.v1",
+            entityType: "delivery_project",
+            entityId: projectId,
+            after: {
+              projectId,
+              projectName: project.rows[0].name,
+              projectReference: execution.controls?.reference ?? "",
+              claim: {
+                id: claim.id,
+                handoverId,
+                area: claim.area,
+                severity: claim.severity,
+                dueDate: claim.dueDate,
+              },
+            },
+          });
+          return { ok: true, claimId: claim.id };
         }
         const data = await this.commercial.load(client, s.workspaceId, caseId);
         let quoteId: string | undefined;

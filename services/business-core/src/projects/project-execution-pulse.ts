@@ -372,6 +372,31 @@ export function projectExecutionPulse(
       }));
   }
 
+  for (const claim of data.snags.filter((snag) => Boolean(snag.handoverId))) {
+    if (claim.status === "closed") continue;
+    if (claim.status === "ready") {
+      actions.push(action({
+        kind: "review_warranty_claim",
+        priority: claim.severity === "critical" ? "critical" : "high",
+        title: `Verify warranty remedy · ${claim.title}`,
+        detail: "A warranty correction is ready for independent verification before the client update is closed.",
+        ownerId: projectOwner,
+        recordId: claim.id,
+      }));
+    } else if (claim.dueDate && claim.dueDate <= today) {
+      actions.push(action({
+        kind: "resolve_warranty_claim",
+        priority: claim.severity === "critical" || claim.dueDate < today ? "critical" : "high",
+        title: `Respond to warranty claim · ${claim.title}`,
+        detail: claim.dueDate < today
+          ? `Client warranty response was due ${claim.dueDate}. Assign the remedy or record a revised client commitment.`
+          : "A client warranty claim needs acknowledgement, diagnosis and an accountable remedy.",
+        ownerId: claim.ownerId || projectOwner,
+        recordId: claim.id,
+      }));
+    }
+  }
+
   for (const handover of data.handovers) {
     if (handover.status === "returned") {
       actions.push(action({

@@ -215,6 +215,13 @@ export type ProjectDocument = {
 };
 export type Snag = {
   handoverId?: string;
+  /** Present only for a claim raised through an authenticated client portal. */
+  warrantyClaimChallengeId?: string;
+  reportedAt?: string;
+  reportedBy?: string;
+  reportedVia?: "team" | "client_portal";
+  /** Client-provided context stays internal and is never added to PublicProject. */
+  clientNote?: string;
   id: string;
   title: string;
   taskId: string;
@@ -618,6 +625,8 @@ export type ProjectExecutionAction = {
     | "review_handover"
     | "correct_handover"
     | "recover_handover_commitment"
+    | "resolve_warranty_claim"
+    | "review_warranty_claim"
     | "confirm_order";
   priority: "critical" | "high" | "normal";
   title: string;
@@ -698,10 +707,15 @@ export type PublicProject = {
     | "clientReviewDueDate"
   > & {
     canDecide?: boolean;
+    canReportWarranty?: boolean;
     packet?: Pick<HandoverPacket, "id" | "version" | "tasks" | "documents">;
     outstandingItems: Pick<
       HandoverOutstandingItem,
       "id" | "title" | "kind" | "dueDate" | "status"
     >[];
   })[];
+  warrantyClaims: Pick<
+    Snag,
+    "id" | "handoverId" | "title" | "area" | "severity" | "dueDate" | "status" | "reportedAt"
+  >[];
 };

@@ -22,6 +22,7 @@ export function projectExecutionEvents(
   const dispatch = data.dispatches?.find((item) => item.id === recordId);
   const commissioning = data.commissioning?.find((item) => item.id === recordId);
   const handover = data.handovers.find((item) => item.id === recordId);
+  const snag = data.snags.find((item) => item.id === recordId);
   const common = {
     projectId,
     projectName,
@@ -103,6 +104,25 @@ export function projectExecutionEvents(
     })];
   }
 
+  if (snag?.handoverId) {
+    const eventName = action === "warranty_snag"
+      ? "project.warranty.claimed.v1"
+      : action === "snag_status"
+        ? `project.warranty.claim_${snag.status}.v1`
+        : "project.warranty.claim_updated.v1";
+    return [event(eventName, {
+      warrantyClaim: {
+        id: snag.id,
+        handoverId: snag.handoverId,
+        area: snag.area,
+        severity: snag.severity,
+        dueDate: snag.dueDate,
+        status: snag.status,
+        reportedVia: snag.reportedVia ?? "team",
+      },
+    })];
+  }
+
   if (handover) {
     const status = handover.status;
     const eventName = action === "handover_status"
@@ -146,6 +166,19 @@ export function projectExecutionEvents(
         handoverDate: data.controls?.handoverDate ?? "",
         onHold: Boolean(data.controls?.onHold),
       },
+    })];
+  if (action === "commercial")
+    return [event(
+      data.financeClosed
+        ? "project.final_account.closed.v1"
+        : "project.final_account.reopened.v1",
+      { finalAccount: { closed: data.financeClosed } },
+    )];
+  if (action === "complete_project")
+    return [event("project.completed.v1", {
+      phase: data.phase,
+      finalAccountClosed: data.financeClosed,
+      acceptedHandovers: data.handovers.filter((handover) => handover.status === "accepted").length,
     })];
   return [event("project.execution.updated.v1", { command: action })];
 }

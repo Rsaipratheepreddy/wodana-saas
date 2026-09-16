@@ -302,6 +302,6 @@ class InternalProjectRemindersController {
     ProjectWorkflowService,
     ProjectScheduleService,
   ],
-  exports: [ProjectsService],
+  exports: [ProjectsService, ProjectNotificationsService],
 })
 export class ProjectsModule {}

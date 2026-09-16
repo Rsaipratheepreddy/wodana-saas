@@ -38,6 +38,7 @@ import {
   refreshHandoverPacket,
   setHandoverOutstandingStatus,
 } from "./project-handover";
+import { assertWarrantyCoverage } from "./project-warranty";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
   phase: "planning",
@@ -378,6 +379,20 @@ export function publicProject(
           dueDate: item.dueDate,
           status: item.status,
         })),
+      })),
+    warrantyClaims: d.snags
+      .filter((snag) => Boolean(snag.handoverId) && d.handovers.some(
+        (handover) => handover.id === snag.handoverId && handover.published,
+      ))
+      .map((snag) => ({
+        id: snag.id,
+        handoverId: snag.handoverId,
+        title: snag.title,
+        area: snag.area,
+        severity: snag.severity,
+        dueDate: snag.dueDate,
+        status: snag.status,
+        reportedAt: snag.reportedAt,
       })),
   };
 }
@@ -1633,13 +1648,12 @@ export function applyExecution(
     const handoverId =
       action === "warranty_snag" ? str(v.handoverId, 80, true) : undefined;
     if (handoverId) {
-      const handover = get(d.handovers, handoverId);
-      if (handover.status !== "accepted")
-        throw new ConflictException(
-          "Record a warranty defect against an accepted handover.",
-        );
-      if (str(v.area, 160, true) !== handover.area)
-        throw new BadRequestException("Use the accepted handover area.");
+      assertWarrantyCoverage(d, {
+        handoverId,
+        area: str(v.area, 160, true),
+        taskId: str(v.taskId, 80),
+        onDate: a.today ?? a.now.slice(0, 10),
+      });
     }
     recordId = str(v.id, 80) || randomUUID();
     if (d.snags.some((s) => s.id === recordId))
@@ -1660,6 +1674,9 @@ export function applyExecution(
       status: "open",
       evidence: str(v.evidence, 3000, true),
       resolution: "",
+      reportedAt: a.now,
+      reportedBy: a.name,
+      reportedVia: "team",
       verifiedBy: undefined,
     });
   } else if (action === "snag_status") {
@@ -1819,6 +1836,13 @@ export function applyExecution(
     )
       throw new ConflictException(
         "Reconcile retention and supplier credits before closing the final account.",
+      );
+    if (
+      b.financeClosed === true &&
+      (!d.handovers.length || d.handovers.some((handover) => handover.status !== "accepted"))
+    )
+      throw new ConflictException(
+        "Complete physical handover acceptance before closing the final account.",
       );
     d.financeClosed = b.financeClosed === true;
     d.financeEvidence = d.financeClosed

@@ -95,4 +95,36 @@ describe("project execution events", () => {
     });
     expect(JSON.stringify(event)).not.toContain("Private training notes");
   });
+
+  it("emits a safe warranty event without client report text or evidence", () => {
+    const data = emptyProject();
+    data.snags = [{
+      id: "claim-1", handoverId: "handover-1", title: "Door alignment", taskId: "",
+      area: "Bedroom", ownerId: "foreman", severity: "minor", dueDate: "2026-09-17",
+      status: "open", evidence: "Client portal warranty report", resolution: "",
+      reportedVia: "client_portal", clientNote: "Gate code and private access instruction",
+    }];
+
+    const [event] = projectExecutionEvents("project-1", "Villa project", data, "warranty_snag", "claim-1");
+
+    expect(event).toMatchObject({
+      action: "project.warranty.claimed.v1",
+      data: { warrantyClaim: { id: "claim-1", handoverId: "handover-1", severity: "minor" } },
+    });
+    expect(JSON.stringify(event)).not.toContain("Gate code");
+  });
+
+  it("keeps final-account and project-completion events financially safe", () => {
+    const data = emptyProject();
+    data.financeClosed = true;
+    data.financeEvidence = "Private accounting reference";
+    data.phase = "completed";
+
+    const [account] = projectExecutionEvents("project-1", "Villa project", data, "commercial", "project");
+    const [completed] = projectExecutionEvents("project-1", "Villa project", data, "complete_project", "project");
+
+    expect(account).toMatchObject({ action: "project.final_account.closed.v1", data: { finalAccount: { closed: true } } });
+    expect(completed).toMatchObject({ action: "project.completed.v1", data: { finalAccountClosed: true } });
+    expect(JSON.stringify([account, completed])).not.toContain("Private accounting reference");
+  });
 });

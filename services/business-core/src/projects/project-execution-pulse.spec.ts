@@ -307,4 +307,28 @@ describe("project execution pulse", () => {
       expect.objectContaining({ kind: "recover_handover_commitment", recordId: "accepted", ownerId: "trainer" }),
     ]));
   });
+
+  it("routes client warranty claims to remedy and independent verification without reopening delivery work", () => {
+    const data = emptyProject();
+    data.roleAssignments = [{ role: "project_manager", memberId: "manager" }];
+    data.snags = [
+      {
+        id: "open-claim", handoverId: "handover", title: "Door alignment", taskId: "",
+        area: "Bedroom", ownerId: "foreman", severity: "major", dueDate: "2026-09-15",
+        status: "open", evidence: "Client portal warranty report", resolution: "", reportedVia: "client_portal",
+      },
+      {
+        id: "ready-claim", handoverId: "handover", title: "Drawer adjustment", taskId: "",
+        area: "Bedroom", ownerId: "foreman", severity: "minor", dueDate: "2026-09-16",
+        status: "ready", evidence: "Correction photos", resolution: "Adjusted", reportedVia: "team",
+      },
+    ];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16");
+
+    expect(pulse.nextActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "resolve_warranty_claim", recordId: "open-claim", ownerId: "foreman", priority: "critical" }),
+      expect.objectContaining({ kind: "review_warranty_claim", recordId: "ready-claim", ownerId: "manager" }),
+    ]));
+  });
 });
