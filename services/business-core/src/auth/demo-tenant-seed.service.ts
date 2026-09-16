@@ -53,12 +53,6 @@ export class DemoTenantSeedService implements OnApplicationBootstrap {
       DEMO_TENANT.ownerEmail,
       DEMO_TENANT.password,
     );
-    await this.database.query(
-      `INSERT INTO platform_administrators (user_id)
-       SELECT id FROM users WHERE primary_email = $1
-       ON CONFLICT (user_id) DO UPDATE SET status = 'active', updated_at = now()`,
-      [DEMO_TENANT.ownerEmail],
-    );
     await this.seedOrganizationStructure(workspaceId);
     this.logger.log(`Demo login ready for ${DEMO_TENANT.ownerEmail} at ${DEMO_TENANT.slug}`);
   }

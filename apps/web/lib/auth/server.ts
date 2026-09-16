@@ -61,7 +61,7 @@ export const getAuthenticatedProfile = cache(async (): Promise<AuthProfile> => {
       id: "00000000-0000-4000-8000-000000000001",
       primaryEmail: "admin@igloarchitects.com",
       displayName: "Iglo Administrator",
-      platformRole: "administrator",
+      platformRole: null,
       nextAction: "enter_workspace",
       memberships: [{
         workspaceId: "00000000-0000-4000-8000-000000000002",

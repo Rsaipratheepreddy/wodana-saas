@@ -4,11 +4,7 @@ const api = process.env.BUSINESS_CORE_URL ?? "http://127.0.0.1:8010/api/v1";
 const internalToken = process.env.BUSINESS_CORE_INTERNAL_TOKEN ?? "local-development-token";
 const runId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 const ownerEmail = `owner-${runId}@example.com`;
-const owner = {
-  "x-wodana-user-subject": `owner-${runId}`,
-  "x-wodana-user-email": ownerEmail,
-  "x-wodana-user-name": "Provisioned Owner",
-};
+const ownerPassword = `Smoke#${runId}Aa1!`;
 
 async function request(path, {
   body,
@@ -97,14 +93,12 @@ const rotated = await request(
 );
 assert.notEqual(rotated.invitationToken, provisioned.ownerInvitation.invitationToken);
 
-const beforeAcceptance = await request("/me", { headers: owner });
-assert.equal(beforeAcceptance.nextAction, "accept_invitation");
-assert.equal(beforeAcceptance.pendingInvitations[0].id, provisioned.ownerInvitation.id);
-await request(`/workspaces/invitations/${provisioned.ownerInvitation.id}/accept`, {
+const activated = await request("/auth/invitations/activate", {
+  body: { invitationToken: rotated.invitationToken, password: ownerPassword },
   expected: 201,
-  headers: owner,
-  method: "POST",
 });
+assert.ok(activated.accessToken);
+const owner = { authorization: `Bearer ${activated.accessToken}` };
 const afterAcceptance = await request("/me", { headers: owner });
 assert.equal(afterAcceptance.nextAction, "start_onboarding");
 
