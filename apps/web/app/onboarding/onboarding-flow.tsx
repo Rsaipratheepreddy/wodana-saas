@@ -461,8 +461,8 @@ export function OnboardingFlow({
           </div>
 
           <div className={styles.envelopeScene}>
-            <div className={styles.celebration} data-side="left" aria-hidden="true"><i /><i /><i /><i /></div>
-            <div className={styles.celebration} data-side="right" aria-hidden="true"><i /><i /><i /><i /></div>
+            <div className={styles.celebration} data-side="left" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
+            <div className={styles.celebration} data-side="right" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
             <div className={styles.envelope}>
               <div className={styles.envelopeBack} aria-hidden="true" />
               <article aria-hidden={!letterOpen} className={styles.welcomeLetter}>
@@ -479,8 +479,8 @@ export function OnboardingFlow({
 
           <div className={styles.welcomeActions}>
             {!letterOpen
-              ? <Button onPress={() => setLetterOpen(true)} size="large" variant="primary">Open your welcome</Button>
-              : <Button onPress={beginSetup} size="large" variant="primary">Set up your workspace<ArrowRight aria-hidden="true" size={16} /></Button>}
+              ? <Button onPress={() => setLetterOpen(true)} variant="primary">Open your welcome</Button>
+              : <Button onPress={beginSetup} variant="primary">Set up your workspace<ArrowRight aria-hidden="true" size={15} /></Button>}
             <small>{letterOpen ? "Four quick steps. Your progress saves automatically." : "A little note from Wodana"}</small>
           </div>
           <p className={styles.welcomeAnnouncement} aria-live="polite">{letterOpen ? `Welcome letter from the Wodana team opened for ${form.name}.` : ""}</p>
