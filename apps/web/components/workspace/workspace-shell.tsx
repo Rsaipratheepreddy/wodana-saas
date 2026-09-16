@@ -20,6 +20,7 @@ import {
   type WorkspaceUser,
 } from "./workspace-navigation";
 import { WorkspaceSidebar, WorkspaceModuleSwitcher } from "./workspace-sidebar";
+import { WorkspaceAccountMenu } from "./workspace-account-menu";
 import { PreProjectProvider, usePreProject } from "@/components/pre-project/pre-project-context";
 import { caseRoute, PRE_PROJECT_ROOT } from "@/lib/pre-project/types";
 import { preProjectNavigation } from "@/lib/pre-project/navigation";
@@ -118,7 +119,6 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
           modules={modules}
           navigation={activeModule.navigation}
           pathname={pathname}
-          user={user}
           workspaces={workspaces}
         />
       </div> : null}
@@ -140,7 +140,6 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
               onDismiss={() => setMobileNavigationPath(null)}
               onNavigate={() => setMobileNavigationPath(null)}
               pathname={pathname}
-              user={user}
               workspaces={workspaces}
             />
           </Dialog>
@@ -219,6 +218,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces }: Workspac
           >
             {theme === "light" ? <Moon aria-hidden="true" size={16} /> : <Sun aria-hidden="true" size={16} />}
           </button>
+          <WorkspaceAccountMenu user={user} />
         </header>
         <main className={styles.workspaceContent}>{children}</main>
       </div>

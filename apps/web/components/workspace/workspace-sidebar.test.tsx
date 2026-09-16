@@ -11,7 +11,6 @@ vi.mock("next/navigation", () => ({
 const workspaces = [
   { description: "Business workspace", id: "wodana", name: "Wodana" },
 ];
-const user = { email: "admin@example.com", name: "Workspace admin" };
 const workspaceModule = workspaceModules.find((module) => module.id === "workspace")!;
 const crmModule = workspaceModules.find((module) => module.id === "crm")!;
 const preProjectModule = workspaceModules.find((module) => module.id === "pre-project")!;
@@ -20,7 +19,7 @@ describe("WorkspaceSidebar", () => {
   it.each(["desktop", "mobile"] as const)("shows requirement sections in the sidebar on %s", async (mode) => {
     const interaction=userEvent.setup();
     const navigation=preProjectModule.navigation.filter(g=>['pre-project-requirements','pre-project-case-sections'].includes(g.id));
-    render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={navigation} pathname="/workspace/pre-projects/requirements" user={user} workspaces={workspaces}/>);
+    render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={navigation} pathname="/workspace/pre-projects/requirements" workspaces={workspaces}/>);
     const nav=screen.getByRole('navigation',{name:'Main navigation'});
     expect(within(nav).getAllByRole('link').map(l=>l.textContent)).toEqual(['Requirements','Client inspirations','Design','Quotations','Agreement & payments','Change requests','Approvals & release','Client portal']);
     expect(screen.queryByRole('button',{name:'Commercial & approvals'})).not.toBeInTheDocument();
@@ -37,7 +36,6 @@ describe("WorkspaceSidebar", () => {
         modules={workspaceModules}
         navigation={crmModule.navigation}
         pathname="/workspace/crm/leads"
-        user={user}
         workspaces={workspaces}
       />,
     );
@@ -57,7 +55,6 @@ describe("WorkspaceSidebar", () => {
         modules={workspaceModules}
         navigation={crmModule.navigation}
         pathname="/workspace/crm"
-        user={user}
         workspaces={workspaces}
       />,
     );
@@ -81,7 +78,6 @@ describe("WorkspaceSidebar", () => {
         modules={workspaceModules}
         navigation={workspaceModule.navigation}
         pathname="/workspace"
-        user={user}
         workspaces={workspaces}
       />,
     );
@@ -104,7 +100,6 @@ describe("WorkspaceSidebar", () => {
         modules={workspaceModules}
         navigation={workspaceModule.navigation}
         pathname="/workspace"
-        user={user}
         workspaces={workspaces}
       />,
     );
@@ -132,7 +127,6 @@ describe("WorkspaceSidebar", () => {
         modules={workspaceModules}
         navigation={crmModule.navigation}
         pathname="/workspace/crm"
-        user={user}
         workspaces={workspaces}
       />,
     );

@@ -10,7 +10,7 @@ const route = vi.hoisted(() => ({ pathname: "/workspace/members" }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
 }));
 
 const shellProps = {
@@ -86,6 +86,21 @@ describe("WorkspaceShell theme", () => {
     await interaction.click(screen.getByRole("button", { name: "Use light mode" }));
     await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "light"));
     expect(window.localStorage.getItem("wodana-theme")).toBe("light");
+  });
+
+  it("shows the signed-in account as the final header avatar", async () => {
+    const interaction = userEvent.setup();
+    render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
+
+    const accountButton = screen.getByRole("button", { name: "Account menu for Workspace owner" });
+    expect(accountButton.closest("header")).not.toBeNull();
+    await interaction.click(accountButton);
+
+    const accountMenu = await screen.findByRole("dialog", { name: "Account menu" });
+    expect(within(accountMenu).getByText("Workspace owner")).toBeVisible();
+    expect(within(accountMenu).getByText("admin@example.com")).toBeVisible();
+    expect(within(accountMenu).getByRole("link", { name: "User settings" })).toHaveAttribute("href", "/workspace/settings");
+    expect(within(accountMenu).getByRole("button", { name: "Sign out" })).toBeEnabled();
   });
 
   it("opens and closes the Woddy chat panel from the header", async () => {

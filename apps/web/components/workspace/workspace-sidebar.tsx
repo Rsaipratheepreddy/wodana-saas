@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Activity,
   BadgeDollarSign,
@@ -12,7 +11,6 @@ import {
   Calculator,
   ChevronDown,
   ChevronsUpDown,
-  CircleUserRound,
   ClipboardCheck,
   ClipboardList,
   Factory,
@@ -25,10 +23,8 @@ import {
   Home,
   KeyRound,
   LayoutGrid,
-  LogOut,
   MapPinned,
   MessagesSquare,
-  MoreHorizontal,
   PackageSearch,
   PackageCheck,
   Palette,
@@ -69,7 +65,6 @@ import type {
   WorkspaceIdentity,
   WorkspaceModuleDefinition,
   WorkspaceNavigationSection,
-  WorkspaceUser,
 } from "./workspace-navigation";
 import styles from "./workspace.module.css";
 import { identityInitials, identityStyle as visualForIdentity } from "@/lib/brand/identity";
@@ -126,15 +121,6 @@ export function WorkspaceModuleSwitcher({ activeModule, modules }: { activeModul
   </DialogTrigger>;
 }
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
 export type WorkspaceSidebarProps = {
   activeModule: WorkspaceModuleDefinition;
   mode?: "desktop" | "mobile";
@@ -143,7 +129,6 @@ export type WorkspaceSidebarProps = {
   onDismiss?: () => void;
   onNavigate?: () => void;
   pathname: string;
-  user: WorkspaceUser;
   workspaces: WorkspaceIdentity[];
 };
 
@@ -155,10 +140,8 @@ export function WorkspaceSidebar({
   onDismiss,
   onNavigate,
   pathname,
-  user,
   workspaces,
 }: WorkspaceSidebarProps) {
-  const router = useRouter();
   const instanceId = useId().replaceAll(":", "");
   const searchRef = useRef<HTMLInputElement>(null);
   const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
@@ -174,7 +157,6 @@ export function WorkspaceSidebar({
     activeWorkspace?.id ?? "workspace",
     activeWorkspace?.imageUrl,
   );
-  const userVisual = visualForIdentity(user.name, user.avatarUrl);
 
   const filteredNavigation = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -213,21 +195,8 @@ export function WorkspaceSidebar({
     });
   };
 
-  const [signOutError, setSignOutError] = useState("");
-  const signOut = async () => {
-    setSignOutError("");
-    const response = await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
-    if (!response?.ok) {
-      setSignOutError("Unable to log out this device. Please try again.");
-      return;
-    }
-    router.replace("/login");
-    router.refresh();
-  };
-
   return (
     <div className={styles.sidebarFrame} data-mode={mode}>
-      {signOutError ? <p role="alert">{signOutError}</p> : null}
       <aside aria-label="Workspace navigation" className={styles.sidebarCard}>
         <div className={styles.workspaceHeader}>
           <DialogTrigger>
@@ -433,68 +402,6 @@ export function WorkspaceSidebar({
           ) : null}
         </nav>
 
-        <div className={styles.sidebarFooter}>
-          <DialogTrigger>
-            <AriaButton
-              className={styles.userButton}
-            >
-              <span
-                aria-hidden="true"
-                className={styles.avatar}
-                data-has-image={user.avatarUrl ? true : undefined}
-                style={userVisual}
-              >
-                {user.avatarUrl ? null : initials(user.name)}
-              </span>
-              <span className={styles.userIdentity}>
-                <strong>{user.name}</strong>
-                <small>{user.email}</small>
-              </span>
-              <MoreHorizontal aria-hidden="true" className={styles.userMore} size={17} />
-            </AriaButton>
-            <Popover
-              className={styles.userPopover}
-              placement="top start"
-            >
-              <Dialog aria-label="Account menu" className={styles.accountDialog}>
-                {({ close }) => (
-                  <>
-                    <div className={styles.accountSummary}>
-                      <span
-                        aria-hidden="true"
-                        className={styles.avatar}
-                        data-has-image={user.avatarUrl ? true : undefined}
-                        style={userVisual}
-                      >
-                        {user.avatarUrl ? null : initials(user.name)}
-                      </span>
-                      <span>
-                        <strong>{user.name}</strong>
-                        <small>{user.email}</small>
-                      </span>
-                    </div>
-                    <Link href="/workspace/settings" onClick={close}>
-                      <CircleUserRound size={16} /> User Settings
-                    </Link>
-                    {user.platformRole === "administrator" ? <Link href="/internal" onClick={close}>
-                      <Building2 size={16} /> Internal portal
-                    </Link> : null}
-                    <button
-                      className={styles.accountAction}
-                      onClick={async () => {
-                        close();
-                        await signOut();
-                      }}
-                      type="button"
-                    >
-                      <LogOut size={16} /> Sign out
-                    </button>
-                  </>
-                )}
-              </Dialog>
-            </Popover>
-          </DialogTrigger>
-        </div>
       </aside>
 
     </div>
