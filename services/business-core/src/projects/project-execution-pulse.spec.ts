@@ -33,6 +33,49 @@ describe("project execution pulse", () => {
     });
   });
 
+  it("puts the owned project hold and client commitments ahead of execution work", () => {
+    const data = emptyProject();
+    data.phase = "active";
+    data.controls = {
+      ...data.controls!,
+      onHold: true,
+      holdReason: "Client access is not confirmed.",
+      holdOwnerId: "manager",
+      risk: "high_risk",
+      targetCompletion: "2026-09-15",
+      handoverDate: "2026-09-18",
+      nextAction: "Confirm access window",
+      nextActionOwnerId: "coordinator",
+      nextActionDate: "2026-09-15",
+      nextClientMeeting: "2026-09-16",
+      nextClientMeetingOwnerId: "designer",
+    };
+    data.tasks = [{
+      id: "office-task", parentId: "", package: "", title: "Prepare client pack", description: "",
+      area: "", location: "office", ownerId: "manager", assigneeIds: [], resourceId: "",
+      start: "2026-09-16", end: "2026-09-16", baselineStart: "2026-09-16", baselineEnd: "2026-09-16",
+      predecessors: [], quantity: 1, unit: "item", weight: 1, approved: 0, status: "planned",
+      priority: "normal", inspectionRequired: false, scopeIds: [], drawingId: "",
+      readiness: { scope: true, access: true, materials: true }, blocker: "",
+    }];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16");
+
+    expect(pulse.health).toBe("blocked");
+    expect(pulse.nextActions[0]).toMatchObject({
+      kind: "resolve_project_hold", ownerId: "manager", detail: "Client access is not confirmed.",
+    });
+    expect(pulse.nextActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "resolve_project_risk" }),
+      expect.objectContaining({ kind: "recover_project_promise" }),
+      expect.objectContaining({ kind: "complete_client_action", ownerId: "coordinator" }),
+      expect.objectContaining({ kind: "prepare_client_meeting", ownerId: "designer" }),
+    ]));
+    expect(pulse.nextActions).not.toContainEqual(expect.objectContaining({
+      kind: "start_task", taskId: "office-task",
+    }));
+  });
+
   it("offers a start action only when the package, readiness and booking are all sound", () => {
     const data = emptyProject();
     data.workPackages = [{

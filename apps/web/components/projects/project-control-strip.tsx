@@ -42,6 +42,7 @@ const blankControls = (): ProjectControlSummary => ({
   nextActionOwnerId: "",
   nextActionDate: "",
   nextClientMeeting: "",
+  nextClientMeetingOwnerId: "",
   clientNote: "",
 });
 
@@ -66,6 +67,7 @@ export function ProjectControlStrip({
   const handoverDays = controls.handoverDate && state.today
     ? Math.ceil((Date.parse(`${controls.handoverDate}T12:00:00Z`) - Date.parse(`${state.today}T12:00:00Z`)) / 86400000)
     : null;
+  const hasNextAction = Boolean(draft.nextAction || draft.nextActionOwnerId || draft.nextActionDate);
   function updateRole(role: ProjectRole, memberId: string) {
     setAssignments((current) => {
       const next = current.filter((item) => item.role !== role);
@@ -90,10 +92,11 @@ export function ProjectControlStrip({
             <label>Promised timeline<input value={draft.promise} onChange={(e) => setDraft({ ...draft, promise: e.target.value })} placeholder="What the client was promised"/></label>
             <label>Target completion<input type="date" value={draft.targetCompletion} onChange={(e) => setDraft({ ...draft, targetCompletion: e.target.value })}/></label>
             <label>Client handover date<input type="date" value={draft.handoverDate} onChange={(e) => setDraft({ ...draft, handoverDate: e.target.value })}/></label>
-            <label>Next action<input value={draft.nextAction} onChange={(e) => setDraft({ ...draft, nextAction: e.target.value })}/></label>
-            <label>Next action owner<select value={draft.nextActionOwnerId} onChange={(e) => setDraft({ ...draft, nextActionOwnerId: e.target.value })}><option value="">Unassigned</option>{state.members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-            <label>Next action due<input type="date" value={draft.nextActionDate} onChange={(e) => setDraft({ ...draft, nextActionDate: e.target.value })}/></label>
+            <label>Next action<input required={hasNextAction} value={draft.nextAction} onChange={(e) => setDraft({ ...draft, nextAction: e.target.value })}/></label>
+            <label>Next action owner<select required={hasNextAction} value={draft.nextActionOwnerId} onChange={(e) => setDraft({ ...draft, nextActionOwnerId: e.target.value })}><option value="">Choose owner…</option>{state.members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
+            <label>Next action due<input required={hasNextAction} type="date" value={draft.nextActionDate} onChange={(e) => setDraft({ ...draft, nextActionDate: e.target.value })}/></label>
             <label>Next client meeting<input type="date" value={draft.nextClientMeeting} onChange={(e) => setDraft({ ...draft, nextClientMeeting: e.target.value })}/></label>
+            <label>Meeting owner<select required={Boolean(draft.nextClientMeeting)} value={draft.nextClientMeetingOwnerId} onChange={(e) => setDraft({ ...draft, nextClientMeetingOwnerId: e.target.value })}><option value="">Choose owner…</option>{state.members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
           </div>
           <label>Latest client note<textarea value={draft.clientNote} onChange={(e) => setDraft({ ...draft, clientNote: e.target.value })}/></label>
           <label className={s.check}><input type="checkbox" checked={draft.onHold} onChange={(e) => setDraft({ ...draft, onHold: e.target.checked })}/><span><strong>Place project on hold</strong><small>This pauses new task starts without changing the project phase.</small></span></label>

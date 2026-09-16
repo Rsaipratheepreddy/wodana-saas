@@ -91,11 +91,19 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - The backend enforces the same resource, task and date-span check at command time, so a stale browser state or a direct API request cannot bypass the calendar commitment.
 - Focused pulse tests cover absent, old, partial and wrong-resource bookings. The full business-core suite passed (608 passed, 10 skipped) and root typechecking passed. This is backend control only; booking/calendar UI UAT is still required.
 
-### Next locked slice — Project command centre: client promises and decision queue
+### Slice 6 — Project command-centre decision truth (backend completed 16 September 2026)
 
-1. Turn the existing project controls into deterministic escalation: project hold, overdue client promise/handover target, dated next action and overdue next client meeting must appear once, at the right priority and with a real owner.
-2. Preserve the operating hierarchy: a critical hold/risk beats package and task noise; package/design/procurement/booking work remains linked underneath rather than becoming a second task list.
-3. Add pure state contracts and tests first. UI follows only after the backend flow and permissions are proven.
+- Project controls now produce one deterministic decision queue: owned project holds, material risk, due/overdue client promise, due/overdue handover, dated client action and next client meeting. Each item carries the accountable member ID for the live workspace to render.
+- A project hold is now reflected honestly in that queue. The command centre will not offer package preparation, design resolution, booking or task-start actions while the backend refuses new task starts; the project hold is elevated ahead of all lower-level execution work.
+- A client action must be saved with its action, owner and date as one complete commitment. A client meeting must have its own owner, and a handover cannot precede target completion. The existing Project controls form now collects and validates those fields before it calls the backend.
+- The queue remains an internal operating view. It does not disclose margin, vendor negotiation or private notes to the client portal.
+- Focused tests, the full business-core suite (610 passed, 10 skipped), 14 project web-component tests and root typechecking passed. This verifies contracts and the existing form path; it is not a claim that the command-centre UX itself has completed UAT.
+
+### Next locked slice — Factory-to-site delivery hand-off
+
+1. Audit the existing production controls as one connected chain: scoped factory task → confirmed factory commitment → approved measured output → dispatch → site receipt → site installation/inspection.
+2. For every link, define what can be edited, cancelled, split, rejected, reworked or delayed, and prevent progress from skipping a required upstream acceptance.
+3. Expose the resulting state and exception reasons as a small, auditable backend contract before redesigning the Production and Execution screens.
 
 ## Do not lose these client requirements
 

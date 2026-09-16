@@ -46,6 +46,7 @@ export const emptyProject = (): ProjectData => ({
     nextActionOwnerId: "",
     nextActionDate: "",
     nextClientMeeting: "",
+    nextClientMeetingOwnerId: "",
     clientNote: "",
   },
   roleAssignments: [],
@@ -398,6 +399,28 @@ export function applyExecution(
       holdOwnerId = member(value.holdOwnerId);
     if (onHold && !holdOwnerId)
       throw new BadRequestException("Choose an owner for the project hold.");
+    const targetCompletion = day(value.targetCompletion);
+    const handoverDate = day(value.handoverDate);
+    if (targetCompletion && handoverDate && handoverDate < targetCompletion)
+      throw new BadRequestException(
+        "Handover cannot be before the target completion.",
+      );
+    const nextAction = str(value.nextAction, 500);
+    const nextActionOwnerId = member(value.nextActionOwnerId);
+    const nextActionDate = day(value.nextActionDate);
+    if (
+      (nextAction || nextActionOwnerId || nextActionDate) &&
+      (!nextAction || !nextActionOwnerId || !nextActionDate)
+    )
+      throw new BadRequestException(
+        "Enter the next action, its owner and its due date together.",
+      );
+    const nextClientMeeting = day(value.nextClientMeeting);
+    const nextClientMeetingOwnerId = member(value.nextClientMeetingOwnerId);
+    if (Boolean(nextClientMeeting) !== Boolean(nextClientMeetingOwnerId))
+      throw new BadRequestException(
+        "Choose an owner whenever a next client meeting is scheduled.",
+      );
     const previous = d.controls;
     d.controls = {
       reference: str(value.reference, 80, true),
@@ -412,12 +435,13 @@ export function applyExecution(
         : "",
       holdOwnerId: onHold ? holdOwnerId : "",
       promise: str(value.promise, 500),
-      targetCompletion: day(value.targetCompletion),
-      handoverDate: day(value.handoverDate),
-      nextAction: str(value.nextAction, 500),
-      nextActionOwnerId: member(value.nextActionOwnerId),
-      nextActionDate: day(value.nextActionDate),
-      nextClientMeeting: day(value.nextClientMeeting),
+      targetCompletion,
+      handoverDate,
+      nextAction,
+      nextActionOwnerId,
+      nextActionDate,
+      nextClientMeeting,
+      nextClientMeetingOwnerId,
       clientNote: str(value.clientNote, 3000),
     };
     if (

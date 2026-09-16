@@ -277,6 +277,7 @@ export type ProjectControlSummary = {
   nextActionOwnerId: string;
   nextActionDate: string;
   nextClientMeeting: string;
+  nextClientMeetingOwnerId: string;
   clientNote: string;
 };
 export type ProjectRole =
@@ -528,6 +529,12 @@ export type ProjectExecutionAction = {
     | "inspect_task"
     | "resolve_design"
     | "resolve_booking"
+    | "resolve_project_hold"
+    | "resolve_project_risk"
+    | "recover_project_promise"
+    | "prepare_handover"
+    | "complete_client_action"
+    | "prepare_client_meeting"
     | "start_task"
     | "review_report"
     | "confirm_order";
@@ -536,6 +543,7 @@ export type ProjectExecutionAction = {
   detail: string;
   workPackageId?: string;
   taskId?: string;
+  ownerId?: string;
   recordId: string;
 };
 export type ProjectExecutionPulse = {

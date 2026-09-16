@@ -15,6 +15,14 @@ const rank: Record<ProjectExecutionAction["priority"], number> = {
   high: 1,
   normal: 2,
 };
+const commandCentreRank: Partial<Record<ProjectExecutionAction["kind"], number>> = {
+  resolve_project_hold: 0,
+  resolve_project_risk: 1,
+  recover_project_promise: 2,
+  prepare_handover: 3,
+  complete_client_action: 4,
+  prepare_client_meeting: 5,
+};
 
 function action(
   item: Omit<ProjectExecutionAction, "id">,
@@ -47,6 +55,13 @@ function taskPackage(data: ProjectData, task: Task) {
   }
 }
 
+function projectOwnerId(data: ProjectData) {
+  return data.initiation?.baseline?.projectOwnerId
+    || data.roleAssignments?.find((assignment) => assignment.role === "project_manager")?.memberId
+    || data.controls?.nextActionOwnerId
+    || undefined;
+}
+
 /**
  * A deterministic, explainable focus list. It never changes a project; it
  * only surfaces the most valuable safe next action for the current operator.
@@ -59,8 +74,77 @@ export function projectExecutionPulse(
 ): ProjectExecutionPulse {
   const actions: ProjectExecutionAction[] = [];
   const workPackages = data.workPackages ?? [];
+  const controls = data.controls;
+  const projectOwner = projectOwnerId(data);
+  const projectHeld = Boolean(controls?.onHold);
 
-  for (const workPackage of workPackages) {
+  if (projectHeld)
+    actions.push(action({
+      kind: "resolve_project_hold",
+      priority: "critical",
+      title: "Resolve project hold",
+      detail: controls?.holdReason || "Release the project hold or record the recovery plan before authorising more delivery work.",
+      ownerId: controls?.holdOwnerId || projectOwner,
+      recordId: "project-hold",
+    }));
+
+  if (data.phase !== "completed" && controls) {
+    if (["urgent_action", "high_risk"].includes(controls.risk))
+      actions.push(action({
+        kind: "resolve_project_risk",
+        priority: controls.risk === "high_risk" ? "critical" : "high",
+        title: "Recover project risk",
+        detail: "Review the forecast, accountable owner and client commitment before delivery drifts further.",
+        ownerId: projectOwner,
+        recordId: "project-risk",
+      }));
+    if (controls.targetCompletion && controls.targetCompletion <= today)
+      actions.push(action({
+        kind: "recover_project_promise",
+        priority: controls.targetCompletion < today ? "critical" : "high",
+        title: "Protect the client promise",
+        detail: controls.targetCompletion < today
+          ? `Target completion was ${controls.targetCompletion}. Reforecast and confirm the recovery plan with the client.`
+          : "Target completion is today. Confirm the remaining plan and client communication.",
+        ownerId: projectOwner,
+        recordId: "target-completion",
+      }));
+    if (controls.handoverDate && controls.handoverDate <= today)
+      actions.push(action({
+        kind: "prepare_handover",
+        priority: controls.handoverDate < today ? "critical" : "high",
+        title: "Protect client handover",
+        detail: controls.handoverDate < today
+          ? `Client handover was due ${controls.handoverDate}. Review acceptance, outstanding work and the revised commitment.`
+          : "Client handover is due today. Confirm acceptance, outstanding work and the client update.",
+        ownerId: projectOwner,
+        recordId: "handover",
+      }));
+    if (controls.nextAction && controls.nextActionDate && controls.nextActionDate <= today)
+      actions.push(action({
+        kind: "complete_client_action",
+        priority: controls.nextActionDate < today ? "high" : "normal",
+        title: controls.nextAction,
+        detail: controls.nextActionDate < today
+          ? `This client action was due ${controls.nextActionDate}. Complete it or record the new commitment.`
+          : "This client action is due today. Complete it or record the next commitment.",
+        ownerId: controls.nextActionOwnerId || projectOwner,
+        recordId: "next-client-action",
+      }));
+    if (controls.nextClientMeeting && controls.nextClientMeeting <= today)
+      actions.push(action({
+        kind: "prepare_client_meeting",
+        priority: "high",
+        title: controls.nextClientMeeting < today ? "Close the client meeting" : "Prepare the client meeting",
+        detail: controls.nextClientMeeting < today
+          ? `The client meeting was scheduled for ${controls.nextClientMeeting}. Record its outcome and the next commitment.`
+          : "Confirm the agenda, current forecast and decisions required before the client meeting.",
+        ownerId: controls.nextClientMeetingOwnerId || projectOwner,
+        recordId: "next-client-meeting",
+      }));
+  }
+
+  for (const workPackage of projectHeld ? [] : workPackages) {
     if (workPackage.status === "planning") {
       const issue = workPackageReadiness(data, workPackage)[0];
       actions.push(action({
@@ -83,7 +167,7 @@ export function projectExecutionPulse(
       }));
   }
 
-  for (const task of data.tasks) {
+  for (const task of projectHeld ? [] : data.tasks) {
     if (["completed", "cancelled"].includes(task.status)) continue;
     const workPackage = taskPackage(data, task);
     const overdue = Boolean(task.end) && task.end < today;
@@ -192,6 +276,7 @@ export function projectExecutionPulse(
 
   const nextActions = actions
     .sort((left, right) => rank[left.priority] - rank[right.priority]
+      || (commandCentreRank[left.kind] ?? 100) - (commandCentreRank[right.kind] ?? 100)
       || left.title.localeCompare(right.title))
     .slice(0, 10);
   const overdueTasks = data.tasks.filter(
