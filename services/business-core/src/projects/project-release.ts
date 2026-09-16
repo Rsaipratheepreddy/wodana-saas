@@ -10,6 +10,10 @@ import { releasedScopeLine } from "./released-scope-line";
 import { adoptProjectWorkflow } from "./project-workflow";
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { syncScopeWorkPackages } from "./project-work-packages";
+import {
+  captureApprovedDesignBaseline,
+  synchroniseApprovedDesignDocuments,
+} from "./project-design-control";
 
 function releasedInitiation(
   data: CommercialData,
@@ -73,36 +77,20 @@ export async function releaseDeliveryProject(
     throw new ConflictException(
       "The accepted quotation no longer matches the approved Deal File. Complete a new owner review before release.",
     );
-  const linked = quote.lines.filter((l) => l.scopeId);
-  for (const line of linked) {
-    const scope = (
-      await client.query(
-        `SELECT e.version,e.scope_status,e.archived_at,(SELECT max(s.version) FROM pre_project_item_specifications s WHERE s.workspace_id=e.workspace_id AND s.case_id=e.case_id AND s.entry_id=e.id) AS specification_version FROM pre_project_brief_entries e WHERE e.workspace_id=$1 AND e.case_id=$2 AND e.id=$3`,
-        [workspaceId, caseId, line.scopeId],
-      )
-    ).rows[0];
-    if (
-      !scope ||
-      scope.archived_at ||
-      scope.scope_status !== "included" ||
-      scope.version !== line.scopeVersion ||
-      (line.specificationVersion &&
-        scope.specification_version !== line.specificationVersion)
-    )
-      throw new ConflictException(
-        `Preparation changed for ${line.title}. Review its quotation revision before release.`,
-      );
-    const designs = (
-      await client.query(
-        `SELECT count(*)::int AS total,count(*) FILTER (WHERE v.status='approved' AND NOT EXISTS(SELECT 1 FROM pre_project_design_threads t WHERE t.workspace_id=v.workspace_id AND t.version_id=v.id AND t.blocking AND t.status='open'))::int AS approved FROM pre_project_item_design_refs r JOIN pre_project_design_versions v ON v.workspace_id=r.workspace_id AND v.id=r.design_version_id WHERE r.workspace_id=$1 AND r.case_id=$2 AND r.entry_id=$3 AND r.version=$4`,
-        [workspaceId, caseId, line.scopeId, line.specificationVersion ?? 0],
-      )
-    ).rows[0] as { total: number; approved: number };
-    if (!designs.total || designs.approved !== designs.total)
-      throw new ConflictException(
-        `Complete the linked design approvals for ${line.title} before release.`,
-      );
-  }
+  const designBaseline = await captureApprovedDesignBaseline(
+    client,
+    workspaceId,
+    caseId,
+    quote.lines.map((line) => ({
+      scopeLineId: line.id,
+      sourceScopeId: line.scopeId,
+      sourceScopeVersion: line.scopeVersion,
+      sourceSpecificationVersion: line.specificationVersion,
+      title: line.title,
+    })),
+    data.release!.at,
+    quote.definitionBaseline,
+  );
   const p = (
     await client.query(
       `INSERT INTO delivery_projects(workspace_id,case_id,name,created_by) SELECT c.workspace_id,c.id,o.title,$3 FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id WHERE c.workspace_id=$1 AND c.id=$2 ON CONFLICT(workspace_id,case_id) DO UPDATE SET name=delivery_projects.name RETURNING id,name,status,case_id AS "caseId"`,
@@ -146,6 +134,13 @@ export async function releaseDeliveryProject(
         approvedAt: approval.decidedAt!,
         approvedBy: approval.decidedBy!,
       }));
+    execution.designBaseline = designBaseline;
+    synchroniseApprovedDesignDocuments(
+      execution,
+      designBaseline,
+      data.release!.at,
+      randomUUID,
+    );
     execution.initiation = releasedInitiation(
       data,
       quote,
@@ -178,8 +173,19 @@ export async function releaseDeliveryProject(
         acceptedHash,
         execution.scope,
       );
+    const neededDesignBaseline = !execution.designBaseline;
+    if (neededDesignBaseline) {
+      execution.designBaseline = designBaseline;
+      synchroniseApprovedDesignDocuments(
+        execution,
+        designBaseline,
+        data.release!.at,
+        randomUUID,
+      );
+    }
     const createdPackages = syncScopeWorkPackages(execution, data.release!.at);
-    executionChanged = neededInitiation || createdPackages.length > 0;
+    executionChanged =
+      neededInitiation || neededDesignBaseline || createdPackages.length > 0;
   }
   if (executionChanged) {
     execution.revision++;

@@ -173,7 +173,10 @@ function fixture(): CommercialData {
 function database(options: { existing?: ReturnType<typeof emptyProject>; scopeVersion?: number } = {}) {
   let stored: ReturnType<typeof emptyProject> | undefined;
   const query = vi.fn(async (sql: string, values?: unknown[]) => {
-    if (sql.includes("FROM pre_project_brief_entries e WHERE"))
+    if (
+      sql.includes("FROM pre_project_brief_entries e WHERE") ||
+      sql.includes("FROM pre_project_brief_entries entry")
+    )
       return {
         rowCount: 1,
         rows: [
@@ -182,6 +185,20 @@ function database(options: { existing?: ReturnType<typeof emptyProject>; scopeVe
             scope_status: "included",
             archived_at: null,
             specification_version: 3,
+          },
+        ],
+      };
+    if (sql.includes('SELECT version.id AS "designVersionId"'))
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            designVersionId: "design-version-1",
+            designId: "design-1",
+            title: "Wardrobe elevation",
+            documentType: "drawing",
+            revision: 2,
+            approvedAt: now,
           },
         ],
       };
@@ -287,6 +304,23 @@ describe("commercial project release", () => {
         value: 1312.5,
       },
     });
+    expect(db.stored()?.designBaseline).toMatchObject({
+      links: [
+        expect.objectContaining({
+          scopeLineId: "quote-line-1",
+          designVersionId: "design-version-1",
+          revision: 2,
+        }),
+      ],
+    });
+    expect(db.stored()?.documents).toContainEqual(
+      expect.objectContaining({
+        title: "Wardrobe elevation · Rev 2",
+        status: "approved",
+        sourceDesignVersionId: "design-version-1",
+        scopeLineIds: ["quote-line-1"],
+      }),
+    );
   });
 
   it("rejects accepted-price drift against the approved Deal File", async () => {

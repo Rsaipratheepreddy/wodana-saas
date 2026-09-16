@@ -50,6 +50,11 @@ import { adoptProjectWorkflow, ensureProjectWorkflow } from "./project-workflow"
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { blockWorkPackagesForDeduction, syncScopeWorkPackages } from "./project-work-packages";
 import { projectExecutionPulse } from "./project-execution-pulse";
+import {
+  captureApprovedDesignBaseline,
+  mergeDesignBaseline,
+  synchroniseApprovedDesignDocuments,
+} from "./project-design-control";
 @Injectable()
 export class ExecutionService {
   constructor(private readonly access: HrmsAccessService) {}
@@ -586,6 +591,20 @@ export class ExecutionService {
             throw new ConflictException(
               "Variation currency must match the original agreement.",
             );
+          const variationDesignBaseline = await captureApprovedDesignBaseline(
+            ctx.client,
+            w,
+            row.caseId,
+            q.lines.map((line) => ({
+              scopeLineId: line.id,
+              sourceScopeId: line.scopeId,
+              sourceScopeVersion: line.scopeVersion,
+              sourceSpecificationVersion: line.specificationVersion,
+              title: line.title,
+            })),
+            new Date().toISOString(),
+            q.definitionBaseline,
+          );
           const used = new Set(
             [...d.scope.lines, ...d.variations.flatMap((v) => v.lines)].map(
               (l) => l.id,
@@ -649,6 +668,18 @@ export class ExecutionService {
             value: q.direction === "deduction" ? -q.total : q.total,
             lines: q.lines.map(releasedScopeLine),
           });
+          if (variationDesignBaseline.links.length) {
+            d.designBaseline = mergeDesignBaseline(
+              d.designBaseline,
+              variationDesignBaseline,
+            );
+            synchroniseApprovedDesignDocuments(
+              d,
+              variationDesignBaseline,
+              new Date().toISOString(),
+              randomUUID,
+            );
+          }
           syncScopeWorkPackages(d, new Date().toISOString());
         }
         d.changeCases ??= [];

@@ -7,6 +7,7 @@ import type {
   Task,
 } from "./execution.types";
 import { routeSupportsLocation, workPackageForTask } from "./project-work-packages";
+import { designReadinessForTask } from "./project-design-control";
 
 const rank: Record<ProjectExecutionAction["priority"], number> = {
   critical: 0,
@@ -117,6 +118,20 @@ export function projectExecutionPulse(
     const resourceReady = task.location === "office"
       || !task.resourceId
       || (resource?.active && confirmedBooking(task.id, bookings));
+    const designReady =
+      task.location === "office" || designReadinessForTask(data, task).ready;
+    if (task.status === "planned" && !designReady) {
+      actions.push(action({
+        kind: "resolve_design",
+        priority: "high",
+        title: `Link the approved design for ${task.title}`,
+        detail: "Use the approved design revision captured with this released scope before starting delivery work.",
+        workPackageId: workPackage?.id,
+        taskId: task.id,
+        recordId: task.id,
+      }));
+      continue;
+    }
     if (task.status === "planned" && ready && resourceReady)
       actions.push(action({
         kind: "start_task",

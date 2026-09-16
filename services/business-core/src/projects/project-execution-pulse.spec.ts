@@ -95,4 +95,40 @@ describe("project execution pulse", () => {
       kind: "start_task", taskId: "task-1",
     }));
   });
+
+  it("surfaces a missing released design before it offers delivery work to start", () => {
+    const data = emptyProject();
+    data.workPackages = [{
+      id: "package-1", scopeLineIds: ["line-1"], title: "Joinery", area: "Living",
+      deliveryRoute: "site", status: "ready", ownerId: "manager", plannedStart: "",
+      plannedEnd: "", blocker: "", createdAt: "2026-09-16T10:00:00.000Z", updatedAt: "2026-09-16T10:00:00.000Z",
+    }];
+    data.designBaseline = {
+      capturedAt: "2026-09-16T10:00:00.000Z",
+      links: [{
+        scopeLineId: "line-1", sourceScopeId: "source-1", sourceScopeVersion: 1,
+        sourceSpecificationVersion: 1, designVersionId: "design-1", designId: "design",
+        title: "Joinery drawing", documentType: "drawing", revision: 1,
+        approvedAt: "2026-09-16T09:00:00.000Z",
+      }],
+    };
+    data.tasks = [{
+      id: "task-1", parentId: "", packageId: "package-1", package: "Joinery",
+      title: "Install joinery", description: "", area: "Living", location: "site",
+      ownerId: "foreman", assigneeIds: [], resourceId: "", start: "2026-09-17",
+      end: "2026-09-18", baselineStart: "2026-09-17", baselineEnd: "2026-09-18",
+      predecessors: [], quantity: 1, unit: "nos", weight: 1, approved: 0,
+      status: "planned", priority: "normal", inspectionRequired: true, scopeIds: ["line-1"],
+      drawingId: "", readiness: { scope: true, access: true, materials: true }, blocker: "",
+    }];
+
+    const pulse = projectExecutionPulse(data, "2026-09-16");
+
+    expect(pulse.nextActions).toContainEqual(expect.objectContaining({
+      kind: "resolve_design", taskId: "task-1",
+    }));
+    expect(pulse.nextActions).not.toContainEqual(expect.objectContaining({
+      kind: "start_task", taskId: "task-1",
+    }));
+  });
 });

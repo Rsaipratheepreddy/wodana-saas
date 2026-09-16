@@ -69,6 +69,14 @@ Last audited: 16 September 2026. This is the working source of truth for the cur
 - Project execution records the released Change Case reference alongside its variations. If the client rejects a complete, unaccepted package, it can be withdrawn and restarted from a fresh impact assessment; after any acceptance, a corrective Change Case is required.
 - Focused change-control, variation and work-package tests passed, as did business-core typechecking. Full-suite and UAT validation remain required before any delivery claim.
 
+### Slice 3 — Design-to-delivery control (backend completed 16 September 2026)
+
+- Delivery now captures the exact approved Pre-execution design revision(s) for every released, scoped quotation item. It rejects archived, changed, unapproved or blocking-thread design evidence before project release.
+- Those revisions become approved, traceable project documents linked to their released scope. The original project files remain available from the pre-execution file location; delivery does not copy or mutate them.
+- A site or factory task with design-controlled scope must point to the captured approved design document. A generic, stale or superseded drawing cannot start that task; office-only design work remains intentionally unblocked.
+- Accepted variation scope uses the same design capture and cannot enter delivery planning without its corresponding approved design evidence. The baseline keeps earlier accepted evidence while adding new variation evidence.
+- The execution pulse now surfaces missing design evidence as an actionable item before it offers a task as start-ready. Focused tests, the full business-core suite (605 passed, 10 skipped) and root typechecking passed. No project UI or UAT-complete claim has been made.
+
 ### Next locked slice — Project command centre
 
 1. Define the one live project operating view from the initiation baseline, execution pulse, scope packages, approvals and commercial readiness.

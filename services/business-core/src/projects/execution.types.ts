@@ -200,6 +200,10 @@ export type ProjectDocument = {
   replaces: string;
   published: boolean;
   approvedBy?: string;
+  /** Immutable link when this is a design revision captured from Pre-execution. */
+  sourceDesignVersionId?: string;
+  /** Released quotation scope covered by this document revision. */
+  scopeLineIds?: string[];
 };
 export type Snag = {
   handoverId?: string;
@@ -359,6 +363,28 @@ export type ApprovedMaterialSelection = {
   approvedAt: string;
   approvedBy: string;
 };
+/**
+ * The approved design evidence that crossed the commercial-to-delivery
+ * boundary. It is separate from mutable project documents so delivery always
+ * knows the exact design revision that was contractually released.
+ */
+export type ProjectDesignLink = {
+  scopeLineId: string;
+  sourceScopeId: string;
+  sourceScopeVersion: number;
+  sourceSpecificationVersion: number;
+  designVersionId: string;
+  designId: string;
+  title: string;
+  documentType: string;
+  revision: number;
+  approvedAt: string;
+};
+export type ProjectDesignBaseline = {
+  capturedAt: string;
+  definitionBaseline?: { id: string; number: number; hash: string };
+  links: ProjectDesignLink[];
+};
 export type ProjectWorkPackage = {
   id: string;
   /** Immutable links to the released quotation scope that this package delivers. */
@@ -388,6 +414,7 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
   roleAssignments?: ProjectRoleAssignment[];
   initiation?: ProjectInitiation;
   approvedMaterials?: ApprovedMaterialSelection[];
+  designBaseline?: ProjectDesignBaseline;
   workPackages?: ProjectWorkPackage[];
   milestones?: {
     id: string;
@@ -499,6 +526,7 @@ export type ProjectExecutionAction = {
     | "recover_task"
     | "resolve_task"
     | "inspect_task"
+    | "resolve_design"
     | "start_task"
     | "review_report"
     | "confirm_order";

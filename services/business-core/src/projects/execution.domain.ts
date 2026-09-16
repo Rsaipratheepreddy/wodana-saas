@@ -26,6 +26,7 @@ import {
   routeSupportsLocation,
   workPackageForTask,
 } from "./project-work-packages";
+import { designReadinessForTask } from "./project-design-control";
 export const emptyProject = (): ProjectData => ({
   revision: 0,
   phase: "planning",
@@ -900,6 +901,13 @@ export function applyExecution(
         throw new ConflictException(
           "Link the approved drawing or specification.",
         );
+      if (t.location !== "office") {
+        const designGate = designReadinessForTask(d, t);
+        if (!designGate.ready)
+          throw new ConflictException(
+            "Link the approved design revision captured with this released scope before starting delivery work.",
+          );
+      }
       if (t.predecessors.some((id) => get(d.tasks, id).status !== "completed"))
         throw new ConflictException("Complete the preceding tasks first.");
       const workPackage = workPackageForTask(d, t);
@@ -1423,12 +1431,41 @@ export function applyExecution(
       status: "draft" as const,
       replaces: str(v.replaces, 80),
       published: false,
+      sourceDesignVersionId: str(v.sourceDesignVersionId, 80),
+      scopeLineIds: ids(v.scopeLineIds),
     };
     if (!value.url && !value.note)
       throw new BadRequestException(
         "Add the file link or controlled document reference.",
       );
     if (value.replaces) get(d.documents, value.replaces);
+    if (value.sourceDesignVersionId) {
+      const links = d.designBaseline?.links.filter(
+        (link) => link.designVersionId === value.sourceDesignVersionId,
+      ) ?? [];
+      if (!links.length)
+        throw new BadRequestException(
+          "Choose an approved design revision captured with this project.",
+        );
+      if (!value.scopeLineIds.length)
+        value.scopeLineIds = [...new Set(links.map((link) => link.scopeLineId))];
+      if (
+        value.scopeLineIds.some(
+          (scopeLineId) => !links.some((link) => link.scopeLineId === scopeLineId),
+        )
+      )
+        throw new BadRequestException(
+          "A design document can only cover the released scope linked to that revision.",
+        );
+    } else if (value.scopeLineIds.length) {
+      const released = activeReleasedScopeLines(d);
+      if (
+        value.scopeLineIds.some(
+          (scopeLineId) => !released.some((line) => line.id === scopeLineId),
+        )
+      )
+        throw new BadRequestException("Link documents only to active released scope.");
+    }
     if (
       d.documents.some(
         (x) =>
