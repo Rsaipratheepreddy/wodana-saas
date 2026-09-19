@@ -44,7 +44,8 @@ function History({
 }: Props) {
   const timezone = boot.employee?.calendar.timezone ?? boot.workspace.timezone;
   const today = localDay(timezone),
-    [from, setFrom] = useState(today.slice(0, 8) + "01"),
+    recent = localDay(timezone, new Date(Date.now() - 6 * 86400000)),
+    [from, setFrom] = useState(team ? recent : today.slice(0, 8) + "01"),
     [to, setTo] = useState(today);
   const query = `from=${from}&to=${to}&scope=${team ? "team" : "self"}`;
   const { data, error, loading } = useHrms<AttendanceHistory>(
@@ -59,6 +60,14 @@ function History({
   );
   const [selected, setSelected] = useState<AttendanceDay | null>(null);
   const total = data?.days.reduce((sum, d) => sum + d.workedMinutes, 0) ?? 0;
+  const workedDays =
+      data?.days.filter((day) => day.workedMinutes > 0).length ?? 0,
+    attention =
+      data?.days.filter(
+        (day) => day.reviewCount || day.rejectedCount || day.stale,
+      ).length ?? 0,
+    leaveDays =
+      data?.days.reduce((sum, day) => sum + day.leaveDays, 0) ?? 0;
   return (
     <>
       <div className={styles.toolbar}>
@@ -103,15 +112,51 @@ function History({
         >
           Today
         </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setFrom(recent);
+            setTo(today);
+          }}
+        >
+          Last 7 days
+        </Button>
         <strong>{minutesLabel(total)} completed</strong>
       </div>
       {error ? <Notice error>{error}</Notice> : null}
       {loading ? <Notice>Loading attendance…</Notice> : null}
+      {data ? (
+        <div className={styles.metricGrid} aria-label="Attendance summary">
+          <div className={styles.metricCard}>
+            <span>Recorded time</span>
+            <strong>{minutesLabel(total)}</strong>
+            <small>Completed segments</small>
+          </div>
+          <div className={styles.metricCard}>
+            <span>Attendance days</span>
+            <strong>{workedDays}</strong>
+            <small>{team ? "Across the team" : "In this date range"}</small>
+          </div>
+          <div className={styles.metricCard}>
+            <span>Needs attention</span>
+            <strong>{attention}</strong>
+            <small>Exceptions or missing checkout</small>
+          </div>
+          <div className={styles.metricCard}>
+            <span>Approved leave</span>
+            <strong>{leaveDays}</strong>
+            <small>Days in this range</small>
+          </div>
+        </div>
+      ) : null}
       {data?.days.length ? (
         <DataTable
           caption="Daily attendance summary"
           getRowKey={(d) => `${d.membershipId}:${d.date}`}
-          rows={data.days}
+          rows={[...data.days].sort(
+            (a, b) =>
+              b.date.localeCompare(a.date) || a.name.localeCompare(b.name),
+          )}
           columns={[
             ...(team
               ? [

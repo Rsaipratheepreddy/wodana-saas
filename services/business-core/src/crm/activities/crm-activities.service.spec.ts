@@ -55,14 +55,14 @@ describe("CRM activity response evidence", () => {
     });
     const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })) };
     const events = { record: vi.fn().mockResolvedValue(undefined) };
-    const slas = { recordFirstResponse: vi.fn().mockResolvedValue(null) };
+    const slas = { recordFirstResponse: vi.fn().mockResolvedValue({ instanceId: "sla", recorded: true, respondedAt: completedAt }) };
     const service = new CrmActivitiesService(access as never, events as never, slas as never);
     return { service, query, slas, completedAt };
   };
 
   it("records a completed outbound human interaction as verified response evidence", async () => {
     const { service, slas, completedAt } = setup();
-    await service.complete({} as never, "workspace", "activity", { version: 2, outcome: "Spoke to client" });
+    const result = await service.complete({} as never, "workspace", "activity", { version: 2, outcome: "Spoke to client" });
     expect(slas.recordFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", {
       sourceType: "activity",
       sourceId: "activity",
@@ -75,6 +75,7 @@ describe("CRM activity response evidence", () => {
         attestation: "completed_outbound_interaction",
       },
     });
+    expect(result.firstResponseEvidence).toMatchObject({ instanceId: "sla", recorded: true, respondedAt: completedAt });
   });
 
   it("accepts completion of the SLA-generated response task as an explicit human attestation", async () => {

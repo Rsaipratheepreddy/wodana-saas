@@ -5,10 +5,12 @@ import { CurrentActor } from "../../auth/current-actor.decorator";
 import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { Public } from "../../auth/public.decorator";
 import { CrmAutomationsService } from "./crm-automations.service";
-import { AdvanceAutomationRunDto, ApprovalDecisionDto, AutomationVersionDto, ClaimWorkspaceDto, CompleteAutomationWaitDto, CreateAutomationDto, DryRunAutomationDto, ExecuteAutomationStepDto, ListAutomationRunsQueryDto, StartAutomationRunDto, UpdateAutomationDto } from "./dto/automations.dto";
+import { AdvanceAutomationRunDto, ApprovalDecisionDto, AutomationVersionDto, ClaimWorkspaceDto, CompleteAutomationWaitDto, CreateAutomationDto, DryRunAutomationDto, ExecuteAutomationStepDto, ListAutomationRunsQueryDto, StartAutomationRunDto, UpdateAutomationDto, UpdateAutomationPresetDto } from "./dto/automations.dto";
 @ApiTags("crm-automations") @ApiBearerAuth() @Controller("workspaces/:workspaceId/crm")
 export class CrmAutomationsController {
   constructor(private readonly automations: CrmAutomationsService) {}
+  @Get("automation-presets") presets(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.automations.presets(actor, workspaceId); }
+  @Patch("automation-presets/:code") updatePreset(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("code") code: string, @Body() input: UpdateAutomationPresetDto) { return this.automations.updatePreset(actor, workspaceId, code, input); }
   @Get("automation-approvals") approvals(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.automations.approvals(actor, workspaceId); }
   @Get("automations") list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.automations.list(actor, workspaceId); }
   @Get("automations/:id") get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string) { return this.automations.get(actor, workspaceId, id); }

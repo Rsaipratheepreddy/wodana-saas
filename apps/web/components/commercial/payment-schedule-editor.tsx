@@ -1,20 +1,64 @@
 "use client";
+
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
-import { DataGrid, ControlledModalDialog } from "@/design-system";
-import type {
-  PaymentTerm,
-  PaymentTemplate,
-  Quote,
-} from "@/lib/commercial/types";
+import {
+  Archive,
+  ArrowDown,
+  ArrowUp,
+  GripVertical,
+  History,
+  Plus,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  Callout,
+  Checkbox,
+  ConfirmationDialog,
+  ControlledModalDialog,
+  DataGrid,
+  type DataGridColumn,
+  IconButton,
+  InspectorSheet,
+  NumericInput,
+  TextInput,
+  VisuallyHidden,
+} from "@/design-system";
+import type { PaymentTerm, PaymentTemplate, Quote } from "@/lib/commercial/types";
 import {
   commercialPath,
   jsonRequest,
   money,
-  quoteTotals,
   paymentMilestoneAmounts,
+  quoteTotals,
 } from "@/lib/commercial/client";
+import type { WorkspaceConfigurationRevision } from "@/lib/workspace/company-profile";
 import s from "./commercial.module.css";
+
+const newMilestone = (): PaymentTerm => ({
+  id: crypto.randomUUID(),
+  title: "New milestone",
+  percent: 0,
+  trigger: "",
+  requiredForRelease: false,
+  requiredForProduction: false,
+});
+
+function starterTemplate(): PaymentTemplate {
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    version: 0,
+    milestones: [
+      { ...newMilestone(), title: "Advance", percent: 50, trigger: "On signing the agreement", requiredForRelease: true },
+      { ...newMilestone(), title: "Before installation", percent: 40, trigger: "Before site installation" },
+      { ...newMilestone(), title: "Handover", percent: 10, trigger: "On completed handover" },
+    ],
+  };
+}
+
 export function PaymentScheduleEditor({
   quote,
   onChange,
@@ -22,308 +66,323 @@ export function PaymentScheduleEditor({
   readOnly,
 }: {
   quote: Quote;
-  onChange: (q: Quote) => void;
+  onChange: (quote: Quote) => void;
   workspaceId: string;
   readOnly: boolean;
 }) {
-  const [templates, setTemplates] = useState<PaymentTemplate[]>([]),
-    [library, setLibrary] = useState(false),
-    [templateName, setTemplateName] = useState(""),
-    [edit, setEdit] = useState<PaymentTemplate | null>(null),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const terms = quote.paymentTerms ?? [],
-    total = quoteTotals(quote).total;
+  const [templates, setTemplates] = useState<PaymentTemplate[]>([]);
+  const [library, setLibrary] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [edit, setEdit] = useState<PaymentTemplate | null>(null);
+  const [historyTemplate, setHistoryTemplate] = useState<PaymentTemplate | null>(null);
+  const [revisions, setRevisions] = useState<WorkspaceConfigurationRevision[]>([]);
+  const [archiveTarget, setArchiveTarget] = useState<PaymentTemplate | null>(null);
+  const [rollbackTarget, setRollbackTarget] = useState<WorkspaceConfigurationRevision | null>(null);
+  const [error, setError] = useState("");
+  const [historyError, setHistoryError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const terms = quote.paymentTerms ?? [];
+  const total = quoteTotals(quote).total;
+
   async function load() {
     try {
       const result = await jsonRequest<{ items: PaymentTemplate[] }>(
         commercialPath(workspaceId, "payment-templates"),
       );
       setTemplates(result.items);
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Payment schedules could not be loaded.");
     }
   }
+
   useEffect(() => {
     let active = true;
-    jsonRequest<{ items: PaymentTemplate[] }>(
-      commercialPath(workspaceId, "payment-templates"),
-    )
+    jsonRequest<{ items: PaymentTemplate[] }>(commercialPath(workspaceId, "payment-templates"))
       .then((result) => {
         if (active) setTemplates(result.items);
       })
-      .catch((e) => {
-        if (active) setError(e.message);
+      .catch((failure: unknown) => {
+        if (active) setError(failure instanceof Error ? failure.message : "Payment schedules could not be loaded.");
       });
     return () => {
       active = false;
     };
   }, [workspaceId]);
-  const apply = (t: PaymentTemplate) => {
+
+  const apply = (template: PaymentTemplate) => {
     onChange({
       ...quote,
-      paymentTerms: structuredClone(t.milestones),
-      paymentTemplate: { id: t.id, version: t.version, name: t.name },
+      paymentTerms: structuredClone(template.milestones),
+      paymentTemplate: { id: template.id, version: template.version, name: template.name },
     });
     setLibrary(false);
   };
-  const add = (): PaymentTerm => ({
-    id: crypto.randomUUID(),
-    title: "New milestone",
-    percent: 0,
-    trigger: "",
-    requiredForRelease: false,
-  });
+
+  const openHistory = async (template: PaymentTemplate) => {
+    setLibrary(false);
+    setHistoryTemplate(template);
+    setHistoryError("");
+    setRevisions([]);
+    try {
+      setRevisions(
+        await jsonRequest<WorkspaceConfigurationRevision[]>(
+          commercialPath(workspaceId, `payment-templates/${template.id}/history`),
+        ),
+      );
+    } catch (failure) {
+      setHistoryError(failure instanceof Error ? failure.message : "Schedule history could not be loaded.");
+    }
+  };
+
+  const archiveTemplate = async () => {
+    if (!archiveTarget || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await jsonRequest(
+        commercialPath(workspaceId, `payment-templates/${archiveTarget.id}/archive`),
+        "POST",
+        { version: archiveTarget.version },
+      );
+      if (quote.paymentTemplate?.id === archiveTarget.id) onChange({ ...quote, paymentTemplate: undefined });
+      setArchiveTarget(null);
+      await load();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Schedule could not be archived.");
+      setArchiveTarget(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rollback = async () => {
+    if (!historyTemplate || !rollbackTarget || busy) return;
+    setBusy(true);
+    setHistoryError("");
+    try {
+      const restored = await jsonRequest<PaymentTemplate>(
+        commercialPath(workspaceId, `payment-templates/${historyTemplate.id}/rollback`),
+        "POST",
+        { version: historyTemplate.version, revisionId: rollbackTarget.id },
+      );
+      setRollbackTarget(null);
+      setHistoryTemplate(null);
+      await load();
+      apply(restored);
+    } catch (failure) {
+      setHistoryError(failure instanceof Error ? failure.message : "Schedule revision could not be restored.");
+      setRollbackTarget(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section
       className={s.section}
-      onDragOver={(e) => {
-        if (!readOnly) e.preventDefault();
+      onDragOver={(event) => {
+        if (!readOnly) event.preventDefault();
       }}
-      onDrop={(e) => {
+      onDrop={(event) => {
         if (readOnly) return;
-        const id = e.dataTransfer.getData(
-          "application/wodana-payment-template",
-        );
-        const t = templates.find((t) => t.id === id);
-        if (t) {
-          e.preventDefault();
-          apply(t);
+        const id = event.dataTransfer.getData("application/wodana-payment-template");
+        const template = templates.find((item) => item.id === id);
+        if (template) {
+          event.preventDefault();
+          apply(template);
         }
       }}
     >
       <div className={s.header}>
         <div>
           <h2>Payment schedule</h2>
-          <p className={s.muted}>
-            Shown in this quotation. Accepted milestones carry into Agreement &
-            payments.
-          </p>
+          <p className={s.muted}>Accepted milestones carry into the agreement and payment tracking.</p>
         </div>
-        {!readOnly && (
-          <button
-            className={s.button}
-            onClick={() => {
-              void load();
-              setLibrary(true);
-            }}
-          >
-            Choose / create schedule
-          </button>
-        )}
+        {!readOnly ? (
+          <Button onPress={() => { void load(); setLibrary(true); }}>Choose schedule</Button>
+        ) : null}
       </div>
-      {error && (
-        <p role="alert" className={s.error}>
-          {error}
-        </p>
-      )}
-      {!readOnly && templates.length > 0 && (
+
+      {error ? <Callout title="Payment schedule unavailable" tone="danger">{error}</Callout> : null}
+
+      {!readOnly && templates.length ? (
         <details className={s.section}>
-          <summary>
-            Saved schedules · drag one onto this section, or click to use
-          </summary>
-          <div className={s.actions} style={{ paddingBlock: ".7rem" }}>
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                className={s.button}
+          <summary>Saved schedules</summary>
+          <div className={s.actions}>
+            {templates.map((template) => (
+              <span
                 draggable
-                onDragStart={(e) =>
-                  e.dataTransfer.setData(
-                    "application/wodana-payment-template",
-                    t.id,
-                  )
-                }
-                onClick={() => apply(t)}
+                key={template.id}
+                onDragStart={(event) => event.dataTransfer.setData("application/wodana-payment-template", template.id)}
               >
-                {t.name}
-              </button>
+                <Button onPress={() => apply(template)} size="compact">{template.name}</Button>
+              </span>
             ))}
           </div>
         </details>
-      )}
-      {quote.paymentTemplate && (
+      ) : null}
+
+      {quote.paymentTemplate ? (
         <p className={s.muted}>
-          {quote.paymentTemplate.name} · template v
-          {quote.paymentTemplate.version} · editable copy for this quotation
+          {quote.paymentTemplate.name} · template v{quote.paymentTemplate.version} · editable for this quotation
         </p>
-      )}
+      ) : null}
+
       {!terms.length ? (
-        <p className={s.notice}>
-          Choose a reusable schedule, or add milestones. Their percentages must
-          total 100% before review.
-        </p>
+        <p className={s.notice}>Choose a reusable schedule or add milestones. Percentages must total 100% before review.</p>
       ) : (
         <MilestoneRows
-          rows={terms}
+          currency={quote.currency}
           onChange={(rows) => onChange({ ...quote, paymentTerms: rows })}
           readOnly={readOnly}
+          rows={terms}
           total={total}
-          currency={quote.currency}
         />
       )}
-      {!readOnly && (
-        <button
-          className={s.button}
-          style={{ marginTop: ".7rem" }}
-          onClick={() =>
-            onChange({ ...quote, paymentTerms: [...terms, add()] })
-          }
-        >
-          <Plus size={14} />
-          Add milestone
-        </button>
-      )}
+
+      {!readOnly ? (
+        <div className={s.actions}>
+          <Button onPress={() => onChange({ ...quote, paymentTerms: [...terms, newMilestone()] })} size="compact">
+            <Plus aria-hidden="true" size={14} />Add milestone
+          </Button>
+        </div>
+      ) : null}
+
       <ControlledModalDialog
+        description="Reuse a saved schedule or create one. Issued quotations are never changed."
         isOpen={library}
         onOpenChange={setLibrary}
-        title="Payment schedules"
         size="lg"
+        title="Payment schedules"
       >
         <div className={s.form}>
-          <p className={s.muted}>
-            Use a saved schedule or create one for your team. Changes here never
-            alter an issued quotation.
-          </p>
-          {templates.map((t) => (
+          {templates.map((template) => (
             <div
               className={s.section}
-              key={t.id}
               draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData(
-                  "application/wodana-payment-template",
-                  t.id,
-                );
-              }}
+              key={template.id}
+              onDragStart={(event) => event.dataTransfer.setData("application/wodana-payment-template", template.id)}
             >
               <div className={s.header}>
                 <div>
-                  <strong>{t.name}</strong>
+                  <strong>{template.name}</strong>
                   <p className={s.muted}>
-                    {t.milestones
-                      .map((m) => `${m.percent}% ${m.title}`)
-                      .join(" · ")}
+                    {template.milestones.map((milestone) => `${milestone.percent}% ${milestone.title}`).join(" · ")}
                   </p>
                 </div>
                 <div className={s.actions}>
-                  <button
-                    className={s.button}
-                    onClick={() => {
-                      setEdit(structuredClone(t));
-                      setTemplateName(t.name);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button className={s.primary} onClick={() => apply(t)}>
-                    Use schedule
-                  </button>
+                  <Button onPress={() => { setEdit(structuredClone(template)); setTemplateName(template.name); }} size="compact" variant="quiet">Edit</Button>
+                  <Button onPress={() => void openHistory(template)} size="compact" variant="quiet"><History aria-hidden="true" size={14} />History</Button>
+                  <Button onPress={() => setArchiveTarget(template)} size="compact" variant="quiet"><Archive aria-hidden="true" size={14} />Archive</Button>
+                  <Button onPress={() => apply(template)} size="compact" variant="primary">Use schedule</Button>
                 </div>
               </div>
             </div>
           ))}
-          <button
-            className={s.button}
-            onClick={() => {
-              setEdit({
-                id: crypto.randomUUID(),
-                name: "",
-                version: 0,
-                milestones: [
-                  {
-                    ...add(),
-                    title: "Advance",
-                    percent: 50,
-                    trigger: "On signing the agreement",
-                    requiredForRelease: true,
-                  },
-                  {
-                    ...add(),
-                    title: "Before installation",
-                    percent: 40,
-                    trigger: "Before site installation",
-                  },
-                  {
-                    ...add(),
-                    title: "Handover",
-                    percent: 10,
-                    trigger: "On completed handover",
-                  },
-                ],
-              });
-              setTemplateName("");
-            }}
-          >
-            <Plus size={14} />
-            Create reusable schedule
-          </button>
-          {edit && (
-            <>
-              <label>
-                Schedule name
-                <input
-                  value={templateName}
-                  onChange={(e) => setTemplateName(e.target.value)}
-                  placeholder="e.g. Residential · 50 / 40 / 10"
-                />
-              </label>
-              <MilestoneRows
-                rows={edit.milestones}
-                onChange={(rows) => setEdit({ ...edit, milestones: rows })}
-                readOnly={false}
+
+          <Button onPress={() => { setEdit(starterTemplate()); setTemplateName(""); }}>
+            <Plus aria-hidden="true" size={14} />Create schedule
+          </Button>
+
+          {edit ? (
+            <div className={s.section}>
+              <TextInput
+                label="Schedule name"
+                onChange={setTemplateName}
+                placeholder="e.g. Residential · 50 / 40 / 10"
+                value={templateName}
               />
-              <button
-                className={s.button}
-                onClick={() =>
-                  setEdit({ ...edit, milestones: [...edit.milestones, add()] })
-                }
-              >
-                Add milestone
-              </button>
-              {error && (
-                <p role="alert" className={s.error}>
-                  {error}
-                </p>
-              )}
-              <button
-                className={s.primary}
-                disabled={busy || !templateName.trim()}
-                onClick={async () => {
-                  setBusy(true);
-                  setError("");
-                  try {
-                    const saved = await jsonRequest<PaymentTemplate>(
-                      commercialPath(workspaceId, "payment-templates"),
-                      "PUT",
-                      { ...edit, name: templateName },
-                    );
-                    await load();
-                    apply(saved);
-                    setEdit(null);
-                  } catch (e) {
-                    setError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                Save & use schedule
-              </button>
-            </>
-          )}
+              <MilestoneRows onChange={(rows) => setEdit({ ...edit, milestones: rows })} readOnly={false} rows={edit.milestones} />
+              <div className={s.actions}>
+                <Button onPress={() => setEdit({ ...edit, milestones: [...edit.milestones, newMilestone()] })} size="compact">
+                  <Plus aria-hidden="true" size={14} />Add milestone
+                </Button>
+                <Button
+                  isDisabled={busy || !templateName.trim()}
+                  isLoading={busy}
+                  onPress={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      const saved = await jsonRequest<PaymentTemplate>(
+                        commercialPath(workspaceId, "payment-templates"),
+                        "PUT",
+                        { ...edit, name: templateName.trim() },
+                      );
+                      await load();
+                      apply(saved);
+                      setEdit(null);
+                    } catch (failure) {
+                      setError(failure instanceof Error ? failure.message : "Schedule could not be saved.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  variant="primary"
+                >
+                  Save and use
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </ControlledModalDialog>
+
+      <InspectorSheet
+        description="Every save is retained. Restoring creates a new revision and keeps later history."
+        isOpen={Boolean(historyTemplate)}
+        onOpenChange={(open) => { if (!open && !busy) setHistoryTemplate(null); }}
+        size="sm"
+        title={historyTemplate ? `${historyTemplate.name} history` : "Schedule history"}
+      >
+        {historyError ? <Callout title="Schedule history unavailable" tone="danger">{historyError}</Callout> : null}
+        {!historyError && !revisions.length ? <p className={s.muted}>No saved changes yet.</p> : null}
+        {revisions.length ? (
+          <ol className={s.history}>
+            {revisions.map((revision, index) => (
+              <li key={revision.id}>
+                <div className={s.header}>
+                  <div>
+                    <strong>Revision {revision.revisionNumber}</strong>
+                    <p className={s.muted}>
+                      {new Date(revision.createdAt).toLocaleString()} · {revision.changes.length} changed {revision.changes.length === 1 ? "field" : "fields"}
+                    </p>
+                  </div>
+                  {index === 0 ? (
+                    <Badge tone="neutral">Current</Badge>
+                  ) : (
+                    <Button isDisabled={busy} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet">
+                      <RotateCcw aria-hidden="true" size={14} />Restore
+                    </Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </InspectorSheet>
+
+      <ConfirmationDialog
+        body="It will stop appearing in schedule selection. Existing quotations and revision history stay unchanged."
+        confirmLabel={busy ? "Archiving…" : "Archive schedule"}
+        isOpen={Boolean(archiveTarget)}
+        onConfirm={() => void archiveTemplate()}
+        onOpenChange={(open) => { if (!open && !busy) setArchiveTarget(null); }}
+        title="Archive this payment schedule?"
+      />
+      <ConfirmationDialog
+        body="The selected milestones become the current schedule. The current version remains in history."
+        confirmLabel={busy ? "Restoring…" : "Restore revision"}
+        isOpen={Boolean(rollbackTarget)}
+        onConfirm={() => void rollback()}
+        onOpenChange={(open) => { if (!open && !busy) setRollbackTarget(null); }}
+        title="Restore this payment schedule revision?"
+      />
     </section>
   );
 }
-function MilestoneRows({
-  rows,
-  onChange,
-  readOnly,
-  total,
-  currency,
-}: {
+
+function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
   rows: PaymentTerm[];
   onChange: (rows: PaymentTerm[]) => void;
   readOnly: boolean;
@@ -331,128 +390,144 @@ function MilestoneRows({
   currency?: string;
 }) {
   const [drag, setDrag] = useState<string | null>(null);
+
   function move(id: string, to: number) {
-    const next = [...rows],
-      index = next.findIndex((r) => r.id === id);
+    const next = [...rows];
+    const index = next.findIndex((row) => row.id === id);
     if (index < 0 || to < 0 || to >= next.length) return;
     const [item] = next.splice(index, 1);
     next.splice(to, 0, item);
     onChange(next);
   }
-  const patch = (id: string, v: Partial<PaymentTerm>) =>
-    onChange(rows.map((r) => (r.id === id ? { ...r, ...v } : r)));
-  return (
-    <>
-      <DataGrid ariaLabel="Payment schedule" data={rows} getRowId={r=>r.id} selectable={false} pinFirstColumn={false} searchLabel="Search payment schedule" exportFileName="payment-schedule.csv" getRowDragHandlers={r=>({onDragOver:e=>{if(drag)e.preventDefault();},onDrop:e=>{if(drag){e.preventDefault();move(drag,rows.findIndex(item=>item.id===r.id));setDrag(null);}}})} columns={[...(!readOnly?[{id:"order",header:"Order",size:130,enableSorting:false,enableColumnFilter:false,meta:{renderCell:(r:PaymentTerm)=>{const i=rows.findIndex(item=>item.id===r.id);return <>
-                      <div className={s.rowAction}>
-                        <span
-                          draggable
-                          onDragStart={(e) => {
-                            setDrag(r.id);
-                            e.dataTransfer.setData("text/plain", r.id);
-                          }}
-                          onDragEnd={() => setDrag(null)}
-                          title="Drag to reorder"
-                        >
-                          <GripVertical size={16} />
-                        </span>
-                        <button
-                          className={s.icon}
-                          aria-label={`Move ${r.title} up`}
-                          disabled={i === 0}
-                          onClick={() => move(r.id, i - 1)}
-                        >
-                          <ArrowUp size={13} />
-                        </button>
-                        <button
-                          className={s.icon}
-                          aria-label={`Move ${r.title} down`}
-                          disabled={i === rows.length - 1}
-                          onClick={() => move(r.id, i + 1)}
-                        >
-                          <ArrowDown size={13} />
-                        </button>
-                      </div>
-                    </>;}}}]:[]),
-{id:"title",header:"Milestone / trigger",size:300,accessorFn:(r:PaymentTerm)=>`${r.title} ${r.trigger}`,meta:{renderCell:(r:PaymentTerm)=>{const i=rows.findIndex(item=>item.id===r.id);return <>
-                    {readOnly ? (
-                      <>
-                        {r.title}
-                        <small className={s.detail}>{r.trigger}</small>
-                      </>
-                    ) : (
-                      <>
-                        <input
-                          aria-label={`Milestone ${i + 1} title`}
-                          value={r.title}
-                          onChange={(e) =>
-                            patch(r.id, { title: e.target.value })
-                          }
-                        />
-                        <input
-                          aria-label={`Milestone ${i + 1} trigger`}
-                          placeholder="When is it due?"
-                          value={r.trigger}
-                          onChange={(e) =>
-                            patch(r.id, { trigger: e.target.value })
-                          }
-                        />
-                      </>
-                    )}
-                  </>;}}},
-{id:"percent",header:"Percentage",size:120,accessorFn:(r:PaymentTerm)=>r.percent,meta:{renderCell:(r:PaymentTerm)=>{const i=rows.findIndex(item=>item.id===r.id);return <>
-                    {readOnly ? (
-                      `${r.percent}%`
-                    ) : (
-                      <input
-                        aria-label={`Milestone ${i + 1} percentage`}
-                        className={s.number}
-                        type="number"
-                        min=".01"
-                        max={100}
-                        step=".01"
-                        value={r.percent}
-                        onChange={(e) =>
-                          patch(r.id, { percent: Number(e.target.value) })
-                        }
-                      />
-                    )}
-                  </>;}}},
-...(total !== undefined?[{id:"amount",header:"Amount",size:160,accessorFn:(r:PaymentTerm)=>total === undefined ? 0 : paymentMilestoneAmounts(total, rows)[rows.findIndex(item=>item.id===r.id)],meta:{renderCell:(r:PaymentTerm)=>{const i=rows.findIndex(item=>item.id===r.id);const amount=total===undefined?0:paymentMilestoneAmounts(total, rows)[i];return <>{money(amount, currency)}</>;}}}]:[]),
-{id:"release",header:"Before release",size:140,accessorFn:(r:PaymentTerm)=>r.requiredForRelease ? "Required" : "Optional",meta:{renderCell:(r:PaymentTerm)=>{const i=rows.findIndex(item=>item.id===r.id);return <>
-                    {readOnly ? (
-                      r.requiredForRelease ? (
-                        "Required"
-                      ) : (
-                        "—"
-                      )
-                    ) : (
-                      <input
-                        style={{ width: "auto", minWidth: 0 }}
-                        aria-label={`Milestone ${i + 1} required before release`}
-                        type="checkbox"
-                        checked={r.requiredForRelease}
-                        onChange={(e) =>
-                          patch(r.id, { requiredForRelease: e.target.checked })
-                        }
-                      />
-                    )}
-                  </>;}}},
-...(!readOnly?[{id:"action",header:"Action",size:90,enableSorting:false,enableColumnFilter:false,meta:{renderCell:(r:PaymentTerm)=>{const i=rows.findIndex(item=>item.id===r.id);return <>
-                      <button
-                        className={s.icon}
-                        aria-label={`Remove milestone ${i + 1}`}
-                        onClick={() =>
-                          onChange(rows.filter((m) => m.id !== r.id))
-                        }
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </>;}}}]:[])]}/>
-      <p className={s.muted}>
-        Total: {rows.reduce((sum, r) => sum + r.percent, 0).toFixed(2)}% · Drag
-        milestones or use the arrow buttons to reorder.
-      </p>
-    </>
-  );
+
+  const patch = (id: string, value: Partial<PaymentTerm>) =>
+    onChange(rows.map((row) => (row.id === id ? { ...row, ...value } : row)));
+
+  const columns: DataGridColumn<PaymentTerm>[] = [
+    ...(!readOnly ? [{
+      id: "order",
+      header: "Order",
+      size: 130,
+      enableSorting: false,
+      enableColumnFilter: false,
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return <div className={s.rowAction}>
+          <span
+            draggable
+            onDragEnd={() => setDrag(null)}
+            onDragStart={(event) => { setDrag(row.id); event.dataTransfer.setData("text/plain", row.id); }}
+            title="Drag to reorder"
+          ><GripVertical aria-hidden="true" size={16} /></span>
+          <IconButton aria-label={`Move ${row.title} up`} isDisabled={index === 0} onPress={() => move(row.id, index - 1)} size="compact"><ArrowUp aria-hidden="true" size={13} /></IconButton>
+          <IconButton aria-label={`Move ${row.title} down`} isDisabled={index === rows.length - 1} onPress={() => move(row.id, index + 1)} size="compact"><ArrowDown aria-hidden="true" size={13} /></IconButton>
+        </div>;
+      } },
+    }] : []),
+    {
+      id: "title",
+      header: "Milestone / trigger",
+      size: 300,
+      accessorFn: (row) => `${row.title} ${row.trigger}`,
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return readOnly ? <>{row.title}<small className={s.detail}>{row.trigger}</small></> : (
+          <div className={s.paymentFields}>
+            <TextInput label={<VisuallyHidden>Milestone {index + 1} title</VisuallyHidden>} onChange={(value) => patch(row.id, { title: value })} value={row.title} />
+            <TextInput label={<VisuallyHidden>Milestone {index + 1} trigger</VisuallyHidden>} onChange={(value) => patch(row.id, { trigger: value })} placeholder="When is it due?" value={row.trigger} />
+          </div>
+        );
+      } },
+    },
+    {
+      id: "percent",
+      header: "Percentage",
+      size: 140,
+      accessorFn: (row) => row.percent,
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return readOnly ? `${row.percent}%` : (
+          <NumericInput
+            label={<VisuallyHidden>Milestone {index + 1} percentage</VisuallyHidden>}
+            maxValue={100}
+            minValue={0.01}
+            onChange={(value) => patch(row.id, { percent: value })}
+            step={0.01}
+            suffix="%"
+            value={row.percent}
+          />
+        );
+      } },
+    },
+    ...(total !== undefined ? [{
+      id: "amount",
+      header: "Amount",
+      size: 160,
+      accessorFn: (row: PaymentTerm) => paymentMilestoneAmounts(total, rows)[rows.findIndex((item) => item.id === row.id)],
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return money(paymentMilestoneAmounts(total, rows)[index], currency);
+      } },
+    }] : []),
+    {
+      id: "release",
+      header: "Before release",
+      size: 140,
+      accessorFn: (row) => row.requiredForRelease ? "Required" : "Optional",
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return readOnly ? (row.requiredForRelease ? "Required" : "—") : (
+          <Checkbox aria-label={`Milestone ${index + 1} required before release`} isSelected={row.requiredForRelease} onChange={(selected) => patch(row.id, { requiredForRelease: selected })} />
+        );
+      } },
+    },
+    {
+      id: "production",
+      header: "Before production",
+      size: 165,
+      accessorFn: (row) => row.requiredForProduction ? "Required" : "Optional",
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return readOnly ? (row.requiredForProduction ? "Required" : "—") : (
+          <Checkbox aria-label={`Milestone ${index + 1} required before production`} isSelected={row.requiredForProduction === true} onChange={(selected) => patch(row.id, { requiredForProduction: selected })} />
+        );
+      } },
+    },
+    ...(!readOnly ? [{
+      id: "action",
+      header: "Action",
+      size: 90,
+      enableSorting: false,
+      enableColumnFilter: false,
+      meta: { renderCell: (row: PaymentTerm) => {
+        const index = rows.findIndex((item) => item.id === row.id);
+        return <IconButton aria-label={`Remove milestone ${index + 1}`} onPress={() => onChange(rows.filter((milestone) => milestone.id !== row.id))} size="compact"><Trash2 aria-hidden="true" size={14} /></IconButton>;
+      } },
+    }] : []),
+  ];
+
+  return <>
+    <DataGrid
+      ariaLabel="Payment schedule"
+      columns={columns}
+      data={rows}
+      exportFileName="payment-schedule.csv"
+      getRowDragHandlers={(row) => ({
+        onDragOver: (event) => { if (drag) event.preventDefault(); },
+        onDrop: (event) => {
+          if (!drag) return;
+          event.preventDefault();
+          move(drag, rows.findIndex((item) => item.id === row.id));
+          setDrag(null);
+        },
+      })}
+      getRowId={(row) => row.id}
+      pinFirstColumn={false}
+      searchLabel="Search payment schedule"
+      selectable={false}
+    />
+    <p className={s.muted}>
+      Total: {rows.reduce((sum, row) => sum + row.percent, 0).toFixed(2)}% · Drag milestones or use the arrow buttons to reorder.
+    </p>
+  </>;
 }

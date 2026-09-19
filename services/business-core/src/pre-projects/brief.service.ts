@@ -9,11 +9,29 @@ import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { ArchiveBriefEntryDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
+import { syncOneTreeFromCase } from "../jobs/one-tree.store";
+import { discoveryCoverage } from "./discovery-coverage";
 
 export const BRIEF_MAX_BYTES = 20 * 1024 * 1024;
+export function assertBriefUpload(file?:BriefUpload): asserts file is BriefUpload {
+  if (!file?.buffer?.length || file.buffer.length > BRIEF_MAX_BYTES) throw new BadRequestException("Choose an image or PDF up to 20 MB.");
+}
 export const emptyBrief = { goals: "", propertyType: "", location: "", area: "", budget: "", timeline: "", decisionMakers: "", people: "", preferences: "", retainedItems: "", exclusions: "", constraints: "" };
+export function qualificationHandoffValues(evidence: unknown): Record<string, string> | null {
+  if (!evidence || typeof evidence !== "object" || !Array.isArray((evidence as { answers?: unknown }).answers)) return null;
+  const entries = (evidence as { answers: unknown[] }).answers.flatMap((item): Array<[string, string]> => {
+    if (!item || typeof item !== "object") return [];
+    const { questionKey, value } = item as { questionKey?: unknown; value?: unknown };
+    if (typeof questionKey !== "string" || !questionKey.trim() || value === null || value === undefined) return [];
+    if (typeof value === "string") return [[questionKey, value]];
+    if (typeof value === "number" || typeof value === "boolean") return [[questionKey, String(value)]];
+    if (Array.isArray(value) && value.every(entry => typeof entry === "string")) return [[questionKey, value.join(", ")]];
+    return [];
+  });
+  return Object.fromEntries(entries);
+}
 type CatalogSnapshot={catalogName:string;id:string;name:string;kind:string;code:string;version:number;catalogId:string;configuration:Record<string,unknown>|null;commerce?:{pricingMode:"unpriced"|"fixed"|"on_request"}};
-type Context = { status: string; description: string | null; amount: string | null; currencyCode: string | null; leadId: string | null };
+type Context = { status: string; description: string | null; amount: string | null; currencyCode: string | null; leadId: string | null; qualificationEvidence: unknown };
 type BriefUpload = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 const entrySelect = `SELECT (SELECT content || jsonb_build_object('version',s.version,'createdAt',s.created_at,'designRefs',COALESCE((SELECT jsonb_agg(ref || jsonb_build_object('currentStatus',v.status)) FROM jsonb_array_elements(s.content->'designRefs') ref JOIN pre_project_design_versions v ON v.workspace_id=s.workspace_id AND v.case_id=s.case_id AND v.id=(ref->>'versionId')::uuid),'[]'::jsonb)) FROM pre_project_item_specifications s WHERE s.workspace_id=e.workspace_id AND s.case_id=e.case_id AND s.entry_id=e.id ORDER BY s.version DESC LIMIT 1) AS specification,e.id,e.kind,e.title,e.note,e.note_document AS document,e.pinned,e.category,e.priority,e.source,e.version,
   e.room_id AS "roomId",r.name AS "roomName",e.scope_status AS "scopeStatus",e.review_status AS "reviewStatus",
@@ -35,12 +53,26 @@ export class BriefService {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => {
       const context = await this.case(client, workspaceId, caseId);
       const saved = await client.query(`SELECT content,version,updated_at AS "updatedAt" FROM pre_project_briefs WHERE workspace_id=$1 AND case_id=$2`, [workspaceId, caseId]);
-      const qualification = context.leadId ? await client.query(`SELECT question_key,value FROM crm_lead_qualification_values WHERE workspace_id=$1 AND lead_id=$2`, [workspaceId, context.leadId]) : { rows: [] };
-      const values = Object.fromEntries(qualification.rows.filter(row => typeof row.value === "string").map(row => [row.question_key, row.value]));
-      const defaults = { ...emptyBrief, goals: values.requirements || context.description || "", budget: values.budget || "", timeline: values.timeline || "", location: values.location || "", decisionMakers: values.decision_maker || "", currencyCode:context.currencyCode, budgetAmount:"" };
+      const frozenValues = qualificationHandoffValues(context.qualificationEvidence);
+      const qualification = frozenValues === null && context.leadId ? await client.query(`SELECT question_key,value FROM crm_lead_qualification_values WHERE workspace_id=$1 AND lead_id=$2`, [workspaceId, context.leadId]) : { rows: [] };
+      const values = frozenValues ?? Object.fromEntries(qualification.rows.filter(row => typeof row.value === "string").map(row => [row.question_key, row.value]));
+      const defaults = {
+        ...emptyBrief,
+        goals: values.requirements || context.description || "",
+        propertyType: values.property_type || "",
+        budget: values.budget || "",
+        timeline: values.timeline || "",
+        location: values.location || "",
+        decisionMakers: values.decision_maker || "",
+        preferences: values.preferences || "",
+        currencyCode: context.currencyCode,
+        budgetAmount: "",
+      };
       const rooms = await client.query(`SELECT id,name,version,catalog_record_id AS "catalogRecordId",catalog_snapshot AS "catalogSnapshot" FROM pre_project_rooms WHERE workspace_id=$1 AND case_id=$2 ORDER BY created_at,id`, [workspaceId, caseId]);
       const entries = await client.query(`${entrySelect} WHERE e.workspace_id=$1 AND e.case_id=$2 ORDER BY e.created_at DESC,e.id DESC`, [workspaceId, caseId]);
+      const measurements = await client.query(`SELECT entry_id AS "entryId",status FROM pre_project_site_records WHERE workspace_id=$1 AND case_id=$2 AND kind='measurement' AND entry_id IS NOT NULL`, [workspaceId, caseId]);
       return { caseId, workspaceId, brief: { ...defaults, ...saved.rows[0]?.content, version: saved.rows[0]?.version ?? 0, updatedAt: saved.rows[0]?.updatedAt ?? null }, rooms: rooms.rows, entries: entries.rows,
+        coverage: discoveryCoverage(rooms.rows, entries.rows, measurements.rows),
         canEdit: context.status === "active" && await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"), caseStatus: context.status,
         fromCrm: !saved.rowCount, crmContext: { description: context.description, opportunityAmount: context.amount, currencyCode: context.currencyCode } };
     });
@@ -64,6 +96,7 @@ export class BriefService {
         ON CONFLICT(case_id) DO UPDATE SET content=$3,version=pre_project_briefs.version+1,updated_by=$4,updated_at=now()
         RETURNING content,version,updated_at AS "updatedAt"`, [caseId, workspaceId, content, userId]);
       await this.event(client, workspaceId, caseId, userId, "brief_saved", caseId, current.rows[0]?.content, content);
+      await syncOneTreeFromCase(client, workspaceId, caseId, userId);
       return { ...result.rows[0].content, version: result.rows[0].version, updatedAt: result.rows[0].updatedAt };
     });
   }
@@ -82,6 +115,7 @@ export class BriefService {
         ? await client.query(`UPDATE pre_project_rooms SET name=$4,catalog_record_id=$5,catalog_snapshot=$6,version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND id=$3 RETURNING id,name,version,catalog_record_id AS "catalogRecordId",catalog_snapshot AS "catalogSnapshot"`, [workspaceId, caseId, input.id, input.name,catalogId,snapshot])
         : await client.query(`INSERT INTO pre_project_rooms(id,workspace_id,case_id,name,catalog_record_id,catalog_snapshot) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,version,catalog_record_id AS "catalogRecordId",catalog_snapshot AS "catalogSnapshot"`, [input.id, workspaceId, caseId, input.name,catalogId,snapshot]);
       await this.event(client, workspaceId, caseId, userId, "room_saved", input.id, current.rows[0], result.rows[0]);
+      await syncOneTreeFromCase(client, workspaceId, caseId, userId);
       return result.rows[0];
     });
   }
@@ -171,6 +205,7 @@ export class BriefService {
       await client.query(`DELETE FROM pre_project_entry_assets WHERE workspace_id=$1 AND case_id=$2 AND entry_id=$3`, [workspaceId,caseId,input.id]);
       for (const assetId of input.assetIds) await client.query(`INSERT INTO pre_project_entry_assets(workspace_id,case_id,entry_id,asset_id) VALUES($1,$2,$3,$4)`, [workspaceId,caseId,input.id,assetId]);
       await this.event(client,workspaceId,caseId,userId,current.rowCount ? "entry_updated" : "entry_added",input.id,{ version: input.version },input);
+      await syncOneTreeFromCase(client, workspaceId, caseId, userId);
       return this.entry(client,workspaceId,caseId,input.id);
   }
 
@@ -180,12 +215,13 @@ export class BriefService {
       this.version(current.version,input.version);
       await client.query(`UPDATE pre_project_brief_entries SET archived_at=CASE WHEN $4 THEN now() ELSE NULL END,version=version+1,updated_by=$5,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,id,input.archived,userId]);
       await this.event(client,workspaceId,caseId,userId,input.archived ? "entry_archived" : "entry_restored",id,undefined,{ archived: input.archived });
+      await syncOneTreeFromCase(client, workspaceId, caseId, userId);
       return this.entry(client,workspaceId,caseId,id);
     });
   }
 
   async upload(actor: RequestActor, workspaceId: string, caseId: string, id: string, file?: BriefUpload) {
-    if (!file?.buffer?.length || file.buffer.length > BRIEF_MAX_BYTES) throw new BadRequestException("Choose an image or PDF up to 20 MB.");
+    assertBriefUpload(file);
     return this.edit(actor,workspaceId,caseId,async (client,userId) => {
       const digest = createHash("sha256").update(file.buffer).digest("hex");
       const existing = await client.query(`SELECT id,original_name AS name,mime_type AS "mimeType",byte_size AS "byteSize",preview_key IS NOT NULL AS "hasPreview",sha256 FROM pre_project_brief_assets WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,id]);
@@ -241,7 +277,7 @@ export class BriefService {
   }
 
   async case(client: PoolClient, workspaceId: string, caseId: string, lock=false): Promise<Context> {
-    const result=await client.query(`SELECT c.status,o.description,o.amount,COALESCE(o.currency_code,w.default_currency) AS "currencyCode",o.lead_id AS "leadId" FROM pre_project_cases c JOIN workspaces w ON w.id=c.workspace_id JOIN crm_opportunities o ON o.id=c.opportunity_id AND o.workspace_id=c.workspace_id WHERE c.workspace_id=$1 AND c.id=$2${lock ? " FOR UPDATE OF c" : ""}`,[workspaceId,caseId]);
+    const result=await client.query(`SELECT c.status,o.description,o.amount,COALESCE(o.currency_code,w.default_currency) AS "currencyCode",o.lead_id AS "leadId",o.qualification_evidence AS "qualificationEvidence" FROM pre_project_cases c JOIN workspaces w ON w.id=c.workspace_id JOIN crm_opportunities o ON o.id=c.opportunity_id AND o.workspace_id=c.workspace_id WHERE c.workspace_id=$1 AND c.id=$2${lock ? " FOR UPDATE OF c" : ""}`,[workspaceId,caseId]);
     if (!result.rowCount) throw new NotFoundException("Pre-execution not found"); return result.rows[0];
   }
   edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string)=>Promise<T>) {

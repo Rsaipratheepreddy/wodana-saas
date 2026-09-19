@@ -3,6 +3,11 @@ import type { CSSProperties } from "react";
 export const WODDY_MARK_SRC = "/brand/wodana/woddy-mark-v4.png";
 export const IDENTITY_VARIANT_COUNT = 6;
 
+type IdentityImageOptions = {
+  fit?: "contain" | "cover";
+  surface?: "brand" | "neutral";
+};
+
 /** A consistent identity color across lists, profiles, navigation and messages. */
 export function identityVariant(identity: string): number {
   const normalized = identity.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
@@ -11,16 +16,19 @@ export function identityVariant(identity: string): number {
   return hash % IDENTITY_VARIANT_COUNT;
 }
 
-export function identityStyle(identity: string, imageUrl?: string): CSSProperties {
+export function identityStyle(identity: string, imageUrl?: string, options: IdentityImageOptions = {}): CSSProperties {
   if (imageUrl) return {
     backgroundImage: `url(${JSON.stringify(imageUrl)})`,
-    backgroundColor: "var(--wd-color-surface)",
+    backgroundColor: options.surface === "brand"
+      ? "var(--wd-workspace-brand-light-100, var(--wd-color-surface))"
+      : "var(--wd-color-surface)",
     backgroundPosition: "center",
-    backgroundSize: "cover",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: options.fit ?? "cover",
   };
   return {
-    backgroundImage: `var(--wd-identity-gradient-${identityVariant(identity)})`,
-    backgroundColor: "var(--wd-identity-base)",
+    backgroundImage: "none",
+    backgroundColor: `var(--wd-identity-color-${identityVariant(identity)})`,
     color: "var(--wd-identity-ink)",
   };
 }

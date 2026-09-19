@@ -1,9 +1,9 @@
 "use client";
 import { Pencil, Plus, ShieldCheck } from "lucide-react";
 import type { Quote, QuoteLine, PortalBrand } from "@/lib/commercial/types";
-import { money, quoteTotals, paymentMilestoneAmounts } from "@/lib/commercial/client";
+import { acceptedQuoteTotals, money, quoteTotals, paymentMilestoneAmounts } from "@/lib/commercial/client";
+import { quotationDescription } from "@/lib/commercial/presentation";
 import { QuotationCover } from "./quotation-cover";
-import { CustomMaterialSummary } from "./quotation-materials";
 import { BrandLogo } from "./portal-settings";
 import d from "./quotation-studio.module.css";
 
@@ -18,23 +18,13 @@ export function quotationPages(q: Quote): DocumentPage[] {
   const pages: DocumentPage[] = [
     { id: "cover", kind: "cover", title: "Cover" },
   ];
-  const rooms = [
-    ...new Set([
-      ...(q.rooms ?? []).map((r) => r.name),
-      ...q.lines.map((l) => l.room),
-    ]),
-  ];
-  rooms.forEach((room) => {
-    const lines = q.lines.filter((l) => l.room === room);
-    for (let start = 0; start < Math.max(1, lines.length); start += 6)
-      pages.push({
-        id: `room:${room}:${start}`,
-        kind: "room",
-        title: room + (start ? ` · continued` : ""),
-        room,
-        lines: lines.slice(start, start + 6),
-      });
-  });
+  for (let start = 0; start < Math.max(1, q.lines.length); start += 3)
+    pages.push({
+      id: `items:${start}`,
+      kind: "room",
+      title: start ? `Items · ${Math.floor(start / 3) + 1}` : "Items",
+      lines: q.lines.slice(start, start + 3),
+    });
   return [
     ...pages,
     { id: "summary", kind: "summary", title: "Summary" },
@@ -67,7 +57,8 @@ export function QuotationDocumentPage({
   onAdd: (room: string) => void;
   preview: boolean;
 }) {
-  const totals = quoteTotals(quote),
+  const selectedOptionIds = new Set(quote.clientDecision?.selectedOptionLineIds ?? []),
+    totals = quote.status === "accepted" ? acceptedQuoteTotals(quote) : quoteTotals(quote),
     rooms = [...new Set([...(quote.rooms ?? []).map(r => r.name), ...quote.lines.map((l) => l.room)])].filter(room => quote.lines.some(l => l.room === room));
   if (page.kind === "cover")
     return (
@@ -95,7 +86,7 @@ export function QuotationDocumentPage({
       <div className={d.documentBody}>
         <span className={d.eyebrow}>
           {page.kind === "room"
-            ? "Room-wise scope"
+            ? "Estimate proposal · item schedule"
             : "Your project, clearly defined"}
         </span>
         <h2>{page.title}</h2>
@@ -107,33 +98,41 @@ export function QuotationDocumentPage({
                 {page.lines?.length === 1 ? "item" : "items"} · {quote.currency}
               </span>
               {!preview && (
-                <button onClick={() => onAdd(page.room!)}>
+                <button onClick={() => onAdd(page.lines?.[0]?.room ?? "General")}>
                   <Plus size={13} />
                   Add item
                 </button>
               )}
             </div>
-            <table className={d.documentTable}>
+            <table className={`${d.documentTable} ${d.itemsTable}`}>
               <colgroup>
-                {[28, 28, 15, 12, 17].map((w, i) => (
+                {[4, 14, 14, 6, 6, 6, 18, 7, 12, 13].map((w, i) => (
                   <col key={i} style={{ width: `${w}%` }} />
                 ))}
               </colgroup>
               <thead>
                 <tr>
-                  <th>Item description</th>
-                  <th>Materials & finishes</th>
+                  <th>SN</th>
+                  <th>Description of item</th>
+                  <th>Inspiration</th>
+                  <th>Length</th>
+                  <th>Height</th>
+                  <th>Depth</th>
+                  <th>Materials requested</th>
+                  <th>Qty</th>
                   <th>Unit price</th>
-                  <th>Qty / unit</th>
-                  <th>Total</th>
+                  <th>Total amount</th>
                 </tr>
               </thead>
               <tbody>
-                {page.lines?.map((line) => (
+                {page.lines?.map((line, index) => (
                   <tr
                     key={line.id}
                     data-selected={!preview && selectedItem === line.id}
                   >
+                    <td>
+                      {Number(page.id.split(":")[1] ?? 0) + index + 1}
+                    </td>
                     <td>
                       {preview ? (
                         <strong>{line.title}</strong>
@@ -147,8 +146,14 @@ export function QuotationDocumentPage({
                           <Pencil size={12} />
                         </button>
                       )}
-                      {line.specification && <p>{line.specification}</p>}
+                      {line.optional ? <small>{selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total"}</small> : null}
+                      {line.variant ? <small>{line.variant}</small> : null}
+                      <small>{line.room}</small>
                     </td>
+                    <td>{line.photo ? <img className={d.itemImage} src={line.photo} alt={`Inspiration for ${line.title}`} /> : <span>—</span>}</td>
+                    <td>{line.dimensions?.length != null ? `L ${line.dimensions.length} ${line.dimensions.unit}` : "—"}</td>
+                    <td>{line.dimensions?.height != null ? `H ${line.dimensions.height} ${line.dimensions.unit}` : "—"}</td>
+                    <td>{line.dimensions?.depth != null ? `D ${line.dimensions.depth} ${line.dimensions.unit}` : "—"}</td>
                     <td>
                       {line.catalogLinks?.find((l) => l.role === "variant") && (
                         <small>
@@ -159,11 +164,8 @@ export function QuotationDocumentPage({
                         </small>
                       )}
                       <div className={d.materialText}>
-                        {line.material ||
-                          (!line.customMaterials?.length ? "As specified" : "")}
+                        {quotationDescription(line) || "As specified"}
                       </div>
-                      {line.finish && <p>{line.finish}</p>}
-                      <CustomMaterialSummary materials={line.customMaterials} />
                       {!preview && (
                         <button
                           className={d.editMaterial}
@@ -176,14 +178,14 @@ export function QuotationDocumentPage({
                       )}
                     </td>
                     <td>
+                      {line.quantity}
+                      <small>{line.unit}</small>
+                    </td>
+                    <td>
                       <DocumentAmount
                         value={line.rate}
                         currency={quote.currency}
                       />
-                    </td>
-                    <td>
-                      {line.quantity}
-                      <small>{line.unit}</small>
                     </td>
                     <td>
                       <strong>
@@ -199,20 +201,19 @@ export function QuotationDocumentPage({
             </table>
             {!page.lines?.length && (
               <p className={d.emptyDocument}>
-                Add the first item for this room from the sidebar.
+                Add the first quoted item from the Items view.
               </p>
             )}
             <div className={d.roomTotal}>
               <span>
-                Room total
-                {quote.lines.filter((l) => l.room === page.room).length !==
-                page.lines?.length
-                  ? " · all pages"
+                Items subtotal
+                {quote.lines.length !== page.lines?.length
+                  ? " · all item pages"
                   : ""}
               </span>
               <strong>
                 {money(
-                  quoteTotals({ ...quote, discount: 0, taxRate: 0, lines: quote.lines.filter(l => l.room === page.room) }).total,
+                  quoteTotals({ ...quote, discount: 0, taxRate: 0, lines: quote.lines.map(line => line.optional && selectedOptionIds.has(line.id) ? {...line, optional:false} : line) }).total,
                   quote.currency,
                 )}
               </strong>
@@ -243,7 +244,7 @@ export function QuotationDocumentPage({
                           ...quote,
                           discount: 0,
                           taxRate: 0,
-                          lines: quote.lines.filter((l) => l.room === room),
+                          lines: quote.lines.filter((l) => l.room === room).map(line => line.optional && selectedOptionIds.has(line.id) ? {...line, optional:false} : line),
                         }).total,
                         quote.currency,
                       )}
@@ -271,7 +272,7 @@ export function QuotationDocumentPage({
                 <dt>
                   {quote.direction === "deduction"
                     ? "Client credit"
-                    : "Quotation total"}
+                    : quote.status === "accepted" ? "Accepted total" : "Quotation total"}
                 </dt>
                 <dd>{money(totals.total, quote.currency)}</dd>
               </div>
@@ -302,6 +303,9 @@ export function QuotationDocumentPage({
                         <strong>{t.title || "Milestone"}</strong>
                         {t.requiredForRelease && (
                           <small>Before project release</small>
+                        )}
+                        {t.requiredForProduction && (
+                          <small>Before manufacturing starts</small>
                         )}
                       </td>
                       <td>{t.trigger}</td>
@@ -355,7 +359,7 @@ export function QuotationDocumentPage({
                   ? `Accepted by ${quote.decidedBy ?? "the client"}${quote.decidedAt ? ` on ${new Date(quote.decidedAt).toLocaleDateString("en-GB")}` : ""}.`
                   : "Your client can approve this quotation or request changes through the client portal after it is issued."}
               </p>
-              <strong>{money(totals.total, quote.currency)}</strong>
+              <strong>{money(quote.clientDecision?.acceptedTotal ?? totals.total, quote.currency)}</strong>
             </div>
           </>
         )}

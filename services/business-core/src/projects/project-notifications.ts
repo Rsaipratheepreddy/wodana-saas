@@ -121,7 +121,7 @@ export class ProjectNotificationsService {
     }
     if (["report_submit", "submit_report", "commissioning_status", "order_status"].includes(action)) {
       const reviewers = await ctx.client.query<{ membership_id: string }>(
-        `SELECT DISTINCT a.membership_id FROM project_assignments a JOIN member_roles mr ON mr.membership_id=a.membership_id AND mr.workspace_id=a.workspace_id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE a.workspace_id=$1 AND a.project_id=$2 AND a.active AND p.code='projects.review'`,
+        `SELECT DISTINCT a.membership_id FROM project_assignments a JOIN effective_member_roles mr ON mr.membership_id=a.membership_id AND mr.workspace_id=a.workspace_id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE a.workspace_id=$1 AND a.project_id=$2 AND a.active AND p.code='projects.review'`,
         [ctx.workspaceId, projectId],
       );
       reviewers.rows.forEach((row) => people.add(row.membership_id));

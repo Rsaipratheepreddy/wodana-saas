@@ -1,7 +1,7 @@
 const COOKIE = 'wodana_mobile_refresh';
 const PLACEHOLDER = 'http-only-cookie';
 const routes = new Map([
-  ['/auth/login', 'POST'], ['/auth/refresh', 'POST'], ['/auth/logout', 'POST'],
+  ['/auth/login', 'POST'], ['/auth/mfa/verify', 'POST'], ['/auth/refresh', 'POST'], ['/auth/logout', 'POST'],
   ['/auth/password/forgot', 'POST'], ['/me', 'GET'],
 ]);
 
@@ -72,7 +72,8 @@ function createAuthProxy({ target, fetcher = fetch }) {
       if (path === '/auth/logout' || (path === '/auth/refresh' && upstream.status === 401)) {
         response.setHeader('Set-Cookie', cookie('', 0, secure));
       }
-      if (upstream.ok && (path === '/auth/login' || path === '/auth/refresh')) {
+      if (upstream.ok && (path === '/auth/login' || path === '/auth/mfa/verify' || path === '/auth/refresh')
+        && payload.mfaRequired !== true) {
         if (typeof payload.refreshToken !== 'string' || !payload.refreshToken
           || !Number.isFinite(payload.refreshTokenExpiresIn) || payload.refreshTokenExpiresIn <= 0) {
           return send(response, 502, { message: 'Invalid session response' });
@@ -100,7 +101,12 @@ function allowedWorkspaceRoute(path,method){
   return method==='POST'&&new RegExp(`^${id}/(assets/${id}(?:/markup)?|site/${id}/review)$`).test(resource);
  }
  if(area==='crm')return resource.length>0&&['GET','POST','PATCH','DELETE'].includes(method);
- if(area==='projects')return method==='GET'&&['','locations','attendance'].includes(resource);
+ if(area==='projects'){
+  const id='[0-9a-f-]{36}';
+  if(method==='GET')return ['','locations','attendance','field-queue'].includes(resource);
+  return method==='POST'&&(new RegExp(`^${id}/field-actions$`).test(resource)
+   ||new RegExp(`^${id}/files/[a-zA-Z0-9_-]{1,80}/${id}$`).test(resource));
+ }
  if(method==='GET')return /^(bootstrap|attendance\/(current|history)|reviews|leave\/(types|balances|requests)|captures\/[0-9a-f-]{36}\/photo)$/.test(resource);
  if(method==='PUT')return /^captures\/[0-9a-f-]{36}\/photo$/.test(resource);
  return method==='POST'&&/^(captures|attendance\/actions|reviews|reviews\/[0-9a-f-]{36}\/decision|leave\/requests|leave\/requests\/[0-9a-f-]{36}\/(cancel|decision))$/.test(resource);

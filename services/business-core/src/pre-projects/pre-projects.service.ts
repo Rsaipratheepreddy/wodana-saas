@@ -4,6 +4,7 @@ import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
+import { ensureJobForSource } from "../jobs/job-identity.store";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
@@ -17,7 +18,9 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   c.activated_at AS "activatedAt", c.hold_reason AS "holdReason", c.held_at AS "heldAt", c.held_by AS "heldBy",
   c.status = 'on_hold' AS "isOnHold", c.cancellation_reason AS "cancellationReason",
   c.cancelled_at AS "cancelledAt", c.cancelled_by AS "cancelledBy", c.released_at AS "releasedAt",
-  c.released_by AS "releasedBy", engagement_owner.display_name AS "engagementOwnerName"
+  c.released_by AS "releasedBy", engagement_owner.display_name AS "engagementOwnerName",
+  o.conversion_origin AS "conversionOrigin", o.converted_at AS "convertedAt",
+  o.qualification_evidence AS "qualificationEvidence", o.qualification_evidence_hash AS "qualificationEvidenceHash"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
@@ -51,7 +54,9 @@ export class PreProjectsService {
           manager.display_name, true, lead.version, COALESCE(opportunity.owner_membership_id, lead.owner_membership_id),
           'discover', 1, NULL::text, 'normal', 'none', NULL::timestamptz, NULL::varchar, NULL::timestamptz,
           NULL::uuid, false, NULL::varchar, NULL::timestamptz, NULL::uuid, NULL::timestamptz, NULL::uuid,
-          manager.display_name
+          manager.display_name, opportunity.conversion_origin, opportunity.converted_at,
+          COALESCE(opportunity.qualification_evidence, lead.qualification_evidence),
+          COALESCE(opportunity.qualification_evidence_hash, lead.qualification_evidence_hash)
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
@@ -139,6 +144,7 @@ export class PreProjectsService {
         LEFT JOIN users active_owner_account ON active_owner_account.id = active_owner.user_id AND active_owner_account.status = 'active'
         WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
+      await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id } });
       return result;
@@ -146,7 +152,10 @@ export class PreProjectsService {
   }
 
   get(actor: RequestActor, workspaceId: string, id: string) {
-    return this.access.withPermission(actor, workspaceId, "pre_projects.view", (client) => this.read(client, workspaceId, id));
+    return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
+      ...await this.read(client, workspaceId, id),
+      canManageLifecycle: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.manage_lifecycle"),
+    }));
   }
 
   start(actor: RequestActor, workspaceId: string, opportunityId: string) {
@@ -165,6 +174,7 @@ export class PreProjectsService {
         LEFT JOIN users active_owner_account ON active_owner_account.id = active_owner.user_id AND active_owner_account.status = 'active'
         WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
+      await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId } });
       return result;

@@ -10,7 +10,6 @@ export type HomeUpdate = {
   title: string;
   description: string;
   icon: 'check' | 'clock' | 'calendar' | 'hrms';
-  tone: 'lilac' | 'rose' | 'peach';
   destination: HrmsDestination;
 };
 export type HomeUpdatesSnapshot = { items: HomeUpdate[]; partial: boolean; restricted: boolean; timezone?: string };
@@ -45,7 +44,7 @@ export async function loadHomeUpdates(read: Read, workspaceId: string, now = new
     const attendance = (reviews.value ?? []).filter(r => r.status === 'pending' && r.canDecide && r.membershipId !== boot.membershipId).length;
     const leave = (teamLeave.value ?? []).filter(r => ['pending', 'cancellation_pending'].includes(r.status) && r.canDecide && r.membershipId !== boot.membershipId).length;
     const count = attendance + leave;
-    if (count) ranked.push({ id: 'approvals', priority: 90, icon: 'check', tone: 'lilac',
+    if (count) ranked.push({ id: 'approvals', priority: 90, icon: 'check',
       title: `${count} request${count === 1 ? ' needs' : 's need'} your review`,
       description: [attendance ? `${attendance} attendance` : '', leave ? `${leave} leave` : ''].filter(Boolean).join(' · '),
       destination: { tab: 'approvals', reviewView: attendance ? 'attendance' : 'leave' } });
@@ -54,11 +53,11 @@ export async function loadHomeUpdates(read: Read, workspaceId: string, now = new
     if (current.value) {
       const stale = now.getTime() - Date.parse(current.value.startedAt) > 36 * 60 * 60 * 1000;
       const time = new Intl.DateTimeFormat('en', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(new Date(current.value.startedAt));
-      ranked.push({ id: 'attendance', priority: stale ? 100 : 80, icon: 'clock', tone: 'peach',
+      ranked.push({ id: 'attendance', priority: stale ? 100 : 80, icon: 'clock',
         title: stale ? 'Your checkout needs attention' : 'You’re checked in',
         description: stale ? 'Review your open attendance session' : `Started at ${time} · Open attendance`, destination: { tab: 'attendance' } });
     } else if (boot.employee!.activeFrom <= today && (!boot.employee!.activeTo || boot.employee!.activeTo >= today)) {
-      ranked.push({ id: 'attendance', priority: 10, icon: 'clock', tone: 'peach', title: 'Ready for your workday?',
+      ranked.push({ id: 'attendance', priority: 10, icon: 'clock', title: 'Ready for your workday?',
         description: 'Open attendance to check in', destination: { tab: 'attendance' } });
     }
   }
@@ -68,13 +67,13 @@ export async function loadHomeUpdates(read: Read, workspaceId: string, now = new
     if (upcoming) {
       const currentLeave = upcoming.status === 'approved' && upcoming.startDate <= today;
       const dates = upcoming.startDate === upcoming.endDate ? shortDate(upcoming.startDate) : `${shortDate(upcoming.startDate)} – ${shortDate(upcoming.endDate)}`;
-      ranked.push({ id: `leave-${upcoming.id}`, priority: currentLeave ? 95 : 40, icon: 'calendar', tone: 'rose',
+      ranked.push({ id: `leave-${upcoming.id}`, priority: currentLeave ? 95 : 40, icon: 'calendar',
         title: currentLeave ? 'You have approved leave today' : upcoming.status === 'approved' ? 'Your upcoming leave is approved'
           : upcoming.status === 'cancellation_pending' ? 'Leave cancellation pending' : 'Your leave request is pending',
         description: `${dates} · ${upcoming.days} ${upcoming.days === 1 ? 'day' : 'days'}`, destination: { tab: 'leave' } });
     }
   }
-  if (!boot.employee?.enabled && boot.permissions.self) ranked.push({ id: 'setup', priority: 5, icon: 'hrms', tone: 'peach',
+  if (!boot.employee?.enabled && boot.permissions.self) ranked.push({ id: 'setup', priority: 5, icon: 'hrms',
     title: 'Employee attendance isn’t enabled', description: 'Open HRMS for setup details', destination: { tab: 'attendance' } });
   return { timezone, partial, restricted: false, items: ranked.sort((a,b) => b.priority - a.priority).slice(0,2).map(({ priority: _, ...item }) => item) };
 }

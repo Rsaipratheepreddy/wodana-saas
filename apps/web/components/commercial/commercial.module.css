@@ -1,5 +1,5 @@
 .page {
-  padding: 1rem 1.5rem 2rem;
+  padding: 1.25rem 1.5rem 2rem;
   color: var(--wd-color-text);
   font-size: 0.8125rem;
   min-inline-size: 0;
@@ -48,8 +48,8 @@
   white-space: nowrap;
 }
 .primary {
-  background: var(--wd-brand-gradient);
-  color: var(--wd-brand-ink);
+  background: var(--wd-color-action-primary);
+  color: var(--wd-color-action-on-primary);
   border-color: transparent;
   font-weight: 550;
 }
@@ -63,7 +63,7 @@
   cursor: default;
 }
 .page :focus-visible {
-  outline: 2px solid var(--wd-brand-lilac);
+  outline: 2px solid var(--wd-color-focus);
   outline-offset: 2px;
 }
 .toolbar {
@@ -74,6 +74,26 @@
   flex-wrap: wrap;
   padding: 0.4rem 0;
   border-block: 1px solid var(--wd-color-structural-divider);
+}
+.toolbar[data-quotation-toolbar] {
+  position: relative !important;
+  top: auto !important;
+  z-index: 21 !important;
+  block-size: 2.25rem;
+  min-block-size: 2.25rem !important;
+  margin-block-start: -2.25rem;
+  margin-inline-start: 9.25rem;
+  padding: .15rem 1rem .15rem 0 !important;
+  border-block-start: 0;
+  background: var(--wd-color-surface);
+  flex-wrap: nowrap;
+}
+.toolbar[data-quotation-toolbar] .actions { flex-wrap: nowrap; }
+.toolbar[data-quotation-toolbar] :global(.wd-field) { gap: 0; }
+.toolbar[data-quotation-toolbar] :global(.wd-select-button) { min-block-size: 1.85rem; block-size: 1.85rem; }
+@media (max-width: 820px) {
+  .toolbar[data-quotation-toolbar] { block-size: auto; margin-block-start: 0; margin-inline-start: 0; padding: .35rem .5rem !important; flex-wrap: wrap; }
+  .toolbar[data-quotation-toolbar] .actions { flex-wrap: wrap; }
 }
 .tabs {
   display: flex;
@@ -95,7 +115,7 @@
 .tabs [aria-current],
 .tabs [aria-selected="true"] {
   color: var(--wd-color-text);
-  border-block-end-color: var(--wd-brand-lilac);
+  border-block-end-color: var(--wd-color-action-primary);
 }
 .status {
   display: inline-flex;
@@ -115,7 +135,7 @@
 .status[data-status="resolved"] {
   background: color-mix(
     in srgb,
-    var(--wd-brand-lilac) 20%,
+    var(--wd-color-success) 14%,
     var(--wd-color-surface)
   );
   color: var(--wd-color-text);
@@ -124,7 +144,7 @@
 .status[data-status="proof_submitted"] {
   background: color-mix(
     in srgb,
-    var(--wd-brand-peach) 20%,
+    var(--wd-color-warning) 14%,
     var(--wd-color-surface)
   );
   color: var(--wd-color-text);
@@ -155,7 +175,7 @@
 .table .room td {
   background: color-mix(
     in srgb,
-    var(--wd-brand-lilac) 7%,
+    var(--wd-color-action-primary) 7%,
     var(--wd-color-surface)
   );
   font-size: 0.74rem;
@@ -175,7 +195,7 @@
 }
 .table input:focus {
   background: var(--wd-color-surface);
-  border-color: var(--wd-brand-lilac);
+  border-color: var(--wd-color-action-primary);
   outline: none;
 }
 .table .number {
@@ -290,7 +310,7 @@
   padding: 0.6rem 0.8rem;
   background: color-mix(
     in srgb,
-    var(--wd-brand-lilac) 12%,
+    var(--wd-color-action-primary) 12%,
     var(--wd-color-surface)
   );
   font-size: 0.75rem;
@@ -338,7 +358,7 @@
 .controlSummary small, .controlSummary strong, .dealBanner small, .dealBanner strong, .dealBanner span { display: block; }
 .controlSummary small, .dealBanner small { color: var(--wd-color-text-secondary); font-size: .68rem; }
 .controlSummary strong, .dealBanner strong { margin-block-start: .3rem; }
-.dealBanner { display: grid; grid-template-columns: minmax(14rem, 1fr) auto auto; gap: 2rem; align-items: center; padding: 1rem; background: color-mix(in srgb, var(--wd-brand-lilac) 14%, var(--wd-color-surface)); border-inline-start: 3px solid var(--wd-brand-lilac); }
+.dealBanner { display: grid; grid-template-columns: minmax(14rem, 1fr) auto auto; gap: 1rem; align-items: center; padding: 1rem; background: var(--wd-color-surface-muted); border-inline-start: 3px solid var(--wd-color-action-primary); }
 .dealBanner span { color: var(--wd-color-text-secondary); font-size: .7rem; margin-block-start: .25rem; }
 .ownerForm { display: grid; gap: 1rem; max-inline-size: 52rem; padding-block: .5rem; }
 .ownerForm > label, .decisionField, .approverField { display: flex; flex-direction: column; gap: .4rem; color: var(--wd-color-text-secondary); font-size: .75rem; }
@@ -366,7 +386,7 @@
 }
 .flowIntro > div { display: grid; gap: 0.22rem; }
 .flowIntro span {
-  color: var(--crm-accent, #694f7a);
+  color: var(--wd-color-text-secondary);
   font-size: 0.61rem;
   font-weight: 650;
   letter-spacing: 0.11em;
@@ -391,7 +411,7 @@
   block-size: 2px;
   background: var(--wd-color-structural-divider);
 }
-.preExecutionFlow li[data-state="complete"]:not(:last-child)::after { background: #50a588; }
+.preExecutionFlow li[data-state="complete"]:not(:last-child)::after { background: var(--wd-color-success); }
 .preExecutionFlow a {
   position: relative;
   z-index: 1;
@@ -405,7 +425,7 @@
   text-decoration: none;
   border-radius: 0.58rem;
 }
-.preExecutionFlow a[aria-current="step"] { background: color-mix(in srgb, var(--crm-accent, #694f7a) 7%, var(--wd-color-surface)); }
+.preExecutionFlow a[aria-current="step"] { background: var(--wd-color-action-primary-subtle); }
 .preExecutionFlow a:hover { background: var(--wd-color-surface-muted); }
 .flowNode {
   display: grid;
@@ -416,10 +436,10 @@
   background: var(--wd-color-surface);
   color: var(--wd-color-text-secondary);
 }
-.preExecutionFlow li[data-state="complete"] .flowNode { color: #2f8065; background: color-mix(in srgb, #50a588 14%, var(--wd-color-surface)); }
-.preExecutionFlow li[data-state="attention"] .flowNode { color: #9a5d1f; background: color-mix(in srgb, var(--wd-brand-peach) 25%, var(--wd-color-surface)); }
+.preExecutionFlow li[data-state="complete"] .flowNode { color: var(--wd-color-success); background: var(--wd-color-success-subtle); }
+.preExecutionFlow li[data-state="attention"] .flowNode { color: var(--wd-color-warning); background: var(--wd-color-warning-subtle); }
 .preExecutionFlow li[data-state="ready"] .flowNode,
-.preExecutionFlow a[aria-current="step"] .flowNode { color: var(--crm-accent, #694f7a); background: var(--wd-color-surface-muted); }
+.preExecutionFlow a[aria-current="step"] .flowNode { color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); }
 .flowCopy { display: grid; min-inline-size: 0; gap: 0.18rem; }
 .flowCopy small { color: var(--wd-color-text-secondary); font-size: 0.59rem; letter-spacing: 0.04em; text-transform: uppercase; }
 .flowCopy strong { font-size: 0.78rem; font-weight: 620; }
@@ -433,9 +453,9 @@
   font-style: normal;
   white-space: nowrap;
 }
-.preExecutionFlow li[data-state="complete"] em { color: #2f8065; }
-.preExecutionFlow li[data-state="attention"] em { color: #89501a; }
-.preExecutionFlow li[data-state="ready"] em { color: var(--crm-accent, #694f7a); }
+.preExecutionFlow li[data-state="complete"] em { color: var(--wd-color-success); }
+.preExecutionFlow li[data-state="attention"] em { color: var(--wd-color-warning); }
+.preExecutionFlow li[data-state="ready"] em { color: var(--wd-color-action-primary); }
 @media (max-width: 760px) {
   .controlSummary, .dealBanner { grid-template-columns: 1fr 1fr; }
   .checkGrid { grid-template-columns: 1fr; }
@@ -463,6 +483,11 @@
   margin: 0.4rem 0;
   white-space: pre-wrap;
   line-height: 1.6;
+}
+.paymentFields {
+  display: grid;
+  gap: 0.35rem;
+  min-inline-size: 14rem;
 }
 .requestButton {
   border: 0;
@@ -510,8 +535,8 @@
   display: grid;
   place-items: center;
   border-radius: 0.65rem;
-  color: #30263a;
-  background: var(--wd-brand-gradient);
+  color: var(--wd-color-action-on-primary);
+  background: var(--wd-color-action-primary);
   font-weight: 600;
 }
 .quoteTitle {
@@ -561,7 +586,7 @@
     min-block-size: 2.5rem;
   }
   .page {
-    padding: 0.8rem;
+    padding: 1rem;
   }
   .table {
     min-inline-size: 45rem;
@@ -677,6 +702,7 @@
   gap: 1.5rem;
   margin-block-end: 0.7rem;
 }
+.filterScroller { max-inline-size: 100%; overflow-x: auto; scrollbar-width: thin; }
 .listTools .tabs {
   margin: 0;
   border: 0;
@@ -784,7 +810,7 @@
   background: color-mix(
     in srgb,
     var(--wd-color-surface-muted) 85%,
-    var(--wd-brand-lilac)
+    var(--wd-color-action-primary)
   );
   font-size: 0.68rem;
   font-weight: 550;
@@ -795,7 +821,7 @@
 .table .room td {
   background: color-mix(
     in srgb,
-    var(--wd-brand-lilac) 18%,
+    var(--wd-color-action-primary) 18%,
     var(--wd-color-surface)
   );
   padding: 0.7rem 0.8rem;
@@ -888,15 +914,15 @@
 .table .material button {
   background: color-mix(
     in srgb,
-    var(--wd-brand-lilac) 9%,
+    var(--wd-color-action-primary) 9%,
     var(--wd-color-surface)
   );
   padding: 0.45rem 0.5rem;
   border-radius: 0.35rem;
 }
 .tabs [aria-selected="true"] {
-  color: var(--crm-accent);
-  border-color: var(--crm-accent);
+  color: var(--crm-accent, var(--wd-color-action-primary));
+  border-color: var(--crm-accent, var(--wd-color-action-primary));
 }
 .studioPage > .toolbar {
   padding: 0.65rem 1rem;
@@ -927,7 +953,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem 1rem;
-  background: var(--crm-accent-soft, #f0e8fa);
+  background: var(--wd-color-surface-muted);
   border-radius: 0.6rem;
 }
 .invoiceTarget div {
@@ -993,11 +1019,11 @@
 }
 .invoiceChoice input {
   min-block-size: 0;
-  accent-color: var(--crm-accent, #694f7a);
+  accent-color: var(--crm-accent, var(--wd-color-action-primary));
 }
 .invoiceChoice:has(input:checked) {
-  border-color: var(--crm-accent, #694f7a);
-  background: var(--crm-accent-soft, #f0e8fa);
+  border-color: var(--wd-color-action-primary);
+  background: var(--wd-color-action-primary-subtle);
 }
 .invoiceChoice:has(input:disabled) {
   opacity: 0.6;
@@ -1006,7 +1032,7 @@
 .linkButton {
   border: 0;
   background: none;
-  color: var(--crm-accent, #694f7a);
+  color: var(--crm-accent, var(--wd-color-action-primary));
   font: inherit;
   font-size: 0.72rem;
   text-align: start;
@@ -1036,7 +1062,7 @@
   flex-wrap: wrap;
   padding: 0.8rem 0;
   font-size: 0.7rem;
-  color: var(--crm-accent, #694f7a);
+  color: var(--crm-accent, var(--wd-color-action-primary));
 }
 .boqContext > span {
   display: flex;
@@ -1044,7 +1070,7 @@
   align-items: center;
 }
 .boqContext > span:first-child {
-  background: var(--crm-accent-soft, #f0e8fa);
+  background: var(--wd-color-surface-muted);
   padding: 0.4rem 0.55rem;
   border-radius: 0.4rem;
 }
@@ -1095,7 +1121,7 @@
 }
 .documentTable .quantityUnit input:last-child {
   border-inline-start: 1px solid var(--wd-color-structural-divider);
-  background: var(--crm-accent-soft);
+  background: var(--crm-accent-soft, var(--wd-color-action-primary-subtle));
   font-size: 0.67rem;
   max-width: 3.1rem;
   min-width: 2.4rem;
@@ -1107,7 +1133,7 @@
 }
 .variant {
   display: block;
-  color: var(--crm-accent);
+  color: var(--crm-accent, var(--wd-color-action-primary));
   font-size: 0.64rem;
   margin-bottom: 0.3rem;
 }
@@ -1146,13 +1172,13 @@
 }
 
 .form {
-  accent-color: var(--wd-brand-lilac);
-  --wd-color-focus: #694f7a;
+  accent-color: var(--wd-color-action-primary);
+  --wd-color-focus: var(--wd-color-action-primary);
   --wd-focus-ring: 0 0 0 3px
-    color-mix(in srgb, var(--wd-brand-lilac) 30%, transparent);
+    color-mix(in srgb, var(--wd-color-action-primary) 30%, transparent);
 }
 .form :focus-visible {
-  outline-color: var(--wd-brand-lilac);
+  outline-color: var(--wd-color-action-primary);
 }
 
 /* Keep a single column model. A narrow canvas scrolls the table instead of crushing its cells. */
@@ -1165,22 +1191,22 @@
 .documentTable .room td { overflow: visible; }
 .table .itemName { display: block; inline-size: calc(100% - 1.5rem); min-inline-size: 0; min-block-size: 2.6rem; border: 1px solid transparent; background: transparent; color: inherit; font-family: inherit; font-size: .78rem; line-height: 1.5; font-weight: 550; padding: .2rem 0; resize: none; field-sizing: content; }
 .table .itemName:hover { border-color: var(--wd-color-border-control); }
-.table .itemName:focus { outline: 2px solid var(--wd-brand-lilac); }
+.table .itemName:focus { outline: 2px solid var(--wd-color-action-primary); }
 .table .moneyEditor { display: flex; align-items: stretch; inline-size: 100%; min-inline-size: 0; border: 1px solid var(--wd-color-border-control); border-radius: .4rem; background: var(--wd-color-surface); overflow: hidden; }
-.moneyEditor > span { display: grid; align-items: center; flex: 0 0 auto; padding: .4rem; background: var(--crm-accent-soft, #f4eef9); font-size: .6rem; }
+.moneyEditor > span { display: grid; align-items: center; flex: 0 0 auto; padding: .4rem; background: var(--wd-color-surface-muted); font-size: .6rem; }
 .table .moneyEditor input { min-inline-size: 0; inline-size: 100%; flex: 1; block-size: 2.6rem; padding: .45rem .3rem; border: 0; border-radius: 0; font-size: .78rem; }
 .table .quantityUnit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); min-inline-size: 0; inline-size: 100%; overflow: hidden; }
 .table .quantityUnit input, .documentTable .quantityUnit input:last-child { inline-size: 100%; min-inline-size: 0; max-inline-size: none; border: 0; border-radius: 0; block-size: 2.6rem; padding: .45rem .3rem; }
 .table .quantityUnit input:last-child { border-inline-start: 1px solid var(--wd-color-structural-divider); }
 .table input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 .table input[type="number"]::-webkit-inner-spin-button, .table input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.table .material button { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; padding: .6rem; min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; cursor: pointer; border: 1px solid color-mix(in srgb, var(--wd-brand-lilac) 32%, transparent); border-radius: .4rem; }
-.table .material button:hover { background: var(--crm-accent-soft, #f0e8fa); border-color: var(--wd-brand-lilac); }
-.material .materialEdit { display: inline-flex; align-items: center; gap: .35rem; color: var(--crm-accent, #694f7a); font-size: .68rem; font-weight: 550; margin-block-start: .2rem; }
+.table .material button { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; padding: .6rem; min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; cursor: pointer; border: 1px solid color-mix(in srgb, var(--wd-color-action-primary) 32%, transparent); border-radius: .4rem; }
+.table .material button:hover { background: var(--wd-color-action-primary-subtle); border-color: var(--wd-color-action-primary); }
+.material .materialEdit { display: inline-flex; align-items: center; gap: .35rem; color: var(--crm-accent, var(--wd-color-action-primary)); font-size: .68rem; font-weight: 550; margin-block-start: .2rem; }
 .itemContext { display: grid; gap: .3rem; margin: 0; }
 .itemContext span { color: var(--wd-color-text-secondary); font-size: .75rem; }
 .editorTabs { display: flex; gap: .4rem; border-block-end: 1px solid var(--wd-color-structural-divider); padding-block-end: .65rem; }
 .editorTabs button { border: 0; border-radius: .4rem; color: var(--wd-color-text-secondary); padding: .6rem .75rem; background: transparent; font: inherit; cursor: pointer; }
-.editorTabs button[aria-pressed="true"] { background: #faf7fd; color: #755b84; box-shadow: inset 0 -2px #ceb6df; }
-:global([data-theme="dark"]) .studioPage > .toolbar > .actions > strong { color: #f1e7f5; }
+.editorTabs button[aria-pressed="true"] { background: var(--wd-color-surface-muted); color: var(--wd-color-action-primary); box-shadow: inset 0 -2px var(--wd-color-action-primary); }
+:global([data-theme="dark"]) .studioPage > .toolbar > .actions > strong { color: var(--wd-color-text); }
 .studioPage > .toolbar { padding-block: .35rem; }

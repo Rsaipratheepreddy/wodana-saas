@@ -156,12 +156,17 @@ test("designer workspace: folders, review, remarks, revisions and portal decisio
   await page
     .getByRole("button", { name: "Send for review", exact: true })
     .click();
+  const reviewConfirmation = page.getByRole("checkbox", {
+    name: "I checked the preview and it matches this folder, room, item and design type.",
+    exact: true,
+  });
   await page
-    .getByRole("checkbox", {
-      name: "I checked the preview and it matches this folder, room, item and design type.",
-      exact: true,
-    })
-    .check();
+    .getByText(
+      "I checked the preview and it matches this folder, room, item and design type.",
+      { exact: true },
+    )
+    .click();
+  await expect(reviewConfirmation).toBeChecked();
   await page
     .getByRole("dialog", { name: "Send for review", exact: true })
     .getByRole("button", { name: "Send for review", exact: true })
@@ -209,12 +214,17 @@ test("designer workspace: folders, review, remarks, revisions and portal decisio
   await page
     .getByRole("button", { name: "Send for review", exact: true })
     .click();
+  const revisedReviewConfirmation = page.getByRole("checkbox", {
+    name: "I checked the preview and it matches this folder, room, item and design type.",
+    exact: true,
+  });
   await page
-    .getByRole("checkbox", {
-      name: "I checked the preview and it matches this folder, room, item and design type.",
-      exact: true,
-    })
-    .check();
+    .getByText(
+      "I checked the preview and it matches this folder, room, item and design type.",
+      { exact: true },
+    )
+    .click();
+  await expect(revisedReviewConfirmation).toBeChecked();
   await page
     .getByRole("dialog", { name: "Send for review", exact: true })
     .getByRole("button", { name: "Send for review", exact: true })

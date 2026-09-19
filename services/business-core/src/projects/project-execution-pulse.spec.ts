@@ -199,6 +199,8 @@ describe("project execution pulse", () => {
       links: [{
         scopeLineId: "line-1", sourceScopeId: "source-1", sourceScopeVersion: 1,
         sourceSpecificationVersion: 1, designVersionId: "design-1", designId: "design",
+        assetId: "asset-1", fileName: "Joinery drawing.pdf", mimeType: "application/pdf",
+        byteSize: 1024, hasPreview: false,
         title: "Joinery drawing", documentType: "drawing", revision: 1,
         approvedAt: "2026-09-16T09:00:00.000Z",
       }],

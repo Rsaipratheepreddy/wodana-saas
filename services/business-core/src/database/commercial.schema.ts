@@ -51,8 +51,13 @@ export const commercialPaymentTemplates = pgTable(
     name: varchar("name", { length: 160 }).notNull(),
     version: integer("version").notNull().default(1),
     milestones: jsonb("milestones").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique().on(t.workspaceId, t.name)],
+  (t) => [
+    unique().on(t.workspaceId, t.name),
+    check("commercial_payment_templates_status_check", sql`${t.status} IN ('active','archived')`),
+  ],
 );
 export const clientPortalSettings = pgTable("client_portal_settings", {
   workspaceId: uuid("workspace_id")
@@ -131,5 +136,9 @@ export const commercialQuotationTemplates = pgTable("commercial_quotation_templa
   name: varchar("name", { length: 160 }).notNull(),
   version: integer("version").notNull().default(1),
   content: jsonb("content").notNull(),
+  status: varchar("status", { length: 16 }).notNull().default("active"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique().on(t.workspaceId, t.name)]);
+}, (t) => [
+  unique().on(t.workspaceId, t.name),
+  check("commercial_quotation_templates_status_check", sql`${t.status} IN ('active','archived')`),
+]);

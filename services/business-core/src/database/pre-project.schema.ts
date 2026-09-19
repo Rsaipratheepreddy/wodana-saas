@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, smallint, text, timestamp, unique, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { workspaceCatalogRecords } from "./catalog.schema";
 import { crmOpportunities } from "./crm.schema";
 import { users, workspaceMemberships, workspaces } from "./schema";
@@ -114,6 +114,53 @@ export const preProjectScopeLinks = pgTable("pre_project_scope_links",{
   foreignKey({columns:[t.workspaceId,t.recordId],foreignColumns:[workspaceCatalogRecords.workspaceId,workspaceCatalogRecords.id]}),
   check("pre_project_scope_links_role_check",sql`${t.role} IN ('work','variant','material','brand','finish','unit','execution')`)]);
 
+export const oneTreeNodes = pgTable("one_tree_nodes", {
+  id: uuid("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id").notNull(),
+  caseId: uuid("case_id").notNull(),
+  parentId: uuid("parent_id"),
+  kind: varchar("kind", { length: 12 }).notNull(),
+  sourceType: varchar("source_type", { length: 20 }).notNull(),
+  sourceId: uuid("source_id").notNull(),
+  status: varchar("status", { length: 12 }).notNull().default("active"),
+  version: integer("version").notNull().default(1),
+  replacesNodeId: uuid("replaces_node_id"),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, t => [
+  unique().on(t.workspaceId, t.id),
+  unique().on(t.workspaceId, t.caseId, t.sourceType, t.sourceId),
+  foreignKey({ columns: [t.workspaceId, t.caseId], foreignColumns: [preProjectCases.workspaceId, preProjectCases.id] }),
+  foreignKey({ columns: [t.workspaceId, t.parentId], foreignColumns: [t.workspaceId, t.id] }),
+  foreignKey({ columns: [t.workspaceId, t.replacesNodeId], foreignColumns: [t.workspaceId, t.id] }),
+  index("one_tree_nodes_job_idx").on(t.workspaceId, t.jobId, t.kind, t.status, t.createdAt, t.id),
+  index("one_tree_nodes_case_idx").on(t.workspaceId, t.caseId, t.parentId, t.kind, t.status),
+  check("one_tree_nodes_kind_check", sql`${t.kind} IN ('site','room','zone','item')`),
+  check("one_tree_nodes_source_type_check", sql`${t.sourceType} IN ('case','room','brief_entry','manual')`),
+  check("one_tree_nodes_status_check", sql`${t.status} IN ('active','archived')`),
+  check("one_tree_nodes_version_check", sql`${t.version}>0`),
+]);
+
+export const oneTreeNodeRevisions = pgTable("one_tree_node_revisions", {
+  workspaceId: uuid("workspace_id").notNull(),
+  nodeId: uuid("node_id").notNull(),
+  revision: integer("revision").notNull(),
+  sourceVersion: integer("source_version").notNull(),
+  sourceHash: varchar("source_hash", { length: 64 }).notNull(),
+  label: varchar("label", { length: 240 }).notNull(),
+  snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ columns: [t.workspaceId, t.nodeId, t.revision] }),
+  unique().on(t.workspaceId, t.nodeId, t.sourceHash),
+  foreignKey({ columns: [t.workspaceId, t.nodeId], foreignColumns: [oneTreeNodes.workspaceId, oneTreeNodes.id] }),
+  index("one_tree_node_revisions_latest_idx").on(t.workspaceId, t.nodeId, t.revision.desc()),
+  check("one_tree_node_revisions_source_version_check", sql`${t.sourceVersion}>=0`),
+]);
+
 export const preProjectDesignFolders = pgTable("pre_project_design_folders",{
  id:uuid("id").primaryKey(),...caseColumns(),name:varchar("name",{length:160}).notNull(),description:text("description").notNull().default(""),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),version:integer("version").notNull().default(1),...createdColumns(),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[unique().on(t.workspaceId,t.caseId,t.id),uniqueIndex("pre_project_design_folders_name_key").on(t.workspaceId,t.caseId,sql`lower(${t.name})`),
@@ -132,11 +179,12 @@ export const preProjectDesigns = pgTable("pre_project_designs",{
 export const preProjectDesignVersions = pgTable("pre_project_design_versions",{
   reviewerId:uuid("reviewer_id").references(()=>users.id),
   id:uuid("id").primaryKey(),...caseColumns(),designId:uuid("design_id").notNull(),number:integer("number").notNull(),assetId:uuid("asset_id").notNull(),note:text("note").notNull().default(""),
-  status:varchar("status",{length:30}).notNull().default("draft"),...createdColumns(),
+  includedClientRounds:smallint("included_client_rounds"),clientReviewExpiresAt:timestamp("client_review_expires_at",{withTimezone:true}),status:varchar("status",{length:30}).notNull().default("draft"),...createdColumns(),
 },t=>[unique().on(t.workspaceId,t.caseId,t.designId,t.id),unique().on(t.designId,t.number),uniqueIndex("pre_project_design_versions_case_id_key").on(t.workspaceId,t.caseId,t.id),
+  index("pre_project_design_versions_review_expiry_idx").on(t.workspaceId,t.status,t.clientReviewExpiresAt).where(sql`${t.status}='client_review'`),
   foreignKey({columns:[t.workspaceId,t.caseId,t.designId],foreignColumns:[preProjectDesigns.workspaceId,preProjectDesigns.caseId,preProjectDesigns.id]}),
   foreignKey({columns:[t.workspaceId,t.caseId,t.assetId],foreignColumns:[preProjectBriefAssets.workspaceId,preProjectBriefAssets.caseId,preProjectBriefAssets.id]}),
-  check("pre_project_design_versions_number_check",sql`${t.number}>0`),check("pre_project_design_versions_status_check",sql`${t.status} IN ('draft','internal_review','internal_approved','client_review','approved','changes_requested')`)]);
+  check("pre_project_design_versions_number_check",sql`${t.number}>0`),check("pre_project_design_versions_client_rounds_check",sql`${t.includedClientRounds} IS NULL OR ${t.includedClientRounds} BETWEEN 0 AND 99`),check("pre_project_design_versions_status_check",sql`${t.status} IN ('draft','internal_review','internal_approved','client_review','approved','changes_requested','rejected')`)]);
 
 export const preProjectDesignActivity = pgTable("pre_project_design_activity",{
   reviewerId:uuid("reviewer_id").references(()=>users.id),decisionSource:varchar("decision_source",{length:30}),decisionAt:timestamp("decision_at",{withTimezone:true}),

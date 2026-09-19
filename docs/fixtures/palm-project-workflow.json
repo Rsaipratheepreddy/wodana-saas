@@ -1,0 +1,105 @@
+{
+  "version": 0,
+  "code": "palm_design_build_delivery",
+  "name": "Palm design and build delivery",
+  "description": "Palm Living's post-release delivery stages. Owner Review and Deal File remain release gates; On Hold remains a project condition.",
+  "isDefault": true,
+  "stages": [
+    {
+      "key": "project_setup",
+      "visibleName": "Project setup",
+      "description": "Confirm the project manager, delivery team and executable package plan from the released Deal File.",
+      "phase": "planning",
+      "ownerRole": "project_manager",
+      "exitGates": ["project_manager_assigned", "tasks_planned"]
+    },
+    {
+      "key": "concept_moodboard",
+      "visibleName": "Concept & moodboard",
+      "description": "Coordinate the released concept and moodboard work without replacing approved revision history.",
+      "phase": "active",
+      "ownerRole": "senior_designer",
+      "exitGates": []
+    },
+    {
+      "key": "space_planning",
+      "visibleName": "Space planning",
+      "description": "Coordinate room layouts and the accepted scope for each space.",
+      "phase": "active",
+      "ownerRole": "senior_designer",
+      "exitGates": []
+    },
+    {
+      "key": "renders_client_approval",
+      "visibleName": "Renders & client approval",
+      "description": "Manage render revisions and exact client decisions through the design approval records.",
+      "phase": "active",
+      "ownerRole": "senior_designer",
+      "exitGates": []
+    },
+    {
+      "key": "technical_materials",
+      "visibleName": "Technical drawings & materials",
+      "description": "Coordinate approved technical drawings and material selections for delivery.",
+      "phase": "active",
+      "ownerRole": "technical_designer",
+      "exitGates": []
+    },
+    {
+      "key": "boq_procurement",
+      "visibleName": "BOQ & procurement",
+      "description": "Plan released quantities, purchase requirements, suppliers and evidence-backed commitments.",
+      "phase": "active",
+      "ownerRole": "procurement_production",
+      "exitGates": []
+    },
+    {
+      "key": "manufacturing_readiness",
+      "visibleName": "Manufacturing readiness",
+      "description": "Confirm package readiness, approved production evidence and applicable finance gates.",
+      "phase": "active",
+      "ownerRole": "procurement_production",
+      "exitGates": []
+    },
+    {
+      "key": "manufacturing",
+      "visibleName": "Manufacturing",
+      "description": "Track factory work, inspection and dispatch evidence against released quantities.",
+      "phase": "active",
+      "ownerRole": "procurement_production",
+      "exitGates": []
+    },
+    {
+      "key": "site_works",
+      "visibleName": "Site works",
+      "description": "Coordinate site readiness, execution, evidence and recovery actions.",
+      "phase": "active",
+      "ownerRole": "project_manager",
+      "exitGates": []
+    },
+    {
+      "key": "installation",
+      "visibleName": "Installation",
+      "description": "Track accepted site receipts, installed quantities and inspections.",
+      "phase": "active",
+      "ownerRole": "project_manager",
+      "exitGates": ["all_tasks_closed"]
+    },
+    {
+      "key": "snagging_handover",
+      "visibleName": "Snagging & handover",
+      "description": "Close verified snags and complete the exact client handover and finance controls.",
+      "phase": "handover",
+      "ownerRole": "project_manager",
+      "exitGates": ["all_snags_closed", "all_handovers_accepted", "finance_closed"]
+    },
+    {
+      "key": "completed",
+      "visibleName": "Completed",
+      "description": "Keep the accepted project, package and aftercare history available as an auditable record.",
+      "phase": "completed",
+      "ownerRole": null,
+      "exitGates": []
+    }
+  ]
+}

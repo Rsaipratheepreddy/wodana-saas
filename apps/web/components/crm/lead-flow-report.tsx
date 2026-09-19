@@ -36,20 +36,20 @@ export function LeadFlowReport({ initialData }: { initialData: LeadsPageData }) 
     if (groupBy === "source") { const [source, channel] = value.split(" / "); return `${leadOptionLabel(initialData.leadOptions?.sources, source)} / ${leadOptionLabel(initialData.leadOptions?.channels[source], channel)}`; }
     return value.replaceAll("_", " ");
   };
-  return <section className={styles.forms} aria-label="Lead reports">
-    <header className={styles.toolbar}><div><h2>Lead flow</h2><p>Current outcomes for leads created in the selected period. Stale means no record update for 7 days.</p></div><div className={styles.actions}><SelectField label="Group by" items={groups} selectedKey={groupBy} onSelectionChange={key => key && setGroup(String(key))} /><SelectField label="Period" items={[{ id: "7", label: "Last 7 days" }, { id: "30", label: "Last 30 days" }, { id: "90", label: "Last 90 days" }, { id: "365", label: "Last year" }]} selectedKey={period} onSelectionChange={key => key && setPeriod(String(key))} /></div></header>
+  return <section className={styles.forms} aria-label="Enquiry reports">
+    <header className={styles.toolbar}><div><h2>Enquiry performance</h2><p>Outcomes for enquiries created in the selected period. Stale means no update for 7 days.</p></div><div className={styles.actions}><SelectField label="Group by" items={groups} selectedKey={groupBy} onSelectionChange={key => key && setGroup(String(key))} /><SelectField label="Period" items={[{ id: "7", label: "Last 7 days" }, { id: "30", label: "Last 30 days" }, { id: "90", label: "Last 90 days" }, { id: "365", label: "Last year" }]} selectedKey={period} onSelectionChange={key => key && setPeriod(String(key))} /></div></header>
     {loading ? <p role="status">Loading report…</p> : error ? <Callout title="Report unavailable" tone="warning">{error}</Callout> : <>
-      <DataGrid ariaLabel="Lead flow report" data={report?.rows ?? []} getRowId={row => row.id} pageSize={50} exportFileName="lead-flow.csv" columns={[
+      <DataGrid ariaLabel="Enquiry health report" data={report?.rows ?? []} getRowId={row => row.id} pageSize={50} exportFileName="enquiry-health.csv" columns={[
         { id: "label", header: groups.find(group => group.id === groupBy)?.label ?? "Group", accessorFn: row => label(row.label), size: 260 },
-        { accessorKey: "leads", header: "Leads", size: 100 }, { accessorKey: "unassigned", header: "Unassigned", size: 120 },
+        { accessorKey: "leads", header: "Enquiries", size: 110 }, { accessorKey: "unassigned", header: "Unassigned", size: 120 },
         { accessorKey: "qualified", header: "Qualified", size: 110 }, { accessorKey: "disqualified", header: "Disqualified", size: 120 },
         { accessorKey: "qualificationRate", header: "Qualified %", size: 125 }, { accessorKey: "won", header: "Won", size: 90 },
         { accessorKey: "lost", header: "Lost", size: 90 }, { accessorKey: "stale", header: "Stale", size: 90 },
         { accessorKey: "averageDaysSinceUpdate", header: "Avg days since update", size: 190 },
-      ]} emptyTitle="No leads in this period" emptyDescription="Choose a longer period or start collecting enquiries." />
+      ]} emptyTitle="No enquiries in this period" emptyDescription="Choose a longer period or start collecting enquiries." />
       <div className={styles.settings}><h3>Incoming enquiries</h3><p>{report?.processing.map(item => `${item.status === "ready" ? "Processed" : item.status === "duplicate_candidate" ? "Duplicate review" : item.status.replaceAll("_", " ")}: ${item.count}`).join(" · ") || "No submissions"}</p></div><DataGrid ariaLabel="Walk-in performance" data={report?.walkIns ?? []} getRowId={row => row.intakeMethod} showToolbar={false} columns={[
         { id: "intake", header: "Walk-in capture", accessorFn: row => row.intakeMethod === "form" ? "Customer form / QR" : row.intakeMethod === "manual" ? "Staff entry" : row.intakeMethod, size: 230 },
-        { accessorKey: "count", header: "Submissions", size: 140 }, { accessorKey: "leads", header: "Leads", size: 100 },
+        { accessorKey: "count", header: "Submissions", size: 140 }, { accessorKey: "leads", header: "Enquiries", size: 110 },
         { accessorKey: "qualified", header: "Qualified", size: 120 }, { accessorKey: "disqualified", header: "Disqualified", size: 120 },
         { accessorKey: "duplicates", header: "Duplicate review", size: 150 },
       ]} emptyTitle="No walk-in enquiries in this period" />

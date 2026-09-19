@@ -56,11 +56,11 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onDup
     finally { setSaving(false); }
   };
   return <ControlledModalDialog isOpen isDismissable={!saving} onOpenChange={open => { if (!open && !saving) onClose(); }} size="lg"
-    title={existing ? "Edit lead enquiry" : "Add lead"} description={existing?.reference ?? "Customer details, enquiry and ownership in one place."}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>Cancel</Button><Button form={formId} type="submit" variant="primary" isDisabled={!options} isLoading={saving}>{savedId ? "Refresh lead" : existing ? "Save changes" : "Create lead"}</Button></div>}>
+    title={existing ? "Edit enquiry" : "Add enquiry"} description={existing?.reference ?? "Customer details, enquiry and ownership in one place."}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>Cancel</Button><Button form={formId} type="submit" variant="primary" isDisabled={!options} isLoading={saving}>{savedId ? "Refresh enquiry" : existing ? "Save changes" : "Create enquiry"}</Button></div>}>
     <form id={formId} className={styles.leadForm} onSubmit={save}>
       {failure && <Callout title="Enquiry not saved" tone="danger">{failure}</Callout>}
-      {!options && <Callout title="Enquiry options unavailable" tone="warning">Refresh Leads to load the current configuration.</Callout>}
+      {!options && <Callout title="Enquiry options unavailable" tone="warning">Refresh Enquiries to load the current configuration.</Callout>}
       <fieldset className={styles.enquiryFields} disabled={saving || Boolean(savedId)}>
         <div className={styles.formColumns}><TextInput isRequired label="Customer name" value={contact.displayName} onChange={set("displayName")} /><TextInput label="Mobile" inputType="tel" value={contact.mobile ?? ""} onChange={set("mobile")} /></div>
         <div className={styles.formColumns}><TextInput label="Email" inputType="email" value={contact.email ?? ""} onChange={set("email")} /><TextInput label="Property location" value={details.location ?? ""} onChange={setDetail("location")} placeholder="Area, emirate or property" /></div>
@@ -68,8 +68,8 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onDup
         <TextAreaField label="Project description · optional" value={summary} onChange={setSummary} placeholder="What would the customer like to do?" />
         {!existing && <>
           <div className={styles.formColumns}><SelectField label="Source" isRequired items={options?.sources ?? []} selectedKey={source} onSelectionChange={key => { const value = String(key); setSource(value); setChannel(options?.channels[value]?.[0]?.id ?? ""); }} /><SelectField label="Channel" isRequired items={options?.channels[source] ?? []} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} /></div>
-          <div className={styles.formColumns}><SelectField label="Assignment" items={[{ id: "manual", label: "Choose salesperson" }, { id: "automatic", label: "Use routing rules" }, { id: "unassigned", label: "Leave unassigned" }]} selectedKey={mode} onSelectionChange={key => key && setMode(String(key))} />
-            {mode === "manual" ? <SelectField isRequired label="Salesperson" items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? "Uses the matching rule or default team and available capacity." : "The lead stays visible in the Unassigned view."}</p>}
+          <div className={styles.formColumns}><SelectField label="Assignment" items={[{ id: "manual", label: "Choose sales owner" }, { id: "automatic", label: "Use routing rules" }, { id: "unassigned", label: "Leave unassigned" }]} selectedKey={mode} onSelectionChange={key => key && setMode(String(key))} />
+            {mode === "manual" ? <SelectField isRequired label="Sales owner" items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? "Uses the matching rule or default team and available capacity." : "The enquiry stays visible in Unassigned."}</p>}
           </div>
         </>}
         <details className={styles.moreDetails}>
@@ -84,7 +84,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved, onDup
             <TextAreaField label="Internal notes" value={details.internalNotes ?? ""} onChange={setDetail("internalNotes")} />
           </div>
         </details>
-        {!existing && <p className={styles.routingHint}>Enquiry reference is assigned automatically when the lead is created.</p>}
+        {!existing && <p className={styles.routingHint}>The enquiry reference is assigned automatically.</p>}
       </fieldset>
     </form>
   </ControlledModalDialog>;

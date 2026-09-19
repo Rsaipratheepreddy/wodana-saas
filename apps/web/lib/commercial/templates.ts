@@ -35,6 +35,19 @@ export function applyQuotationTemplate(
     inclusions: content.inclusions,
     terms: content.terms,
     exclusions: content.exclusions,
+    presentation: content.presentation
+      ? {
+          ...content.presentation,
+          pages: content.presentation.pages.map((page) => ({
+            ...page,
+            id: page.kind === "custom" ? `custom:${crypto.randomUUID()}` : page.id,
+            elements: page.elements.map((element) => ({
+              ...element,
+              id: crypto.randomUUID(),
+            })),
+          })),
+        }
+      : undefined,
     paymentTerms: content.paymentTerms.map((term) => ({
       ...term,
       id: crypto.randomUUID(),

@@ -1,6 +1,15 @@
 "use client";
 import { useState } from "react";
-import { Button, SelectField } from "@/design-system";
+import {
+  Button,
+  Checkbox,
+  DateField,
+  NumericInput,
+  SelectField,
+  TextAreaField,
+  useDesignSystem,
+} from "@/design-system";
+import { today, type CalendarDate } from "@internationalized/date";
 import {
   caseRequest,
   designPayload,
@@ -218,6 +227,7 @@ export function DesignUpload({
       title: string;
       documentType: string;
       note: string;
+      includedClientRounds: number | null;
       asset: CaseAsset;
     }>
   >([]);
@@ -247,6 +257,7 @@ export function DesignUpload({
             title: f.title,
             documentType: f.documentType,
             note: f.note,
+            includedClientRounds: f.includedClientRounds,
           })),
         },
       );
@@ -297,6 +308,7 @@ export function DesignUpload({
               title: asset.name.slice(0, 240),
               documentType: "2D floor plan",
               note: "",
+              includedClientRounds: null,
             },
           ])
         }
@@ -308,6 +320,18 @@ export function DesignUpload({
             workspaceId={data.workspaceId}
             caseId={data.caseId}
             assets={[f.asset]}
+            onMarked={!disabled && files.length < 20 ? (asset) => setFiles((rows) => [
+              ...rows,
+              {
+                id: crypto.randomUUID(),
+                versionId: crypto.randomUUID(),
+                asset,
+                title: `${f.title} · marked copy`.slice(0, 240),
+                documentType: f.documentType,
+                note: f.note,
+                includedClientRounds: f.includedClientRounds,
+              },
+            ]) : undefined}
             onRemove={
               !disabled
                 ? () =>
@@ -328,21 +352,39 @@ export function DesignUpload({
               )
             }
           />
-          <label>
-            Note · optional
-            <textarea
-              rows={2}
-              maxLength={5000}
-              value={f.note}
-              onChange={(e) =>
+          <NumericInput
+            label="Included client review rounds"
+            description="Leave empty when the agreement does not define a limit."
+            minValue={0}
+            maxValue={99}
+            value={f.includedClientRounds ?? NaN}
+            onChange={(value) =>
+              setFiles((rows) =>
+                rows.map((row) =>
+                  row.id === f.id
+                    ? {
+                        ...row,
+                        includedClientRounds: Number.isFinite(value)
+                          ? value
+                          : null,
+                      }
+                    : row,
+                ),
+              )
+            }
+          />
+          <TextAreaField
+            label="Note · optional"
+            maxLength={5000}
+            value={f.note}
+            onChange={(value) =>
                 setFiles((rows) =>
                   rows.map((row) =>
-                    row.id === f.id ? { ...row, note: e.target.value } : row,
+                    row.id === f.id ? { ...row, note: value } : row,
                   ),
                 )
-              }
-            />
-          </label>
+            }
+          />
         </fieldset>
       ))}
     </CaseModal>
@@ -457,18 +499,38 @@ export function DesignMetadata({
             key && setDraft((d) => ({ ...d, documentType: String(key) }))
           }
         />
-        <label>
-          Note
-          <textarea
-            rows={3}
-            maxLength={5000}
-            disabled={busy || locked}
-            value={draft.description}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, description: e.target.value }))
-            }
-          />
-        </label>
+        <NumericInput
+          label="Included client review rounds"
+          description="Leave empty when the agreement does not define a limit."
+          isDisabled={busy || locked}
+          minValue={0}
+          maxValue={99}
+          value={draft.versions[0]?.includedClientRounds ?? NaN}
+          onChange={(value) =>
+            setDraft((d) => ({
+              ...d,
+              versions: d.versions.map((revision, index) =>
+                index === 0
+                  ? {
+                      ...revision,
+                      includedClientRounds: Number.isFinite(value)
+                        ? value
+                        : null,
+                    }
+                  : revision,
+              ),
+            }))
+          }
+        />
+        <TextAreaField
+          label="Note"
+          maxLength={5000}
+          isDisabled={busy || locked}
+          value={draft.description}
+          onChange={(value) =>
+            setDraft((d) => ({ ...d, description: value }))
+          }
+        />
         {locked && (
           <p className={styles.muted}>
             This revision has entered review. Upload a new revision before
@@ -546,6 +608,7 @@ export function RevisionUpload({
           workspaceId={data.workspaceId}
           caseId={data.caseId}
           assets={[asset]}
+          onMarked={!busy && !uploading ? setAsset : undefined}
           onRemove={!busy ? () => setAsset(null) : undefined}
         />
       ) : (
@@ -559,16 +622,13 @@ export function RevisionUpload({
           onUploaded={setAsset}
         />
       )}
-      <label>
-        What changed?
-        <textarea
-          rows={3}
-          maxLength={5000}
-          disabled={busy || uploading}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-      </label>
+      <TextAreaField
+        label="What changed?"
+        maxLength={5000}
+        isDisabled={busy || uploading}
+        value={note}
+        onChange={setNote}
+      />
       <p className={styles.muted}>
         Earlier files and decisions stay in history. This revision begins a new
         review.
@@ -600,6 +660,7 @@ export function DesignReview({
   onClose: () => void;
   onSaved: (d: CaseDesign) => void;
 }) {
+  const { timeZone } = useDesignSystem();
   const [note, setNote] = useState("");
   const defaultReviewer =
     options.reviewers.length === 1 ? options.reviewers[0].id : null;
@@ -608,8 +669,15 @@ export function DesignReview({
   const [id] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [reviewExpiresOn, setReviewExpiresOn] = useState<CalendarDate>(() =>
+    today(timeZone).add({ days: 7 }),
+  );
   const latest = design.versions[0];
   const sending = action === "client_review";
+  const usedRounds = design.clientRoundsUsed ?? 0;
+  const includedRounds = latest?.includedClientRounds;
+  const overAllowance =
+    sending && includedRounds != null && usedRounds >= includedRounds;
   const portalBlocked =
     sending &&
     options.portal &&
@@ -617,6 +685,8 @@ export function DesignReview({
   const valid =
     Boolean(latest) &&
     !portalBlocked &&
+    (!sending || Boolean(reviewExpiresOn)) &&
+    (!overAllowance || Boolean(note.trim())) &&
     (action !== "internal_review" || Boolean(reviewer)) &&
     (action !== "internal_review" || contextConfirmed) &&
     (action !== "changes_requested" || Boolean(note.trim()));
@@ -640,6 +710,13 @@ export function DesignReview({
             decisionBy: "",
             ...(action === "internal_review" ? { reviewerId: reviewer } : {}),
             ...(action === "internal_review" ? { contextConfirmed } : {}),
+            ...(sending
+              ? {
+                  reviewExpiresAt: new Date(
+                    reviewExpiresOn.add({ days: 1 }).toDate(timeZone).getTime() - 1,
+                  ).toISOString(),
+                }
+              : {}),
           },
         ),
       );
@@ -708,15 +785,14 @@ export function DesignReview({
               The selected reviewer can approve this revision or request
               changes.
             </p>
-            <label className={styles.confirmation}>
-              <input
-                type="checkbox"
-                checked={contextConfirmed}
-                disabled={busy}
-                onChange={(event) => setContextConfirmed(event.target.checked)}
-              />
-              <span>I checked the preview and it matches this folder, room, item and design type.</span>
-            </label>
+            <Checkbox
+              isSelected={contextConfirmed}
+              isDisabled={busy}
+              onChange={setContextConfirmed}
+            >
+              I checked the preview and it matches this folder, room, item and
+              design type.
+            </Checkbox>
           </>
         )}
         {portalBlocked ? (
@@ -736,31 +812,49 @@ export function DesignReview({
           </p>
         ) : (
           sending && (
-            <p className={styles.muted}>
-              This exact revision will be available in the client portal. The
-              client can approve it or request changes. Share the portal link
-              with them; this does not send a notification.
-            </p>
+            <>
+              <DateField
+                label="Client decision due"
+                isRequired
+                minValue={today(timeZone).add({ days: 1 })}
+                value={reviewExpiresOn}
+                onChange={(value) => value && setReviewExpiresOn(value as CalendarDate)}
+              />
+              {overAllowance ? (
+                <p role="alert" className={styles.notice}>
+                  {usedRounds} of {includedRounds} included client review rounds
+                  are already used. This is a guided exception, not a silent
+                  block. Record the approved reason below before continuing.
+                </p>
+              ) : null}
+              <p className={styles.muted}>
+                This exact revision will be available in the client portal until
+                the selected date. The client can approve it, request changes or
+                reject it. Share the portal link with them; this does not claim a
+                notification was sent.
+              </p>
+            </>
           )
         )}
-        <label>
-          {action === "changes_requested"
-            ? "Changes needed"
-            : "Review note · optional"}
-          <textarea
-            required={action === "changes_requested"}
-            maxLength={5000}
-            rows={3}
-            disabled={busy}
-            placeholder={
-              action === "changes_requested"
-                ? "Tell the designer what needs to change."
-                : "Add context if needed."
-            }
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
+        <TextAreaField
+          label={
+            action === "changes_requested"
+              ? "Changes needed"
+              : overAllowance
+                ? "Approved exception reason"
+                : "Review note · optional"
+          }
+          isRequired={action === "changes_requested" || overAllowance}
+          maxLength={5000}
+          isDisabled={busy}
+          placeholder={
+            action === "changes_requested"
+              ? "Tell the designer what needs to change."
+              : "Add context if needed."
+          }
+          value={note}
+          onChange={setNote}
+        />
         {sending && options.portal?.enabled && options.portal.slug && (
           <a
             href={"/portal/" + encodeURIComponent(options.portal.slug)}

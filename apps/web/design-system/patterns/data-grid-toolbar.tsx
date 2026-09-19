@@ -9,7 +9,7 @@ import { Checkbox, SearchInput, SelectField, TextInput } from "../components/for
 import type { DataGridColumnMeta, SavedView } from "./data-grid";
 import { useDesignSystem } from "../foundations/provider";
 
-export function DataGridToolbar<T>({ table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows, totalRowCount }: {
+export function DataGridToolbar<T>({ table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows }: {
   table: Table<T>; views: SavedView[]; activeView?: string; onViewChange: (id: string) => void;
   searchLabel: string; actions?: ReactNode; onExport: () => void; hasMoreRows?: boolean; totalRowCount?: number;
   searchValue?: string; onSearchChange?: (value: string) => void;
@@ -26,18 +26,19 @@ export function DataGridToolbar<T>({ table, views, activeView, onViewChange, sea
   const columnItems = (items: typeof columns) => items.map(column => ({ id: column.id, label: String(column.columnDef.header) }));
   return <header className="wd-grid-toolbar wd-record-toolbar">
     <div className="wd-record-tools">
+      <div className="wd-record-controls">
       {views.length ? <SelectField label="Table view" selectedKey={activeView} onSelectionChange={key => key && onViewChange(String(key))} items={views} /> : <span className="wd-record-view"><Table2 size={14} />Table view</span>}
       <DialogTrigger>
-        <Button variant="quiet" size="compact" aria-label="Manage columns"><Columns3 size={14} />{columns.filter(column => column.getIsVisible()).length}/{columns.length} columns</Button>
+        <Button variant="quiet" size="compact" aria-label="Manage columns"><Columns3 size={14} />Columns</Button>
         <Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-column-popover" placement="bottom start"><Dialog aria-label="Visible columns" className="wd-column-menu">
           <strong>Columns</strong>
           {columns.map(column => <Checkbox key={column.id} isDisabled={!column.getCanHide()} isSelected={column.getIsVisible()} onChange={column.toggleVisibility}>{typeof column.columnDef.header === 'string' ? column.columnDef.header : column.id}</Checkbox>)}
           <Button size="compact" variant="quiet" onPress={() => table.resetColumnVisibility()}>Reset columns</Button>
         </Dialog></Popover>
       </DialogTrigger>
-      <span className="wd-record-count" title={hasMoreRows ? 'Rows loaded so far. Load more to include older records.' : undefined}><Rows3 size={14} />{table.getFilteredRowModel().rows.length}/{totalRowCount ?? table.getCoreRowModel().rows.length} {hasMoreRows ? 'loaded rows' : 'rows'}</span>
+      {hasMoreRows ? <span className="wd-record-count" title="Load more to include older records."><Rows3 size={14} />{table.getFilteredRowModel().rows.length} loaded</span> : null}
       <DialogTrigger>
-        <Button variant="quiet" size="compact" aria-label="Filter" isDisabled={!filterable.length}><Filter size={14} />{filters.length ? `${filters.length} filter${filters.length === 1 ? '' : 's'}` : 'No filters'}</Button>
+        <Button variant="quiet" size="compact" aria-label="Filter" isDisabled={!filterable.length}><Filter size={14} />{filters.length ? `${filters.length} filter${filters.length === 1 ? '' : 's'}` : 'Filter'}</Button>
         <Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-record-panel" placement="bottom start"><Dialog aria-label="Filter records">{({ close }) => <>
           <header><strong>Filter records</strong><IconButton aria-label="Close filters" onPress={close} size="compact"><X size={14} /></IconButton></header>
           <SelectField label="Column" items={columnItems(filterable)} selectedKey={filterColumn?.id} onSelectionChange={key => key && setFilterId(String(key))} />
@@ -55,10 +56,11 @@ export function DataGridToolbar<T>({ table, views, activeView, onViewChange, sea
           <footer><Button variant="quiet" size="compact" isDisabled={!sort} onPress={() => table.resetSorting()}>Clear sort</Button><Button size="compact" onPress={close}>Done</Button></footer>
         </>}</Dialog></Popover>
       </DialogTrigger>
+      </div>
       <form className="wd-record-search" onSubmit={event => event.preventDefault()}>
         <SearchInput label={searchLabel} placeholder="Search…" value={searchValue ?? String(table.getState().globalFilter ?? '')} onChange={value => onSearchChange ? onSearchChange(value) : table.setGlobalFilter(value)} />
       </form>
     </div>
-    <div className="wd-record-actions"><Button size="compact" onPress={onExport} aria-label={table.getSelectedRowModel().rows.length ? 'Export selected rows' : 'Export filtered rows'}><Download size={14} aria-hidden="true"/>Export</Button>{actions}</div>
+    <div className="wd-record-actions"><Button size="compact" variant="quiet" onPress={onExport} aria-label={table.getSelectedRowModel().rows.length ? 'Export selected rows' : 'Export filtered rows'}><Download size={14} aria-hidden="true"/>Export</Button>{actions}</div>
   </header>;
 }

@@ -26,6 +26,7 @@ const upper = ({ value }: { value: unknown }) => typeof value === "string" ? val
 export class ListSupplierOffersQueryDto {
   @IsOptional() @IsIn(["draft", "active", "archived"]) status?: string;
   @IsOptional() @IsUUID() vendorId?: string;
+  @IsOptional() @IsUUID() legalEntityId?: string;
   @IsOptional() @IsUUID() catalogRecordId?: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(240) search?: string;
   @IsOptional() @IsString() @MaxLength(1000) cursor?: string;
@@ -35,6 +36,7 @@ export class ListSupplierOffersQueryDto {
 export class ApplicableSupplierOffersQueryDto {
   @IsUUID() catalogRecordId!: string;
   @IsUUID() unitRecordId!: string;
+  @IsUUID() legalEntityId!: string;
   @Transform(upper) @Matches(/^[A-Z]{3}$/) currency!: string;
   @Type(() => Number) @IsNumber({ maxDecimalPlaces: 6 }) @Min(0.000001) @Max(1_000_000_000) quantity!: number;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) validOn?: string;
@@ -45,8 +47,10 @@ export class CreateSupplierOfferDto {
   @IsInt() @Min(0) @Max(0) version!: number;
   @IsUUID() vendorId!: string;
   @IsOptional() @IsUUID() vendorSiteId?: string;
+  @IsOptional() @IsUUID() legalEntityId?: string;
   @IsUUID() catalogRecordId!: string;
   @IsOptional() @IsUUID() unitRecordId?: string;
+  @IsOptional() @IsUUID() replacesOfferId?: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(120) supplierSku?: string;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 6 }) @Min(0) @Max(1_000_000_000_000) amount?: number;
   @IsOptional() @Transform(upper) @Matches(/^[A-Z]{3}$/) currency?: string;
@@ -67,6 +71,7 @@ export class CreateSupplierOfferDto {
 export class UpdateSupplierOfferDto {
   @IsInt() @Min(1) version!: number;
   @IsOptional() @IsUUID() vendorSiteId?: string | null;
+  @IsOptional() @IsUUID() legalEntityId?: string | null;
   @IsOptional() @IsUUID() unitRecordId?: string | null;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(120) supplierSku?: string | null;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 6 }) @Min(0) @Max(1_000_000_000_000) amount?: number | null;

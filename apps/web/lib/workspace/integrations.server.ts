@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
 import type { CompanyProfileData } from "./company-profile";
-import { integrationsPageFixture, type IntegrationConnection, type IntegrationsPageData } from "./integrations";
+import { integrationsPageFixture, providerCapabilitiesFixture, type IntegrationConnection, type IntegrationsPageData, type ProviderCapabilitiesResponse } from "./integrations";
 
 export async function getIntegrationsPageData(): Promise<IntegrationsPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -19,19 +19,27 @@ export async function getIntegrationsPageData(): Promise<IntegrationsPageData> {
     headers: { authorization: `Bearer ${token}` },
     cache: "no-store",
   }).catch(() => null);
-  const [profileResponse, connectionsResponse] = await Promise.all([
+  const [profileResponse, connectionsResponse, capabilitiesResponse] = await Promise.all([
     request(`/workspaces/${membership.workspaceId}`),
     request(`/workspaces/${membership.workspaceId}/integration-connections`),
+    request(`/workspaces/${membership.workspaceId}/integration-capabilities`),
   ]);
-  if ([profileResponse, connectionsResponse].some((response) => response?.status === 401)) redirect("/login");
-  if (!profileResponse || !connectionsResponse) throw new Error("The integrations service is unavailable.");
-  if (!profileResponse.ok || !connectionsResponse.ok) throw new Error("Integrations could not be loaded.");
+  if ([profileResponse, connectionsResponse, capabilitiesResponse].some((response) => response?.status === 401)) redirect("/login");
+  if (!profileResponse?.ok) throw new Error("The workspace profile could not be loaded.");
 
   const profile = await profileResponse.json() as CompanyProfileData;
   return {
     canManage,
-    connections: await connectionsResponse.json() as IntegrationConnection[],
+    // Integrations are an optional capability on older core releases. Keep the
+    // settings screen usable and show the provider catalogue while that API is
+    // unavailable instead of failing the entire workspace settings route.
+    connections: connectionsResponse?.ok
+      ? await connectionsResponse.json() as IntegrationConnection[]
+      : [],
     legalEntities: profile.legalEntities,
+    providerCapabilities: capabilitiesResponse?.ok
+      ? await capabilitiesResponse.json() as ProviderCapabilitiesResponse
+      : providerCapabilitiesFixture,
     workspaceId: membership.workspaceId,
   };
 }

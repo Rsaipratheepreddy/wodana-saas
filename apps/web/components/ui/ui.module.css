@@ -402,7 +402,7 @@
 .progressValue {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--wd-aqua-500), var(--wd-brand-500));
+  background: var(--wd-color-action-primary);
   transition: width var(--wd-duration-slow) var(--wd-ease-out);
 }
 
@@ -504,7 +504,7 @@
 .carousel { overflow: hidden; }
 .carouselViewport { overflow: hidden; border-radius: var(--wd-radius-md); }
 .carouselTrack { display: flex; transition: transform var(--wd-duration-slow) var(--wd-ease-out); }
-.carouselSlide { min-width: 100%; padding: var(--wd-space-8); background: linear-gradient(135deg, var(--wd-brand-900), var(--wd-brand-700)); color: white; }
+.carouselSlide { min-width: 100%; padding: var(--wd-space-8); background: var(--wd-brand-900); color: white; }
 .carouselEyebrow { margin: 0 0 var(--wd-space-6); color: var(--wd-brand-200); font-size: var(--wd-text-xs); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .carouselQuote { max-width: 34rem; margin: 0; font-size: var(--wd-text-lg); line-height: 1.45; letter-spacing: -0.015em; }
 .carouselMeta { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); margin-top: var(--wd-space-8); color: var(--wd-brand-100); font-size: var(--wd-text-sm); }
@@ -525,13 +525,14 @@
 .directionActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-3); }
 
 .skeleton { position: relative; overflow: hidden; border-radius: var(--wd-radius-xs); background: #e8ecea; }
-.skeleton::after { position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 70%), transparent); content: ""; transform: translateX(-100%); animation: shimmer 1.5s infinite; }
+.skeleton::after { position: absolute; inset: 0; background: var(--wd-color-surface-hover); content: ""; opacity: 0.4; animation: skeletonPulse 1.5s ease-in-out infinite alternate; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes tabIn { from { transform: scaleX(0.4); opacity: 0; } }
 @keyframes contentIn { from { transform: translateY(4px); opacity: 0; } }
 @keyframes dialogIn { from { transform: translateY(8px) scale(0.985); opacity: 0; } }
 @keyframes shimmer { to { transform: translateX(100%); } }
+@keyframes skeletonPulse { to { opacity: 0.1; } }
 
 @media (prefers-reduced-motion: reduce) {
   .spinner,

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  acceptedVariationsToRelease,
+  acceptedVariationSnapshotIsCurrent,
   controlledChangeCanRelease,
   deductionDraftLine,
   dispositionsCoverImpact,
@@ -8,6 +10,7 @@ import {
   sourceLinesForChange,
   validateControlledChangeSources,
 } from "./change-control";
+import { freezeHash } from "./commercial.domain";
 import type { CommercialData, Quote } from "./commercial.types";
 import type { ProjectData } from "../projects/execution.types";
 
@@ -38,6 +41,22 @@ function commercial(overrides: Partial<CommercialData> = {}) {
     requests: [],
     ...overrides,
   } as CommercialData;
+}
+
+function acceptedVariation(input: Quote) {
+  const quote = structuredClone(input);
+  quote.hash = freezeHash(quote);
+  quote.clientDecision = {
+    decision: "accept",
+    quoteHash: quote.hash,
+    selectedOptionLineIds: [],
+    baseTotal: quote.total,
+    optionsTotal: 0,
+    acceptedTotal: quote.total,
+    decidedAt: "2026-09-16T10:00:00.000Z",
+    decidedBy: "Client",
+  };
+  return quote;
 }
 
 describe("controlled change cases", () => {
@@ -180,14 +199,14 @@ describe("controlled change cases", () => {
         ],
       },
     };
-    const remove = {
+    const remove = acceptedVariation({
       ...baseQuote,
       id: "remove",
       kind: "variation",
       direction: "deduction",
       status: "accepted",
       requestIds: ["change-1"],
-    } as Quote;
+    } as Quote);
     const add = {
       ...baseQuote,
       id: "add",
@@ -199,7 +218,26 @@ describe("controlled change cases", () => {
     const data = commercial({ quotes: [baseQuote, remove, add], requests: [request] });
 
     expect(controlledChangeCanRelease(data, "change-1")).toBe(false);
-    add.status = "accepted";
+    Object.assign(add, acceptedVariation({ ...add, status: "accepted" } as Quote));
     expect(controlledChangeCanRelease(data, "change-1")).toBe(true);
+    add.title = "Changed after acceptance";
+    expect(acceptedVariationSnapshotIsCurrent(add)).toBe(false);
+    expect(controlledChangeCanRelease(data, "change-1")).toBe(false);
+  });
+
+  it("plans each accepted variation once without rewriting the baseline", () => {
+    const variation = {
+      ...baseQuote,
+      id: "addition",
+      number: 2,
+      kind: "variation",
+      direction: "addition",
+      status: "accepted",
+      baselineId: baseQuote.id,
+    } as Quote;
+    const data = commercial({ quotes: [baseQuote, variation] });
+    expect(acceptedVariationsToRelease(data, [])).toEqual([variation]);
+    expect(acceptedVariationsToRelease(data, [variation.id])).toEqual([]);
+    expect(data.quotes[0]).toBe(baseQuote);
   });
 });

@@ -130,7 +130,7 @@ export function VendorOrderForm() {
     current = actions.find((a) => a.id === form.kind)!;
   const brandStyle = brand
     ? ({
-        "--wd-brand-gradient": `linear-gradient(110deg,${brand.primaryColor},${brand.accentColor})`,
+        "--wd-brand-gradient": brand.primaryColor,
         "--vendor-tint": brand.primaryColor,
       } as CSSProperties)
     : {};

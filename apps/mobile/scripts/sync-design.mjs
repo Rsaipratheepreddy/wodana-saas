@@ -9,13 +9,26 @@ function declarations(block) {
     .map(([, name, value]) => [name, value.trim()]));
 }
 
+function blendHex(foreground, background, percent) {
+  const share = Number(percent) / 100;
+  const channels = [1, 3, 5].map(index => Math.round(
+    Number.parseInt(foreground.slice(index, index + 2), 16) * share
+    + Number.parseInt(background.slice(index, index + 2), 16) * (1 - share),
+  ));
+  return `#${channels.map(value => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
 function resolve(name, values, seen = new Set()) {
   if (seen.has(name) || !values[name]) throw new Error(`Unresolved design token: ${name}`);
   seen.add(name);
-  return values[name].replace(/var\((--wd-[\w-]+)\)/g,
-    (_, reference) => resolve(reference, values, new Set(seen)))
+  return values[name].replace(/var\((--wd-[\w-]+)(?:,\s*([^()]+))?\)/g,
+    (_, reference, fallback) => values[reference] ? resolve(reference, values, new Set(seen)) : fallback?.trim() ?? (() => { throw new Error(`Unresolved design token: ${reference}`); })())
     .replace(/rgb\((\d+) (\d+) (\d+) \/ (\d+)%\)/g,
-      (_, r, g, b, a) => `rgba(${r}, ${g}, ${b}, ${Number(a) / 100})`);
+      (_, r, g, b, a) => `rgba(${r}, ${g}, ${b}, ${Number(a) / 100})`)
+    // Native colors cannot evaluate CSS color-mix. Use the static brand fallback;
+    // tenant-selected primary colors are applied separately at runtime.
+    .replace(/color-mix\(in oklch,\s*(#[0-9a-f]{6})\s+(\d+)%,\s*(#[0-9a-f]{6})\)/gi,
+      (_, foreground, percent, background) => blendHex(foreground, background, percent));
 }
 
 export async function generateTokens() {

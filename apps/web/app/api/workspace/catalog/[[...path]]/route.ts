@@ -2,7 +2,7 @@ import { invalidRequest,isSameOrigin,UUID,workspaceJsonResponse } from "@/lib/wo
 async function handle(request:Request,{params}:{params:Promise<{path?:string[]}>}) {
  const {path=[]}=await params; const workspaceId=new URL(request.url).searchParams.get("workspaceId")??"";
  const route=path.join("/");
- const valid=(request.method==="GET"&&!route)||(request.method==="PUT"&&route==="records")||(request.method==="PATCH"&&path.length===2&&path[0]==="records"&&UUID.test(path[1]))||(request.method==="POST"&&["starter","collections","organize","import"].includes(route));
+ const valid=(request.method==="GET"&&!route)||(request.method==="PUT"&&route==="records")||(request.method==="PATCH"&&path.length===2&&path[0]==="records"&&UUID.test(path[1]))||(request.method==="POST"&&["starter","collections","organize","import","preview"].includes(route));
  if(!UUID.test(workspaceId)||!valid) return invalidRequest("Invalid catalog resource.");
  let body:string|undefined;
  if(request.method!=="GET") {

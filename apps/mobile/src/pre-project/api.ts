@@ -2,9 +2,9 @@ import {useEffect,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import {useAuth} from '../auth/provider';
 // The field app consumes the same contracts and payload serializers as the portal.
-export type {CaseContent,CaseRoom,CaseAsset,ScopeEntry,ItemDimension,CatalogChoice,CaseBrief} from '../../../web/lib/pre-project/content';
+export type {CaseContent,CaseRoom,CaseAsset,ScopeEntry,ItemDimension,CatalogChoice,CaseBrief,CaseDesign,DesignOptions,DesignVersion} from '../../../web/lib/pre-project/content';
 export type {SiteData,SiteRecord,SiteKind} from '../../../web/lib/pre-project/site';
-export type {PreProjectCase,PreProjectList} from '../../../web/lib/pre-project/types';
+export type {PreProjectCase,PreProjectListItem,PreProjectList} from '../../../web/lib/pre-project/types';
 export {entryPayload,briefFields} from '../../../web/lib/pre-project/content';
 export {sitePayload,siteLabels,visitInstant,visitWallTime} from '../../../web/lib/pre-project/site';
 import type {ScopeEntry} from '../../../web/lib/pre-project/content';

@@ -11,6 +11,7 @@ import { CommercialCatalogPicker, type CommercialCatalogChoice } from './catalog
 import { QuotationNumberInput } from './quotation-number-input';
 import { QuotationItemRecipe } from './quotation-item-recipe';
 import { QuotationItemMaterials } from './quotation-item-materials';
+import { applyCatalogMedia } from '@/lib/commercial/quotation-table';
 import { QuotationProductPicker, QuotationVariantChoices } from './quotation-product-picker';
 import { QuotationRoomPicker } from './quotation-room-picker';
 import s from './quotation-workbench.module.css';
@@ -29,11 +30,11 @@ export function QuotationRoomDialog({quote,room,itemId,workspaceId,caseId,initia
   const maxItems=quote.lines.filter(l=>l.room!==room).length+lines.length>=300;
   const patch=(line:QuoteLine)=>setLines(rows=>rows.map(l=>l.id===line.id?line:l));
   const choose=(id:string)=>{setSelected(id);setBrowsing(false);setAddedMessage('');};
-  const addCustom=()=>{if(maxItems)return;const next=newLine(name);setLines(rows=>[...rows,next]);setSearch('');choose(next.id);};
-  const addProduct=(product:CommercialCatalogChoice,variant:CommercialCatalogChoice|null)=>{
+  const addCustom=()=>{if(maxItems)return;const next={...newLine(name),manualReason:'Added manually in the quotation item composer'};setLines(rows=>[...rows,next]);setSearch('');choose(next.id);};
+  const addProduct=async(product:CommercialCatalogChoice,variant:CommercialCatalogChoice|null)=>{
     const existing=lines.find(line=>line.catalogLinks?.some(link=>link.role==='work'&&link.recordId===product.id)&&line.catalogLinks?.find(link=>link.role==='variant')?.recordId===variant?.id);
     if(existing){if(existing.quantity>=1e6)return;patch({...existing,quantity:existing.quantity+1});setSelected(existing.id);}
-    else{if(maxItems)return;const next=selectVariant({...catalogItem(name,product),title:quotationItemName(product.name,catalog?.name??name)},variant);setLines(rows=>[...rows,next]);setSelected(next.id);}
+    else{if(maxItems)return;const base=selectVariant({...catalogItem(name,product),title:quotationItemName(product.name,catalog?.name??name)},variant);const next=await applyCatalogMedia(workspaceId,base,variant,product);setLines(rows=>[...rows,next]);setSelected(next.id);}
     setAddedMessage(`${quotationItemName(product.name,catalog?.name??name)} added${existing?' · quantity '+(existing.quantity+1):''}`);
   };
   const remove=(id:string)=>{const next=lines.filter(line=>line.id!==id);setLines(next);if(selected===id){setSelected(next[0]?.id??'');if(!next.length)setBrowsing(true);}};
@@ -64,12 +65,12 @@ export function QuotationRoomDialog({quote,room,itemId,workspaceId,caseId,initia
             <div className={s.selectedItemHeading}>{quote.direction!=='deduction'?<button className={s.backToItem} onClick={()=>setBrowsing(true)}><ArrowLeft size={13}/>Back to items</button>:<strong>Edit item</strong>}<div className={s.actions}><button className={s.iconButton} aria-label="Duplicate item" title="Duplicate item" disabled={maxItems||quote.direction==='deduction'} onClick={()=>{const copy={...structuredClone(item),id:crypto.randomUUID()};setLines(rows=>[...rows,copy]);setSearch('');choose(copy.id);}}><Copy size={14}/></button><button className={s.iconButton} title="Remove item" aria-label="Remove item" onClick={()=>remove(item.id)}><Trash2 size={14}/></button></div></div>
             <div className={s.itemForm}>
               <label>Item name<input aria-label="Item name" value={item.title} maxLength={240} onChange={e=>patch({...item,title:e.target.value})}/></label>
-              {work&&quote.direction!=='deduction'&&<QuotationVariantChoices workspaceId={workspaceId} caseId={caseId} work={work.snapshot} roomName={catalog?.name??name} value={item.catalogLinks?.find(link=>link.role==='variant')?.snapshot??null} onChange={value=>patch(selectVariant(item,value))}/>}
+              {work&&quote.direction!=='deduction'&&<QuotationVariantChoices workspaceId={workspaceId} caseId={caseId} work={work.snapshot} roomName={catalog?.name??name} value={item.catalogLinks?.find(link=>link.role==='variant')?.snapshot??null} onChange={async value=>patch(await applyCatalogMedia(workspaceId,selectVariant(item,value),value,work.snapshot))}/>} 
               <div className={s.priceFields}><label>Quantity<QuotationNumberInput label="Item quantity" value={item.quantity} min={.0001} max={1e6} onChange={quantity=>patch({...item,quantity})}/></label><label>Unit<input aria-label="Item unit" maxLength={20} value={item.unit} onChange={e=>patch(customUnit(item,e.target.value))}/></label><label>Unit price · {quote.currency}<QuotationNumberInput label="Item unit price" money value={item.rate} onChange={rate=>patch({...item,rate})}/></label></div>
               {item.rate===0&&<p className={s.hint}>Enter a unit price.</p>}
               <QuotationItemRecipe item={item} onChange={patch} workspaceId={workspaceId} caseId={caseId}/>
               <details className={s.notes}><summary>Other materials & finishes{item.customMaterials?.length?` · ${item.customMaterials.length} custom`:''}</summary><QuotationItemMaterials item={item} onChange={patch} workspaceId={workspaceId} caseId={caseId} library={quote.lines.flatMap(line=>line.customMaterials??[])}/></details>
-              <details className={s.notes}><summary>Notes & item link</summary><label>Additional description<textarea aria-label="Item description" rows={2} maxLength={32000} value={item.specification} onChange={e=>patch({...item,specification:e.target.value})}/></label>{quote.direction!=='deduction'&&<CommercialCatalogPicker workspaceId={workspaceId} caseId={caseId} kind="work" label="Item from Master Data" catalogId={catalog?.catalogId??master?.catalogId} value={work?.snapshot??null} onChange={value=>{if(value)patch(catalogItem(name,value,item));else patch({...item,catalogLinks:(item.catalogLinks??[]).filter(link=>!['work','variant','material','finish'].includes(link.role)),material:'',finish:''});}}/>}</details>
+              <details className={s.notes}><summary>Notes & item link</summary><label>Additional description<textarea aria-label="Item description" rows={2} maxLength={32000} value={item.specification} onChange={e=>patch({...item,specification:e.target.value})}/></label>{quote.direction!=='deduction'&&<CommercialCatalogPicker workspaceId={workspaceId} caseId={caseId} kind="work" label="Item from Master Data" catalogId={catalog?.catalogId??master?.catalogId} value={work?.snapshot??null} onChange={async value=>{if(value)patch(await applyCatalogMedia(workspaceId,catalogItem(name,value,item),value));else patch({...item,catalogLinks:(item.catalogLinks??[]).filter(link=>!['work','variant','material','finish'].includes(link.role)),material:'',finish:''});}}/>}</details>
               <div className={s.itemPreview}><span>Quotation description</span><p>{quotationDescription(item)||'Selected materials appear here.'}</p></div>
             </div>
           </div>}

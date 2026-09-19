@@ -1,14 +1,15 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 
-const collections = new Set(["settings", "lead-options", "lead-forms", "relationships", "parties", "leads", "queues", "assignment-policies", "sla-policies", "intake-inbox", "intake-events", "enquiries", "activities", "pipelines", "opportunities", "conversations", "sequences", "automations", "automation-runs", "automation-approvals", "today", "reports", "taxonomies", "custom-fields", "qualification-forms", "saved-views", "duplicate-candidates", "sequence-enrollments", "notification-templates"]);
-const segments = new Set(["responses", "details", "lead-flow", "default-managers", "requirement-notes", "decision", "members", "qualification", "qualify", "assign", "auto-assign", "assignment-simulation", "status", "complete", "appointment", "transition", "stages", "stakeholders", "team", "project-link", "messages", "read", "publish", "pause", "validate", "dry-run", "enrollments", "stop", "review", "contact-points", "addresses", "consents", "relationships", "sources", "pipeline", "funnel", "sla", "assignment", "forecast"]);
+const collections = new Set(["settings", "lead-options", "lead-forms", "relationships", "parties", "leads", "queues", "assignment-policies", "sla-policies", "intake-inbox", "intake-events", "enquiries", "activities", "pipelines", "opportunities", "conversations", "sequences", "automations", "automation-presets", "automation-runs", "automation-approvals", "ai-suggestions", "today", "reports", "taxonomies", "custom-fields", "qualification-forms", "saved-views", "duplicate-candidates", "sequence-enrollments", "notification-templates", "notification-policies", "notification-preferences", "notifications", "party-merges"]);
+const segments = new Set(["responses", "details", "lead-flow", "default-managers", "requirement-notes", "decision", "members", "qualification", "qualify", "assign", "auto-assign", "assignment-simulation", "status", "complete", "appointment", "transition", "stages", "stakeholders", "team", "project-link", "messages", "read", "publish", "pause", "validate", "dry-run", "enrollments", "stop", "review", "contact-points", "addresses", "consents", "relationships", "sources", "pipeline", "funnel", "sla", "assignment", "forecast", "approve", "archive", "history", "rollback", "privacy-erasure", "merge", "reverse"]);
 
 async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   if (path.length === 1 && path[0] === "members" && request.method === "GET" && UUID.test(workspaceId)) return workspaceJsonResponse(`/workspaces/${workspaceId}/members`, { method: "GET" }, "Members could not be loaded.");
-  if (!UUID.test(workspaceId) || !collections.has(path[0]) || path.length > 5 || path.slice(1).some((part) => !UUID.test(part) && !segments.has(part))) return invalidRequest("Invalid CRM resource.");
+  const validPreset = path[0] === "automation-presets" && path.length === 2 && /^[a-z][a-z_]{1,48}$/.test(path[1]);
+  if (!UUID.test(workspaceId) || !collections.has(path[0]) || path.length > 5 || (!validPreset && path.slice(1).some((part) => !UUID.test(part) && !segments.has(part)))) return invalidRequest("Invalid CRM resource.");
   if (request.method !== "GET") {
     if (!isSameOrigin(request)) return Response.json({ message: "This request must come from your workspace." }, { status: 403 });
   }

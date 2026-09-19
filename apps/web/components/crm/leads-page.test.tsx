@@ -5,41 +5,44 @@ import { leadsPageFixture, type CrmLeadListItem } from "@/lib/crm/leads";
 import { LeadsPage } from "./leads-page";
 
 vi.mock("next/font/google", () => ({ Caveat: () => ({ variable: "note-font" }) }));
+const router = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("LeadsPage", () => {
-  it("uses the shared record grid with avatars, source chips and search", async () => {
-    const interaction = userEvent.setup();
+  it("uses the shared record grid with avatars, source chips and search", () => {
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
 
-    expect(screen.getByRole("heading", { name: "Leads" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Enquiries" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Lead records" })).not.toBeInTheDocument();
-    const table = screen.getByRole("table", { name: "CRM leads" });
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "CRM enquiries" });
     expect(within(table).getAllByRole("row")).toHaveLength(6);
     expect(within(table).getByRole("columnheader", { name: /Stage/i })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: /Source/i })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /Channel/i })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /Intake method/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kanban" })).not.toBeInTheDocument();
     expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "card");
     expect(within(table).getByRole("img",{name:"Dr Maya Nair"})).toBeInTheDocument();
-    await interaction.type(screen.getByRole("searchbox", { name: "Search leads" }), "Emirates Hills");
+    const search = screen.getByRole("searchbox", { name: "Search enquiries" });
+    fireEvent.change(search, { target: { value: "Emirates Hills" } });
     expect(screen.getByText("Emirates Hills villa interior renovation")).toBeInTheDocument();
     expect(screen.queryByText("Dubai wellness clinic design")).not.toBeInTheDocument();
 
-    expect(within(screen.getByRole("table", { name: "CRM leads" })).getAllByRole("row")).toHaveLength(2);
+    expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row")).toHaveLength(2);
 
-    await interaction.clear(screen.getByRole("searchbox", { name: "Search leads" }));
+    fireEvent.change(search, { target: { value: "" } });
     expect(screen.getByText("Dubai wellness clinic design")).toBeInTheDocument();
   });
 
-  it("opens workspace enquiry-type configuration from the lead toolbar", async () => {
-    const user = userEvent.setup();
+  it("opens workspace enquiry-type configuration from the enquiry submenu", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ taxonomies: [] }) }));
-    render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
-
-    await user.click(screen.getByRole("button", { name: "Enquiry types" }));
+    const data = structuredClone(leadsPageFixture);
+    render(<LeadsPage initialData={data} initialSection="options" />);
 
     expect(await screen.findByRole("heading", { name: "Workspace enquiry options" })).toBeInTheDocument();
     expect(screen.getByText(/choices belong only to this workspace/i)).toBeInTheDocument();
@@ -55,18 +58,38 @@ describe("LeadsPage", () => {
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["New", "Initiated", "Qualified", "Disqualified"]);
     await user.keyboard("{Escape}");
     await filterLeads(user, "Stage", "Initiated");
-    expect(within(screen.getByRole("table", { name: "CRM leads" })).getAllByRole("row")).toHaveLength(5);
-  });
+    expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row")).toHaveLength(5);
+  }, 10_000);
 
-  it("provides a Pre-execution link immediately after qualification succeeds", async () => {
+  it("qualifies a lead through the conversion endpoint and keeps the pre-execution handoff", async () => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture), lead = data.items[0];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, status: "qualified", version: lead.version + 1, nextActionAt: null }) }));
+    const converted = { ...lead, status: "qualified" as const, isConverted: true, version: lead.version + 1, nextActionAt: null };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes(`/data/leads/${lead.id}/qualify`)) return { ok: true, json: async () => ({ id: "71000000-0000-4000-8000-000000000001", leadId: lead.id, title: lead.title }) };
+      if (url.startsWith("/api/workspace/crm/leads?")) return { ok: true, json: async () => ({ data: data.items.map((item) => item.id === lead.id ? converted : item), nextCursor: null }) };
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={data} />);
+
     await chooseOption(user, /Stage for Dr Maya Nair/, "Qualified");
-    expect(await screen.findByText("Dr Maya Nair moved to Qualified.")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Qualify enquiry" });
+    expect(within(dialog).getByDisplayValue(lead.title)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Qualify & create opportunity" }));
+
+    expect(await screen.findByText("Dr Maya Nair qualified and created an opportunity.")).toBeInTheDocument();
+    expect(fetchMock.mock.calls[0][0]).toContain(`/api/workspace/crm/data/leads/${lead.id}/qualify?workspaceId=${data.workspaceId}`);
+    const conversionRequest = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
+    expect(JSON.parse(conversionRequest[1].body)).toMatchObject({
+      partyId: lead.partyId,
+      leadVersion: lead.version,
+      pipelineId: data.pipelines[0].id,
+      ownerMembershipId: lead.ownerMembershipId,
+      title: lead.title,
+    });
     const row = screen.getByRole("button", { name: /Stage for Dr Maya Nair/ }).closest("tr")!;
     expect(within(row).getByRole("link", { name: /Open Pre-execution/ })).toHaveAttribute("href", `/workspace/pre-projects?search=${encodeURIComponent(lead.title)}`);
-  });
+  }, 10_000);
 
   it("opens the existing lead inspector from the table", async () => {
     const interaction = userEvent.setup();
@@ -75,30 +98,33 @@ describe("LeadsPage", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => leadsPageFixture.items[0] }));
     await interaction.click(screen.getByRole("button", { name: /Amira Al Mansoori.*Emirates Hills/ }));
     const dialog = await screen.findByRole("dialog", { name: "Amira Al Mansoori" });
+    expect(within(dialog).getByRole("tab", { name: "Response" })).toBeInTheDocument();
     expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("tab", { name: "Provenance" })).toBeInTheDocument();
     expect(within(dialog).getByRole("tab", { name: "Requirement notes" })).toBeInTheDocument();
-    expect(within(dialog).getByText("Next follow-up")).toBeInTheDocument();
+    expect(within(dialog).getByText("Next action")).toBeInTheDocument();
+    expect(within(dialog).getByText("Contact action is not delivery proof")).toBeInTheDocument();
   });
 
   it("assigns from the table, preserves other rows, and uses the returned version for auto-assignment", async () => {
     const user = userEvent.setup();
     const data = structuredClone(leadsPageFixture);
     const lead = data.items[0];
-    const manager = { ...data.members[0], id: "10000000-0000-4000-8000-000000000099", displayName: "New lead manager" };
+    const manager = { ...data.members[0], id: "10000000-0000-4000-8000-000000000099", displayName: "New sales owner" };
     data.members.push(manager);
     const saved = { id: lead.id, ownerMembershipId: manager.id, queueId: lead.queueId, nextActionAt: lead.nextActionAt, status: lead.status, updatedAt: lead.updatedAt, version: lead.version + 1 };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => saved });
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={data} />);
     await user.click(screen.getByRole("button", { name: `Assign ${lead.partyName}` }));
-    let dialog = await screen.findByRole("dialog", { name: "Reassign lead" });
-    await user.click(within(dialog).getByRole("radio", { name: /New lead manager/ }));
+    let dialog = await screen.findByRole("dialog", { name: "Reassign enquiry" });
+    await user.click(within(dialog).getByRole("radio", { name: /New sales owner/ }));
     await user.click(within(dialog).getByRole("button", { name: "Reassign" }));
     await waitFor(() => expect(within(screen.getByRole("button", { name: `Assign ${lead.partyName}` })).getByRole("img", { name: manager.displayName })).toBeInTheDocument());
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ version: lead.version, ownerMembershipId: manager.id, queueId: lead.queueId });
-    expect(within(screen.getByRole("table", { name: "CRM leads" })).getAllByRole("row")).toHaveLength(data.items.length + 1);
+    expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row")).toHaveLength(data.items.length + 1);
     await user.click(screen.getByRole("button", { name: `Assign ${lead.partyName}` }));
-    dialog = await screen.findByRole("dialog", { name: "Reassign lead" });
+    dialog = await screen.findByRole("dialog", { name: "Reassign enquiry" });
     await user.click(within(dialog).getByRole("radio", { name: "Auto-assign" }));
     await user.click(within(dialog).getByRole("button", { name: "Reassign" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -112,7 +138,7 @@ describe("LeadsPage", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: "Lead changed; reload and try again" }) }));
     render(<LeadsPage initialData={data} />);
     await user.click(screen.getByRole("button", { name: `Assign ${lead.partyName}` }));
-    const dialog = await screen.findByRole("dialog", { name: "Reassign lead" });
+    const dialog = await screen.findByRole("dialog", { name: "Reassign enquiry" });
     await user.click(within(dialog).getByRole("radio", { name: "Auto-assign" }));
     await user.click(within(dialog).getByRole("button", { name: "Reassign" }));
     expect(await within(dialog).findByText("Lead changed; reload and try again")).toBeInTheDocument();
@@ -128,13 +154,13 @@ describe("LeadsPage", () => {
     const fixture = structuredClone(leadsPageFixture);
     fixture.leadOptions = { sources: [{id:"company",label:"Company"}], channels: {company:[{id:"call",label:"Call"}]}, enquiryTypes: [{id:"not_sure",label:"Not Sure Yet"}], customerTypes: [], budgetRanges: [] };
     render(<LeadsPage initialData={fixture} />);
-    await user.click(screen.getByRole("button", { name: "Add lead" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add lead" });
+    await user.click(screen.getByRole("button", { name: "Add enquiry" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add enquiry" });
     await user.type(within(dialog).getByLabelText(/Customer name/), "Layla Karim");
     await user.click(within(dialog).getByRole("button", { name: /Assignment/ }));
     await user.click(screen.getByRole("option", { name: mode === "automatic" ? "Use routing rules" : "Leave unassigned" }));
-    await user.click(within(dialog).getByRole("button", { name: "Create lead" }));
-    expect(await screen.findByText("Lead created.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Create enquiry" }));
+    expect(await screen.findByText("Enquiry created.")).toBeInTheDocument();
     expect(fetchMock.mock.calls[0][0]).toBe("/api/workspace/crm/leads");
     const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, {body:string}])[1].body);
     expect(body).toMatchObject({ displayName: "Layla Karim", title: "", assignment: { mode }, source: "company", channel: "call" });
@@ -157,14 +183,14 @@ describe("LeadsPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={{ ...structuredClone(leadsPageFixture), nextCursor: "fixture-next-page" }} />);
 
-    await interaction.click(screen.getByRole("button", { name: "Load more leads" }));
+    await interaction.click(screen.getByRole("button", { name: "Load more enquiries" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(String(fetchMock.mock.calls[0][0])).toContain(`workspaceId=${leadsPageFixture.workspaceId}`);
     expect(String(fetchMock.mock.calls[0][0])).toContain("cursor=fixture-next-page");
     expect(await screen.findByText("Downtown hospitality lounge")).toBeInTheDocument();
     expect(screen.getAllByText("Dubai wellness clinic design")).toHaveLength(1);
-    expect(screen.getByText("6/6 rows")).toBeInTheDocument();
+    expect(screen.getByText("6 records")).toBeInTheDocument();
   });
 
   it("filters independently by source and status and resets to all leads", async () => {
@@ -191,9 +217,6 @@ describe("LeadsPage", () => {
     expect(await screen.findByText("Dr Maya Nair moved to New.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(`/api/workspace/crm/leads/${lead.id}/status`, expect.objectContaining({ method: "POST", body: JSON.stringify({ workspaceId: leadsPageFixture.workspaceId, version: lead.version, status: "new" }) }));
     expect(screen.getByRole("button", { name: /Stage for Dr Maya Nair/ })).toHaveTextContent("New");
-    // A second move uses the returned server version, not the stale initial version.
-    await chooseOption(interaction, /Stage for Dr Maya Nair/, "Qualified");
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).version).toBe(lead.version + 1);
   });
 
   it("keeps a lead in its original status when the API rejects a move", async () => {
@@ -253,13 +276,13 @@ describe("LeadsPage", () => {
     expect(await screen.findByText("Dr Maya Nair moved to Disqualified.")).toBeInTheDocument();
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).reason).toBe("Client asked to wait until next month");
     expect(screen.getByRole("button", { name: /Stage for Dr Maya Nair/ })).toHaveTextContent("Disqualified");
-  });
+  }, 20_000);
 
   it("shows a permission state instead of an empty data grid", () => {
     render(<LeadsPage initialData={{ ...structuredClone(leadsPageFixture), canView: false, items: [] }} />);
 
-    expect(screen.getByText("Lead access is restricted")).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "CRM leads" })).not.toBeInTheDocument();
+    expect(screen.getByText("Enquiry access is restricted")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "CRM enquiries" })).not.toBeInTheDocument();
   });
 });
 

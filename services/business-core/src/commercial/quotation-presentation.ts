@@ -9,6 +9,15 @@ export function quotationItemName(title: string, room: string) {
   return title;
 }
 
+/** Concise, unit-aware finished size for the client document. */
+export function quotationDimensionsText(dimensions?: QuoteLine["dimensions"]): string {
+  if (!dimensions) return "";
+  const values = (["length", "height", "depth"] as const)
+    .filter((key) => dimensions[key] !== undefined)
+    .map((key) => `${key[0].toUpperCase()} ${dimensions[key]}`);
+  return values.length ? `${values.join(" × ")} ${dimensions.unit}` : "";
+}
+
 /** Remove appended catalog identifiers from generated summaries, preserving authored notes. */
 export function quotationMaterialText(
   line: Pick<QuoteLine, "material" | "finish" | "catalogLinks">,

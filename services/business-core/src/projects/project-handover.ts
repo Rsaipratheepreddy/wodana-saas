@@ -341,13 +341,20 @@ export function setHandoverOutstandingStatus(
   if (!item) throw new BadRequestException("Handover item not found.");
   if (status === "warranty" && (!handover.warrantyUntil || handover.status !== "accepted"))
     throw new ConflictException("Transfer an item to warranty only after an accepted handover with a warranty date.");
-  if (["closed", "warranty"].includes(status) && !evidence)
+  if (["ready", "closed", "warranty"].includes(status) && !evidence)
     throw new BadRequestException("Record completion evidence for this handover item.");
   item.status = status;
   if (evidence) item.evidence = evidence;
-  if (["closed", "warranty"].includes(status)) {
+  if (status === "ready") {
+    item.resolution = evidence;
+    item.resolutionBy = verifiedBy;
+    item.verifiedBy = undefined;
+  } else if (["closed", "warranty"].includes(status)) {
     item.resolution = evidence;
     item.verifiedBy = verifiedBy;
+  } else {
+    item.resolutionBy = undefined;
+    item.verifiedBy = undefined;
   }
 }
 

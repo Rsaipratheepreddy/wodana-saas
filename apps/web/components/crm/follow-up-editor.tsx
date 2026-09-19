@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Check, StickyNote } from "lucide-react";
-import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog } from "@/design-system";
 import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib/crm/client";
 import { localDateTime } from "@/lib/crm/calendar";
 import { useCrmResource } from "./crm-workbench";
@@ -32,11 +32,16 @@ function ScheduleFields({ date, time, onChange, required = false }: { date: stri
 export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved }: { workspaceId: string; recordId: string; summary?: RecordData; onClose: () => void; onSaved: (record: RecordData) => void }) {
   const resource = useCrmResource<RecordData>(workspaceId, `activities/${recordId}`);
   const [editing, setEditing] = useState({ dirty: false, busy: false });
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const editingChanged = useCallback((dirty: boolean, busy: boolean) => setEditing({ dirty, busy }), []);
-  const close = () => { if (!editing.busy && (!editing.dirty || window.confirm("Discard unsaved changes?"))) onClose(); };
-  return <InspectorSheet isOpen title="Follow-up" description="Your notes, next reminder, and progress." size="md" onOpenChange={(open) => { if (!open) close(); }}>
+  const close = () => {
+    if (editing.busy) return;
+    if (editing.dirty) { requestConfirmation({ title: "Discard unsaved follow-up changes?", body: "Your saved follow-up remains unchanged. Notes and reminder edits will be lost.", confirmLabel: "Discard changes", onConfirm: onClose }); return; }
+    onClose();
+  };
+  return <><InspectorSheet isOpen title="Follow-up" description="Your notes, next reminder, and progress." size="md" onOpenChange={(open) => { if (!open) close(); }}>
     {resource.loading ? <p role="status">Loading follow-up…</p> : resource.failure ? <Callout title="Could not open follow-up" tone="warning">{resource.failure}<Button size="compact" onPress={resource.refresh}>Retry</Button></Callout> : resource.data ? <FollowUpForm key={`${recordId}:${resource.data.version}`} workspaceId={workspaceId} initial={{ ...summary, ...resource.data }} onSaved={onSaved} onEditingChange={editingChanged} onReload={resource.refresh} onClose={close} /> : null}
-  </InspectorSheet>;
+  </InspectorSheet>{confirmationDialog}</>;
 }
 
 function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload, onClose }: { workspaceId: string; initial: RecordData; onSaved: (record: RecordData) => void; onEditingChange: (dirty: boolean, busy: boolean) => void; onReload: () => void; onClose: () => void }) {
@@ -47,6 +52,7 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
   const [failure, setFailure] = useState("");
   const [conflict, setConflict] = useState(false);
   const [notice, setNotice] = useState("");
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftFor(record));
   const pending = record.status === "pending";
   useEffect(() => onEditingChange(dirty, busy), [dirty, busy, onEditingChange]);
@@ -75,7 +81,7 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
         const result = await crmRequest<RecordData>(workspaceId, `activities/${record.id}/complete`, "POST", { version: current.version });
         current = { ...current, ...result }; setRecord(current); onSaved(current);
       }
-      setNotice(complete ? "Follow-up completed. Your notes are saved." : "Saved. Your reminder is updated in Overview and Calendar.");
+      setNotice(complete ? "Follow-up completed. Your notes are saved." : "Saved. Your reminder is updated in Today and Calendar.");
     } catch (error) {
       setConflict(error instanceof CrmRequestError && error.status === 409);
       setFailure(`${savedChanges ? "Notes and schedule were saved, but completion failed. " : ""}${(error as Error).message}`);
@@ -83,9 +89,9 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
   };
 
   return <form className={styles.editor} onSubmit={(event) => { event.preventDefault(); void save(false); }}>
-    <div className={styles.context}><span className={styles.contextIcon}><StickyNote size={19} /></span><div><strong>{String(record.partyName ?? record.leadTitle ?? record.title)}</strong><small>{label(record.type)}{record.ownerName ? ` · ${String(record.ownerName)}` : " · Unassigned"}</small></div>{record.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>Open lead</Link> : null}</div>
+    <div className={styles.context}><span className={styles.contextIcon}><StickyNote size={19} /></span><div><strong>{String(record.partyName ?? record.leadTitle ?? record.title)}</strong><small>{label(record.type)}{record.ownerName ? ` · ${String(record.ownerName)}` : " · Unassigned"}</small></div>{record.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>Open enquiry</Link> : null}</div>
     {!pending ? <p className={styles.status}><Check size={16} />{label(record.status)}{record.completedAt ? ` · ${new Date(String(record.completedAt)).toLocaleDateString()}` : ""}</p> : null}
-    {failure ? <Callout title="Could not save follow-up" tone="danger">{failure}{conflict ? <Button size="compact" onPress={() => { if (!dirty || window.confirm("Load the latest follow-up and discard your unsaved changes?")) { onEditingChange(false, false); onReload(); } }}>Reload latest</Button> : null}</Callout> : null}
+    {failure ? <Callout title="Could not save follow-up" tone="danger">{failure}{conflict ? <Button size="compact" onPress={() => { const reload = () => { onEditingChange(false, false); onReload(); }; if (dirty) { requestConfirmation({ title: "Load the latest follow-up?", body: "Your unsaved notes and reminder changes will be replaced by the latest saved version.", confirmLabel: "Reload latest", onConfirm: reload }); } else reload(); }}>Reload latest</Button> : null}</Callout> : null}
     {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
     {pending ? <fieldset disabled={busy} className={styles.fields}>
       <TextInput label="Follow-up title" isRequired value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
@@ -94,6 +100,7 @@ function FollowUpForm({ workspaceId, initial, onSaved, onEditingChange, onReload
       <TextAreaField label="Notes" description="Keep what the client said and what you need to do next." placeholder="Client asked me to call tomorrow about the quotation…" value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
     </fieldset> : <div className={styles.readOnly}><h3>{String(record.title)}</h3><p>{record.dueAt ? new Date(String(record.dueAt)).toLocaleString() : "No reminder date"}</p><h3>Notes</h3><p>{String(record.description || "No notes were added.")}</p>{record.completionOutcome ? <><h3>Outcome</h3><p>{String(record.completionOutcome)}</p></> : null}</div>}
     <div className={styles.actions}>{pending ? <><Button size="compact" isDisabled={busy || conflict} onPress={() => void save(true)}><Check size={15} />{dirty ? "Save & complete" : "Mark complete"}</Button><Button size="compact" variant="primary" type="submit" isDisabled={!dirty || conflict} isLoading={busy}>Save changes</Button></> : <Button size="compact" onPress={onClose}>Close</Button>}</div>
+    {confirmationDialog}
   </form>;
 }
 
@@ -135,17 +142,18 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated }: { workspa
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const [failure, setFailure] = useState("");
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const leadParties = new Set(leads.items.map((item) => item.partyId));
-  const targets = [...leads.items.map((item) => ({ id: `lead:${item.id}`, label: `${String(item.partyName ?? "Lead")} · ${String(item.title ?? "Enquiry")}`, record: item })), ...parties.items.filter((item) => !leadParties.has(item.id)).map((item) => ({ id: `party:${item.id}`, label: String(item.displayName ?? "Client"), record: item }))];
+  const targets = [...leads.items.map((item) => ({ id: `lead:${item.id}`, label: `${String(item.partyName ?? "Customer")} · ${String(item.title ?? "Enquiry")}`, record: item })), ...parties.items.filter((item) => !leadParties.has(item.id)).map((item) => ({ id: `party:${item.id}`, label: String(item.displayName ?? "Customer"), record: item }))];
   const dirty = Boolean(relation || type !== "call" || owner !== "unassigned" || JSON.stringify(draft) !== JSON.stringify(initial));
-  const close = () => { if (!busy && (!dirty || window.confirm("Discard this unsaved follow-up?"))) onClose(); };
+  const close = () => { if (busy) return; if (dirty) { requestConfirmation({ title: "Discard this unsaved follow-up?", body: "The reminder has not been saved and will be lost.", confirmLabel: "Discard follow-up", onConfirm: onClose }); return; } onClose(); };
   const change = (value: Partial<Draft>) => setDraft((old) => ({ ...old, ...value }));
   const save = async () => {
     if (saving.current) return;
     saving.current = true; setBusy(true); setFailure("");
     try {
       const target = targets.find((item) => item.id === relation);
-      if (!target) throw new Error("Choose a lead or client from the list.");
+      if (!target) throw new Error("Choose an enquiry or customer from the list.");
       const [kind, id] = relation.split(":");
       const name = String(target.record.partyName ?? target.record.displayName ?? "Client");
       const title = draft.title.trim() || `${label(type)} follow-up · ${name}`;
@@ -155,18 +163,18 @@ export function NewFollowUpDialog({ workspaceId, onClose, onCreated }: { workspa
     } catch (error) { setFailure((error as Error).message); }
     finally { saving.current = false; setBusy(false); }
   };
-  return <ControlledModalDialog isOpen title="Add follow-up" description="Choose a client, add a note, and set your next reminder." onOpenChange={(open) => { if (!open) close(); }} isDismissable={!busy}>
+  return <><ControlledModalDialog isOpen title="Add follow-up" description="Choose a client, add a note, and set your next reminder." onOpenChange={(open) => { if (!open) close(); }} isDismissable={!busy}>
     <form className={styles.editor} onSubmit={(event) => { event.preventDefault(); void save(); }}>
       {failure ? <Callout title="Could not save follow-up" tone="danger">{failure}</Callout> : null}
-      {leads.failure || parties.failure ? <Callout title="Some clients could not load" tone="warning">{leads.failure || parties.failure}<Button size="compact" onPress={() => { leads.retry(); parties.retry(); }}>Retry</Button></Callout> : null}
+      {leads.failure || parties.failure ? <Callout title="Some customers could not load" tone="warning">{leads.failure || parties.failure}<Button size="compact" onPress={() => { leads.retry(); parties.retry(); }}>Retry</Button></Callout> : null}
       <fieldset className={styles.fields} disabled={busy}>
-        <ComboboxField label="Lead or client" isRequired placeholder={leads.loading || parties.loading ? "Loading clients…" : "Search clients and leads…"} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => setRelation(String(key ?? ""))} isDisabled={!targets.length} />
-        {!leads.loading && !parties.loading && !targets.length ? <p className={styles.hint}>Add a lead before creating a follow-up. <Link href="/workspace/crm/leads">Open leads</Link></p> : null}
+        <ComboboxField label="Enquiry or customer" isRequired placeholder={leads.loading || parties.loading ? "Loading customers…" : "Search customers and enquiries…"} items={targets.filter((item) => item.label.toLocaleLowerCase().includes(targetSearch.toLocaleLowerCase()))} inputValue={targetSearch} onInputChange={setTargetSearch} selectedKey={relation || null} onSelectionChange={(key) => setRelation(String(key ?? ""))} isDisabled={!targets.length} />
+        {!leads.loading && !parties.loading && !targets.length ? <p className={styles.hint}>Add an enquiry before creating a follow-up. <Link href="/workspace/crm/leads">Open enquiries</Link></p> : null}
         <TextInput label="Follow-up title" placeholder="e.g. Call about the quotation" value={draft.title} maxLength={240} onChange={(title) => change({ title })} />
         <ScheduleFields date={draft.date} time={draft.time} onChange={change} required />
         <TextAreaField label="Notes" placeholder="Client asked me to call tomorrow…" value={draft.notes} maxLength={10000} onChange={(notes) => change({ notes })} />
         <details className={styles.options}><summary>Type & assignee</summary><div><SelectField label="Type" items={[{ id: "call", label: "Call" }, { id: "task", label: "Task" }, { id: "meeting", label: "Meeting" }]} selectedKey={type} onSelectionChange={(key) => setType(String(key))} /><SelectField label="Assigned to" items={[{ id: "unassigned", label: "Unassigned" }, ...rows(members.data).map((item) => ({ id: item.id, label: String(item.displayName ?? item.name ?? "Team member") }))]} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} />{members.failure ? <p className={styles.hint}>Assignees are unavailable. You can still save an unassigned reminder.</p> : null}</div></details>
       </fieldset><div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={close}>Cancel</Button><Button size="compact" type="submit" variant="primary" isLoading={busy} isDisabled={!relation}>Save reminder</Button></div>
     </form>
-  </ControlledModalDialog>;
+  </ControlledModalDialog>{confirmationDialog}</>;
 }

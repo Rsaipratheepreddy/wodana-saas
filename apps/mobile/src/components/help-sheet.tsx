@@ -40,12 +40,12 @@ export function HelpSheet({ topic, onClose, onSignIn }: {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(47,35,45,0.30)' },
-  sheet: { width: '100%', maxWidth: 520, maxHeight: '85%', alignSelf: 'center', borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: '#ffffff', overflow: 'hidden' },
-  content: { padding: 28, gap: 20 },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: tokens.colors.light.overlay },
+  sheet: { width: '100%', maxWidth: 520, maxHeight: '85%', alignSelf: 'center', borderTopLeftRadius: 16, borderTopRightRadius: 16, backgroundColor: tokens.colors.light.surface, overflow: 'hidden' },
+  content: { padding: 24, gap: 20 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  symbol: { width: 56, height: 56, borderRadius: 18, backgroundColor: `${tokens.brand.lilac}55`, alignItems: 'center', justifyContent: 'center' },
-  close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: '#f8f5f8' },
-  ink: { color: tokens.brand.ink, letterSpacing: -0.5 },
-  description: { color: '#645562', lineHeight: 23 },
+  symbol: { width: 48, height: 48, borderRadius: 12, backgroundColor: tokens.colors.light.actionPrimarySubtle, alignItems: 'center', justifyContent: 'center' },
+  close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: tokens.colors.light.surfaceMuted },
+  ink: { color: tokens.colors.light.text },
+  description: { color: tokens.colors.light.textSecondary, lineHeight: 23 },
 });

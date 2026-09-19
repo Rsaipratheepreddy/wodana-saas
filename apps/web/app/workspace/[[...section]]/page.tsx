@@ -1,9 +1,11 @@
-import { AuditLogPage, BillingPage, CompanyProfile, IntegrationsPage, MembersPage, OrganizationStructurePage, RolesPermissionsPage, SecurityPage, workspaceScreens } from "@/components/workspace";
-import { CrmScreenPage, LeadsPage } from "@/components/crm";
+import { AuditLogPage, BillingPage, CompanyProfile, IntegrationsPage, MembersPage, OrganizationStructurePage, RolesPermissionsPage, SecurityPage, WorkspaceConfigurationPage, workspaceScreens } from "@/components/workspace";
+import { CrmCustomers, CrmOpportunities, CrmReports, CrmScreenPage, LeadsPage, type EnquirySection } from "@/components/crm";
+import { TodayJobsPage } from "@/components/jobs";
 import { PRE_PROJECT_ROOT, listSearch } from "@/lib/pre-project/types";
 import { getPreProjectRedirect } from "@/lib/pre-project/routes";
 import { getLeadsPageData } from "@/lib/crm/leads.server";
 import { getCrmScreenPageData } from "@/lib/crm/screens.server";
+import { jobsRead } from "@/lib/jobs/jobs.server";
 import type { CrmScreenId } from "@/lib/crm/screens";
 import { getAuditLogPageData } from "@/lib/workspace/audit-log.server";
 import { getCompanyProfilePageData } from "@/lib/workspace/company-profile.server";
@@ -28,6 +30,10 @@ export default async function WorkspaceScreen({
   if (pathname === "/workspace/audit-log") redirect("/workspace/settings/audit-logs");
   if (pathname === "/workspace/security") redirect("/workspace/settings/security");
   if (pathname === "/workspace/projects/installation") redirect("/workspace/projects/site-work");
+  // Workflow authoring, run history and provider setup are platform operations.
+  // Tenant teams use the resulting SLA, routing and follow-up controls in their
+  // normal CRM flow instead of maintaining technical automations themselves.
+  if (pathname === "/workspace/crm/sequences") redirect("/workspace/crm");
   if (getPreProjectRedirect(pathname)) {
     redirect(getPreProjectRedirect(pathname, await searchParams)!);
   }
@@ -44,8 +50,25 @@ export default async function WorkspaceScreen({
   }
 
   if (screen.id === "company") {
-    const { canManage, profile } = await getCompanyProfilePageData();
-    return <CompanyProfile canManage={canManage} initialData={profile} />;
+    const data = await getCompanyProfilePageData();
+    return <CompanyProfile
+      canManage={data.canManage}
+      initialData={data.profile}
+    />;
+  }
+
+  if (screen.id === "business-records" || screen.id === "workspace-language" || screen.id === "organizations-account") {
+    const data = await getCompanyProfilePageData();
+    return <WorkspaceConfigurationPage
+      canManage={data.canManage}
+      initialData={data.profile}
+      initialTerminology={data.terminology}
+      terminologyUnavailable={data.terminologyUnavailable}
+      organizationAccount={data.organizationAccount}
+      organizationAccountUnavailable={data.organizationAccountUnavailable}
+      organizationRequests={data.organizationRequests}
+      view={screen.id === "business-records" ? "legal-entities" : screen.id === "organizations-account" ? "organizations" : "language"}
+    />;
   }
 
   if (screen.id === "members") {
@@ -85,11 +108,42 @@ export default async function WorkspaceScreen({
 
   if (screen.id === "leads") {
     const query = await searchParams;
-    return <LeadsPage key={String(query.lead ?? "leads")} initialCreate={query.create === "true"} initialData={await getLeadsPageData()} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} />;
+    const enquirySection = typeof query.section === "string" && ["forms", "options", "reports", "sla", "assignment"].includes(query.section)
+      ? query.section as Exclude<EnquirySection, "leads">
+      : undefined;
+    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} initialCreate={query.create === "true"} initialData={await getLeadsPageData()} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} />;
+  }
+
+  if (screen.id === "crm-overview") {
+    const { data, loadError } = await jobsRead();
+    return <TodayJobsPage items={data.items} loadError={loadError} />;
+  }
+
+  if (screen.id === "opportunities") {
+    const query = await searchParams;
+    return <CrmOpportunities
+      initialData={await getCrmScreenPageData("opportunities")}
+      initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined}
+    />;
+  }
+
+  if (screen.id === "customers") {
+    const query = await searchParams;
+    const view = query.type === "company" ? "organization" : query.type === "person" ? "person" : "all";
+    return <CrmCustomers
+      initialData={await getCrmScreenPageData("customers")}
+      initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined}
+      initialView={view}
+    />;
+  }
+
+  if (screen.id === "organizations") redirect("/workspace/crm/customers?type=company");
+  if (screen.id === "activities") redirect("/workspace/crm/follow-ups");
+  if (screen.id === "crm-reports") {
+    return <CrmReports initialData={await getCrmScreenPageData("crm-reports")} />;
   }
 
   const crmScreens = new Set<CrmScreenId>([
-    "crm-overview",
     "follow-ups",
     "calendar",
     "customers",
@@ -97,7 +151,6 @@ export default async function WorkspaceScreen({
     "opportunities",
     "activities",
     "conversations",
-    "sequences",
     "automations",
     "crm-reports",
   ]);

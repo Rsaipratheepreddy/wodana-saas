@@ -24,7 +24,7 @@ import {
 } from "./api";
 import { Button, TextField, Card, Choice, EmptyState, Notice, Sheet } from "./ui";
 import { clearPending, photoForm, readPending, savePending } from "./pending";
-import { syncCapture, type PendingCapture } from "./capture-queue";
+import { attendanceSyncFailure, syncCapture, type PendingCapture } from "./capture-queue";
 export function Attendance({
   workspaceId,
   boot,
@@ -133,12 +133,18 @@ function EmployeeAttendance({
       await syncCapture(saved, {
         request: (path, method, body) =>
           client.api(`/workspaces/${workspaceId}/hrms/${path}`, method, body),
-        photo: async (capture) =>
-          client.api(
-            `/workspaces/${workspaceId}/hrms/captures/${capture.input.captureId}/photo`,
-            "PUT",
-            await photoForm(capture),
-          ),
+        photo: async (capture) => {
+          const upload = await photoForm(capture);
+          try {
+            return await client.api(
+              `/workspaces/${workspaceId}/hrms/captures/${capture.input.captureId}/photo`,
+              "PUT",
+              upload.form,
+            );
+          } finally {
+            upload.cleanup();
+          }
+        },
       });
       await clearPending(saved);
       setPending(null);
@@ -146,14 +152,14 @@ function EmployeeAttendance({
       setMessage("Attendance recorded.");
       onSaved();
     } catch (error) {
-      if (
-        error instanceof ApiError &&
-        [400, 404, 409, 413, 422].includes(error.status)
-      ) {
-        setRejectedStatus(error.status);
+      const failure = attendanceSyncFailure(error);
+      if (failure.state !== "pending") {
+        setRejectedStatus(failure.status);
         setRetryReason(saved.input.exceptionReason);
         setKind(null);
-        setMessage([error.message, ...error.issues].join(" "));
+        setMessage(error instanceof ApiError
+          ? [failure.message, ...error.issues].join(" ")
+          : failure.message);
         onSaved();
       } else {
         setMessage(

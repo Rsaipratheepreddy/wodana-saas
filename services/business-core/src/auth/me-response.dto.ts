@@ -21,6 +21,12 @@ export class MembershipSummaryResponseDto {
   @ApiPropertyOptional({ type: String, nullable: true }) workspaceLogoUrl!: string | null;
   @ApiPropertyOptional({ example: "#0B7F5D", type: String, nullable: true })
   workspacePrimaryColor!: string | null;
+  @ApiPropertyOptional({ example: "#000000", type: String, nullable: true })
+  workspaceSecondaryColor!: string | null;
+  @ApiPropertyOptional({ example: "alta", type: String, nullable: true })
+  workspaceHeadingFont!: string | null;
+  @ApiPropertyOptional({ example: "montserrat", type: String, nullable: true })
+  workspaceBodyFont!: string | null;
   @ApiPropertyOptional({ type: String, format: "uuid", nullable: true }) accountId!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) accountName!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true, enum: ["owner", "administrator", "member"] })
@@ -28,8 +34,20 @@ export class MembershipSummaryResponseDto {
   @ApiProperty() isDefaultOrganization!: boolean;
   @ApiProperty() status!: string;
   @ApiProperty({ type: [String] }) roles!: string[];
+  @ApiProperty({ type: [String], description: "Modules allowed by both the organization's commercial entitlements and the member's effective role grants" })
+  allowedModules!: string[];
+  @ApiProperty({ description: "Commercial entitlement state. Legacy organizations remain explicitly not configured until an operator assigns a versioned set." })
+  entitlement!: { status: string; version: number | null };
   @ApiProperty({ type: () => WorkspaceOnboardingSummaryResponseDto })
   onboarding!: WorkspaceOnboardingSummaryResponseDto;
+}
+
+export class UnavailableOrganizationResponseDto {
+  @ApiProperty({ format: "uuid" }) workspaceId!: string;
+  @ApiProperty() workspaceName!: string;
+  @ApiProperty() workspaceSlug!: string;
+  @ApiProperty({ enum: ["suspended", "archived"] }) workspaceStatus!: string;
+  @ApiPropertyOptional({ type: String, nullable: true }) accountName!: string | null;
 }
 
 export class PendingInvitationSummaryResponseDto {
@@ -52,6 +70,8 @@ export class MeResponseDto {
   @ApiProperty({ type: IdentityResponseDto }) identity!: IdentityResponseDto;
   @ApiPropertyOptional({ type: [MembershipSummaryResponseDto] })
   memberships!: MembershipSummaryResponseDto[];
+  @ApiProperty({ type: [UnavailableOrganizationResponseDto] })
+  unavailableOrganizations!: UnavailableOrganizationResponseDto[];
   @ApiProperty({ type: [PendingInvitationSummaryResponseDto] })
   pendingInvitations!: PendingInvitationSummaryResponseDto[];
   @ApiProperty({

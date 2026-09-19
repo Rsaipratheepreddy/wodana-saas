@@ -8,7 +8,7 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ case?: string; quote?: string }>;
+  searchParams: Promise<{ case?: string; quote?: string; snapshot?: string }>;
 }) {
   const { slug } = await params,
     q = await searchParams;
@@ -23,6 +23,6 @@ export default async function Page({
   const data = (await response.json()) as { cases: ClientCase[] },
     record = data.cases.find((c) => c.id === q.case),
     quote = record?.quotes.find((v) => v.id === q.quote);
-  if (!record || !quote) notFound();
+  if (!record || !quote || (q.snapshot && q.snapshot !== quote.hash)) notFound();
   return <QuotationPrint quote={quote} customer={record.customerName} />;
 }

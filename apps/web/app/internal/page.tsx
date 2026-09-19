@@ -8,6 +8,11 @@ export const metadata: Metadata = {
 };
 
 export default async function InternalPage() {
-  const { profile, tenants } = await getInternalPortalData();
-  return <InternalPortal initialTenants={tenants} user={{ email: profile.primaryEmail, name: profile.displayName }} />;
+  const { operator, tenants } = await getInternalPortalData();
+  return <InternalPortal initialTenants={tenants} user={{
+    email: operator.email,
+    name: operator.displayName,
+    role: operator.role,
+    permissions: operator.permissions,
+  }} />;
 }

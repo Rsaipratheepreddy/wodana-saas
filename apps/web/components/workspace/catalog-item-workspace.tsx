@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Button } from "@/design-system";
+import { Button, useConfirmationDialog } from "@/design-system";
 import {
   blankCatalogRecord,
   type CatalogPageData,
@@ -29,6 +29,7 @@ export function CatalogItemWorkspace({
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const recipe = data.items.find(
     (r) =>
       r.kind === "construction" &&
@@ -154,14 +155,12 @@ export function CatalogItemWorkspace({
                 key={id}
                 aria-pressed={view === id}
                 onClick={() => {
-                  if (
-                    dirty &&
-                    !window.confirm("Discard unsaved sheet changes?")
-                  )
+                  const changeView = () => { setDirty(false); onDirtyChange(false); setView(id); };
+                  if (dirty) {
+                    requestConfirmation({ title: "Discard unsaved sheet changes?", body: "The current material and process edits have not been saved.", confirmLabel: "Discard changes", onConfirm: changeView });
                     return;
-                  setDirty(false);
-                  onDirtyChange(false);
-                  setView(id);
+                  }
+                  changeView();
                 }}
               >
                 {label}
@@ -237,6 +236,7 @@ export function CatalogItemWorkspace({
           )}
         </>
       )}
+      {confirmationDialog}
     </section>
   );
 }

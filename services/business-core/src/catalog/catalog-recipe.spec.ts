@@ -28,6 +28,13 @@ describe("connected quotation recipes", () => {
     const rows = starters();
     const result = previewRecipe(rows, example(rows));
     expect(result.measurement).toEqual({ quantity: 72, unit: "Square foot" });
+    expect(result.lines.find((line) => line.id === code(rows, "ICT-WARD_SP-CARP-INST").id)?.norm).toEqual({
+      factor: 1,
+      basis: "width_height",
+      kind: "labour_or_process",
+      sourceId: code(rows, "ICT-WARD_SP-CARP-INST").id,
+      sourceVersion: 1,
+    });
     expect(
       result.lines.some((l) => l.sourceId === code(rows, "HW-SLD-2D").id),
     ).toBe(true);
@@ -67,6 +74,17 @@ describe("connected quotation recipes", () => {
     expect(
       result.lines.some((l) => l.sourceId === code(rows, "SP-CARP-INST").id),
     ).toBe(false);
+  });
+  it("applies a reviewed workspace wastage allowance without changing the net measurement", () => {
+    const rows = starters();
+    const waste = code(rows, "WST-PLY");
+    waste.specificationStatus = "workspace_verified";
+    waste.configuration = { ...waste.configuration, approvedPercent: 10 };
+    const result = previewRecipe(rows, example(rows));
+    const panel = result.lines.find((line) => line.id === code(rows, "ICT-WARD_BACK_PANEL").id)!;
+    expect(panel.quantity).toBeCloseTo(72);
+    expect(panel.wastePercent).toBe(10);
+    expect(panel.allowedQuantity).toBeCloseTo(79.2);
   });
   it("requires the actual hinge count when a set is replaced with individual hardware", () => {
     const rows = starters();

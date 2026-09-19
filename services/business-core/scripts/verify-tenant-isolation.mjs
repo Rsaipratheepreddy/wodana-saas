@@ -14,6 +14,8 @@ const intentionalExceptions = [
   "mfa_security_events",
   "project_vendor_access",
   "tenant_login_branding",
+  // Control-plane drafts may not have a workspace yet; only guarded operator routes access them.
+  "tenant_provisioning_drafts",
   "tenant_provisioning_requests",
 ];
 

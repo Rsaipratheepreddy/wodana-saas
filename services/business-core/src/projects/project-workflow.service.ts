@@ -15,6 +15,8 @@ import {
   type ProjectWorkflowStage,
   type ProjectWorkflowTemplate,
 } from "./project-workflow";
+import { ConfigurationRevisionsService } from "../workspaces/configuration-revisions.service";
+import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 
 type WorkflowRow = {
   id: string;
@@ -60,6 +62,7 @@ export class ProjectWorkflowService {
   constructor(
     private readonly access: HrmsAccessService,
     private readonly events: CrmEventsService,
+    private readonly revisions: ConfigurationRevisionsService = new ConfigurationRevisionsService(),
   ) {}
 
   list(actor: RequestActor, workspaceId: string) {
@@ -74,6 +77,18 @@ export class ProjectWorkflowService {
         templates,
         supportedExitGates: [...PROJECT_WORKFLOW_GATE_KEYS],
       };
+    });
+  }
+
+  history(actor: RequestActor, workspaceId: string, templateId: string) {
+    return this.access.run(actor, workspaceId, async (ctx) => {
+      this.access.require(ctx, "projects.view", "projects.manage");
+      return this.revisions.history(
+        ctx.client,
+        workspaceId,
+        "project_workflow_template",
+        templateId,
+      );
     });
   }
 
@@ -104,6 +119,16 @@ export class ProjectWorkflowService {
         );
 
       try {
+        if (before) {
+          await this.revisions.ensureBaseline(ctx.client, {
+            workspaceId,
+            resourceType: "project_workflow_template",
+            resourceId: templateId,
+            sourceVersion: before.version,
+            snapshot: before,
+            actorUserId: ctx.userId,
+          });
+        }
         let displacedBefore: WorkflowRow[] = [];
         let displacedAfter: WorkflowRow[] = [];
         if (next.isDefault) {
@@ -170,6 +195,15 @@ export class ProjectWorkflowService {
             "This workflow template changed. Refresh before saving.",
           );
         const saved = workflow(result.rows[0]);
+        await this.revisions.record(ctx.client, {
+          workspaceId,
+          resourceType: "project_workflow_template",
+          resourceId: templateId,
+          sourceVersion: saved.version,
+          action: before ? "saved" : "created",
+          snapshot: saved,
+          actorUserId: ctx.userId,
+        });
         await this.events.record(ctx.client, {
           workspaceId,
           actorUserId: ctx.userId,
@@ -181,6 +215,27 @@ export class ProjectWorkflowService {
           after: saved,
         });
         for (const displaced of displacedAfter) {
+          const displacedBeforeTemplate = workflow(
+            displacedBefore.find((candidate) => candidate.id === displaced.id)!,
+          );
+          const displacedTemplate = workflow(displaced);
+          await this.revisions.ensureBaseline(ctx.client, {
+            workspaceId,
+            resourceType: "project_workflow_template",
+            resourceId: displaced.id,
+            sourceVersion: displacedBeforeTemplate.version,
+            snapshot: displacedBeforeTemplate,
+            actorUserId: ctx.userId,
+          });
+          await this.revisions.record(ctx.client, {
+            workspaceId,
+            resourceType: "project_workflow_template",
+            resourceId: displaced.id,
+            sourceVersion: displacedTemplate.version,
+            action: "saved",
+            snapshot: displacedTemplate,
+            actorUserId: ctx.userId,
+          });
           await this.events.record(ctx.client, {
             workspaceId,
             actorUserId: ctx.userId,
@@ -188,10 +243,8 @@ export class ProjectWorkflowService {
             action: "project.workflow_template_default_replaced.v1",
             entityType: "project_workflow_template",
             entityId: displaced.id,
-            before: workflow(
-              displacedBefore.find((candidate) => candidate.id === displaced.id)!,
-            ),
-            after: workflow(displaced),
+            before: displacedBeforeTemplate,
+            after: displacedTemplate,
           });
         }
         return saved;
@@ -230,6 +283,14 @@ export class ProjectWorkflowService {
           "This workflow template changed. Refresh before archiving.",
         );
       const before = workflow(current.rows[0]);
+      await this.revisions.ensureBaseline(ctx.client, {
+        workspaceId,
+        resourceType: "project_workflow_template",
+        resourceId: templateId,
+        sourceVersion: before.version,
+        snapshot: before,
+        actorUserId: ctx.userId,
+      });
       const result = await ctx.client.query<WorkflowRow>(
         `UPDATE project_workflow_templates
          SET status='archived',is_default=false,version=version+1,updated_by=$1,updated_at=now()
@@ -243,6 +304,15 @@ export class ProjectWorkflowService {
           "This workflow template changed. Refresh before archiving.",
         );
       const archived = workflow(result.rows[0]);
+      await this.revisions.record(ctx.client, {
+        workspaceId,
+        resourceType: "project_workflow_template",
+        resourceId: templateId,
+        sourceVersion: archived.version,
+        action: "archived",
+        snapshot: archived,
+        actorUserId: ctx.userId,
+      });
       await this.events.record(ctx.client, {
         workspaceId,
         actorUserId: ctx.userId,
@@ -254,6 +324,158 @@ export class ProjectWorkflowService {
         after: archived,
       });
       return archived;
+    });
+  }
+
+  rollback(
+    actor: RequestActor,
+    workspaceId: string,
+    templateId: string,
+    input: RestoreConfigurationRevisionDto,
+  ) {
+    return this.access.run(actor, workspaceId, async (ctx) => {
+      this.access.require(ctx, "projects.manage");
+      await this.lock(ctx.client, workspaceId);
+      const current = await ctx.client.query<WorkflowRow>(
+        `SELECT id,code,name,description,status,is_default AS "isDefault",version,stages,
+                updated_at AS "updatedAt"
+         FROM project_workflow_templates
+         WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
+        [workspaceId, templateId],
+      );
+      if (!current.rowCount) throw new NotFoundException("Workflow template not found.");
+      const before = workflow(current.rows[0]);
+      if (before.version !== input.version) {
+        throw new ConflictException("This workflow template changed. Refresh before restoring.");
+      }
+      const revision = await this.revisions.requireRevision(
+        ctx.client,
+        workspaceId,
+        "project_workflow_template",
+        templateId,
+        input.revisionId,
+      );
+      const target = parseProjectWorkflowTemplate(revision.snapshot);
+      const targetStatus = revision.snapshot.status === "archived" ? "archived" : "active";
+      const targetDefault = targetStatus === "active" && target.isDefault;
+      await this.revisions.ensureBaseline(ctx.client, {
+        workspaceId,
+        resourceType: "project_workflow_template",
+        resourceId: templateId,
+        sourceVersion: before.version,
+        snapshot: before,
+        actorUserId: ctx.userId,
+      });
+      let displacedBefore: WorkflowRow[] = [];
+      let displacedAfter: WorkflowRow[] = [];
+      if (targetDefault) {
+        displacedBefore = (
+          await ctx.client.query<WorkflowRow>(
+            `SELECT id,code,name,description,status,is_default AS "isDefault",version,stages,
+                    updated_at AS "updatedAt"
+             FROM project_workflow_templates
+             WHERE workspace_id=$1 AND status='active' AND is_default AND id<>$2
+             FOR UPDATE`,
+            [workspaceId, templateId],
+          )
+        ).rows;
+        displacedAfter = (
+          await ctx.client.query<WorkflowRow>(
+          `UPDATE project_workflow_templates
+           SET is_default=false,version=version+1,updated_by=$1,updated_at=now()
+           WHERE workspace_id=$2 AND status='active' AND is_default AND id<>$3
+           RETURNING id,code,name,description,status,is_default AS "isDefault",version,stages,
+                     updated_at AS "updatedAt"`,
+          [ctx.userId, workspaceId, templateId],
+          )
+        ).rows;
+      }
+      let result;
+      try {
+        result = await ctx.client.query<WorkflowRow>(
+          `UPDATE project_workflow_templates
+           SET code=$1,name=$2,description=$3,status=$4,is_default=$5,stages=$6,
+               version=version+1,updated_by=$7,updated_at=now()
+           WHERE workspace_id=$8 AND id=$9 AND version=$10
+           RETURNING id,code,name,description,status,is_default AS "isDefault",version,stages,
+                     updated_at AS "updatedAt"`,
+          [
+            target.code,
+            target.name,
+            target.description,
+            targetStatus,
+            targetDefault,
+            JSON.stringify(target.stages),
+            ctx.userId,
+            workspaceId,
+            templateId,
+            input.version,
+          ],
+        );
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictException("The revision conflicts with another active workflow code or default.");
+        }
+        throw error;
+      }
+      if (!result.rowCount) {
+        throw new ConflictException("This workflow template changed. Refresh before restoring.");
+      }
+      const restored = workflow(result.rows[0]);
+      await this.revisions.record(ctx.client, {
+        workspaceId,
+        resourceType: "project_workflow_template",
+        resourceId: templateId,
+        sourceVersion: restored.version,
+        action: "rolled_back",
+        snapshot: restored,
+        actorUserId: ctx.userId,
+        sourceRevisionId: revision.id,
+      });
+      await this.events.record(ctx.client, {
+        workspaceId,
+        actorUserId: ctx.userId,
+        source: "user",
+        action: "project.workflow_template_rolled_back.v1",
+        entityType: "project_workflow_template",
+        entityId: templateId,
+        before,
+        after: { ...restored, sourceRevisionId: revision.id },
+      });
+      for (const displaced of displacedAfter) {
+        const previous = displacedBefore.find((candidate) => candidate.id === displaced.id);
+        if (!previous) continue;
+        const displacedBeforeTemplate = workflow(previous);
+        const displacedTemplate = workflow(displaced);
+        await this.revisions.ensureBaseline(ctx.client, {
+          workspaceId,
+          resourceType: "project_workflow_template",
+          resourceId: displaced.id,
+          sourceVersion: displacedBeforeTemplate.version,
+          snapshot: displacedBeforeTemplate,
+          actorUserId: ctx.userId,
+        });
+        await this.revisions.record(ctx.client, {
+          workspaceId,
+          resourceType: "project_workflow_template",
+          resourceId: displaced.id,
+          sourceVersion: displacedTemplate.version,
+          action: "saved",
+          snapshot: displacedTemplate,
+          actorUserId: ctx.userId,
+        });
+        await this.events.record(ctx.client, {
+          workspaceId,
+          actorUserId: ctx.userId,
+          source: "user",
+          action: "project.workflow_template_default_replaced.v1",
+          entityType: "project_workflow_template",
+          entityId: displaced.id,
+          before: displacedBeforeTemplate,
+          after: displacedTemplate,
+        });
+      }
+      return restored;
     });
   }
 

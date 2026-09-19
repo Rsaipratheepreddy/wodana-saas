@@ -86,6 +86,17 @@ function task(scopeIds: string[], location: "site" | "factory" | "office" = "sit
   };
 }
 
+function plannedPackage(workPackage: NonNullable<ProjectData["workPackages"]>[number]) {
+  return {
+    ...workPackage,
+    plannedStart: "2026-09-18",
+    plannedEnd: "2026-09-19",
+    nextAction: "Confirm delivery readiness",
+    nextActionOwnerId: "manager",
+    nextActionDate: "2026-09-17",
+  };
+}
+
 describe("released scope work packages", () => {
   it("creates one stable, executable planning package per released scope line", () => {
     const data = releasedProject();
@@ -129,18 +140,18 @@ describe("released scope work packages", () => {
     const workPackage = data.workPackages![0];
 
     expect(() => command(data, "work_package", {
-      workPackage: { ...workPackage, status: "ready", ownerId: "" },
+      workPackage: { ...plannedPackage(workPackage), status: "ready", ownerId: "" },
     })).toThrow(/accountable owner/);
     expect(() => command(data, "work_package", {
       workPackage: {
-        ...workPackage,
+        ...plannedPackage(workPackage),
         status: "ready",
         ownerId: "manager",
         deliveryRoute: "factory",
       },
     })).toThrow(/does not match this package/);
     data = command(data, "work_package", {
-      workPackage: { ...workPackage, status: "ready", ownerId: "manager", deliveryRoute: "site" },
+      workPackage: { ...plannedPackage(workPackage), status: "ready", ownerId: "manager", deliveryRoute: "site" },
     });
     expect(data.workPackages![0].status).toBe("ready");
   });
@@ -159,7 +170,7 @@ describe("released scope work packages", () => {
     const workPackage = data.workPackages![0];
     data = command(data, "work_package", {
       workPackage: {
-        ...workPackage,
+        ...plannedPackage(workPackage),
         status: "ready",
         ownerId: "manager",
         deliveryRoute: "vendor",
@@ -199,5 +210,53 @@ describe("released scope work packages", () => {
       id: "duplicate-package",
     });
     expect(() => assertUniqueWorkPackageScope(data)).toThrow(/only one active work package/);
+  });
+
+  it("stores one accountable package plan and rejects dependency cycles", () => {
+    let data = releasedProject();
+    data.controls!.targetCompletion = "2026-09-30";
+    const first = data.workPackages![0], second = data.workPackages![1];
+    data = command(data, "work_package", {
+      workPackage: {
+        ...plannedPackage(first),
+        status: "planning",
+        ownerId: "manager",
+        priority: "high",
+        risk: "watch",
+        nextAction: "Confirm supplier slot",
+        nextActionOwnerId: "manager",
+        nextActionDate: "2026-09-17",
+        recoveryPlan: "Use the alternate approved slot if the first date slips.",
+        predecessorPackageIds: [second.id],
+      },
+    });
+    expect(data.workPackages![0]).toMatchObject({
+      priority: "high",
+      risk: "watch",
+      nextAction: "Confirm supplier slot",
+      predecessorPackageIds: [second.id],
+    });
+    expect(() => command(data, "work_package", {
+      workPackage: {
+        ...plannedPackage(data.workPackages![1]),
+        status: "planning",
+        ownerId: "manager",
+        predecessorPackageIds: [first.id],
+      },
+    })).toThrow(/cannot form a cycle/);
+  });
+
+  it("protects the client target with an explicit package recovery plan", () => {
+    const data = releasedProject();
+    data.controls!.targetCompletion = "2026-09-18";
+    const workPackage = data.workPackages![0];
+    expect(() => command(data, "work_package", {
+      workPackage: {
+        ...plannedPackage(workPackage),
+        plannedEnd: "2026-09-20",
+        status: "planning",
+        ownerId: "manager",
+      },
+    })).toThrow(/Record the recovery plan/);
   });
 });

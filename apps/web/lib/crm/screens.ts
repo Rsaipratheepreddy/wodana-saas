@@ -97,6 +97,8 @@ const opportunities: CrmRecord[] = [
     id: "73000000-0000-4000-8000-000000000001",
     title: "Emirates Hills villa interior renovation",
     partyName: "Amira Al Mansoori",
+    pipelineId: "pipeline-1",
+    stageId: "stage-1",
     pipelineName: "Design & build sales",
     stageName: "Proposal",
     status: "open",
@@ -113,6 +115,8 @@ const opportunities: CrmRecord[] = [
     id: "73000000-0000-4000-8000-000000000002",
     title: "DIFC executive office fit-out",
     partyName: "Khalid Rahman",
+    pipelineId: "pipeline-1",
+    stageId: "stage-2",
     pipelineName: "Design & build sales",
     stageName: "Negotiation",
     status: "open",
@@ -219,7 +223,7 @@ export function crmScreenFixture(id: CrmScreenId): CrmScreenPageData {
     ],
     "follow-ups": activities,
     calendar: activities,
-    customers: people,
+    customers: [...people, ...organizations],
     organizations,
     opportunities,
     activities,
@@ -254,7 +258,7 @@ export function crmScreenFixture(id: CrmScreenId): CrmScreenPageData {
           ],
         }
       : id === "opportunities"
-        ? { pipelines: [{ id: "pipeline-1", name: "Design & build sales", stages: [{ id: "stage-1", name: "Proposal" }, { id: "stage-2", name: "Negotiation" }] }] }
+        ? { pipelines: [{ id: "pipeline-1", name: "Design & build sales", status: "active", isDefault: true, stages: [{ id: "stage-1", name: "Proposal", status: "active", position: 1 }, { id: "stage-2", name: "Negotiation", status: "active", position: 2 }] }] }
         : id === "automations"
           ? { runs: [{ id: "run-1", status: "completed", definitionId: automations[0].id, createdAt: UPDATED_AT }] }
           : {},

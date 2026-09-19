@@ -122,7 +122,7 @@ export class CustomerAccountsService {
            ON membership.workspace_id = workspace.id
           AND membership.user_id = $2
           AND membership.status = 'active'
-         LEFT JOIN member_roles assigned ON assigned.membership_id = membership.id
+         LEFT JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
          LEFT JOIN roles role ON role.id = assigned.role_id
          WHERE linked.account_id = $1
            AND workspace.status = 'active'

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Text, useTheme } from '../design-system';
 import { DateField } from '../hrms/date-field';
-import { Button, CallButton, Card, Choice, EmptyState, HorizontalFilters, Metric, Notice, RecordCard, ResourceState, SearchBox, SectionHeading, Sheet, TextField } from './ui';
+import { Button, CallButton, Card, Choice, ContactButton, EmptyState, HorizontalFilters, Metric, Notice, RecordCard, ResourceState, SearchBox, SectionHeading, Sheet, TextField } from './ui';
 import { crmContact, crmDate, crmLabel, crmNumber, crmRows, useCrm, useCrmActions, type CrmRecord } from './api';
+import { responseActivityBody, type ResponseAction } from './response';
 
 type ViewProps = { workspaceId: string; revision: number; refresh: () => void };
 
@@ -17,6 +18,20 @@ function text(value: unknown, fallback = 'Not set') { return typeof value === 's
 function schedule(days = 1) {
   const value = new Date(Date.now() + days * 86_400_000); const pad = (part: number) => String(part).padStart(2, '0');
   return { date: `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`, time: '10:00' };
+}
+
+function qualificationHandoff(deal: CrmRecord | null) {
+  const evidence = (deal?.qualificationEvidence ?? deal?.qualification_evidence) as Record<string, unknown> | undefined;
+  if (!evidence || !Array.isArray(evidence.answers)) return null;
+  const form = evidence.form && typeof evidence.form === 'object' ? evidence.form as Record<string, unknown> : null;
+  const questions = form && Array.isArray(form.questions) ? form.questions as Array<Record<string, unknown>> : [];
+  const labels = new Map(questions.filter(question => typeof question.key === 'string').map(question => [String(question.key), text(question.label, crmLabel(question.key))]));
+  const rows = (evidence.answers as Array<Record<string, unknown>>).flatMap(answer => {
+    if (typeof answer.questionKey !== 'string') return [];
+    const value = Array.isArray(answer.value) ? answer.value.join(', ') : answer.value === true ? 'Yes' : answer.value === false ? 'No' : text(answer.value, 'Not provided');
+    return [{ key: answer.questionKey, label: labels.get(answer.questionKey) ?? crmLabel(answer.questionKey), value }];
+  });
+  return { formName: text(form?.name, 'No configured form'), evaluatedAt: evidence.evaluatedAt, rows };
 }
 
 export function TodayView({ workspaceId, revision, refresh, open }: ViewProps & { open: (kind: string, id: string) => void }) {
@@ -90,11 +105,14 @@ function LeadSheet({ workspaceId, leadId, onClose, onSaved }: { workspaceId: str
   const [nextActionDate, setNextActionDate] = useState(defaultNext.date);
   const [nextActionTime, setNextActionTime] = useState(defaultNext.time);
   const [activity, setActivity] = useState('');
+  const [responseAction, setResponseAction] = useState<ResponseAction>('follow_up');
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const lead = resource.data;
   const party = useCrm<CrmRecord>(workspaceId, typeof lead?.partyId === 'string' ? `parties/${lead.partyId}` : null, revision);
   const phone = crmContact(party.data, 'phone');
+  const email = crmContact(party.data, 'email');
+  const activities = useCrm<unknown>(workspaceId, `activities?leadId=${leadId}&limit=10`, revision);
   const reload = () => { setRevision(value => value + 1); onSaved(); };
   const saveStatus = async () => {
     if (!lead || !status) return;
@@ -108,8 +126,15 @@ function LeadSheet({ workspaceId, leadId, onClose, onSaved }: { workspaceId: str
     if (!lead || !activity.trim()) return;
     setBusy(true); setFeedback('');
     try {
-      await action('activities', 'POST', { leadId, partyId: lead.partyId, type: 'task', title: activity.trim(), priority: 'normal', dueAt: new Date(Date.now() + 86_400_000).toISOString(), isNextAction: true });
-      setActivity(''); setFeedback('Follow-up created for tomorrow.'); reload();
+      const created = await action<CrmRecord>('activities', 'POST', responseActivityBody({
+        kind: responseAction, leadId, partyId: typeof lead.partyId === 'string' ? lead.partyId : undefined,
+        ownerMembershipId: typeof lead.ownerMembershipId === 'string' ? lead.ownerMembershipId : undefined,
+        text: activity, followUpAt: new Date(Date.now() + 86_400_000).toISOString(),
+      }));
+      if (responseAction === 'call') await action(`activities/${created.id}/complete`, 'POST', { version: crmNumber(created.version), outcome: activity.trim() });
+      setActivity('');
+      setFeedback(responseAction === 'call' ? 'Completed outbound call recorded.' : responseAction === 'note' ? 'Internal note saved. It was not sent to the customer.' : 'Follow-up created for tomorrow.');
+      reload();
     } catch (error) { setFeedback(message(error)); } finally { setBusy(false); }
   };
   return <Sheet title={text(lead?.enquiry && (lead.enquiry as CrmRecord).partyName, 'Lead details')} onClose={onClose}>
@@ -117,16 +142,34 @@ function LeadSheet({ workspaceId, leadId, onClose, onSaved }: { workspaceId: str
     {lead ? <>
       <RecordCard title={text((lead.enquiry as CrmRecord | undefined)?.title, 'Enquiry')} subtitle={text((lead.enquiry as CrmRecord | undefined)?.summary, 'No enquiry notes')}
         status={String(lead.status)} meta={`${crmLabel((lead.enquiry as CrmRecord | undefined)?.source, 'Manual')} · ${lead.ownerName ? text(lead.ownerName) : lead.ownerMembershipId ? 'Assigned' : 'Unassigned'}`} />
-      {phone ? <CallButton phone={phone} label="Call customer" /> : null}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <ContactButton kind="phone" value={phone} label="Call" />
+        <ContactButton kind="email" value={email} label="Email" />
+        <ContactButton kind="whatsapp" value={phone} label="WhatsApp" />
+      </View>
+      <Notice>Contact buttons open another app. They do not prove a message was sent or delivered; provider-tracked delivery appears in Inbox.</Notice>
+      <Card><View style={{ gap: 5 }}><Text weight="semibold">Enquiry provenance</Text>
+        <Text size="sm" tone="textSecondary">{crmLabel((lead.enquiry as CrmRecord | undefined)?.source, 'Unknown source')} · {crmLabel((lead.enquiry as CrmRecord | undefined)?.channel, 'Unknown channel')} · {crmLabel((lead.enquiry as CrmRecord | undefined)?.intakeMethod, 'Manual')}</Text>
+        <Text size="xs" tone="textTertiary">Received {crmDate((lead.enquiry as CrmRecord | undefined)?.receivedAt, true)}</Text>
+        {Array.isArray((lead.enquiry as CrmRecord | undefined)?.attribution) ? ((lead.enquiry as CrmRecord).attribution as CrmRecord[]).map(touch => <Text key={touch.id} size="xs" tone="textTertiary">{crmLabel(touch.source)}{touch.medium ? ` · ${crmLabel(touch.medium)}` : ''}{touch.campaign ? ` · ${text(touch.campaign)}` : ''}</Text>) : null}
+      </View></Card>
       <Choice label="Move lead to" value={status} onChange={setStatus} options={(transitions[String(lead.status)] ?? []).map(value => ({ value, label: crmLabel(value) }))} />
       {status ? <>
         {['disqualified', 'paused'].includes(status) ? <TextField label="Reason" value={reason} onChangeText={setReason} /> : null}
         {!['qualified', 'disqualified', 'paused'].includes(status) ? <View style={{ gap: 12 }}><DateField label="Next action date" value={nextActionDate} onChange={setNextActionDate} /><DateField label="Time" value={nextActionTime} onChange={setNextActionTime} mode="time" /></View> : null}
         <Button label={busy ? 'Saving…' : 'Update status'} loading={busy} disabled={(['disqualified', 'paused'].includes(status) && !reason.trim())} onPress={saveStatus} />
       </> : null}
-      <View style={{ gap: 10 }}><Text weight="semibold">Quick follow-up</Text><TextField label="Task" value={activity} onChangeText={setActivity} placeholder="Call about the quotation" />
-        <Button label="Create for tomorrow" variant="secondary" disabled={!activity.trim() || busy} onPress={addActivity} /></View>
-      {feedback ? <Notice error={!feedback.includes('updated') && !feedback.includes('created')}>{feedback}</Notice> : null}
+      <View style={{ gap: 10 }}><Text weight="semibold">Record response</Text>
+        <Choice label="Action" value={responseAction} onChange={value => setResponseAction(value as ResponseAction)} options={[{ value: 'follow_up', label: 'Schedule follow-up' }, { value: 'note', label: 'Add internal note' }, { value: 'call', label: 'Log completed outbound call' }]} />
+        <TextField label={responseAction === 'follow_up' ? 'Next action' : 'Outcome or note'} value={activity} onChangeText={setActivity} placeholder={responseAction === 'follow_up' ? 'Call about the quotation' : 'What happened?'} />
+        <Button label={busy ? 'Saving…' : responseAction === 'follow_up' ? 'Create for tomorrow' : responseAction === 'note' ? 'Save note' : 'Record completed call'} variant="secondary" disabled={!activity.trim() || busy} onPress={addActivity} />
+      </View>
+      {feedback ? <Notice error={!['updated', 'created', 'recorded', 'saved'].some(word => feedback.includes(word))}>{feedback}</Notice> : null}
+      <View style={{ gap: 8 }}><Text weight="semibold">Response history</Text>
+        <ResourceState loading={activities.loading} error={activities.error} empty={!crmRows(activities.data).length} emptyTitle="No response activity yet">
+          {crmRows(activities.data).map(item => <RecordCard key={item.id} title={text(item.title, crmLabel(item.type))} subtitle={text(item.description, 'No note')} status={String(item.status ?? '')} meta={`${item.interactionDirection ? `${crmLabel(item.interactionDirection)} · ` : ''}${crmDate(item.completedAt ?? item.dueAt ?? item.createdAt, true)}`} />)}
+        </ResourceState>
+      </View>
       {Array.isArray(lead.opportunities) && lead.opportunities.length ? <View style={{ gap: 8 }}><Text weight="semibold">Converted opportunity</Text>{(lead.opportunities as CrmRecord[]).map(deal => <RecordCard key={deal.id} title={text(deal.title)} status={String(deal.status)} />)}</View> : null}
     </> : null}
   </Sheet>;
@@ -181,6 +224,7 @@ function DealSheet({ workspaceId, dealId, onClose, onSaved }: { workspaceId: str
   const deal = resource.data;
   const party = useCrm<CrmRecord>(workspaceId, typeof deal?.partyId === 'string' ? `parties/${deal.partyId}` : null, revision);
   const phone = crmContact(party.data, 'phone');
+  const handoff = qualificationHandoff(deal);
   const save = async () => { if (!deal || !outcome) return; setBusy(true); setFeedback(''); try {
     await action(`opportunities/${dealId}/transition`, 'POST', { version: crmNumber(deal.version), status: outcome, reason: reason.trim() || outcome });
     setFeedback('Deal updated.'); setOutcome(''); setReason(''); setRevision(v => v + 1); onSaved();
@@ -192,6 +236,8 @@ function DealSheet({ workspaceId, dealId, onClose, onSaved }: { workspaceId: str
         meta={deal.amount == null ? 'Value not set' : `${crmNumber(deal.amount).toLocaleString()} ${text(deal.currencyCode, '')}`} />
       {phone ? <CallButton phone={phone} label="Call customer" /> : null}
       <View style={{ flexDirection: 'row', gap: 10 }}><Metric value={`${crmNumber(deal.probability)}%`} label="Probability" /><Metric value={crmDate(deal.nextActionAt, true)} label="Next action" /></View>
+      {handoff ? <Card><View style={{ gap: 8 }}><Text weight="semibold">Qualification handoff</Text><Text size="xs" tone="textSecondary">{handoff.formName} · frozen {crmDate(handoff.evaluatedAt, true)}</Text>{handoff.rows.length ? handoff.rows.map(answer => <View key={answer.key} style={{ gap: 2 }}><Text size="xs" tone="textSecondary">{answer.label}</Text><Text size="sm">{answer.value}</Text></View>) : <Text size="sm" tone="textSecondary">No qualification answers were required.</Text>}</View></Card> : null}
+      {Array.isArray(deal.stageHistory) && deal.stageHistory.length ? <Card><View style={{ gap: 8 }}><Text weight="semibold">Decision history</Text>{(deal.stageHistory as CrmRecord[]).map((entry, index) => <Text key={entry.id || String(index)} size="sm">{crmLabel(entry.toStatus)} · {text(entry.reason, 'Stage changed')} · {crmDate(entry.changedAt, true)}</Text>)}</View></Card> : null}
       <Choice label={deal.status === 'open' ? 'Close deal as' : 'Reopen deal'} value={outcome} onChange={setOutcome}
         options={(deal.status === 'open' ? ['won', 'lost', 'abandoned'] : ['open']).map(value => ({ value, label: crmLabel(value) }))} />
       {outcome ? <><TextField label="Reason" value={reason} onChangeText={setReason} /><Button label={busy ? 'Saving…' : 'Update deal'} loading={busy} disabled={!reason.trim()} onPress={save} /></> : null}

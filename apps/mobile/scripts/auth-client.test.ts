@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AuthClient, type SessionStorage } from '../src/auth/client';
+import { ApiError, AuthClient, type SessionStorage } from '../src/auth/client';
 
 const profile = { id: 'user-1', primaryEmail: 'member@example.com', displayName: 'Member', status: 'active', nextAction: 'enter_workspace',
-  memberships: [{ workspaceId: 'workspace-1', workspaceName: 'Iglo Architects', workspaceSlug: 'iglo-architects', status: 'active', roles: ['member'] }] };
+  memberships: [{ workspaceId: 'workspace-1', workspaceName: 'Iglo Architects', workspaceSlug: 'iglo-architects', workspaceStatus: 'active',
+    workspaceLogoUrl: null, workspacePrimaryColor: null, status: 'active', roles: ['member'], allowedModules: ['workspace', 'crm', 'pre-project', 'projects', 'hrms'] }] };
 const tokens = (version = 1) => ({ accessToken: `access-${version}`, refreshToken: `refresh-${version}`, accessTokenExpiresIn: 900, refreshTokenExpiresIn: 2592000 });
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((r) => { resolve = r; }); return { promise, resolve }; }
@@ -25,7 +26,7 @@ function harness() {
     if (path === '/me') return response(profile);
     throw new Error(`Unexpected path ${path}`);
   };
-  const create = () => new AuthClient({ baseUrl: 'https://api.example.com/api/v1', tenantSlug: 'iglo-architects', storage, fetch: fetcher, now: () => clock });
+  const create = (tenantSlug = 'iglo-architects') => new AuthClient({ baseUrl: 'https://api.example.com/api/v1', tenantSlug, storage, fetch: fetcher, now: () => clock });
   return { create, storage, calls, get saved() { return saved; }, set saved(value) { saved = value; }, set clock(value: number) { clock = value; },
     set override(value: typeof override) { override = value; } };
 }
@@ -39,6 +40,57 @@ test('sign-in verifies /me and persists only refresh metadata, never password or
   assert.equal(h.calls[1].token, 'Bearer access-1');
   assert.equal(JSON.parse(h.saved!).refreshToken, 'refresh-1');
   assert.doesNotMatch(h.saved!, /Keep#Spaces|access-1|primaryEmail/);
+});
+test('native sign-in waits for an MFA challenge and persists no token before verification', async () => {
+  const h = harness(), client = h.create();
+  h.override = (path, init) => {
+    if (path === '/auth/login') return response({ mfaRequired: true, challengeToken: 'one-time-challenge', selectedWorkspaceId: 'workspace-1' }, 201);
+    if (path === '/auth/mfa/verify') return JSON.parse(String(init.body)).code === '123456'
+      ? response({ ...tokens(), selectedWorkspaceId: 'workspace-1' }, 201)
+      : response({ message: 'Incorrect code' }, 401);
+    return undefined;
+  };
+  await client.signIn('member@example.com', 'password');
+  assert.equal(client.getSnapshot().status, 'mfa');
+  assert.equal(h.saved, null);
+  assert.equal(h.calls.some((call) => call.path === '/me'), false);
+  await assert.rejects(client.verifyMfa('000000'), /Verification code is incorrect/);
+  assert.equal(client.getSnapshot().status, 'mfa');
+  await client.verifyMfa('123456');
+  assert.equal(client.getSnapshot().status, 'signedIn');
+  assert.equal(JSON.parse(h.saved!).refreshToken, 'refresh-1');
+  assert.equal(h.calls.find((call) => call.path === '/auth/mfa/verify')?.body?.challengeToken, 'one-time-challenge');
+});
+test('an expired MFA challenge and cancellation fail closed', async () => {
+  const h = harness(), client = h.create();
+  h.override = (path) => path === '/auth/login'
+    ? response({ mfaRequired: true, challengeToken: 'one-time-challenge', selectedWorkspaceId: 'workspace-1' }, 201)
+    : path === '/auth/mfa/verify' ? response({ message: 'Expired' }, 410) : undefined;
+  await client.signIn('member@example.com', 'password');
+  await assert.rejects(client.verifyMfa('123456'), /session has expired/);
+  assert.equal(client.getSnapshot().status, 'signedOut');
+  assert.equal(h.saved, null);
+  await client.signIn('member@example.com', 'password');
+  client.cancelMfa();
+  assert.equal(client.getSnapshot().status, 'signedOut');
+  await assert.rejects(client.verifyMfa('123456'), /expired/);
+});
+test('a generic native build signs into the selected tenant and restores only that scoped session', async () => {
+  const h = harness(), client = h.create('');
+  const palmProfile = { ...profile, memberships: [{ ...profile.memberships[0], workspaceSlug: 'plm' }] };
+  h.override = (path) => path === '/me' ? response(palmProfile) : undefined;
+  await assert.rejects(client.signIn('member@example.com', 'password', 'bad/tenant'), /workspace code/);
+  assert.equal(h.calls.length, 0);
+  await client.signIn('member@example.com', 'password', 'plm');
+  assert.equal(client.tenantSlug, 'plm');
+  assert.equal(h.calls.find((call) => call.path === '/auth/login')?.body?.tenantSlug, 'plm');
+  assert.equal(JSON.parse(h.saved!).scope, 'https://api.example.com/api/v1|plm');
+  const restored = h.create('');
+  await restored.restore();
+  assert.equal(restored.tenantSlug, 'plm');
+  assert.equal(restored.getSnapshot().status, 'signedIn');
+  const locked = h.create('iglo-architects');
+  await assert.rejects(locked.signIn('member@example.com', 'password', 'plm'), /different workspace/);
 });
 test('invalid credentials cannot create a session', async () => {
   const h = harness(), client = h.create();
@@ -54,6 +106,37 @@ test('a login response cannot bypass active workspace membership verification', 
   assert.equal(client.getSnapshot().status, 'signedOut');
   assert.equal(h.saved, null);
   assert.ok(h.calls.some((call) => call.path === '/auth/logout'));
+});
+test('suspended organization and missing module grants fail closed at mobile sign-in', async () => {
+  const h = harness(), client = h.create();
+  h.override = (path) => path === '/me' ? response({ ...profile, memberships: [{ ...profile.memberships[0], workspaceStatus: 'suspended' }] }) : undefined;
+  await assert.rejects(client.signIn('member@example.com', 'password'), /no longer have access/);
+  h.override = (path) => path === '/me' ? response({ ...profile, memberships: [{ ...profile.memberships[0], allowedModules: undefined }] }) : undefined;
+  await assert.rejects(client.signIn('member@example.com', 'password'), /could not be verified/);
+});
+test('team-inherited role unions and their effective modules are accepted without local role guessing', async () => {
+  const h = harness(), client = h.create();
+  const inherited = {
+    ...profile,
+    memberships: [{
+      ...profile.memberships[0],
+      roles: ['sales-agent', 'project-reporter'],
+      allowedModules: ['workspace', 'crm', 'projects'],
+    }],
+  };
+  h.override = (path) => path === '/me' ? response(inherited) : undefined;
+  await client.signIn('member@example.com', 'password');
+  const state = client.getSnapshot();
+  assert.equal(state.status, 'signedIn');
+  if (state.status !== 'signedIn') throw new Error('Expected a signed-in state');
+  assert.deepEqual(state.profile.memberships[0].roles, ['sales-agent', 'project-reporter']);
+  assert.deepEqual(state.profile.memberships[0].allowedModules, ['workspace', 'crm', 'projects']);
+});
+test('malformed effective roles fail closed instead of granting a native session', async () => {
+  const h = harness(), client = h.create();
+  h.override = (path) => path === '/me' ? response({ ...profile, memberships: [{ ...profile.memberships[0], roles: undefined }] }) : undefined;
+  await assert.rejects(client.signIn('member@example.com', 'password'), /could not be verified/);
+  assert.equal(client.getSnapshot().status, 'signedOut');
 });
 test('relaunch rotates the saved token and revalidates the profile', async () => {
   const h = harness();
@@ -168,6 +251,32 @@ test('workspace writes retry a 401 with the same action and preserve API validat
  await assert.rejects(client.api('/workspaces/workspace-1/hrms/attendance/actions','POST',body),(e:unknown)=>e instanceof Error&&'status' in e&&e.status===409&&e.message==='Already checked in');
  assert.equal(client.getSnapshot().status,'signedIn');
  await assert.rejects(client.api('/workspaces/other-workspace/hrms/bootstrap'),/outside the active workspace/);
+});
+test('a server-side module downgrade refreshes stale native capabilities and blocks later queued writes locally',async()=>{
+ const h=harness(),client=h.create();
+ let current={...profile,memberships:[{...profile.memberships[0],allowedModules:['workspace','crm','projects']}]} as typeof profile;
+ h.override=(path)=>path==='/me'?response(current):path.includes('/projects/')?response({message:'This module is not included.'},403):undefined;
+ await client.signIn('member@example.com','password');
+ current={...profile,memberships:[{...profile.memberships[0],allowedModules:['workspace','crm']}]} as typeof profile;
+ await assert.rejects(client.api('/workspaces/workspace-1/projects/project-1/field-actions','POST',{action:'draft'}),(error:unknown)=>error instanceof ApiError&&error.status===403);
+ const state=client.getSnapshot();assert.equal(state.status,'signedIn');
+ if(state.status!=='signedIn')throw new Error('Expected signed-in state');
+ assert.deepEqual(state.profile.memberships[0].allowedModules,['workspace','crm']);
+ const requests=h.calls.filter(call=>call.path.includes('/projects/')).length;
+ await assert.rejects(client.api('/workspaces/workspace-1/projects/project-1/field-actions','POST',{action:'retry'}),(error:unknown)=>error instanceof ApiError&&error.status===403);
+ assert.equal(h.calls.filter(call=>call.path.includes('/projects/')).length,requests);
+});
+test('past-due billing remains visible without silently removing native module access',async()=>{
+ const h=harness(),client=h.create();
+ const pastDue={...profile,memberships:[{...profile.memberships[0],billingAccess:{state:'past_due',effect:'unchanged',warning:true,
+  actionDueAt:null,affectedModules:[],message:'Payment is past due. Workspace access remains unchanged.'}}]};
+ h.override=path=>path==='/me'?response(pastDue):path.endsWith('/billing')?response({accessPolicy:pastDue.memberships[0].billingAccess}):undefined;
+ await client.signIn('member@example.com','password');
+ const state=client.getSnapshot();assert.equal(state.status,'signedIn');
+ if(state.status!=='signedIn')throw new Error('Expected signed-in state');
+ assert.deepEqual(state.profile.memberships[0].allowedModules,profile.memberships[0].allowedModules);
+ assert.equal(state.profile.memberships[0].billingAccess?.state,'past_due');
+ assert.deepEqual(await client.api('/workspaces/workspace-1/billing'),{accessPolicy:pastDue.memberships[0].billingAccess});
 });
 test('foreground session refresh keeps active forms mounted, including transient outages',async()=>{
  const h=harness(),client=h.create();await client.signIn('member@example.com','password');const states:string[]=[];client.subscribe(()=>states.push(client.getSnapshot().status));

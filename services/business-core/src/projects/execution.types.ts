@@ -32,6 +32,13 @@ export type ReleasedScopeLine = {
   specification?: string;
   material: string;
   finish?: string;
+  /** Accepted finished-item size; verified site measurements remain separate. */
+  dimensions?: {
+    length?: number;
+    height?: number;
+    depth?: number;
+    unit: "mm" | "cm" | "m" | "in" | "ft";
+  };
   quantity: number;
   unit: string;
   rate?: number;
@@ -173,6 +180,8 @@ export type Order = {
   unitCost: number;
   currency: string;
   promisedDate: string;
+  /** Supplier-confirmed duration retained with the commitment when known. */
+  leadTimeDays?: number;
   status:
     | "enquiry"
     | "draft"
@@ -210,6 +219,8 @@ export type ProjectDocument = {
   approvedBy?: string;
   /** Immutable link when this is a design revision captured from Pre-execution. */
   sourceDesignVersionId?: string;
+  /** Protected Pre-execution asset containing the captured design revision. */
+  sourceDesignAssetId?: string;
   /** Released quotation scope covered by this document revision. */
   scopeLineIds?: string[];
 };
@@ -248,6 +259,8 @@ export type HandoverOutstandingItem = {
   status: "open" | "ready" | "closed" | "warranty";
   evidence: string;
   resolution: string;
+  /** Person who submitted the latest completion evidence. */
+  resolutionBy?: string;
   verifiedBy?: string;
 };
 
@@ -387,6 +400,7 @@ export type ProjectInitiationCommercialBaseline = {
     dueDate: string;
     trigger: string;
     requiredForRelease: boolean;
+    requiredForProduction?: boolean;
   }[];
 };
 export type ProjectInitiationBaseline = {
@@ -449,6 +463,11 @@ export type ProjectDesignLink = {
   sourceSpecificationVersion: number;
   designVersionId: string;
   designId: string;
+  assetId: string;
+  fileName: string;
+  mimeType: string;
+  byteSize: number;
+  hasPreview: boolean;
   title: string;
   documentType: string;
   revision: number;
@@ -477,9 +496,70 @@ export type ProjectWorkPackage = {
   ownerId: string;
   plannedStart: string;
   plannedEnd: string;
+  /** Explicit package dependencies; task dependencies remain the detailed schedule truth. */
+  predecessorPackageIds?: string[];
+  priority?: "normal" | "high" | "critical";
+  risk?: "on_track" | "watch" | "blocked";
+  nextAction?: string;
+  nextActionOwnerId?: string;
+  nextActionDate?: string;
+  recoveryPlan?: string;
   blocker: string;
   createdAt: string;
   updatedAt: string;
+};
+export type ProjectConnectedPlan = {
+  promise: {
+    statement: string;
+    targetCompletion: string;
+    handoverDate: string;
+  };
+  packages: {
+    id: string;
+    title: string;
+    area: string;
+    status: ProjectWorkPackage["status"];
+    ownerId: string;
+    priority: "normal" | "high" | "critical";
+    risk: "on_track" | "watch" | "blocked";
+    plannedStart: string;
+    plannedEnd: string;
+    predecessorPackageIds: string[];
+    nextAction: string;
+    nextActionOwnerId: string;
+    nextActionDate: string;
+    recoveryPlan: string;
+    supplierCommitments: {
+      orderId: string;
+      number: string;
+      vendor: string;
+      status: Order["status"];
+      promisedDate: string;
+      leadTimeDays: number | null;
+      taskId: string;
+    }[];
+    capacityCommitments: {
+      taskId: string;
+      resourceId: string;
+      resourceName: string;
+      resourceKind: ProjectResource["kind"] | null;
+      bookingStatus: ProjectBooking["status"] | "missing";
+      start: string;
+      end: string;
+    }[];
+    issues: {
+      code:
+        | "owner"
+        | "schedule"
+        | "dependency"
+        | "supplier"
+        | "capacity"
+        | "next_action"
+        | "promise"
+        | "recovery";
+      detail: string;
+    }[];
+  }[];
 };
 export type ProjectData = import("./execution-controls.types").ExecutionControls & {
   controls?: ProjectControlSummary;
@@ -660,10 +740,13 @@ export type ProjectState = {
   data: ProjectData;
   pulse: ProjectExecutionPulse;
   members: { id: string; name: string }[];
+  sites?: { id: string; name: string; address: string }[];
   /** Active client contacts permitted to make portal acceptance decisions. */
   clientApprovers?: { id: string; name: string }[];
   resources: ProjectResource[];
   bookings: ProjectBooking[];
+  /** Connected delivery projection; contains no employee leave or private HRMS fields. */
+  connectedPlan?: ProjectConnectedPlan;
   memberId: string;
   canManage: boolean;
   canReview: boolean;

@@ -18,6 +18,8 @@ export type WorkspaceMember = {
   joinedAt: string | null;
   version: number;
   roles: string[];
+  inheritedRoles?: string[];
+  teams?: Array<{ id: string; name: string }>;
 };
 
 export type WorkspaceInvitation = {
@@ -31,6 +33,7 @@ export type WorkspaceInvitation = {
   createdAt: string;
   invitedByName: string;
   roles: string[];
+  teams?: Array<{ id: string; name: string }>;
 };
 
 export type MembersPageData = {
@@ -40,6 +43,7 @@ export type MembersPageData = {
   invitations: WorkspaceInvitation[];
   members: WorkspaceMember[];
   roles: WorkspaceRole[];
+  teams: Array<{ id: string; name: string }>;
   workspaceId: string;
 };
 
@@ -61,6 +65,7 @@ export const membersPageFixture: MembersPageData = {
     },
   ],
   invitations: [],
+  teams: [],
   roles: [
     {
       id: "00000000-0000-4000-8000-000000000004",

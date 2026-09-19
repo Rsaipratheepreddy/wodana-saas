@@ -13,9 +13,9 @@ it('shows source prices for review without creating or guessing a price-book ent
   {name:'price',value:'999'},{name:'markup_percent',value:'15'},
  ]};
  const onSave=vi.fn();
- render(<DesignSystemProvider><CatalogPriceDialog target={target} items={[target]} canManage={false} onClose={vi.fn()} onSave={onSave} onSaved={vi.fn()} onArchive={vi.fn()}/></DesignSystemProvider>);
+ render(<DesignSystemProvider><CatalogPriceDialog target={target} items={[target]} canManage={false} canViewCosts={false} onClose={vi.fn()} onSave={onSave} onSaved={vi.fn()} onArchive={vi.fn()}/></DesignSystemProvider>);
  expect(screen.getByRole('heading',{name:'Imported prices · needs review'})).toBeVisible();
- expect(screen.getByText('₹780.00')).toBeVisible();expect(screen.getByText('₹897.00')).toBeVisible();
+ expect(screen.queryByText('₹780.00')).not.toBeInTheDocument();expect(screen.getByText('₹897.00')).toBeVisible();
  expect(importedPrices(target)).toHaveLength(2);expect(onSave).not.toHaveBeenCalled();
  expect(screen.queryByRole('button',{name:'Save price'})).not.toBeInTheDocument();
 });
@@ -25,7 +25,7 @@ it("saves a dated selling price against the material without changing its identi
  const unit={...blankCatalogRecord("unit"),id:"unit",catalogId:"catalog",name:"Square foot",code:"SQFT",version:1};
  const material={...blankCatalogRecord("material"),id:"material",catalogId:"catalog",name:"Plywood",code:"PLY",version:1,links:[{relation:"unit",targetId:unit.id}]};
  const onSave=vi.fn(async r=>({...r,version:1})),onSaved=vi.fn();
- render(<DesignSystemProvider><CatalogPriceDialog target={material} items={[material,unit]} canManage onClose={vi.fn()} onSave={onSave} onSaved={onSaved} onArchive={vi.fn()}/></DesignSystemProvider>);
+ render(<DesignSystemProvider><CatalogPriceDialog target={material} items={[material,unit]} canManage canViewCosts onClose={vi.fn()} onSave={onSave} onSaved={onSaved} onArchive={vi.fn()}/></DesignSystemProvider>);
  await user.type(screen.getByLabelText("Price per unit",{exact:false}),"150");
  await user.click(screen.getByRole("button",{name:/Internal cost Price type/}));
  await user.click(screen.getByRole("option",{name:"Selling price"}));

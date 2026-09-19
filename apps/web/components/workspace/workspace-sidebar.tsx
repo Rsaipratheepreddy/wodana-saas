@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Activity,
   BadgeDollarSign,
@@ -23,6 +24,7 @@ import {
   Home,
   KeyRound,
   LayoutGrid,
+  Languages,
   MapPinned,
   MessagesSquare,
   PackageSearch,
@@ -30,7 +32,6 @@ import {
   Palette,
   Plug,
   Ruler,
-  Search,
   Send,
   Settings,
   ShoppingCart,
@@ -68,6 +69,7 @@ import type {
 } from "./workspace-navigation";
 import styles from "./workspace.module.css";
 import { identityInitials, identityStyle as visualForIdentity } from "@/lib/brand/identity";
+import { WorkspaceUniversalSearch } from "./workspace-universal-search";
 
 const icons: Record<WorkspaceIconName, LucideIcon> = {
   activity: Activity,
@@ -89,6 +91,7 @@ const icons: Record<WorkspaceIconName, LucideIcon> = {
   home: Home,
   installation: Hammer,
   integrations: Plug,
+  language: Languages,
   leads: BriefcaseBusiness,
   materialPlan: PackageSearch,
   measurements: Ruler,
@@ -113,7 +116,8 @@ const icons: Record<WorkspaceIconName, LucideIcon> = {
 };
 
 export function WorkspaceModuleSwitcher({ activeModule, modules }: { activeModule: WorkspaceModuleDefinition; modules: WorkspaceModuleDefinition[] }) {
-  return <DialogTrigger><AriaButton aria-label={`Switch module. Current: ${activeModule.label}`} className={styles.moduleButton}><LayoutGrid aria-hidden="true" size={18} /></AriaButton>
+  const ActiveIcon = icons[activeModule.icon];
+  return <DialogTrigger><AriaButton aria-label={`Switch module. Current: ${activeModule.label}`} className={styles.moduleButton}><ActiveIcon aria-hidden="true" size={16} /><span>{activeModule.label}</span><ChevronDown aria-hidden="true" size={14} /></AriaButton>
     <Popover className={styles.modulePopover} offset={8} placement="bottom start"><Dialog aria-label="Choose module" className={styles.moduleDialog}>{({ close }) => <><p className={styles.popoverLabel}>Products</p>{modules.map((module) => {
       const ModuleIcon = icons[module.icon];
       return <Link aria-current={module.id === activeModule.id ? "page" : undefined} className={styles.moduleOption} data-selected={module.id === activeModule.id || undefined} href={module.href} key={module.id} onClick={close}><span aria-hidden="true" className={styles.moduleOptionIcon} data-module={module.id}><ModuleIcon size={17} strokeWidth={1.8} /></span><span><strong>{module.label}</strong><small>{module.description}</small></span></Link>;
@@ -125,6 +129,7 @@ export type WorkspaceSidebarProps = {
   activeModule: WorkspaceModuleDefinition;
   mode?: "desktop" | "mobile";
   modules: WorkspaceModuleDefinition[];
+  unavailableOrganizations?: Array<{ workspaceId: string; workspaceName: string; workspaceStatus: string; accountName: string | null }>;
   navigation: WorkspaceNavigationSection[];
   onDismiss?: () => void;
   onNavigate?: () => void;
@@ -135,7 +140,7 @@ export type WorkspaceSidebarProps = {
 export function WorkspaceSidebar({
   activeModule,
   mode = "desktop",
-  modules,
+  unavailableOrganizations = [],
   navigation,
   onDismiss,
   onNavigate,
@@ -143,6 +148,7 @@ export function WorkspaceSidebar({
   workspaces,
 }: WorkspaceSidebarProps) {
   const instanceId = useId().replaceAll(":", "");
+  const searchParams = useSearchParams();
   const searchRef = useRef<HTMLInputElement>(null);
   const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
   const [workspaceError, setWorkspaceError] = useState("");
@@ -152,10 +158,12 @@ export function WorkspaceSidebar({
     .filter((section) => section.items.length > 0), [navigation]);
   // Newly authorized navigation groups start expanded; only explicit collapses are stored.
   const [closedSections, setClosedSections] = useState(() => new Set<string>());
+  const [submenuOpen, setSubmenuOpen] = useState<Record<string, boolean>>({});
   const activeWorkspace = workspaces[0];
   const activeWorkspaceVisual = visualForIdentity(
     activeWorkspace?.id ?? "workspace",
     activeWorkspace?.imageUrl,
+    { fit: "contain", surface: "brand" },
   );
 
   const filteredNavigation = useMemo(() => {
@@ -164,9 +172,12 @@ export function WorkspaceSidebar({
     return visibleNavigation
       .map((section) => ({
         ...section,
-        items: section.items.filter((item) =>
-          [item.label, item.description].some((text) => text?.toLocaleLowerCase().includes(normalizedQuery)),
-        ),
+        items: section.items.flatMap((item) => {
+          const itemMatches = [item.label, item.description].some((text) => text?.toLocaleLowerCase().includes(normalizedQuery));
+          const matchingChildren = item.children?.filter((child) => child.label.toLocaleLowerCase().includes(normalizedQuery));
+          if (!itemMatches && !matchingChildren?.length) return [];
+          return [{ ...item, ...(itemMatches ? {} : { children: matchingChildren }) }];
+        }),
       }))
       .filter((section) => section.items.length > 0);
   }, [visibleNavigation, query]);
@@ -193,6 +204,12 @@ export function WorkspaceSidebar({
       else next.add(sectionId);
       return next;
     });
+  };
+
+  const location = searchParams.size ? `${pathname}?${searchParams}` : pathname;
+  const submenuIsOpen = (itemId: string, active: boolean) => submenuOpen[itemId] ?? active;
+  const toggleSubmenu = (itemId: string, active: boolean) => {
+    setSubmenuOpen((current) => ({ ...current, [itemId]: !submenuIsOpen(itemId, active) }));
   };
 
   return (
@@ -234,12 +251,12 @@ export function WorkspaceSidebar({
                     <p className={styles.popoverLabel}>Workspaces</p>
                     {workspaceError ? <p role="alert">{workspaceError}</p> : null}
                     {workspaces.map((workspace) => (
-                      <button
+                      <AriaButton
                         className={styles.workspaceOption}
                         data-selected={workspace.id === activeWorkspace?.id || undefined}
                         key={workspace.id}
-                        disabled={switchingWorkspace}
-                        onClick={async () => {
+                        isDisabled={switchingWorkspace}
+                        onPress={async () => {
                           if (workspace.id === activeWorkspace?.id) { close(); return; }
                           setSwitchingWorkspace(true); setWorkspaceError("");
                           try {
@@ -248,13 +265,12 @@ export function WorkspaceSidebar({
                             window.location.assign(activeModule.href);
                           } catch (error) { setWorkspaceError((error as Error).message); setSwitchingWorkspace(false); }
                         }}
-                        type="button"
                       >
                         <span
                           aria-hidden="true"
                           className={styles.optionMark}
                           data-has-image={workspace.imageUrl ? true : undefined}
-                          style={visualForIdentity(workspace.id, workspace.imageUrl)}
+                          style={visualForIdentity(workspace.id, workspace.imageUrl, { fit: "contain", surface: "brand" })}
                         >
                           {workspace.imageUrl ? null : identityInitials(workspace.name)}
                         </span>
@@ -262,89 +278,49 @@ export function WorkspaceSidebar({
                           <strong>{workspace.name}</strong>
                           <small>{workspace.description}</small>
                         </span>
-                      </button>
+                      </AriaButton>
                     ))}
-                  </>
-                )}
-              </Dialog>
-            </Popover>
-          </DialogTrigger>
-          <DialogTrigger>
-            <AriaButton
-              aria-label={`Switch module. Current: ${activeModule.label}`}
-              className={styles.moduleButton}
-            >
-              <LayoutGrid aria-hidden="true" size={18} strokeWidth={1.8} />
-            </AriaButton>
-            <Popover
-              className={styles.modulePopover}
-              offset={8}
-              placement={mode === "desktop" ? "right top" : "bottom end"}
-            >
-              <Dialog aria-label="Choose module" className={styles.moduleDialog}>
-                {({ close }) => (
-                  <>
-                    <p className={styles.popoverLabel}>Products</p>
-                    {modules.map((module) => {
-                      const ModuleIcon = icons[module.icon];
-                      return (
-                        <Link
-                          aria-current={module.id === activeModule.id ? "page" : undefined}
-                          className={styles.moduleOption}
-                          data-selected={module.id === activeModule.id || undefined}
-                          href={module.href}
-                          key={module.id}
-                          onClick={() => {
-                            onNavigate?.();
-                            close();
-                          }}
-                        >
-                          <span aria-hidden="true" className={styles.moduleOptionIcon} data-module={module.id}>
-                            <ModuleIcon size={17} strokeWidth={1.8} />
-                          </span>
-                          <span>
-                            <strong>{module.label}</strong>
-                            <small>{module.description}</small>
-                          </span>
-                        </Link>
-                      );
-                    })}
+                    {unavailableOrganizations.map((organization) => (
+                      <div aria-disabled="true" className={styles.workspaceOption} key={organization.workspaceId}>
+                        <span aria-hidden="true" className={styles.optionMark} style={visualForIdentity(organization.workspaceId)}>{identityInitials(organization.workspaceName)}</span>
+                        <span><strong>{organization.workspaceName}</strong><small>{organization.accountName ? `${organization.accountName} · ` : ""}{organization.workspaceStatus === "suspended" ? "Suspended" : "Unavailable"}</small></span>
+                      </div>
+                    ))}
+                    <Link
+                      className={styles.workspaceManageLink}
+                      href="/workspace/organizations"
+                      onClick={() => {
+                        onNavigate?.();
+                        close();
+                      }}
+                    >
+                      <strong>Add or manage workspaces</strong>
+                      <small>For a separate company with its own team, data and branding.</small>
+                    </Link>
                   </>
                 )}
               </Dialog>
             </Popover>
           </DialogTrigger>
           {mode === "mobile" ? (
-            <button
+            <AriaButton
               aria-label="Close navigation"
               className={styles.mobileClose}
-              onClick={onDismiss}
-              type="button"
+              onPress={onDismiss}
             >
               <X size={18} />
-            </button>
+            </AriaButton>
           ) : null}
         </div>
 
         <div className={styles.searchArea}>
-          <label className={styles.searchField}>
-            <Search aria-hidden="true" size={17} />
-            <input
-              aria-label="Search navigation"
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setQuery("");
-                  event.currentTarget.blur();
-                }
-              }}
-              placeholder="Search…"
-              ref={searchRef}
-              type="search"
-              value={query}
-            />
-            <kbd aria-hidden="true">⌘ K</kbd>
-          </label>
+          <WorkspaceUniversalSearch
+            inputRef={searchRef}
+            onNavigate={onNavigate}
+            onQueryChange={setQuery}
+            query={query}
+            workspaceId={activeWorkspace?.id ?? ""}
+          />
         </div>
 
         <nav aria-label="Main navigation" className={styles.navigation}>
@@ -355,16 +331,15 @@ export function WorkspaceSidebar({
             return (
               <section className={styles.navigationSection} data-heading={Boolean(section.label) || undefined} key={section.id}>
                 {section.label ? (
-                  <button
+                  <AriaButton
                     aria-controls={sectionContentId}
                     aria-expanded={isOpen}
                     className={styles.sectionToggle}
-                    onClick={() => toggleSection(section.id)}
-                    type="button"
+                    onPress={() => toggleSection(section.id)}
                   >
                     <span>{section.label}</span>
                     <ChevronDown aria-hidden="true" data-open={isOpen || undefined} size={15} />
-                  </button>
+                  </AriaButton>
                 ) : null}
                 <div
                   aria-hidden={!isOpen}
@@ -377,19 +352,30 @@ export function WorkspaceSidebar({
                       const ItemIcon = icons[item.icon];
                       const active = pathname === item.href.split("?")[0]
                         || (item.id === "settings" && pathname.startsWith("/workspace/settings/"));
+                      const showSubmenu = Boolean(item.children?.length) && (Boolean(query) || submenuIsOpen(item.id, active));
                       return (
-                        <Link
-                          aria-current={active ? "page" : undefined}
-                          className={styles.navigationItem}
-                          data-active={active || undefined}
-                          href={item.href}
-                          key={item.id}
-                          onClick={onNavigate}
-                          tabIndex={isOpen ? undefined : -1}
-                        >
-                          <ItemIcon aria-hidden="true" size={18} strokeWidth={1.8} />
-                          <span>{item.label}</span>
-                        </Link>
+                        <div className={styles.navigationItemGroup} key={item.id}>
+                          <div className={styles.navigationItemRow} data-active={active || undefined}>
+                            <Link
+                              aria-current={active ? "page" : undefined}
+                              className={styles.navigationItem}
+                              data-active={active || undefined}
+                              href={item.href}
+                              onClick={onNavigate}
+                              tabIndex={isOpen ? undefined : -1}
+                            >
+                              <ItemIcon aria-hidden="true" size={18} strokeWidth={1.8} />
+                              <span>{item.label}</span>
+                            </Link>
+                            {item.children?.length ? <AriaButton aria-controls={`${instanceId}-${item.id}-submenu`} aria-expanded={showSubmenu} aria-label={`Toggle ${item.label} submenu`} className={styles.submenuToggle} isDisabled={!isOpen} onPress={() => toggleSubmenu(item.id, active)}><ChevronDown aria-hidden="true" data-open={showSubmenu || undefined} size={15} /></AriaButton> : null}
+                          </div>
+                          {item.children?.length ? <div aria-hidden={!showSubmenu} className={styles.submenu} data-open={showSubmenu || undefined} id={`${instanceId}-${item.id}-submenu`}>
+                            <div className={styles.submenuInner}>{item.children.map((child) => {
+                              const childActive = location === child.href;
+                              return <Link aria-current={childActive ? "page" : undefined} className={styles.submenuItem} data-active={childActive || undefined} href={child.href} key={child.id} onClick={onNavigate} tabIndex={isOpen && showSubmenu ? undefined : -1}>{child.label}</Link>;
+                            })}</div>
+                          </div> : null}
+                        </div>
                       );
                     })}
                   </div>

@@ -1,5 +1,6 @@
 import type { BusinessUnitRecord, LegalEntityRecord } from "./company-profile";
 import type { WorkspaceMember } from "./members";
+import type { WorkspaceRole } from "./members";
 
 export type TeamMemberRecord = {
   membershipId: string;
@@ -18,7 +19,11 @@ export type WorkspaceTeamRecord = {
   status: "active" | "archived";
   version: number;
   members: TeamMemberRecord[];
+  roleIds?: string[];
+  queueIds?: string[];
 };
+
+export type TeamQueueOption = { id: string; name: string; code: string };
 
 export type OrganizationStructurePageData = {
   canManage: boolean;
@@ -27,6 +32,8 @@ export type OrganizationStructurePageData = {
   businessUnits: BusinessUnitRecord[];
   teams: WorkspaceTeamRecord[];
   members: WorkspaceMember[];
+  roles: WorkspaceRole[];
+  queues: TeamQueueOption[];
 };
 
 export const organizationStructureFixture: OrganizationStructurePageData = {
@@ -63,4 +70,6 @@ export const organizationStructureFixture: OrganizationStructurePageData = {
   }],
   teams: [],
   members: [],
+  roles: [],
+  queues: [],
 };

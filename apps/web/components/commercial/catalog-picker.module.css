@@ -21,7 +21,7 @@
   background: var(--wd-color-surface);
 }
 .inputGroup:focus-within {
-  outline: 2px solid var(--wd-brand-lilac);
+  outline: 2px solid var(--wd-color-focus);
   outline-offset: 1px;
 }
 .picker.picker .inputGroup > input {
@@ -77,7 +77,7 @@
 .results button:hover {
   background: color-mix(
     in srgb,
-    var(--wd-brand-lilac) 15%,
+    var(--wd-color-action-primary) 9%,
     var(--wd-color-surface)
   );
 }

@@ -66,6 +66,7 @@ describe('room catalog navigation',()=>{
   expect(screen.getByRole('button',{name:'Open Wardrobe'})).toBeVisible();
   expect(screen.queryByRole('button',{name:'Open Cabinet'})).not.toBeInTheDocument();
   expect(screen.getByRole('searchbox')).toHaveValue('');
+  expect(screen.getByRole('columnheader',{name:'Image'})).toBeVisible();
  });
  it('searches and sorts every room item across table pages',async()=>{
   const data=fixture();const template=data.items.find(r=>r.id==='wardrobe')!;
@@ -87,6 +88,7 @@ describe('room catalog navigation',()=>{
   const user=userEvent.setup();render(<CatalogSettingsPage initialData={fixture()}/>);
   await user.click(screen.getByRole('button',{name:'Open Bedroom'}));await user.click(screen.getByRole('button',{name:'Open Wardrobe'}));
   await user.click(within(screen.getByRole('group',{name:'Item sections'})).getByRole('button',{name:'Materials'}));
+  expect(screen.getByRole('columnheader',{name:'Image'})).toBeVisible();
   expect(screen.getByRole('button',{name:'Open Carcass'})).toBeVisible();expect(screen.queryByRole('button',{name:'Open Upgraded hinges'})).not.toBeInTheDocument();
   await user.click(screen.getByRole('button',{name:'Variants'}));await user.click(screen.getByRole('button',{name:'Open Budget'}));
   expect(screen.getByRole('button',{name:'Open Carcass'})).toBeVisible();expect(screen.getByRole('button',{name:'Open Upgraded hinges'})).toBeVisible();
@@ -100,6 +102,18 @@ describe('room catalog navigation',()=>{
   render(<CatalogSettingsPage initialData={{...fixture(),overview:true}}/>);
   expect(screen.getByRole('button',{name:'Open Bedroom'})).toBeVisible();expect(screen.getByRole('button',{name:'Add room'})).toBeDisabled();
   await waitFor(()=>expect(request).toHaveBeenCalledTimes(1));expect(request.mock.calls[0][0]).toContain('catalogId=catalog');
+ });
+ it('combines materials from every collection in one materials view',async()=>{
+  const overview={...fixture(),overview:true};
+  const switchRecord={...blankCatalogRecord('hardware'),id:'smart-switch',name:'Smart switch',code:'SMART_SWITCH',version:1,catalogId:'old'};
+  const full={...fixture(),items:[...fixture().items,switchRecord]};
+  const request=vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('catalogId=')?fixture():full}));
+  vi.stubGlobal('fetch',request);const user=userEvent.setup();render(<CatalogSettingsPage initialData={overview}/>);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Add room'})).toBeEnabled());
+  await user.click(within(screen.getByRole('group',{name:'Master Data sections'})).getByRole('button',{name:'Materials'}));
+  expect(await screen.findByRole('button',{name:'Open Smart switch'})).toBeVisible();
+  expect(screen.getByRole('button',{name:'Open Plywood'})).toBeVisible();
+  expect(request.mock.calls.some(([url])=>!String(url).includes('catalogId='))).toBe(true);
  });
  it('provides a retry after materials fail to load',async()=>{
   const request=vi.fn().mockRejectedValueOnce(Error('Connection interrupted')).mockResolvedValue({ok:true,json:async()=>fixture()});vi.stubGlobal('fetch',request);

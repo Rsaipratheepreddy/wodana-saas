@@ -86,4 +86,29 @@ describe("variation families and deductions", () => {
       }),
     ).toThrow(/client credit/);
   });
+  it("treats only client-selected options as accepted contract scope", () => {
+    const optionalBase = {
+      ...base,
+      lines: [...base.lines, { ...base.lines[0], id: "option", optional: true }],
+      clientDecision: {
+        decision: "accept" as const,
+        quoteHash: "hash",
+        selectedOptionLineIds: [],
+        baseTotal: 100,
+        optionsTotal: 0,
+        acceptedTotal: 100,
+        decidedAt: "2026-09-18",
+        decidedBy: "Client",
+      },
+    };
+    const optionDeduction = {
+      ...deduction,
+      lines: [{ ...deduction.lines[0], deductsLineId: "option" }],
+    };
+    expect(() => validateDeduction({ quotes: [optionalBase] } as CommercialData, optionDeduction)).toThrow(/accepted/);
+    optionalBase.clientDecision.selectedOptionLineIds = ["option"];
+    optionalBase.clientDecision.optionsTotal = 100;
+    optionalBase.clientDecision.acceptedTotal = 200;
+    expect(() => validateDeduction({ quotes: [optionalBase] } as CommercialData, optionDeduction)).not.toThrow();
+  });
 });

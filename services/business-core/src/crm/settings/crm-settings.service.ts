@@ -4,12 +4,24 @@ import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { validateQualificationQuestionDefinitions } from "../leads/qualification-evidence";
-import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
+import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, QualificationQuestionDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
+import { ConfigurationRevisionsService, type ConfigurationResourceType } from "../../workspaces/configuration-revisions.service";
+import type { RestoreConfigurationRevisionDto } from "../../workspaces/dto/restore-configuration-revision.dto";
 
 type Row = Record<string, unknown>;
 @Injectable()
 export class CrmSettingsService {
-  constructor(private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService) {}
+  constructor(
+    private readonly access: WorkspaceAccessService,
+    private readonly events: CrmEventsService,
+    private readonly revisions: ConfigurationRevisionsService = new ConfigurationRevisionsService(),
+  ) {}
+
+  history(actor: RequestActor, workspaceId: string, type: string, id: string) {
+    const resourceType = this.revisionResourceType(type);
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", (client) =>
+      this.revisions.history(client, workspaceId, resourceType, id));
+  }
 
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client) => {
@@ -34,6 +46,11 @@ export class CrmSettingsService {
         options.push(created.rows[0] as Row);
       }
       const response = { ...taxonomy, options };
+      await this.revisions.record(client, {
+        workspaceId, resourceType: "crm_taxonomy", resourceId: String(taxonomy.id),
+        sourceVersion: Number(taxonomy.version), action: "created", snapshot: response,
+        actorUserId: actorUser.userId,
+      });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.taxonomy.created.v1", entityType: "crm_taxonomy", entityId: String(taxonomy.id), after: response });
       return response;
     });
@@ -43,7 +60,7 @@ export class CrmSettingsService {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const existing = await client.query<Row>(`SELECT * FROM crm_taxonomies WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, taxonomyId]);
       if (!existing.rowCount) throw new NotFoundException("Taxonomy not found");
-      const before = existing.rows[0];
+      const before = await this.taxonomySnapshot(client, workspaceId, taxonomyId);
       if (Number(before.version) !== input.version) throw new ConflictException("Taxonomy changed; reload and try again");
       if (input.options && ["enquiry_type", "budget_range"].includes(String(before.code)) && !input.options.some(option => option.code.toLowerCase() === "not_sure")) throw new UnprocessableEntityException("Keep the Not sure yet option for enquiries");
       if (input.options) {
@@ -66,6 +83,15 @@ export class CrmSettingsService {
       }
       const options = await client.query(`SELECT id, code, label, position, status, version FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 ORDER BY position, label`, [workspaceId, taxonomyId]);
       const response = { ...result.rows[0], options: options.rows };
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType: "crm_taxonomy", resourceId: taxonomyId,
+        sourceVersion: Number(before.version), snapshot: before, actorUserId: actorUser.userId,
+      });
+      await this.revisions.record(client, {
+        workspaceId, resourceType: "crm_taxonomy", resourceId: taxonomyId,
+        sourceVersion: Number(response.version), action: "saved", snapshot: response,
+        actorUserId: actorUser.userId,
+      });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.taxonomy.updated.v1", entityType: "crm_taxonomy", entityId: taxonomyId, before, after: response });
       return response;
     });
@@ -76,6 +102,11 @@ export class CrmSettingsService {
       this.validateFieldConfiguration(input);
       const result = await client.query(`INSERT INTO crm_custom_field_definitions (workspace_id, entity_type, key, label, data_type, required, searchable, configuration) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version`, [workspaceId, input.entityType, input.key, input.label, input.dataType, input.required ?? false, input.searchable ?? false, input.configuration ?? {}]);
       const response = result.rows[0] as Row;
+      await this.revisions.record(client, {
+        workspaceId, resourceType: "crm_custom_field", resourceId: String(response.id),
+        sourceVersion: Number(response.version), action: "created", snapshot: response,
+        actorUserId: actorUser.userId,
+      });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.custom_field.created.v1", entityType: "crm_custom_field", entityId: String(response.id), after: response });
       return response;
     });
@@ -85,7 +116,7 @@ export class CrmSettingsService {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const existing = await client.query<Row>(`SELECT * FROM crm_custom_field_definitions WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, definitionId]);
       if (!existing.rowCount) throw new NotFoundException("Custom field not found");
-      const before = existing.rows[0];
+      const before = this.customFieldSnapshot(existing.rows[0]);
       if (Number(before.version) !== input.version) throw new ConflictException("Custom field changed; reload and try again");
       if (input.configuration) this.validateFieldConfiguration({ dataType: String(before.data_type), configuration: input.configuration });
       const result = await client.query(
@@ -95,6 +126,15 @@ export class CrmSettingsService {
         [input.label?.trim() ?? null, input.required ?? null, input.searchable ?? null, input.configuration ?? null, input.status ?? null, workspaceId, definitionId, input.version],
       );
       if (!result.rowCount) throw new ConflictException("Custom field changed; reload and try again");
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType: "crm_custom_field", resourceId: definitionId,
+        sourceVersion: Number(before.version), snapshot: before, actorUserId: actorUser.userId,
+      });
+      await this.revisions.record(client, {
+        workspaceId, resourceType: "crm_custom_field", resourceId: definitionId,
+        sourceVersion: Number(result.rows[0].version), action: "saved", snapshot: result.rows[0] as Row,
+        actorUserId: actorUser.userId,
+      });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.custom_field.updated.v1", entityType: "crm_custom_field", entityId: definitionId, before, after: result.rows[0] as Row });
       return result.rows[0];
     });
@@ -135,6 +175,11 @@ export class CrmSettingsService {
         questions.push(created.rows[0] as Row);
       }
       const response = { ...form, questions };
+      await this.revisions.record(client, {
+        workspaceId, resourceType: "crm_qualification_form", resourceId: String(form.id),
+        sourceVersion: Number(form.version), action: "created", snapshot: response,
+        actorUserId: actorUser.userId,
+      });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.qualification_form.created.v1", entityType: "crm_qualification_form", entityId: String(form.id), after: response });
       return response;
     });
@@ -144,16 +189,16 @@ export class CrmSettingsService {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       const existing = await client.query<Row>(`SELECT * FROM crm_qualification_forms WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, formId]);
       if (!existing.rowCount) throw new NotFoundException("Qualification form not found");
-      const before = existing.rows[0];
-      if (Number(before.version) !== input.version) throw new ConflictException("Qualification form changed; reload and try again");
+      const current = existing.rows[0];
+      if (Number(current.version) !== input.version) throw new ConflictException("Qualification form changed; reload and try again");
       if (input.questions) {
         validateQualificationQuestionDefinitions(input.questions);
         const keys = new Set(input.questions.map((question) => question.key));
         const positions = new Set(input.questions.map((question) => question.position));
         if (keys.size !== input.questions.length || positions.size !== input.questions.length) throw new UnprocessableEntityException("Question keys and positions must be unique");
       }
-      const resultingStatus = input.status ?? String(before.status);
-      const resultingServiceType = input.serviceType !== undefined ? input.serviceType?.trim() || null : before.service_type as string | null;
+      const resultingStatus = input.status ?? String(current.status);
+      const resultingServiceType = input.serviceType !== undefined ? input.serviceType?.trim() || null : current.service_type as string | null;
       if (resultingStatus === "active") {
         const questionCount = input.questions?.length ?? Number((await client.query(
           `SELECT count(*)::int AS count FROM crm_qualification_questions WHERE workspace_id=$1 AND form_id=$2`,
@@ -170,6 +215,7 @@ export class CrmSettingsService {
           throw new ConflictException("Only one active qualification form is allowed for each enquiry type");
         }
       }
+      const before = await this.qualificationFormSnapshot(client, workspaceId, formId);
       let result;
       try {
         result = await client.query(
@@ -201,6 +247,15 @@ export class CrmSettingsService {
       }
       const questions = await client.query(`SELECT id, key, label, data_type AS "dataType", required, position, scoring, configuration FROM crm_qualification_questions WHERE workspace_id = $1 AND form_id = $2 ORDER BY position`, [workspaceId, formId]);
       const response = { ...result.rows[0], questions: questions.rows };
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType: "crm_qualification_form", resourceId: formId,
+        sourceVersion: Number(before.version), snapshot: before, actorUserId: actorUser.userId,
+      });
+      await this.revisions.record(client, {
+        workspaceId, resourceType: "crm_qualification_form", resourceId: formId,
+        sourceVersion: Number(response.version), action: "saved", snapshot: response,
+        actorUserId: actorUser.userId,
+      });
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.qualification_form.updated.v1", entityType: "crm_qualification_form", entityId: formId, before, after: response });
       return response;
     });
@@ -239,11 +294,216 @@ export class CrmSettingsService {
       const tables: Record<string, string> = { taxonomy: "crm_taxonomies", "custom-field": "crm_custom_field_definitions", "qualification-form": "crm_qualification_forms" };
       const table = tables[type];
       if (!table) throw new UnprocessableEntityException("Setting type cannot be archived");
+      const resourceType = this.revisionResourceType(type);
+      const before = await this.settingSnapshot(client, workspaceId, type, id);
+      if (Number(before.version) !== input.version) throw new ConflictException("Setting changed or was not found");
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType, resourceId: id, sourceVersion: Number(before.version),
+        snapshot: before, actorUserId: actorUser.userId,
+      });
       const result = await client.query(`UPDATE ${table} SET status = 'archived', version = version + 1 WHERE workspace_id = $1 AND id = $2 AND version = $3 RETURNING id, status, version`, [workspaceId, id, input.version]);
       if (!result.rowCount) throw new ConflictException("Setting changed or was not found");
-      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.setting.archived.v1", entityType: type, entityId: id, after: result.rows[0] as Row });
-      return result.rows[0];
+      const after = await this.settingSnapshot(client, workspaceId, type, id);
+      await this.revisions.record(client, {
+        workspaceId, resourceType, resourceId: id, sourceVersion: Number(after.version),
+        action: "archived", snapshot: after, actorUserId: actorUser.userId,
+      });
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.setting.archived.v1", entityType: type, entityId: id, before, after });
+      return after;
     });
+  }
+
+  rollback(
+    actor: RequestActor,
+    workspaceId: string,
+    type: string,
+    id: string,
+    input: RestoreConfigurationRevisionDto,
+  ) {
+    const resourceType = this.revisionResourceType(type);
+    const tables: Record<string, string> = {
+      taxonomy: "crm_taxonomies",
+      "custom-field": "crm_custom_field_definitions",
+      "qualification-form": "crm_qualification_forms",
+    };
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
+      await client.query(`SELECT id FROM ${tables[type]} WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [workspaceId, id]);
+      const before = await this.settingSnapshot(client, workspaceId, type, id);
+      if (Number(before.version) !== input.version) throw new ConflictException("Setting changed; reload and try again");
+      const revision = await this.revisions.requireRevision(client, workspaceId, resourceType, id, input.revisionId);
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType, resourceId: id, sourceVersion: Number(before.version),
+        snapshot: before, actorUserId: actorUser.userId,
+      });
+      if (type === "taxonomy") await this.restoreTaxonomy(client, workspaceId, id, input.version, before, revision.snapshot);
+      else if (type === "custom-field") await this.restoreCustomField(client, workspaceId, id, input.version, before, revision.snapshot);
+      else await this.restoreQualificationForm(client, workspaceId, id, input.version, before, revision.snapshot);
+      const after = await this.settingSnapshot(client, workspaceId, type, id);
+      await this.revisions.record(client, {
+        workspaceId, resourceType, resourceId: id, sourceVersion: Number(after.version),
+        action: "rolled_back", snapshot: after, actorUserId: actorUser.userId,
+        sourceRevisionId: revision.id,
+      });
+      await this.events.record(client, {
+        workspaceId, actorUserId: actorUser.userId, source: "user",
+        action: "crm.setting.rolled_back.v1", entityType: type, entityId: id,
+        before, after: { ...after, sourceRevisionId: revision.id },
+      });
+      return after;
+    });
+  }
+
+  private revisionResourceType(type: string): ConfigurationResourceType {
+    const resources: Record<string, ConfigurationResourceType> = {
+      taxonomy: "crm_taxonomy",
+      "custom-field": "crm_custom_field",
+      "qualification-form": "crm_qualification_form",
+    };
+    if (!resources[type]) throw new UnprocessableEntityException("Setting type does not have revision history");
+    return resources[type];
+  }
+
+  private async settingSnapshot(client: PoolClient, workspaceId: string, type: string, id: string): Promise<Row> {
+    if (type === "taxonomy") return this.taxonomySnapshot(client, workspaceId, id);
+    if (type === "custom-field") {
+      const result = await client.query<Row>(`SELECT * FROM crm_custom_field_definitions WHERE workspace_id=$1 AND id=$2`, [workspaceId, id]);
+      if (!result.rowCount) throw new NotFoundException("Custom field not found");
+      return this.customFieldSnapshot(result.rows[0]);
+    }
+    if (type === "qualification-form") return this.qualificationFormSnapshot(client, workspaceId, id);
+    throw new UnprocessableEntityException("Setting type cannot be revised");
+  }
+
+  private async taxonomySnapshot(client: PoolClient, workspaceId: string, id: string): Promise<Row> {
+    const result = await client.query<Row>(
+      `SELECT taxonomy.id,taxonomy.code,taxonomy.name,taxonomy.status,taxonomy.version,
+              COALESCE(jsonb_agg(jsonb_build_object(
+                'id',option.id,'code',option.code,'label',option.label,'position',option.position,
+                'status',option.status,'version',option.version
+              ) ORDER BY option.position,option.code) FILTER (WHERE option.id IS NOT NULL),'[]'::jsonb) AS options
+       FROM crm_taxonomies taxonomy
+       LEFT JOIN crm_taxonomy_options option ON option.workspace_id=taxonomy.workspace_id AND option.taxonomy_id=taxonomy.id
+       WHERE taxonomy.workspace_id=$1 AND taxonomy.id=$2 GROUP BY taxonomy.id`,
+      [workspaceId, id],
+    );
+    if (!result.rowCount) throw new NotFoundException("Taxonomy not found");
+    return result.rows[0];
+  }
+
+  private customFieldSnapshot(row: Row): Row {
+    return {
+      id: row.id,
+      entityType: row.entityType ?? row.entity_type,
+      key: row.key,
+      label: row.label,
+      dataType: row.dataType ?? row.data_type,
+      required: row.required,
+      searchable: row.searchable,
+      configuration: row.configuration ?? {},
+      status: row.status,
+      version: row.version,
+    };
+  }
+
+  private async qualificationFormSnapshot(client: PoolClient, workspaceId: string, id: string): Promise<Row> {
+    const result = await client.query<Row>(
+      `SELECT form.id,form.code,form.name,form.status,form.service_type AS "serviceType",form.version,
+              COALESCE(jsonb_agg(jsonb_build_object(
+                'id',question.id,'key',question.key,'label',question.label,'dataType',question.data_type,
+                'required',question.required,'position',question.position,'scoring',question.scoring,
+                'configuration',question.configuration
+              ) ORDER BY question.position) FILTER (WHERE question.id IS NOT NULL),'[]'::jsonb) AS questions
+       FROM crm_qualification_forms form
+       LEFT JOIN crm_qualification_questions question ON question.workspace_id=form.workspace_id AND question.form_id=form.id
+       WHERE form.workspace_id=$1 AND form.id=$2 GROUP BY form.id`,
+      [workspaceId, id],
+    );
+    if (!result.rowCount) throw new NotFoundException("Qualification form not found");
+    return result.rows[0];
+  }
+
+  private async restoreTaxonomy(client: PoolClient, workspaceId: string, id: string, version: number, before: Row, target: Row) {
+    if (target.code !== before.code || typeof target.name !== "string" || !["active", "archived"].includes(String(target.status))) {
+      throw new UnprocessableEntityException("This taxonomy revision cannot be restored");
+    }
+    const options = Array.isArray(target.options) ? target.options as Row[] : [];
+    if (options.some((option) => typeof option.code !== "string" || typeof option.label !== "string" || !Number.isInteger(option.position))) {
+      throw new UnprocessableEntityException("This taxonomy revision has invalid options");
+    }
+    if (["enquiry_type", "budget_range"].includes(String(target.code)) && !options.some((option) => option.code === "not_sure" && option.status !== "archived")) {
+      throw new UnprocessableEntityException("Keep the Not sure yet option for enquiries");
+    }
+    const updated = await client.query(
+      `UPDATE crm_taxonomies SET name=$1,status=$2,version=version+1,updated_at=now()
+       WHERE workspace_id=$3 AND id=$4 AND version=$5 RETURNING id`,
+      [target.name, target.status, workspaceId, id, version],
+    );
+    if (!updated.rowCount) throw new ConflictException("Taxonomy changed; reload and try again");
+    await client.query(
+      `UPDATE crm_taxonomy_options SET status='archived',version=version+1,updated_at=now()
+       WHERE workspace_id=$1 AND taxonomy_id=$2 AND status<>'archived'`,
+      [workspaceId, id],
+    );
+    for (const option of options) {
+      await client.query(
+        `INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position,status)
+         VALUES($1,$2,$3,$4,$5,$6)
+         ON CONFLICT(workspace_id,taxonomy_id,code) DO UPDATE SET
+           label=EXCLUDED.label,position=EXCLUDED.position,status=EXCLUDED.status,
+           version=crm_taxonomy_options.version+1,updated_at=now()`,
+        [workspaceId, id, option.code, option.label, option.position, option.status === "archived" ? "archived" : "active"],
+      );
+    }
+  }
+
+  private async restoreCustomField(client: PoolClient, workspaceId: string, id: string, version: number, before: Row, target: Row) {
+    if (
+      target.key !== before.key || target.entityType !== before.entityType || target.dataType !== before.dataType ||
+      typeof target.label !== "string" || typeof target.required !== "boolean" || typeof target.searchable !== "boolean" ||
+      !target.configuration || typeof target.configuration !== "object" || Array.isArray(target.configuration) ||
+      !["active", "archived"].includes(String(target.status))
+    ) throw new UnprocessableEntityException("This custom-field revision cannot be restored");
+    this.validateFieldConfiguration({ dataType: String(target.dataType), configuration: target.configuration as Record<string, unknown> });
+    const result = await client.query(
+      `UPDATE crm_custom_field_definitions
+       SET label=$1,required=$2,searchable=$3,configuration=$4,status=$5,version=version+1,updated_at=now()
+       WHERE workspace_id=$6 AND id=$7 AND version=$8 RETURNING id`,
+      [target.label, target.required, target.searchable, target.configuration, target.status, workspaceId, id, version],
+    );
+    if (!result.rowCount) throw new ConflictException("Custom field changed; reload and try again");
+  }
+
+  private async restoreQualificationForm(client: PoolClient, workspaceId: string, id: string, version: number, before: Row, target: Row) {
+    if (target.code !== before.code || typeof target.name !== "string" || !["draft", "active", "archived"].includes(String(target.status))) {
+      throw new UnprocessableEntityException("This qualification-form revision cannot be restored");
+    }
+    const questions = Array.isArray(target.questions) ? target.questions as QualificationQuestionDto[] : [];
+    validateQualificationQuestionDefinitions(questions);
+    if (target.status === "active" && !questions.length) throw new UnprocessableEntityException("An active qualification form needs at least one question");
+    if (target.status === "active") {
+      const conflicting = await client.query(
+        `SELECT 1 FROM crm_qualification_forms
+         WHERE workspace_id=$1 AND id<>$2 AND status='active' AND service_type IS NOT DISTINCT FROM $3::text LIMIT 1`,
+        [workspaceId, id, target.serviceType ?? null],
+      );
+      if (conflicting.rowCount) throw new ConflictException("Only one active qualification form is allowed for each enquiry type");
+    }
+    const updated = await client.query(
+      `UPDATE crm_qualification_forms
+       SET name=$1,service_type=$2,status=$3,version=version+1,updated_at=now()
+       WHERE workspace_id=$4 AND id=$5 AND version=$6 RETURNING id`,
+      [target.name, target.serviceType ?? null, target.status, workspaceId, id, version],
+    );
+    if (!updated.rowCount) throw new ConflictException("Qualification form changed; reload and try again");
+    await client.query(`DELETE FROM crm_qualification_questions WHERE workspace_id=$1 AND form_id=$2`, [workspaceId, id]);
+    for (const question of questions) {
+      await client.query(
+        `INSERT INTO crm_qualification_questions
+          (workspace_id,form_id,key,label,data_type,required,position,scoring,configuration)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [workspaceId, id, question.key, question.label, question.dataType, question.required ?? false, question.position, question.scoring ?? {}, question.configuration ?? {}],
+      );
+    }
   }
 
   private validateFieldConfiguration(input: Pick<CreateCustomFieldDto, "dataType" | "configuration">) {

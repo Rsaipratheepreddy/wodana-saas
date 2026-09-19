@@ -39,7 +39,7 @@ export const Surface = forwardRef<HTMLDivElement, ElementProps & { tone?: "defau
   return <Tag {...props} className={classes("wd-surface", className)} data-tone={tone} ref={ref} />;
 });
 
-export const Container = forwardRef<HTMLDivElement, ElementProps & { size?: "narrow" | "wide" | "full" }>(function Container(
+export const Container = forwardRef<HTMLDivElement, ElementProps & { size?: "form" | "narrow" | "wide" | "full" }>(function Container(
   { as: Tag = "div", className, size = "wide", ...props },
   ref,
 ) {

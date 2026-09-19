@@ -51,6 +51,12 @@
 .optionList { display: grid; gap: .5rem; }
 .optionRow { display: flex; align-items: end; gap: .5rem; }
 .optionRow > :first-child { flex: 1; }
+.historyList { display: grid; padding: 0; margin: 0; border-block: 1px solid var(--wd-color-structural-divider); list-style: none; }
+.historyList > li { display: grid; justify-items: start; gap: .4rem; padding-block: .75rem; }
+.historyList > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.historyList > li > div { inline-size: 100%; display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.historyList strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.historyList small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .questionFooter { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding-block-start: .5rem; border-block-start: 1px solid var(--wd-color-structural-divider); }
 .addQuestion { border: 1px dashed var(--wd-color-structural-divider); inline-size: 100%; margin-block-start: .75rem; }
 .settings { max-inline-size: 44rem; display: grid; gap: 1rem; padding-block: 1rem; }
@@ -59,6 +65,8 @@
 .share > :first-child { inline-size: 100%; }
 .download { color: var(--wd-color-focus); text-underline-offset: 3px; font-size: .8125rem; }
 .publicPage { min-block-size: 100dvh; padding: 2rem 1rem; background: var(--wd-color-surface-secondary, #f7f6f8); }
+.publicBrand { max-inline-size: 42rem; margin: 0 auto 1rem; min-block-size: 3rem; display: flex; align-items: center; color: var(--wd-color-text); }
+.publicBrand img { inline-size: auto; max-inline-size: 12rem; block-size: auto; max-block-size: 3.5rem; object-fit: contain; object-position: left center; }
 .customerForm { max-inline-size: 42rem; margin-inline: auto; display: grid; gap: .875rem; }
 .customerHeading { padding: 1.25rem; background: var(--wd-color-surface); }
 .customerHeading h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 .5rem; }
@@ -69,10 +77,10 @@
 .answerChoices { padding: 0; margin: 0; border: 0; display: grid; gap: .75rem; font-size: .8125rem; }
 .answerChoices legend { margin-block-end: .75rem; font-weight: 500; }
 .answerChoices p { margin: 0; color: var(--wd-color-text-secondary); }
-.radioChoice { display: flex; gap: .625rem; align-items: center; }
-.radioChoice input { accent-color: var(--wd-color-focus); }
-.customerFooter { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem; }
-.customerFooter p, .previewNotice { font-size: .75rem; color: var(--wd-color-text-secondary); }
+.customerConsent { display: grid; gap: .375rem; padding: 1rem 1.25rem; background: var(--wd-color-surface); }
+.customerConsent small { padding-inline-start: 1.75rem; color: var(--wd-color-text-secondary); font-size: .75rem; line-height: 1.45; }
+.customerFooter { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; padding-block: .5rem; }
+.previewNotice { font-size: .75rem; color: var(--wd-color-text-secondary); }
 .received { max-inline-size: 42rem; margin: 3rem auto; padding: 1.25rem; }
 .received h1 { font-size: 1.5rem; }
 .responseAnswers { display: grid; gap: 1rem; }

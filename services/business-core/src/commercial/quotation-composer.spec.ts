@@ -5,6 +5,7 @@ import {
   mergeQuotationProposal,
   quotationComposerReadiness,
   quoteDraftHash,
+  quotationScopeCoverage,
   type QuotationProposalItem,
 } from "./quotation-composer";
 
@@ -137,11 +138,50 @@ describe("quotation composer boundaries", () => {
     expect(readiness.warnings.map((issue) => issue.code)).toContain("CUSTOM_ITEM");
   });
 
+  it("makes uncovered confirmed scope conspicuous without inventing a hard gate", () => {
+    const source = quote({ lines: [line()] });
+    const includedScope = [
+      { id: "scope-1", title: "Cabinetry", roomName: "Kitchen" },
+      { id: "scope-2", title: "Island", roomName: "Kitchen" },
+    ];
+    expect(quotationScopeCoverage(source, includedScope)).toEqual({
+      included: includedScope,
+      covered: [includedScope[0]],
+      uncovered: [includedScope[1]],
+    });
+    const readiness = quotationComposerReadiness(source, {
+      confirmed: true,
+      current: true,
+      includedScope,
+    });
+    expect(readiness.warnings).toContainEqual(expect.objectContaining({
+      code: "UNCOVERED_SCOPE",
+      message: expect.stringContaining("1 confirmed scope item"),
+    }));
+  });
+
+  it("warns when the recorded internal cost exceeds the base quotation value", () => {
+    const readiness = quotationComposerReadiness(
+      quote({ lines: [line({ quantity: 1, rate: 100, unitCost: 120 })] }),
+      { confirmed: true, current: true },
+    );
+    expect(readiness.readyForReview).toBe(true);
+    expect(readiness.warnings).toContainEqual(expect.objectContaining({
+      code: "NEGATIVE_MARGIN",
+      message: expect.stringContaining("does not cover"),
+    }));
+  });
+
   it("compares revision changes by durable scope/catalog identity", () => {
     const before = quote({ id: "old", lines: [line()], total: 200 });
     const current = quote({ lines: [line({ quantity: 3 }), line({ id: "new", scopeId: "scope-2" })], total: 450 });
-    expect(compareQuotationRevisions(current, before)).toEqual({
+    expect(compareQuotationRevisions(current, before)).toMatchObject({
       previousQuoteId: "old", added: 1, removed: 0, changed: 1, totalDelta: 250,
+      details: {
+        added: [{ id: "new", room: "Kitchen", title: "Cabinetry", optional: false }],
+        removed: [],
+        changed: [{ id: "line-1", changes: ["quantity"] }],
+      },
     });
   });
 });

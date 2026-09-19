@@ -21,6 +21,11 @@ export type AuthProfile = {
     workspaceSlug: string;
     workspaceLogoUrl: string | null;
     workspacePrimaryColor: string | null;
+    workspaceSecondaryColor: string | null;
+    workspaceHeadingFont: string | null;
+    workspaceBodyFont: string | null;
+    accountName?: string | null;
+    allowedModules: Array<"workspace" | "crm" | "pre-project" | "projects" | "hrms">;
     roles: string[];
     onboarding: {
       status: "not_started" | "in_progress" | "completed";
@@ -28,6 +33,13 @@ export type AuthProfile = {
       completedSteps: Array<"workspace_profile" | "organization" | "team" | "integrations">;
       version: number;
     };
+  }>;
+  unavailableOrganizations?: Array<{
+    workspaceId: string;
+    workspaceName: string;
+    workspaceSlug: string;
+    workspaceStatus: string;
+    accountName: string | null;
   }>;
   nextAction: string;
 };
@@ -69,6 +81,10 @@ export const getAuthenticatedProfile = cache(async (): Promise<AuthProfile> => {
         workspaceSlug: "iglo-architects",
         workspaceLogoUrl: null,
         workspacePrimaryColor: null,
+        workspaceSecondaryColor: null,
+        workspaceHeadingFont: null,
+        workspaceBodyFont: null,
+        allowedModules: ["workspace", "crm", "pre-project", "projects", "hrms"],
         roles: ["owner"],
         onboarding: {
           status: "completed",

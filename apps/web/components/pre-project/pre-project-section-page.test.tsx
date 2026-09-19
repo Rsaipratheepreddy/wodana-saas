@@ -9,9 +9,9 @@ const sections = preProjectModule.navigation.flatMap((group) => group.items);
 describe("Pre-execution navigation", () => {
   it("groups every agreed destination without execution operations or duplicate approval centers", () => {
     expect(preProjectModule.navigation.map((group) => [group.label ?? "Main", group.items.map((item) => item.label)])).toEqual([
-      ["Main", ["Qualified leads", "Master Data", "Quotation Templates"]],
-      ["Requirement gathering", ["Requirements"]],
-      ["Main", ["Client inspirations", "Design", "Quotations", "Agreement & payments", "Change requests", "Approvals & release", "Client portal"]],
+      ["Main", ["Pre-execution cases", "Master Data", "Supplier Offers", "Quotation Templates"]],
+      ["Requirement gathering", ["Case overview", "Requirements"]],
+      ["Main", ["Client inspirations", "Design", "Scope confirmation", "Quotations", "Agreement & payments", "Change requests", "Approvals & release", "Client portal"]],
     ]);
     expect(new Set(workspaceScreens.map((item) => item.id)).size).toBe(workspaceScreens.length);
     expect(new Set(workspaceScreens.map((item) => item.href)).size).toBe(workspaceScreens.length);

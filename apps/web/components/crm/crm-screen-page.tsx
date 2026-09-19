@@ -39,21 +39,21 @@ import { PipelineSettings } from "./pipeline-settings";
 import { AutomationApprovals } from "./automation-approvals";
 import { CrmOverview } from "./crm-overview";
 import { CrmInbox } from "./crm-inbox";
-import { CrmAutomations } from "./crm-automations";
+import { CrmSmartRules } from "./crm-smart-rules";
 import { CrmFollowUps } from "./crm-follow-ups";
 import { CrmProductShell } from "./crm-product-shell";
 
 const DUBAI_FORMAT = { locale: "en-GB", timeZone: "Asia/Dubai" };
 
 const screenCopy: Record<CrmScreenId, { title: string; description: string; noun: string }> = {
-  "crm-overview": { title: "Overview", description: "Focus on customer replies, commitments, and the work that needs attention today.", noun: "priorities" },
+  "crm-overview": { title: "Today", description: "Customer work that needs attention now.", noun: "priorities" },
   "follow-ups": { title: "Follow-ups", description: "Keep every promised call, task, and client reminder visible.", noun: "follow-ups" },
   calendar: { title: "Calendar", description: "See CRM commitments and connected Google events.", noun: "events" },
-  customers: { title: "People", description: "Contacts connected to leads, companies, and deals.", noun: "people" },
-  organizations: { title: "Companies", description: "Companies connected to leads, stakeholders, and commercial work.", noun: "companies" },
-  opportunities: { title: "Deals", description: "Qualified leads moving toward a decision and delivery handoff.", noun: "deals" },
+  customers: { title: "Customers", description: "People and companies linked to enquiries and opportunities.", noun: "customers" },
+  organizations: { title: "Companies", description: "Companies connected to enquiries, stakeholders, and commercial work.", noun: "companies" },
+  opportunities: { title: "Opportunities", description: "Qualified enquiries moving to a commercial decision or pre-execution.", noun: "opportunities" },
   activities: { title: "Activities", description: "Coordinate calls, meetings, tasks, notes, and the next customer commitment.", noun: "activities" },
-  conversations: { title: "Conversations", description: "See every customer thread and quickly identify messages awaiting a response.", noun: "conversations" },
+  conversations: { title: "Inbox", description: "Customer conversations and messages awaiting a response.", noun: "conversations" },
   sequences: { title: "Sequences", description: "Organize consistent, respectful follow-up across email, WhatsApp, and team tasks.", noun: "sequences" },
   automations: { title: "Automations", description: "Monitor CRM workflows, their publishing state, and recent execution health.", noun: "automations" },
   "crm-reports": { title: "CRM reports", description: "Review acquisition, response time, pipeline, assignment, and forecast performance.", noun: "report rows" },
@@ -136,7 +136,8 @@ function columnsFor(id: CrmScreenId, referenceTime: number): DataGridColumn<CrmR
     { accessorKey: "dueAt", header: "Due", size: 150, cell: ({ row }) => <DueCell value={value(row.original, "dueAt")} referenceTime={referenceTime} /> },
   ];
   if (id === "customers" || id === "organizations") return [
-    { accessorKey: "displayName", header: id === "customers" ? "Customer" : "Organization", size: 250, meta: { primary: true }, cell: ({ row }) => <Identity name={text(row.original, "displayName")} detail={primaryContact(row.original, "email")} icon={id === "organizations" ? <span className={styles.recordIcon}><Building2 size={16} /></span> : undefined} /> },
+    { accessorKey: "displayName", header: id === "customers" ? "Customer" : "Organization", size: 250, meta: { primary: true }, cell: ({ row }) => <Identity name={text(row.original, "displayName")} detail={primaryContact(row.original, "email")} icon={id === "organizations" || row.original.type === "organization" ? <span className={styles.recordIcon}><Building2 size={16} /></span> : undefined} /> },
+    ...(id === "customers" ? [{ accessorKey: "type", header: "Type", size: 120, cell: ({ row }: { row: { original: CrmRecord } }) => <Chip>{row.original.type === "organization" ? "Company" : "Person"}</Chip> }] : []),
     { accessorKey: "lifecycle", header: "Lifecycle", size: 130, cell: ({ row }) => <Chip>{humanize(value(row.original, "lifecycle"))}</Chip> },
     { id: "email", accessorFn: (row) => primaryContact(row, "email"), header: "Email", size: 220, cell: ({ row }) => <span className={styles.contact}><Mail size={13} />{primaryContact(row.original, "email")}</span> },
     { id: "phone", accessorFn: (row) => primaryContact(row, "phone"), header: "Phone", size: 155, cell: ({ row }) => primaryContact(row.original, "phone") },
@@ -149,7 +150,7 @@ function columnsFor(id: CrmScreenId, referenceTime: number): DataGridColumn<CrmR
     { accessorKey: "status", header: "Status", size: 100, cell: ({ row }) => <State status={value(row.original, "status")} /> },
     { accessorKey: "amount", header: "Value", size: 135, meta: { align: "end" }, cell: ({ row }) => <strong className={styles.money}>{moneyLabel(row.original)}</strong> },
     { accessorKey: "probability", header: "Probability", size: 110, meta: { align: "center" }, cell: ({ row }) => `${numeric(row.original, "probability")}%` },
-    { accessorKey: "ownerName", header: "Lead manager", size: 150, cell: ({ row }) => text(row.original, "ownerName", "Unassigned") },
+    { accessorKey: "ownerName", header: "Sales owner", size: 150, cell: ({ row }) => text(row.original, "ownerName", "Unassigned") },
     { accessorKey: "expectedCloseAt", header: "Expected close", size: 135, cell: ({ row }) => dateLabel(value(row.original, "expectedCloseAt")) },
     { accessorKey: "nextActionAt", header: "Next action", size: 130, cell: ({ row }) => <DueCell value={value(row.original, "nextActionAt")} referenceTime={referenceTime} /> },
   ];
@@ -157,7 +158,7 @@ function columnsFor(id: CrmScreenId, referenceTime: number): DataGridColumn<CrmR
     { accessorKey: "title", header: "Activity", size: 315, meta: { primary: true }, cell: ({ row }) => <Identity name={text(row.original, "title")} detail={humanize(value(row.original, "type"))} icon={<span className={styles.recordIcon}><Activity size={16} /></span>} /> },
     { accessorKey: "status", header: "Status", size: 115, cell: ({ row }) => <State status={value(row.original, "status")} /> },
     { accessorKey: "priority", header: "Priority", size: 110, cell: ({ row }) => <State status={value(row.original, "priority")} /> },
-    { accessorKey: "ownerName", header: "Lead manager", size: 160, cell: ({ row }) => text(row.original, "ownerName", "Unassigned") },
+    { accessorKey: "ownerName", header: "Sales owner", size: 160, cell: ({ row }) => text(row.original, "ownerName", "Unassigned") },
     { accessorKey: "dueAt", header: "Due", size: 145, cell: ({ row }) => <DueCell value={value(row.original, "dueAt")} referenceTime={referenceTime} /> },
     { accessorKey: "isNextAction", header: "Commitment", size: 125, cell: ({ row }) => bool(row.original, "isNextAction") ? <Badge tone="info">Next action</Badge> : <span className={styles.muted}>Supporting</span> },
     { accessorKey: "customerVisible", header: "Visibility", size: 120, cell: ({ row }) => <Chip>{bool(row.original, "customerVisible") ? "Customer" : "Internal"}</Chip> },
@@ -211,7 +212,7 @@ function reportDimension(row: CrmRecord) { return text(row, "source", text(row, 
 function reportBreakdown(row: CrmRecord) { return humanize(value(row, "channel") ?? value(row, "stage") ?? value(row, "method") ?? value(row, "status") ?? value(row, "report")); }
 function reportRecords(row: CrmRecord) { return numeric(row, "enquiries") || numeric(row, "count") || numeric(row, "leads") || 0; }
 function reportProgress(row: CrmRecord) {
-  if (value(row, "opportunities") !== undefined) return `${numeric(row, "leads")} leads · ${numeric(row, "opportunities")} opportunities · ${numeric(row, "won")} won`;
+  if (value(row, "opportunities") !== undefined) return `${numeric(row, "leads")} enquiries · ${numeric(row, "opportunities")} opportunities · ${numeric(row, "won")} won`;
   if (value(row, "averageMinutes") !== undefined) return `${numeric(row, "averageMinutes")} min average`;
   if (value(row, "weightedAmount") !== undefined) return `Weighted ${moneyLabel(row, "weightedAmount")}`;
   return humanize(value(row, "status") ?? value(row, "report"));
@@ -320,7 +321,7 @@ export function CrmScreenPage({ initialData, initialRecordId, initialCalendar = 
   if (initialData.id === "follow-ups") return <CrmFollowUps key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;
   if (initialData.id === "calendar") return <CrmProductShell title="Calendar" description="CRM commitments and connected Google events." canView={initialData.canView} compact useWorkspaceColors><h1 className="wd-visually-hidden">Calendar</h1><CrmCalendar focused={false} workspaceId={initialData.workspaceId} /></CrmProductShell>;
   if (initialData.id === "conversations") return <CrmInbox key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;
-  if (initialData.id === "automations") return <CrmAutomations key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;
+  if (initialData.id === "automations") return <CrmSmartRules key={initialData.workspaceId} initialData={initialData} />;
   return <CrmTablePage key={`${initialData.workspaceId}/${initialData.id}`} initialData={initialData} initialRecordId={initialRecordId} initialCalendar={initialCalendar} />;
 }
 
@@ -358,7 +359,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
       finally { setBusy(false); }
       return;
     }
-    const endpoints: Partial<Record<CrmScreenId, string>> = { customers: "parties?type=person&limit=100", organizations: "parties?type=organization&limit=100", opportunities: "opportunities?limit=100", activities: "activities?limit=100", conversations: "conversations?limit=100", sequences: "sequences", automations: "automations", "crm-overview": "today" };
+    const endpoints: Partial<Record<CrmScreenId, string>> = { customers: "parties?limit=100", organizations: "parties?type=organization&limit=100", opportunities: "opportunities?limit=100", activities: "activities?limit=100", conversations: "conversations?limit=100", sequences: "sequences", automations: "automations", "crm-overview": "today" };
     const endpoint = endpoints[initialData.id];
     if (!endpoint) return;
     setBusy(true); setFailure("");

@@ -24,7 +24,7 @@ const work = record({
   commerce: { pricingMode: "fixed" },
   links: [{ relation: "unit", targetId: "unit" }],
 });
-const unit = record({ id: "unit", kind: "unit" });
+const unit = record({ id: "unit", kind: "unit", dimension: "count", baseFactor: 1, configuration: { symbol: "nos" } });
 const request: SellingPriceRequest = {
   catalogId,
   workId: "work",
@@ -79,6 +79,14 @@ describe("catalog selling-price resolution", () => {
         appliedUnitRate: 100,
       },
     });
+  });
+
+  it("keeps an earlier price snapshot reproducible after the rate book changes", () => {
+    const original = resolveSellingPrice([work, unit, rate("rate", { amount: 100 })], request).snapshot;
+    const revised = resolveSellingPrice([work, unit, { ...rate("rate", { amount: 120 }), version: 2 }], request).snapshot;
+    expect(original.rateCard).toMatchObject({ id: "rate", version: 1, amount: 100, appliedUnitRate: 100 });
+    expect(revised.rateCard).toMatchObject({ id: "rate", version: 2, amount: 120, appliedUnitRate: 120 });
+    expect(original.rateCard?.amount).toBe(100);
   });
 
   it("never treats purchase, cost, draft or archived rates as selling prices", () => {
@@ -241,6 +249,20 @@ describe("catalog selling-price resolution", () => {
     ).toBe("unit_mismatch");
   });
 
+  it("converts compatible physical units from a pinned source unit without guessing packs", () => {
+    const squareFoot = record({ id: "sqft", kind: "unit", dimension: "area", baseFactor: 0.09290304, configuration: { symbol: "sq.ft" } });
+    const squareMetre = record({ id: "sqm", kind: "unit", dimension: "area", baseFactor: 1, configuration: { symbol: "sq.m" } });
+    const areaWork = { ...work, links: [{ relation: "unit", targetId: "sqft" }] };
+    const areaRate = rate("area-rate", { amount: 100 }, []);
+    areaRate.links = [{ relation: "work", targetId: "work" }, { relation: "unit", targetId: "sqm" }];
+    const result = resolveSellingPrice([areaWork, squareFoot, squareMetre, areaRate], { ...request, unitId: "sqft", unitVersion: 1, unitLabel: "sq.ft", quantity: 10 });
+    expect(result.snapshot.rateCard).toMatchObject({ amount: 100, baseUnitRate: 9.29, appliedUnitRate: 9.29, sourceUnit: { id: "sqm", version: 1, label: "sq.m", conversionFactor: 0.09290304 } });
+
+    const sheet = record({ id: "sheet", kind: "unit", dimension: "pack", configuration: { symbol: "sheet" } });
+    const packRate = { ...areaRate, links: [{ relation: "work", targetId: "work" }, { relation: "unit", targetId: "sheet" }] };
+    expect(resolveSellingPrice([areaWork, squareFoot, sheet, packRate], { ...request, unitId: "sqft", unitVersion: 1, unitLabel: "sq.ft" })).toMatchObject({ status: "price_required", code: "unit_mismatch" });
+  });
+
   it("keeps on-request and unpriced items explicit rather than converting them to zero-price products", () => {
     expect(
       resolveSellingPrice(
@@ -271,6 +293,12 @@ describe("catalog selling-price resolution", () => {
     ).toThrow(/does not belong/);
   });
 
+  it("rejects a stale or unavailable selected variant version", () => {
+    const variant = record({ id: "variant", kind: "variant", version: 2, links: [{ relation: "work", targetId: "work" }] });
+    expect(() => resolveSellingPrice([work, unit, variant], { ...request, variantId: "variant", variantVersion: 1 })).toThrow(/does not belong|variant/i);
+    expect(() => resolveSellingPrice([work, unit, { ...variant, archived: true }], { ...request, variantId: "variant", variantVersion: 2 })).toThrow(/does not belong|variant/i);
+  });
+
   it("loads only workspace-scoped catalog records and never supplier offers", async () => {
     const query = vi
       .fn()
@@ -288,5 +316,59 @@ describe("catalog selling-price resolution", () => {
       expect(sql).not.toContain("workspace_supplier_offers");
       expect(parameters[0]).toBe("workspace-a");
     }
+  });
+
+  it("loads a rate unit from the same workspace before converting it", async () => {
+    const squareFoot = record({
+      id: "sqft",
+      kind: "unit",
+      dimension: "area",
+      baseFactor: 0.09290304,
+      configuration: { symbol: "sq.ft" },
+    });
+    const squareMetre = record({
+      id: "sqm",
+      kind: "unit",
+      dimension: "area",
+      baseFactor: 1,
+      configuration: { symbol: "sq.m" },
+    });
+    const areaWork = {
+      ...work,
+      links: [{ relation: "unit", targetId: "sqft" }],
+    };
+    const areaRate = rate("area-rate", { amount: 100 });
+    areaRate.links = [
+      { relation: "work", targetId: "work" },
+      { relation: "unit", targetId: "sqm" },
+    ];
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [areaWork, squareFoot] })
+      .mockResolvedValueOnce({ rows: [areaRate] })
+      .mockResolvedValueOnce({ rows: [squareMetre] });
+
+    const result = await new CatalogSellingPriceService().resolve(
+      { query } as never,
+      "workspace-a",
+      {
+        ...request,
+        unitId: "sqft",
+        unitVersion: 1,
+        unitLabel: "sq.ft",
+      },
+    );
+
+    expect(result.snapshot.rateCard).toMatchObject({
+      baseUnitRate: 9.29,
+      sourceUnit: { id: "sqm", conversionFactor: 0.09290304 },
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[2][0]).toContain("r.workspace_id=$1");
+    expect(query.mock.calls[2][1]).toEqual([
+      "workspace-a",
+      catalogId,
+      ["sqm"],
+    ]);
   });
 });

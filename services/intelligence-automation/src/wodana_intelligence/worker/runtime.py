@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from wodana_intelligence.integrations.business_core import BusinessCoreClient
 from wodana_intelligence.worker.adapters import NotificationAdapter
-from wodana_intelligence.worker.models import DeliveryJob, DomainEventV1
+from wodana_intelligence.worker.models import DeliveryJob, DomainEventV1, PushReceiptJob
 
 logger = logging.getLogger("wodana.worker.runtime")
 
@@ -336,9 +336,28 @@ class CrmWorker:
                     "providerMessageId": result.provider_message_id,
                     "errorCode": result.error_code,
                     "errorMessage": result.error_message,
+                    "endpointReference": result.endpoint_reference,
                 },
             )
             delivered += result.result == "delivered"
+        claim_receipts = getattr(self.business_core, "claim_push_receipts", None)
+        record_receipt = getattr(self.business_core, "record_push_receipt", None)
+        if claim_receipts and record_receipt:
+            for item in await claim_receipts(workspace_id):
+                receipt = PushReceiptJob.model_validate(item)
+                verified = await self.adapter.verify_push(receipt)
+                await record_receipt(
+                    str(receipt.notification_id),
+                    {
+                        "workspaceId": workspace_id,
+                        "attempt": receipt.attempt,
+                        "providerMessageId": receipt.provider_message_id,
+                        "result": verified.result,
+                        "errorCode": verified.error_code,
+                        "errorMessage": verified.error_message,
+                    },
+                )
+                delivered += verified.result == "delivered"
         return delivered
 
     async def poll_due_work(self) -> None:
@@ -348,6 +367,7 @@ class CrmWorker:
             await self.recover_pending()
             for workspace_id in await self.business_core.due_crm_workspaces():
                 await self.business_core.process_due_slas(workspace_id)
+                await self.business_core.process_due_takeovers(workspace_id)
                 await self.business_core.process_due_sequences(workspace_id)
                 await self.drain_notifications(workspace_id)
                 waits = await self.business_core.claim_automation_waits(workspace_id)

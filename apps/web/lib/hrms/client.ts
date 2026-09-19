@@ -8,7 +8,7 @@ export class HrmsError extends Error {
   }
 }
 export function hrmsUrl(workspaceId: string, path: string, area = "hrms") {
-  return `/api/workspace/${area}/${path}${path.includes("?") ? "&" : "?"}workspaceId=${encodeURIComponent(workspaceId)}`;
+  return `/api/workspace/${area}${path ? `/${path}` : ""}${path.includes("?") ? "&" : "?"}workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 export async function hrmsRequest<T>(
   workspaceId: string,

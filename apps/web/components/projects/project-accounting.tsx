@@ -131,7 +131,7 @@ export function ProjectAccounting({
                     workspaceId={workspaceId}
                     payment={payment}
                     busy={busy}
-                    canApprove={state.canApprove}
+                    canVerifyFinance={state.canVerifyFinance}
                     run={run}
                     currency={state.currency}
                     customerName={state.customerName}

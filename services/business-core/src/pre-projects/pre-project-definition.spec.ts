@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clientSafeSpecification,
+  definitionChanges,
   definitionIssues,
   definitionSnapshotHash,
   definitionSourceHash,
@@ -180,5 +181,17 @@ describe("definition baseline domain", () => {
 
     expect(definitionSourceHash(reformatted)).not.toBe(original);
     expect(definitionSourceHash(approved)).not.toBe(original);
+  });
+
+  it("summarizes added, renamed and removed rooms and scope items",()=>{
+    const previous=snapshot(),current=structuredClone(previous);
+    current.brief.version=3;current.rooms[0]={...current.rooms[0],version:2,name:'Primary bedroom'};
+    current.rooms.push({id:'room-2',version:1,name:'Study'});
+    current.items[0]={...current.items[0],version:4,title:'Walk-in wardrobe'};
+    current.items.push({...current.items[0],id:'scope-2',title:'Study desk'});
+    const changed=definitionChanges(previous,current);
+    expect(changed).toMatchObject({briefChanged:true,rooms:{added:['Study'],removed:[],changed:['Bedroom → Primary bedroom']},items:{added:['Study desk'],removed:[],changed:['Walk-in wardrobe']},total:5});
+    const removed=structuredClone(current);removed.rooms=[];removed.items=[];
+    expect(definitionChanges(current,removed)).toMatchObject({rooms:{removed:['Primary bedroom','Study']},items:{removed:['Walk-in wardrobe','Study desk']},total:4});
   });
 });

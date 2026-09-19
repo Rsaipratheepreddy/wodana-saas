@@ -5,6 +5,10 @@ import { routeSupportsLocation } from "./project-work-packages";
 export type WorkPackageReadinessIssue = {
   code:
     | "owner"
+    | "schedule"
+    | "next_action"
+    | "dependency"
+    | "recovery"
     | "tasks"
     | "task_owner"
     | "task_status"
@@ -43,6 +47,41 @@ export function workPackageReadiness(
     issues.push({
       code: "owner",
       detail: "Assign an accountable work-package owner.",
+    });
+  if (!workPackage.plannedStart || !workPackage.plannedEnd)
+    issues.push({
+      code: "schedule",
+      detail: "Set the work-package start and finish dates.",
+    });
+  if (
+    !workPackage.nextAction ||
+    !workPackage.nextActionOwnerId ||
+    !workPackage.nextActionDate
+  )
+    issues.push({
+      code: "next_action",
+      detail: "Record the package's next action, owner and due date.",
+    });
+  const incompleteDependency = (workPackage.predecessorPackageIds ?? [])
+    .map((id) => (data.workPackages ?? []).find((candidate) => candidate.id === id))
+    .find((candidate) => candidate?.status !== "completed");
+  if (incompleteDependency)
+    issues.push({
+      code: "dependency",
+      detail: `Complete ${incompleteDependency.title} before marking this package ready.`,
+    });
+  if (
+    (workPackage.risk === "blocked" ||
+      Boolean(
+        data.controls?.targetCompletion &&
+          workPackage.plannedEnd &&
+          workPackage.plannedEnd > data.controls.targetCompletion,
+      )) &&
+    !workPackage.recoveryPlan?.trim()
+  )
+    issues.push({
+      code: "recovery",
+      detail: "Record a recovery plan for this package risk.",
     });
   const tasks = data.tasks.filter((task) => task.packageId === workPackage.id);
   if (!tasks.length) {

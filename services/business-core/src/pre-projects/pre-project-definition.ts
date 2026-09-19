@@ -61,6 +61,28 @@ export interface DefinitionSourceSnapshot {
   items: DefinitionSourceItem[];
 }
 
+export type DefinitionChangeSummary = {
+  briefChanged: boolean;
+  rooms: { added: string[]; removed: string[]; changed: string[] };
+  items: { added: string[]; removed: string[]; changed: string[] };
+  total: number;
+};
+
+export function definitionChanges(previous: DefinitionSourceSnapshot, current: DefinitionSourceSnapshot): DefinitionChangeSummary {
+  const compare = <T extends {id:string;name?:string;title?:string}>(before:T[],after:T[]) => {
+    const prior=new Map(before.map(value=>[value.id,value])),next=new Map(after.map(value=>[value.id,value]));
+    const label=(value:T)=>value.name||value.title||value.id;
+    const added=after.filter(value=>!prior.has(value.id)).map(label);
+    const removed=before.filter(value=>!next.has(value.id)).map(label);
+    const changed=after.filter(value=>prior.has(value.id)&&canonicalHash(prior.get(value.id))!==canonicalHash(value)).map(value=>{
+      const old=prior.get(value.id)!;return old.name&&value.name&&old.name!==value.name?`${old.name} → ${value.name}`:label(value);
+    });
+    return {added,removed,changed};
+  };
+  const rooms=compare(previous.rooms,current.rooms),items=compare(previous.items,current.items);const briefChanged=canonicalHash(previous.brief)!==canonicalHash(current.brief);
+  return {briefChanged,rooms,items,total:Number(briefChanged)+rooms.added.length+rooms.removed.length+rooms.changed.length+items.added.length+items.removed.length+items.changed.length};
+}
+
 const string = (value: unknown) =>
   typeof value === "string" ? value : "";
 const nullableString = (value: unknown) =>

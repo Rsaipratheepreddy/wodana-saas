@@ -23,6 +23,7 @@ export function quotationTemplateContent(
         variant,
         pricingMode,
         materialRows,
+        dimensions,
       }) => ({
         id,
         room,
@@ -39,6 +40,7 @@ export function quotationTemplateContent(
         variant,
         pricingMode,
         materialRows,
+        dimensions,
       }),
     ),
     currency: q.currency,
@@ -47,13 +49,15 @@ export function quotationTemplateContent(
     inclusions: q.inclusions,
     terms: q.terms,
     exclusions: q.exclusions,
+    presentation: q.presentation,
     paymentTerms: q.paymentTerms.map(
-      ({ id, title, percent, trigger, requiredForRelease }) => ({
+      ({ id, title, percent, trigger, requiredForRelease, requiredForProduction }) => ({
         id,
         title,
         percent,
         trigger,
         requiredForRelease,
+        requiredForProduction: requiredForProduction === true,
       }),
     ),
   });

@@ -85,15 +85,17 @@ describe("factory and on-site master structure",()=>{
   expect(()=>validateCatalogRecord({...rate,configuration:{...rate.configuration,costIncludes:"unconfirmed"}})).toThrow("cost inclusions");
  });
 });
-function setup(current:unknown=null,targets:unknown[]=[]) {
+function setup(current:unknown=null,targets:unknown[]=[],canManageCosts=true) {
  const query=vi.fn(async(sql:string)=>{
   if(sql.includes("kind='catalog_group'"))return {rows:[{id:catalogId,kind:"catalog_group",archived:false}],rowCount:1};
   if(sql.includes("content,version")&&sql.includes("AND id=$2"))return {rows:current?[current]:[],rowCount:current?1:0};
   if(sql.startsWith("SELECT id,kind,archived"))return {rows:targets,rowCount:targets.length};
   return {rows:[],rowCount:0};
  });
- const withPermissions=vi.fn(async(_a,_w,_p,fn)=>fn({query},{userId:"user"}));const record=vi.fn();
- return {service:new CatalogService({withPermissions} as unknown as WorkspaceAccessService,{record} as unknown as CrmEventsService),query,withPermissions,record};
+ const withPermissions=vi.fn(async(_a,_w,_p,fn)=>fn({query},{userId:"user"}));
+ const hasPermission=vi.fn(async(_client,_workspace,_user,permission)=>permission==="supplier_offers.manage"?canManageCosts:true);
+ const record=vi.fn();
+ return {service:new CatalogService({withPermissions,hasPermission} as unknown as WorkspaceAccessService,{record} as unknown as CrmEventsService),query,withPermissions,hasPermission,record};
 }
 describe("workspace catalog writes",()=>{
  it("blocks conversion changes to a referenced unit before writing data",async()=>{
@@ -176,6 +178,13 @@ describe("workspace catalog writes",()=>{
   expect(withPermissions).toHaveBeenCalledWith(actor,"workspace",["catalog.view","catalog.manage"],expect.any(Function));
   expect(query.mock.calls.some(([sql])=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
  });
+ it("requires sourcing permission before a catalog manager can write internal costs",async()=>{
+  const process=CATALOG_STARTER.find(r=>r.code==="FP-CUT-PANEL")!;
+  const rate={...room,kind:"rate_card" as const,links:[process.links.find(l=>l.relation==="unit")!,{relation:"factory_process",targetId:process.id}],configuration:{amount:50,currency:"AED",effectiveFrom:"2026-09-18",priceType:"cost",costIncludes:"labour_and_machine",taxIncluded:"no"}};
+  const {service,query}=setup(null,[],false);
+  await expect(service.save(actor,"workspace",rate)).rejects.toThrow("Supplier cost management permission");
+  expect(query.mock.calls.some(([sql])=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
+ });
  it("rejects references unavailable in the current workspace",async()=>{
   const {service,query}=setup();const material=CATALOG_STARTER.find(r=>r.kind==="material")!;
   await expect(service.save(actor,"workspace",material)).rejects.toThrow("from this workspace");
@@ -187,4 +196,26 @@ describe("workspace catalog writes",()=>{
   await expect(service.save(actor,"workspace",plainToInstance(SaveCatalogRecordDto,room))).resolves.toMatchObject({id,version:1});
   expect(record).not.toHaveBeenCalled();expect(query.mock.calls.some(([sql])=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
  });
+});
+
+it("returns selling prices but redacts internal costs from a catalogue-only response",async()=>{
+ const base={catalogId,version:1,archived:false,starterVersion:null,updatedAt:"2026-09-18T00:00:00Z"};
+ const rows=[
+  {...base,id:"10000000-0000-4000-a000-000000000001",kind:"work",code:"ITEM",name:"Item",content:{description:"",attributes:[{name:"estimated_cost_aed",value:"100"},{name:"selling_price_aed",value:"150"}]}},
+  {...base,id:"10000000-0000-4000-a000-000000000002",kind:"rate_card",code:"COST",name:"Cost",content:{configuration:{priceType:"cost",amount:100}}},
+  {...base,id:"10000000-0000-4000-a000-000000000003",kind:"rate_card",code:"SELL",name:"Sell",content:{configuration:{priceType:"selling",amount:150}}},
+ ];
+ const query=vi.fn(async(sql:string)=>{
+  if(sql.includes("ORDER BY kind,name"))return {rows,rowCount:rows.length};
+  if(sql.includes("default_currency"))return {rows:[{defaultCurrency:"AED"}],rowCount:1};
+  if(sql.includes("FROM legal_entities"))return {rows:[{id:"entity",name:"Palm Living",baseCurrency:"AED"}],rowCount:1};
+  return {rows:[],rowCount:0};
+ });
+ const hasPermission=vi.fn(async(_c,_w,_u,permission)=>permission==="catalog.manage");
+ const withPermission=vi.fn(async(_a,_w,_p,fn)=>fn({query},{userId:"user"}));
+ const service=new CatalogService({withPermission,hasPermission} as unknown as WorkspaceAccessService,{record:vi.fn()} as unknown as CrmEventsService);
+ const result=await service.list(actor,"workspace",{catalogId});
+ expect(result).toMatchObject({canViewCosts:false,priceVisibility:"selling_only",currency:"AED",legalEntities:[{baseCurrency:"AED"}]});
+ expect(result.items.map(item=>item.id)).toEqual([rows[0].id,rows[2].id]);
+ expect(result.items[0].attributes).toEqual([{name:"selling_price_aed",value:"150"}]);
 });

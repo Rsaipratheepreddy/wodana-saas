@@ -1,15 +1,21 @@
-import type { ImageSourcePropType } from 'react-native';
+import type { TenantModuleId } from '../auth/client';
+import { visibleHomeModuleIds } from './module-access';
 
 export type HomeModule = {
   id: 'crm' | 'pre-project' | 'projects' | 'hrms';
   label: string;
-  keywords: string;
-  image: ImageSourcePropType;
+  group: string;
+  description: string;
 };
 
 export const homeModules: readonly HomeModule[] = [
-  { id: 'crm', label: 'CRM', keywords: 'customers contacts leads sales relationships', image: require('../../assets/illustrations/home/crm-v1.png') },
-  { id: 'pre-project', label: 'Pre-project', keywords: 'planning designs brief quotation preproject', image: require('../../assets/illustrations/home/pre-project-v1.png') },
-  { id: 'projects', label: 'Projects', keywords: 'construction delivery site building', image: require('../../assets/illustrations/home/projects-v1.png') },
-  { id: 'hrms', label: 'HRMS', keywords: 'people team attendance leave employees human resources', image: require('../../assets/illustrations/home/hrms-v1.png') },
+  { id: 'crm', label: 'CRM', group: 'Customers & sales', description: 'Enquiries, follow-ups and deals' },
+  { id: 'pre-project', label: 'Pre-execution', group: 'Plan the work', description: 'Briefs, scope and site visits' },
+  { id: 'projects', label: 'Projects', group: 'Deliver the work', description: 'Assigned work, receipts and site photos' },
+  { id: 'hrms', label: 'People', group: 'Team operations', description: 'Attendance, leave and approvals' },
 ];
+
+export function visibleHomeModules(allowed: readonly TenantModuleId[] | undefined): HomeModule[] {
+  const ids = visibleHomeModuleIds(allowed);
+  return homeModules.filter(module => ids.includes(module.id));
+}

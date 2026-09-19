@@ -1,12 +1,13 @@
 .provider { min-block-size: 100%; background: var(--wd-color-surface); }
-.page { inline-size: 100%; min-block-size: 100%; padding: 1.25rem 1.5rem 3rem; }
-.pageHeading { margin-block-end: 1rem; }
-.pageHeading h1 { margin: 0; color: var(--wd-color-text); font-size: 1.375rem; font-weight: var(--wd-weight-semibold); letter-spacing: -.025em; line-height: 1.2; }
-.pageHeading p { margin: .25rem 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.summary { min-block-size: 4rem; max-inline-size: 76rem; display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; border-radius: .85rem; margin-block-end: 1rem; padding: .65rem .75rem; background: linear-gradient(120deg, #d6b9f3 0%, #e4a2bc 48%, #f39b54 100%); box-shadow: 0 .5rem 1.25rem rgb(126 73 114 / 10%); }
-.summary span { min-block-size: 2rem; display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px; padding-inline: .65rem; background: rgb(255 255 255 / 68%); color: #51464c; font-size: var(--wd-text-xs); white-space: nowrap; }
-.summary strong { color: #171319; }
-.summary span[data-attention="true"] { background: rgb(255 245 229 / 88%); color: #6f4510; }
+.page { inline-size: 100%; min-block-size: 100%; padding: .875rem 1.25rem 1.5rem; }
+.pageHeading { margin-block-end: .65rem; }
+.pageHeading > div:first-child { display: flex; align-items: baseline; gap: .75rem; min-inline-size: 0; }
+.pageHeading h1 { margin: 0; color: var(--wd-color-text); font-size: 1.125rem; font-weight: var(--wd-weight-semibold); letter-spacing: -.02em; line-height: 1.2; white-space: nowrap; }
+.pageHeading p { display: none; }
+.summary { min-block-size: 3rem; max-inline-size: 76rem; display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; border: 1px solid var(--wd-color-structural-divider); border-radius: .65rem; margin-block-end: .65rem; padding: .4rem .5rem; background: var(--wd-color-surface-muted); box-shadow: none; }
+.summary span { min-block-size: 2rem; display: inline-flex; align-items: center; gap: .3rem; border-radius: 999px; padding-inline: .65rem; background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); white-space: nowrap; }
+.summary strong { color: var(--wd-color-text); }
+.summary span[data-attention="true"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
 .gridRegion { max-inline-size: 76rem; }
 .gridRegion :global(.wd-data-grid) { border-color: var(--wd-color-structural-divider); border-radius: .7rem; box-shadow: none; }
 .gridRegion :global(.wd-table tr > * + *) { border-inline-start: 1px solid var(--wd-color-structural-divider); }

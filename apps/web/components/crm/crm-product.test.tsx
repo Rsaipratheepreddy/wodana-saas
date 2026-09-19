@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
 import { CrmScreenPage } from "./crm-screen-page";
+import { CrmAutomations } from "./crm-automations";
 import { crmRecordLink } from "./crm-product-shell";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -14,9 +15,9 @@ describe("CRM product workflows", () => {
     const fixture = structuredClone(crmScreenFixture("crm-overview"));
     render(<CrmScreenPage initialData={fixture} />);
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-    const april = screen.getByRole("button", { name: "Show Apr lead source details" });
+    const april = screen.getByRole("button", { name: "Show Apr enquiry source details" });
     await user.click(april);
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Apr · 5 leads");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Apr · 5 enquiries");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Website 3");
     expect(screen.getByRole("tooltip")).toHaveTextContent("Instagram 2");
     expect(april).toHaveAttribute("aria-expanded", "true");
@@ -38,7 +39,7 @@ describe("CRM product workflows", () => {
     const definition = { nodes: [{ key: "start", type: "trigger", configuration: { eventTypes: ["crm.enquiry.ready.v1"] } }, { key: "task", type: "create_task", configuration: { title: "Call customer", priority: "high", delayMinutes: 30, isNextAction: true, retainedCustomFlag: true } }, { key: "end", type: "end", configuration: {} }], edges: [{ from: "start", to: "task" }, { from: "task", to: "end" }] };
     const detail = { ...record, definition, version: 2, draftVersionNumber: 1, validation: { valid: true, errors: [], warnings: [] } };
     const fetcher = vi.fn(async (input: string, init?: RequestInit) => response(init?.method === "PATCH" ? { ...detail, version: 3 } : input.includes(`/automations/${record.id}?`) ? detail : fixture.items));
-    vi.stubGlobal("fetch", fetcher); render(<CrmScreenPage initialData={fixture} initialRecordId={record.id} />);
+    vi.stubGlobal("fetch", fetcher); render(<CrmAutomations initialData={fixture} initialRecordId={record.id} />);
     await user.click(await screen.findByRole("button", { name: "Step list" }));
     await user.click(await screen.findByRole("button", { name: /Create Task.*Call customer/ }));
     const input = screen.getByLabelText("Task title"); await user.clear(input); await user.type(input, "Call within one hour");

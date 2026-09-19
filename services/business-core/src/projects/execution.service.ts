@@ -1,6 +1,14 @@
 import { commercialExecutionReady } from "./project-readiness";
 import { paymentIsVerified } from "../commercial/accounting-invoice";
-import { controlledChangeCanRelease } from "../commercial/change-control";
+import {
+  financeGatePaymentsReady,
+  variationReleasePaymentsReady,
+} from "../commercial/release-integrity";
+import {
+  acceptedVariationsToRelease,
+  acceptedVariationSnapshotIsCurrent,
+  controlledChangeCanRelease,
+} from "../commercial/change-control";
 import { freezeHash } from "../commercial/commercial.domain";
 import { previewReschedule } from "./project-reschedule";
 import { ProjectNotificationsService } from "./project-notifications";
@@ -50,6 +58,12 @@ import { adoptProjectWorkflow, ensureProjectWorkflow } from "./project-workflow"
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { blockWorkPackagesForDeduction, syncScopeWorkPackages } from "./project-work-packages";
 import { projectExecutionPulse } from "./project-execution-pulse";
+import { projectConnectedPlan } from "./project-connected-plan";
+import {
+  projectFieldCommand,
+  projectFieldProject,
+  type ProjectFieldPermissions,
+} from "./project-field-work";
 import {
   captureApprovedDesignBaseline,
   mergeDesignBaseline,
@@ -96,6 +110,16 @@ export class ExecutionService {
       approvedMaterials: stored.approvedMaterials ?? [],
       workPackages: stored.workPackages ?? [],
     } as ProjectData;
+    data.workPackages = (data.workPackages ?? []).map((workPackage) => ({
+      ...workPackage,
+      predecessorPackageIds: workPackage.predecessorPackageIds ?? [],
+      priority: workPackage.priority ?? "normal",
+      risk: workPackage.risk ?? "on_track",
+      nextAction: workPackage.nextAction ?? "",
+      nextActionOwnerId: workPackage.nextActionOwnerId ?? "",
+      nextActionDate: workPackage.nextActionDate ?? "",
+      recoveryPlan: workPackage.recoveryPlan ?? "",
+    }));
     ensureProjectWorkflow(data);
     return data;
   }
@@ -304,6 +328,97 @@ export class ExecutionService {
       ).rows;
     });
   }
+  fieldQueue(actor: RequestActor, w: string) {
+    return this.access.run(actor, w, async (ctx) => {
+      this.access.require(ctx, "projects.view", "projects.manage");
+      const permissions: ProjectFieldPermissions = {
+        manage: ctx.permissions.has("projects.manage"),
+        review: ctx.permissions.has("projects.review"),
+        report:
+          ctx.permissions.has("projects.report") ||
+          ctx.permissions.has("projects.manage"),
+        buy: ctx.permissions.has("projects.buy"),
+      };
+      const projects = (
+        await ctx.client.query<{ id: string; name: string; customer: string }>(
+          `SELECT project.id,project.name,party.display_name AS customer
+             FROM delivery_projects project
+             JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
+             JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
+             JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
+            WHERE project.workspace_id=$1 AND project.status IN ('active','completed')
+              AND ($3 OR EXISTS(SELECT 1 FROM project_assignments assignment
+                   WHERE assignment.workspace_id=project.workspace_id AND assignment.project_id=project.id
+                     AND assignment.membership_id=$2 AND assignment.active))
+            ORDER BY project.name,project.id`,
+          [w, ctx.membershipId, permissions.manage],
+        )
+      ).rows;
+      const projectMembers = projects.length
+        ? (
+            await ctx.client.query<{
+              projectId: string;
+              id: string;
+              name: string;
+            }>(
+              `SELECT assignment.project_id AS "projectId",membership.id,user_account.display_name AS name
+                 FROM project_assignments assignment
+                 JOIN workspace_memberships membership
+                   ON membership.workspace_id=assignment.workspace_id
+                  AND membership.id=assignment.membership_id
+                 JOIN users user_account ON user_account.id=membership.user_id
+                WHERE assignment.workspace_id=$1 AND assignment.project_id=ANY($2::uuid[])
+                  AND assignment.active AND membership.status='active'
+                ORDER BY user_account.display_name,membership.id`,
+              [w, projects.map((project) => project.id)],
+            )
+          ).rows
+        : [];
+      const items = [];
+      for (const project of projects) {
+        const item = projectFieldProject(
+          {
+            ...project,
+            members: projectMembers
+              .filter((member) => member.projectId === project.id)
+              .map(({ id: memberId, name }) => ({ id: memberId, name })),
+          },
+          await this.load(ctx, project.id),
+          ctx.membershipId,
+          permissions,
+        );
+        if (
+          item.tasks.length ||
+          item.deliveries.length ||
+          item.purchaseReceipts.length ||
+          item.snags.length ||
+          item.handovers.length
+        )
+          items.push(item);
+      }
+      return { projects: items };
+    });
+  }
+  async fieldCommand(actor: RequestActor, w: string, id: string, input: unknown) {
+    const command = await this.access.run(actor, w, async (ctx) => {
+      this.access.require(ctx, "projects.view", "projects.manage");
+      await this.row(ctx, id);
+      return projectFieldCommand(
+        await this.load(ctx, id),
+        ctx.membershipId,
+        {
+          manage: ctx.permissions.has("projects.manage"),
+          review: ctx.permissions.has("projects.review"),
+          report:
+            ctx.permissions.has("projects.report") ||
+            ctx.permissions.has("projects.manage"),
+          buy: ctx.permissions.has("projects.buy"),
+        },
+        input,
+      );
+    });
+    return this.command(actor, w, id, command);
+  }
   state(actor: RequestActor, w: string, id: string) {
     return this.access.run(actor, w, (ctx) => this.stateIn(ctx, id));
   }
@@ -319,13 +434,21 @@ export class ExecutionService {
     ).rows;
     const clientApprovers = (
       await ctx.client.query<{ id: string; name: string }>(
-        `SELECT grant.id,grant.name
+        `SELECT portal_grant.id,portal_grant.name
            FROM client_portal_settings settings
-           JOIN client_portal_grants grant ON grant.workspace_id=settings.workspace_id
+           JOIN client_portal_grants portal_grant ON portal_grant.workspace_id=settings.workspace_id
           WHERE settings.workspace_id=$1 AND settings.enabled=true
-            AND grant.case_id=$2 AND grant.active=true AND grant.role='approver'
-          ORDER BY grant.name`,
+            AND portal_grant.case_id=$2 AND portal_grant.active=true AND portal_grant.role='approver'
+          ORDER BY portal_grant.name`,
         [ctx.workspaceId, r.caseId],
+      )
+    ).rows;
+    const sites = (
+      await ctx.client.query<{ id: string; name: string; address: string }>(
+        `SELECT id,name,address FROM work_locations
+         WHERE workspace_id=$1 AND project_id=$2 AND kind='site' AND active
+         ORDER BY name`,
+        [ctx.workspaceId, id],
       )
     ).rows;
     const resources = (
@@ -366,9 +489,16 @@ export class ExecutionService {
         visibleBookings.filter((booking) => booking.projectId === id),
       ),
       members,
+      sites,
       clientApprovers,
       resources,
       bookings: visibleBookings,
+      connectedPlan: projectConnectedPlan(
+        data,
+        resources,
+        visibleBookings.filter((booking) => booking.projectId === id),
+        localDate(new Date(), r.timezone ?? "UTC"),
+      ),
       memberId: ctx.membershipId,
       canManage: ctx.permissions.has("projects.manage"),
       canReview: ctx.permissions.has("projects.review"),
@@ -488,12 +618,12 @@ export class ExecutionService {
         const requestedApproverId =
           str(b.clientApproverId, 80) || existingHandover?.clientApproverId || "";
         const approvers = await ctx.client.query<{ id: string }>(
-          `SELECT grant.id
+          `SELECT portal_grant.id
              FROM client_portal_settings settings
-             JOIN client_portal_grants grant ON grant.workspace_id=settings.workspace_id
+             JOIN client_portal_grants portal_grant ON portal_grant.workspace_id=settings.workspace_id
             WHERE settings.workspace_id=$1 AND settings.enabled=true
-              AND grant.case_id=$2 AND grant.active=true AND grant.role='approver'
-            ORDER BY grant.created_at`,
+              AND portal_grant.case_id=$2 AND portal_grant.active=true AND portal_grant.role='approver'
+            ORDER BY portal_grant.created_at`,
           [w, row.caseId],
         );
         if (requestedApproverId) {
@@ -584,12 +714,12 @@ export class ExecutionService {
           throw new ConflictException("Release the original BOQ first.");
         d.variations ??= [];
         const commercial = row.commercial as CommercialData | undefined;
-        const changes = (commercial?.quotes ?? []).filter(
-          (q: Quote) =>
-            q.kind === "variation" &&
-            q.status === "accepted" &&
-            !d.variations!.some((v) => v.quoteId === q.id),
-        ) as Quote[];
+        const changes = commercial
+          ? acceptedVariationsToRelease(
+              commercial,
+              d.variations.map((variation) => variation.quoteId),
+            )
+          : [];
         const releasedChangeCases = new Map(
           (commercial?.requests ?? [])
             .filter(
@@ -608,30 +738,13 @@ export class ExecutionService {
             );
         for (const q of changes) {
           const variationHash = freezeHash(q);
-          if (q.hash && q.hash !== variationHash)
+          if (!acceptedVariationSnapshotIsCurrent(q))
             throw new ConflictException(
               `Accepted variation V${q.number} changed after client acceptance. Issue a new variation before release.`,
             );
-          if (
-            row.commercial.payments.some(
-              (p: {
-                sourceQuoteId?: string;
-                requiredForRelease: boolean;
-                status: string;
-                invoice?: {
-                  accountId?: string;
-                  balance: number;
-                  refreshedAt: string;
-                  lastError?: string;
-                };
-              }) =>
-                p.sourceQuoteId === q.id &&
-                p.requiredForRelease &&
-                !paymentIsVerified(p),
-            )
-          )
+          if (!variationReleasePaymentsReady(commercial!, q))
             throw new ConflictException(
-              `Verify the required payment for variation V${q.number} before releasing its work.`,
+              `Finance must verify and fully allocate the required receipt for variation V${q.number} before releasing its work.`,
             );
           if (q.currency !== d.scope.currency)
             throw new ConflictException(
@@ -1228,6 +1341,16 @@ export class ExecutionService {
           const t = get(d.tasks, b.id);
           if(t.location!=="office"&&!t.resourceId)throw new ConflictException("Assign a crew or factory and confirm its booking before starting work.");
           if (t.location === "factory") {
+            const commercial = row.commercial as CommercialData | undefined;
+            if (
+              commercial?.payments?.some(
+                (payment) => payment.requiredForProduction === true,
+              ) &&
+              !financeGatePaymentsReady(commercial, "production")
+            )
+              throw new ConflictException(
+                "Finance must verify the contracted before-production receipt before manufacturing starts.",
+              );
             const resource = resources.find((r) => r.id === t.resourceId),
               orders = d.orders.filter(
                 (o) =>

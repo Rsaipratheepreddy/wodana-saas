@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -37,7 +37,7 @@ describe('short scope capture',()=>{
   expect(screen.getByRole('alert')).toHaveTextContent('Enter a short title');
   await user.type(screen.getByLabelText('Client requirement'),'Wardrobe');
   await user.click(screen.getByRole('button',{name:'Continue'}));
-  await user.type(screen.getByLabelText('Reference link · optional'),'https://example.com/reference');
+  fireEvent.change(screen.getByLabelText('Reference link · optional'),{target:{value:'https://example.com/reference'}});
   await user.click(screen.getByRole('button',{name:'Continue'}));
   await user.type(screen.getByLabelText('Quantity · optional'),'2');
   await user.click(screen.getByRole('button',{name:'Back'}));
@@ -63,6 +63,15 @@ describe('short scope capture',()=>{
   await user.type(screen.getByLabelText('Client notes · optional'),'Keep the loft.');
   await user.click(screen.getByRole('button',{name:'Save requirement'}));
   expect(onSave.mock.calls[0][0]).toEqual({...entry,note:'Keep the loft.'});
+ });
+ it('uses plain needs, constraints, and consultant-review language',async()=>{
+  const {user}=setup({...blankEntry('room'),version:1,title:'Wardrobe',source:'client'});
+  await user.click(screen.getByRole('button',{name:/Optional details/}));
+  await user.click(screen.getByText('More context · optional'));
+  expect(screen.getByLabelText('Constraints / avoid')).toBeVisible();
+  await user.click(screen.getByText('Team decisions & record settings'));
+  expect(screen.getByLabelText('Need or preference')).toBeVisible();
+  expect(screen.getByLabelText('Consultant review')).toBeVisible();
  });
  it('routes missing document attachments to References instead of losing the title',async()=>{
   const {user,onSave}=setup({...blankEntry(),kind:'file'});

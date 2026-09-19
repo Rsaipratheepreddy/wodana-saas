@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 const CrmFlowCanvas = dynamic(() => import("./crm-flow-canvas").then((module) => module.CrmFlowCanvas), { ssr: false, loading: () => <p role="status">Loading workflow canvas…</p> });
-import { ArrowDown, ArrowLeft, Play, Plus, Search, Workflow, X, Settings2, Undo2, Redo2, PanelLeftClose, Save } from "lucide-react";
-import { Badge, Button, Callout, Tabs, ConfirmationDialog, IconButton, SelectField } from "@/design-system";
+import { ArrowDown, ArrowLeft, BellRing, Play, Plus, Search, Send, Workflow, X, Settings2, Undo2, Redo2, PanelLeftClose, Save } from "lucide-react";
+import { Badge, Button, Callout, Tabs, ConfirmationDialog, IconButton, InspectorSheet, SelectField } from "@/design-system";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell, crmTime } from "./crm-product-shell";
-import { ActionDialog, ResourceState, useCrmResource, type ActionSpec } from "./crm-workbench";
-import { CrmCreateDialog } from "./crm-record-workbench";
+import { ActionDialog, ResourceState, choice, useCrmResource, type ActionSpec } from "./crm-workbench";
+import { CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
 import { AutomationApprovals } from "./automation-approvals";
 import styles from "./crm-product.module.css";
 
@@ -17,9 +17,9 @@ import { connectFlow, edgePort, flowConnectionIssues, flowPorts, recordFlowChang
 import editor from "./crm-workflow-editor.module.css";
 const events = [{ id: "crm.enquiry.ready.v1", name: "An enquiry is ready" }, { id: "crm.customer.replied.v1", name: "A customer replies" }, { id: "crm.sla.breached.v1", name: "A response SLA is breached" }, { id: "crm.opportunity.won.v1", name: "An opportunity is won" }];
 
-export function CrmAutomations({ initialData, initialRecordId }: { initialData: CrmScreenPageData; initialRecordId?: string }) {
+export function CrmAutomations({ initialData, initialRecordId, initialTab = "workflows" }: { initialData: CrmScreenPageData; initialRecordId?: string; initialTab?: "workflows" | "sequences" | "runs" | "approvals" | "notifications" }) {
   const [items, setItems] = useState(initialData.items);
-  const [tab, setTab] = useState("workflows");
+  const [tab, setTab] = useState(initialTab);
   const [selected, setSelected] = useState(initialRecordId ?? "");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -31,7 +31,9 @@ export function CrmAutomations({ initialData, initialRecordId }: { initialData: 
   if (initialData.canView && selected && tab === "workflows") return <CrmProductShell title="Automations" description="Visual workflow builder" canView compact><WorkflowDetail key={selected} workspaceId={initialData.workspaceId} id={selected} onBack={() => setSelected("")} onChanged={refresh} /></CrmProductShell>;
   return <CrmProductShell title="Automations" description="Build explicit trigger → action workflows, publish deliberately, and review what actually ran." canView={initialData.canView} actions={<><Button size="compact" isLoading={busy} onPress={() => void refresh()}>Refresh workflows</Button><Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus size={14} /> New workflow</Button></>}>
     {failure ? <Callout title="Could not refresh workflows" tone="warning">{failure}</Callout> : null}
-    <Tabs selectedKey={tab} onSelectionChange={setTab} items={[{ id: "workflows", label: "Workflows", panel: null }, { id: "runs", label: "Run history", panel: <AutomationRuns workspaceId={initialData.workspaceId} definitions={items} /> }, { id: "approvals", label: "Approvals", panel: <AutomationApprovals workspaceId={initialData.workspaceId} /> }]} />
+    <Tabs selectedKey={tab} onSelectionChange={(key) => {
+      if (["workflows", "sequences", "runs", "approvals", "notifications"].includes(key)) setTab(key as typeof tab);
+    }} items={[{ id: "workflows", label: "Workflows", panel: null }, { id: "sequences", label: "Sequences", panel: <SequenceSettings workspaceId={initialData.workspaceId} /> }, { id: "runs", label: "Run history", panel: <AutomationRuns workspaceId={initialData.workspaceId} definitions={items} /> }, { id: "approvals", label: "Approvals", panel: <AutomationApprovals workspaceId={initialData.workspaceId} /> }, { id: "notifications", label: "Notifications", panel: <NotificationSettings workspaceId={initialData.workspaceId} /> }]} />
     {tab === "workflows" ? selected ? <WorkflowDetail key={selected} workspaceId={initialData.workspaceId} id={selected} onBack={() => setSelected("")} onChanged={refresh} /> : <>
       <div className={styles.toolbar}><label className={styles.search}><Search size={16} /><input aria-label="Search workflows" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search workflows…" /></label><select aria-label="Workflow status" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All states</option>{["active", "draft", "paused"].map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></div>
       <section aria-label="Automation workflows" className={styles.workflows}>{visible.map((item) => <button type="button" className={styles.workflowCard} key={item.id} onClick={() => setSelected(item.id)}><span className={styles.threadTop}><Workflow size={20} /><Badge tone="neutral">{label(item.status)}</Badge></span><h2>{String(item.name)}</h2><p>{String(item.description ?? "Open this workflow to review its trigger, steps, and publishing state.")}</p><div className={styles.threadTop}><small>{item.activeVersionNumber ? `Published v${item.activeVersionNumber}` : "Not published"} · {item.runOncePerAggregate ? "Once per record" : "Every matching event"}</small><span>Open workflow →</span></div></button>)}</section>
@@ -40,6 +42,57 @@ export function CrmAutomations({ initialData, initialRecordId }: { initialData: 
     </> : null}
     {creating ? <CrmCreateDialog workspaceId={initialData.workspaceId} id="automations" onClose={() => setCreating(false)} onSaved={async (result) => { if (result?.id) { setSelected(result.id); setTab("workflows"); } await refresh(); }} /> : null}
   </CrmProductShell>;
+}
+
+function SequenceSettings({ workspaceId }: { workspaceId: string }) {
+  const resource = useCrmResource<unknown>(workspaceId, "sequences");
+  const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState("");
+  return <section aria-label="Follow-up sequences" className={styles.runHistory}>
+    <div className={styles.toolbar}><div><h2>Follow-up sequences</h2><p className={styles.muted}>Use a sequence only for repeatable, permissioned follow-up. A reply or closed opportunity exits it automatically.</p></div><Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus size={14} />New sequence</Button></div>
+    <ResourceState {...resource} retry={resource.refresh} />
+    <div className={styles.workflows}>{rows(resource.data).map((sequence) => <button className={styles.workflowCard} key={sequence.id} onClick={() => setSelected(sequence.id)} type="button"><span className={styles.threadTop}><Send size={18} /><Badge tone="neutral">{label(sequence.status)}</Badge></span><h2>{String(sequence.name)}</h2><p>{Array.isArray(sequence.steps) ? `${sequence.steps.length} steps` : "No steps"} · Stops on customer reply or closed opportunity.</p><small>Open sequence →</small></button>)}</div>
+    {!resource.loading && !resource.failure && !rows(resource.data).length ? <p className={styles.notificationEmpty}>No follow-up sequences yet.</p> : null}
+    {creating ? <CrmCreateDialog id="sequences" workspaceId={workspaceId} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); await resource.refresh(); }} /> : null}
+    {selected ? <InspectorSheet isOpen title="Follow-up sequence" size="md" onOpenChange={(open) => { if (!open) setSelected(""); }}><LinkedRecordWorkbench id="sequences" workspaceId={workspaceId} recordId={selected} onChanged={async () => { resource.refresh(); }} /></InspectorSheet> : null}
+  </section>;
+}
+
+function NotificationSettings({ workspaceId }: { workspaceId: string }) {
+  const policies = useCrmResource<unknown>(workspaceId, "notification-policies");
+  const templates = useCrmResource<unknown>(workspaceId, "notification-templates");
+  const [action, setAction] = useState<ActionSpec | null>(null);
+  const refresh = async () => { policies.refresh(); templates.refresh(); };
+  const channels = ["in_app", "email", "whatsapp", "push", "webhook"];
+  return <section aria-label="Notification settings" className={styles.runHistory}>
+    <div className={styles.toolbar}><Button size="compact" variant="primary" onPress={() => setAction({
+      title: "New notification policy",
+      path: "notification-policies",
+      initial: { channels: "in_app" },
+      fields: [{ key: "name", label: "Name", required: true }, { key: "eventType", label: "Event", required: true }, { key: "channels", label: "Channels", required: true }],
+      transform: ({ channels: selected, ...values }) => {
+        const selectedChannels = String(selected).split(",").map((value) => value.trim()).filter(Boolean);
+        if (!selectedChannels.length || selectedChannels.some((channel) => !channels.includes(channel))) throw new Error("Use one or more supported channels: in_app, email, whatsapp, push, or webhook.");
+        return { ...values, channels: [...new Set(selectedChannels)] };
+      },
+      submit: "Create policy",
+    })}><Plus size={14} /> New policy</Button><Button size="compact" onPress={() => setAction({
+      title: "New message template",
+      path: "notification-templates",
+      initial: { channel: "email", locale: "en", variables: "" },
+      fields: [{ key: "code", label: "Template code", required: true }, { key: "channel", label: "Channel", options: choice(channels), required: true }, { key: "locale", label: "Locale", required: true }, { key: "subjectTemplate", label: "Subject" }, { key: "bodyTemplate", label: "Message", type: "textarea", required: true }, { key: "variables", label: "Variables (comma separated)" }],
+      transform: ({ variables, ...values }) => ({ ...values, variables: String(variables ?? "").split(",").map((value) => value.trim()).filter(Boolean) }),
+      submit: "Create template",
+    })}>New template</Button><Button size="compact" onPress={() => void refresh()}>Refresh</Button></div>
+    <ResourceState {...policies} retry={policies.refresh} />
+    <div className={styles.workflows}>{rows(policies.data).map((policy) => <article className={styles.workflowCard} key={policy.id}><span className={styles.threadTop}><BellRing size={18} /><Badge tone="neutral">{label(policy.status)}</Badge></span><h2>{String(policy.name)}</h2><p>{String(policy.eventType)} · {Array.isArray(policy.channels) ? policy.channels.map((channel) => label(channel)).join(" · ") : "No channels"}</p>{policy.status !== "archived" ? <Button size="compact" onPress={() => setAction({ title: "Change notification policy", path: `notification-policies/${policy.id}/status`, method: "PATCH", initial: { version: policy.version, status: policy.status }, fields: [{ key: "status", label: "Status", options: choice(policy.status === "active" ? ["paused", "archived"] : ["active", "archived"]), required: true }], submit: "Save" })}>Change status</Button> : null}</article>)}</div>
+    {!policies.loading && !policies.failure && !rows(policies.data).length ? <p className={styles.notificationEmpty}>No notification policies yet.</p> : null}
+    <div className={styles.sectionHeading}><h2>Message templates</h2></div>
+    <ResourceState {...templates} retry={templates.refresh} />
+    <div className={styles.workflows}>{rows(templates.data).map((template) => <article className={styles.workflowCard} key={template.id}><span className={styles.threadTop}><span>{String(template.code)}</span><Badge tone="neutral">{label(template.status)}</Badge></span><p>{label(template.channel)} · {String(template.locale)} · v{String(template.versionNumber)}</p>{template.status === "draft" ? <Button size="compact" onPress={() => setAction({ title: "Approve message template", description: "Approved templates can be used for customer outreach.", path: `notification-templates/${template.id}/approve`, initial: { versionNumber: template.versionNumber }, fields: [], submit: "Approve" })}>Approve</Button> : null}</article>)}</div>
+    {!templates.loading && !templates.failure && !rows(templates.data).length ? <p className={styles.notificationEmpty}>No message templates yet.</p> : null}
+    {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={refresh} /> : null}
+  </section>;
 }
 
 function WorkflowDetail({ workspaceId, id, onBack, onChanged }: { workspaceId: string; id: string; onBack: () => void; onChanged: () => Promise<void> }) {
@@ -63,6 +116,7 @@ function WorkflowEditor({ workspaceId, workflow, onSaved, onBack }: { workspaceI
   const [failure, setFailure] = useState("");
   const [checking, setChecking] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [leaveHref, setLeaveHref] = useState("");
   const [removing, setRemoving] = useState(false);
   const node = definition.nodes.find((item) => item.key === nodeKey);
   const conditional = (edge: Edge) => Boolean(edge.condition) || edge.when !== undefined || edge.default === true;
@@ -75,7 +129,7 @@ function WorkflowEditor({ workspaceId, workflow, onSaved, onBack }: { workspaceI
     const link = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("a[href]") as HTMLAnchorElement | null : null;
       if (!target || target.target === "_blank" || target.origin !== location.origin || target.href === location.href || event.metaKey || event.ctrlKey) return;
-      if (!window.confirm("Discard unsaved workflow changes?")) { event.preventDefault(); event.stopPropagation(); }
+      event.preventDefault(); event.stopPropagation(); setLeaveHref(target.href); setLeaving(true);
     };
     window.addEventListener("beforeunload", unload); document.addEventListener("click", link, true);
     return () => { window.removeEventListener("beforeunload", unload); document.removeEventListener("click", link, true); };
@@ -129,7 +183,7 @@ function WorkflowEditor({ workspaceId, workflow, onSaved, onBack }: { workspaceI
     </div>
     <footer className={editor.footer}><span>{definition.nodes.length} steps · {definition.edges.length} connections</span>{connectionIssues.length ? <details><summary>{connectionIssues.length} connection{connectionIssues.length === 1 ? "" : "s"} to finish before saving</summary><ul>{connectionIssues.map((issue, index) => <li key={index}>{issue}</li>)}</ul></details> : <span>All steps connected · Save before publishing</span>}<button type="button" onClick={() => { setPaletteOpen(false); setSettingsOpen(false); setCanvasMode(true); }}><PanelLeftClose size={13} /> Focus canvas</button></footer>
     {action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={onSaved} /> : null}
-    <ConfirmationDialog isOpen={leaving} onOpenChange={setLeaving} title="Discard workflow changes?" body="Your unsaved steps, connections and settings will be discarded." confirmLabel="Discard changes" onConfirm={onBack} />
+    <ConfirmationDialog isOpen={leaving} onOpenChange={(open) => { setLeaving(open); if (!open) setLeaveHref(""); }} title="Discard workflow changes?" body="Your unsaved steps, connections and settings will be discarded." confirmLabel="Discard changes" onConfirm={() => { if (leaveHref) window.location.assign(leaveHref); else onBack(); }} />
     <ConfirmationDialog isOpen={removing} onOpenChange={setRemoving} title="Remove this step?" body="This removes the step and its attached connections from the draft. Connect the remaining steps before saving. Undo can restore it." confirmLabel="Remove step" onConfirm={() => { if (node && node.type !== "trigger") setDefinition({ ...definition, nodes: definition.nodes.filter((item) => item.key !== node.key), edges: definition.edges.filter((edge) => edge.from !== node.key && edge.to !== node.key) }); setRemoving(false); selectNode(""); }} />
   </div>;
 }
@@ -151,11 +205,11 @@ function NodeSettings({ workspaceId, node, onChange, onTypeChange }: { workspace
     return <><label>Event field path<input value={String(condition.path ?? "")} maxLength={200} placeholder="event.leadId" onChange={(event) => change("path", event.target.value)} /></label>
       <SelectField label="Check" selectedKey={String(condition.operator ?? "equals")} onSelectionChange={(key) => { if (key) change("operator", String(key)); }} items={[{ id: "exists", label: "Has a value" }, { id: "equals", label: "Equals" }, { id: "not_equals", label: "Does not equal" }, { id: "contains", label: "Contains" }, { id: "gt", label: "Greater than" }, { id: "gte", label: "Greater than or equal" }, { id: "lt", label: "Less than" }, { id: "lte", label: "Less than or equal" }]} />
       {(condition.operator ?? "equals") !== "exists" ? <><SelectField label="Value type" selectedKey={valueType} onSelectionChange={(key) => change("value", key === "number" ? 0 : key === "boolean" ? true : "")} items={[{ id: "text", label: "Text" }, { id: "number", label: "Number" }, { id: "boolean", label: "True / false" }]} />{valueType === "boolean" ? <SelectField label="Compare to" selectedKey={String(condition.value)} onSelectionChange={(key) => change("value", key === "true")} items={[{ id: "true", label: "True" }, { id: "false", label: "False" }]} /> : <label>Compare to<input type={valueType === "number" ? "number" : "text"} value={String(condition.value ?? "")} onChange={(event) => change("value", valueType === "number" ? Number(event.target.value) : event.target.value)} /></label>}</> : null}
-      <p className={styles.muted}>Uses the triggering event’s data, not a live customer lookup. For example, event.leadId checks for a linked lead. Yes runs when the check matches; No runs otherwise.</p>
+      <p className={styles.muted}>Uses the triggering event’s data, not a live customer lookup. For example, event.leadId is the backend identifier for a linked enquiry. Yes runs when the check matches; No runs otherwise.</p>
     </>;
   }
   if (node.type === "create_task" || node.type === "delay_until") return <><label>Action<select value={node.type} onChange={(e) => onTypeChange(e.target.value)}><option value="create_task">Create follow-up task</option><option value="delay_until">Wait before continuing</option></select></label>{node.type === "create_task" ? <><label>Task title<input maxLength={300} value={String(config.title ?? "")} onChange={(e) => set("title", e.target.value)} /></label><label>Priority<select value={String(config.priority ?? "normal")} onChange={(e) => set("priority", e.target.value)}>{["low", "normal", "high", "urgent"].map((item) => <option key={item} value={item}>{label(item)}</option>)}</select></label><label className={styles.checkbox}><input type="checkbox" checked={Boolean(config.isNextAction)} onChange={(e) => set("isNextAction", e.target.checked)} /> Make this the next commitment</label></> : null}{config.dueAt ? <p className={styles.muted}>Scheduled using {String(config.dueAt)}. This existing schedule is preserved.</p> : <label>{node.type === "create_task" ? "Task due in (minutes)" : "Wait (minutes)"}<input type="number" min={0} max={525600} value={Number(config.delayMinutes ?? 0)} onChange={(e) => set("delayMinutes", Math.max(0, Number(e.target.value)))} /></label>}</>;
-  if (node.type === "assign") return <><ResourceState {...queues} retry={queues.refresh} /><label>Assignment queue<select value={String(config.queueId ?? "")} onChange={(e) => { const next = { ...config }; if (e.target.value) next.queueId = e.target.value; else delete next.queueId; onChange(next); }}><option value="">Use lead’s current queue</option>{rows(queues.data).map((queue) => <option key={queue.id} value={queue.id}>{String(queue.name)}</option>)}</select></label><p>Uses the queue’s configured assignment policy and eligible lead managers.</p></>;
+  if (node.type === "assign") return <><ResourceState {...queues} retry={queues.refresh} /><label>Assignment queue<select value={String(config.queueId ?? "")} onChange={(e) => { const next = { ...config }; if (e.target.value) next.queueId = e.target.value; else delete next.queueId; onChange(next); }}><option value="">Use the enquiry’s current queue</option>{rows(queues.data).map((queue) => <option key={queue.id} value={queue.id}>{String(queue.name)}</option>)}</select></label><p>Uses the queue’s configured assignment policy and eligible sales owners.</p></>;
   return <><p className={styles.muted}>This advanced step is preserved exactly. Review its current settings below; use the specialized CRM section to configure the referenced resource.</p><dl className={styles.configFacts}>{Object.entries(config).map(([key, value]) => <div key={key}><dt>{label(key)}</dt><dd>{typeof value === "object" ? JSON.stringify(value, null, 2) : String(value)}</dd></div>)}</dl></>;
 }
 

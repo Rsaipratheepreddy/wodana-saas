@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState, type FormEvent } from "react";
-import { Braces, CreditCard, ExternalLink, Search, Unplug } from "lucide-react";
+import { Braces, CreditCard, ExternalLink } from "lucide-react";
 import { siAutodesk, siDropbox, siQuickbooks, siWhatsapp, siZoho, type SimpleIcon } from "simple-icons";
 import {
   Badge,
@@ -9,17 +9,22 @@ import {
   Callout,
   ConfirmationDialog,
   ControlledModalDialog,
+  DataGrid,
   DesignSystemProvider,
+  EmptyState,
+  IconMenuButton,
+  SearchInput,
   SelectField,
+  Surface,
   Switch,
   TextInput,
+  type DataGridColumn,
 } from "@/design-system";
 import {
-  integrationCatalog,
-  type IntegrationCatalogId,
   type IntegrationConnection,
   type IntegrationProvider,
   type IntegrationsPageData,
+  type ProviderCapabilityState,
 } from "@/lib/workspace/integrations";
 import { WhatsAppSignup, isWhatsAppSetup, type WhatsAppSetup } from "./whatsapp-signup";
 import { IntegrationTools } from "./integration-tools";
@@ -39,6 +44,14 @@ function statusTone(status: IntegrationConnection["status"]) {
   if (status === "pending") return "info" as const;
   if (status === "revoked") return "danger" as const;
   return "neutral" as const;
+}
+
+function verificationLabel(status: ProviderCapabilityState["verificationState"]) {
+  if (status === "delivery_verified") return "Delivery verified";
+  if (status === "operation_confirmed") return "Provider operation confirmed";
+  if (status === "failed") return "Latest check failed";
+  if (status === "not_applicable") return "Built in";
+  return "Not tested";
 }
 
 function responseMessage(response: Response, fallback: string) {
@@ -87,12 +100,12 @@ function DocusignMark() {
   </svg>;
 }
 
-function ProviderMark({ provider }: { provider: IntegrationCatalogId }) {
+function ProviderMark({ provider }: { provider: ProviderCapabilityState["id"] }) {
   if (provider === "google_workspace") return <GoogleWorkspaceMark />;
   if (provider === "quickbooks") return <SimpleBrandMark icon={siQuickbooks} />;
   if (provider === "whatsapp") return <SimpleBrandMark icon={siWhatsapp} />;
   if (provider === "zoho_books") return <SimpleBrandMark icon={siZoho} />;
-  if (provider === "autodesk_construction_cloud") return <SimpleBrandMark icon={siAutodesk} />;
+  if (provider === "autodesk_construction_cloud") return <SimpleBrandMark color="currentColor" icon={siAutodesk} />;
   if (provider === "microsoft_365") return <MicrosoftMark />;
   if (provider === "docusign") return <DocusignMark />;
   if (provider === "dropbox") return <SimpleBrandMark icon={siDropbox} />;
@@ -110,7 +123,7 @@ export function IntegrationsPage({
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [connections, setConnections] = useState(initialData.connections);
   const [query, setQuery] = useState("");
-  const [editor, setEditor] = useState<{ provider: IntegrationProvider; connection?: IntegrationConnection; startAfterSave?: boolean } | null>(null);
+  const [editor, setEditor] = useState<{ provider: IntegrationProvider; connection?: IntegrationConnection } | null>(null);
   const [revoking, setRevoking] = useState<IntegrationConnection | null>(null);
   const [toolConnection, setToolConnection] = useState<IntegrationConnection | null>(null);
   const [whatsappSetup, setWhatsappSetup] = useState<WhatsAppSetup | null>(null);
@@ -124,14 +137,19 @@ export function IntegrationsPage({
   const [status, setStatus] = useState(oauthResult?.result === "connected"
     ? "The account was connected successfully."
     : "");
+  const providerCatalog = initialData.providerCapabilities.providers;
 
   const visibleCatalog = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return integrationCatalog.filter((item) =>
-      !normalized || `${item.label} ${item.source} ${item.description} ${item.category}`.toLowerCase().includes(normalized),
+    return providerCatalog.filter((item) =>
+      !normalized || `${item.label} ${item.source} ${item.description} ${item.category} ${item.capabilities.map((capability) => capability.label).join(" ")}`.toLowerCase().includes(normalized),
     );
-  }, [query]);
-  const availableProviders = new Set(integrationCatalog.filter((item) => item.availability === "available").map((item) => item.provider));
+  }, [providerCatalog, query]);
+  const availableCatalog = visibleCatalog.filter((item) => item.implementation === "available" && item.setupMode === "tenant_connection");
+  const includedCatalog = visibleCatalog.filter((item) => item.implementation === "available" && item.setupMode === "platform_managed");
+  const plannedCatalog = visibleCatalog.filter((item) => item.implementation === "planned");
+  const unavailableCatalog = visibleCatalog.filter((item) => item.implementation === "requires_specification");
+  const availableProviders = new Set(providerCatalog.filter((item) => item.implementation === "available").map((item) => item.provider));
   const activeConnections = connections.filter((connection) => connection.status !== "revoked" && availableProviders.has(connection.provider));
   const connectedCount = activeConnections.filter((connection) => connection.status === "connected").length;
   const attentionCount = activeConnections.filter((connection) => connection.status === "degraded").length;
@@ -203,86 +221,150 @@ export function IntegrationsPage({
     }
   };
 
+  const accountColumns: DataGridColumn<IntegrationConnection>[] = [
+    {
+      accessorKey: "displayName",
+      header: "Account",
+      size: 200,
+      cell: ({ row }) => <span className={styles.accountIdentity}>
+        <strong title={row.original.displayName}>{row.original.displayName}</strong>
+        <small>{row.original.externalAccountId ?? row.original.externalDomain ?? "Account details pending"}</small>
+        <small className={styles.accountMobileStatus}>{STATUS_LABELS[row.original.status]}</small>
+      </span>,
+    },
+    {
+      id: "providerName",
+      accessorFn: (connection) => providerCatalog.find((item) => item.provider === connection.provider)?.label ?? connection.provider,
+      header: "App",
+      size: 165,
+      meta: { mobileHidden: true },
+    },
+    {
+      id: "legalEntityName",
+      accessorFn: (connection) => connection.legalEntityName ?? "Not assigned",
+      header: "Organization",
+      size: 180,
+      meta: { mobileHidden: true },
+    },
+    {
+      accessorKey: "status",
+      header: "Status",
+      size: 150,
+      meta: { mobileHidden: true },
+      cell: ({ row }) => <Badge tone={statusTone(row.original.status)}>{STATUS_LABELS[row.original.status]}</Badge>,
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      size: 150,
+      enableSorting: false,
+      meta: {
+        align: "end",
+        renderCell: (connection) => <span className={styles.accountActions}>
+          {connection.status === "connected" || connection.status === "degraded"
+            ? <Button onPress={() => setToolConnection(connection)} size="compact">Open tools</Button>
+            : <Button isDisabled={!initialData.canManage || connection.status === "pending"} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? "Connecting" : "Connect"}</Button>}
+          <IconMenuButton
+            ariaLabel={`Actions for ${connection.displayName}`}
+            items={[
+              { id: "manage", label: "Manage settings" },
+              ...(connection.status === "degraded" ? [{ id: "reconnect", label: "Reconnect" }] : []),
+              { id: "disconnect", label: "Disconnect", isDisabled: !initialData.canManage, tone: "danger" },
+            ]}
+            onAction={(action) => {
+              if (action === "manage") setEditor({ provider: connection.provider, connection });
+              if (action === "reconnect") void connect(connection);
+              if (action === "disconnect") setRevoking(connection);
+            }}
+          />
+        </span>,
+      },
+    },
+  ];
+
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-labelledby="integrations-heading" className={styles.page}>
       <header className={styles.pageHeading}>
-        <h1 id="integrations-heading">Integrations &amp; connected apps</h1>
-        <p>Connect the tools used across your organization.</p>
+        <h1 id="integrations-heading">Connected apps</h1>
+        <p>Connect calendars, messaging and accounting to your workspace.</p>
       </header>
 
       <div className={styles.toolbar}>
         <div className={styles.summary}>
           <span><strong>{connectedCount}</strong> connected</span>
           <span><strong>{activeConnections.length}</strong> configured</span>
-          <span data-attention={attentionCount ? true : undefined}><strong>{attentionCount}</strong> need attention</span>
+          {attentionCount ? <span data-attention><strong>{attentionCount}</strong> need attention</span> : null}
         </div>
+        <div className={styles.searchField}><SearchInput label="Search integrations" onChange={setQuery} placeholder="Search apps" value={query} /></div>
       </div>
 
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
       {failure ? <Callout title="Integration action failed" tone="danger">{failure}</Callout> : null}
 
-      <div className={styles.catalogTools}>
-        <label className={styles.searchField}>
-          <Search aria-hidden="true" size={15} />
-          <input aria-label="Search integrations" onChange={(event) => setQuery(event.target.value)} placeholder="Search" type="search" value={query} />
-        </label>
-      </div>
-
-      {visibleCatalog.length ? <div className={styles.catalogGrid}>
-        {visibleCatalog.map((item) => {
+      {availableCatalog.length ? <section aria-labelledby="available-apps-heading" className={styles.catalogSection}>
+        <div className={styles.sectionHeading}><h2 id="available-apps-heading">Available</h2><span>{availableCatalog.length} app{availableCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.catalogGrid}>{availableCatalog.map((item) => {
           const connection = item.provider ? newestActiveConnection(connections, item.provider) : undefined;
-          const selected = Boolean(connection && ["pending", "connected", "degraded"].includes(connection.status));
-          const isAvailable = item.availability === "available" && Boolean(item.provider);
-          return <article aria-label={`${item.label} integration`} className={styles.integrationCard} data-provider={item.id} key={item.id}>
+          if (!item.provider) return null;
+          return <Surface as="article" aria-label={`${item.label} integration`} className={styles.integrationCard} key={item.id} tone="raised">
             <div className={styles.cardBody}>
-              <header>
-                <div>
+              <div className={styles.cardHeader}>
+                <span className={styles.providerIcon}><ProviderMark provider={item.id} /></span>
+                <div className={styles.cardIdentity}>
                   <strong>{item.label}</strong>
                   {item.href ? <a href={item.href} rel="noreferrer" target="_blank">{item.source}<ExternalLink aria-hidden="true" size={10} /></a> : <small>{item.source}</small>}
                 </div>
-                <span className={styles.providerIcon}><ProviderMark provider={item.id} /></span>
-              </header>
+                <Badge tone={connection ? statusTone(connection.status) : "neutral"}>{connection ? STATUS_LABELS[connection.status] : "Not connected"}</Badge>
+              </div>
               <p>{item.description}</p>
-              {isAvailable && connection ? <small className={styles.connectionName}>{connection.displayName}{connection.legalEntityName ? ` · ${connection.legalEntityName}` : ""}{connection.legalEntityCurrency ? ` · ${connection.legalEntityCurrency}` : ""}</small> : null}
+              {connection ? <small className={styles.connectionName}>{connection.displayName}{connection.legalEntityName ? ` · ${connection.legalEntityName}` : ""}</small> : null}
+              <small className={styles.capabilityTruth}>Setup: {connection ? "Configured" : "Not configured"} · Evidence: {connection?.id === item.connection?.id ? verificationLabel(item.verificationState) : "Not tested"}</small>
               {connection?.healthIssues?.length ? <small className={styles.healthIssue}>{connection.healthIssues[0]}</small> : null}
             </div>
-            <footer>
-              <span className={styles.cardActions}>
-                {isAvailable && item.provider
-                  ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">View integration</Button>
-                  : <Button isDisabled size="compact">View integration</Button>}
-                {connection && ["connected", "degraded"].includes(connection.status)
-                  ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: connection.provider, startAfterSave: true })} size="compact" variant="quiet">Connect another</Button>
-                  : null}
-              </span>
-              <span className={styles.connectionControl}>
-                {!isAvailable ? <Badge>Coming soon</Badge> : connection ? <Badge tone={statusTone(connection.status)}>{STATUS_LABELS[connection.status]}</Badge> : <Badge>Not connected</Badge>}
-                <Switch
-                  aria-label={isAvailable ? `${selected ? "Disconnect" : "Connect"} ${item.label}` : `${item.label} is coming soon`}
-                  isDisabled={!isAvailable || !initialData.canManage || connection?.status === "pending" || connectingId === connection?.id}
-                  isSelected={isAvailable && selected}
-                  onChange={(enabled) => {
-                    if (!item.provider) return;
-                    if (!connection) setEditor({ provider: item.provider, startAfterSave: true });
-                    else if (enabled) void connect(connection);
-                    else setRevoking(connection);
-                  }}
-                />
-              </span>
-            </footer>
-          </article>;
-        })}
-      </div> : <div className={styles.noResults}><Unplug aria-hidden="true" size={20} /><strong>No integrations found</strong><span>Try a different category or search.</span></div>}
+            <div className={styles.cardFooter}>
+              {!connection
+                ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">Connect</Button>
+                : connection.status === "draft"
+                  ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">Connect</Button>
+                  : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">Manage</Button>}
+              {connection?.status === "draft" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">Settings</Button> : null}
+              {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">Add account</Button> : null}
+            </div>
+          </Surface>;
+        })}</div>
+      </section> : null}
+
+      {includedCatalog.length ? <section aria-labelledby="included-apps-heading" className={styles.catalogSection}>
+        <div className={styles.sectionHeading}><h2 id="included-apps-heading">Built into Wodana</h2><span>{includedCatalog.length} capability</span></div>
+        <div className={styles.plannedGrid}>{includedCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
+          <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
+          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.description}</small></span>
+          <Badge tone="info">Included</Badge>
+        </Surface>)}</div>
+      </section> : null}
+
+      {plannedCatalog.length ? <section aria-labelledby="planned-apps-heading" className={styles.catalogSection}>
+        <div className={styles.sectionHeading}><h2 id="planned-apps-heading">Planned</h2><span>{plannedCatalog.length} app{plannedCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.plannedGrid}>{plannedCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
+          <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
+          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.source}</small></span>
+          <Badge>Planned</Badge>
+        </Surface>)}</div>
+      </section> : null}
+
+      {unavailableCatalog.length ? <section aria-labelledby="unavailable-apps-heading" className={styles.catalogSection}>
+        <div className={styles.sectionHeading}><div><h2 id="unavailable-apps-heading">External lead capture</h2><p>Shared enquiry links and QR codes work now. These native sources need provider access before they can be enabled.</p></div><span>{unavailableCatalog.length} source{unavailableCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.plannedGrid}>{unavailableCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
+          <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
+          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.description}</small></span>
+          <Badge tone="warning">Details required</Badge>
+        </Surface>)}</div>
+      </section> : null}
+
+      {!visibleCatalog.length ? <EmptyState title="No integrations found" description="Try another search term." /> : null}
       {activeConnections.length ? <section aria-label="Configured accounts" className={styles.accounts}>
-        <h2>Configured accounts</h2>
-        {activeConnections.map((connection) => <div className={styles.accountRow} key={connection.id}>
-          <div><strong>{connection.displayName}</strong><p>{connection.externalAccountId ?? connection.externalDomain ?? connection.provider} · {connection.legalEntityName ?? "Organization not mapped"}{connection.legalEntityCurrency ? ` · ${connection.legalEntityCurrency}` : ""}</p>{connection.healthIssues?.map((issue) => <small className={styles.healthIssue} key={issue}>{issue}</small>)}</div>
-          <Badge tone={statusTone(connection.status)}>{STATUS_LABELS[connection.status]}</Badge>
-          {connection.status === "connected" ? <Button onPress={() => setToolConnection(connection)}>Open tools</Button> : <Button isDisabled={!initialData.canManage} onPress={() => void connect(connection)}>Connect</Button>}
-          {["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: connection.provider, startAfterSave: true })}>Connect another</Button> : null}
-          <Button isDisabled={!initialData.canManage} onPress={() => setRevoking(connection)}>Disconnect</Button>
-        </div>)}
-        {initialData.canManage ? <div className={styles.accountRow}>{integrationCatalog.filter((item) => item.availability === "available").map((item) => <Button key={item.id} onPress={() => setEditor({ provider: item.provider! })}>Add {item.label} account</Button>)}</div> : null}
+        <div className={styles.sectionHeading}><h2>Configured accounts</h2><span>{activeConnections.length} account{activeConnections.length === 1 ? "" : "s"}</span></div>
+        <DataGrid appearance="flush" ariaLabel="Configured accounts" columns={accountColumns} data={activeConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
       </section> : null}
     </section>
 
@@ -308,10 +390,10 @@ export function IntegrationsPage({
   </DesignSystemProvider>;
 }
 
-function IntegrationDialog({ initialData, item, onClose, onSaved }: { initialData: IntegrationsPageData; item: { provider: IntegrationProvider; connection?: IntegrationConnection; startAfterSave?: boolean } | null; onClose: () => void; onSaved: (connection: IntegrationConnection, shouldConnect: boolean) => void }) {
+function IntegrationDialog({ initialData, item, onClose, onSaved }: { initialData: IntegrationsPageData; item: { provider: IntegrationProvider; connection?: IntegrationConnection } | null; onClose: () => void; onSaved: (connection: IntegrationConnection, shouldConnect: boolean) => void }) {
   const connection = item?.connection;
   const provider = item?.provider ?? "google_workspace";
-  const catalogItem = integrationCatalog.find((entry) => entry.provider === provider)!;
+  const catalogItem = initialData.providerCapabilities.providers.find((entry) => entry.provider === provider) ?? { label: provider.replaceAll("_", " ") };
   const [displayName, setDisplayName] = useState(connection?.displayName ?? `${catalogItem.label} connection`);
   const [legalEntityId, setLegalEntityId] = useState(connection?.legalEntityId ?? "none");
   const [accountEmail, setAccountEmail] = useState(String(connection?.configuration?.accountEmail ?? ""));
@@ -325,8 +407,9 @@ function IntegrationDialog({ initialData, item, onClose, onSaved }: { initialDat
   const [saving, setSaving] = useState(false);
   const formId = `integration-${connection?.id ?? provider}`;
 
-  const save = async (event: FormEvent) => {
+  const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const shouldConnect = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "connect";
     if (provider === "google_workspace" && (legalEntityId === "none" || (!externalDomain.trim() && !accountEmail.trim()))) {
       setFailure("Google requires an organization and a domain or exact Gmail address.");
       return;
@@ -351,7 +434,7 @@ function IntegrationDialog({ initialData, item, onClose, onSaved }: { initialDat
         }),
       });
       if (!response.ok) throw new Error(await responseMessage(response, "The integration connection could not be saved."));
-      onSaved(await response.json() as IntegrationConnection, Boolean(item?.startAfterSave));
+      onSaved(await response.json() as IntegrationConnection, shouldConnect);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "The integration connection could not be saved.");
     } finally {
@@ -359,7 +442,7 @@ function IntegrationDialog({ initialData, item, onClose, onSaved }: { initialDat
     }
   };
 
-  return <ControlledModalDialog description="Configure the connection first. Enabling it starts provider authorization; credentials are never stored in this form." footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button><Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} type="submit" variant="primary">{connection ? "Save changes" : item?.startAfterSave ? "Save and connect" : "Save draft"}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={connection ? `Manage ${catalogItem.label}` : `Connect ${catalogItem.label}`}>
+  return <ControlledModalDialog description="Choose an organization and account. Credentials are never stored in this form." footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button>{connection ? <Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} type="submit" variant="primary">Save changes</Button> : <><Button form={formId} isDisabled={!initialData.canManage || saving} name="intent" type="submit" value="draft">Save draft</Button><Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} name="intent" type="submit" value="connect" variant="primary">Save and connect</Button></>}</div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={connection ? `Manage ${catalogItem.label}` : `Connect ${catalogItem.label}`}>
     <form className={styles.form} id={formId} onSubmit={save}>
       {failure ? <Callout title="Could not save connection" tone="danger">{failure}</Callout> : null}
       {connection ? <div className={styles.dialogStatus}><Badge tone={statusTone(connection.status)}>{STATUS_LABELS[connection.status]}</Badge><span>Version {connection.version}</span></div> : null}

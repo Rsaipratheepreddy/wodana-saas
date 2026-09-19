@@ -1,10 +1,10 @@
 "use client";
-import { DataGrid } from "@/design-system";
+import { Button, DataGrid, SegmentedControl } from "@/design-system";
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Plus } from "lucide-react";
 import type { CommercialState } from "@/lib/commercial/types";
-import { money, statusLabel } from "@/lib/commercial/client";
+import { acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
 import s from "./commercial.module.css";
 export function QuotationList({
   state,
@@ -40,10 +40,10 @@ export function QuotationList({
         </span>
         {state.canEdit &&
           (!quotes.length ? (
-            <button className={s.primary} disabled={busy} onClick={create}>
+            <Button variant="primary" size="compact" isDisabled={busy} onPress={create}>
               <Plus size={15} />
               Create quotation
-            </button>
+            </Button>
           ) : working ? (
             <Link className={s.button} href={href(working.id)}>
               Continue {working.status === "draft" ? "draft" : "review"}
@@ -52,24 +52,14 @@ export function QuotationList({
           ) : null)}
       </div>
       <div className={s.listTools}>
-        <div className={s.tabs} role="tablist" aria-label="Filter quotations">
-          {[
-            ["all", "All"],
-            ["draft", "Draft & review"],
-            ["issued", "Awaiting client"],
-            ["accepted", "Accepted"],
-          ].map(([id, label]) => (
-            <button
-              role="tab"
-              aria-selected={filter === id}
-              key={id}
-              onClick={() => setFilter(id)}
-            >
-              {label}
-            </button>
-          ))}
+        <div className={s.filterScroller}>
+          <SegmentedControl label="Filter quotations" value={filter} onChange={setFilter} options={[
+            { id: "all", label: "All" },
+            { id: "draft", label: "Draft & review" },
+            { id: "issued", label: "Awaiting client" },
+            { id: "accepted", label: "Accepted" },
+          ]} />
         </div>
-
       </div>
       <DataGrid ariaLabel="Quotations" emptyTitle={quotes.length?"No matching quotations":"No quotations yet"} emptyDescription={quotes.length?"Try another search or status.":"Create a quotation, then add rooms, items and a payment schedule."} data={visible} getRowId={row=>row.id} searchLabel="Search quotations" exportFileName="quotations.csv" onRowAction={q=>open(q.id)} columns={[{id:"title",header:"Quotation",size:300,accessorFn:(q)=>q.title,cell:({row:{original:q}})=>{return <>
                   <Link href={href(q.id)} className={s.quoteLink}>
@@ -81,7 +71,7 @@ export function QuotationList({
                   </small>
                 </>;}},
 {id:"version",header:"Version",size:90,accessorFn:(q)=>q.number,cell:({row:{original:q}})=>{return <>V{q.number}</>;}},
-{id:"total",header:"Amount",size:150,accessorFn:(q)=>q.total,cell:({row:{original:q}})=>{return <>{money(q.total, q.currency)}</>;}},
+{id:"total",header:"Amount",size:150,accessorFn:(q)=>acceptedQuoteValue(q),cell:({row:{original:q}})=>{return <>{money(acceptedQuoteValue(q), q.currency)}</>; }},
 {id:"status",header:"Status",size:170,accessorFn:(q)=>statusLabel[q.status],cell:({row:{original:q}})=>{return <>
                   <span className={s.status} data-status={q.status}>
                     {statusLabel[q.status]}

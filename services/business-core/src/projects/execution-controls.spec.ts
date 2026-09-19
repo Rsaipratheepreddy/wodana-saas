@@ -94,6 +94,24 @@ function setup() {
   return d;
 }
 describe("delivery closeout controls", () => {
+  it("lets the assigned site owner receive independently but denies unrelated staff", () => {
+    const d = setup();
+    d.tasks[1].status = "planned";
+    applyControls(d, "dispatch", { record: {
+      id: "assigned-delivery", title: "Wardrobes", taskId: "factory",
+      receivingTaskId: "site", quantity: 4, destination: "Site", dueDate: "2026-09-07",
+    } }, actor);
+    applyControls(d, "dispatch_status", { id: "assigned-delivery", status: "ready" }, reviewer);
+    applyControls(d, "dispatch_status", {
+      id: "assigned-delivery", status: "dispatched", carrier: "Carrier", reference: "DN-2",
+    }, actor);
+    expect(() => applyControls(d, "dispatch_status", {
+      id: "assigned-delivery", status: "received", accepted: 4, rejected: 0, evidence: "GRN-2",
+    }, { ...actor, id: "unrelated", manage: false, review: false })).toThrow(/assigned/);
+    expect(() => applyControls(d, "dispatch_status", {
+      id: "assigned-delivery", status: "received", accepted: 4, rejected: 0, evidence: "GRN-2",
+    }, { ...actor, id: "foreman", manage: false, review: false })).not.toThrow();
+  });
   it("prevents excess dispatch and tracks rejection without accepting it as delivered", () => {
     const d = setup();
     d.tasks[1].status = "planned";

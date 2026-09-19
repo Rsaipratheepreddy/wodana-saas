@@ -31,4 +31,33 @@ describe("CRM SLA reporting", () => {
     expect(sql).not.toContain("lead.owner_membership_id");
     expect(query.mock.calls.every(([, values]) => values?.[0] === "workspace")).toBe(true);
   });
+
+  it("reconciles every enquiry-health grouping to the underlying lead total", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("averageDaysSinceUpdate")) return { rows: [
+        { id: "current", label: "current", leads: 2, unassigned: 0, qualified: 0, stale: 0 },
+        { id: "closed", label: "closed", leads: 1, unassigned: 0, qualified: 1, stale: 0 },
+      ], rowCount: 2 };
+      if (sql.includes("FROM crm_intake_events") && sql.includes("GROUP BY status")) return { rows: [{ status: "ready", count: 3 }], rowCount: 1 };
+      if (sql.includes("SELECT count(*)::int AS leads")) return { rows: [{ leads: 3, unassigned: 0, qualified: 1, disqualified: 0, stale: 0 }], rowCount: 1 };
+      if (sql.includes("intake.channel='walk_in'")) return { rows: [], rowCount: 0 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const access = { withPermissions: vi.fn(async (_actor, _workspaceId, _permissions, work) => work({ query })) };
+    const service = new CrmReportingService(access as never);
+    const result = await service.report({} as never, "workspace", "lead-flow", {
+      groupBy: "freshness", from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      report: "lead-flow",
+      groupBy: "freshness",
+      summary: { leads: 3, qualified: 1 },
+      reconciliation: { totalLeads: 3, groupedLeads: 3, matches: true },
+    });
+    const groupedSql = query.mock.calls[0][0];
+    expect(groupedSql).toContain("THEN 'stale'");
+    expect(groupedSql).toContain("THEN 'closed'");
+    expect(access.withPermissions).toHaveBeenCalledWith({}, "workspace", ["crm.reports.view"], expect.any(Function));
+  });
 });

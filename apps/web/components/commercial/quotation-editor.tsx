@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   CommercialCatalogPicker,
@@ -13,6 +13,8 @@ import { PaymentScheduleEditor } from "./payment-schedule-editor";
 import { DataGrid, ControlledModalDialog } from "@/design-system";
 import type { Quote, QuoteLine, ChangeRequest } from "@/lib/commercial/types";
 import { money, newLine, quoteTotals } from "@/lib/commercial/client";
+import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
+import { QuotationCatalogPrice } from "./quotation-catalog-price";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
 export function QuotationEditor({
@@ -24,6 +26,8 @@ export function QuotationEditor({
   workspaceId,
   caseId,
   itemsOnly = false,
+  canOverridePrice = false,
+  canEditCosts = false,
 }: {
   workspaceId: string;
   caseId: string;
@@ -33,7 +37,11 @@ export function QuotationEditor({
   itemsOnly?: boolean;
   readOnly: boolean;
   requests: ChangeRequest[];
+  canOverridePrice?: boolean;
+  canEditCosts?: boolean;
 }) {
+  const latest = useRef(quote);
+  useLayoutEffect(() => { latest.current = quote; }, [quote]);
   const [item, setItem] = useState<QuoteLine | null>(null),
     [itemMode, setItemMode] = useState<"details" | "materials">("details"),
     [room, setRoom] = useState("All rooms"),
@@ -49,6 +57,14 @@ export function QuotationEditor({
     patch({
       lines: quote.lines.map((l) => (l.id === id ? { ...l, ...v } : l)),
     });
+  const applyCatalogPrice = (basis: QuoteLine, currency: string, taxRate: number, update: Partial<QuoteLine>) => {
+    const current = latest.current;
+    const selected = current.lines.find((item) => item.id === basis.id);
+    if (!selected || current.currency !== currency || current.taxRate !== taxRate ||
+      JSON.stringify(catalogPriceInput(selected, currency, taxRate)) !== JSON.stringify(catalogPriceInput(basis, currency, taxRate))) return false;
+    onChange({ ...current, lines: current.lines.map((item) => item.id === basis.id ? { ...item, ...update } : item) });
+    return true;
+  };
   const totals = quoteTotals(quote),
     rooms = [
       ...new Set([
@@ -58,7 +74,7 @@ export function QuotationEditor({
     ];
   const rateCell = (l: QuoteLine) => (
     <div className={s.rateCell}>
-      {readOnly ? (
+      {usesCatalogPricing(l) ? <QuotationCatalogPrice line={l} currency={quote.currency} taxRate={quote.taxRate} workspaceId={workspaceId} caseId={caseId} readOnly={readOnly} canOverride={canOverridePrice} onApply={applyCatalogPrice} /> : readOnly ? (
         money(l.rate, quote.currency)
       ) : (
         <div className={q.moneyControl}><span>{quote.currency}</span><QuotationNumberInput
@@ -194,7 +210,7 @@ export function QuotationEditor({
                           </>}},
 ...(costing?[{id:"unit",header:"Unit",size:110,accessorFn:(l:QuoteLine)=>l.unit,meta:{renderCell:(l:QuoteLine)=><>{readOnly ? l.unit : <button className={q.unitButton} aria-label={`Change unit for ${l.title}`} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}</>}}]:[]),
 ...(costing?[{id:"cost",header:"Unit cost",size:150,accessorFn:(l:QuoteLine)=>l.unitCost,meta:{renderCell:(l:QuoteLine)=><>
-                              {readOnly ? (
+                              {readOnly || !canEditCosts ? (
                                 money(l.unitCost, quote.currency)
                               ) : (
                                 <QuotationNumberInput label={`Cost for ${l.title}`} value={l.unitCost} money onChange={(unitCost) => line(l.id, { unitCost })} />
@@ -696,10 +712,10 @@ export function QuotationEditor({
                   onChange={(e) => setItem(customUnit(item, e.target.value))}
                 />
               </label>
-              <label>
+              {costing ? <label>
                 Internal unit cost
-                <QuotationNumberInput label="Internal unit cost" value={item.unitCost} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />
-              </label>
+                {readOnly || !canEditCosts ? <span>{money(item.unitCost, quote.currency)}</span> : <QuotationNumberInput label="Internal unit cost" value={item.unitCost} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />}
+              </label> : null}
               <label>
                 Selling rate
                 <QuotationNumberInput label="Selling rate" value={item.rate} min={0} max={1e8} money onChange={(rate) => setItem({ ...item, rate })} />

@@ -1,15 +1,15 @@
 # Wodana mobile
 
-New React Native application for the new Wodana web product. The current milestone
-includes email/password authentication, an authenticated navigation shell, basic employee HRMS, and Pre-project Site/Brief field capture. The welcome retains its original
-full-screen lilac/rose/peach gradient, glass logo tile, and two pill buttons, with
-no headline, description, or footer copy. Sign-in uses the web login's soft top
-glow fading into white, with the logo in the top header and a short form heading.
+Expo/React Native application for the new Wodana web product. There is no Flutter
+source in this repository. The current milestone includes email/password/MFA,
+an authenticated shell, CRM, employee HRMS and Pre-project Site/Brief field capture.
+The public welcome and sign-in screens use the same neutral canvas, flat indigo
+action colour and Wodana logo as the web design tokens.
 
 `Sign in with email` opens the email/password form. `I don’t have an account` opens
 invitation guidance. The form includes masked/showable passwords, keyboard actions,
-validation with field focus, back navigation, and password-help guidance. Google
-Workspace SSO is visible and disabled, labeled “coming soon.”
+validation with field focus, back navigation, and password-help guidance.
+Unconnected Google Workspace SSO is not shown as an available action.
 
 Authentication uses the new Business Core API. Login verifies the active profile
 and workspace before opening Home. Access tokens stay in memory; native refresh
@@ -20,28 +20,22 @@ refresh tokens in an HttpOnly cookie through its local API proxy.
 Password help submits a reset request. The existing backend does not deliver reset
 emails yet, so the screen directs the user to their administrator for a reset link.
 
-Home has a floating dark brand-ink navigation pill with Home, Inbox, Create (+),
-Notifications, and Profile. The + button is the middle item and stays icon-only.
-The selected tab expands into a lilac/rose/peach pill with its name. Width and position
-animate together; the 22-point outline icons retain their size. On compact phones,
-the selected label sits below its icon to preserve full names and 48-point tap targets.
-Motion respects reduced motion. The bar supports safe areas, RTL, and keyboard
-navigation in the browser. The standard bar is 66 points high and grows for larger
-accessibility text. It sits inside the device's native safe
-area with an additional 32-point bottom gap, reduced to 24 on short phones or 16
-in compact landscape windows.
+The global bottom navigation contains only working Home and Profile destinations.
+Its selected state uses the semantic navigation/action tokens, with 48-point touch
+targets, RTL order and keyboard navigation in the browser. The CRM module retains
+its working Inbox; global Inbox, Create and Notifications are hidden until they
+have real flows.
 
-Home has a rounded gradient header, the active workspace name, profile initials,
-live updates, and a two-column grid for CRM, Pre-project, Projects, and HRMS.
-Four generated transparent 3D illustrations live in `assets/illustrations/home`;
-the generation prompts are saved alongside them. All modules are visible without a search bar.
+Home has a flat token-based header, the selected organization name/brand, profile initials,
+live updates when HRMS is granted, and a compact list limited to that user's effective module grants.
+Home shows only granted modules with a working native destination; Projects remains
+available on web until its native screen is built.
 Updates show up to two relevant HRMS items: open attendance, upcoming leave, or requests
 the member can approve. Each opens the corresponding HRMS screen. Counts respect
 permissions and exclude the member's own approval requests. Updates refresh on return
 to Home, foregrounding, and manual refresh; failed sources show a retry state.
 HRMS opens working attendance, leave, history, and approval screens. Other module entries retain their existing destinations.
-Profile shows the signed-in account and Sign out. Inbox, Notifications, and Create
-remain blank destinations awaiting their product flows.
+Profile shows the signed-in account and Sign out.
 
 ## Run
 
@@ -55,7 +49,9 @@ npm run android:mobile
 ```
 
 Copy `apps/mobile/.env.example` to `apps/mobile/.env.local`, then set the native
-Business Core API URL, tenant slug, and browser proxy target for your environment.
+Business Core API URL, tenant slug, browser proxy target and tenant web origin for your environment.
+The web origin lets the app display an operator-provided logo when `/me` returns a relative URL;
+without it, the organization name and approved colour remain the safe fallback.
 The iOS simulator can use `127.0.0.1`; Android Emulator uses `10.0.2.2` for the same
 Mac. Rebuild standalone native apps after changing their public configuration.
 The Metro proxy is for browser development; a deployed web export needs its own
@@ -86,15 +82,13 @@ reviewed for context; this app uses the new web brand and design tokens.
   are distributed in the respective packages' `LICENSE_FONT` files.
 - Semantic light, dark, and high-contrast colors; type sizes; spacing; radii;
   and motion timings generated directly from `apps/web/styles/tokens.css`.
-- Sign-in controls match the live web login: 48-point height, 12-point corners,
-  13-point input/button text, 12-point labels, and the same lilac/rose/peach
-  gradient with dark text. `login-theme.ts` records the login-specific styles.
-- SVG gradients reproduce the web's 120-degree sign-in button gradient and layered
-  top glow. The welcome's full-screen gradient is a separate component so login
-  changes do not affect it. Public screens stay light even in device dark mode.
+- Sign-in controls use a 48-point height, 12-point corners, 13-point input/button
+  text, 12-point labels and one solid action colour. `login-theme.ts` records
+  public light-surface styles; the authenticated shell follows the system light/dark mode.
 - Safe-area-aware layout, compact spacing on short screens, text scaling,
   accessible controls, and reduced-motion-aware entrance and focus animations.
-- Native launch logo on lilac is held until fonts and the rendered logo are ready.
+- Native launch uses the neutral light/dark canvas and the Wodana mark until fonts
+  and the rendered wordmark are ready.
   Android 12+ uses the mascot within its system splash mask, then shows the
   complete wordmark in React Native. Native launch presentation should be
   verified in release builds, because Expo Go substitutes its own launch UI.
@@ -114,15 +108,15 @@ Import from `src/design-system`:
   Latin/Arabic font selection, text direction, and reduced-motion preference.
 - `Text`: web type scale, regular/medium/semibold/bold, semantic text tones.
 - `Screen`, `Stack`, `Surface`: native layout and borderless surface primitives.
-- `Button`: primary, secondary, ghost, gradient brand and brand-secondary variants,
-  plus white/glass welcome pills. Icons, pressed/focused/disabled/loading states,
-  accessible role/state, and minimum 48-point targets (56 for welcome pills)
+- `Button`: primary, secondary, ghost, flat public brand and brand-secondary variants,
+  plus legacy white/glass variants. Icons, pressed/focused/disabled/loading states,
+  accessible role/state, and minimum 48-point targets
   that grow when text wraps or scales.
 - `TextField`: default and login variants, label/hint/error states, animated focus
   border and ring, trailing actions, ref forwarding, standard keyboard/password/
   autofill props, and a minimum 48-point touch target.
-- `BrandLogo`, `BrandBackdrop`, `WelcomeBackdrop`: shared public brand presentation in `src/components`.
-- `BottomNavigation`: controlled, animated five-item bar in `src/components`.
+- `BrandLogo`: public and authenticated Wodana wordmark in `src/components`.
+- `BottomNavigation`: controlled two-destination bar in `src/components`.
 - `ModuleIcon`: eleven module/shortcut icons, with `brand` and `outline` variants,
   in `src/components/module-icon.tsx`. SVG exports live in `assets/icons/modules`;
   run `npm run icons:export` after changing the shared geometry. The module plan
@@ -160,7 +154,7 @@ HRMS uses fresh camera photos and action-only foreground location, with a durabl
 
 ### HRMS appearance and local examples
 
-HRMS follows the authenticated home palette with a lilac canvas, plum tabs, lilac/rose/peach actions, rounded cards, leave balance rings and themed form sheets. Attendance, leave, history and approvals share these controls; the welcome/sign-in theme is preserved. Native date pickers, half-day selectors and keyboard-aware sheets are available in leave/correction forms. HRMS tabs scroll on narrow screens instead of wrapping. The bottom navigation renders its selected gradient inside the active tab, keeping labels and selection aligned after navigation or refresh.
+HRMS uses the same generated semantic light/dark tokens as Home and CRM, with flat selected tabs and restrained borders. Attendance, leave, history and approvals share these controls. Native date pickers, half-day selectors and keyboard-aware sheets are available in leave/correction forms. HRMS tabs scroll on narrow screens instead of wrapping.
 
 The local sample-data script and its scope are documented in `../../docs/hrms-implementation.md`. Refresh HRMS or reopen the module after seeding. Sample attendance is labeled Demo and has no photo or GPS evidence. Live check-in remains available because no open sample session is created.
 
@@ -169,7 +163,7 @@ The HRMS tab bar reserves its full button height plus vertical inset and does no
 
 ## Pre-project field work
 
-Pre-project opens the same case list and records as the operations portal. Brief & scope has room/catalog-linked requirements, notes, inspiration and reference files in three short steps. Site survey has visits, observations, structured measurements, evidence and permission-controlled verification/history. Design remains web-only in this delivery.
+Pre-project opens the same case list and records as the operations portal. Brief & scope has room/catalog-linked requirements, notes, inspiration and reference files in three short steps. Site survey has visits, observations, structured measurements, evidence and permission-controlled verification/history. Assigned internal design reviewers also receive an exact-revision review queue with the protected file, source context, review note, approve and request-changes actions. Design authoring and client decisions remain web-first.
 
 Camera, Photos and Files support several images/PDFs on one record. Draw opens an original photo with pen colour/thickness, Undo and Clear; saving creates a separate marked copy. Both assets remain linked to the record. Strokes use normalized coordinates and are rendered by Business Core. Measurement fields remain the source of numeric dimensions.
 

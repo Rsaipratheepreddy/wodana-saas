@@ -1,20 +1,14 @@
 import { tokens } from './tokens.generated';
 
-// Public auth styles from apps/web/app/login/login.module.css and its live controls.
-// Keep these separate from the green action palette used inside the workspace.
-export function mixWithWhite(hex: string, amount: number) {
-  const channels = hex.slice(1).match(/../g)!.map((channel) => Math.round(parseInt(channel, 16) * amount + 255 * (1 - amount)));
-  return `rgb(${channels.join(', ')})`;
-}
-
+// Public auth styles mirror the neutral web login and its one action accent.
 export const loginTheme = {
-  ink: tokens.brand.ink,
-  accent: '#694f7a',
-  accentSoft: '#f0e8fa',
-  muted: mixWithWhite(tokens.brand.ink, 0.72),
-  line: mixWithWhite(tokens.brand.ink, 0.16),
-  secondary: mixWithWhite('#f0e8fa', 0.25),
-  canvas: '#ffffff',
+  ink: tokens.colors.light.text,
+  accent: tokens.colors.light.actionPrimary,
+  accentSoft: tokens.colors.light.actionPrimarySubtle,
+  muted: tokens.colors.light.textSecondary,
+  line: tokens.colors.light.borderControl,
+  secondary: tokens.colors.light.surface,
+  canvas: tokens.colors.light.canvas,
   controlHeight: 48,
   controlRadius: 12,
   controlFontSize: 13,

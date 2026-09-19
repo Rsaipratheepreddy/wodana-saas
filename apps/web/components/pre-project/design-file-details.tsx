@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
 import { ArrowLeft, Download, Upload } from "lucide-react";
-import { Button, IconMenuButton, SelectField } from "@/design-system";
+import { Button, IconMenuButton, SelectField, useConfirmationDialog } from "@/design-system";
 import {
   caseApi,
   caseRequest,
   designPayload,
+  designRoundLabel,
   type CaseContent,
   type CaseDesign,
   type DesignOptions,
@@ -48,12 +49,20 @@ export function DesignFileDetails({
   const [message, setMessage] = useState("");
   const [upload, setUpload] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [compare, setCompare] = useState(false);
+  const [comparisonVersionId, setComparisonVersionId] = useState<string | null>(
+    design.versions.find((candidate) => candidate.id !== latest?.id)?.id ?? null,
+  );
   const [archive, setArchive] = useState(false);
   const [review, setReview] = useState<string | null>(null);
   const [commentDirty, setCommentDirty] = useState(false);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   // Keep the revision being read (and its unsent comment) if a colleague uploads another.
   const [versionId, setVersionId] = useState<string | null>(latest?.id ?? null);
   const version = design.versions.find((v) => v.id === versionId) ?? latest;
+  const comparisonVersion = design.versions.find(
+    (candidate) => candidate.id === comparisonVersionId,
+  );
   const current = version?.id === latest?.id;
   const writable = data.canEdit && !design.archivedAt && current;
   const editable = writable && (!latest || latest.status === "draft");
@@ -72,8 +81,8 @@ export function DesignFileDetails({
         } as Record<string, string[]>
       )[latest?.status ?? ""] ?? []);
   const leave = (action: () => void) => {
-    if (!commentDirty || window.confirm("Discard your unsent comment?"))
-      action();
+    if (!commentDirty) { action(); return; }
+    requestConfirmation({ title: "Discard your unsent comment?", body: "The comment has not been posted and will be lost.", confirmLabel: "Discard comment", onConfirm: action });
   };
   const reviewer =
     options.reviewers.find((r) => r.id === latest?.reviewerId)?.name ??
@@ -94,13 +103,21 @@ export function DesignFileDetails({
               "Internal review complete. Send this revision to the client for approval.",
             client_review:
               "Waiting for the client’s decision in their portal. This screen updates automatically.",
+            expired:
+              "The client review window expired without a decision. Upload a new revision when it is ready to review again.",
             changes_requested:
               "Read the remarks, then upload a new revision to send for review again.",
             approved:
               "Approved by the client. This revision and its decision are kept in history.",
           } as Record<string, string>
         )[latest?.status ?? ""] ?? "Upload a file to start.");
-  const state = version?.status ?? "no_file";
+  const state = !current && version ? "superseded" : (version?.status ?? "no_file");
+  const source = [
+    design.roomName ? `Room: ${design.roomName}` : "",
+    design.scopeTitle ? `Item: ${design.scopeTitle}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className={view.fileDetail}>
       <header className={view.compactFileHeader}>
@@ -158,7 +175,9 @@ export function DesignFileDetails({
                 v.number +
                 (v.id === latest.id ? " · Latest" : "") +
                 " · " +
-                (designStateLabels[v.status] ?? v.status),
+                (v.id === latest.id
+                  ? (designStateLabels[v.status] ?? v.status)
+                  : `Superseded · ${designStateLabels[v.status] ?? v.status}`),
             }))}
             onSelectionChange={(key) =>
               key && leave(() => setVersionId(String(key)))
@@ -176,6 +195,21 @@ export function DesignFileDetails({
           {design.archivedAt ? "Archived" : (designStateLabels[state] ?? state)}
         </span>
         <div className={view.revisionActions}>
+          {version && design.versions.length > 1 && (
+            <Button
+              variant="quiet"
+              size="compact"
+              onPress={() => {
+                setComparisonVersionId(
+                  design.versions.find((candidate) => candidate.id !== version.id)
+                    ?.id ?? null,
+                );
+                setCompare(true);
+              }}
+            >
+              Compare revisions
+            </Button>
+          )}
           {version && (
             <a
               className={view.originalFile}
@@ -304,6 +338,21 @@ export function DesignFileDetails({
           <dl className={view.fileMetadata}>
             <dt>Design type</dt>
             <dd>{design.documentType}</dd>
+            <dt>Revision &amp; author</dt>
+            <dd>
+              {version
+                ? `R${version.number} · ${version.createdByName}`
+                : "No revision"}
+            </dd>
+            <dt>Source</dt>
+            <dd>{source || folderName || "Unfiled"}</dd>
+            <dt>Client review rounds</dt>
+            <dd>
+              {designRoundLabel(
+                design.clientRoundsUsed ?? 0,
+                version?.includedClientRounds,
+              )}
+            </dd>
             <dt>Note</dt>
             <dd>
               {(current ? design.description : version?.note) ||
@@ -322,6 +371,68 @@ export function DesignFileDetails({
           )}
         </aside>
       </div>
+      {compare && version && comparisonVersion && (
+        <CaseModal
+          title="Compare revisions"
+          description={`${design.title} · R${version.number} and R${comparisonVersion.number}`}
+          onClose={() => setCompare(false)}
+        >
+          <SelectField
+            label={`Compare R${version.number} with`}
+            selectedKey={comparisonVersion.id}
+            items={design.versions
+              .filter((candidate) => candidate.id !== version.id)
+              .map((candidate) => ({
+                id: candidate.id,
+                label: `R${candidate.number} · ${designStateLabels[candidate.status] ?? candidate.status}`,
+              }))}
+            onSelectionChange={(key) =>
+              key && setComparisonVersionId(String(key))
+            }
+          />
+          <div className={view.comparisonGrid}>
+            {[version, comparisonVersion].map((candidate) => (
+              <section
+                className={view.comparisonPanel}
+                aria-label={`Revision ${candidate.number} comparison`}
+                key={candidate.id}
+              >
+                <header>
+                  <div>
+                    <strong>R{candidate.number}</strong>
+                    <small>{candidate.createdByName}</small>
+                  </div>
+                  <span className={view.status} data-status={candidate.status}>
+                    {designStateLabels[candidate.status] ?? candidate.status}
+                  </span>
+                </header>
+                <div className={view.comparisonCanvas}>
+                  {candidate.asset.mimeType === "application/pdf" ? (
+                    <iframe
+                      className={view.pdfViewer}
+                      title={`${candidate.asset.name} revision ${candidate.number}`}
+                      src={
+                        caseApi(
+                          data.workspaceId,
+                          data.caseId,
+                          `assets/${candidate.asset.id}?view=1`,
+                        ) + "#navpanes=0&view=FitH"
+                      }
+                    />
+                  ) : (
+                    <FileCover
+                      data={data}
+                      design={{ ...design, versions: [candidate] }}
+                      full
+                    />
+                  )}
+                </div>
+                <p>{candidate.note || "No revision note."}</p>
+              </section>
+            ))}
+          </div>
+        </CaseModal>
+      )}
       {editing && (
         <DesignMetadata
           data={data}
@@ -422,6 +533,7 @@ export function DesignFileDetails({
           </p>
         </CaseModal>
       )}
+      {confirmationDialog}
     </div>
   );
 }

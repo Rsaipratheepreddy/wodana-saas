@@ -30,6 +30,7 @@ export class CreateQueueDto {
   @IsString() @IsNotEmpty() @MaxLength(160) name!: string;
   @IsOptional() @IsUUID() businessUnitId?: string;
   @IsOptional() @IsBoolean() isFallback?: boolean;
+  @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number;
 }
 
 export class UpdateQueueDto {
@@ -37,6 +38,7 @@ export class UpdateQueueDto {
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(160) name?: string;
   @IsOptional() @IsUUID() businessUnitId?: string | null;
   @IsOptional() @IsBoolean() isFallback?: boolean;
+  @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number | null;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
 }
 

@@ -40,14 +40,19 @@ describe("universal components", () => {
     await user.click(screen.getAllByRole("button", { name: "Close navigation" })[0]);
     expect(open.closest(".wd-app-shell")).not.toHaveAttribute("data-mobile-open");
   });
+  it("supports a header-only shell when a section has no navigation", () => {
+    render(<DesignSystemProvider><AppShell title="Wodana Control"><span>Tenant overview</span></AppShell></DesignSystemProvider>);
+    expect(screen.getByText("Tenant overview").closest(".wd-app-shell")).toHaveAttribute("data-navigation", "none");
+    expect(screen.queryByRole("complementary", { name: "Primary navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open navigation" })).not.toBeInTheDocument();
+  });
   it("protects dirty sheet content from accidental dismissal", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<DesignSystemProvider><SideSheet isDirty title="Edit project" trigger={<Button>Edit</Button>}><TextInput label="Name" /></SideSheet></DesignSystemProvider>);
     await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("button", { name: "Close inspector" }));
+    expect(screen.getByRole("dialog", { name: "Discard unsaved changes?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.getByRole("dialog", { name: "Edit project" })).toBeInTheDocument();
-    expect(confirm).toHaveBeenCalledOnce();
-    confirm.mockRestore();
   });
 });

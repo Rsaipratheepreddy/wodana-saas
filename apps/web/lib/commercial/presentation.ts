@@ -1,1 +1,1 @@
-export { quotationDescription, quotationItemName, quotationVariantName, quotationLineVariant, quotationMaterialText } from "../../../../services/business-core/src/commercial/quotation-presentation";
+export { quotationDescription, quotationDimensionsText, quotationItemName, quotationVariantName, quotationLineVariant, quotationMaterialText } from "../../../../services/business-core/src/commercial/quotation-presentation";

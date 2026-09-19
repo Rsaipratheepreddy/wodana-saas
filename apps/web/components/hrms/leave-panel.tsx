@@ -47,6 +47,30 @@ export function LeavePanel({
       revision,
     ),
     types = useHrms<LeaveType[]>(workspaceId, "leave/types", revision);
+  const balanceCards = team
+    ? Object.values(
+        (balances.data ?? []).reduce<
+          Record<string, LeaveBalance & { people: number }>
+        >((summary, balance) => {
+          const current = summary[balance.leaveTypeId];
+          if (current) {
+            current.allowance += balance.allowance;
+            current.used += balance.used;
+            current.pending += balance.pending;
+            current.available += balance.available;
+            current.people += 1;
+          } else {
+            summary[balance.leaveTypeId] = {
+              ...balance,
+              membershipId: "team",
+              name: "Team",
+              people: 1,
+            };
+          }
+          return summary;
+        }, {}),
+      )
+    : (balances.data ?? []);
   return (
     <>
       <div className={styles.toolbar}>
@@ -88,17 +112,14 @@ export function LeavePanel({
       {requests.error || balances.error || types.error ? (
         <Notice error>{requests.error || balances.error || types.error}</Notice>
       ) : null}
-      {balances.data?.length ? (
+      {balanceCards.length ? (
         <div className={styles.balanceGrid}>
-          {balances.data.map((b) => (
+          {balanceCards.map((b) => (
             <div
               className={styles.balanceCard}
               key={`${b.membershipId}:${b.leaveTypeId}`}
             >
-              <span>
-                {team ? `${b.name} · ` : ""}
-                {b.leaveTypeName}
-              </span>
+              <span>{b.leaveTypeName}</span>
               <div className={styles.balanceBody}>
                 <div className={styles.ring}>
                   <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -133,6 +154,12 @@ export function LeavePanel({
                   <dd>
                     {b.used} · {b.pending}
                   </dd>
+                  {team && "people" in b ? (
+                    <>
+                      <dt>Team coverage</dt>
+                      <dd>{Number(b.people)} people</dd>
+                    </>
+                  ) : null}
                 </dl>
               </div>
             </div>

@@ -12,6 +12,14 @@ import { WorkspaceBillingController } from "./workspace-billing.controller";
 import { CustomerAccountsController } from "./customer-accounts.controller";
 import { CustomerAccountsService } from "./customer-accounts.service";
 import { InternalOrganizationAccountsController } from "./internal-organization-accounts.controller";
+import { OperatorTenantsController } from "./operator-tenants.controller";
+import { PlatformOperatorGuard } from "../auth/platform-operator.guard";
+import { PlatformOperatorPermissionGuard } from "../auth/platform-operator-permission.guard";
+import { OperatorTenantDraftsController } from "./operator-tenant-drafts.controller";
+import { TenantProvisioningDraftsService } from "./tenant-provisioning-drafts.service";
+import { TenantDomainsService } from "./tenant-domains.service";
+import { ConfigurationRevisionsService } from "./configuration-revisions.service";
+import { TenantOperationsService } from "./tenant-operations.service";
 
 @Module({
   imports: [EmailModule],
@@ -20,6 +28,8 @@ import { InternalOrganizationAccountsController } from "./internal-organization-
     WorkspaceBillingController,
     CustomerAccountsController,
     InternalTenantsController,
+    OperatorTenantsController,
+    OperatorTenantDraftsController,
     InternalOrganizationAccountsController,
     PublicBrandingController,
   ],
@@ -28,9 +38,15 @@ import { InternalOrganizationAccountsController } from "./internal-organization-
     WorkspacesService,
     CustomerAccountsService,
     TenantManagementService,
+    TenantProvisioningDraftsService,
+    TenantDomainsService,
     InternalServiceGuard,
+    PlatformOperatorGuard,
+    PlatformOperatorPermissionGuard,
     BrandAssetStorageService,
+    ConfigurationRevisionsService,
+    TenantOperationsService,
   ],
-  exports: [WorkspaceAccessService, WorkspacesService],
+  exports: [WorkspaceAccessService, WorkspacesService, ConfigurationRevisionsService],
 })
 export class WorkspacesModule {}

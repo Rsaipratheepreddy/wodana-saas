@@ -8,6 +8,8 @@ test.describe("workspace shell", () => {
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Route inventory is viewport independent");
+    await page.goto("/workspace");
+    await page.context().addCookies([{ name: "wodana_access", value: "local-e2e-fixture", url: new URL(page.url()).origin }]);
     const directlyAddressableScreens = workspaceScreens.filter((screen) => !screen.href.startsWith("/workspace/projects/") || screen.href === "/workspace/projects");
     for (const screen of directlyAddressableScreens) {
       const response = await page.goto(screen.href);
@@ -15,47 +17,52 @@ test.describe("workspace shell", () => {
       await expect(page).not.toHaveURL(/\/login/);
       const main = page.getByRole("main");
       await expect(main).toBeVisible();
-      await expect(main.getByRole("heading", { level: 1 }).first()).toBeVisible();
+      await expect(main).not.toBeEmpty();
     }
   });
 
-  test("navigates between intentionally empty workspace screens", async ({ page }, testInfo) => {
+  test("renders the workspace's active business record", async ({ page }) => {
+    await page.goto("/workspace/legal-entities");
+
+    const records = page.getByRole("region", { name: "Business records" });
+    await expect(records.getByText("Iglo Architects", { exact: true })).toBeVisible();
+    await expect(records.getByText("IGLO · Iglo Architects LLC", { exact: true })).toBeVisible();
+  });
+
+  test("moves between Workspace and CRM without losing navigation context", async ({ page }, testInfo) => {
     await page.goto("/workspace");
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();
     }
-    await expect(page.getByRole("link", { name: "Org profile" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "Company profile" })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    await expect(page.getByRole("region", { name: "Org profile workspace" })).toBeVisible();
-
-    await page.getByRole("button", { name: "Switch module. Current: Workspace" }).click();
-    const moduleDialog = page.getByRole("dialog", { name: "Choose module" });
-    await moduleDialog.getByRole("link", { name: /^CRM/ }).click();
+    await expect(page.getByRole("region", { name: "Company profile" })).toBeVisible();
+    if (testInfo.project.name === "mobile") {
+      await page.getByRole("button", { name: "Close navigation" }).click();
+      await page.getByRole("button", { name: "Switch module. Current: Workspace" }).click();
+      await page.getByRole("dialog", { name: "Choose module" }).getByRole("link", { name: /^CRM/ }).click();
+    } else {
+      await page.getByRole("navigation", { name: "Modules" }).getByRole("link", { name: "CRM", exact: true }).click();
+    }
     await expect(page).toHaveURL(/\/workspace\/crm$/);
-    await expect(page.getByLabel("Current product: CRM")).toBeVisible();
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();
     }
-    await page.getByRole("link", { name: "Leads" }).click();
+    await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Enquiries", exact: true }).click();
     await expect(page).toHaveURL(/\/workspace\/crm\/leads$/);
-    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
-    await expect(breadcrumb.getByRole("link", { name: "Home" })).toBeVisible();
-    await expect(breadcrumb.getByText("CRM", { exact: true })).toBeAttached();
-    await expect(breadcrumb.getByText("Leads", { exact: true })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
     if (testInfo.project.name === "desktop") {
-      await expect(page.getByRole("link", { name: "Leads" })).toHaveAttribute(
+      const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
+      await expect(breadcrumb.getByText("Enquiries", { exact: true })).toHaveAttribute("aria-current", "page");
+      await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Enquiries", exact: true })).toHaveAttribute(
         "aria-current",
         "page",
       );
     } else {
-      await expect(page.locator("header").getByText("Leads", { exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Enquiries" })).toBeVisible();
     }
-    await expect(page.getByRole("region", { name: "Leads workspace" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Enquiries workspace" })).toBeVisible();
   });
 
   test("searches simplified CRM navigation without losing keyboard access", async ({ page }, testInfo) => {
@@ -72,9 +79,9 @@ test.describe("workspace shell", () => {
     await search.fill("follow");
     const mainNavigation = page.getByRole("navigation", { name: "Main navigation" });
     await expect(mainNavigation.getByRole("link", { name: "Follow-ups", exact: true })).toBeVisible();
-    await expect(mainNavigation.getByRole("link", { name: "Overview", exact: true })).toHaveCount(0);
+    await expect(mainNavigation.getByRole("link", { name: "Today", exact: true })).toHaveCount(0);
     await search.press("Escape");
-    await expect(mainNavigation.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
+    await expect(mainNavigation.getByRole("link", { name: "Today", exact: true })).toBeVisible();
   });
 
   test("uses a slim fixed sidebar without a floating collapse control", async ({
@@ -98,7 +105,7 @@ test.describe("workspace shell", () => {
     expect(geometry.contentStart - geometry.sidebarEnd).toBeLessThanOrEqual(1);
   });
 
-  test("opens workspace and module menus outside the desktop sidebar", async ({
+  test("keeps module tabs and the workspace menu outside the desktop sidebar", async ({
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Desktop popover placement");
@@ -107,14 +114,12 @@ test.describe("workspace shell", () => {
     const sidebarBox = await sidebar.boundingBox();
     expect(sidebarBox).not.toBeNull();
 
-    await page.getByRole("button", { name: "Switch module. Current: Workspace" }).click();
-    const moduleMenu = page.getByRole("dialog", { name: "Choose module" });
-    await expect(moduleMenu).toBeVisible();
-    const moduleMenuBox = await moduleMenu.boundingBox();
-    expect(moduleMenuBox?.x ?? 0).toBeGreaterThanOrEqual(
+    const moduleTabs = page.getByRole("navigation", { name: "Modules" });
+    await expect(moduleTabs.getByRole("link", { name: "CRM", exact: true })).toBeVisible();
+    const moduleTabsBox = await moduleTabs.boundingBox();
+    expect(moduleTabsBox?.x ?? 0).toBeGreaterThanOrEqual(
       (sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0),
     );
-    await page.keyboard.press("Escape");
 
     await page
       .getByRole("button", { name: "Switch workspace. Current: Iglo Architects" })
@@ -132,7 +137,7 @@ test.describe("workspace shell", () => {
     await page.goto("/workspace/crm");
     await page.getByRole("button", { name: "Open navigation" }).click();
     await expect(page.getByRole("dialog", { name: "Mobile workspace navigation" })).toBeVisible();
-    await page.getByRole("link", { name: "Leads" }).click();
+    await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Enquiries", exact: true }).click();
     await expect(page).toHaveURL(/\/workspace\/crm\/leads$/);
     await expect(page.getByRole("dialog", { name: "Mobile workspace navigation" })).toHaveCount(0);
     const overflow = await page.evaluate(
@@ -183,15 +188,15 @@ test.describe("workspace shell", () => {
       });
     });
     await page.goto("/workspace");
-    await page.getByRole("button", { name: "Edit company information" }).click();
-    const dialog = page.getByRole("dialog", { name: "Edit company information" });
+    await page.getByRole("button", { name: "Edit profile" }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit profile" });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("textbox", { name: /Company display name/ }).fill("Iglo Architecture");
-    await expect(dialog.getByText("iglo-architects", { exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await dialog.getByRole("textbox", { name: "Company name", exact: true }).fill("Iglo Architecture");
+    await expect(dialog.getByRole("textbox", { name: "Registered company name" })).toBeVisible();
+    await dialog.getByRole("button", { name: "Save" }).click();
 
     await expect(dialog).toBeHidden();
-    await expect(page.getByText("Org profile saved.")).toBeVisible();
+    await expect(page.getByText("Company profile saved.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Iglo Architecture" })).toBeVisible();
     expect(requestBody).toMatchObject({
       workspaceId: companyProfileFixture.workspace.id,

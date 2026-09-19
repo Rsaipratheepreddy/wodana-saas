@@ -77,6 +77,13 @@ export class InternalTenantsController {
     return this.tenants.getManagedTenant(externalTenantId);
   }
 
+  @Get(":externalTenantId/status")
+  @ApiOperation({ summary: "Read a tenant's safe account, onboarding, access and domain status" })
+  @ApiOkResponse()
+  getStatus(@Param("externalTenantId") externalTenantId: string) {
+    return this.tenants.getTenantStatus(externalTenantId);
+  }
+
   @Patch(":externalTenantId/management")
   @ApiOperation({ summary: "Update client access and subscription terms" })
   @ApiOkResponse()

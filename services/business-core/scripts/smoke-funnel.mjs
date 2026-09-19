@@ -1,22 +1,73 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import pg from "pg";
+import { palmLivingBrandFixture, palmLivingCatalogImport } from "./palm-living-fixture.mjs";
 
 const api = process.env.BUSINESS_CORE_URL ?? "http://127.0.0.1:8164/api/v1";
 if (!["127.0.0.1", "localhost"].includes(new URL(api).hostname))
   throw new Error("The funnel smoke is restricted to an isolated local API.");
 
 const run = randomUUID();
-const slug = `funnel-${run}`;
+const palmFixture = process.env.WODANA_SYNTHETIC_FIXTURE === "palm";
+const palmIntakeProfile = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-crm-intake-profile.json", import.meta.url), "utf8"));
+if (process.env.WODANA_SYNTHETIC_FIXTURE && !palmFixture)
+  throw new Error("WODANA_SYNTHETIC_FIXTURE only accepts the isolated palm profile.");
+const fixture = palmFixture ? {
+  workspaceName: "Palm Living UAT (synthetic)",
+  registeredName: "Palm Living UAT Synthetic LLC",
+  slugPrefix: "palm-synthetic",
+  ownerName: "Operations UAT",
+  ownerEmailPrefix: "operations",
+  reviewerName: "Cece UAT reviewer",
+  reviewerEmailPrefix: "cece",
+  customerName: "Amina Rahman (synthetic)",
+  enquiryTitle: "Two-room villa renovation",
+  enquirySummary: "Synthetic shared-link enquiry for a villa renovation, joinery and furnishing scope.",
+  opportunityTitle: "Amina Rahman — villa renovation (synthetic)",
+  formTitle: "Palm Living project enquiry (synthetic)",
+} : {
+  workspaceName: "Generic Funnel Verification",
+  registeredName: "Generic Funnel Verification LLC",
+  slugPrefix: "funnel",
+  ownerName: "Funnel Owner",
+  ownerEmailPrefix: "funnel-owner",
+  reviewerName: "Funnel Reviewer",
+  reviewerEmailPrefix: "funnel-reviewer",
+  customerName: "Generic Client",
+  enquiryTitle: "Two-room interior project",
+  enquirySummary: "A generic customer enquiry used only in the disposable funnel verification.",
+  opportunityTitle: "Generic Client — interior project",
+  formTitle: "Project enquiry (synthetic)",
+};
+const slug = `${fixture.slugPrefix}-${run}`;
 const owner = {
-  "x-wodana-user-subject": `funnel-owner-${run}`,
-  "x-wodana-user-email": `funnel-owner-${run}@example.com`,
-  "x-wodana-user-name": "Funnel Owner",
+  "x-wodana-user-subject": `${fixture.ownerEmailPrefix}-${run}`,
+  "x-wodana-user-email": `${fixture.ownerEmailPrefix}-${run}@wodana.invalid`,
+  "x-wodana-user-name": fixture.ownerName,
 };
 const reviewer = {
-  "x-wodana-user-subject": `funnel-reviewer-${run}`,
-  "x-wodana-user-email": `funnel-reviewer-${run}@example.com`,
-  "x-wodana-user-name": "Funnel Reviewer",
+  "x-wodana-user-subject": `${fixture.reviewerEmailPrefix}-${run}`,
+  "x-wodana-user-email": `${fixture.reviewerEmailPrefix}-${run}@wodana.invalid`,
+  "x-wodana-user-name": fixture.reviewerName,
+};
+const internal = {
+  "x-wodana-internal-token": process.env.BUSINESS_CORE_INTERNAL_TOKEN ?? "local-development-token",
+};
+const jobViewer = {
+  "x-wodana-user-subject": `funnel-job-viewer-${run}`,
+  "x-wodana-user-email": `funnel-job-viewer-${run}@example.com`,
+  "x-wodana-user-name": "Job Viewer",
+};
+const jobDenied = {
+  "x-wodana-user-subject": `funnel-job-denied-${run}`,
+  "x-wodana-user-email": `funnel-job-denied-${run}@example.com`,
+  "x-wodana-user-name": "Job Denied",
+};
+const outsider = {
+  "x-wodana-user-subject": `funnel-job-outsider-${run}`,
+  "x-wodana-user-email": `funnel-job-outsider-${run}@example.com`,
+  "x-wodana-user-name": "Job Outsider",
 };
 
 async function request(
@@ -56,7 +107,7 @@ async function rawRequest(path, { body, headers = owner, method = "POST" } = {})
 
 const workspace = await request("/workspaces", {
   body: {
-    name: "Generic Funnel Verification",
+    name: fixture.workspaceName,
     slug,
     defaultCurrency: "AED",
     defaultLocale: "en-AE",
@@ -65,8 +116,8 @@ const workspace = await request("/workspaces", {
     weekStartsOn: 1,
     firstLegalEntity: {
       code: "FUNNEL",
-      displayName: "Generic Funnel Verification",
-      registeredName: "Generic Funnel Verification LLC",
+      displayName: fixture.workspaceName,
+      registeredName: fixture.registeredName,
       countryCode: "AE",
       baseCurrency: "AED",
       locale: "en-AE",
@@ -75,6 +126,59 @@ const workspace = await request("/workspaces", {
   },
 });
 const workspaceId = workspace.workspace.id;
+let palmBrandConfigured = false;
+let palmCatalogImported = false;
+let palmCatalogRecordCount = 0;
+if (palmFixture) {
+  const appearance = await request(`/workspaces/${workspaceId}/appearance`, {
+    method: "PUT",
+    expected: 200,
+    body: {
+      workspaceVersion: workspace.workspace.version,
+      primaryColor: palmLivingBrandFixture.primaryColor,
+      secondaryColor: palmLivingBrandFixture.secondaryColor,
+      headingFont: palmLivingBrandFixture.headingFont.token,
+      bodyFont: palmLivingBrandFixture.bodyFont.token,
+    },
+  });
+  assert.equal(appearance.primaryColor, "#E4E3DE");
+  assert.equal(appearance.secondaryColor, "#000000");
+  assert.equal(appearance.headingFont, "alta");
+  assert.equal(appearance.bodyFont, "montserrat");
+  const publicBrand = await request(`/auth/tenant/${slug}`);
+  assert.equal(publicBrand.primaryColor, "#E4E3DE");
+  assert.equal(publicBrand.secondaryColor, "#000000");
+  assert.equal(publicBrand.headingFont, "alta");
+  assert.equal(publicBrand.bodyFont, "montserrat");
+  palmBrandConfigured = true;
+
+  const catalogId = randomUUID();
+  await request(`/workspaces/${workspaceId}/catalog/collections`, {
+    body: {
+      id: catalogId,
+      name: "Palm Living electrical materials",
+      description: "Client-supplied electrical material register pending commercial and stock review.",
+      starter: false,
+    },
+  });
+  const catalogImport = palmLivingCatalogImport(catalogId);
+  const preview = await request(`/workspaces/${workspaceId}/catalog/import`, {
+    body: { ...catalogImport, dryRun: true },
+  });
+  assert.equal(preview.preview, true);
+  assert.equal(preview.created, 41);
+  const applied = await request(`/workspaces/${workspaceId}/catalog/import`, {
+    body: { ...catalogImport, dryRun: false },
+  });
+  assert.equal(applied.preview, false);
+  assert.equal(applied.created, 41);
+  const hardware = applied.items.filter((item) => item.kind === "hardware");
+  assert.equal(hardware.length, 39);
+  assert(hardware.every((item) => item.commerce?.pricingMode === "unpriced"));
+  assert(hardware.every((item) => item.provenance?.reviewStatus === "needs_review"));
+  palmCatalogRecordCount = applied.items.length;
+  palmCatalogImported = true;
+}
 const designUnit = await request(`/workspaces/${workspaceId}/business-units`, {
   body: {
     legalEntityId: workspace.legalEntities[0].id,
@@ -89,13 +193,48 @@ let members = await request(`/workspaces/${workspaceId}/members`);
 const ownerMember = members.find((member) => member.roles.includes("owner"));
 assert(ownerMember);
 
-const invitation = await request(`/workspaces/${workspaceId}/invitations`, {
+const reviewerRole = await request(`/workspaces/${workspaceId}/roles`, {
   body: {
-    displayName: "Funnel Reviewer",
-    email: reviewer["x-wodana-user-email"],
-    roleCodes: ["owner"],
+    code: "uat_reviewer",
+    name: "UAT design and commercial reviewer",
+    permissionCodes: [
+      "pre_projects.view",
+      "pre_projects.edit",
+      "pre_projects.review_designs",
+      "commercial.approve",
+      "commercial.finance.verify",
+    ],
   },
 });
+const reviewerTeam = await request(`/workspaces/${workspaceId}/teams`, {
+  body: {
+    businessUnitId: designUnit.id,
+    code: "UAT_REVIEW",
+    name: "UAT review",
+    description: "Synthetic team-inherited access fixture.",
+    roleIds: [reviewerRole.id],
+  },
+});
+const beforeReviewerInvite = await request(`/workspaces/${workspaceId}/billing`);
+assert.deepEqual({
+  members: beforeReviewerInvite.usage.members,
+  pendingInvitations: beforeReviewerInvite.usage.pendingInvitations,
+  reservedSeats: beforeReviewerInvite.usage.reservedSeats,
+}, { members: 1, pendingInvitations: 0, reservedSeats: 1 });
+const invitation = await request(`/workspaces/${workspaceId}/invitations`, {
+  body: {
+    displayName: fixture.reviewerName,
+    email: reviewer["x-wodana-user-email"],
+    roleCodes: [],
+    teamIds: [reviewerTeam.id],
+  },
+});
+const pendingReviewerInvite = await request(`/workspaces/${workspaceId}/billing`);
+assert.deepEqual({
+  members: pendingReviewerInvite.usage.members,
+  pendingInvitations: pendingReviewerInvite.usage.pendingInvitations,
+  reservedSeats: pendingReviewerInvite.usage.reservedSeats,
+}, { members: 1, pendingInvitations: 1, reservedSeats: 2 });
 await request(`/workspaces/invitations/${invitation.id}/accept`, {
   headers: reviewer,
   method: "POST",
@@ -104,7 +243,63 @@ members = await request(`/workspaces/${workspaceId}/members`);
 const reviewerMember = members.find(
   (member) => member.email === reviewer["x-wodana-user-email"],
 );
-assert(reviewerMember?.roles.includes("owner"));
+assert(reviewerMember);
+assert.deepEqual(reviewerMember.roles, []);
+assert(reviewerMember.inheritedRoles.includes("uat_reviewer"));
+assert(reviewerMember.teams.some((team) => team.id === reviewerTeam.id));
+const acceptedReviewerInvite = await request(`/workspaces/${workspaceId}/billing`);
+assert.deepEqual({
+  members: acceptedReviewerInvite.usage.members,
+  pendingInvitations: acceptedReviewerInvite.usage.pendingInvitations,
+  reservedSeats: acceptedReviewerInvite.usage.reservedSeats,
+}, { members: 2, pendingInvitations: 0, reservedSeats: 2 });
+
+const salesQueue = await request(`/workspaces/${workspaceId}/crm/queues`, {
+  body: {
+    code: palmFixture ? palmIntakeProfile.operations.queue.code : "sales",
+    name: palmFixture ? palmIntakeProfile.operations.queue.name : "Sales and account managers",
+    isFallback: true,
+    ...(palmFixture ? { takeoverAfterMinutes: palmIntakeProfile.operations.queue.takeoverAfterMinutes } : {}),
+  },
+});
+await request(`/workspaces/${workspaceId}/crm/queues/${salesQueue.id}/members`, {
+  method: "PUT",
+  body: { membershipId: ownerMember.id, capacity: 100, weight: 1, isAvailable: true },
+});
+
+let palmSlaPolicy = null;
+if (palmFixture) {
+  const configured = palmIntakeProfile.operations.firstResponseSla;
+  palmSlaPolicy = await request(`/workspaces/${workspaceId}/crm/sla-policies`, {
+    body: {
+      name: configured.name,
+      eventType: "first_response",
+      warningAfterMinutes: configured.warningAfterMinutes,
+      breachAfterMinutes: configured.breachAfterMinutes,
+      calculationMode: configured.calculationMode,
+      schedule: configured.schedule,
+    },
+  });
+  assert.equal(salesQueue.takeoverAfterMinutes, 60);
+  assert.equal(palmSlaPolicy.calculationMode, "business");
+  assert.deepEqual(palmSlaPolicy.schedule, configured.schedule);
+}
+
+if (palmFixture) {
+  const createTaxonomy = (code, name, entries) => request(`/workspaces/${workspaceId}/crm/taxonomies`, {
+    body: { code, name, options: entries.map((entry, position) => ({ ...entry, position })) },
+  });
+  await createTaxonomy("lead_source", "Lead source", palmIntakeProfile.sources);
+  for (const [source, channels] of Object.entries(palmIntakeProfile.channels)) {
+    await createTaxonomy(`lead_channel_${source}`, `${palmIntakeProfile.sources.find(option => option.code === source)?.label ?? source} channels`, channels);
+  }
+  await createTaxonomy("enquiry_type", "Enquiry type", palmIntakeProfile.enquiryTypes);
+  await createTaxonomy("budget_range", "Budget range", palmIntakeProfile.budgetRanges);
+  const configuredOptions = await request(`/workspaces/${workspaceId}/crm/lead-options`);
+  assert.deepEqual(configuredOptions.enquiryTypes.map(option => option.label), palmIntakeProfile.enquiryTypes.map(option => option.label));
+  assert.deepEqual(configuredOptions.channels.third_party.map(option => option.label), ["PlyLeads"]);
+  assert.deepEqual(configuredOptions.channels.digital_marketing.map(option => option.label), ["Palm Living", "TBD"]);
+}
 
 const workflowPath = `/workspaces/${workspaceId}/projects/workflow-templates`;
 const workflowFallback = await request(workflowPath);
@@ -200,20 +395,291 @@ await request(`/workspaces/${workspaceId}/crm/qualification-forms/${qualificatio
   body: { version: qualificationDraft.version, status: "active" },
 });
 
+const sharedFormDraft = await request(`/workspaces/${workspaceId}/crm/lead-forms`, {
+  body: {},
+});
+const sharedFormQuestions = palmFixture
+  ? sharedFormDraft.draft.questions.map(question => {
+      const field = palmIntakeProfile.form.fields.find(candidate => candidate.field === question.field);
+      return field ? { ...question, title: field.title, required: field.required } : question;
+    })
+  : sharedFormDraft.draft.questions;
+const sharedForm = await request(`/workspaces/${workspaceId}/crm/lead-forms/${sharedFormDraft.id}`, {
+  method: "PATCH",
+  body: {
+    version: sharedFormDraft.version,
+    action: "publish",
+    draft: {
+      ...sharedFormDraft.draft,
+      title: palmFixture ? palmIntakeProfile.form.title : fixture.formTitle,
+      description: palmFixture ? palmIntakeProfile.form.description : sharedFormDraft.draft.description,
+      source: palmFixture ? palmIntakeProfile.form.source : "company",
+      channel: palmFixture ? palmIntakeProfile.form.channel : "website",
+      questions: sharedFormQuestions,
+    },
+  },
+});
+const publicSharedForm = await request(`/public/crm/lead-forms/${sharedForm.token}`, {
+  headers: {},
+});
+assert.equal(publicSharedForm.branding.displayName, fixture.workspaceName);
+assert.equal(publicSharedForm.source, undefined);
+assert.equal(publicSharedForm.channel, undefined);
+assert(publicSharedForm.questions.every((question) => question.field === undefined));
+assert.equal(publicSharedForm.consentLabel, "I agree to be contacted about this enquiry.");
+if (palmFixture) {
+  assert.equal(publicSharedForm.questions.find(question => question.title === "Email")?.required, true);
+  assert.deepEqual(publicSharedForm.questions.find(question => question.title === "What can we help with?")?.options.map(option => option.label), palmIntakeProfile.enquiryTypes.map(option => option.label));
+  assert.deepEqual(publicSharedForm.questions.find(question => question.title === "Approximate project budget")?.options.map(option => option.label), palmIntakeProfile.budgetRanges.map(option => option.label));
+}
+const sharedRequestId = randomUUID();
+const sharedValues = {
+  displayName: "Noor Al Mansoori (synthetic shared link)",
+  mobile: "+971500000001",
+  email: "noor.shared-link@wodana.invalid",
+  location: "Dubai Hills (synthetic)",
+  serviceType: "not_sure",
+  budgetRange: "",
+  summary: "Three-bedroom furnishing and joinery enquiry created only for local UAT.",
+};
+const sharedAnswers = Object.fromEntries(sharedForm.draft.questions.map((question) => [
+  question.id,
+  sharedValues[question.field] ?? "",
+]));
+await request(`/public/crm/lead-forms/${sharedForm.token}`, {
+  headers: {},
+  body: { requestId: sharedRequestId, revision: publicSharedForm.revision, answers: sharedAnswers, serviceConsent: true },
+});
+await request(`/public/crm/lead-forms/${sharedForm.token}`, {
+  headers: {},
+  body: { requestId: sharedRequestId, revision: publicSharedForm.revision, answers: sharedAnswers, serviceConsent: true },
+});
+const sharedResponses = await request(`/workspaces/${workspaceId}/crm/lead-forms/${sharedForm.id}/responses`);
+assert.equal(sharedResponses.data.length, 1);
+const sharedIntake = await request(`/workspaces/${workspaceId}/crm/intake-events/${sharedResponses.data[0].id}`);
+const sharedLeadList = await request(`/workspaces/${workspaceId}/crm/leads?search=${encodeURIComponent(sharedValues.displayName)}`);
+const sharedLead = sharedLeadList.data.find((candidate) => candidate.partyName === sharedValues.displayName);
+assert(sharedLead, "The shared-link enquiry must appear in the accountable CRM queue.");
+assert.equal(sharedLead.partyId, sharedIntake.resolvedPartyId);
+assert.equal(sharedIntake.payload.formId, sharedForm.id);
+assert.deepEqual(sharedIntake.payload.formRawAnswers, sharedAnswers);
+assert.equal(sharedIntake.payload.assignment.mode, "automatic");
+assert.equal(sharedIntake.payload.consents[0].status, "granted");
+assert.equal(sharedIntake.payload.consents[0].evidence.method, "public_enquiry_form");
+assert.equal(sharedIntake.payload.consent.formRevision, publicSharedForm.revision);
+assert.equal(sharedLead.source, "company");
+assert.equal(sharedLead.channel, "website");
+assert.equal(sharedLead.intakeMethod, "form");
+assert.equal(sharedLead.ownerMembershipId, ownerMember.id);
+const sharedLeadDetail = await request(`/workspaces/${workspaceId}/crm/leads/${sharedLead.id}`);
+assert.equal(sharedLeadDetail.assignments[0].assignmentMethod, "automatic");
+
+const duplicateAnswers = { ...sharedAnswers };
+duplicateAnswers[sharedForm.draft.questions.find(question => question.field === "displayName").id] = "Noor A. (synthetic duplicate candidate)";
+await request(`/public/crm/lead-forms/${sharedForm.token}`, {
+  headers: {},
+  body: { requestId: randomUUID(), revision: publicSharedForm.revision, answers: duplicateAnswers, serviceConsent: true },
+});
+const duplicateResponses = await request(`/workspaces/${workspaceId}/crm/lead-forms/${sharedForm.id}/responses`);
+assert.equal(duplicateResponses.data.length, 2);
+const duplicateResponse = duplicateResponses.data.find(response => response.status === "duplicate_candidate");
+assert(duplicateResponse, "Repeated unverified contact must remain a duplicate candidate for review.");
+assert(duplicateResponse.candidateCount > 0);
+assert.equal(duplicateResponse.consentStatus, "granted");
+const duplicateIntake = await request(`/workspaces/${workspaceId}/crm/intake-events/${duplicateResponse.id}`);
+assert(duplicateIntake.candidates.length > 0);
+assert.deepEqual(duplicateIntake.payload.formRawAnswers, duplicateAnswers);
+
+let palmSalesTeam = null;
+let staffAssignedLead = null;
+if (palmFixture) {
+  const salesRole = await request(`/workspaces/${workspaceId}/roles`, {
+    body: {
+      code: "palm_sales_account_manager",
+      name: "Sales and account manager",
+      description: "Respond to and follow up assigned Palm enquiries.",
+      permissionCodes: [
+        "crm.parties.view", "crm.leads.view", "crm.leads.manage", "crm.leads.assign",
+        "crm.activities.view", "crm.activities.manage", "crm.communications.view",
+        "crm.notifications.view",
+      ],
+    },
+  });
+  palmSalesTeam = await request(`/workspaces/${workspaceId}/teams`, {
+    body: {
+      businessUnitId: designUnit.id,
+      code: palmIntakeProfile.operations.team.code,
+      name: palmIntakeProfile.operations.team.name,
+      description: "Synthetic Palm sales team with inherited access and queue membership.",
+      memberIds: [reviewerMember.id],
+      leadMembershipId: reviewerMember.id,
+      roleIds: [salesRole.id],
+      queueIds: [salesQueue.id],
+    },
+  });
+  const afterSalesTeam = await request(`/workspaces/${workspaceId}/members`);
+  const inheritedSalesMember = afterSalesTeam.find(member => member.id === reviewerMember.id);
+  assert(inheritedSalesMember.inheritedRoles.includes("palm_sales_account_manager"));
+  assert(inheritedSalesMember.teams.some(team => team.id === palmSalesTeam.id));
+  const routedQueues = await request(`/workspaces/${workspaceId}/crm/queues`);
+  assert(routedQueues.find(queue => queue.id === salesQueue.id).members.some(member =>
+    member.membershipId === reviewerMember.id && member.teamId === palmSalesTeam.id));
+
+  const staffName = "Staff-created Palm enquiry (synthetic)";
+  const staffIntake = await request(`/workspaces/${workspaceId}/crm/intake-events`, {
+    headers: { ...owner, "idempotency-key": `palm-staff-${run}`, "x-correlation-id": randomUUID() },
+    body: {
+      source: "self_generated",
+      channel: "call",
+      intakeMethod: "manual",
+      externalEventId: `palm-staff-${run}`,
+      party: {
+        displayName: staffName,
+        email: `staff-created-${run}@wodana.invalid`,
+        mobile: "+971500000002",
+        preferredLocale: "en-AE",
+        preferredTimezone: "Asia/Dubai",
+      },
+      title: staffName,
+      summary: "Synthetic staff-created enquiry assigned to a named eligible team owner.",
+      serviceType: "not_sure",
+      originalPayload: { method: "manual_staff_entry" },
+      assignment: { mode: "manual", ownerMembershipId: reviewerMember.id, queueId: salesQueue.id },
+    },
+  });
+  const staffLeads = await request(`/workspaces/${workspaceId}/crm/leads?search=${encodeURIComponent(staffName)}`);
+  staffAssignedLead = staffLeads.data.find(candidate => candidate.partyName === staffName);
+  assert(staffAssignedLead);
+  assert.equal(staffAssignedLead.id, staffIntake.leadId);
+  assert.equal(staffAssignedLead.ownerMembershipId, reviewerMember.id);
+  assert.equal(staffAssignedLead.queueId, salesQueue.id);
+  const staffLeadDetail = await request(`/workspaces/${workspaceId}/crm/leads/${staffAssignedLead.id}`);
+  assert.equal(staffLeadDetail.assignments[0].assignmentMethod, "manual");
+  await request(`/workspaces/${workspaceId}/crm/leads/${staffAssignedLead.id}`, { headers: reviewer });
+
+  if (!process.env.DATABASE_URL) throw new Error("Palm takeover acceptance needs the disposable database.");
+  const databaseEndpoint = new URL(process.env.DATABASE_URL);
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(databaseEndpoint.hostname)
+    || !databaseEndpoint.pathname.startsWith('/wodana_funnel_test_'))
+    throw new Error("Palm takeover acceptance requires the disposable local funnel database.");
+  const takeoverDatabase = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    await takeoverDatabase.connect();
+    await takeoverDatabase.query("BEGIN");
+    await takeoverDatabase.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
+    await takeoverDatabase.query(
+      "UPDATE crm_leads SET ownership_due_at=now()-interval '1 minute' WHERE workspace_id=$1 AND id=$2",
+      [workspaceId, sharedLead.id],
+    );
+    await takeoverDatabase.query("COMMIT");
+  } finally {
+    await takeoverDatabase.end();
+  }
+  const takeover = await request(`/internal/crm/slas/workspaces/${workspaceId}/process-takeovers`, {
+    headers: internal,
+    body: { limit: 100 },
+  });
+  assert(takeover.reassigned.some(item => item.leadId === sharedLead.id && item.ownerMembershipId === reviewerMember.id));
+  const transferredLead = await request(`/workspaces/${workspaceId}/crm/leads/${sharedLead.id}`);
+  assert.equal(transferredLead.ownerMembershipId, reviewerMember.id);
+  assert.equal(transferredLead.assignments[0].reason, "No call or note was logged before the ownership deadline");
+  const reviewerNotifications = await request(`/workspaces/${workspaceId}/crm/notifications`, { headers: reviewer });
+  assert(reviewerNotifications.some(notification => notification.deepLink === `/workspace/crm/leads?lead=${sharedLead.id}`
+    && notification.eventType === "crm.lead.assigned"));
+
+  await request(`/workspaces/${workspaceId}/crm/activities`, {
+    headers: reviewer,
+    body: {
+      leadId: sharedLead.id,
+      type: "note",
+      title: "Follow-up logged",
+      description: "Synthetic note stops ownership takeover but is not a verified customer response.",
+      ownerMembershipId: reviewerMember.id,
+    },
+  });
+  const noteDatabase = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    await noteDatabase.connect();
+    await noteDatabase.query("BEGIN");
+    await noteDatabase.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
+    await noteDatabase.query(
+      "UPDATE crm_leads SET ownership_due_at=now()-interval '1 minute' WHERE workspace_id=$1 AND id=$2",
+      [workspaceId, sharedLead.id],
+    );
+    await noteDatabase.query("COMMIT");
+  } finally {
+    await noteDatabase.end();
+  }
+  const afterNote = await request(`/internal/crm/slas/workspaces/${workspaceId}/process-takeovers`, {
+    headers: internal,
+    body: { limit: 100 },
+  });
+  assert(afterNote.engaged.includes(sharedLead.id));
+  const retainedLead = await request(`/workspaces/${workspaceId}/crm/leads/${sharedLead.id}`);
+  assert.equal(retainedLead.ownerMembershipId, reviewerMember.id);
+  assert.equal(retainedLead.ownershipDueAt, null);
+  const retainedFirstResponses = retainedLead.sla.filter(instance => instance.eventType === "first_response");
+  assert(retainedFirstResponses.length, "The lead must retain its first-response SLA instance");
+  assert(retainedFirstResponses.every(instance => instance.respondedAt === null), "An internal note must not claim a customer response");
+
+  assert.equal(retainedLead.enquiry.source, "company");
+  assert.equal(retainedLead.enquiry.channel, "website");
+  assert.equal(retainedLead.enquiry.intakeMethod, "form");
+  assert(retainedLead.enquiry.correlationId);
+  assert.deepEqual(retainedLead.enquiry.attribution, []);
+  const followUpAt = new Date(Date.now() + 86_400_000).toISOString();
+  const followUp = await request(`/workspaces/${workspaceId}/crm/activities`, {
+    headers: reviewer,
+    body: {
+      leadId: sharedLead.id,
+      partyId: sharedLead.partyId,
+      type: "task",
+      title: "Call customer about the synthetic enquiry",
+      ownerMembershipId: reviewerMember.id,
+      dueAt: followUpAt,
+      isNextAction: true,
+    },
+  });
+  assert.equal(followUp.isNextAction, true);
+  const responseCall = await request(`/workspaces/${workspaceId}/crm/activities`, {
+    headers: reviewer,
+    body: {
+      leadId: sharedLead.id,
+      partyId: sharedLead.partyId,
+      type: "call",
+      interactionDirection: "outbound",
+      title: "Customer call",
+      description: "Synthetic completed outbound call for local response-workspace acceptance.",
+      ownerMembershipId: reviewerMember.id,
+      isNextAction: false,
+    },
+  });
+  const completedResponseCall = await request(`/workspaces/${workspaceId}/crm/activities/${responseCall.id}/complete`, {
+    headers: reviewer,
+    body: { version: responseCall.version, outcome: "Customer reached (synthetic)" },
+  });
+  assert.equal(completedResponseCall.firstResponseEvidence?.recorded, true, `Outbound response evidence was rejected: ${JSON.stringify(completedResponseCall.firstResponseEvidence)}`);
+  const afterResponse = await request(`/workspaces/${workspaceId}/crm/leads/${sharedLead.id}`);
+  const answeredFirstResponse = afterResponse.sla.find(instance => instance.eventType === "first_response" && instance.responseSourceId === responseCall.id);
+  assert(answeredFirstResponse?.respondedAt, `Completed outbound call did not become first-response evidence: ${JSON.stringify(afterResponse.sla)}`);
+  assert.equal(answeredFirstResponse.responseSourceType, "activity");
+  assert.equal(answeredFirstResponse.responseSourceId, responseCall.id);
+}
+
 const intakeBody = {
   source: "company",
   channel: "website",
   intakeMethod: "form",
   externalEventId: `funnel-${run}`,
   party: {
-    displayName: "Generic Client",
-    email: `client-${run}@example.com`,
+    displayName: fixture.customerName,
+    email: `client-${run}@wodana.invalid`,
     phone: "+971501234567",
     preferredLocale: "en-AE",
     preferredTimezone: "Asia/Dubai",
   },
-  title: "Two-room interior project",
-  summary: "A generic customer enquiry used only in the disposable funnel verification.",
+  title: fixture.enquiryTitle,
+  summary: fixture.enquirySummary,
   serviceType: "not_sure",
   originalPayload: { form: "generic-funnel-smoke" },
   attribution: [{ source: "website", medium: "form", campaign: "uat" }],
@@ -248,11 +714,12 @@ assert(lead, "CRM intake must create a queryable lead.");
 const initialConversion = {
   leadVersion: lead.version,
   partyId: lead.partyId,
+  legalEntityId: workspace.legalEntities[0].id,
   pipelineId: pipeline.id,
   stageId: pipeline.stages[0].id,
   ownerMembershipId: ownerMember.id,
-  title: "Generic Client — interior project",
-  description: "Qualified from the generic intake path.",
+  title: fixture.opportunityTitle,
+  description: "Qualified from the isolated synthetic intake path.",
   amount: 1500,
   currencyCode: "AED",
   expectedCloseAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
@@ -302,6 +769,24 @@ assert.equal(prepared.status, "active");
 assert.equal(prepared.phase, "discover");
 assert.equal(prepared.version, 1);
 assert.equal(prepared.ownerMembershipId, ownerMember.id);
+assert.equal(prepared.qualificationEvidenceHash, opportunity.qualificationEvidenceHash);
+assert.equal(prepared.conversionOrigin, "lead_qualification");
+assert.equal(prepared.qualificationEvidence.answers.find((answer) => answer.questionKey === "property_type")?.value, "villa");
+const discoveryHandoff = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/brief`);
+assert.equal(discoveryHandoff.brief.propertyType, "villa");
+assert.equal(discoveryHandoff.fromCrm, true);
+const healthLeads = await request(`/workspaces/${workspaceId}/crm/leads?limit=100`);
+for (const groupBy of ["mainSource", "channel", "owner", "team", "enquiryType", "freshness"]) {
+  const health = await request(`/workspaces/${workspaceId}/crm/reports/lead-flow?groupBy=${groupBy}`);
+  assert.equal(health.groupBy, groupBy);
+  assert.equal(health.reconciliation.matches, true);
+  assert.equal(health.reconciliation.totalLeads, healthLeads.data.length);
+  assert.equal(health.rows.reduce((total, row) => total + Number(row.leads), 0), healthLeads.data.length);
+}
+const slaHealth = await request(`/workspaces/${workspaceId}/crm/reports/sla`);
+assert.equal(slaHealth.reconciliation.matches, true);
+assert.equal(slaHealth.rows.reduce((total, row) => total + Number(row.count), 0), Number(slaHealth.summary.total));
+assert.equal((await rawRequest(`/workspaces/${workspaceId}/crm/reports/lead-flow?groupBy=owner`, { headers: reviewer, method: "GET" })).status, 403);
 
 const profileRequestId = randomUUID();
 const profileInput = {
@@ -394,7 +879,13 @@ await request(`/workspaces/${workspaceId}/commercial/portal-settings`, {
   body: {
     version: portalSettings.version,
     enabled: true,
-    brand: portalSettings.brand,
+    brand: palmFixture ? {
+      ...portalSettings.brand,
+      name: "Palm Living",
+      primaryColor: palmLivingBrandFixture.secondaryColor,
+      accentColor: palmLivingBrandFixture.primaryColor,
+      layout: "minimal",
+    } : portalSettings.brand,
   },
   method: "PUT",
 });
@@ -402,7 +893,7 @@ const commercialPath = `/workspaces/${workspaceId}/commercial/cases/${caseId}`;
 const mobile = `+9715${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
 await request(`${commercialPath}/contacts`, {
   body: {
-    name: "Generic Client",
+    name: fixture.customerName,
     phone: mobile,
     role: "approver",
     testContact: true,
@@ -579,7 +1070,7 @@ await designActivity("internal_approved", reviewer, {
 await designActivity("client_review", owner);
 await designActivity("approved", owner, {
   note: "Client approved in the recorded design meeting.",
-  decisionBy: "Generic Client",
+  decisionBy: fixture.customerName,
   decisionSource: "meeting",
   decisionAt: new Date().toISOString(),
 });
@@ -820,8 +1311,15 @@ quote.taxRate = 5;
 quote.paymentTerms = [
   {
     id: randomUUID(),
-    title: "Handover payment",
-    percent: 100,
+    title: "Advance",
+    percent: 50,
+    trigger: "On agreement",
+    requiredForRelease: true,
+  },
+  {
+    id: randomUUID(),
+    title: "Handover balance",
+    percent: 50,
     trigger: "On handover",
     requiredForRelease: false,
   },
@@ -866,6 +1364,15 @@ await commercial("agreement", {
   evidence: "Signed agreement reference SIG-FUNNEL-1",
 });
 await commercial("execute_agreement");
+commercialState = await request(commercialPath);
+const releasePayment = commercialState.data.payments.find((payment) => payment.requiredForRelease);
+assert(releasePayment, "The accepted quotation must create a release payment milestone.");
+await commercial("report_payment_receipt", {
+  paymentId: releasePayment.id,
+  reference: "SYNTHETIC-ADVANCE-RECEIPT",
+  evidence: "Synthetic local-only bank receipt evidence; no provider or real payment.",
+});
+await commercial("verify_payment", { paymentId: releasePayment.id }, reviewer);
 await commercial("submit_owner_review", {
   commission: 0,
   checklist: {
@@ -896,6 +1403,10 @@ const project = await request(
 );
 const releasedLine = project.data.scope.lines[0];
 assert.equal(project.caseId, caseId);
+assert.deepEqual(project.sites, []);
+assert.equal(project.data.initiation.status, "not_started");
+assert.equal(project.data.initiation.commercial.quoteId, quoteId);
+assert.equal(project.data.initiation.commercial.dealFileId, commercialState.data.dealFile.id);
 assert.equal(project.data.scope.quoteId, quoteId);
 assert.equal(project.data.scope.quoteHash, commercialState.data.dealFile.quoteHash);
 assert.equal(project.data.scope.dealFileId, commercialState.data.dealFile.id);
@@ -957,6 +1468,32 @@ async function projectCommand(action, body = {}, expected = 201) {
   );
 }
 
+const initiationDay = new Date().toISOString().slice(0, 10);
+await projectCommand("project_initiation", {
+  initiation: {
+    projectOwnerId: ownerMember.id,
+    teamMemberIds: [ownerMember.id],
+    roleAssignments: [{ role: "project_manager", memberId: ownerMember.id }],
+    siteReadiness: "to_confirm",
+    siteIds: [],
+    objective: "Deliver the accepted design and scope.",
+    clientPromise: "Confirm the site plan before mobilising.",
+    clientContactName: "QA contact",
+    clientContactPhone: "",
+    clientContactEmail: "",
+    accessNotes: "Site access remains to be confirmed.",
+    operationalStart: initiationDay,
+    targetCompletion: initiationDay,
+    handoverDate: "",
+  },
+});
+const initiated = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
+assert.equal(initiated.data.initiation.status, "confirmed");
+assert.equal(initiated.data.initiation.baseline.projectOwnerId, ownerMember.id);
+assert.equal(initiated.data.initiation.commercial.quoteId, quoteId);
+await projectCommand("project_roles", {
+  assignments: [{ role: "project_manager", memberId: reviewerMember.id }],
+}, 409);
 await projectCommand("project_roles", {
   assignments: [{ role: "project_manager", memberId: ownerMember.id }],
 });
@@ -1268,11 +1805,217 @@ assert.equal(
   projectId,
 );
 
+const changeCreated = await commercial("create_change_case", {
+  kind: "replacement",
+  sourceLineIds: [releasedLine.id],
+  title: "Replace the approved wardrobe",
+  detail: "Use the newly selected finish while preserving the accepted history.",
+  owner: fixture.ownerName,
+  dueDate: "",
+});
+const changeId = changeCreated.data.requests.at(-1).id;
+const changeAssessed = await commercial("assess_change_case", { requestId: changeId });
+const impact = changeAssessed.data.requests.find((item) => item.id === changeId).control.impact;
+assert.equal(impact.projectId, projectId);
+assert(impact.targets.length > 0);
+const dispositions = impact.targets.map((target) => ({
+  targetKind: target.kind,
+  targetId: target.id,
+  action: "hold_and_replan",
+  note: "Pause this affected record and replan after client acceptance.",
+}));
+await commercial("set_change_dispositions", { requestId: changeId, dispositions });
+const changePrepared = await commercial("prepare_change_variations", { requestId: changeId });
+const controlled = changePrepared.data.requests.find((item) => item.id === changeId).control;
+assert.equal(controlled.quoteIds.length, 2);
+assert.deepEqual(controlled.quoteIds.map((id) => changePrepared.data.quotes.find((quote) => quote.id === id).direction), ["deduction", "addition"]);
+
+const jobs = await request(`/workspaces/${workspaceId}/jobs`);
+assert.equal(jobs.total, palmFixture ? 3 : 2);
+assert.equal(jobs.items.length, palmFixture ? 3 : 2);
+assert(jobs.items.every((item) => /^J-\d{6,}$/.test(item.reference)));
+const projectJobSummary = jobs.items.find((item) => item.links.some((link) => link.type === "project" && link.id === projectId));
+const sharedJobSummary = jobs.items.find((item) => item.links.some((link) => link.type === "enquiry" && link.id === sharedLead.enquiryId));
+assert(projectJobSummary, "The released project must stay on its originating Job.");
+assert(sharedJobSummary, "The shared-link enquiry must receive its own Job identity.");
+if (palmFixture) {
+  assert(jobs.items.some((item) => item.links.some((link) =>
+    link.type === "lead" && link.id === staffAssignedLead.id)),
+  "The staff-created Palm enquiry must receive its own Job identity.");
+}
+const job = await request(`/workspaces/${workspaceId}/jobs/${projectJobSummary.jobId}`);
+assert.equal(job.jobId, projectJobSummary.jobId);
+assert.equal(job.missingSourceCount, 0);
+assert.equal(job.phase, "deliver");
+assert.equal(job.accessLimited, false);
+assert.equal(job.phaseSource.type, "project");
+assert(job.nextAction?.route === `/workspace/projects/${projectId}`);
+assert(Array.isArray(job.timeline) && job.timeline.some((event) => event.kind === "source_link"));
+assert(job.links.some((link) => link.type === "project" && link.id === projectId));
+assert(changePrepared.data.quotes.every((quote) => job.links.some((link) => link.type === "quote" && link.id === quote.id && link.caseId === caseId)));
+const stageRequestId = randomUUID();
+const stagePath = `/workspaces/${workspaceId}/jobs/${projectJobSummary.jobId}/stage`;
+const stageInput = {
+  stage: "Mobilisation ready",
+  reason: "The release gates passed and delivery ownership is confirmed.",
+  expectedVersion: 0,
+  requestId: stageRequestId,
+};
+const stageSet = await request(stagePath, { method: "PUT", body: stageInput, expected: 200 });
+assert.deepEqual({ phase: stageSet.phase, stage: stageSet.stage, version: stageSet.version, replayed: stageSet.replayed }, {
+  phase: "deliver", stage: "Mobilisation ready", version: 1, replayed: false,
+});
+const stageReplay = await request(stagePath, { method: "PUT", body: stageInput, expected: 200 });
+assert.equal(stageReplay.replayed, true);
+const staleStage = await rawRequest(stagePath, {
+  method: "PUT",
+  body: { ...stageInput, stage: "Started", requestId: randomUUID() },
+});
+assert.equal(staleStage.status, 409);
+const stagedJob = await request(`/workspaces/${workspaceId}/jobs/${projectJobSummary.jobId}`);
+assert.deepEqual({ label: stagedJob.stage.label, manual: stagedJob.stage.manual, version: stagedJob.stage.version }, {
+  label: "Mobilisation ready", manual: true, version: 1,
+});
+assert(stagedJob.timeline.some((event) => event.kind === "stage" && event.title === "Stage set to Mobilisation ready"));
+const unknownJob = await rawRequest(`/workspaces/${workspaceId}/jobs/${randomUUID()}`, { method: "GET" });
+assert.equal(unknownJob.status, 404);
+
+const searchTerm = fixture.customerName.split(/[ (]/)[0];
+const ownerSearch = await request(`/workspaces/${workspaceId}/search?q=${encodeURIComponent(searchTerm)}&limit=50`);
+assert.deepEqual(
+  [...new Set(ownerSearch.items.map((item) => item.kind))].sort(),
+  ["customer", "job", "project", "quotation", "room"],
+);
+const reviewerSearch = await request(`/workspaces/${workspaceId}/search?q=${encodeURIComponent(searchTerm)}&limit=50`, { headers: reviewer });
+assert.deepEqual(
+  reviewerSearch.searchedKinds,
+  palmFixture ? ["customer", "job", "room", "quotation"] : ["job", "room", "quotation"],
+);
+assert.deepEqual(
+  [...new Set(reviewerSearch.items.map((item) => item.kind))].sort(),
+  palmFixture ? ["customer", "job", "quotation", "room"] : ["job", "quotation", "room"],
+);
+assert(reviewerSearch.items.some((item) => item.kind === "room" && item.id === roomId));
+assert(reviewerSearch.items.some((item) => item.kind === "quotation" && item.id === quoteId));
+assert.equal((await rawRequest(`/workspaces/${workspaceId}/projects/${projectId}/execution`, { headers: reviewer, method: "GET" })).status, 403);
+assert.equal((await rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/brief`, { headers: reviewer, method: "GET" })).status, 200);
+
+await request(`/workspaces/${workspaceId}/teams/${reviewerTeam.id}/archive`, {
+  body: { version: reviewerTeam.version },
+});
+if (palmSalesTeam) {
+  await request(`/workspaces/${workspaceId}/teams/${palmSalesTeam.id}/archive`, {
+    body: { version: palmSalesTeam.version },
+  });
+}
+const revokedReviewerSearch = await request(`/workspaces/${workspaceId}/search?q=${encodeURIComponent(searchTerm)}&limit=50`, { headers: reviewer });
+assert.deepEqual(revokedReviewerSearch, { query: searchTerm, items: [], searchedKinds: [], truncated: false });
+assert.equal((await rawRequest(`/workspaces/${workspaceId}/jobs/${projectJobSummary.jobId}`, { headers: reviewer, method: "GET" })).status, 403);
+assert.equal((await rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/brief`, { headers: reviewer, method: "GET" })).status, 403);
+
+for (const [person, roleCode, permissionCodes] of [
+  [jobViewer, "job_viewer", ["crm.leads.view"]],
+  [jobDenied, "job_denied", ["legal_entities.view"]],
+]) {
+  await request(`/workspaces/${workspaceId}/roles`, {
+    body: { code: roleCode, name: roleCode, permissionCodes },
+  });
+  const invite = await request(`/workspaces/${workspaceId}/invitations`, {
+    body: { email: person["x-wodana-user-email"], roleCodes: [roleCode] },
+  });
+  await request(`/workspaces/invitations/${invite.id}/accept`, { headers: person, method: "POST" });
+}
+const viewerJobs = await request(`/workspaces/${workspaceId}/jobs`, { headers: jobViewer });
+assert.equal(viewerJobs.total, palmFixture ? 3 : 2);
+const viewerProjectJob = viewerJobs.items.find((item) => item.jobId === projectJobSummary.jobId);
+assert(viewerProjectJob);
+assert.deepEqual(viewerProjectJob.links.map((link) => link.type).sort(), ["enquiry", "lead"]);
+assert.equal(viewerProjectJob.phase, "unknown");
+assert.equal(viewerProjectJob.accessLimited, true);
+assert.equal(viewerProjectJob.nextAction, null);
+const deniedJobs = await rawRequest(`/workspaces/${workspaceId}/jobs`, { headers: jobDenied, method: "GET" });
+assert.equal(deniedJobs.status, 403);
+const outsiderJobs = await rawRequest(`/workspaces/${workspaceId}/jobs`, { headers: outsider, method: "GET" });
+assert.equal(outsiderJobs.status, 404);
+const repairPath = `/workspaces/${workspaceId}/jobs/${job.jobId}/links/repair`;
+const repairInput = {
+  recordType: "quote", recordId: quoteId, caseId,
+  expectedVersion: 1, requestId: randomUUID(), reason: "Review quotation link",
+};
+const deniedRepair = await rawRequest(repairPath, { headers: jobViewer, body: repairInput });
+assert.equal(deniedRepair.status, 403);
+const healthyRepair = await rawRequest(repairPath, { body: repairInput });
+assert.equal(healthyRepair.status, 409, "healthy links must not be silently rewritten");
+
+let jobIdentityLinked = false;
+if (process.env.DATABASE_URL) {
+  const databaseEndpoint = new URL(process.env.DATABASE_URL);
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(databaseEndpoint.hostname)
+    || !databaseEndpoint.pathname.startsWith("/wodana_funnel_test_"))
+    throw new Error("Job ledger smoke requires the disposable local funnel database.");
+  const database = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  try {
+    await database.connect();
+    await database.query("BEGIN READ ONLY");
+    await database.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
+    const jobs = await database.query(
+      "SELECT id,reference FROM job_identities WHERE workspace_id=$1",
+      [workspaceId],
+    );
+    assert.equal(jobs.rowCount, palmFixture ? 3 : 2,
+      "the shared-link, staff-created Palm enquiry, and qualified enquiry must each retain a Job");
+    assert(jobs.rows.every((row) => /^J-\d{6,}$/.test(row.reference)));
+    const projectJob = await database.query(
+      `SELECT job_id FROM job_identity_links
+       WHERE workspace_id=$1 AND record_type='project' AND record_id=$2 AND status='active'`,
+      [workspaceId, projectId],
+    );
+    assert.equal(projectJob.rowCount, 1);
+    const links = await database.query(
+      "SELECT record_type,record_id,case_id FROM job_identity_links WHERE workspace_id=$1 AND job_id=$2 AND status='active'",
+      [workspaceId, projectJob.rows[0].job_id],
+    );
+    for (const [type, id] of [
+      ["enquiry", intake.enquiryId], ["lead", lead.id], ["opportunity", opportunity.id],
+      ["case", caseId], ["project", projectId],
+    ]) {
+      assert(links.rows.some((link) => link.record_type === type && link.record_id === id), `${type} must link to the Job`);
+    }
+    for (const quote of changePrepared.data.quotes)
+      assert(links.rows.some((link) => link.record_type === "quote" && link.record_id === quote.id && link.case_id === caseId),
+        `quote ${quote.id} must link to its case's Job`);
+    const events = await database.query(
+      "SELECT count(*)::int AS total FROM job_identity_link_events WHERE workspace_id=$1 AND job_id=$2",
+      [workspaceId, projectJob.rows[0].job_id],
+    );
+    assert.equal(events.rows[0].total, links.rowCount, "replay must not duplicate Job-link audit events");
+    const consent = await database.query(
+      `SELECT status,evidence FROM crm_consents
+       WHERE workspace_id=$1 AND party_id=$2 AND purpose='service' AND channel='all'`,
+      [workspaceId, sharedLead.partyId],
+    );
+    assert.equal(consent.rowCount, 1);
+    assert.equal(consent.rows[0].status, "granted");
+    assert.equal(consent.rows[0].evidence.method, "public_enquiry_form");
+    assert.equal(consent.rows[0].evidence.formRevision, publicSharedForm.revision);
+    await database.query("ROLLBACK");
+    jobIdentityLinked = true;
+  } finally {
+    await database.end();
+  }
+}
+
 process.stdout.write(
   `${JSON.stringify(
     {
       ok: true,
       workspaceId,
+      fixture: palmFixture ? "palm_synthetic_uat" : "generic_funnel",
+      operationsActor: owner["x-wodana-user-email"],
+      secondRoleActor: reviewer["x-wodana-user-email"],
+      clientActor: `${fixture.customerName} · purpose-bound local portal challenge`,
+      sharedFormId: sharedForm.id,
+      sharedEnquiryId: sharedLead.enquiryId,
       intakeId: intake.intakeEventId,
       enquiryId: intake.enquiryId,
       leadId: lead.id,
@@ -1281,11 +2024,37 @@ process.stdout.write(
       quoteId,
       dealFileId: commercialState.data.dealFile.id,
       projectId,
+      palmCatalogRecordCount,
       assertions: {
         apiBusinessRecordsOnly: true,
+        isolatedPalmFixture: palmFixture,
+        palmBrandConfigured,
+        palmCatalogImported,
+        sharedLinkReplaySafe: true,
+        sharedLinkAttributionSafe: true,
+        sharedLinkRawAnswersSafe: true,
+        sharedLinkConsentSafe: true,
+        duplicateCandidatesPreserved: true,
+        palmIntakeProfileExact: palmFixture,
+        palmSalesTeamInherited: palmFixture,
+        staffNamedOwnerEligible: palmFixture,
+        immediateAssignmentNotificationSafe: palmFixture,
+        elapsedTakeoverSafe: palmFixture,
+        noteStopsTakeoverNotSla: palmFixture,
+        responseWorkspaceProvenanceSafe: palmFixture,
+        responseWorkspaceActionsSafe: palmFixture,
+        outboundCallEvidenceSafe: palmFixture,
+        palmBusinessHoursSlaExact: palmFixture,
+        secondRoleReviewSafe: true,
+        clientActorPurposeBound: true,
         intakeReplaySafe: true,
         intakeResolutionEvidenceSafe: true,
         qualificationEvidenceSafe: true,
+        qualificationHandoffVisible: true,
+        frozenDiscoveryDefaultsSafe: true,
+        crmHealthReportsReconciled: true,
+        crmHealthDimensionsComplete: true,
+        crmReportPermissionDenied: true,
         conversionReplaySafe: true,
         preparationReplaySafe: true,
         engagementProfileReplaySafe: true,
@@ -1319,6 +2088,14 @@ process.stdout.write(
         projectScheduleConcurrentWriteSafe: true,
         projectScheduleTaskLifecycleSafe: true,
         preReleasePlanningPreserved: true,
+        controlledReplacementPrepared: true,
+        jobIdentityLinked,
+        jobIdentityApi: true,
+        jobIdentityPermissionScope: true,
+        jobIdentityRepairGuard: true,
+        jobOperatingProjectionSafe: true,
+        jobStageReplaySafe: true,
+        jobTimelineSafe: true,
       },
     },
     null,

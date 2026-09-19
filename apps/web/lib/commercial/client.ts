@@ -44,11 +44,12 @@ export function paymentMilestoneAmounts(total: number, terms: { percent: number 
 }
 export function quoteTotals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
   const round = roundMoney;
+  const includedLines = q.lines.filter((line) => !line.optional);
   const subtotal = round(
-      q.lines.reduce((sum, l) => sum + round(l.quantity * l.rate), 0),
+      includedLines.reduce((sum, l) => sum + round(l.quantity * l.rate), 0),
     ),
     cost = round(
-      q.lines.reduce((s, l) => s + round(l.quantity * (l.unitCost ?? 0)), 0),
+      includedLines.reduce((s, l) => s + round(l.quantity * (l.unitCost ?? 0)), 0),
     ),
     net = round(subtotal - q.discount),
     tax = round((net * q.taxRate) / 100);
@@ -60,6 +61,46 @@ export function quoteTotals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
     total: round(net + tax),
     margin: net ? ((net - cost) / net) * 100 : 0,
   };
+}
+export function quoteSelectionTotals(
+  q: Pick<Quote, "lines" | "discount" | "taxRate" | "total">,
+  selectedOptionLineIds: string[],
+) {
+  const selected = new Set(selectedOptionLineIds);
+  const selectedTotals = quoteTotals({
+    ...q,
+    lines: q.lines.map((line) =>
+      line.optional && selected.has(line.id)
+        ? { ...line, optional: false }
+        : line,
+    ),
+  });
+  return {
+    baseTotal: roundMoney(q.total),
+    optionsTotal: roundMoney(selectedTotals.total - q.total),
+    acceptedTotal: selectedTotals.total,
+  };
+}
+export function acceptedQuoteTotals(q: Quote) {
+  const selected = new Set(
+    q.clientDecision?.decision === "accept"
+      ? q.clientDecision.selectedOptionLineIds
+      : [],
+  );
+  return quoteTotals({
+    ...q,
+    lines: q.lines.map((line) =>
+      line.optional && selected.has(line.id)
+        ? { ...line, optional: false }
+        : line,
+    ),
+  });
+}
+export function acceptedQuoteValue(q: Quote) {
+  return q.clientDecision?.decision === "accept" &&
+    q.clientDecision.acceptedTotal !== undefined
+    ? q.clientDecision.acceptedTotal
+    : q.total;
 }
 export function newLine(room = "General"): QuoteLine {
   return {

@@ -31,19 +31,20 @@ export async function getMembersPageData(): Promise<MembersPageData> {
     cache: "no-store",
   }).catch(() => null);
 
-  const [membersResponse, rolesResponse, invitationsResponse] = await Promise.all([
+  const [membersResponse, rolesResponse, invitationsResponse, teamsResponse] = await Promise.all([
     request(`/workspaces/${membership.workspaceId}/members`),
     request(`/workspaces/${membership.workspaceId}/roles`),
     canManage ? request(`/workspaces/${membership.workspaceId}/invitations`) : Promise.resolve(null),
+    canManage ? request(`/workspaces/${membership.workspaceId}/teams`) : Promise.resolve(null),
   ]);
 
-  if ([membersResponse, rolesResponse, invitationsResponse].some((response) => response?.status === 401)) {
+  if ([membersResponse, rolesResponse, invitationsResponse, teamsResponse].some((response) => response?.status === 401)) {
     redirect("/login");
   }
-  if (!membersResponse || !rolesResponse || (canManage && !invitationsResponse)) {
+  if (!membersResponse || !rolesResponse || (canManage && (!invitationsResponse || !teamsResponse))) {
     throw new Error("The members service is unavailable.");
   }
-  if (!membersResponse.ok || !rolesResponse.ok || (invitationsResponse && !invitationsResponse.ok)) {
+  if (!membersResponse.ok || !rolesResponse.ok || (invitationsResponse && !invitationsResponse.ok) || (teamsResponse && !teamsResponse.ok)) {
     throw new Error("Workspace members could not be loaded.");
   }
 
@@ -54,6 +55,7 @@ export async function getMembersPageData(): Promise<MembersPageData> {
     workspaceId: membership.workspaceId,
     members: await membersResponse.json() as WorkspaceMember[],
     roles: await rolesResponse.json() as WorkspaceRole[],
+    teams: teamsResponse ? (await teamsResponse.json() as Array<{ id: string; name: string }>) : [],
     invitations: invitationsResponse
       ? await invitationsResponse.json() as WorkspaceInvitation[]
       : [],

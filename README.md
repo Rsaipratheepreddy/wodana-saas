@@ -7,10 +7,16 @@ adjacent frontend are legacy migration references and must not receive new featu
 [the source-of-truth contract](docs/architecture/00-source-of-truth.md) and
 [the consolidation register](docs/consolidation-register.md).
 
+For the end-to-end product direction and ordered backend, web and mobile delivery work, read the
+[product blueprint](docs/WODANA_PRODUCT_BLUEPRINT.md) and [delivery board](docs/WODANA_TASKS.md).
+They describe target behavior; the board's evidence gates determine what is actually complete.
+The [internal control-plane plan](docs/WODANA_CONTROL_PLANE.md) covers tenant accounts, onboarding,
+domains, access, module entitlements, seats, billing, audit and their web/mobile effects.
+
 ## Services
 
 - `apps/web` — Next.js and React frontend.
-- `apps/mobile` — new React Native / Expo application; the first milestone is the branded splash screen. See [mobile setup](apps/mobile/README.md).
+- `apps/mobile` — React Native / Expo application with CRM, HRMS and pre-project field capture in progress. See [mobile setup](apps/mobile/README.md) and the delivery board for remaining native work.
 - `services/business-core` — NestJS system of record for clients, projects, approvals, BOQs, purchasing, production, finance, portals, and permissions.
 - `services/intelligence-automation` — Python/FastAPI service for AI, document processing, Google Workspace, QuickBooks, WhatsApp, Zoho Books, webhooks, scheduled automations, and background jobs.
 - PostgreSQL — authoritative relational data.

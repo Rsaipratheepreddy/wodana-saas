@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import { ArrowUpRight, Upload } from "lucide-react";
 import type { PortalBrand, PortalSettings } from "@/lib/commercial/types";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
@@ -23,7 +23,7 @@ export function BrandLogo({ brand }: { brand: PortalBrand }) {
             className={s.logoMark}
             aria-hidden
             style={{
-              background: `linear-gradient(135deg,${brand.primaryColor},${brand.accentColor})`,
+              background: brand.primaryColor,
             }}
           >
             {brand.name
@@ -63,9 +63,6 @@ export function PortalSettingsPage({ initial }: { initial: PortalSettings }) {
       setBusy(false);
     }
   }
-  const style = {
-    "--wd-brand-gradient": `linear-gradient(110deg,${data.brand.primaryColor},${data.brand.accentColor})`,
-  } as CSSProperties;
   return (
     <section className={s.page}>
       <header className={s.header}>
@@ -201,7 +198,7 @@ export function PortalSettingsPage({ initial }: { initial: PortalSettings }) {
                 patch({ layout: e.target.value as PortalBrand["layout"] })
               }
             >
-              <option value="soft">Soft gradient</option>
+              <option value="soft">Soft tint</option>
               <option value="minimal">Minimal white</option>
             </select>
           </label>
@@ -234,10 +231,9 @@ export function PortalSettingsPage({ initial }: { initial: PortalSettings }) {
         <aside
           className={s.preview}
           style={{
-            ...style,
             background:
               data.brand.layout === "soft"
-                ? `linear-gradient(135deg,color-mix(in srgb,${data.brand.primaryColor} 15%,white),color-mix(in srgb,${data.brand.accentColor} 9%,white))`
+                ? `color-mix(in srgb,${data.brand.primaryColor} 7%,white)`
                 : "#fff",
             color: "#202522",
           }}

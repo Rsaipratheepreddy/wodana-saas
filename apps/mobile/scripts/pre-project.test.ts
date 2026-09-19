@@ -3,6 +3,8 @@ import test from 'node:test';
 import {blankEntry,entryPayload,formatCaseMoney} from '../../web/lib/pre-project/content';
 import {newSiteRecord,sitePayload,visitInstant,visitWallTime} from '../../web/lib/pre-project/site';
 import {convertMeasurement} from '../src/pre-project/measurements';
+import {assignedDesignReviews} from '../src/pre-project/design-review';
+import type {CaseDesign} from '../../web/lib/pre-project/content';
 
 test('field entry preserves catalog IDs and several attachment IDs without posting mutable snapshots',()=>{
  const row=blankEntry('room-1');row.title='Wardrobe';row.quantity=72;row.unit='sq.ft';
@@ -22,4 +24,14 @@ test('field visit time is interpreted in the workspace timezone and invalid DST 
 });
 test('the shared currency formatter keeps the case currency, including zero-decimal currencies',()=>{
  assert.match(formatCaseMoney('2500','JPY','en-US'),/JPY\s*2,500$/);assert.match(formatCaseMoney('1250.5','AED','en-US'),/AED\s*1,250.50$/);
+});
+test('native design review shows only the current revision assigned to this reviewer',()=>{
+ const design=(id:string,status:string,reviewerId:string|null,archivedAt:string|null=null)=>({id,archivedAt,versions:[{id:`${id}-version`,status,reviewerId}]} as unknown as CaseDesign);
+ const visible=assignedDesignReviews([
+  design('mine','internal_review','reviewer'),
+  design('other','internal_review','someone-else'),
+  design('approved','internal_approved','reviewer'),
+  design('archived','internal_review','reviewer','2026-09-18T00:00:00.000Z'),
+ ],'reviewer');
+ assert.deepEqual(visible.map(item=>item.id),['mine']);
 });

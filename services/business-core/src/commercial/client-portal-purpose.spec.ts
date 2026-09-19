@@ -13,4 +13,11 @@ describe("client portal verification purposes", () => {
     expect(parsePortalChallengePurpose("handover-decision:case:project:handover:decline")).toBeNull();
     expect(parsePortalChallengePurpose("warranty-claim:case:project")).toBeNull();
   });
+
+  it("allows an exact design rejection purpose but not unsupported material or definition declines", () => {
+    expect(parsePortalChallengePurpose("design-decision:case:revision:decline"))
+      .toEqual({ kind: "design-decision", caseId: "case", recordId: "revision", decision: "decline" });
+    expect(parsePortalChallengePurpose("material-decision:case:material:decline")).toBeNull();
+    expect(parsePortalChallengePurpose("definition-decision:case:baseline:decline")).toBeNull();
+  });
 });

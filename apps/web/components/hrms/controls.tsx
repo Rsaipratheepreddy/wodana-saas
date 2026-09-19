@@ -227,39 +227,44 @@ export function DataTable<Row>({
   rows: Row[];
 }) {
   return (
-    <div
-      className="wd-table-scroll"
-      role="region"
-      aria-label={caption}
-      tabIndex={0}
-    >
-      <table data-record-table="" className="wd-table">
-        <caption className="wd-visually-hidden">{caption}</caption>
-        <thead>
-          <tr>
-            {columns.map((c) => (
-              <th
-                key={c.key}
-                scope="col"
-                style={{ textAlign: c.align ?? "start" }}
-              >
-                {c.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={getRowKey(row)}>
+    <div className="wd-table-frame">
+      <div
+        className="wd-table-scroll"
+        role="region"
+        aria-label={caption}
+        tabIndex={0}
+      >
+        <table data-record-table="" className="wd-table">
+          <caption className="wd-visually-hidden">{caption}</caption>
+          <thead>
+            <tr>
               {columns.map((c) => (
-                <td key={c.key} style={{ textAlign: c.align ?? "start" }}>
-                  {c.render(row)}
-                </td>
+                <th
+                  key={c.key}
+                  scope="col"
+                  style={{ textAlign: c.align ?? "start" }}
+                >
+                  {c.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={getRowKey(row)}>
+                {columns.map((c) => (
+                  <td key={c.key} style={{ textAlign: c.align ?? "start" }}>
+                    {c.render(row)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <footer className="wd-table-footer">
+        {rows.length} {rows.length === 1 ? "record" : "records"}
+      </footer>
     </div>
   );
 }

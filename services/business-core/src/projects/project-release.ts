@@ -1,8 +1,13 @@
-import { freezeHash } from "../commercial/commercial.domain";
-import { commercialReleaseReady } from "../commercial/release-integrity";
+import { acceptedQuoteLines, acceptedQuoteValue, freezeHash } from "../commercial/commercial.domain";
+import {
+  approvedMaterialEvidence,
+  commercialReleaseReady,
+  sameMaterialEvidence,
+} from "../commercial/release-integrity";
 import type { PoolClient } from "pg";
 import { ConflictException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import { ensureJobForSource } from "../jobs/job-identity.store";
 import type { CommercialData } from "../commercial/commercial.types";
 import { emptyProject } from "./execution.domain";
 import type { ProjectData, ProjectInitiation } from "./execution.types";
@@ -12,6 +17,7 @@ import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { syncScopeWorkPackages } from "./project-work-packages";
 import {
   captureApprovedDesignBaseline,
+  sameDesignEvidence,
   synchroniseApprovedDesignDocuments,
 } from "./project-design-control";
 
@@ -32,7 +38,7 @@ function releasedInitiation(
       dealFileReference: frozenScope?.dealFileReference ?? dealFile.reference,
       agreementReference: data.agreement?.reference ?? dealFile.agreementReference,
       currency: frozenScope?.currency ?? quote.currency,
-      value: frozenScope?.value ?? quote.total,
+      value: frozenScope?.value ?? acceptedQuoteValue(quote),
       paymentMilestones: data.payments
         .filter(
           (payment) =>
@@ -45,6 +51,7 @@ function releasedInitiation(
           dueDate: payment.dueDate,
           trigger: payment.trigger ?? "",
           requiredForRelease: payment.requiredForRelease,
+          requiredForProduction: payment.requiredForProduction === true,
         })),
     },
     baseline: null,
@@ -81,7 +88,7 @@ export async function releaseDeliveryProject(
     client,
     workspaceId,
     caseId,
-    quote.lines.map((line) => ({
+    acceptedQuoteLines(quote).map((line) => ({
       scopeLineId: line.id,
       sourceScopeId: line.scopeId,
       sourceScopeVersion: line.scopeVersion,
@@ -91,12 +98,28 @@ export async function releaseDeliveryProject(
     data.release!.at,
     quote.definitionBaseline,
   );
+  if (
+    !sameDesignEvidence(quote.designEvidence, designBaseline) ||
+    !sameDesignEvidence(dealFile.designEvidence, designBaseline)
+  )
+    throw new ConflictException(
+      "The approved design evidence no longer matches this quotation. Create and approve a revised quotation or controlled Change Case before release.",
+    );
+  const materialEvidence = approvedMaterialEvidence(
+    quote,
+    data.materialApprovals,
+  );
+  if (!sameMaterialEvidence(dealFile.materialEvidence, materialEvidence))
+    throw new ConflictException(
+      "The approved material evidence no longer matches the Deal File. Complete a controlled review before release.",
+    );
   const p = (
     await client.query(
       `INSERT INTO delivery_projects(workspace_id,case_id,name,created_by) SELECT c.workspace_id,c.id,o.title,$3 FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id WHERE c.workspace_id=$1 AND c.id=$2 ON CONFLICT(workspace_id,case_id) DO UPDATE SET name=delivery_projects.name RETURNING id,name,status,case_id AS "caseId"`,
       [workspaceId, caseId, userId],
     )
   ).rows[0];
+  await ensureJobForSource(client, workspaceId, { type: "project", id: String(p.id) }, userId);
   const existing = (
     await client.query(
       "SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2 FOR UPDATE",
@@ -117,8 +140,7 @@ export async function releaseDeliveryProject(
       reference: dealFile.reference.replace(/^DF-/, "PRJ-"),
     };
     execution.roleAssignments ??= [];
-    execution.approvedMaterials = (data.materialApprovals ?? [])
-      .filter((approval) => approval.quoteId === quote.id && approval.status === "approved")
+    execution.approvedMaterials = materialEvidence
       .map((approval) => ({
         id: randomUUID(),
         sourceApprovalId: approval.id,
@@ -156,8 +178,8 @@ export async function releaseDeliveryProject(
       releaseId: data.release!.id,
       releasedAt: data.release!.at,
       currency: quote.currency,
-      value: quote.total,
-      lines: quote.lines.map(releasedScopeLine),
+      value: acceptedQuoteValue(quote),
+      lines: acceptedQuoteLines(quote).map(releasedScopeLine),
     };
     syncScopeWorkPackages(execution, data.release!.at);
     execution.phase = "active";

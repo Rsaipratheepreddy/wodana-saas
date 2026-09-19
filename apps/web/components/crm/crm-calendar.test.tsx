@@ -34,7 +34,7 @@ describe("CRM calendar", () => {
 
   it("keeps search and a compact date navigator alongside the time grid", async () => {
     render(<CrmCalendar workspaceId={workspaceId} />);
-    expect(await screen.findByRole("textbox", { name: "Search calendar" })).toBeInTheDocument();
+    expect(await screen.findByRole("searchbox", { name: "Search calendar" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Date navigator" })).toBeInTheDocument();
     expect(screen.queryByText("My calendars")).not.toBeInTheDocument();
     expect(screen.queryByText("CRM commitments")).not.toBeInTheDocument();
@@ -45,9 +45,9 @@ describe("CRM calendar", () => {
     const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByRole("button", { name: /CRM Design consultation/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Cancelled consultation/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Day" }));
+    await user.click(screen.getByRole("radio", { name: "Day" }));
     expect(screen.getByRole("group", { name: "Day calendar" })).toBeInTheDocument();
-    await user.type(screen.getByRole("textbox", { name: "Search calendar" }), "No match");
+    await user.type(screen.getByRole("searchbox", { name: "Search calendar" }), "No match");
     expect(screen.queryByRole("button", { name: /CRM Design consultation/ })).not.toBeInTheDocument();
   });
 
@@ -58,7 +58,7 @@ describe("CRM calendar", () => {
     await user.type(within(dialog).getByRole("textbox", { name: /Meeting title/ }), "Site visit");
     await user.click(within(dialog).getByRole("button", { name: /Customer/ }));
     await user.click(await screen.findByRole("option", { name: "Calendar customer" }));
-    await user.click(within(dialog).getByRole("button", { name: /Lead manager/ }));
+    await user.click(within(dialog).getByRole("button", { name: /Sales owner/ }));
     await user.click(await screen.findByRole("option", { name: "Iglo Manager" }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(vi.mocked(crmRequest).mock.calls.filter((call) => call[2] === "POST")).toHaveLength(1));
@@ -93,7 +93,7 @@ describe("CRM calendar", () => {
     fireEvent.change(screen.getByLabelText("Reminder date"), { target: { value: "2026-09-09" } });
     fireEvent.change(screen.getByLabelText("Reminder time"), { target: { value: "11:00" } });
     await user.click(screen.getByRole("button", { name: "Save changes" }));
-    await screen.findByText("Saved. Your reminder is updated in Overview and Calendar.");
+    await screen.findByText("Saved. Your reminder is updated in Today and Calendar.");
     expect(vi.mocked(crmRequest)).toHaveBeenCalledWith(workspaceId, "activities/pending", "PATCH", expect.objectContaining({ version: 2, description: "Discuss the quote. Call tomorrow.", dueAt: new Date("2026-09-09T11:00").toISOString() }));
   });
 });

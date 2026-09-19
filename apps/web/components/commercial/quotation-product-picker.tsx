@@ -1,46 +1,163 @@
 "use client";
-import { useState } from 'react';
-import { Check, Minus, Pencil, Plus, Search, X } from 'lucide-react';
-import type { QuoteLine } from '@/lib/commercial/types';
-import { quotationItemName, quotationVariantName } from '@/lib/commercial/presentation';
-import type { CommercialCatalogChoice } from './catalog-picker';
-import { useCatalogOptions } from './catalog-options-cache';
-import s from './quotation-workbench.module.css';
 
-function VariantOptions({options,work,roomName,value,onChange}:{options:CommercialCatalogChoice[];work:CommercialCatalogChoice;roomName:string;value:CommercialCatalogChoice|null;onChange:(variant:CommercialCatalogChoice)=>void}) {
-  if(options.length>5)return <select aria-label={`Variant for ${quotationItemName(work.name,roomName)}`} value={value?.id??''} onChange={e=>{const selected=options.find(v=>v.id===e.target.value);if(selected)onChange(selected);}}>{!value&&<option value="" disabled>Select variant</option>}{options.map(v=><option key={v.id} value={v.id}>{quotationVariantName(v.name,work.name,roomName,v.code)}</option>)}</select>;
-  return <div>{options.map(variant=><button key={variant.id} className={s.variantChip} aria-pressed={value?.id===variant.id} title={variant.name} onClick={()=>onChange(variant)}>{quotationVariantName(variant.name,work.name,roomName,variant.code)}</button>)}</div>;
-}
-export function QuotationVariantChoices({workspaceId,caseId,work,roomName='',value,onChange}:{workspaceId:string;caseId:string;work:CommercialCatalogChoice;roomName?:string;value:CommercialCatalogChoice|null;onChange:(variant:CommercialCatalogChoice|null)=>void}) {
-  const {items,loading,error,refresh}=useCatalogOptions(workspaceId,caseId,'variant','',work.id,work.catalogId);
-  const options=value&&!items.some(item=>item.id===value.id)?[value,...items]:items;
-  if(!loading&&!error&&!options.length)return null;
-  return <div className={s.variantOptions} role="group" aria-label="Variant"><span>Variant</span><VariantOptions options={options} work={work} roomName={roomName} value={value} onChange={onChange}/>{loading&&<small role="status">Loading variants…</small>}{error&&<p role="alert" className={s.error}>{error} <button className={s.textButton} onClick={refresh}>Retry</button></p>}</div>;
+import { useMemo, useState } from "react";
+import { Check, Minus, Pencil, Plus } from "lucide-react";
+import { Button, DataGrid, SegmentedControl, SelectField, type DataGridColumn } from "@/design-system";
+import type { QuoteLine } from "@/lib/commercial/types";
+import { quotationItemName, quotationVariantName } from "@/lib/commercial/presentation";
+import type { CommercialCatalogChoice } from "./catalog-picker";
+import { useCatalogOptions } from "./catalog-options-cache";
+import s from "./quotation-workbench.module.css";
+
+const pricingLabel = (mode?: "unpriced" | "fixed" | "on_request") =>
+  mode === "fixed" ? "Fixed price" : mode === "on_request" ? "Quote required" : "Unpriced";
+
+function VariantOptions({ options, work, roomName, value, onChange }: {
+  options: CommercialCatalogChoice[];
+  work: CommercialCatalogChoice;
+  roomName: string;
+  value: CommercialCatalogChoice | null;
+  onChange: (variant: CommercialCatalogChoice) => void;
+}) {
+  if (options.length > 5) return <SelectField
+    aria-label={`Variant for ${quotationItemName(work.name, roomName)}`}
+    items={options.map((variant) => ({ id: variant.id, label: quotationVariantName(variant.name, work.name, roomName, variant.code) }))}
+    label={<span className="wd-visually-hidden">Variant</span>}
+    onSelectionChange={(key) => { const selected = options.find((variant) => variant.id === key); if (selected) onChange(selected); }}
+    selectedKey={value?.id ?? null}
+  />;
+  return <div>{options.map((variant) => <Button
+    aria-pressed={value?.id === variant.id}
+    key={variant.id}
+    onPress={() => onChange(variant)}
+    size="compact"
+    variant="quiet"
+  >{quotationVariantName(variant.name, work.name, roomName, variant.code)}</Button>)}</div>;
 }
 
-function Product({work,roomName,lines,workspaceId,caseId,atLimit,onAdd,onEdit,onQuantity}:{work:CommercialCatalogChoice;roomName:string;lines:QuoteLine[];workspaceId:string;caseId:string;atLimit:boolean;onAdd:(work:CommercialCatalogChoice,variant:CommercialCatalogChoice|null)=>void;onEdit:(id:string)=>void;onQuantity:(id:string,quantity:number)=>void}) {
-  const [variantId,setVariantId]=useState<string|null>(null);
-  const {items:variants,loading,error,refresh}=useCatalogOptions(workspaceId,caseId,'variant','',work.id,work.catalogId);
-  // A visible default makes a new product a single-click add. Existing quotation lines are never rewritten.
-  const variant=variants.find(v=>v.id===variantId)??variants[0]??null;
-  const added=lines.filter(line=>line.catalogLinks?.some(link=>link.role==='work'&&link.recordId===work.id));
-  const matching=added.find(line=>line.catalogLinks?.find(link=>link.role==='variant')?.recordId===variant?.id);
-  const name=quotationItemName(work.name,roomName),ready=!loading&&!error;
-  return <section className={s.shopProduct} aria-label={name}>
-    <div className={s.shopProductHeading}><strong>{name}</strong>{matching?<div className={s.quantityStepper} aria-label={`Quantity for ${name}`}><button aria-label={`Decrease ${name}`} onClick={()=>onQuantity(matching.id,Math.max(0,matching.quantity-1))}><Minus size={13}/></button><span aria-live="polite">{matching.quantity}</span><button aria-label={`Add ${name}`} disabled={!ready||matching.quantity>=1e6} onClick={()=>onAdd(work,variant)}><Plus size={13}/></button></div>:<button className={s.primary} disabled={!ready||atLimit} aria-label={`Add ${name}`} onClick={()=>onAdd(work,variant)}><Plus size={13}/>Add</button>}</div>
-    {!!variants.length&&<div className={s.variantOptions} role="group" aria-label={`Variant for ${name}`}><VariantOptions options={variants} work={work} roomName={roomName} value={variant} onChange={v=>setVariantId(v.id)}/></div>}
-    {loading&&<small className={s.hint} role="status">Loading variants…</small>}{error&&<p role="alert" className={s.error}>{error} <button className={s.textButton} onClick={refresh}>Retry</button></p>}
-    {!!added.length&&<div className={s.productMeta}><span><Check size={12}/>{added.reduce((sum,line)=>sum+line.quantity,0)} in room</span><button className={s.textButton} onClick={()=>onEdit((matching??added[0]).id)} aria-label={`Edit ${name}`}><Pencil size={12}/>Materials & price</button></div>}
-  </section>;
+function VariantComparison({ options, work, roomName, value, onChange }: {
+  options: CommercialCatalogChoice[];
+  work: CommercialCatalogChoice;
+  roomName: string;
+  value: CommercialCatalogChoice | null;
+  onChange: (variant: CommercialCatalogChoice) => void;
+}) {
+  const columns = useMemo<DataGridColumn<CommercialCatalogChoice>[]>(() => [
+    { accessorKey: "name", header: "Variant", size: 190, meta: { primary: true }, cell: ({ row }) => <span><strong>{quotationVariantName(row.original.name, work.name, roomName, row.original.code)}</strong><small>{row.original.code}</small></span> },
+    { id: "specification", header: "Specification", size: 180, accessorFn: (variant) => String(variant.configuration?.specificationTier ?? variant.configuration?.qualityGrade ?? variant.configuration?.variant ?? variant.description ?? "—") },
+    { id: "price", header: "Price", size: 120, accessorFn: (variant) => pricingLabel(variant.commerce?.pricingMode) },
+    { id: "select", header: "", size: 110, enableSorting: false, meta: { align: "end", renderCell: (variant) => <Button aria-label={`Select ${variant.name}`} onPress={() => onChange(variant)} size="compact" variant={value?.id === variant.id ? "primary" : "secondary"}>{value?.id === variant.id ? "Selected" : "Select"}</Button> } },
+  ], [onChange, roomName, value?.id, work.name]);
+  return <DataGrid
+    appearance="flush"
+    ariaLabel={`Compare variants for ${quotationItemName(work.name, roomName)}`}
+    columns={columns}
+    data={options}
+    emptyDescription="Add an active variant to this item before comparing."
+    emptyTitle="No variants"
+    getRowId={(variant) => variant.id}
+    rowNumbers={false}
+    selectable={false}
+    showFooter={false}
+    showToolbar={false}
+  />;
 }
 
-export function QuotationProductPicker({workspaceId,caseId,catalogId,room,lines,atLimit,onAdd,onCustom,onEdit,onQuantity}:{workspaceId:string;caseId:string;catalogId?:string;room:CommercialCatalogChoice|null;lines:QuoteLine[];atLimit:boolean;onAdd:(work:CommercialCatalogChoice,variant:CommercialCatalogChoice|null)=>void;onCustom:()=>void;onEdit:(id:string)=>void;onQuantity:(id:string,quantity:number)=>void}) {
-  const [search,setSearch]=useState(''),[allRooms,setAllRooms]=useState(false);
-  const {items,loading,error,refresh}=useCatalogOptions(workspaceId,caseId,'work',search,allRooms?undefined:room?.id,catalogId);
-  return <div className={s.productPicker}><div className={s.shopSearch}><label className={s.compactSearch}><Search size={14}/><input type="search" aria-label="Search products" placeholder="Search items…" value={search} onChange={e=>setSearch(e.target.value)}/>{search&&<button aria-label="Clear product search" onClick={()=>setSearch('')}><X size={13}/></button>}</label><button className={s.textButton} disabled={atLimit} onClick={onCustom}><Plus size={13}/>Custom item</button></div>
-    {room&&<div className={s.productFilters} role="group" aria-label="Item source"><button aria-pressed={!allRooms} onClick={()=>setAllRooms(false)}>{room.name}</button><button aria-pressed={allRooms} onClick={()=>setAllRooms(true)}>All items</button></div>}
-    {error&&<p role="alert" className={s.error}>{error} <button className={s.textButton} onClick={refresh}>Retry</button></p>}{loading&&<p role="status" className={s.hint}>Finding items…</p>}
-    {!loading&&!error&&!items.length&&<p className={s.hint}>No matching items. Try another search or add a custom item.</p>}
-    <div className={s.products}>{items.map(work=><Product key={work.id} work={work} roomName={room?.name??''} workspaceId={workspaceId} caseId={caseId} lines={lines} atLimit={atLimit} onAdd={onAdd} onEdit={onEdit} onQuantity={onQuantity}/>)}</div>
+export function QuotationVariantChoices({ workspaceId, caseId, work, roomName = "", value, onChange }: {
+  workspaceId: string;
+  caseId: string;
+  work: CommercialCatalogChoice;
+  roomName?: string;
+  value: CommercialCatalogChoice | null;
+  onChange: (variant: CommercialCatalogChoice | null) => void;
+}) {
+  const [compare, setCompare] = useState(false);
+  const { items, loading, error, refresh } = useCatalogOptions(workspaceId, caseId, "variant", "", work.id, work.catalogId);
+  const options = value && !items.some((item) => item.id === value.id) ? [value, ...items] : items;
+  if (!loading && !error && !options.length) return null;
+  return <div className={s.variantOptions} role="group" aria-label="Variant">
+    <span>Variant</span>
+    <VariantOptions options={options} work={work} roomName={roomName} value={value} onChange={onChange} />
+    {options.length > 1 ? <Button onPress={() => setCompare((open) => !open)} size="compact" variant="quiet">{compare ? "Close comparison" : "Compare variants"}</Button> : null}
+    {compare ? <VariantComparison options={options} work={work} roomName={roomName} value={value} onChange={onChange} /> : null}
+    {loading ? <small role="status">Loading variants…</small> : null}
+    {error ? <p role="alert" className={s.error}>{error} <Button onPress={refresh} size="compact" variant="quiet">Retry</Button></p> : null}
+  </div>;
+}
+
+function ProductActions({ work, roomName, lines, workspaceId, caseId, atLimit, onAdd, onEdit, onQuantity }: {
+  work: CommercialCatalogChoice;
+  roomName: string;
+  lines: QuoteLine[];
+  workspaceId: string;
+  caseId: string;
+  atLimit: boolean;
+  onAdd: (work: CommercialCatalogChoice, variant: CommercialCatalogChoice | null) => void;
+  onEdit: (id: string) => void;
+  onQuantity: (id: string, quantity: number) => void;
+}) {
+  const [variantId, setVariantId] = useState<string | null>(null);
+  const { items: variants, loading, error, refresh } = useCatalogOptions(workspaceId, caseId, "variant", "", work.id, work.catalogId);
+  const variant = variants.find((item) => item.id === variantId) ?? variants[0] ?? null;
+  const added = lines.filter((line) => line.catalogLinks?.some((link) => link.role === "work" && link.recordId === work.id));
+  const matching = added.find((line) => line.catalogLinks?.find((link) => link.role === "variant")?.recordId === variant?.id) ?? (variant ? undefined : added[0]);
+  const name = quotationItemName(work.name, roomName), ready = !loading && !error;
+  return <div className={s.productActionCell}>
+    {variants.length ? <VariantOptions options={variants} work={work} roomName={roomName} value={variant} onChange={(next) => setVariantId(next.id)} /> : null}
+    {matching ? <div className={s.quantityStepper} aria-label={`Quantity for ${name}`}>
+      <Button aria-label={`Decrease ${name}`} onPress={() => onQuantity(matching.id, Math.max(0, matching.quantity - 1))} size="compact" variant="quiet"><Minus size={13} /></Button>
+      <span aria-live="polite">{matching.quantity}</span>
+      <Button aria-label={`Add ${name}`} isDisabled={!ready || matching.quantity >= 1e6} onPress={() => onAdd(work, variant)} size="compact" variant="quiet"><Plus size={13} /></Button>
+    </div> : <Button aria-label={`Add ${name}`} isDisabled={!ready || atLimit} onPress={() => onAdd(work, variant)} size="compact" variant="primary"><Plus size={13} />Add</Button>}
+    {added.length ? <span className={s.productMeta}><span><Check size={12} />{added.reduce((sum, line) => sum + line.quantity, 0)} in room</span><Button aria-label={`Edit ${name}`} onPress={() => onEdit((matching ?? added[0]).id)} size="compact" variant="quiet"><Pencil size={12} />Materials &amp; price</Button></span> : null}
+    {loading ? <small className={s.hint} role="status">Loading variants…</small> : null}
+    {error ? <span role="alert" className={s.error}>{error} <Button onPress={refresh} size="compact" variant="quiet">Retry</Button></span> : null}
+  </div>;
+}
+
+export function QuotationProductPicker({ workspaceId, caseId, catalogId, room, lines, atLimit, onAdd, onCustom, onEdit, onQuantity }: {
+  workspaceId: string;
+  caseId: string;
+  catalogId?: string;
+  room: CommercialCatalogChoice | null;
+  lines: QuoteLine[];
+  atLimit: boolean;
+  onAdd: (work: CommercialCatalogChoice, variant: CommercialCatalogChoice | null) => void;
+  onCustom: () => void;
+  onEdit: (id: string) => void;
+  onQuantity: (id: string, quantity: number) => void;
+}) {
+  const [search, setSearch] = useState(""), [allRooms, setAllRooms] = useState(false);
+  const { items, loading, error, refresh } = useCatalogOptions(workspaceId, caseId, "work", search, allRooms ? undefined : room?.id, catalogId);
+  const columns = useMemo<DataGridColumn<CommercialCatalogChoice>[]>(() => [
+    { accessorKey: "name", header: "Item", size: 230, meta: { primary: true }, cell: ({ row }) => <span><strong>{quotationItemName(row.original.name, room?.name ?? "")}</strong><small>{row.original.code}{row.original.description ? ` · ${row.original.description}` : ""}</small></span> },
+    { accessorKey: "catalogName", header: "Catalog", size: 140, cell: ({ row }) => row.original.catalogName ?? "—" },
+    { id: "pricing", header: "Selling price", size: 130, accessorFn: (item) => pricingLabel(item.commerce?.pricingMode) },
+    { id: "add", header: "Choose", size: 310, enableSorting: false, meta: { renderCell: (work) => <ProductActions work={work} roomName={room?.name ?? ""} workspaceId={workspaceId} caseId={caseId} lines={lines} atLimit={atLimit} onAdd={onAdd} onEdit={onEdit} onQuantity={onQuantity} /> } },
+  ], [atLimit, caseId, lines, onAdd, onEdit, onQuantity, room?.name, workspaceId]);
+  return <div className={s.productPicker}>
+    <DataGrid
+      appearance="card"
+      ariaLabel="Catalog items"
+      columns={columns}
+      data={items}
+      emptyDescription="Try another search or add a custom item."
+      emptyTitle="No matching items"
+      error={error || null}
+      getRowId={(work) => work.id}
+      isLoading={loading}
+      onSearchChange={setSearch}
+      persistKey="quotation-product-picker"
+      rowNumbers={false}
+      searchLabel="Search products"
+      searchValue={search}
+      selectable={false}
+      showFooter={false}
+      toolbarActions={<>
+        {room ? <SegmentedControl label="Item source" onChange={(value) => setAllRooms(value === "all")} options={[{ id: "room", label: room.name }, { id: "all", label: "All items" }]} value={allRooms ? "all" : "room"} /> : null}
+        {error ? <Button onPress={refresh} size="compact" variant="quiet">Retry</Button> : null}
+        <Button isDisabled={atLimit} onPress={onCustom} size="compact" variant="secondary"><Plus size={13} />Custom item</Button>
+      </>}
+    />
   </div>;
 }

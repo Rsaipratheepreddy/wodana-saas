@@ -7,8 +7,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { ProjectWorkspace } from "./project-workspace";
+import userEvent from "@testing-library/user-event";
 import type { ProjectState } from "@/lib/projects/execution";
-vi.mock("@/design-system", () => ({
+vi.mock("@/design-system", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/design-system")>()),
   ControlledModalDialog: ({
     isOpen,
     title,
@@ -132,7 +134,54 @@ const initial: ProjectState = {
   },
 };
 describe("project workspace", () => {
+  it("shows the complete evidence-based delivery flow from planning to close", () => {
+    render(<ProjectWorkspace initial={initial} section="overview" />);
+    const flow = screen.getByRole("navigation", { name: "Project delivery flow" });
+    expect(within(flow).getByRole("link", { name: /^Plan/ })).toHaveAttribute("href", "/workspace/projects/p/plan-teams");
+    expect(within(flow).getByRole("link", { name: /^Materials & orders/ })).toHaveAttribute("href", "/workspace/projects/p/material-planning");
+    expect(within(flow).getByRole("link", { name: /^Production/ })).toHaveAttribute("href", "/workspace/projects/p/production");
+    expect(within(flow).getByRole("link", { name: /^Onsite/ })).toHaveAttribute("href", "/workspace/projects/p/site-work");
+    expect(within(flow).getByText("0/1 site tasks complete")).toBeVisible();
+    expect(within(flow).getByRole("link", { name: /^Quality & close/ })).toHaveAttribute("href", "/workspace/projects/p/handover");
+  });
+
+  it("refreshes the backend decision queue after a successful project command", async () => {
+    const user = userEvent.setup();
+    const updated = { ...initial.data, revision: 2 };
+    const refreshed: ProjectState = {
+      ...initial,
+      data: updated,
+      pulse: {
+        ...initial.pulse,
+        health: "blocked",
+        nextActions: [{
+          id: "hold-action",
+          kind: "resolve_project_hold",
+          priority: "critical",
+          title: "Release project hold",
+          detail: "Manager approval is required",
+          recordId: initial.id,
+        }],
+      },
+    };
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) =>
+      new Response(JSON.stringify(options?.method === "POST" ? { data: updated } : refreshed), { status: 200 }),
+    );
+    try {
+      render(<ProjectWorkspace initial={initial} section="overview" />);
+      await user.click(screen.getByRole("button", { name: "Project settings" }));
+      expect(screen.getByRole("dialog", { name: "Project controls" })).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText(/Project \/ work-order reference/), { target: { value: "PLM-001" } });
+      await user.click(screen.getByRole("button", { name: "Save project controls" }));
+      await waitFor(() => expect(screen.getByRole("link", { name: /Release project hold/ })).toHaveAttribute("href", "/workspace/projects/p/overview"));
+      expect(request.mock.calls.map(([, options]) => options?.method ?? "GET")).toEqual(["POST", "GET"]);
+    } finally {
+      request.mockRestore();
+    }
+  });
+
   it("saves changed financial form values rather than restoring their defaults", async () => {
+    const user = userEvent.setup();
     const request = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -143,17 +192,12 @@ describe("project workspace", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Update financial plan" }),
       );
-      fireEvent.change(screen.getByLabelText("Approved cost budget"), {
-        target: { value: "85000" },
-      });
-      fireEvent.change(screen.getByLabelText("Forecast final cost"), {
-        target: { value: "90000" },
-      });
-      fireEvent.change(
-        screen.getByLabelText("Budget / forecast approval reference"),
-        { target: { value: "BUDGET-APPROVAL" } },
-      );
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await user.clear(screen.getByLabelText(/Approved cost budget/));
+      await user.type(screen.getByLabelText(/Approved cost budget/), "85000");
+      await user.clear(screen.getByLabelText(/Forecast final cost/));
+      await user.type(screen.getByLabelText(/Forecast final cost/), "90000");
+      await user.type(screen.getByLabelText(/Budget \/ forecast approval reference/), "BUDGET-APPROVAL");
+      await user.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() => expect(request).toHaveBeenCalled());
       const payload = JSON.parse(String(request.mock.calls[0][1]?.body));
       expect(payload.budget).toBe(85000);
@@ -163,16 +207,60 @@ describe("project workspace", () => {
       request.mockRestore();
     }
   });
+  it("shows released change-case lineage beside the immutable commercial baseline", () => {
+    const controlled = structuredClone(initial);
+    controlled.data.scope = {
+      quoteId: "base",
+      quoteNumber: 1,
+      currency: "AED",
+      value: 500,
+      lines: [],
+    };
+    controlled.data.changeCases = [{
+      requestId: "change",
+      number: 3,
+      kind: "replacement",
+      quoteIds: ["credit", "addition"],
+      sourceLineIds: ["line"],
+      releasedAt: "2026-09-18T00:00:00.000Z",
+    }];
+    render(<ProjectWorkspace initial={controlled} section="commercial" />);
+    expect(screen.getByText("Change C3 · replacement")).toBeVisible();
+    expect(screen.getByText("2 accepted documents")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Refresh accepted changes" })).toBeVisible();
+  });
   it("opens schedules with baseline dates and milestones by default", () => {
     render(<ProjectWorkspace initial={initial} section="plan-teams" />);
-    expect(screen.getByRole("button", { name: "Schedule & milestones" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("radio", { name: "Schedule & milestones" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("heading", { name: "Milestone timeline" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Project task timeline" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add milestone" })).toBeTruthy();
   });
+  it("opens the exact protected pre-execution file from a released design document", () => {
+    const released = structuredClone(initial);
+    released.data.documents = [{
+      id: "document",
+      title: "Wardrobe elevation · Rev 2",
+      kind: "drawing",
+      revision: "D2",
+      url: "",
+      note: "Approved design revision",
+      status: "approved",
+      replaces: "",
+      published: false,
+      sourceDesignVersionId: "design-version",
+      sourceDesignAssetId: "design-asset",
+      scopeLineIds: ["line"],
+    }];
+    render(<ProjectWorkspace initial={released} section="documents" />);
+    expect(screen.getByRole("link", { name: /Wardrobe elevation/ })).toHaveAttribute(
+      "href",
+      "/api/project-files/p/design-asset?workspaceId=w",
+    );
+  });
   it("shows a focused leaf-task board without duplicating work packages", () => {
     render(<ProjectWorkspace initial={initial} section="plan-teams" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tasks" }));
     expect(screen.getByRole("region", { name: "Project task board" })).toBeTruthy();
     expect(
       within(screen.getByRole("region", { name: "Project task board" })).getByRole("button", { name: /Install wardrobes · Bedroom Fit soft-close hardware/ }),
@@ -184,7 +272,7 @@ describe("project workspace", () => {
     const readOnly = structuredClone(initial);
     readOnly.canManage = false;
     render(<ProjectWorkspace initial={readOnly} section="plan-teams" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tasks" }));
     const card = within(screen.getByRole("region", { name: "Project task board" })).getByRole("button", { name: /Install wardrobes · Bedroom Fit soft-close hardware/ }).closest("article");
     expect(card).toHaveAttribute("draggable", "false");
     expect(screen.queryByRole("button", { name: "Start" })).toBeNull();
@@ -195,7 +283,7 @@ describe("project workspace", () => {
     planning.data.phase = "planning";
     planning.data.tasks[1].status = "planned";
     render(<ProjectWorkspace initial={planning} section="plan-teams" />);
-    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tasks" }));
     const board = screen.getByRole("region", { name: "Project task board" });
     const card = within(board).getByRole("button", { name: /Install wardrobes · Bedroom Fit soft-close hardware/ }).closest("article");
     expect(card).toHaveAttribute("draggable", "false");
@@ -224,7 +312,7 @@ describe("project workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));
     const dialog = screen.getByRole("dialog", { name: "Add task" });
     expect(within(dialog).getByLabelText("Accountable owner")).toBeTruthy();
-    expect(within(dialog).getByLabelText("Preceding tasks")).toBeTruthy();
+    expect(within(dialog).getByRole("group", { name: "Preceding tasks" })).toBeTruthy();
     expect(within(dialog).getByLabelText("Materials ready")).toBeTruthy();
   });
   it("makes daily progress a clear submit-for-review workflow", () => {

@@ -5,7 +5,7 @@ import c from "./catalog-picker.module.css";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { useCatalogOptions } from "./catalog-options-cache";
 import s from "./commercial.module.css";
-export type CommercialCatalogChoice = CatalogChoice & { description?: string };
+export type CommercialCatalogChoice = CatalogChoice;
 export function CommercialCatalogPicker({
   workspaceId,
   caseId,

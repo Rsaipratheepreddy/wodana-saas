@@ -30,11 +30,20 @@ class DeliveryJob(BaseModel):
     destination: Optional[dict[str, Any]] = None
     template_code: Optional[str] = Field(default=None, alias="templateCode")
     locale: Optional[str] = None
+    deep_link: Optional[str] = Field(default=None, alias="deepLink")
 
 
 class DeliveryResult(BaseModel):
-    result: Literal["delivered", "retry", "permanent_failure"]
+    result: Literal["accepted", "delivered", "retry", "permanent_failure"]
     provider: str
     provider_message_id: Optional[str] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    endpoint_reference: Optional[str] = None
+
+
+class PushReceiptJob(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    notification_id: UUID = Field(alias="notificationId")
+    attempt: int = Field(ge=1)
+    provider_message_id: str = Field(alias="providerMessageId", min_length=1, max_length=500)

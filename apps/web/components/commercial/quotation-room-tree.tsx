@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Quote, QuoteLine } from "@/lib/commercial/types";
+import { useConfirmationDialog } from "@/design-system";
 import {
   CommercialCatalogPicker,
   type CommercialCatalogChoice,
@@ -59,6 +60,7 @@ export function QuotationRoomTree({
     catalog: CommercialCatalogChoice | null;
   } | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const selectedRoom = quote.lines.find((l) => l.id === selected)?.room;
   const patch = (value: Partial<Quote>) => onChange({ ...quote, ...value });
   const records = rooms.map(
@@ -302,19 +304,15 @@ export function QuotationRoomTree({
                       <button
                         type="button"
                         onClick={() => {
-                          if (
-                            lines.length &&
-                            !window.confirm(
-                              `Remove ${room} and its ${lines.length} items from this draft?`,
-                            )
-                          )
+                          const removeRoom = () => {
+                            patch({ rooms: quote.rooms?.filter((r) => r.name !== room), lines: quote.lines.filter((l) => l.room !== room) });
+                            onSelect(""); setExpanded("");
+                          };
+                          if (lines.length) {
+                            requestConfirmation({ title: `Remove ${room}?`, body: `${lines.length} quoted ${lines.length === 1 ? "item" : "items"} in this room will also be removed from the draft.`, confirmLabel: "Remove room", onConfirm: removeRoom });
                             return;
-                          patch({
-                            rooms: quote.rooms?.filter((r) => r.name !== room),
-                            lines: quote.lines.filter((l) => l.room !== room),
-                          });
-                          onSelect("");
-                          setExpanded("");
+                          }
+                          removeRoom();
                         }}
                       >
                         <Trash2 size={13} />
@@ -440,6 +438,7 @@ export function QuotationRoomTree({
           This version is fixed. Create a revision to edit.
         </p>
       )}
+      {confirmationDialog}
     </div>
   );
 }

@@ -3,13 +3,13 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Plus,
-  Search,
   RefreshCw,
   MessageSquare,
   ArrowUpRight,
   ClipboardCheck,
+  FileText,
 } from "lucide-react";
-import { ControlledModalDialog } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, DataGrid, Form, IconButton, MultiSelectField, NumericInput, SearchInput, SegmentedControl, SelectField, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { CatalogChoiceField } from "@/components/pre-project/case-controls";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { ProjectSchedule, type Milestone } from "./project-schedule";
@@ -29,6 +29,7 @@ import {
   type DailyReport,
   type Order,
   type Material,
+  type ProjectWorkPackage,
 } from "@/lib/projects/execution";
 import s from "./project-workspace.module.css";
 import theme from "../crm/crm-workspace-colors.module.css";
@@ -38,10 +39,12 @@ import { ProjectProduction } from "./project-production";
 import { ProjectOrderDetail } from "./project-order-detail";
 import { ProjectBoq } from "./project-boq";
 import { ProjectOverview } from "./project-overview";
+import { ProjectInitiation } from "./project-initiation";
 import { ProjectTaskBoard } from "./project-task-board";
 import { ProjectControlStrip } from "./project-control-strip";
 import { DailyReportView } from "./daily-report-view";
 import { DailyProgress, DailyReportEditor } from "./project-daily-progress";
+import { ProjectConnectedPlan } from "./project-connected-plan";
 type Field = {
   key: string;
   label: string;
@@ -183,6 +186,15 @@ export function ProjectWorkspace({
     state.members.find((m) => m.id === id)?.name ?? "Unassigned";
   const resource = (id: string) =>
     state.resources.find((r) => r.id === id)?.name ?? "No team";
+  const resourceColumns: DataGridColumn<ProjectState["resources"][number]>[] = [
+    { accessorKey: "name", header: "Resource", meta: { renderCell: (item) => <><strong>{item.name}</strong><span className={s.detail}>{item.active ? "Active" : "Inactive"}</span></> } },
+    { accessorKey: "kind", header: "Type / people", meta: { renderCell: (item) => <>{label(item.kind)}<span className={s.detail}>{item.members.map(person).join(", ") || "Capacity slot"}</span></> } },
+    { id: "bookings", header: "Current bookings", meta: { renderCell: (item) => {
+      const bookings = state.bookings.filter((booking) => booking.resourceId === item.id);
+      return bookings.length ? bookings.map((booking) => <div className={s.timeline} key={booking.id}><strong>{booking.projectName}</strong><small>{booking.start} → {booking.end} · {booking.taskTitle}</small></div>) : "Available to book";
+    } } },
+    { id: "nextWork", header: "Next work", meta: { renderCell: (item) => d.tasks.filter((task) => task.resourceId === item.id && !state.bookings.some((booking) => booking.projectId === state.id && booking.taskId === task.id)).map((task) => <div key={task.id}><Button onPress={() => { setSelected(task.id); setDetailTab("details"); }} size="compact" variant="quiet">{task.title}</Button><span className={s.detail}>Assignment only · not booked</span></div>) } },
+  ];
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const query = new URLSearchParams(window.location.search),
@@ -291,20 +303,23 @@ export function ProjectWorkspace({
           localStorage.removeItem(draftKey);
         } catch {}
       }
-      if (
-        [
-          "booking",
-          "cancel_booking",
-          "resource",
-          "reschedule",
-          "notification_read",
-        ].includes(action)
-      )
-        setState(
-          await jsonRequest<ProjectState>(
-            projectPath(state.workspaceId, `${state.id}/execution`),
-          ),
+      // Commands return the updated record data, while the decision pulse,
+      // booking availability and permissions are calculated by the state read.
+      // Always refresh them so the next action reflects the command just saved.
+      try {
+        const refreshed = await jsonRequest<ProjectState>(
+          projectPath(state.workspaceId, `${state.id}/execution`),
         );
+        if (refreshed.id === state.id && refreshed.pulse && refreshed.data) {
+          setState(refreshed);
+        } else {
+          setSuccess("Saved. Refresh to update next actions.");
+        }
+      } catch {
+        // The command succeeded. Never ask the user to repeat it solely because
+        // the follow-up read failed; retain its returned revision for safe retry.
+        setSuccess("Saved. Refresh to update next actions.");
+      }
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -529,7 +544,7 @@ export function ProjectWorkspace({
           : "New purchase / subcontract order",
       action: enquiry ? "enquiry" : "order",
       wrapper: "order",
-      value: current ?? {
+      value: current ? { ...current, leadTimeDays: current.leadTimeDays ?? 1 } : {
         title: source?.title ?? "",
         vendor: "",
         vendorContact: "",
@@ -543,6 +558,7 @@ export function ProjectWorkspace({
           : 1,
         unit: source?.unit ?? "nos",
         unitCost: 0,
+        leadTimeDays: 1,
         promisedDate: source
           ? "needBy" in source
             ? source.needBy
@@ -579,6 +595,7 @@ export function ProjectWorkspace({
           true,
         ),
         f("promisedDate", "Delivery / completion date", "date", true),
+        f("leadTimeDays", "Supplier lead time (days)", "number", true),
       ],
     });
   }
@@ -806,18 +823,63 @@ export function ProjectWorkspace({
       ],
     });
   }
+  function editWorkPackage(workPackage: ProjectWorkPackage) {
+    open({
+      title: "Plan delivery package",
+      action: "work_package",
+      wrapper: "workPackage",
+      value: {
+        ...workPackage,
+        predecessorPackageIds: workPackage.predecessorPackageIds ?? [],
+        priority: workPackage.priority ?? "normal",
+        risk: workPackage.risk ?? "on_track",
+        nextAction: workPackage.nextAction ?? "",
+        nextActionOwnerId: workPackage.nextActionOwnerId ?? "",
+        nextActionDate: workPackage.nextActionDate ?? "",
+        recoveryPlan: workPackage.recoveryPlan ?? "",
+      },
+      fields: [
+        f("title", "Package name", "text", true),
+        f("area", "Room / area"),
+        f("deliveryRoute", "Delivery route", "select", true, opts(["mixed", "office", "factory", "vendor", "site"])),
+        f("status", "Status", "select", true, opts(["planning", "ready", "in_progress", "on_hold", "blocked", "completed", "cancelled"])),
+        f("ownerId", "Accountable owner", "select", false, memberOptions),
+        f("plannedStart", "Planned start", "date"),
+        f("plannedEnd", "Planned finish", "date"),
+        f(
+          "predecessorPackageIds",
+          "Depends on packages",
+          "multi",
+          false,
+          (d.workPackages ?? [])
+            .filter((candidate) => candidate.id !== workPackage.id && candidate.status !== "cancelled")
+            .map((candidate) => ({ value: candidate.id, label: candidate.title })),
+        ),
+        f("priority", "Priority", "select", true, opts(["normal", "high", "critical"])),
+        f("risk", "Risk", "select", true, opts(["on_track", "watch", "blocked"])),
+        f("nextAction", "Next action"),
+        f("nextActionOwnerId", "Next action owner", "select", false, memberOptions),
+        f("nextActionDate", "Next action due", "date"),
+        f("recoveryPlan", "Recovery plan", "textarea"),
+        f("blocker", "Hold / blocker reason", "textarea"),
+      ],
+    });
+  }
   const schedule = (
-    <ProjectSchedule
-      state={state}
-      run={run}
-      busy={busy}
-      onTask={(t) => {
-        setSelected(t.id);
-        setDetailTab("details");
-      }}
-      onMilestone={editMilestone}
-      onAccept={(m) => decision("Accept milestone", "accept_milestone", m.id)}
-    />
+    <>
+      <ProjectConnectedPlan state={state} onEdit={editWorkPackage} />
+      <ProjectSchedule
+        state={state}
+        run={run}
+        busy={busy}
+        onTask={(t) => {
+          setSelected(t.id);
+          setDetailTab("details");
+        }}
+        onMilestone={editMilestone}
+        onAccept={(m) => decision("Accept milestone", "accept_milestone", m.id)}
+      />
+    </>
   );
   function newReport(t?: Task, prior?: DailyReport) {
     setViewingReportId("");
@@ -985,24 +1047,22 @@ export function ProjectWorkspace({
       className={`${theme.theme} ${s.page}`}
       aria-label={`${projectTabs.find(([id]) => id === section)?.[1]} workspace`}
     >
-      <header className={s.header}>
-        <div className={s.heading}>
-          <h1>{projectTabs.find(([id]) => id === section)?.[1]}</h1>
-          <Badge state={d.phase} />
+      <header className={s.header} data-compact={section !== "overview" || undefined}>
+        <div className={s.projectIdentity}>
+          <div className={s.heading}><h1>{state.name}</h1><Badge state={d.phase} /></div>
+          <p>{state.customer}</p>
         </div>
         <div className={s.actions}>
           <span role="status" className={s.muted}>
             {busy ? "Saving…" : success}
           </span>
-          <button
-            className={s.icon}
-            title="Refresh project"
+          <IconButton
             aria-label="Refresh project"
-            disabled={busy}
-            onClick={() => void refresh()}
+            isDisabled={busy}
+            onPress={() => void refresh()}
           >
             <RefreshCw size={16} />
-          </button>
+          </IconButton>
           {primary?.allowed &&
             ![
               "dispatch",
@@ -1015,40 +1075,32 @@ export function ProjectWorkspace({
               "calendar",
               "legacy",
             ].includes(view) && (
-              <button
-                className={s.primary}
-                disabled={busy}
-                onClick={primary.fn}
-              >
+              <Button isDisabled={busy} onPress={primary.fn} size="compact" variant="primary">
                 <Plus size={16} />
                 {primary.label}
-              </button>
+              </Button>
             )}
         </div>
       </header>
-      <p className={s.subtitle}>
-        {state.name} · {state.customer}
-      </p>
-      <ProjectControlStrip state={state} busy={busy} run={run} />
+      <ProjectControlStrip state={state} busy={busy} run={run} compact={section !== "overview"} />
       {error && !editor && !report && (
         <div className={s.error} role="alert">
           {error}{" "}
-          <button className={s.link} onClick={() => void refresh()}>
+          <Button onPress={() => void refresh()} size="compact" variant="quiet">
             Refresh project
-          </button>
+          </Button>
         </div>
       )}
       {!state.commercialReady && (
         <div className={s.notice}>
-          Planning is open. Execution starts after the accepted quotation,
-          signed agreement and required payments are released.{" "}
+          <strong>Execution not released.</strong> A quotation, agreement or required payment approval is still pending.{" "}
           <Link href={`${pre}/execution-release`}>Review release →</Link>
         </div>
       )}
       {!["overview", "boq"].includes(section) && (
         <div className={s.toolbar}>
-          <div className={s.tabs} aria-label="Views">
-            {(taskView
+          <div className={s.tabs}>
+            <SegmentedControl label="Views" options={(taskView
               ? [
                   [
                     "all",
@@ -1106,26 +1158,10 @@ export function ProjectWorkspace({
                             ["accounting", "Payments & Books"],
                             ["retention", "Retention"],
                           ]
-                        : [["all", "All records"]]
-            ).map(([id, title]) => (
-              <button
-                key={id}
-                aria-pressed={view === id}
-                onClick={() => setView(id)}
-              >
-                {title}
-              </button>
-            ))}
+                : [["all", "All records"]]
+            ).map(([id, title]) => ({ id, label: title }))} value={view} onChange={setView} />
           </div>
-          <label className={s.search}>
-            <Search size={15} />
-            <input
-              aria-label="Search project records"
-              placeholder="Search this view…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
+          <div className={s.search}><SearchInput label="Search project records" placeholder="Search this view…" value={search} onChange={setSearch} /></div>
         </div>
       )}
       {view === "warehouse" ? (
@@ -1154,7 +1190,7 @@ export function ProjectWorkspace({
       ) : section === "boq" ? (
         <ProjectBoq state={state} />
       ) : section === "overview" ? (
-        <ProjectOverview
+        <><ProjectInitiation state={state} busy={busy} run={run} /><ProjectOverview
           state={state}
           today={today()}
           open={(id) => {
@@ -1166,7 +1202,7 @@ export function ProjectWorkspace({
             }
           }}
           conversation={conversation}
-        />
+        /></>
       ) : taskView ? (
         section === "production" &&
         ["all", "mine", "attention", "completed"].includes(view) ? (
@@ -1224,96 +1260,10 @@ export function ProjectWorkspace({
                 Shared capacity across projects. Team members and approved leave
                 are checked when confirming a booking.
               </p>
-              {state.canManage && (
-                <button className={s.button} onClick={editResource}>
-                  <Plus size={14} />
-                  Add resource
-                </button>
-              )}
+              {state.canManage && <Button onPress={editResource} size="compact"><Plus size={14} />Add resource</Button>}
             </div>
             <div className={s.scroll}>
-              <table data-record-table="" className={s.table}>
-                <thead>
-                  <tr>
-                    <th>Resource</th>
-                    <th>Type / people</th>
-                    <th>Current bookings</th>
-                    <th>Next work</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.resources
-                    .filter((r) => filtered(r.name))
-                    .map((r) => {
-                      const bookings = state.bookings.filter(
-                        (b) => b.resourceId === r.id,
-                      );
-                      return (
-                        <tr key={r.id}>
-                          <td>
-                            <strong>{r.name}</strong>
-                            <span className={s.detail}>
-                              {r.active ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td>
-                            {label(r.kind)}
-                            <span className={s.detail}>
-                              {r.members.map(person).join(", ") ||
-                                "Capacity slot"}
-                            </span>
-                          </td>
-                          <td>
-                            {bookings.length
-                              ? bookings.map((b) => (
-                                  <div key={b.id} className={s.timeline}>
-                                    <strong>{b.projectName}</strong>
-                                    <small>
-                                      {b.start} → {b.end} · {b.taskTitle}
-                                    </small>
-                                  </div>
-                                ))
-                              : "Available to book"}
-                          </td>
-                          <td>
-                            {d.tasks
-                              .filter(
-                                (t) =>
-                                  t.resourceId === r.id &&
-                                  !state.bookings.some(
-                                    (b) =>
-                                      b.projectId === state.id &&
-                                      b.taskId === t.id,
-                                  ),
-                              )
-                              .map((t) => (
-                                <div key={t.id}>
-                                  <button
-                                    className={s.link}
-                                    onClick={() => {
-                                      setSelected(t.id);
-                                      setDetailTab("details");
-                                    }}
-                                  >
-                                    {t.title}
-                                  </button>
-                                  <span className={s.detail}>
-                                    Assignment only · not booked
-                                  </span>
-                                </div>
-                              ))}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-              {!state.resources.length && (
-                <Empty title="Give each crew a clear place in the schedule">
-                  Add actual team members or a factory slot, then assign and
-                  confirm a booking from a task.
-                </Empty>
-              )}
+              <DataGrid appearance="flush" ariaLabel="Project resources" columns={resourceColumns} data={state.resources.filter((item) => filtered(item.name))} emptyTitle="No resources yet" emptyDescription="Add a team or factory slot, then confirm bookings from the work plan." getRowId={(item) => item.id} rowNumbers={false} selectable={false} showToolbar={false} />
             </div>
           </>
         ) : (
@@ -1352,12 +1302,12 @@ export function ProjectWorkspace({
             <table data-record-table="" className={s.table}>
               <thead>
                 <tr>
-                  <th>Material / specification</th>
-                  <th>Supply</th>
-                  <th>Required</th>
-                  <th>Accepted stock</th>
+                  <th>Material</th>
+                  <th>Used for</th>
+                  <th>Demand</th>
+                  <th>Stock position</th>
                   <th>Needed by</th>
-                  <th>Actions</th>
+                  <th>Next step</th>
                 </tr>
               </thead>
               <tbody>
@@ -1421,7 +1371,7 @@ export function ProjectWorkspace({
                         <td>{m.needBy}</td>
                         <td>
                           {state.canBuy && m.supply === "company" && (quantityToSource(m,d.orders)>0 ? (
-                            <button className={s.button} onClick={()=>editOrder(undefined,true,{...m,required:quantityToSource(m,d.orders)})}>Source {quantityToSource(m,d.orders)} {m.unit}</button>
+                            <button className={s.button} onClick={()=>editOrder(undefined,true,{...m,required:quantityToSource(m,d.orders)})}>Order {quantityToSource(m,d.orders)} {m.unit}</button>
                           ): <span className={s.detail}>Covered by accepted stock and existing orders</span>)}
                           {state.canManage && (
                             <div className={s.actions}>
@@ -1429,14 +1379,14 @@ export function ProjectWorkspace({
                                 className={s.button}
                                 onClick={() =>
                                   decision(
-                                    "Reserve accepted stock",
+                                    "Allocate stock to work",
                                     "reserve_material",
                                     m.id,
                                     { taskId: m.taskId, quantity: 0 },
                                     [
                                       f(
                                         "taskId",
-                                        "Allocate to task",
+                                        "Work that will use it",
                                         "select",
                                         true,
                                         taskOptions,
@@ -1444,15 +1394,15 @@ export function ProjectWorkspace({
                                       {
                                         ...f(
                                           "quantity",
-                                          "Quantity to reserve",
+                                        "Quantity to allocate",
                                           "number",
                                           true,
                                         ),
-                                        hint: "Enter 0 to release the selected task’s reservation.",
+                                        hint: "Enter 0 to remove the allocation from the selected work.",
                                       },
                                       f(
                                         "note",
-                                        "Stock allocation reference",
+                                        "Allocation note",
                                         "textarea",
                                         true,
                                       ),
@@ -1460,13 +1410,13 @@ export function ProjectWorkspace({
                                   )
                                 }
                               >
-                                Reserve stock
+                                Allocate stock
                               </button>
                               <button
                                 className={s.button}
                                 onClick={() =>
                                   decision(
-                                    "Record material movement",
+                                    "Update stock quantity",
                                     "material_move",
                                     m.id,
                                     {
@@ -1477,7 +1427,7 @@ export function ProjectWorkspace({
                                     [
                                       f(
                                         "kind",
-                                        "Movement",
+                                        "What happened",
                                         "select",
                                         true,
                                         opts(
@@ -1501,7 +1451,7 @@ export function ProjectWorkspace({
                                       ),
                                       f(
                                         "note",
-                                        "Stock / delivery evidence",
+                                        "Delivery or stock evidence",
                                         "textarea",
                                         true,
                                       ),
@@ -1509,7 +1459,7 @@ export function ProjectWorkspace({
                                   )
                                 }
                               >
-                                Record movement
+                                Update stock
                               </button>
                             </div>
                           )}
@@ -1527,8 +1477,7 @@ export function ProjectWorkspace({
             )}
           </div>
           <p className={s.muted}>
-            This view tracks accepted project stock. Manufacturing quantities
-            are defined separately from the BOQ selling quantity.
+            Allocate received stock to the work that will use it. Ordering demand is calculated from accepted receipts, current stock and existing orders.
           </p>
         </>
       ) : section === "procurement" ? (
@@ -1782,47 +1731,28 @@ export function ProjectWorkspace({
           )}
         </>
       ) : section === "documents" ? (
-        <div className={s.scroll}>
-          <table data-record-table="" className={s.table}>
-            <thead>
-              <tr>
-                <th>Document</th>
-                <th>Revision</th>
-                <th>Status</th>
-                <th>Client visibility</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.documents
-                .filter((x) => filtered(`${x.title} ${x.kind}`))
-                .map((x) => (
-                  <tr key={x.id}>
-                    <td>
-                      {x.url ? (
-                        <a
-                          className={s.link}
-                          href={x.url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {x.title} ↗
-                        </a>
-                      ) : (
-                        <strong>{x.title}</strong>
-                      )}
-                      <span className={s.detail}>
-                        {label(x.kind)}
-                        {x.note ? ` · ${x.note}` : ""}
-                      </span>
-                    </td>
-                    <td>{x.revision}</td>
-                    <td>
-                      <Badge state={x.status} />
-                    </td>
-                    <td>{x.published ? "Published" : "Internal"}</td>
-                    <td>
-                      <div className={s.actions}>
+        <section className={s.documentWorkspace} aria-label="Scope and design records">
+          <div className={s.scopeConnection}>
+            <div><strong>Scope, design and delivery stay connected</strong><span>{d.scope?.lines.length ?? 0} approved BOQ items · {d.documents.filter((document) => document.status === "approved").length} approved files</span></div>
+            <div><Link href={`/workspace/projects/${state.id}/boq`}>Open BOQ <ArrowUpRight size={13}/></Link><Link href={`/workspace/projects/${state.id}/material-planning`}>Plan materials <ArrowUpRight size={13}/></Link></div>
+          </div>
+          <div className={s.documentGrid}>
+            {d.documents
+              .filter((x) => filtered(`${x.title} ${x.kind}`))
+              .map((x) => {
+                const href = x.url || (x.sourceDesignAssetId ? `/api/project-files/${state.id}/${x.sourceDesignAssetId}?workspaceId=${state.workspaceId}` : "");
+                const canPreview = Boolean(x.sourceDesignAssetId) || /\.(avif|gif|jpe?g|png|webp)(?:\?.*)?$/i.test(x.url);
+                const linkedItems = x.scopeLineIds?.length ?? 0;
+                return <article className={s.documentCard} key={x.id}>
+                  {href ? <a className={s.documentPreview} href={href} target="_blank" rel="noreferrer" aria-label="Open preview" tabIndex={-1}>
+                    <FileText size={28} aria-hidden="true"/>{canPreview ? <img alt="" loading="lazy" src={href}/> : null}
+                  </a> : <div className={s.documentPreview}><FileText size={28} aria-hidden="true"/></div>}
+                  <div className={s.documentBody}>
+                    <div className={s.documentTitleRow}><div>{href ? <a className={s.link} href={href} target="_blank" rel="noreferrer">{x.title}</a> : <strong>{x.title}</strong>}<span>{label(x.kind)} · Revision {x.revision}</span></div><Badge state={x.status}/></div>
+                    {x.note ? <p title={x.note}>{x.note}</p> : null}
+                    <div className={s.documentMeta}><span>{x.published ? "Visible to client" : "Internal"}</span><span data-linked={linkedItems > 0 || undefined}>{linkedItems ? `Linked to ${linkedItems} BOQ ${linkedItems === 1 ? "item" : "items"}` : "Not linked to BOQ"}</span></div>
+                  </div>
+                  <footer className={s.documentActions}>
                         {state.canManage && x.status === "draft" && (
                           <button
                             className={s.button}
@@ -1879,24 +1809,22 @@ export function ProjectWorkspace({
                         )}
                         <button
                           className={s.icon}
-                          aria-label="Document comments"
+                          aria-label={`Comments on ${x.title}`}
                           onClick={() => conversation(x.id)}
                         >
                           <MessageSquare size={15} />
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+                  </footer>
+                </article>;
+              })}
+          </div>
           {!d.documents.length && (
             <Empty title="Keep the approved information close to the work">
               Add drawings, specifications, permits and closeout documents.
               Revisions preserve the information used for released work.
             </Empty>
           )}
-        </div>
+        </section>
       ) : section === "snagging" ? (
         <div className={s.scroll}>
           <table data-record-table="" className={s.table}>
@@ -2245,14 +2173,22 @@ export function ProjectWorkspace({
             <div className={s.section}>
               <h2>Connected commercial records</h2>
               {state.canManage && (
-                <button
-                  className={s.button}
-                  disabled={busy}
-                  onClick={() => void run("sync_variations")}
+                <Button
+                  size="compact"
+                  isDisabled={busy}
+                  onPress={() => void run("sync_variations")}
                 >
-                  Bring in accepted variations
-                </button>
+                  Refresh accepted changes
+                </Button>
               )}
+              {d.changeCases?.map((change) => (
+                <div className={s.row} key={change.requestId}>
+                  <span>
+                    Change C{change.number} · {change.kind.replaceAll("_", " ")}
+                  </span>
+                  <strong>{change.quoteIds.length} accepted document{change.quoteIds.length === 1 ? "" : "s"}</strong>
+                </div>
+              ))}
               {d.variations?.map((v) => (
                 <div className={s.row} key={v.quoteId}>
                   <span>
@@ -2968,14 +2904,7 @@ export function ProjectWorkspace({
             intended vendor. It expires in seven days and replaces any older
             link.
           </p>
-          <label>
-            Order form link
-            <input
-              readOnly
-              value={vendorLink?.url ?? ""}
-              onFocus={(e) => e.target.select()}
-            />
-          </label>
+          <TextInput isReadOnly label="Order form link" value={vendorLink?.url ?? ""} />
           <div className={s.actions}>
             <a
               className={s.primary}
@@ -2985,9 +2914,8 @@ export function ProjectWorkspace({
             >
               Preview vendor form ↗
             </a>
-            <button
-              className={s.button}
-              onClick={async () => {
+            <Button
+              onPress={async () => {
                 if (vendorLink) {
                   await navigator.clipboard.writeText(vendorLink.url);
                   setSuccess("Vendor link copied");
@@ -2995,11 +2923,10 @@ export function ProjectWorkspace({
               }}
             >
               Copy link
-            </button>
-            <button
-              className={s.button}
-              disabled={busy}
-              onClick={async () => {
+            </Button>
+            <Button
+              isDisabled={busy}
+              onPress={async () => {
                 if (vendorLink) {
                   await jsonRequest(
                     projectPath(state.workspaceId, `${state.id}/vendor-access`),
@@ -3011,7 +2938,7 @@ export function ProjectWorkspace({
               }}
             >
               Revoke link
-            </button>
+            </Button>
           </div>
         </div>
       </ControlledModalDialog>
@@ -3021,7 +2948,7 @@ export function ProjectWorkspace({
         onOpenChange={(v) => !v && setEditor(null)}
         title={editor?.title ?? "Edit record"}
       >
-        <form
+        <Form
           className={s.form}
           onSubmit={async (e) => {
             e.preventDefault();
@@ -3083,106 +3010,26 @@ export function ProjectWorkspace({
             )}
             <div className={s.grid}>
               {editor?.fields.map((field) => (
-                <label
-                  key={field.key}
-                  className={field.type === "check" ? s.check : undefined}
-                  style={
-                    ["textarea", "multi"].includes(field.type ?? "")
-                      ? { gridColumn: "1 / -1" }
-                      : undefined
-                  }
-                >
-                  {field.type === "check" ? (
-                    <>
-                      <input
-                        type="checkbox"
-                        checked={form[field.key] === true}
-                        onChange={(e) =>
-                          setForm({ ...form, [field.key]: e.target.checked })
-                        }
-                      />
-                      {field.label}
-                    </>
-                  ) : (
-                    <>
-                      {field.label}
-                      {field.type === "textarea" ? (
-                        <textarea
-                          required={field.required}
-                          value={String(form[field.key] ?? "")}
-                          onChange={(e) =>
-                            setForm({ ...form, [field.key]: e.target.value })
-                          }
-                        />
-                      ) : field.type === "select" || field.type === "multi" ? (
-                        <select
-                          required={field.required}
-                          multiple={field.type === "multi"}
-                          value={
-                            field.type === "multi"
-                              ? ((form[field.key] as string[]) ?? [])
-                              : String(form[field.key] ?? "")
-                          }
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              [field.key]:
-                                field.type === "multi"
-                                  ? Array.from(
-                                      e.target.selectedOptions,
-                                      (x) => x.value,
-                                    )
-                                  : e.target.value,
-                            })
-                          }
-                        >
-                          {field.type === "select" && (
-                            <option value="">Select…</option>
-                          )}
-                          {field.options?.map((o) => (
-                            <option value={o.value} key={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          required={field.required}
-                          type={field.type ?? "text"}
-                          min={field.type === "number" ? 0 : undefined}
-                          step={field.type === "number" ? "any" : undefined}
-                          value={String(form[field.key] ?? "")}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              [field.key]:
-                                field.type === "number"
-                                  ? Number(e.target.value)
-                                  : e.target.value,
-                            })
-                          }
-                        />
-                      )}
-                    </>
-                  )}
-                  {field.hint && <small>{field.hint}</small>}
-                </label>
+                <div key={field.key} className={["textarea", "multi"].includes(field.type ?? "") ? s.fullWidth : undefined}>
+                  {field.type === "check" ? <Checkbox isSelected={form[field.key] === true} onChange={(value) => setForm((current) => ({ ...current, [field.key]: value }))}>{field.label}</Checkbox>
+                    : field.type === "textarea" ? <TextAreaField description={field.hint} isRequired={field.required} label={field.label} onChange={(value) => setForm((current) => ({ ...current, [field.key]: value }))} value={String(form[field.key] ?? "")} />
+                    : field.type === "multi" ? <MultiSelectField items={(field.options ?? []).map((option) => ({ id: option.value, label: option.label }))} label={field.label} onSelectionChange={(keys) => setForm((current) => ({ ...current, [field.key]: [...keys].map(String) }))} selectedKeys={new Set((form[field.key] as string[] | undefined) ?? [])} />
+                    : field.type === "select" ? <SelectField description={field.hint} isRequired={field.required} items={(field.options ?? []).map((option) => ({ id: option.value, label: option.label }))} label={field.label} onSelectionChange={(key) => setForm((current) => ({ ...current, [field.key]: String(key ?? "") }))} selectedKey={String(form[field.key] ?? "") || null} />
+                    : field.type === "number" ? <NumericInput description={field.hint} isRequired={field.required} label={field.label} minValue={0} onChange={(value) => setForm((current) => ({ ...current, [field.key]: value }))} value={typeof form[field.key] === "number" ? form[field.key] as number : NaN} />
+                    : <TextInput description={field.hint} inputType={field.type === "date" ? "date" : "text"} isRequired={field.required} label={field.label} onChange={(value) => setForm((current) => ({ ...current, [field.key]: value }))} value={String(form[field.key] ?? "")} />}
+                </div>
               ))}
             </div>
           </fieldset>
           <div className={s.actions}>
-            <button className={s.primary} disabled={busy}>
+            <Button isDisabled={busy} type="submit" variant="primary">
               Save
-            </button>
-            <button
-              type="button"
-              className={s.button}
-              onClick={() => setEditor(null)}
-            >
+            </Button>
+            <Button onPress={() => setEditor(null)}>
               Cancel
-            </button>
+            </Button>
           </div>
-        </form>
+        </Form>
       </ControlledModalDialog>
       <ControlledModalDialog
         size="lg"

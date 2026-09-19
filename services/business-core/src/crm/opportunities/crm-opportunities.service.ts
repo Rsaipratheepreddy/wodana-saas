@@ -8,6 +8,7 @@ import {
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
+import { ensureJobForSource } from "../../jobs/job-identity.store";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { canonicalHash, decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
@@ -551,6 +552,7 @@ export class CrmOpportunitiesService {
       ],
     );
     const response = result.rows[0] as Row;
+    await ensureJobForSource(client, workspaceId, { type: "opportunity", id: String(response.id) }, actorUserId);
     await this.assertEntryRequirements(client, workspaceId, response, stage);
     await client.query(`INSERT INTO crm_activities (workspace_id, party_id, opportunity_id, type, title, owner_membership_id, due_at, is_next_action, created_by) VALUES ($1,$2,$3,'task','Follow up on opportunity',$4,$5,true,$6)`, [workspaceId, input.partyId, response.id, input.ownerMembershipId ?? null, nextActionAt, actorUserId]);
     await client.query(`INSERT INTO crm_stage_history (workspace_id, opportunity_id, to_stage_id, to_status, reason, changed_by) VALUES ($1,$2,$3,'open','created',$4)`, [workspaceId, response.id, stage.id, actorUserId]);

@@ -23,8 +23,29 @@ describe('Pre-execution shared tables',()=>{
   await user.click(within(table).getByRole('button',{name:'Percentage'}));
   await user.click(within(table).getByRole('button',{name:'Move Completion up'}));
   expect(within(table).getByRole('textbox',{name:'Milestone 1 title'})).toHaveValue('Completion');
-  expect(within(table).getByRole('textbox',{name:'Milestone 2 title'})).toHaveValue('Booking payment');
-  expect(screen.getByText(/Total: 100.00%/)).toBeVisible();
+ expect(within(table).getByRole('textbox',{name:'Milestone 2 title'})).toHaveValue('Booking payment');
+  const productionGate=within(table).getByRole('checkbox',{name:'Milestone 1 required before production'});
+  expect(productionGate).not.toBeChecked();
+  await user.click(productionGate);
+  expect(productionGate).toBeChecked();
+ expect(screen.getByText(/Total: 100.00%/)).toBeVisible();
+ });
+ it('loads payment template history and exposes safe restore controls',async()=>{
+  const template={id:'00000000-0000-4000-8000-000000000010',name:'Residential 40 / 60',version:2,milestones:initial.paymentTerms};
+  const revisions=[
+   {id:'00000000-0000-4000-8000-000000000012',resourceType:'payment_template',resourceId:template.id,revisionNumber:2,sourceVersion:2,action:'saved',snapshot:{},sourceRevisionId:null,createdBy:null,createdAt:'2026-09-18T08:00:00.000Z',changes:[{path:'milestones.0.percent',before:50,after:40}]},
+   {id:'00000000-0000-4000-8000-000000000011',resourceType:'payment_template',resourceId:template.id,revisionNumber:1,sourceVersion:1,action:'created',snapshot:{},sourceRevisionId:null,createdBy:null,createdAt:'2026-09-17T08:00:00.000Z',changes:[]},
+  ];
+  const fetcher=vi.fn().mockImplementation((url:string)=>Promise.resolve(new Response(JSON.stringify(url.includes('/history')?revisions:{items:[template]}),{status:200,headers:{'content-type':'application/json'}})));
+  vi.stubGlobal('fetch',fetcher);
+  const user=userEvent.setup();render(<Harness payment/>);
+  await user.click(screen.getByRole('button',{name:'Choose schedule'}));
+  const library=await screen.findByRole('dialog',{name:'Payment schedules'});
+  await user.click(within(library).getByRole('button',{name:'History'}));
+  const history=await screen.findByRole('dialog',{name:'Residential 40 / 60 history'});
+  expect(await within(history).findByText('Revision 2')).toBeVisible();
+  expect(within(history).getByRole('button',{name:'Restore'})).toBeVisible();
+  expect(fetcher).toHaveBeenCalledWith(expect.stringContaining(`/payment-templates/${template.id}/history`),expect.anything());
  });
  it('keeps line quantity editing and actions working in the shared quotation grid',async()=>{
   const user=userEvent.setup();render(<Harness/>);

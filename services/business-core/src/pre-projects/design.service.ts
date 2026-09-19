@@ -13,9 +13,22 @@ export function validateDesignTransition(status:string,action:string,note:string
  if(action==='changes_requested'&&!note.trim()) throw new BadRequestException('Describe the changes needed.');
  if((action==='approved'||(status==='client_review'&&action==='changes_requested'))&&(!decisionBy.trim()||!note.trim())) throw new BadRequestException('Record the client name and how their decision was received.');
 }
+export function nextIncludedClientRounds(requested:number|null|undefined,previous:number|null|undefined) {
+ return requested===undefined ? previous??null : requested;
+}
+export function clientReviewExpiry(requested:string|undefined,now=new Date()) {
+ const expiresAt=requested?new Date(requested):new Date(now.getTime()+7*24*60*60*1000);
+ if(!Number.isFinite(expiresAt.getTime())||expiresAt.getTime()<=now.getTime())throw new BadRequestException('Choose a client decision deadline in the future.');
+ if(expiresAt.getTime()>now.getTime()+90*24*60*60*1000)throw new BadRequestException('Choose a client decision deadline within 90 days.');
+ return expiresAt.toISOString();
+}
+export function clientRoundOverrideRequired(used:number,included:number|null|undefined) {
+ return included!==null&&included!==undefined&&used>=included;
+}
 const designSelect=`SELECT d.id,d.title,d.folder_id AS "folderId",d.document_type AS "documentType",d.description,d.version,d.room_id AS "roomId",r.name AS "roomName",d.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",e.archived_at IS NOT NULL AS "scopeArchived",d.archived_at AS "archivedAt",d.updated_at AS "updatedAt",
- COALESCE((SELECT jsonb_agg(jsonb_build_object('id',v.id,'number',v.number,'note',v.note,'status',v.status,'createdAt',v.created_at,'createdByName',u.display_name,'createdBy',v.created_by,'reviewerId',v.reviewer_id,'asset',jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL)) ORDER BY v.number DESC)
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('id',v.id,'number',v.number,'note',v.note,'status',CASE WHEN v.status='client_review' AND v.client_review_expires_at<=now() THEN 'expired' ELSE v.status END,'includedClientRounds',v.included_client_rounds,'clientReviewExpiresAt',v.client_review_expires_at,'createdAt',v.created_at,'createdByName',u.display_name,'createdBy',v.created_by,'reviewerId',v.reviewer_id,'asset',jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL)) ORDER BY v.number DESC)
  FROM pre_project_design_versions v JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.case_id=v.case_id AND a.id=v.asset_id JOIN users u ON u.id=v.created_by WHERE v.workspace_id=d.workspace_id AND v.design_id=d.id),'[]'::jsonb) AS versions,
+ COALESCE((SELECT count(DISTINCT h.version_id)::int FROM pre_project_design_activity h WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id AND h.action='client_review'),0) AS "clientRoundsUsed",
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',h.id,'versionId',h.version_id,'action',h.action,'note',h.note,'decisionBy',h.decision_by,'reviewerId',h.reviewer_id,'decisionSource',h.decision_source,'decisionAt',h.decision_at,'createdAt',h.created_at,'createdByName',COALESCE(u.display_name,'Client portal')) ORDER BY h.created_at,h.id) FROM pre_project_design_activity h LEFT JOIN users u ON u.id=h.created_by WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id),'[]'::jsonb) AS activity,
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'versionId',t.version_id,'title',t.title,'blocking',t.blocking,'status',t.status,'version',t.version,'createdBy',t.created_by,'createdByName',tu.display_name,'createdAt',t.created_at,'resolvedAt',t.resolved_at,'resolvedByName',ru.display_name,'messages',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'body',m.body,'createdBy',m.created_by,'createdByName',mu.display_name,'createdAt',m.created_at) ORDER BY m.created_at,m.id) FROM pre_project_design_messages m JOIN users mu ON mu.id=m.created_by WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.id),'[]'::jsonb)) ORDER BY t.created_at,t.id) FROM pre_project_design_threads t JOIN users tu ON tu.id=t.created_by LEFT JOIN users ru ON ru.id=t.resolved_by WHERE t.workspace_id=d.workspace_id AND t.case_id=d.case_id AND t.design_id=d.id),'[]'::jsonb) AS threads
  FROM pre_project_designs d LEFT JOIN pre_project_rooms r ON r.workspace_id=d.workspace_id AND r.case_id=d.case_id AND r.id=d.room_id LEFT JOIN pre_project_brief_entries e ON e.workspace_id=d.workspace_id AND e.case_id=d.case_id AND e.id=d.scope_entry_id`;
@@ -31,7 +44,7 @@ export class DesignService {
     LEFT JOIN pre_project_rooms r ON r.workspace_id=f.workspace_id AND r.case_id=f.case_id AND r.id=f.room_id
     LEFT JOIN pre_project_brief_entries e ON e.workspace_id=f.workspace_id AND e.case_id=f.case_id AND e.id=f.scope_entry_id
     WHERE f.workspace_id=$1 AND f.case_id=$2 ORDER BY lower(f.name),f.id`,[workspaceId,caseId]);
-   const reviewers=await client.query(`SELECT DISTINCT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id JOIN member_roles mr ON mr.membership_id=m.id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' AND p.code='pre_projects.review_designs' ORDER BY name`,[workspaceId]);
+   const reviewers=await client.query(`SELECT DISTINCT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id JOIN effective_member_roles mr ON mr.membership_id=m.id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' AND p.code='pre_projects.review_designs' ORDER BY name`,[workspaceId]);
    const portal=await this.portalReadiness(client,workspaceId,caseId);
    return {folders:folders.rows,reviewers:reviewers.rows,portal,actorId:user.userId,canReview:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),canRecordClient:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions'),items:(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 ORDER BY d.updated_at DESC,d.id`,[workspaceId,caseId])).rows};
   });
@@ -43,7 +56,9 @@ export class DesignService {
    if(input.version>0&&!current) throw new NotFoundException('Design not found.');
    this.brief.version(current?.version??0,input.version);
    if(input.folderId) await this.validateFolderContext(client,workspaceId,caseId,input.folderId,input.roomId??null,input.scopeEntryId??null);
-   if(current&&(current.room_id!==(input.roomId??null)||current.scope_entry_id!==(input.scopeEntryId??null)||current.document_type!==input.documentType)){const latest=await client.query(`SELECT status FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2 ORDER BY number DESC LIMIT 1`,[workspaceId,input.id]);if(latest.rows[0]&&latest.rows[0].status!=='draft')throw new ConflictException('This file has entered review. Upload a new draft revision before changing its room, scope or document type.');}
+   const latest=current?await client.query(`SELECT status,included_client_rounds FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2 ORDER BY number DESC LIMIT 1`,[workspaceId,input.id]):{rows:[]};
+   const policyChanged=input.includedClientRounds!==undefined&&(latest.rows[0]?.included_client_rounds??null)!==input.includedClientRounds;
+   if(current&&(current.room_id!==(input.roomId??null)||current.scope_entry_id!==(input.scopeEntryId??null)||current.document_type!==input.documentType||policyChanged)&&latest.rows[0]&&latest.rows[0].status!=='draft')throw new ConflictException('This file has entered review. Upload a new draft revision before changing its room, scope, document type or included-round policy.');
    if(input.roomId) await this.belongs(client,'pre_project_rooms',workspaceId,caseId,input.roomId,'room');
    if(input.scopeEntryId) {
     const entry=await client.query(`SELECT room_id,archived_at,kind FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.scopeEntryId]);
@@ -53,7 +68,7 @@ export class DesignService {
    if(current) await client.query(`UPDATE pre_project_designs SET title=$4,document_type=$5,description=$6,room_id=$7,scope_entry_id=$8,folder_id=$10,archived_at=CASE WHEN $9 THEN COALESCE(archived_at,now()) ELSE NULL END,version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,input.title,input.documentType,input.description,input.roomId??null,input.scopeEntryId??null,input.archived??Boolean(current.archived_at),input.folderId===undefined?current.folder_id:input.folderId]);
    else await client.query(`INSERT INTO pre_project_designs(workspace_id,case_id,id,title,document_type,description,room_id,scope_entry_id,created_by,folder_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[workspaceId,caseId,input.id,input.title,input.documentType,input.description,input.roomId??null,input.scopeEntryId??null,userId,input.folderId??null]);
    // Current draft notes may be edited; earlier revisions and review evidence remain untouched.
-   if(current)await client.query(`UPDATE pre_project_design_versions SET note=$3 WHERE workspace_id=$1 AND design_id=$2 AND status='draft' AND number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2)`,[workspaceId,input.id,input.description]);
+   if(current)await client.query(`UPDATE pre_project_design_versions SET note=$3,included_client_rounds=CASE WHEN $4::boolean THEN $5::smallint ELSE included_client_rounds END WHERE workspace_id=$1 AND design_id=$2 AND status='draft' AND number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2)`,[workspaceId,input.id,input.description,input.includedClientRounds!==undefined,input.includedClientRounds??null]);
    await this.event(client,workspaceId,caseId,userId,input.id,'design_saved',input);
    return this.read(client,workspaceId,caseId,input.id);
   });
@@ -62,10 +77,10 @@ export class DesignService {
   return this.brief.edit(actor,workspaceId,caseId,async(client,userId)=>{
    const design=await this.read(client,workspaceId,caseId,id);
    const retry=design.versions.find((v:{id:string})=>v.id===input.id);
-   if(retry) { if(retry.asset.id!==input.assetId||retry.note!==input.note) throw new ConflictException('This version ID is already in use.'); return design; }
+   if(retry) { if(retry.asset.id!==input.assetId||retry.note!==input.note||(input.includedClientRounds!==undefined&&(retry.includedClientRounds??null)!==input.includedClientRounds)) throw new ConflictException('This version ID is already in use.'); return design; }
    this.mutable(design,input.version);
    await this.belongs(client,'pre_project_brief_assets',workspaceId,caseId,input.assetId,'file');
-   await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[input.id,workspaceId,caseId,id,(design.versions[0]?.number??0)+1,input.assetId,input.note,userId]);
+   await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by,included_client_rounds) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[input.id,workspaceId,caseId,id,(design.versions[0]?.number??0)+1,input.assetId,input.note,userId,nextIncludedClientRounds(input.includedClientRounds,design.versions[0]?.includedClientRounds)]);
    await client.query(`UPDATE pre_project_designs SET description=$3 WHERE workspace_id=$1 AND id=$2`,[workspaceId,id,input.note]);
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_version_added',input);
@@ -76,13 +91,14 @@ export class DesignService {
   return this.brief.edit(actor,workspaceId,caseId,async(client,userId)=>{
    const design=await this.read(client,workspaceId,caseId,id);
    const retry=design.activity.find((a:{id:string})=>a.id===input.id);
-   if(retry) { if(retry.versionId!==input.versionId||retry.action!==input.action||retry.note!==input.note||retry.decisionBy!==input.decisionBy||(retry.reviewerId??null)!==(input.reviewerId??null)||(retry.decisionSource??null)!==(input.decisionSource??null)||(retry.decisionAt?new Date(retry.decisionAt).toISOString():null)!==(input.decisionAt?new Date(input.decisionAt).toISOString():null)) throw new ConflictException('This activity ID is already in use.'); return design; }
+   if(retry) { const replayVersion=design.versions.find((version:{id:string})=>version.id===input.versionId);if(retry.versionId!==input.versionId||retry.action!==input.action||retry.note!==input.note||retry.decisionBy!==input.decisionBy||(retry.reviewerId??null)!==(input.reviewerId??null)||(retry.decisionSource??null)!==(input.decisionSource??null)||(retry.decisionAt?new Date(retry.decisionAt).toISOString():null)!==(input.decisionAt?new Date(input.decisionAt).toISOString():null)||(input.action==='client_review'&&input.reviewExpiresAt&&new Date(replayVersion?.clientReviewExpiresAt??0).toISOString()!==new Date(input.reviewExpiresAt).toISOString())) throw new ConflictException('This activity ID is already in use.'); return design; }
    this.mutable(design,input.version);
    const latest=design.versions[0];
    if(!latest||!design.versions.some((v:{id:string})=>v.id===input.versionId)||(input.action!=='comment'&&latest.id!==input.versionId)) throw new ConflictException('Review the latest version. Earlier versions stay in history.');
    validateDesignTransition(latest.status,input.action,input.note,input.decisionBy);
    const clientDecision=latest.status==='client_review'&&input.action!=='comment';
    if(!clientDecision&&(input.decisionBy||input.decisionSource||input.decisionAt))throw new BadRequestException('Client decision details belong only to a client approval or change request.');
+   if(input.action!=='client_review'&&input.reviewExpiresAt)throw new BadRequestException('A client decision deadline belongs only to a client review request.');
    if(input.action!=='internal_review'&&input.reviewerId)throw new BadRequestException('Assign a reviewer when requesting internal review.');
    if(input.action==='internal_review') {
     if(input.contextConfirmed!==true)throw new BadRequestException('Confirm that the preview matches its folder, room, item and design type before review.');
@@ -101,10 +117,12 @@ export class DesignService {
     const portal=await this.portalReadiness(client,workspaceId,caseId);
     if(!portal.enabled)throw new BadRequestException('Enable the client portal in Client access before sending this design.');
     if(!portal.hasApprover)throw new BadRequestException('Add an active client approver in Client access before sending this design.');
+    if(clientRoundOverrideRequired(design.clientRoundsUsed??0,latest.includedClientRounds)&&!input.note.trim())throw new BadRequestException('Included client review rounds are used. Add the approved exception reason before sending another round.');
    }
+   const reviewExpiresAt=input.action==='client_review'?clientReviewExpiry(input.reviewExpiresAt):null;
    // Legacy thread messages remain visible as comments; comments do not block approval.
    if(input.action==='internal_review')await client.query(`UPDATE pre_project_design_versions SET reviewer_id=$4 WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[workspaceId,id,input.versionId,input.reviewerId]);
-   if(input.action!=='comment') await client.query(`UPDATE pre_project_design_versions SET status=$4 WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[workspaceId,id,input.versionId,input.action]);
+   if(input.action!=='comment') await client.query(`UPDATE pre_project_design_versions SET status=$4::varchar,client_review_expires_at=CASE WHEN $4::varchar='client_review' THEN $5::timestamptz ELSE client_review_expires_at END WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[workspaceId,id,input.versionId,input.action,reviewExpiresAt]);
    await client.query(`INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by,reviewer_id,decision_source,decision_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[input.id,workspaceId,caseId,id,input.versionId,input.action,input.note,input.decisionBy,userId,input.reviewerId??null,input.decisionSource??null,input.decisionAt??null]);
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_'+input.action,input);
@@ -149,10 +167,10 @@ export class DesignService {
    for(const file of input.files){
     const note=file.note??input.note;
     const found=await client.query(`SELECT id FROM pre_project_designs WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,file.id]);
-    if(found.rowCount){const previous=await this.read(client,w,c,file.id);const first=previous.versions.find((v:{id:string})=>v.id===file.versionId);if(!first||first.asset.id!==file.assetId||previous.title!==file.title||(previous.folderId??null)!==(input.folderId??null)||previous.documentType!==file.documentType||(previous.roomId??null)!==(input.roomId??null)||(previous.scopeEntryId??null)!==(input.scopeEntryId??null)||first.note!==note)throw new ConflictException('This upload has changed. Reload the folder before trying again.');items.push(previous);continue;}
+    if(found.rowCount){const previous=await this.read(client,w,c,file.id);const first=previous.versions.find((v:{id:string;includedClientRounds?:number|null})=>v.id===file.versionId);if(!first||first.asset.id!==file.assetId||previous.title!==file.title||(previous.folderId??null)!==(input.folderId??null)||previous.documentType!==file.documentType||(previous.roomId??null)!==(input.roomId??null)||(previous.scopeEntryId??null)!==(input.scopeEntryId??null)||first.note!==note||(file.includedClientRounds!==undefined&&(first.includedClientRounds??null)!==file.includedClientRounds))throw new ConflictException('This upload has changed. Reload the folder before trying again.');items.push(previous);continue;}
     await this.belongs(client,'pre_project_brief_assets',w,c,file.assetId,'file');
     await client.query(`INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,description,room_id,scope_entry_id,folder_id,created_by) VALUES($1,$2,$3,$4,$5,$10,$6,$7,$8,$9)`,[file.id,w,c,file.title,file.documentType,input.roomId??null,input.scopeEntryId??null,input.folderId??null,userId,note]);
-    await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by) VALUES($1,$2,$3,$4,1,$5,$6,$7)`,[file.versionId,w,c,file.id,file.assetId,note,userId]);
+    await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by,included_client_rounds) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8)`,[file.versionId,w,c,file.id,file.assetId,note,userId,file.includedClientRounds??null]);
     await this.event(client,w,c,userId,file.id,'design_version_added',{...file,folderId:input.folderId??null});
     items.push(await this.read(client,w,c,file.id));
    }

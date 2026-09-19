@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BriefService } from './brief.service';
+import { assertBriefUpload, BriefService, BRIEF_MAX_BYTES } from './brief.service';
 import type { SaveBriefEntryDto } from './brief.dto';
 import type { PoolClient } from 'pg';
 import type { WorkspaceAccessService } from '../workspaces/workspace-access.service';
 import type { CrmEventsService } from '../crm/shared/crm-events.service';
 import type { BrandAssetStorageService } from '../workspaces/brand-asset-storage.service';
 import type { RequestActor } from '../auth/actor';
+import { prepareReferenceUpload } from '../workspaces/reference-upload';
 
 const document = {version:1 as const,content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Oak cabinets',marks:[{type:'bold'}]}]}]}};
 const input: SaveBriefEntryDto = {id:'entry',version:3,kind:'requirement',title:'Kitchen storage',roomId:null,note:'Oak cabinets',document,pinned:true,archived:false,category:'General',priority:'preferred',scopeStatus:'included',reviewStatus:'captured',quantity:1,unit:'nos',referenceUrl:'',avoid:'',source:'team',assetIds:[],catalogLinks:[]};
@@ -15,6 +16,17 @@ function currentClient(patch: Record<string, unknown> = {}) {
   return {client:{query} as unknown as PoolClient,query};
 }
 describe('Requirement documents on existing scope records', () => {
+  it('accepts the 20 MB upload boundary and rejects empty or larger evidence before storage',()=>{
+    const file=(length:number)=>({buffer:{length} as Buffer,originalname:'site.jpg',mimetype:'image/jpeg',size:length});
+    expect(()=>assertBriefUpload(file(BRIEF_MAX_BYTES))).not.toThrow();
+    expect(()=>assertBriefUpload(file(BRIEF_MAX_BYTES+1))).toThrow('up to 20 MB');
+    expect(()=>assertBriefUpload(file(0))).toThrow('up to 20 MB');
+  });
+  it('inspects and hashes an exact-limit PDF instead of trusting its filename or MIME claim',async()=>{
+    const buffer=Buffer.alloc(BRIEF_MAX_BYTES);buffer.write('%PDF-');
+    const prepared=await prepareReferenceUpload({buffer,originalname:'site-photo.jpg',mimetype:'image/jpeg',size:buffer.length},{allowVideo:true});
+    expect(prepared).toMatchObject({name:'site-photo.jpg',mimeType:'application/pdf'});expect(prepared.digest).toMatch(/^[0-9a-f]{64}$/);
+  });
   it('rejects text-only edits from older editors before writing a rich document', async () => {
     const {client,query} = currentClient();
     await expect(service().writeEntry(client,'workspace','case','user',{...input,document:undefined,note:'Plain replacement'})).rejects.toThrow('rich content');

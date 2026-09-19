@@ -12,10 +12,11 @@ html {
   min-block-size: 100%;
   background: var(--wd-color-canvas);
   font-family: var(--wd-font-sans);
+  font-size: 100%;
+  font-feature-settings: "calt" 1, "kern" 1;
+  font-optical-sizing: auto;
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-variant-ligatures: contextual;
   text-size-adjust: 100%;
 }
 
@@ -124,6 +125,13 @@ code,
 kbd,
 samp {
   font-variant-numeric: tabular-nums;
+}
+
+code,
+kbd,
+samp,
+[data-code] {
+  font-feature-settings: "ss02" 1, "zero" 1;
 }
 
 [data-scroll-lock="true"] {

@@ -1,5 +1,5 @@
 import { Transform, Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsISO8601, ValidateNested, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsISO8601, ValidateNested, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 const trim = ({value}:{value:unknown}) => typeof value === "string" ? value.trim() : value;
 export const documentTypes = [
  "Concept / mood board","Material / finish board","Space plan / furniture layout","2D floor plan","Demolition / partition plan",
@@ -19,6 +19,7 @@ export class SaveDesignDto {
  @IsOptional() @IsUUID() roomId?:string|null;
  @IsOptional() @IsUUID() scopeEntryId?:string|null;
  @IsOptional() @IsUUID() folderId?:string|null;
+ @IsOptional() @IsInt() @Min(0) @Max(99) includedClientRounds?:number|null;
  @IsOptional() @IsBoolean() archived?:boolean;
 }
 export class AddDesignVersionDto {
@@ -26,6 +27,7 @@ export class AddDesignVersionDto {
  @IsInt() @Min(1) version!:number;
  @IsUUID() assetId!:string;
  @IsString() @MaxLength(5000) note!:string;
+ @IsOptional() @IsInt() @Min(0) @Max(99) includedClientRounds?:number|null;
 }
 export class DesignActivityDto {
  @IsUUID() id!:string;
@@ -37,6 +39,7 @@ export class DesignActivityDto {
  @IsOptional() @IsUUID() reviewerId?:string|null;
  @IsOptional() @IsIn(["email","meeting","phone","document"]) decisionSource?:string;
  @IsOptional() @IsISO8601() decisionAt?:string;
+ @IsOptional() @IsISO8601() reviewExpiresAt?:string;
  @IsOptional() @IsBoolean() contextConfirmed?:boolean;
 }
 
@@ -55,6 +58,7 @@ class DesignUploadFileDto {
  @Transform(trim) @IsString() @MinLength(1) @MaxLength(240) title!:string;
  @IsIn(documentTypes) documentType!:string;
  @IsOptional() @IsString() @MaxLength(5000) note?:string;
+ @IsOptional() @IsInt() @Min(0) @Max(99) includedClientRounds?:number|null;
 }
 export class UploadDesignFilesDto {
  @IsOptional() @IsUUID() folderId?:string|null;

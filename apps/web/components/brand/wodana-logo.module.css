@@ -13,10 +13,45 @@
   line-height: 1.15;
 }
 
-.logoImage {
+.artwork {
+  position: relative;
   inline-size: 7.75rem;
-  block-size: auto;
+  aspect-ratio: 1973 / 587;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.artwork::before,
+.artwork::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  -webkit-mask: url("/brand/wodana/wodana-logo-v5.png") center / 100% 100% no-repeat;
+  mask: url("/brand/wodana/wodana-logo-v5.png") center / 100% 100% no-repeat;
+}
+
+.artwork::before {
+  background: linear-gradient(145deg, #87c4ff 0%, #3979f6 45%, #1538ff 100%);
+  clip-path: inset(0 72.5% 0 0);
+}
+
+:global([data-theme="dark"]) .artwork::before,
+:global([data-wd-theme="dark"]) .artwork::before {
+  background-image: linear-gradient(42deg, #747bff 0%, #a1adff 54%, #e0e5ff 100%);
+}
+
+.artwork::after {
+  background: var(--wd-color-text);
+  clip-path: inset(0 0 0 27.5%);
+}
+
+.logoImage {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
   object-fit: contain;
+  opacity: 0;
 }
 
 .wordmark small {
@@ -24,6 +59,25 @@
   font-size: var(--wd-text-2xs);
 }
 
-.logo[data-size="large"] .logoImage {
+.logo[data-size="large"] .artwork {
   inline-size: 9.25rem;
+}
+
+.logo[data-size="small"] .artwork {
+  inline-size: 4.75rem;
+}
+
+.logo[data-size="compact"] .artwork {
+  inline-size: 3.35rem;
+}
+
+.logo[data-size="micro"] .artwork {
+  inline-size: 2.8rem;
+}
+
+@media (forced-colors: active) {
+  .artwork::before,
+  .artwork::after {
+    background: CanvasText;
+  }
 }

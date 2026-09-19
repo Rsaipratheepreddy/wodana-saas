@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Res } from "@nestjs/common";
+import { Controller, Get, Header, Param, Query, Res } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 import type { Response } from "express";
 import { Public } from "../auth/public.decorator";
@@ -12,8 +12,8 @@ export class PublicBrandingController {
 
   @Get(":loginSlug/logo")
   @Header("Cross-Origin-Resource-Policy", "cross-origin")
-  async logo(@Param("loginSlug") loginSlug: string, @Res() response: Response) {
-    const logo = await this.workspaces.readPublicCompanyLogo(loginSlug);
+  async logo(@Param("loginSlug") loginSlug: string, @Query("variant") variant: string | undefined, @Res() response: Response) {
+    const logo = await this.workspaces.readPublicCompanyLogo(loginSlug, variant === "square" ? "square" : "display");
     response.set({
       "cache-control": "public, max-age=3600, stale-while-revalidate=86400",
       "content-type": logo.contentType,

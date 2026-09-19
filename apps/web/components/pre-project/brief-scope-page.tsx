@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { Tab, TabList, TabPanel, Tabs } from 'react-aria-components';
 import { ClipboardList, DoorOpen, FileText, LayoutGrid, Plus, Ruler, Table2 } from 'lucide-react';
 import { Button, Checkbox, DataGrid, SelectField, SearchInput, useDesignSystem, type DataGridColumn } from '@/design-system';
-import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, parseScopePaste, scopeLabels, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
+import { blankEntry, briefFields, caseApi, caseRequest, deriveDiscoveryCoverage, entryPayload, formatCaseMoney, parseScopePaste, scopeLabels, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
 import { CaseModal, CatalogChoiceField } from './case-controls';
 import { ItemSpecificationEditor } from './item-specification-editor';
@@ -36,7 +36,8 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
   const [specFocus, setSpecFocus] = useState<'dimensions'|undefined>();
   const [data, setData] = useState(initialData);
   const [search, setSearch] = useState('');
-  const [room, setRoom] = useState('all');
+  const requestedRoom = searchParams.get('room');
+  const [room, setRoom] = useState(() => requestedRoom && initialData.rooms.some(item => item.id === requestedRoom) ? requestedRoom : 'all');
   const [archived, setArchived] = useState(false);
   const [entry, setEntry] = useState<ScopeEntry|null>(null);
   const [specEntry, setSpecEntry] = useState<ScopeEntry|null>(null);
@@ -56,13 +57,16 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
   const noteEntry = (note: RequirementNote): ScopeEntry => {
     const scope = note.scope ? data.entries.find(item => item.id === note.scope!.id && item.version >= note.scope!.version) ?? note.scope : undefined;
     return {
-      ...(scope ?? { ...blankEntry(), id: `requirement-note:${note.id}`, version: note.version }),
+      ...(scope ?? { ...blankEntry(), id: `requirement-note:${note.id}`, version: note.version, source: 'client', reviewStatus: 'captured' }),
       title: note.title, note: note.note, document: note.document, pinned: note.pinned,
       assets: note.assets ?? [], referenceUrl: note.links?.[0] ?? '',
       archivedAt: note.archived ? note.updatedAt || 'archived' : null,
     };
   };
   const allEntries = [...sharedNotes.items.map(noteEntry), ...data.entries.filter(item => !linkedNotes.has(item.id))];
+  // Older production responses predate discovery coverage. Derive it safely so
+  // existing cases still open while the API and web releases are rolling out.
+  const coverage = deriveDiscoveryCoverage(data.rooms, allEntries, data.coverage?.verifiedMeasurementItemIds ?? []);
   const canEditEntry = (value: ScopeEntry) => data.canEdit && (!linkedNotes.has(value.id) || sharedNotes.canEdit);
   const storedRequirement = (value: ScopeEntry) => value.kind === 'requirement' && !value.id.startsWith('requirement-note:');
   const openSpecification = (value: ScopeEntry, focus?: 'dimensions') => { setSpecFocus(focus); setSpecEntry(value); };
@@ -152,6 +156,15 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
   </div>;
   const editingNote = entry ? linkedNotes.get(entry.id) : undefined;
   return <div className={styles.content}>
+    {initialView !== 'inspiration' && <section className={styles.coverage} aria-label="Discovery coverage">
+      <dl className={styles.coverageSummary}>
+        <div><dt>Rooms covered</dt><dd>{coverage.roomCount ? `${coverage.coveredRoomCount} of ${coverage.roomCount}` : 'No rooms yet'}</dd></div>
+        <div><dt>Client drafts</dt><dd>{coverage.clientDraftItemIds.length ? `${coverage.clientDraftItemIds.length} to review` : 'Clear'}</dd></div>
+        <div><dt>Scope decisions</dt><dd>{coverage.undecidedItemIds.length ? `${coverage.undecidedItemIds.length} open` : 'Clear'}</dd></div>
+        <div><dt>Measurements</dt><dd>{coverage.missingMeasurementItemIds.length ? `${coverage.missingMeasurementItemIds.length} need verification` : 'Clear'}</dd></div>
+      </dl>
+      {coverage.uncoveredRooms.length > 0 && <p><strong>Rooms without requirements:</strong> {coverage.uncoveredRooms.map(item => item.name).join(', ')}</p>}
+    </section>}
     <div className={styles.register}>{initialView === 'inspiration' ? panel : <Tabs className="wd-tabs" selectedKey={tab} onSelectionChange={changeTab}>
       <div className={styles.viewBar}>
         <TabList aria-label="Requirement sections" className="wd-tab-list">{gatheringTabs.map(item => <Tab key={item.id} id={item.id} className="wd-tab"><item.icon size={14}/>{item.label}</Tab>)}</TabList>

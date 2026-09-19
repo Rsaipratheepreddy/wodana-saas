@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  MinLength,
   MaxLength,
   Min,
 } from "class-validator";
@@ -22,6 +23,13 @@ export class UpdateTenantManagementDto {
   @IsOptional()
   @IsIn(["active", "suspended"])
   workspaceStatus?: "active" | "suspended";
+
+  @IsOptional()
+  @Transform(({ value }) => typeof value === "string" ? value.trim() : value)
+  @IsString()
+  @MinLength(10)
+  @MaxLength(500)
+  reason?: string;
 
   @IsOptional()
   @IsIn(["starter", "pro", "enterprise"])

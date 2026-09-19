@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowDown, ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, CheckCheck, ChevronDown, CircleCheck, ClipboardCheck, ClipboardList, FolderKanban, Layers3, LayoutGrid, Menu, MessageCircle, Moon, MousePointer2, Package, PackageSearch, Palette, Pause, Play, Plus, Search, Sparkles, Sun, Users, X } from "lucide-react";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
-import { WodanaLogo } from "@/components/brand";
+import { WodanaLogo, WoddyMark } from "@/components/brand";
 import { Tabs } from "@/design-system/components/navigation";
 import styles from "./landing.module.css";
 
@@ -13,6 +13,33 @@ const workflow = [
   { id: "connect", title: "Start with a conversation.", copy: "Keep enquiries, customer context, and follow-ups together. Give every new opportunity a clear next step.", icon: BriefcaseBusiness, label: "Connect", items: ["One place for your leads", "Follow-ups with clear ownership", "Customer conversations in context"] },
   { id: "plan", title: "Turn a brief into a plan.", copy: "Bring requirements, rooms, materials, and quotations into the same workspace. Keep the details connected as the design takes shape.", icon: ClipboardCheck, label: "Plan", items: ["Room-by-room requirements", "Reusable material catalogs", "Quotations linked to the brief"] },
   { id: "deliver", title: "Give everyone the full picture.", copy: "Bring your team and project context together, from the first handoff to the next milestone. A shared view of what comes next.", icon: FolderKanban, label: "Coordinate", items: ["A shared project workspace", "Documents and team comments", "Role-based access for your team"] },
+];
+
+const productStory = [
+  {
+    number: "01",
+    title: "Qualify the right work.",
+    copy: "Capture the enquiry, agree the brief, and keep every room, reference, and requirement connected.",
+    light: "/landing/crm-light.webp",
+    dark: "/landing/crm-dark.webp",
+    alt: "Wodana CRM dashboard showing the day's priority work",
+  },
+  {
+    number: "02",
+    title: "Build the proposal visually.",
+    copy: "Turn confirmed scope into a clear quotation, add system or manual items, and shape the client-facing pages on canvas.",
+    light: "/landing/quotation-light.webp",
+    dark: "/landing/quotation-dark.webp",
+    alt: "Wodana visual quotation builder connected to scope and pricing",
+  },
+  {
+    number: "03",
+    title: "Deliver with one source of truth.",
+    copy: "Move the accepted work into planning, materials, production, site progress, quality, and handover without retyping it.",
+    light: "/landing/project-light.webp",
+    dark: "/landing/project-dark.webp",
+    alt: "Wodana project overview showing the connected delivery flow",
+  },
 ];
 
 // Match the portal module switcher's glyphs and shared identity gradients.
@@ -201,12 +228,39 @@ export function LandingPage() {
         <div className={styles.heroBottom}><span>LESS JUGGLING. MORE CREATING.</span><button aria-pressed={paused} onClick={() => setPaused(!paused)} className={styles.motionButton}>{paused ? "Play animations" : "Pause animations"}{paused ? <Play aria-hidden="true" size={12} /> : <Pause aria-hidden="true" size={12} />}</button></div>
       </section>
       <div className={styles.moduleStrip} aria-label="Connected workspace modules">{([["crm", "CRM & conversations"], ["planning", "Pre-execution planning"], ["catalogs", "Materials & catalogs"], ["projects", "Project coordination"], ["people", "People & teams"]] as [ModuleKind, string][]).map(([kind, label]) => <span key={kind}><ModuleBadge kind={kind} />{label}</span>)}</div>
+
+      <section className={styles.productTour} id="tour" aria-labelledby="tour-heading">
+        <div className={styles.sectionHeading} data-reveal="once">
+          <span className={styles.eyebrow}>ONE COMPLETE FLOW</span>
+          <RevealHeading id="tour-heading" first="See the work move." second="From enquiry to handover." />
+          <p>Real Wodana screens. One connected record all the way through.</p>
+        </div>
+        <div className={styles.flowRail} aria-label="Wodana workflow">
+          {['Enquiry', 'Requirements', 'Quotation', 'Project', 'Delivery', 'Handover'].map((label, index) => <span key={label}><b>{index + 1}</b>{label}</span>)}
+        </div>
+        <div className={styles.flowFilm} data-reveal>
+          <video aria-label="A complete Wodana workflow from enquiry to project handover" autoPlay loop muted playsInline poster="/landing/crm-dark.webp">
+            <source src="/landing/wodana-complete-flow.webm" type="video/webm" />
+          </video>
+          <span className={styles.filmCaption}><span className={styles.liveDot} />Recorded in the working product</span>
+        </div>
+        <div className={styles.storyGrid}>
+          {productStory.map((story) => <article className={styles.storyCard} data-reveal data-scroll-card key={story.number}>
+            <div className={styles.storyCopy}><span>{story.number}</span><h3>{story.title}</h3><p>{story.copy}</p></div>
+            <div className={styles.storyFrame}>
+              <Image alt={story.alt} className={styles.storyImageLight} height={900} src={story.light} width={1440} />
+              <Image alt="" aria-hidden="true" className={styles.storyImageDark} height={900} src={story.dark} width={1440} />
+            </div>
+          </article>)}
+        </div>
+      </section>
+
       <section id="platform" className={styles.section} aria-labelledby="platform-heading">
         <div className={styles.sectionHeading} data-reveal="once"><span className={styles.eyebrow}>A LITTLE LESS CHAOS</span><RevealHeading id="platform-heading" first="Big ideas need" second="a beautifully organised home." /><p>All the moving parts of your interior business.<br className={styles.desktopBreak} /> Finally, moving together.</p></div>
         <div className={styles.featureGrid}>
           <article className={`${styles.featureCard} ${styles.crmCard}`} data-reveal data-scroll-card><ModuleBadge kind="crm" /><h3>Good conversations.<br />Great beginnings.</h3><p>Give every enquiry a home. Keep the context, follow-ups, and next steps close.</p><div className={styles.pipelineVisual} aria-label="Illustrative CRM pipeline"><div><span>Your opportunity pipeline</span><span>•••</span></div><strong>Make the next move clear.</strong><div className={styles.pipelineTrack}><span /><span /><span /></div><div className={styles.pipelineLegend}><span><i />New enquiry</span><span><i />In conversation</span><span><i />Qualified</span></div><div className={styles.leadCard}><span className={styles.leadAvatar}>SR</span><div><strong>Studio residence</strong><span>Full-home interiors</span></div><span className={styles.leadBadge}>Follow up <ArrowUpRight size={12} /></span></div></div></article>
           <article className={`${styles.featureCard} ${styles.planningCard}`} data-reveal data-scroll-card><ModuleBadge kind="planning" /><h3>From moodboard<br />to master plan.</h3><p>Connect room requirements, materials, and quotations. Let the details do the talking.</p><div className={styles.roomVisual}><div className={styles.roomVisualHeader}><span><Palette size={15} />Living room palette</span><span>04 finishes</span></div><div className={styles.bigSwatches} aria-label="Material palette: oak, linen, stone, and clay"><span><i />Oak</span><span><i />Linen</span><span><i />Stone</span><span><i />Clay</span></div><div className={styles.roomCheck}><CircleCheck size={15} /><span>Requirements captured</span><span>12 / 12</span></div><div className={styles.roomCheck}><ClipboardList size={15} /><span>Quotation ready for review</span><ArrowUpRight size={14} /></div></div></article>
-          <article className={`${styles.featureCard} ${styles.woddyCard}`} data-reveal data-scroll-card><span className={styles.woddyBadge}><Sparkles size={14} />MEET YOUR WORKSPACE SIDEKICK</span><div className={styles.woddyMark}><Image src="/brand/wodana/woddy-mark-v4.png" width={150} height={150} alt="Woddy, the Wodana assistant" /></div><h3>A little help.<br />Right where you work.</h3><p>Meet Woddy. Ask a question and get a helping hand with your workspace.</p><div className={styles.chatVisual} aria-label="Illustrative Woddy conversation"><div className={styles.chatQuestion}>Where should I start today?</div><div className={styles.chatAnswer}><Sparkles size={16} /><div><strong>Let’s make room for good work.</strong><p>Start with your follow-ups, then review the briefs waiting for your attention.</p><span><Check size={13} />One next step at a time</span></div></div><div className={styles.chatInput}><span>Ask Woddy a question…</span><span><ArrowUpRight size={14} /></span></div></div><small>Illustrative conversation</small></article>
+          <article className={`${styles.featureCard} ${styles.woddyCard}`} data-reveal data-scroll-card><span className={styles.woddyBadge}><Sparkles size={14} />MEET YOUR WORKSPACE SIDEKICK</span><div className={styles.woddyMark}><WoddyMark size={150} alt="Woddy, the Wodana assistant" /></div><h3>A little help.<br />Right where you work.</h3><p>Meet Woddy. Ask a question and get a helping hand with your workspace.</p><div className={styles.chatVisual} aria-label="Illustrative Woddy conversation"><div className={styles.chatQuestion}>Where should I start today?</div><div className={styles.chatAnswer}><Sparkles size={16} /><div><strong>Let’s make room for good work.</strong><p>Start with your follow-ups, then review the briefs waiting for your attention.</p><span><Check size={13} />One next step at a time</span></div></div><div className={styles.chatInput}><span>Ask Woddy a question…</span><span><ArrowUpRight size={14} /></span></div></div><small>Illustrative conversation</small></article>
           <article className={`${styles.featureCard} ${styles.collaborationCard}`} data-reveal data-scroll-card><div><ModuleBadge kind="people" /><h3>Same page.<br />Even on different days.</h3><p>Bring decisions, documents, and people together. Keep the handoff as thoughtful as the design.</p></div><div className={styles.activityVisual}><div className={styles.activityTitle}><strong>The latest, all together.</strong><Avatars /></div>{[["AK", "Anika added the room brief", "Planning · Just now"], ["RM", "Rohan shared the finish schedule", "Design · 12 min ago"], ["SN", "Sara left a review comment", "Team · 24 min ago"]].map(([initials, title, detail]) => <div className={styles.activityItem} key={initials}><span className={styles.miniAvatar}>{initials}</span><div><strong>{title}</strong><span>{detail}</span></div><CheckCheck size={13} /></div>)}<div className={styles.activityNote}><span className={styles.liveDot} />A shared space for every little update.</div></div></article>
         </div>
       </section>

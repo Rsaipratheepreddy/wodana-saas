@@ -167,6 +167,16 @@ export class ProjectFilesService {
           ...(d.dispatches??[]),...(d.commissioning??[]),...(d.technicalQueries??[]),...(d.transmittals??[]),...(d.retentions??[]),...(d.supplierReturns??[]),
         ].find((x) => x.id === recordId);
       if (!record) throw new NotFoundException("Choose a project record.");
+      const assignedDispatch = d.dispatches?.find(
+        (dispatch) =>
+          dispatch.id === recordId &&
+          d.tasks.some(
+            (task) =>
+              task.id === dispatch.receivingTaskId &&
+              (task.ownerId === ctx.membershipId ||
+                task.assigneeIds.includes(ctx.membershipId)),
+          ),
+      );
       if (
         !ctx.permissions.has("projects.manage") &&
         !ctx.permissions.has("projects.buy") &&
@@ -177,8 +187,13 @@ export class ProjectFilesService {
             (t.ownerId === ctx.membershipId ||
               t.assigneeIds.includes(ctx.membershipId)),
         ) &&
+        !assignedDispatch &&
         ![...d.reports,...(d.commissioning??[]),...(d.technicalQueries??[])].some(
           (r) => r.id === recordId && r.authorId === ctx.membershipId,
+        ) &&
+        !d.snags.some(
+          (snag) =>
+            snag.id === recordId && snag.ownerId === ctx.membershipId,
         )
       )
         throw new ForbiddenException(

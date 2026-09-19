@@ -1,0 +1,418 @@
+{
+  "schemaVersion": 1,
+  "tenant": "Palm Living",
+  "reviewStatus": "needs_review",
+  "source": {
+    "type": "google_sheet",
+    "url": "https://docs.google.com/spreadsheets/d/1wDa16O4vgF8mSgRAdTSfxRfsXpWGCQTXKTrJ4OiDUfU/edit?gid=1237561810#gid=1237561810",
+    "spreadsheetId": "1wDa16O4vgF8mSgRAdTSfxRfsXpWGCQTXKTrJ4OiDUfU",
+    "gid": "1237561810",
+    "title": "ELECTRICAL MATERIALS",
+    "headerRow": 2,
+    "checkedOn": "2026-09-18",
+    "notes": [
+      "The source header MORAL CODE is interpreted as modelCode without altering the source.",
+      "Source prices and quantities are blank; no commercial or stock values are inferred."
+    ]
+  },
+  "catalogue": {
+    "name": "Palm Living electrical materials",
+    "market": "AE",
+    "currency": "AED",
+    "pricingMode": "unpriced",
+    "specificationStatus": "needs_specification"
+  },
+  "records": [
+    {
+      "sourceRow": 3,
+      "unit": "PCS",
+      "modelCode": "E8331L2_WG",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider 1GANG 2WAY Switch (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 4,
+      "unit": "PCS",
+      "modelCode": "E8332L2_WG",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider 2GANG 2WAY Switch (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 5,
+      "unit": "PCS",
+      "modelCode": "E8333L2_WG",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider 3GANG 2WAY Switch (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 6,
+      "unit": "PCS",
+      "modelCode": "E8331L2_WE",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider 1GANG 2WAY Switch (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 7,
+      "unit": "PCS",
+      "modelCode": "E8332L2_WE",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider 2GANG 2WAY Switch (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 8,
+      "unit": "PCS",
+      "modelCode": "E8333L2_WE",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider 3GANG 2WAY Switch (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 9,
+      "unit": "PCS",
+      "modelCode": "E8331L2_DG",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider 1GANG 2WAY Switch (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 10,
+      "unit": "PCS",
+      "modelCode": "E8332L2_DG",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider 2GANG 2WAY Switch (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 11,
+      "unit": "PCS",
+      "modelCode": "E8333L2_DG",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider 3GANG 2WAY Switch (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 12,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider 4GANG 1WAY Switch (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 13,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "HAIRLINE GOLD",
+      "itemName": "AVATAR ON Schneider 3GANG 2WAY Switch (HAIRLINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 14,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider 1GANG Switch 20A (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 15,
+      "unit": "PCS",
+      "modelCode": "E8315_WG_G12",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider Single Socket (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 16,
+      "unit": "PCS",
+      "modelCode": "E8315_WE_G12",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider Single Socket (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 17,
+      "unit": "PCS",
+      "modelCode": "E8315_DG_G12",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider Single Socket (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 18,
+      "unit": "PCS",
+      "modelCode": "E83T25_WG_G12",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider Double Socket (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 19,
+      "unit": "PCS",
+      "modelCode": "E83T25_WE_G12",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider Double Socket (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 20,
+      "unit": "PCS",
+      "modelCode": "E83T25_DG_G12",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider Double Socket (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 21,
+      "unit": "PCS",
+      "modelCode": "E83T25ACUSB_WG_G12",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider USB Double Socket (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 22,
+      "unit": "PCS",
+      "modelCode": "E83T25ACUSB_WE_G12",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider USB Double Socket (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 23,
+      "unit": "PCS",
+      "modelCode": "E83T25ACUSB_DG_G12",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider USB Double Socket (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 24,
+      "unit": "PCS",
+      "modelCode": "E83T25ACUSB_WD_G12",
+      "dimensions": null,
+      "color": "WOOD DARK",
+      "itemName": "AVATAR ON Schneider USB Double Socket (WOOD DARK)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 25,
+      "unit": "PCS",
+      "modelCode": "E8331RJS_WG",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider Single Data Socket (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 26,
+      "unit": "PCS",
+      "modelCode": "E8331RJS_WE",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider Single Data Socket (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 27,
+      "unit": "PCS",
+      "modelCode": "E8331RJS_DG",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider Single Data Socket (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 28,
+      "unit": "PCS",
+      "modelCode": "E8331RJS_GH",
+      "dimensions": null,
+      "color": "HAIRLINE GOLD",
+      "itemName": "AVATAR ON Schneider Single Data Socket (METAL GOLD HAIRLINE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 29,
+      "unit": "PCS",
+      "modelCode": "E8332RJS_WG",
+      "dimensions": null,
+      "color": "WINE GOLD",
+      "itemName": "AVATAR ON Schneider Double Data Socket (WINE GOLD)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 30,
+      "unit": "PCS",
+      "modelCode": "E8332RJS_WE",
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "AVATAR ON Schneider Double Data Socket (WHITE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 31,
+      "unit": "PCS",
+      "modelCode": "E8332RJS_DG",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "AVATAR ON Schneider Double Data Socket (DARK GREY)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 32,
+      "unit": "PCS",
+      "modelCode": "E8332RJS_GH",
+      "dimensions": null,
+      "color": "HAIRLINE GOLD",
+      "itemName": "AVATAR ON Schneider Double Data Socket (METAL GOLD HAIRLINE)",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 33,
+      "unit": "PCS",
+      "modelCode": "E83T727V",
+      "dimensions": null,
+      "color": "DARK GREY",
+      "itemName": "Universal Shaver Unit Socket",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 34,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "CAT6 RJ45 Socket",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 35,
+      "unit": "BOX",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "BLACK",
+      "itemName": "EcoBRIGHT RF Single Color LED Controller",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 36,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "WHITE",
+      "itemName": "[USPRO] ON & OFF Mini Switch",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 37,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "BLACK",
+      "itemName": "[USPRO] ON & OFF Mini Switch",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 38,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "BLACK-RED",
+      "itemName": "[USPRO] ON & OFF Mini Switch",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 39,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "BLACK",
+      "itemName": "Audiovan Hydraulic Cable Cubby Pop Up Conference Box",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 40,
+      "unit": "BOX",
+      "modelCode": null,
+      "dimensions": null,
+      "color": "GREY",
+      "itemName": "Double Pole Weatherprotected Surface Switch/Isolator",
+      "price": null,
+      "quantity": null
+    },
+    {
+      "sourceRow": 41,
+      "unit": "PCS",
+      "modelCode": null,
+      "dimensions": null,
+      "color": null,
+      "itemName": "Honeywell Home Thermostat",
+      "price": null,
+      "quantity": null
+    }
+  ]
+}
+

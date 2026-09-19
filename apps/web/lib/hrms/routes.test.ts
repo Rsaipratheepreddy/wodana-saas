@@ -16,11 +16,34 @@ describe("HRMS web boundary", () => {
       expect(allowedHrmsRoute("POST", path)).toBe(false);
     expect(allowedHrmsRoute("DELETE", "settings")).toBe(false);
     expect(allowedProjectsRoute("POST", "from-pre-project")).toBe(true);
+    expect(allowedProjectsRoute("GET", "workflow-templates")).toBe(true);
+    expect(
+      allowedProjectsRoute(
+        "GET",
+        "workflow-templates/00000000-0000-4000-8000-000000000001/history",
+      ),
+    ).toBe(true);
+    expect(
+      allowedProjectsRoute(
+        "PUT",
+        "workflow-templates/00000000-0000-4000-8000-000000000001",
+      ),
+    ).toBe(true);
+    expect(
+      allowedProjectsRoute(
+        "POST",
+        "workflow-templates/00000000-0000-4000-8000-000000000001/rollback",
+      ),
+    ).toBe(true);
     expect(allowedProjectsRoute("PUT", "arbitrary")).toBe(false);
+    expect(allowedProjectsRoute("DELETE", "workflow-templates")).toBe(false);
   });
   it("keeps workspace scope and employee calendar dates explicit", () => {
     expect(hrmsUrl("abc", "attendance/history?from=2026-09-01")).toBe(
       "/api/workspace/hrms/attendance/history?from=2026-09-01&workspaceId=abc",
+    );
+    expect(hrmsUrl("abc", "", "projects")).toBe(
+      "/api/workspace/projects?workspaceId=abc",
     );
     expect(localDay("Asia/Kolkata", new Date("2026-09-06T20:00:00Z"))).toBe(
       "2026-09-07",

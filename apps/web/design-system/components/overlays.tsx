@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogTrigger,
@@ -66,8 +66,38 @@ export function ControlledModalDialog({ children, description, footer, isDismiss
   return <ModalOverlay className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={onOpenChange} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-modal" data-size={size}><Dialog className="wd-dialog" aria-label={title}>{() => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Close dialog" onPress={() => onOpenChange(false)}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>;
 }
 
-export function ConfirmationDialog({ body, confirmLabel, isOpen, onConfirm, onOpenChange, title }: { body: ReactNode; confirmLabel: string; isOpen: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; title: string }) {
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button onPress={() => onOpenChange(false)}>Keep editing</Button><Button onPress={onConfirm} variant="danger">{confirmLabel}</Button></div>} isOpen={isOpen} onOpenChange={onOpenChange} title={title}>{body}</ControlledModalDialog>;
+export function ConfirmationDialog({ body, confirmLabel, confirmVariant = "danger", isConfirming = false, isOpen, onConfirm, onOpenChange, title }: { body: ReactNode; confirmLabel: string; confirmVariant?: "primary" | "danger"; isConfirming?: boolean; isOpen: boolean; onConfirm: () => void; onOpenChange: (open: boolean) => void; title: string }) {
+  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isConfirming} onPress={() => onOpenChange(false)}>Keep editing</Button><Button isLoading={isConfirming} onPress={onConfirm} variant={confirmVariant}>{confirmLabel}</Button></div>} isOpen={isOpen} onOpenChange={onOpenChange} title={title}>{body}</ControlledModalDialog>;
+}
+
+type ConfirmationRequest = {
+  body: ReactNode;
+  confirmLabel?: string;
+  confirmVariant?: "primary" | "danger";
+  onConfirm: () => void;
+  title: string;
+};
+
+/** Branded, asynchronous replacement for browser confirm dialogs. */
+export function useConfirmationDialog() {
+  const [request, setRequest] = useState<ConfirmationRequest | null>(null);
+  const requestConfirmation = useCallback((next: ConfirmationRequest) => setRequest(next), []);
+  const confirmationDialog = (
+    <ConfirmationDialog
+      body={request?.body ?? ""}
+      confirmLabel={request?.confirmLabel ?? "Discard changes"}
+      confirmVariant={request?.confirmVariant}
+      isOpen={Boolean(request)}
+      onConfirm={() => {
+        const action = request?.onConfirm;
+        setRequest(null);
+        action?.();
+      }}
+      onOpenChange={(open) => { if (!open) setRequest(null); }}
+      title={request?.title ?? "Confirm action"}
+    />
+  );
+  return { confirmationDialog, requestConfirmation };
 }
 
 function DialogCloseActions({ confirmLabel, onConfirm }: { confirmLabel: string; onConfirm: () => void }) {
@@ -90,14 +120,22 @@ export type SideSheetProps = Omit<DialogTriggerProps, "children"> & {
 export function SideSheet({ children, defaultOpen, description, footer, isDirty = false, isOpen: controlledOpen, onOpenChange, side = "inline-end", size = "md", title, trigger, ...props }: SideSheetProps) {
   const { portalContainer } = useDesignSystem();
   const [internalOpen, setInternalOpen] = useState(defaultOpen ?? false);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const isOpen = controlledOpen ?? internalOpen;
+  const close = () => {
+    if (controlledOpen === undefined) setInternalOpen(false);
+    onOpenChange?.(false);
+  };
   const requestChange = (nextOpen: boolean) => {
-    if (!nextOpen && isDirty && !window.confirm("Discard unsaved changes?")) return;
+    if (!nextOpen && isDirty) {
+      requestConfirmation({ title: "Discard unsaved changes?", body: "Your saved records will stay as they are. Unsaved changes will be discarded.", onConfirm: close });
+      return;
+    }
     if (controlledOpen === undefined) setInternalOpen(nextOpen);
     onOpenChange?.(nextOpen);
   };
   const overlayClass = side === "bottom" ? "wd-sheet-overlay wd-sheet-overlay-bottom" : side === "inline-start" ? "wd-sheet-overlay wd-sheet-overlay-start" : "wd-sheet-overlay";
-  return <DialogTrigger {...props} isOpen={isOpen} onOpenChange={requestChange}><>{trigger}</><ModalOverlay className={overlayClass} isDismissable UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-side={side} data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Close inspector" onPress={() => requestChange(false)}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay></DialogTrigger>;
+  return <><DialogTrigger {...props} isOpen={isOpen} onOpenChange={requestChange}><>{trigger}</><ModalOverlay className={overlayClass} isDismissable UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-side={side} data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Close inspector" onPress={() => requestChange(false)}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay></DialogTrigger>{confirmationDialog}</>;
 }
 
 export function Drawer(props: SideSheetProps) { return <SideSheet {...props} side="inline-start" />; }

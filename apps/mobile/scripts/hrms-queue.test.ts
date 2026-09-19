@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { syncCapture, type PendingCapture } from '../src/hrms/capture-queue';
+import { ApiError, AuthError } from '../src/auth/client';
+import { attendanceSyncFailure, syncCapture, type PendingCapture } from '../src/hrms/capture-queue';
 const capture:PendingCapture={key:'workspace:member',photoUri:'file:///saved-camera.jpg',createdAt:1,input:{actionId:'same-action',captureId:'same-capture',kind:'check_out',expectedSessionId:'session',expectedVersion:2,mode:'site',deviceAt:'2026-09-07T09:00:00Z',position:null,note:'',exceptionReason:'GPS unavailable'}};
 test('network loss stops a capture and retry reuses the original photo and action IDs',async()=>{
  const calls:unknown[]=[];let failed=true;
@@ -10,4 +11,9 @@ test('network loss stops a capture and retry reuses the original photo and actio
 });
 test('a failed photo upload cannot advance the attendance session',async()=>{
  const calls:string[]=[];await assert.rejects(syncCapture(capture,{request:async(path)=>{calls.push(path);},photo:async()=>{throw new Error('upload failed');}}),/upload failed/);assert.deepEqual(calls,['captures']);
+});
+test('entitlement removal retains the capture for review and stops blind retries',()=>{
+ assert.deepEqual(attendanceSyncFailure(new ApiError('HRMS is no longer included.',403)),{state:'permission',message:'HRMS is no longer included.',status:403});
+ assert.equal(attendanceSyncFailure(new AuthError('Workspace access changed.','access')).state,'permission');
+ assert.equal(attendanceSyncFailure(new AuthError('Offline.','network')).state,'pending');
 });

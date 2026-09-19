@@ -47,13 +47,9 @@
   gap: 1rem;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 1.6rem;
-  background: linear-gradient(
-    115deg,
-    color-mix(in srgb, var(--vendor-tint) 24%, white),
-    #fff9f3
-  );
-  border-radius: 0.9rem;
+  padding: var(--wd-space-5);
+  background: var(--wd-color-surface);
+  border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .hero > div > span {
   font-size: 0.7rem;

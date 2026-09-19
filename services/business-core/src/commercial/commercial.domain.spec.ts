@@ -1,16 +1,24 @@
 import { describe, it, expect } from "vitest";
 import {
   actionable,
+  acceptedQuoteLines,
+  acceptedQuoteTotals,
+  acceptedQuoteValue,
+  assertQuoteSnapshot,
+  clientChangeRequest,
   clientQuote,
   date,
   defaultBrand,
   editable,
+  emptyCommercial,
   freezeHash,
+  newRequest,
   parseBrand,
   parseCover,
   parseLines,
   parsePaymentTerms,
   phone,
+  quoteDecisionEvidence,
   totals,
 } from "./commercial.domain";
 import type { Quote } from "./commercial.types";
@@ -71,6 +79,40 @@ const quote = (): Quote => ({
   approverId: "client",
 });
 describe("Commercial boundaries", () => {
+  it("projects structured client requests without internal access identifiers", () => {
+    const data = emptyCommercial();
+    const request = newRequest(data, "Choose finish", "Select one finish", "q1", {
+      ownerMembershipId: "secret-owner-membership",
+      clientApproverGrantId: "secret-client-grant",
+      target: { type: "quotation", id: "q1", revision: 3, label: "Quotation V3" },
+      allowedChoices: [
+        { id: "choice-1", label: "Approve" },
+        { id: "choice-2", label: "Request changes" },
+      ],
+      escalationMinutes: 60,
+      notificationPolicy: { remindersEnabled: true, channels: ["in_app"] },
+      decision: {
+        responseId: "response-1",
+        choiceId: "choice-1",
+        choiceLabel: "Approve",
+        note: "Proceed",
+        decidedAt: "2026-09-18T10:00:00.000Z",
+        decidedBy: "Client approver",
+        clientGrantId: "secret-client-grant",
+      },
+    });
+    request.comments.push(
+      { id: "client-comment", author: "Client", at: "2026-09-18T09:00:00.000Z", text: "Visible", visibility: "client" },
+      { id: "internal-comment", author: "Team", at: "2026-09-18T09:01:00.000Z", text: "Private", visibility: "internal" },
+    );
+
+    const projected = clientChangeRequest(request);
+    expect(projected.decisionRequest?.target).toEqual({ type: "quotation", id: "q1", revision: 3, label: "Quotation V3" });
+    expect(projected.comments.map((comment) => comment.id)).toEqual(["client-comment"]);
+    expect(JSON.stringify(projected)).not.toContain("secret-owner-membership");
+    expect(JSON.stringify(projected)).not.toContain("secret-client-grant");
+    expect(projected).not.toHaveProperty("control");
+  });
   it("rounds line totals, discount and tax consistently", () => {
     expect(totals(quote())).toMatchObject({
       subtotal: 60.45,
@@ -79,6 +121,14 @@ describe("Commercial boundaries", () => {
       total: 52.97,
       cost: 45,
     });
+  });
+  it("prices alternatives without adding them to the base quotation total", () => {
+    const source = quote();
+    source.lines.push({ ...source.lines[0], id: "optional", title: "Upgrade", optional: true, rate: 100 });
+    expect(totals(source)).toMatchObject({ subtotal: 60.45, cost: 45, total: 52.97 });
+    const parsed = parseLines(source.lines);
+    expect(parsed[1].optional).toBe(true);
+    expect(clientQuote({ ...source, total: 52.97 }, "client").lines[1].optional).toBe(true);
   });
   it("rejects negative, duplicate and invalid amounts", () => {
     expect(() => parseLines([{ ...quote().lines[0], rate: -1 }])).toThrow();
@@ -90,6 +140,12 @@ describe("Commercial boundaries", () => {
     expect(() =>
       parsePaymentTerms([{ ...quote().paymentTerms[0], percent: 90 }], true),
     ).toThrow();
+    expect(() =>
+      parsePaymentTerms(
+        [{ ...quote().paymentTerms[0], requiredForRelease: false }],
+        true,
+      ),
+    ).toThrow(/required before project release/);
     expect(parsePaymentTerms(quote().paymentTerms, true)).toHaveLength(1);
   });
   it("uses complete international phone numbers", () => {
@@ -117,6 +173,7 @@ describe("Commercial boundaries", () => {
         at: "2026-09-15T00:00:00.000Z",
       },
     };
+    source.lines[0].manualReason = "internal authorization note";
     const q = clientQuote(source, "client");
     const json = JSON.stringify(q);
     expect(json).not.toContain("unitCost");
@@ -125,6 +182,7 @@ describe("Commercial boundaries", () => {
     expect(json).not.toContain("Internal approver");
     expect(json).not.toContain("requestIds");
     expect(json).not.toContain("catalogPrice");
+    expect(json).not.toContain("internal authorization note");
     expect(q.canDecide).toBe(true);
     expect(clientQuote(quote(), "viewer").canDecide).toBe(false);
   });
@@ -182,6 +240,43 @@ describe("Commercial boundaries", () => {
     expect(
       freezeHash({ ...q, lines: [{ ...q.lines[0], material: "Changed" }] }),
     ).not.toBe(hash);
+  });
+  it("records acceptance against the issued hash and selected options", () => {
+    const q = quote();
+    q.lines.push({ ...q.lines[0], id: "upgrade", title: "Premium finish", optional: true, rate: 100 });
+    q.hash = freezeHash(q);
+    const evidence = quoteDecisionEvidence(
+      q,
+      "accept",
+      ["upgrade"],
+      "Client approver",
+      "2026-09-18T10:00:00.000Z",
+    );
+    expect(evidence).toEqual({
+      decision: "accept",
+      quoteHash: q.hash,
+      selectedOptionLineIds: ["upgrade"],
+      baseTotal: 52.97,
+      optionsTotal: 315,
+      acceptedTotal: 367.97,
+      decidedAt: "2026-09-18T10:00:00.000Z",
+      decidedBy: "Client approver",
+    });
+    q.clientDecision = evidence;
+    expect(acceptedQuoteLines(q).map((line) => line.id)).toEqual(["l1", "upgrade"]);
+    expect(acceptedQuoteTotals(q).total).toBe(367.97);
+    expect(acceptedQuoteValue(q)).toBe(367.97);
+    expect(() => quoteDecisionEvidence(q, "accept", ["missing"], "Client", "2026-09-18T10:00:00.000Z")).toThrow(/this quotation version/i);
+    expect(() => quoteDecisionEvidence(q, "changes", ["upgrade"], "Client", "2026-09-18T10:00:00.000Z", "Please revise")).toThrow(/only be selected/i);
+  });
+  it("rejects a changed issued snapshot and exposes expiry without exposing decisions", () => {
+    const q = quote();
+    q.hash = freezeHash(q);
+    expect(assertQuoteSnapshot(q)).toBe(q.hash);
+    q.terms = "Changed after issue";
+    expect(() => assertQuoteSnapshot(q)).toThrow(/issued snapshot/i);
+    const expired = { ...quote(), validUntil: "2020-01-01" };
+    expect(clientQuote(expired, "client")).toMatchObject({ expired: true, canDecide: false });
   });
   it("freezes cover and inclusions and preserves them in the client document", () => {
     const q = {

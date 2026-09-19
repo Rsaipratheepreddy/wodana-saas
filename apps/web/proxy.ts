@@ -1,16 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forwardedDeviceHeaders } from "@/lib/auth/device-request";
+import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath } from "@/lib/workspace/module-rollout";
 
 const ACCESS_COOKIE = "wodana_access";
 const REFRESH_COOKIE = "wodana_refresh";
-type BootstrapProfile = { nextAction?: unknown };
+type BootstrapProfile = {
+  nextAction?: unknown;
+  memberships?: Array<{ workspaceId: string; workspaceSlug: string; allowedModules?: string[]; roles?: string[]; onboarding?: { status?: string } }>;
+};
 
-function needsOnboarding(profile: BootstrapProfile | null) {
+const ALL_WORKSPACE_MODULES = ["workspace", "crm", "pre-project", "projects", "hrms"] as const;
+
+function needsOnboarding(profile: BootstrapProfile | null, membership?: { onboarding?: { status?: string } }) {
+  if (membership?.onboarding) return membership.onboarding.status !== "completed";
   return profile?.nextAction === "start_onboarding" || profile?.nextAction === "resume_onboarding";
 }
 
 function onboardingRedirect(request: NextRequest) {
   return NextResponse.redirect(new URL("/onboarding", request.url));
+}
+
+function workspaceRedirect(profile: BootstrapProfile | null, request: NextRequest, refreshed = false) {
+  const selectedId = request.cookies.get("wodana_workspace")?.value;
+  const membership = profile?.memberships?.find((item) => item.workspaceId === selectedId) ?? profile?.memberships?.[0];
+  if (needsOnboarding(profile, membership)) return onboardingRedirect(request);
+  const module = deferredModuleForPath(request.nextUrl.pathname);
+  const ownerAccess = membership?.roles?.some((role) => role === "owner" || role === "administrator") ?? false;
+  // Legacy business-core releases do not include module grants in /me. Keep
+  // their established access working until an explicit entitlement list exists.
+  const allowedModules = ownerAccess ? ALL_WORKSPACE_MODULES : membership?.allowedModules ?? ALL_WORKSPACE_MODULES;
+  if (!membership || !allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))) {
+    return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
+  }
+  if (module && membership && isCrmFirstWorkspace(membership.workspaceSlug)) {
+    const destination = new URL("/workspace/coming-soon", request.url);
+    destination.searchParams.set("module", module);
+    return NextResponse.redirect(destination);
+  }
+  return refreshed ? NextResponse.next({ request: { headers: request.headers } }) : NextResponse.next();
 }
 
 function signInRedirect(request: NextRequest, unavailable = false) {
@@ -48,7 +75,7 @@ export async function proxy(request: NextRequest) {
     }).catch(() => null);
     if (current?.ok) {
       const profile = await current.json().catch(() => null) as BootstrapProfile | null;
-      return needsOnboarding(profile) ? onboardingRedirect(request) : NextResponse.next();
+      return workspaceRedirect(profile, request);
     }
     if (!current || current.status >= 500) return signInRedirect(request, true);
   }
@@ -79,9 +106,7 @@ export async function proxy(request: NextRequest) {
       if (!current || current.status >= 500) return signInRedirect(request, true);
       if (!current.ok) return signInRedirect(request);
       const profile = await current.json().catch(() => null) as BootstrapProfile | null;
-      const response = needsOnboarding(profile)
-        ? onboardingRedirect(request)
-        : NextResponse.next({ request: { headers: request.headers } });
+      const response = workspaceRedirect(profile, request, true);
       const options = {
         httpOnly: true,
         sameSite: "strict" as const,

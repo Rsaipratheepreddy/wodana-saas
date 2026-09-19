@@ -19,6 +19,7 @@ export function releasedScopeLine(line: QuoteLine): ReleasedScopeLine {
     specification: line.specification,
     material: quotationMaterialText(line),
     finish: line.finish,
+    dimensions: line.dimensions ? { ...line.dimensions } : undefined,
     quantity: line.quantity,
     unit: line.unit,
     rate: line.rate,

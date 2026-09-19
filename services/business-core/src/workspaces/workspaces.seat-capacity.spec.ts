@@ -19,10 +19,13 @@ function serviceWithCapacity(activeMembers: number, pendingInvitations: number, 
     if (sql.includes("SELECT * FROM workspaces")) {
       return { rowCount: 1, rows: [{ id: workspaceId, name: "Test Workspace" }] };
     }
-    if (sql.includes("FROM workspace_subscriptions subscription")) {
+    if (sql.includes("FROM workspace_seat_capacity")) {
       return {
         rowCount: 1,
-        rows: [{ seatLimit, activeMembers, pendingInvitations }],
+        rows: [{
+          seatLimit, activeMembers, invitedMembers: 0, pendingInvitations,
+          reservedSeats: activeMembers + pendingInvitations,
+        }],
       };
     }
     if (sql.includes("FROM workspace_memberships membership")) {

@@ -42,6 +42,35 @@ export function assertUniqueWorkPackageScope(data: ProjectData) {
   }
 }
 
+export function assertWorkPackageGraph(data: ProjectData) {
+  const active = new Map(
+    (data.workPackages ?? [])
+      .filter((workPackage) => workPackage.status !== "cancelled")
+      .map((workPackage) => [workPackage.id, workPackage]),
+  );
+  for (const workPackage of active.values()) {
+    const predecessors = workPackage.predecessorPackageIds ?? [];
+    if (new Set(predecessors).size !== predecessors.length)
+      throw new ConflictException("A work package cannot repeat a dependency.");
+    if (predecessors.includes(workPackage.id))
+      throw new ConflictException("A work package cannot depend on itself.");
+    if (predecessors.some((id) => !active.has(id)))
+      throw new ConflictException("Choose active work-package dependencies.");
+  }
+  const visiting = new Set<string>(), visited = new Set<string>();
+  const visit = (id: string) => {
+    if (visiting.has(id))
+      throw new ConflictException("Work-package dependencies cannot form a cycle.");
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const dependency of active.get(id)?.predecessorPackageIds ?? [])
+      visit(dependency);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const id of active.keys()) visit(id);
+}
+
 /**
  * Materialises one durable, traceable delivery package for each newly released
  * quotation line. It is idempotent, so retries and variation synchronisation
@@ -70,6 +99,13 @@ export function syncScopeWorkPackages(data: ProjectData, now: string) {
       ownerId: "",
       plannedStart: "",
       plannedEnd: "",
+      predecessorPackageIds: [],
+      priority: "normal",
+      risk: "on_track",
+      nextAction: "",
+      nextActionOwnerId: "",
+      nextActionDate: "",
+      recoveryPlan: "",
       blocker: "",
       createdAt: now,
       updatedAt: now,

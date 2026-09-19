@@ -3,17 +3,19 @@ import type {PoolClient} from 'pg';
 
 export async function portalReviewDesign(client:PoolClient,workspaceId:string,caseId:string,versionId:string) {
  if(!/^[0-9a-f-]{36}$/i.test(versionId))throw new BadRequestException('Choose a design file.');
- const result=await client.query(`SELECT d.id,v.status,v.number FROM pre_project_designs d JOIN pre_project_design_versions v ON v.workspace_id=d.workspace_id AND v.design_id=d.id JOIN pre_project_cases c ON c.workspace_id=d.workspace_id AND c.id=d.case_id WHERE d.workspace_id=$1 AND d.case_id=$2 AND v.id=$3 AND c.status='active' AND d.archived_at IS NULL AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id)`,[workspaceId,caseId,versionId]);
- if(!result.rowCount||result.rows[0].status!=='client_review')throw new ConflictException('This file is no longer awaiting your approval. Reload the portal.');
- return result.rows[0] as {id:string;status:string;number:number};
+ const result=await client.query(`SELECT d.id,v.status,v.number,v.client_review_expires_at<=now() AS expired FROM pre_project_designs d JOIN pre_project_design_versions v ON v.workspace_id=d.workspace_id AND v.design_id=d.id JOIN pre_project_cases c ON c.workspace_id=d.workspace_id AND c.id=d.case_id WHERE d.workspace_id=$1 AND d.case_id=$2 AND v.id=$3 AND c.status='active' AND d.archived_at IS NULL AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id)`,[workspaceId,caseId,versionId]);
+ if(!result.rowCount)throw new ConflictException('This design revision was replaced or is no longer shared. Reload the portal.');
+ if(result.rows[0].status!=='client_review')throw new ConflictException('This file is no longer awaiting your approval. Reload the portal.');
+ if(result.rows[0].expired)throw new ConflictException('This design review request has expired. Ask the project team to issue a new review.');
+ return result.rows[0] as {id:string;status:string;number:number;expired:boolean};
 }
 
 export async function decidePortalDesign(client:PoolClient,workspaceId:string,caseId:string,grant:{id:string;name:string;role:string},input:{versionId:string;decision:string;note:string;challengeId:string},verify:()=>Promise<string|null>) {
  if(grant.role!=='approver')throw new ForbiddenException('Only the designated client approver can decide.');
- if(!['accept','changes'].includes(input.decision))throw new BadRequestException('Choose approve or reject.');
- if(input.decision==='changes'&&!input.note.trim())throw new BadRequestException('Add remarks before rejecting this file.');
+ if(!['accept','changes','decline'].includes(input.decision))throw new BadRequestException('Choose approve, request changes or reject.');
+ if(input.decision!=='accept'&&!input.note.trim())throw new BadRequestException(input.decision==='changes'?'Add remarks before requesting changes.':'Add a reason before rejecting this file.');
  if(input.note.length>5000||!/^[0-9a-f-]{36}$/i.test(input.challengeId))throw new BadRequestException('Invalid design approval.');
- const action=input.decision==='accept'?'approved':'changes_requested';
+ const action=input.decision==='accept'?'approved':input.decision==='changes'?'changes_requested':'rejected';
  const replay=await client.query(`SELECT action,note,version_id,client_grant_id FROM pre_project_design_activity WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.challengeId]);
  if(replay.rowCount){const row=replay.rows[0];if(row.action!==action||row.note!==input.note||row.version_id!==input.versionId||row.client_grant_id!==grant.id)throw new ConflictException('This approval has already been recorded differently.');return {ok:true,replayed:true};}
  const design=await portalReviewDesign(client,workspaceId,caseId,input.versionId);

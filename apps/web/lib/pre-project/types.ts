@@ -1,11 +1,22 @@
 export const PRE_PROJECT_ROOT = "/workspace/pre-projects";
 export type PreProjectCase = {
-  id: string; title: string; description: string | null; status: "active" | "released" | "archived";
+  id: string; title: string; description: string | null; status: "draft" | "active" | "on_hold" | "released" | "cancelled";
   customerId: string; customerName: string; opportunityId: string; opportunityStatus: string;
   leadId: string | null; leadManagerName: string | null; amount: string | null; currencyCode: string | null;
   createdAt: string; updatedAt: string;
+  phase: "discover" | "define" | "design" | "price" | "agree" | "release";
+  version: number; ownerMembershipId: string | null; engagementOwnerName: string | null;
+  targetDate: string | null; priority: "low" | "normal" | "high" | "urgent";
+  riskLevel: "none" | "low" | "medium" | "high" | "critical";
+  activatedAt: string | null; holdReason: string | null; cancellationReason: string | null;
+  releasedAt: string | null; canManageLifecycle?: boolean;
+  conversionOrigin?: string | null; convertedAt?: string | null;
+  qualificationEvidence?: unknown; qualificationEvidenceHash?: string | null;
 };
-export type PreProjectListItem = Omit<PreProjectCase, "status" | "opportunityId"> & { status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number; ownerMembershipId?: string | null };
+export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
+  status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
+  ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
+};
 export type PreProjectList = { items: PreProjectListItem[]; canStartLead?: boolean; total: number; canCreate: boolean; workspaceId: string; error?: string };
 export type PreProjectCandidate = { id: string; title: string; customerName: string; status: string; caseId: string | null };
 export const requirementViews = [
@@ -14,7 +25,7 @@ export const requirementViews = [
   { section: "inspiration", view: "inspiration", label: "Client inspirations" },
   { section: "site-layouts", view: "file", label: "Site layouts" },
 ] as const;
-export const caseSections = ["overview", ...requirementViews.map(item => item.section), "site", "designs", "boq", "quotations", "contracts", "payment-plan", "variations", "approvals", "execution-release", "client-portal", "documents"];
+export const caseSections = ["overview", ...requirementViews.map(item => item.section), "site", "designs", "definition", "boq", "quotations", "contracts", "payment-plan", "variations", "approvals", "execution-release", "client-portal", "documents"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function caseRoute(path: string) {
   const match = path.match(/^\/workspace\/pre-projects\/cases\/([^/]+)(?:\/([^/]+))?$/);

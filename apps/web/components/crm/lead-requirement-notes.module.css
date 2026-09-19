@@ -1,4 +1,4 @@
-.notes { min-inline-size:0; --crm-lilac:var(--wd-brand-lilac,#d6b9f3); --crm-rose:#e4a2bc; --crm-peach:#f39b54; --crm-accent:var(--wd-color-focus); }
+.notes { min-inline-size:0; --crm-lilac:var(--wd-color-info); --crm-rose:var(--wd-color-danger); --crm-peach:var(--wd-color-warning); --crm-accent:var(--wd-color-action-primary); }
 .toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.75rem; margin-block-end:1rem; }
 .toolbar > :global(.wd-search-field) { flex:1 1 13rem; min-inline-size:0; }
 .actions { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }

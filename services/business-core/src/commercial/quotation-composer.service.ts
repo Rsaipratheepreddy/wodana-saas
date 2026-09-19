@@ -28,6 +28,7 @@ import {
   mergeQuotationProposal,
   quotationComposerReadiness,
   quotationLineIdentities,
+  quotationScopeCoverage,
   quoteDraftHash,
   type QuotationProposal,
   type QuotationProposalItem,
@@ -156,6 +157,7 @@ export class QuotationComposerService {
           [workspaceId, caseId, quoteId],
         );
         const previous = this.previousQuote(data, quote);
+        const includedScope = definition ? this.includedScope(definition.snapshot) : [];
         return {
           quoteId,
           revision: data.revision,
@@ -171,8 +173,9 @@ export class QuotationComposerService {
             : null,
           readiness: quotationComposerReadiness(
             quote,
-            definition ? { confirmed: true, current: true } : null,
+            definition ? { confirmed: true, current: true, includedScope } : null,
           ),
+          coverage: quotationScopeCoverage(quote, includedScope),
           comparison: compareQuotationRevisions(quote, previous),
           runs: runs.rows.map((run) => this.present(run, data, quote, definition)),
         };
@@ -399,7 +402,15 @@ export class QuotationComposerService {
           skippedDuplicateItemIds: merged.skipped,
           revision: data.revision,
           quote,
-          readiness: quotationComposerReadiness(quote, { confirmed: true, current: true }),
+          readiness: quotationComposerReadiness(quote, {
+            confirmed: true,
+            current: true,
+            includedScope: this.includedScope(definition.snapshot),
+          }),
+          coverage: quotationScopeCoverage(
+            quote,
+            this.includedScope(definition.snapshot),
+          ),
           replayed: false,
         };
         await this.saveCommand(client, workspaceId, caseId, runId, requestId, "apply", requestHash, response, user.userId);
@@ -567,6 +578,12 @@ export class QuotationComposerService {
           sourceItem: item,
         };
       });
+  }
+
+  private includedScope(snapshot: DefinitionSourceSnapshot) {
+    return snapshot.items
+      .filter((item) => item.scopeStatus === "included")
+      .map((item) => ({ id: item.id, title: item.title, roomName: item.roomName }));
   }
 
   private assistantSeeds(

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { DatabaseService } from "../../database/database.service";
+import { ensureJobForSource } from "../../jobs/job-identity.store";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import {
@@ -718,6 +719,7 @@ export class CrmIntakeService {
        VALUES ($1, $2, $3, $4)`,
       [leadId, workspaceId, enquiryId, input.partyId],
     );
+    await ensureJobForSource(client, workspaceId, { type: "lead", id: leadId }, actorUserId);
     if (original.assignment) await this.leads.assignOnIntake(client, workspaceId, leadId, actorUserId, original.assignment);
     await this.leads.startSlaOnIntake(client, workspaceId, leadId, actorUserId);
     for (const touch of input.attribution) {

@@ -46,6 +46,30 @@ export type QuotationComposerIssue = {
   lineId?: string;
 };
 
+export type QuotationScopeItem = {
+  id: string;
+  title: string;
+  roomName?: string | null;
+};
+
+export type QuotationScopeCoverage = {
+  included: QuotationScopeItem[];
+  covered: QuotationScopeItem[];
+  uncovered: QuotationScopeItem[];
+};
+
+export function quotationScopeCoverage(
+  quote: Quote,
+  included: QuotationScopeItem[] = [],
+): QuotationScopeCoverage {
+  const linked = new Set(quote.lines.flatMap((line) => line.scopeId ? [line.scopeId] : []));
+  return {
+    included,
+    covered: included.filter((item) => linked.has(item.id)),
+    uncovered: included.filter((item) => !linked.has(item.id)),
+  };
+}
+
 export function quoteDraftHash(quote: Quote) {
   return canonicalHash({
     id: quote.id,
@@ -65,6 +89,7 @@ export function quoteDraftHash(quote: Quote) {
     paymentTerms: quote.paymentTerms,
     paymentTemplate: quote.paymentTemplate,
     requestIds: quote.requestIds,
+    designEvidence: quote.designEvidence,
   });
 }
 
@@ -164,7 +189,7 @@ export function mergeQuotationProposal(
 
 export function quotationComposerReadiness(
   quote: Quote,
-  definition: { confirmed: boolean; current: boolean } | null,
+  definition: { confirmed: boolean; current: boolean; includedScope?: QuotationScopeItem[] } | null,
   today = new Date().toISOString().slice(0, 10),
 ) {
   const issues: QuotationComposerIssue[] = [];
@@ -186,6 +211,13 @@ export function quotationComposerReadiness(
         "Confirm the current requirements and design definition before review.",
       );
   }
+  const coverage = quotationScopeCoverage(quote, definition?.includedScope);
+  if (definition?.confirmed && definition.current && coverage.uncovered.length)
+    add(
+      "UNCOVERED_SCOPE",
+      "warning",
+      `${coverage.uncovered.length} confirmed scope ${coverage.uncovered.length === 1 ? "item is" : "items are"} not included in this quotation.`,
+    );
   const identities = new Map<string, string>();
   for (const line of quote.lines) {
     if (line.catalogPrice?.status !== undefined && line.catalogPrice.status !== "resolved")
@@ -213,7 +245,9 @@ export function quotationComposerReadiness(
       add(
         "CUSTOM_ITEM",
         "warning",
-        `${line.title} is a custom item; verify its scope, specification and rate.`,
+        line.manualReason
+          ? `${line.title} is an authorized manual item; verify its specification and rate.`
+          : `${line.title} is a legacy manual item without an authorization reason.`,
         line.id,
       );
     if (line.customMaterials?.some((material) => material.suppliedByClient))
@@ -235,7 +269,13 @@ export function quotationComposerReadiness(
   if (quote.validUntil < today)
     add("UPDATE_VALIDITY", "blocker", "Update the quotation validity date.");
   try {
-    totals(quote);
+    const financials = totals(quote);
+    if (financials.cost > 0 && financials.net < financials.cost)
+      add(
+        "NEGATIVE_MARGIN",
+        "warning",
+        "The quotation value does not cover the recorded internal cost. Review it with an authorized commercial owner.",
+      );
   } catch (error) {
     add(
       "FIX_TOTALS",
@@ -261,6 +301,21 @@ export function quotationComposerReadiness(
 }
 
 export function compareQuotationRevisions(current: Quote, previous?: Quote) {
+  const publicLine = ({ unitCost: _unitCost, manualReason: _manualReason, catalogPrice: _catalogPrice, catalogPriceRequest: _catalogPriceRequest, ...line }: QuoteLine) => line;
+  const summary = (line: QuoteLine) => ({ id: line.id, room: line.room, title: line.title, optional: Boolean(line.optional) });
+  const changes = (before: QuoteLine, after: QuoteLine) => {
+    const fields: string[] = [];
+    if (before.room !== after.room) fields.push("room");
+    if (before.title !== after.title) fields.push("item");
+    if (before.quantity !== after.quantity || before.unit !== after.unit) fields.push("quantity");
+    if (before.rate !== after.rate) fields.push("selling price");
+    if (Boolean(before.optional) !== Boolean(after.optional)) fields.push("option status");
+    if (before.specification !== after.specification) fields.push("specification");
+    if (canonicalHash(before.dimensions ?? null) !== canonicalHash(after.dimensions ?? null)) fields.push("size");
+    if (canonicalHash(before.materialRows ?? before.customMaterials ?? [before.material, before.finish]) !== canonicalHash(after.materialRows ?? after.customMaterials ?? [after.material, after.finish])) fields.push("materials");
+    if (canonicalHash(before.catalogLinks ?? []) !== canonicalHash(after.catalogLinks ?? [])) fields.push("catalogue source");
+    return fields;
+  };
   if (!previous)
     return {
       previousQuoteId: null,
@@ -268,6 +323,7 @@ export function compareQuotationRevisions(current: Quote, previous?: Quote) {
       removed: 0,
       changed: 0,
       totalDelta: current.total,
+      details: { added: current.lines.map(summary), removed: [], changed: [] },
     };
   const key = (line: QuoteLine) => quotationLineIdentity(line) ?? `line:${line.id}`;
   const before = new Map(previous.lines.map((line) => [key(line), line]));
@@ -275,13 +331,21 @@ export function compareQuotationRevisions(current: Quote, previous?: Quote) {
   let changed = 0;
   for (const [identity, line] of after) {
     const old = before.get(identity);
-    if (old && canonicalHash(old) !== canonicalHash(line)) changed++;
+    if (old && canonicalHash(publicLine(old)) !== canonicalHash(publicLine(line))) changed++;
   }
+  const addedLines = [...after.entries()].filter(([identity]) => !before.has(identity)).map(([, line]) => summary(line));
+  const removedLines = [...before.entries()].filter(([identity]) => !after.has(identity)).map(([, line]) => summary(line));
+  const changedLines = [...after.entries()].flatMap(([identity, line]) => {
+    const old = before.get(identity);
+    if (!old || canonicalHash(publicLine(old)) === canonicalHash(publicLine(line))) return [];
+    return [{ ...summary(line), changes: changes(old, line) }];
+  });
   return {
     previousQuoteId: previous.id,
-    added: [...after.keys()].filter((identity) => !before.has(identity)).length,
-    removed: [...before.keys()].filter((identity) => !after.has(identity)).length,
+    added: addedLines.length,
+    removed: removedLines.length,
     changed,
     totalDelta: Math.round((current.total - previous.total) * 100) / 100,
+    details: { added: addedLines, removed: removedLines, changed: changedLines },
   };
 }

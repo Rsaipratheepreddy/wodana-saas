@@ -7,10 +7,11 @@ import { BriefService } from './brief.service';
 import { ItemDimensionDto } from './item-specification.dto';
 import { normalizeItemDimension } from './item-specification.service';
 import { ReviewSiteMeasurementDto, SaveSiteMeasurementDto, SaveSiteObservationDto, SaveSiteVisitDto, SiteLocationDto } from './site.dto';
+import { syncOneTreeFromCase } from '../jobs/one-tree.store';
 
 type Dimension = ItemDimensionDto & { verification?:string; siteSurvey?:{id:string;version:number;status:string}; approximateMetres?:number|null; measuredMetres?:number|null };
-type SiteContent = Record<string,unknown> & { id:string;version:number;kind:string;title:string;status:string;roomId?:string|null;entryId?:string|null;visitId?:string|null;dimensions?:Dimension[];assetIds:string[];assets?:unknown[] };
-const select = `SELECT s.content,s.version,s.updated_at AS "updatedAt",u.display_name AS "recordedBy",r.name AS "roomName",e.title AS "entryTitle",e.archived_at AS "entryArchivedAt",v.title AS "visitTitle"
+type SiteContent = Record<string,unknown> & { id:string;version:number;kind:string;title:string;status:string;roomId?:string|null;entryId?:string|null;visitId?:string|null;dimensions?:Dimension[];assetIds:string[];assets?:unknown[];evidenceConsentConfirmed?:boolean;evidenceConsent?:{confirmedAt:string;confirmedBy:string} };
+const select = `SELECT s.content,s.site_id AS "siteId",s.version,s.updated_at AS "updatedAt",u.display_name AS "recordedBy",r.name AS "roomName",e.title AS "entryTitle",e.archived_at AS "entryArchivedAt",v.title AS "visitTitle"
  FROM pre_project_site_records s JOIN users u ON u.id=s.updated_by
  LEFT JOIN pre_project_rooms r ON r.workspace_id=s.workspace_id AND r.case_id=s.case_id AND r.id=s.room_id
  LEFT JOIN pre_project_brief_entries e ON e.workspace_id=s.workspace_id AND e.case_id=s.case_id AND e.id=s.entry_id
@@ -32,6 +33,10 @@ export function normalizeSurveyDimensions(dimensions:ItemDimensionDto[]):Dimensi
 export function assertSurveyReview(content:SiteContent,status:string) {
  if(status==='verified'&&(!content.dimensions?.length||content.dimensions.some(d=>d.measured==null)||!content.assetIds.length))throw new BadRequestException('Verification needs measured values for every dimension and at least one supporting photo or PDF.');
  if(content.status===status)throw new ConflictException(`This survey is already ${status==='verified'?'verified':'marked for recheck'}.`);
+}
+export function applyEvidenceConsent(content:SiteContent,previous:SiteContent|null,userId:string,now=()=>new Date()) {
+ const {evidenceConsentConfirmed,...clean}=content;
+ return {...clean,...(evidenceConsentConfirmed&&content.assetIds.length?{evidenceConsent:{confirmedAt:now().toISOString(),confirmedBy:userId}}:previous?.evidenceConsent?{evidenceConsent:previous.evidenceConsent}:{})};
 }
 
 @Injectable()
@@ -115,16 +120,18 @@ export class SiteService {
   if(input.visitId){const visit=await this.current(client,w,c,input.visitId);if(visit?.kind!=='visit')throw new BadRequestException('Choose a visit from this pre-execution.');}
  }
  private async write(client:PoolClient,w:string,c:string,userId:string,content:SiteContent,previous:SiteContent|null) {
+  content=applyEvidenceConsent(content,previous,userId);
+  const tree=await syncOneTreeFromCase(client,w,c,userId);
   const assets=await client.query(`SELECT id,original_name AS name,mime_type AS "mimeType",byte_size AS "byteSize",preview_key IS NOT NULL AS "hasPreview" FROM pre_project_brief_assets WHERE workspace_id=$1 AND case_id=$2 AND id=ANY($3::uuid[]) ORDER BY created_at,id`,[w,c,content.assetIds]);
   if(assets.rowCount!==content.assetIds.length)throw new BadRequestException('Every attached file must belong to this pre-execution.');
   const names=(await client.query(`SELECT
    (SELECT name FROM pre_project_rooms WHERE workspace_id=$1 AND case_id=$2 AND id=$3) AS "roomName",
    (SELECT title FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND id=$4) AS "entryTitle",
    (SELECT title FROM pre_project_site_records WHERE workspace_id=$1 AND case_id=$2 AND id=$5) AS "visitTitle"`,[w,c,content.roomId??null,content.entryId??null,content.visitId??null])).rows[0];
-  content={...content,...names,assets:assets.rows};
-  const values=[w,c,content.id,content.kind,content.roomId??null,content.entryId??null,content.visitId??null,content.title,content.status,content.version,content,userId];
-  if(previous)await client.query(`UPDATE pre_project_site_records SET kind=$4,room_id=$5,entry_id=$6,visit_id=$7,title=$8,status=$9,version=$10,content=$11,updated_by=$12,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,values);
-  else await client.query(`INSERT INTO pre_project_site_records(workspace_id,case_id,id,kind,room_id,entry_id,visit_id,title,status,version,content,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,values);
+  content={...content,...names,siteId:tree.siteId,assets:assets.rows};
+  const values=[w,c,content.id,tree.siteId,content.kind,content.roomId??null,content.entryId??null,content.visitId??null,content.title,content.status,content.version,content,userId];
+  if(previous)await client.query(`UPDATE pre_project_site_records SET site_id=$4,kind=$5,room_id=$6,entry_id=$7,visit_id=$8,title=$9,status=$10,version=$11,content=$12,updated_by=$13,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,values);
+  else await client.query(`INSERT INTO pre_project_site_records(workspace_id,case_id,id,site_id,kind,room_id,entry_id,visit_id,title,status,version,content,created_by,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`,values);
   await client.query(`INSERT INTO pre_project_site_revisions(workspace_id,case_id,record_id,version,content,created_by) VALUES($1,$2,$3,$4,$5,$6)`,[w,c,content.id,content.version,content,userId]);
   for(const assetId of content.assetIds)await client.query(`INSERT INTO pre_project_site_assets(workspace_id,case_id,record_id,version,asset_id) VALUES($1,$2,$3,$4,$5)`,[w,c,content.id,content.version,assetId]);
   await this.events.record(client,{workspaceId:w,actorUserId:userId,source:'user',action:`pre_project.site_${content.kind}_saved.v1`,entityType:'pre_project_site_record',entityId:content.id,before:previous??undefined,after:{caseId:c,...content}});

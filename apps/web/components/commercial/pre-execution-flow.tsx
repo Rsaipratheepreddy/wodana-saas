@@ -31,7 +31,9 @@ export function PreExecutionFlow({
   const verifiedPayments = requiredPayments.filter(releasePaymentIsOperational).length;
   const agreementReady =
     agreementIsOperational(data.agreement) && data.agreement?.quoteId === accepted?.id;
-  const paymentsReady = requiredPayments.every(releasePaymentIsOperational);
+  const paymentsReady =
+    requiredPayments.length > 0 &&
+    requiredPayments.every(releasePaymentIsOperational);
   const openChanges = data.requests.filter(
     (request) => !["resolved", "declined", "withdrawn"].includes(request.status),
   ).length;

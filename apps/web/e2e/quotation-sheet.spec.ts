@@ -1,5 +1,24 @@
 import { expect, test } from "@playwright/test";
 
+test("item dimensions carry from the builder into the client quotation", async ({ page }, testInfo) => {
+  await page.route("**/api/**", (route) => route.fulfill({ json: { items: [], templates: [] } }));
+  await page.goto("/testing/quotation");
+  await page.getByRole("button", { name: "Materials for Workstations" }).click();
+  const details = page.getByRole("dialog", { name: "Materials" });
+  await details.getByRole("textbox", { name: "Length" }).fill("220");
+  await details.getByRole("textbox", { name: "Height" }).fill("75");
+  await details.getByRole("textbox", { name: "Depth" }).fill("100");
+  await details.getByRole("button", { name: "Apply materials" }).click();
+  await page.getByRole("button", { name: "Preview quotation" }).click();
+  const document = page.getByRole("article", { name: "Quotation document" });
+  if (testInfo.project.name === "mobile")
+    await expect(document.locator('td[data-label="Materials & details"]').first()).toBeVisible();
+  else
+    await expect(document.getByRole("columnheader", { name: "Materials & details" }).first()).toBeVisible();
+  await expect(document.getByText("L 220 × H 75 × D 100 cm")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("quotation-client-preview.png"), animations: "disabled" });
+});
+
 test("compact table, materials modal, standard unit menus and variant editing", async ({
   page,
 }, testInfo) => {
@@ -322,6 +341,16 @@ test("quotation sheet edits, prices, catalog selections, photos and preview on d
   await page.getByRole("button", { name: "Save section", exact: true }).click();
   await page
     .getByRole("button", { name: "Add item to Delivery", exact: true })
+    .click();
+  const manualDialog = page.getByRole("dialog", {
+    name: "Authorize manual item",
+    exact: true,
+  });
+  await manualDialog
+    .getByRole("textbox", { name: /Authorization reason/ })
+    .fill("Client-requested delivery allowance");
+  await manualDialog
+    .getByRole("button", { name: "Add manual item", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Preview quotation", exact: true })

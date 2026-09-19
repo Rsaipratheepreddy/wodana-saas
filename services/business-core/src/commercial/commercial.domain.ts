@@ -8,8 +8,11 @@ import type {
   QuoteLine,
   PortalBrand,
   ClientQuote,
+  ClientChangeRequest,
   ChangeRequest,
   PaymentTerm,
+  QuotePresentation,
+  QuoteDecisionEvidence,
 } from "./commercial.types";
 export const emptyCommercial = (): CommercialData => ({
   revision: 0,
@@ -17,6 +20,11 @@ export const emptyCommercial = (): CommercialData => ({
   requests: [],
   agreement: null,
   payments: [],
+  financeContext: null,
+  financeDocuments: [],
+  receipts: [],
+  allocations: [],
+  credits: [],
   audit: [],
   ownerReview: null,
   dealFile: null,
@@ -79,11 +87,12 @@ export function phone(input: unknown): string {
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
 export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
+  const includedLines = q.lines.filter((line) => !line.optional);
   const subtotal = round(
-    q.lines.reduce((s, l) => s + round(l.quantity * l.rate), 0),
+    includedLines.reduce((s, l) => s + round(l.quantity * l.rate), 0),
   );
   const cost = round(
-    q.lines.reduce((s, l) => s + round(l.quantity * (l.unitCost ?? 0)), 0),
+    includedLines.reduce((s, l) => s + round(l.quantity * (l.unitCost ?? 0)), 0),
   );
   const discount = round(q.discount);
   if (discount > subtotal)
@@ -117,11 +126,26 @@ export function parseLines(input: unknown): QuoteLine[] {
       unitCost: round(number(l.unitCost, 1e8)),
       rate: round(number(l.rate, 1e8)),
     };
+    if (l.optional !== undefined) line.optional = l.optional === true;
+    if (l.manualReason !== undefined)
+      line.manualReason = text(l.manualReason, 500);
     if (l.variant !== undefined) line.variant = text(l.variant, 240);
     if (l.photo !== undefined) {
       line.photo = text(l.photo, 60000);
       if (line.photo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(line.photo))
         throw new BadRequestException("Use a PNG, JPEG or WebP quotation photo.");
+    }
+    if (l.dimensions !== undefined) {
+      const dimensions = object(l.dimensions);
+      if (!["mm", "cm", "m", "in", "ft"].includes(String(dimensions.unit)))
+        throw new BadRequestException("Choose a valid quotation size unit.");
+      const values = (["length", "height", "depth"] as const).flatMap((key) =>
+        dimensions[key] === undefined || dimensions[key] === null || dimensions[key] === ""
+          ? []
+          : [[key, number(dimensions[key], 1e6, 0.0001)] as const],
+      );
+      if (!values.length) throw new BadRequestException("Enter at least one quotation size.");
+      line.dimensions = { unit: dimensions.unit as NonNullable<QuoteLine["dimensions"]>["unit"], ...Object.fromEntries(values) };
     }
     if (l.pricingMode !== undefined) {
       if (l.pricingMode !== 'item' && l.pricingMode !== 'materials') throw new BadRequestException('Choose item or materials pricing.');
@@ -238,6 +262,9 @@ export function actionable(q: Quote, now = new Date()) {
       "This quotation is no longer awaiting a decision. Open the current version.",
     );
 }
+export function quoteExpired(q: Pick<Quote, "validUntil">, now = new Date()) {
+  return Date.parse(q.validUntil + "T23:59:59.999Z") < now.getTime();
+}
 export function freezeHash(q: Quote): string {
   return createHash("sha256")
     .update(
@@ -245,12 +272,14 @@ export function freezeHash(q: Quote): string {
         direction: q.direction,
         familyId: q.familyId,
         definitionBaseline: q.definitionBaseline,
+        designEvidence: q.designEvidence,
         title: q.title,
         cover: q.cover,
+        presentation: q.presentation,
         rooms: q.rooms,
         inclusions: q.inclusions,
         currency: q.currency,
-        lines: q.lines.map(({ unitCost, ...line }) => line),
+        lines: q.lines.map(({ unitCost, manualReason, ...line }) => line),
         discount: q.discount,
         taxRate: q.taxRate,
         terms: q.terms,
@@ -264,7 +293,85 @@ export function freezeHash(q: Quote): string {
     )
     .digest("hex");
 }
+export function assertQuoteSnapshot(q: Quote) {
+  if (
+    !q.hash ||
+    q.hash !== freezeHash(q) ||
+    round(totals(q).total) !== round(q.total)
+  )
+    throw new ConflictException(
+      "This quotation no longer matches its issued snapshot. Ask the project team to issue a new revision.",
+    );
+  return q.hash;
+}
+export function quoteDecisionEvidence(
+  q: Quote,
+  decision: QuoteDecisionEvidence["decision"],
+  selectedOptionLineIds: unknown,
+  decidedBy: string,
+  decidedAt: string,
+  note = "",
+): QuoteDecisionEvidence {
+  const quoteHash = assertQuoteSnapshot(q);
+  if (!Array.isArray(selectedOptionLineIds) || selectedOptionLineIds.length > 300)
+    throw new BadRequestException("Choose valid quotation options.");
+  const requested = selectedOptionLineIds.map((id) => text(id, 80, true));
+  if (new Set(requested).size !== requested.length)
+    throw new BadRequestException("Choose each quotation option once.");
+  if (decision !== "accept" && requested.length)
+    throw new BadRequestException("Options can only be selected when accepting a quotation.");
+  const optionIds = new Set(q.lines.filter((line) => line.optional).map((line) => line.id));
+  if (requested.some((id) => !optionIds.has(id)))
+    throw new BadRequestException("Choose options from this quotation version only.");
+  const accepted = new Set(requested);
+  const selected = q.lines
+    .filter((line) => line.optional && accepted.has(line.id))
+    .map((line) => line.id);
+  const selectedTotals = totals({
+    ...q,
+    lines: q.lines.map((line) =>
+      line.optional && accepted.has(line.id) ? { ...line, optional: false } : line,
+    ),
+  });
+  const baseTotal = round(q.total);
+  const acceptedTotal = round(selectedTotals.total);
+  return {
+    decision,
+    quoteHash,
+    selectedOptionLineIds: selected,
+    baseTotal,
+    optionsTotal: decision === "accept" ? round(acceptedTotal - baseTotal) : 0,
+    ...(decision === "accept" ? { acceptedTotal } : {}),
+    decidedAt,
+    decidedBy,
+    ...(note ? { note } : {}),
+  };
+}
+export function acceptedQuoteLines(q: Quote) {
+  const selected = new Set(
+    q.clientDecision?.decision === "accept"
+      ? q.clientDecision.selectedOptionLineIds
+      : [],
+  );
+  return q.lines.filter((line) => !line.optional || selected.has(line.id));
+}
+export function acceptedQuoteTotals(q: Quote) {
+  const selected = new Set(acceptedQuoteLines(q).map((line) => line.id));
+  return totals({
+    ...q,
+    lines: q.lines.map((line) =>
+      line.optional && selected.has(line.id) ? { ...line, optional: false } : line,
+    ),
+  });
+}
+export function acceptedQuoteValue(q: Quote) {
+  return q.clientDecision?.decision === "accept" &&
+    q.clientDecision.acceptedTotal !== undefined
+    ? q.clientDecision.acceptedTotal
+    : q.total;
+}
 export function clientQuote(q: Quote, grantId: string): ClientQuote {
+  const expired = quoteExpired(q);
   return {
     id: q.id,
     number: q.number,
@@ -276,6 +383,7 @@ export function clientQuote(q: Quote, grantId: string): ClientQuote {
     status: q.status,
     title: q.title,
     cover: q.cover,
+    presentation: q.presentation,
     rooms: q.rooms?.map(({ id, name }) => ({ id, name })),
     inclusions: q.inclusions,
     currency: q.currency,
@@ -298,23 +406,27 @@ export function clientQuote(q: Quote, grantId: string): ClientQuote {
       customMaterials: l.customMaterials,
       variant: l.variant,
       photo: l.photo,
+      dimensions: l.dimensions,
       pricingMode: l.pricingMode,
       materialRows: l.materialRows,
       quantity: l.quantity,
       unit: l.unit,
       rate: l.rate,
+      optional: l.optional,
     })),
     createdAt: q.createdAt,
     issuedAt: q.issuedAt,
     decidedAt: q.decidedAt,
     decidedBy: q.decidedBy,
+    clientDecision: q.clientDecision,
     hash: q.hash,
     total: q.total,
     brand: q.brand,
     canDecide:
       q.status === "issued" &&
       q.approverId === grantId &&
-      Date.parse(q.validUntil + "T23:59:59.999Z") >= Date.now(),
+      !expired,
+    expired,
   };
 }
 export function newRequest(
@@ -322,6 +434,7 @@ export function newRequest(
   title: string,
   detail: string,
   quoteId?: string,
+  structured?: ChangeRequest["decisionRequest"],
 ): ChangeRequest {
   const request: ChangeRequest = {
     id: randomUUID(),
@@ -335,9 +448,48 @@ export function newRequest(
     resolution: "",
     comments: [],
     createdAt: new Date().toISOString(),
+    ...(structured ? { decisionRequest: structured } : {}),
   };
   data.requests.push(request);
   return request;
+}
+export function clientChangeRequest(request: ChangeRequest): ClientChangeRequest {
+  const projected: ClientChangeRequest = {
+    id: request.id,
+    number: request.number,
+    ...(request.quoteId ? { quoteId: request.quoteId } : {}),
+    title: request.title,
+    detail: request.detail,
+    status: request.status,
+    owner: request.owner,
+    dueDate: request.dueDate,
+    resolution: request.resolution,
+    comments: request.comments.filter((comment) => comment.visibility === "client"),
+    createdAt: request.createdAt,
+  };
+  if (request.decisionRequest) {
+    const decision = request.decisionRequest.decision;
+    projected.decisionRequest = {
+      target: { ...request.decisionRequest.target },
+      allowedChoices: request.decisionRequest.allowedChoices.map((choice) => ({ ...choice })),
+      escalationMinutes: request.decisionRequest.escalationMinutes,
+      notificationPolicy: {
+        remindersEnabled: request.decisionRequest.notificationPolicy.remindersEnabled,
+        channels: [...request.decisionRequest.notificationPolicy.channels],
+      },
+      decision: decision
+        ? {
+            responseId: decision.responseId,
+            choiceId: decision.choiceId,
+            choiceLabel: decision.choiceLabel,
+            note: decision.note,
+            decidedAt: decision.decidedAt,
+            decidedBy: decision.decidedBy,
+          }
+        : null,
+    };
+  }
+  return projected;
 }
 export function parseBrand(input: unknown): PortalBrand {
   const b = object(input);
@@ -377,6 +529,7 @@ export function parsePaymentTerms(
       percent: number(r.percent, 100, 0.01),
       trigger: text(r.trigger, 300, true),
       requiredForRelease: r.requiredForRelease === true,
+      requiredForProduction: r.requiredForProduction === true,
     };
   });
   if (new Set(rows.map((r) => r.id)).size !== rows.length)
@@ -386,6 +539,10 @@ export function parsePaymentTerms(
     Math.abs(rows.reduce((sum, r) => sum + r.percent, 0) - 100) > 0.001
   )
     throw new BadRequestException("Payment milestones must total 100%.");
+  if (required && !rows.some((row) => row.requiredForRelease))
+    throw new BadRequestException(
+      "Choose at least one payment milestone required before project release.",
+    );
   return rows;
 }
 
@@ -401,6 +558,17 @@ export function parseCover(input: unknown) {
     preparedFor: text(c.preparedFor, 160),
     location: text(c.location, 300),
     subtitle: text(c.subtitle, 500),
+    ...(c.coordinates !== undefined
+      ? {
+          coordinates: {
+            latitude: number(object(c.coordinates).latitude, 90, -90),
+            longitude: number(object(c.coordinates).longitude, 180, -180),
+            ...(object(c.coordinates).accuracy !== undefined
+              ? { accuracy: number(object(c.coordinates).accuracy, 100000, 0) }
+              : {}),
+          },
+        }
+      : {}),
     ...(c.logo !== undefined ? { logo: image('logo') } : {}),
     ...(c.banner !== undefined ? { banner: image('banner') } : {}),
     ...(c.signature !== undefined ? { signature: image('signature') } : {}),
@@ -409,5 +577,82 @@ export function parseCover(input: unknown) {
     ...(c.clientSignature !== undefined ? { clientSignature: c.clientSignature === true } : {}),
     ...(c.taxLabel !== undefined ? { taxLabel: text(c.taxLabel, 40) } : {}),
     ...(c.taxRegistration !== undefined ? { taxRegistration: text(c.taxRegistration, 120) } : {}),
+  };
+}
+
+const canvasHex = (value: unknown, fallback: string) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  const result = text(value, 7, true);
+  if (!/^#[\da-f]{6}$/i.test(result))
+    throw new BadRequestException("Choose a valid document colour.");
+  return result;
+};
+
+/** Keep visual freedom bounded, portable and safe for deterministic PDF output. */
+export function parseQuotePresentation(input: unknown): QuotePresentation {
+  const value = object(input);
+  if (value.version !== 1)
+    throw new BadRequestException("Use the current quotation page format.");
+  if (!Array.isArray(value.pages) || value.pages.length > 40)
+    throw new BadRequestException("Use up to 40 quotation pages.");
+  let imageBytes = 0;
+  const image = (candidate: unknown) => {
+    const source = text(candidate ?? "", 500000);
+    if (source && !/^data:image\/(png|jpeg|webp);base64,[a-z\d+/=]+$/i.test(source))
+      throw new BadRequestException("Upload a PNG, JPEG or WebP quotation image.");
+    imageBytes += source.length;
+    if (imageBytes > 1_500_000)
+      throw new BadRequestException("Quotation page images are too large together.");
+    return source;
+  };
+  const position = (candidate: unknown, max = 2000) => number(candidate, max);
+  const pages = value.pages.map((candidate) => {
+    const page = object(candidate);
+    if (!Array.isArray(page.elements) || page.elements.length > 100)
+      throw new BadRequestException("Use up to 100 elements on each quotation page.");
+    const elements = page.elements.map((candidateElement) => {
+      const element = object(candidateElement);
+      if (element.type !== "text" && element.type !== "image")
+        throw new BadRequestException("Choose a text or image page element.");
+      const common = {
+        id: text(element.id, 80, true),
+        type: element.type,
+        x: position(element.x),
+        y: position(element.y),
+        width: number(element.width, 2000, 24),
+        height: number(element.height, 2000, 24),
+      } as const;
+      return element.type === "text"
+        ? {
+            ...common,
+            type: "text" as const,
+            text: text(element.text ?? "", 4000),
+            color: canvasHex(element.color, "#000000"),
+            fontSize: number(element.fontSize ?? 24, 96, 8),
+            align: (element.align === "center" || element.align === "right"
+              ? element.align
+              : "left") as "left" | "center" | "right",
+          }
+        : { ...common, type: "image" as const, src: image(element.src) };
+    });
+    if (new Set(elements.map((element) => element.id)).size !== elements.length)
+      throw new BadRequestException("Give every page element a unique ID.");
+    return {
+      id: text(page.id, 160, true),
+      ...(page.kind === "custom" ? { kind: "custom" as const } : {}),
+      ...(page.title !== undefined ? { title: text(page.title, 160) } : {}),
+      ...(page.background !== undefined ? { background: canvasHex(page.background, "#ffffff") } : {}),
+      ...(page.backgroundImage !== undefined ? { backgroundImage: image(page.backgroundImage) } : {}),
+      elements,
+    };
+  });
+  if (new Set(pages.map((page) => page.id)).size !== pages.length)
+    throw new BadRequestException("Give every quotation page a unique ID.");
+  return {
+    version: 1,
+    pageBackground: canvasHex(value.pageBackground, "#E4E3DE"),
+    textColor: canvasHex(value.textColor, "#000000"),
+    accentColor: canvasHex(value.accentColor, "#000000"),
+    pages,
   };
 }

@@ -17,7 +17,7 @@ describe("CRM lead qualification presentation", () => {
       if (sql.includes("SELECT lead.*")) {
         return {
           rows: [{
-            id: "lead", party_id: "party", owner_membership_id: null, queue_id: null,
+            id: "lead", enquiry_id: "enquiry", party_id: "party", owner_membership_id: null, queue_id: null,
             status: "qualified", version: 5, source: "company", channel: "website",
             service_type: "interior_design", business_unit_id: null, preferred_locale: "en-AE",
             party_owner_membership_id: null, qualification_evidence: evidence,
@@ -29,7 +29,8 @@ describe("CRM lead qualification presentation", () => {
       if (sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
       if (sql.includes("FROM crm_assignment_history")) return { rows: [], rowCount: 0 };
       if (sql.includes("FROM crm_sla_instances")) return { rows: [], rowCount: 0 };
-      if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry", externalEventId: "lead-ad-42", correlationId: "correlation-42" }], rowCount: 1 };
+      if (sql.includes("FROM crm_attribution_touches")) return { rows: [{ id: "touch", source: "instagram", medium: "shared_link", campaign: "summer" }], rowCount: 1 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = {
@@ -46,6 +47,47 @@ describe("CRM lead qualification presentation", () => {
       selection: "service_specific",
       form: evidence.form,
       frozen: true,
+    });
+    expect(result.enquiry).toMatchObject({
+      id: "enquiry",
+      externalEventId: "lead-ad-42",
+      correlationId: "correlation-42",
+      attribution: [{ id: "touch", source: "instagram", medium: "shared_link", campaign: "summer" }],
+    });
+    expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
+  });
+
+  it("preserves a frozen no-form decision instead of dereferencing absent live state", async () => {
+    const evidence = {
+      version: 1,
+      leadId: "lead",
+      serviceType: null,
+      selection: "none",
+      form: null,
+      answers: [],
+      requiredKeys: [],
+      evaluatedAt: "2026-09-18T08:00:00.000Z",
+    };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{
+        id: "lead", enquiry_id: "enquiry", party_id: "party", owner_membership_id: null, queue_id: null,
+        status: "qualified", version: 2, source: "shared_link", channel: "website", service_type: null,
+        business_unit_id: null, preferred_locale: "en-AE", party_owner_membership_id: null,
+        qualification_evidence: evidence, qualification_evidence_hash: "b".repeat(64),
+      }], rowCount: 1 };
+      if (sql.includes("FROM crm_lead_qualification_values") || sql.includes("FROM crm_assignment_history")
+        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const access = {
+      withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })),
+      hasPermission: vi.fn().mockResolvedValue(false),
+    };
+    const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
+
+    await expect(service.get({} as never, "workspace", "lead")).resolves.toMatchObject({
+      qualificationState: { ready: true, missingRequired: [], selection: "none", form: null, frozen: true },
     });
     expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
   });

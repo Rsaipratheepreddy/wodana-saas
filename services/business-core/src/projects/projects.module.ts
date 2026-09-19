@@ -38,6 +38,7 @@ import { ProjectsService } from "./projects.service";
 import { ProjectWorkflowService } from "./project-workflow.service";
 import { ProjectScheduleService } from "./project-schedule.service";
 import { CrmNotificationsModule } from "../crm/notifications/crm-notifications.module";
+import { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 @ApiTags("projects-sites")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/projects")
@@ -75,6 +76,23 @@ export class ProjectsController {
     @Body() body: unknown,
   ) {
     return this.workflows.archive(actor, workspaceId, templateId, body);
+  }
+  @Get("workflow-templates/:templateId/history")
+  workflowTemplateHistory(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("templateId", ParseUUIDPipe) templateId: string,
+  ) {
+    return this.workflows.history(actor, workspaceId, templateId);
+  }
+  @Post("workflow-templates/:templateId/rollback")
+  rollbackWorkflowTemplate(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("templateId", ParseUUIDPipe) templateId: string,
+    @Body() body: RestoreConfigurationRevisionDto,
+  ) {
+    return this.workflows.rollback(actor, workspaceId, templateId, body);
   }
   @Post(":projectId/files/:recordId/:fileId")
   @UseInterceptors(
@@ -193,6 +211,20 @@ export class ProjectsController {
     @Param("workspaceId", ParseUUIDPipe) w: string,
   ) {
     return this.execution.candidates(actor, w);
+  }
+  @Get("field-queue") fieldQueue(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+  ) {
+    return this.execution.fieldQueue(actor, w);
+  }
+  @Post(":projectId/field-actions") fieldAction(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("projectId", ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+  ) {
+    return this.execution.fieldCommand(actor, w, id, body);
   }
   @Post("planning") planning(
     @CurrentActor() actor: RequestActor,

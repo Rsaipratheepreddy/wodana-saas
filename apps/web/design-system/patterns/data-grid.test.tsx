@@ -9,6 +9,11 @@ const columns: DataGridColumn<Row>[] = [{ accessorKey: "name", header: "Name", m
 const rows: Row[] = [{ id: "1", name: "Palm Villa", stage: "Design" }];
 
 describe("DataGrid", () => {
+  it("announces a loading list while keeping placeholder rows decorative", () => {
+    render(<DesignSystemProvider><DataGrid ariaLabel="Customer organizations" columns={columns} data={[]} getRowId={(row) => row.id} isLoading /></DesignSystemProvider>);
+    expect(screen.getByRole("status", { name: "Loading Customer organizations" })).toBeInTheDocument();
+    expect(screen.queryByText("No records found")).not.toBeInTheDocument();
+  });
   it("exports filtered rows across pages and selected rows through the direct Export button", async () => {
     const user = userEvent.setup(), onExport = vi.fn();
     const data = [{id:'1',name:'Palm A',stage:'New'}, {id:'2',name:'Palm B',stage:'New'}, {id:'3',name:'Villa',stage:'New'}];

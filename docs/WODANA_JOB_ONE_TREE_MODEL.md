@@ -1,0 +1,88 @@
+# Canonical Job and One Tree contract — P00.2
+
+**17 September 2026 · product/data contract; P01.1 local backend adapter accepted.** This contract is for Business Core, tenant web, native staff mobile and the client space. It does not change Palm live data. The [product blueprint](WODANA_PRODUCT_BLUEPRINT.md) is the intent; the schema and services cited below are the current evidence. The P01.1 registry, source hooks, read API and reviewed repair exist locally; browser, client-safe and Palm release gates remain separate.
+
+## 1. One job, not one duplicated record
+
+A **Job** is a stable tenant-scoped identity and navigation reference for one piece of prospective or contracted work. It is created when a valid enquiry is accepted from intake, or when a permitted staff member creates a direct opportunity. Raw/unresolved intake is **not** a Job. The same customer may have many Jobs; a repeat enquiry defaults to a new Job. A Job remains addressable if the sale is lost, reopened, paused, cancelled or archived. Its title, customer, owner, financial amount, phase and next action are **read projections** from their source domains, not editable duplicate columns.
+
+The registry introduced in P01.1 should contain only `workspace_id`, immutable `job_id`, immutable human `reference` (proposed tenant-local `J-000001` sequence), creation provenance (`source_type`, `source_id`, actor/time) and lifecycle metadata needed for link repair. A separate versioned link ledger maps `(workspace_id, record_type, record_id)` to one Job, with a unique constraint on that source triple and audit for every attach/detach. No customer name, scope, price, status or owner copy belongs in that registry. Counter allocation is transaction-atomic; gaps are allowed, reuse is not. Public/client routes use a separate opaque grant and must not expose the Job UUID as authorization.
+
+### Current authoritative chain
+
+| Meaning | Current authoritative source | Link that already exists | Job rule |
+| --- | --- | --- | --- |
+| Unvalidated arrival | `crm_intake_events` | idempotency/external event; optional resolved party | Preserve original source and payload; attach to a Job only once it yields an accepted enquiry. |
+| Customer/person/company | `crm_parties` and profiles/relationships | `crm_enquiries.party_id`, `crm_opportunities.party_id` | One party may own many Jobs. Party merge changes the projected customer, not Job identity or historical attribution. |
+| Accepted enquiry | `crm_enquiries` | unique `(workspace_id, intake_event_id)` and tenant-local enquiry reference | Default Job creation point. Keep enquiry reference as its own historical source ID, not the Job reference. |
+| Workable lead | `crm_leads` | unique `(workspace_id, enquiry_id)`, same party | Attach to the enquiry Job; ownership/SLA remains lead-owned. |
+| Qualified/direct sale | `crm_opportunities` | unique non-null `lead_id`; mandatory party; may be created directly without a lead | Lead-derived opportunity inherits the Job. A direct opportunity starts a Job. Forecast/stage/next action remain CRM facts. |
+| Discovery and design | `pre_project_cases` | unique `(workspace_id, opportunity_id)` | Attach to the opportunity Job. Case phase, held/released evidence and client decisions remain case-owned. |
+| Quote/agreement/payment request | `commercial_cases` | one row per case, `content` JSON holds versioned quotes, deal file and decisions | Quote keys are `(workspace_id, case_id, quote_id)`; do not pretend `quote_id` is a global row FK. A quote revision or variation stays on the same Job and keeps its immutable accepted hash. |
+| Delivery | `delivery_projects` | unique `(workspace_id, case_id)` | Attach to the case Job only after release. Execution, quantities, receipts and handover remain Project facts. |
+| Optional CRM project link | `crm_project_links` | unique opportunity/project but `project_id` is not a declared FK | Treat as a corroborating link, never the sole proof of release. Reconcile with the case→project chain and flag disagreement. |
+
+Sources: [CRM schema](../services/business-core/src/database/crm.schema.ts), [case schema](../services/business-core/src/database/pre-project.schema.ts), [case handoff](../services/business-core/src/pre-projects/pre-projects.service.ts), [project release](../services/business-core/src/projects/project-release.ts), [project table migration](../services/business-core/drizzle/0030_hrms_attendance_leave.sql), [commercial case migration](../services/business-core/drizzle/0035_commercial_client_portal.sql). The existing [isolated funnel smoke](../services/business-core/scripts/smoke-funnel.mjs) confirms one linked path, not every legacy orphan.
+
+## 2. Invariants and edge cases
+
+1. All registry, link, read and command operations scope by **workspace ID** and enforce Business Core permissions plus RLS. Legal entity and business unit are projected from the source opportunity/party and checked at handoff; they are not cross-tenant substitutes. A customer merge cannot authorize another Job.
+2. An accepted enquiry, lead, opportunity, case or project can belong to **at most one** Job at a time. One Job may carry multiple intake events or enquiries only after an explicit reviewed duplicate/related-work decision; never infer sameness from phone/email alone. Links are append-audited and corrected through a versioned repair command, not silent SQL rewrites.
+3. Qualification, case start, release, variation and project creation add links within the source command's transaction or an idempotent outbox consumer. Retry with the same command returns the same Job/links. A failed link step must not leave a second Job or an invisible successful business transition.
+4. Direct opportunity, old opportunity without lead, lost/reopened sale, multiple quotes and a customer with repeat work are valid. An opportunity changing customer after creation requires explicit authorization and a visible Job/customer-history diff; it does not mint a new Job.
+5. A **Job merge** is not a party merge. Only an authorized, audited duplicate-work repair can merge Jobs; show all affected records, choose a survivor reference, preserve the retired reference as a redirect, and reject incompatible accepted quotes, projects or cross-tenant records. A **split** requires explicit source-record selection, new reference, re-evaluation of permissions/quotes and cannot silently split an accepted baseline or project. No automatic merge/split in P01.1.
+6. Soft deletion/archive of source records must not erase the Job timeline or its accepted evidence. Orphaned/missing links render a clear repair state for an authorized operator; do not manufacture a fake customer or project to fill the UI.
+
+## 3. One Tree: identity versus evidence
+
+`Job → Site → Room/Zone → Item/Assembly/Work` is a **stable identity hierarchy**, not a second copy of measurements, catalogue prices or design files. Early Jobs have an empty tree. Discovery is the first writer of Site/Room/Zone/Item identities; later domains attach version-specific evidence to those IDs.
+
+| Level | Current state | Required rule for P03.1 |
+| --- | --- | --- |
+| Site | `pre_project_site_records` contains visits, measurements and observations, **not** a durable Site identity. | Mint stable Site ID within Job/case; link visits/evidence to it. One job can have multiple sites; site name/address revisions do not change ID. |
+| Room | `pre_project_rooms.id` is stable inside a case and already referenced by site records, designs and scope entries. | Preserve/backfill this as Room identity under a Site; do not remint IDs. A rename is a versioned edit; archive retains lineage. |
+| Zone | No authoritative Zone row in the inspected case/site schema. | Optional node under Site or Room; introduce only when a real workflow needs it. Never create placeholder zones. |
+| Item/Assembly/Work | `pre_project_brief_entries.id` (requirements), specification versions, catalogue refs and quote `scopeId` provide partial lineage. | Make one stable item/work identity from confirmed scope; bind specs/design/price/quote/BOQ/package/receipt/snag to it and preserve source version/hash. A catalogue selection is a referenced template, not the job item itself. |
+
+Removal is archival with historical links intact. A replacement item has a new ID and a `replaces` lineage link; it must not overwrite an accepted quote line. Measurements carry source record and version. Client-approved design/scope decisions name the exact revision. Project quantities and finance receipts are never inferred from the tree.
+
+## 4. Read projections, timeline and next action
+
+- `JobSummary` reads the registry plus source joins, returning `jobId`, `reference`, customer display/party ID, source IDs/routes, phase/stage, owner, target/promise date, risk, current decision and access-limited next action. Each field carries its source/version or is visibly `unknown`/`not applicable`; a missing source is not silently replaced by a stale cache.
+- Phase is derived from the furthest **verified** evidence: accepted enquiry → qualification → case discovery/design/scope → accepted quote/agreement → verified release → execution → handover/aftercare. A hold is a condition across phases. Stage labels may be tenant-configured, but source transition commands remain authoritative.
+- `NextAction` is one projection from CRM activity/lead SLA, case decision, quote/finance request or project task. It includes source type/ID, owner, due time/timezone, reason, route and `blocked`/`awaiting_client`/`at_risk` status. Prioritize required response, client decision and blocked delivery before low-value reminders; do not synthesize an action when no source exists.
+- The Job timeline orders immutable source events and communications by occurred-at, with separate recorded-at and source pointer. It can aggregate but cannot mutate or replace domain history. Provider state differentiates drafted, queued, sent, delivered, failed and manually logged.
+- Web/mobile/client readers receive separately redacted projections. The client projection excludes margin, private notes, supplier negotiation, staff risk and unpublished work. Permission filtering happens in Business Core, not just the sidebar.
+
+## 5. Migration and acceptance before P01.1 ships
+
+1. Build a **read-only lineage report** on a local clone: join intake→enquiry→lead→opportunity→case→project and parse case quote IDs. Count each path shape, direct opportunities, repeat parties, missing links, duplicate proposals and CRM-project-link disagreements by workspace. Do not use Palm live as the first migration target.
+2. Dry-run deterministic backfill: one candidate Job per accepted enquiry or direct opportunity; attach descendants by current unique chain. Preserve historical enquiry/quote/project references. Produce a diff of proposed links and permissions; reject unresolved collisions, cross-workspace joins, multiple project cases and ambiguous duplicate enquiries rather than choosing arbitrarily.
+3. In one reversible migration, create tenant-scoped registry/link tables with RLS, uniqueness, version/audit and guarded commands. Backfill in bounded idempotent batches with reconciliation checkpoints. A rollback leaves source records untouched and old routes resolvable; never drop existing domain IDs.
+4. Test new/repeat customer, direct opportunity, lead conversion replay, concurrent case start, quote variation, project release replay, lost/reopened/archived work, source deletion, orphan repair, cross-tenant denial, permission downgrade and old-link redirects. Run the existing funnel smoke plus a two-actor browser path. Compare pre/post record counts and access decisions exactly; physical mobile and Palm clone validation are later gates.
+
+**P00.2 acceptance:** this mapping and ownership/edge-case contract is reviewable and grounded in the current schema. It authorizes *no* automatic live backfill, gate relaxation, new customer-visible route or claim that One Tree already exists.
+
+### P01.1 local implementation and release boundary
+
+The additive `0088_job_identity_registry.sql` migration creates a tenant-scoped reference counter, immutable Job root, current source link and append-only link events, all with forced RLS. No business facts are copied into these tables and the migration does not scan or rewrite source rows. Source commands now create or reuse the Job within their existing transaction at accepted enquiry/lead, opportunity, case, quote persistence and released project. `GET /workspaces/:workspaceId/jobs` and `GET /workspaces/:workspaceId/jobs/:jobId` project titles/customers from visible source records; they filter links by current permissions and project assignment, return `missing` for a deleted quote source, and do not write on GET. The local backfill command defaults to a read-only per-tenant diff and permits `--apply` only against a disposable loopback `wodana_job_smoke_*` database; it rejects source anomalies and existing-link conflicts and replays idempotently in batches of 50.
+
+The reviewed `POST /workspaces/:workspaceId/jobs/:jobId/links/repair` command requires `jobs.repair`, access to the underlying source, a reason, request ID and expected version. It restores only a missing/detached link whose live authoritative parent chain resolves to that Job; a link on a different Job requires a separate merge/split decision. Retry with the same request is idempotent. The read projection shows missing active sources and detached links to permitted repairers without inventing replacement facts.
+
+Local evidence: 9 lineage tests; Business Core 114 files/682 tests passed (1 file/10 tests skipped); Business Core and shared-contract typechecks; disposable database smoke for repeat enquiries, direct opportunity, replay, quote/project link, RLS, project assignment, permission downgrade, deleted quote, missing-link repair, detached/reopen repair, stale version, replay and wrong-Job denial; dry-run→apply→repeat yielded 3 Jobs/8 links/8 events without duplicate writes; isolated HTTP funnel passed the original enquiry→project assertions plus Job ledger/API/role-filter/repair-guard checks. Dropping the additive Job tables in a disposable database left the original 2 enquiries, 2 opportunities and 1 project unchanged. `git diff --check` passed. No Palm live data or deployment was touched.
+
+P01.1 is accepted as a **local backend adapter**, not a customer-facing feature or release certificate. The two-actor browser path, old deep-link UX and client-safe traversal remain P01.3/P00.5 acceptance; no automatic merge/split or client-facing Job grant is enabled. Production/clone backfill requires separate preflight and authorization; the local CLI deliberately refuses it.
+
+### P01.2 local operating projection and release boundary
+
+The additive `0096_job_operating_state.sql` migration stores only a versioned manual stage and append-only stage events. `JobsService` derives phase, accountable Next Action and `Blocked`/`Awaiting client`/`At risk` flags from permission-visible CRM, Pre-execution, commercial and Project source evidence. It returns `unknown` rather than a stale earlier phase when a later linked source is hidden. Current-phase actions outrank old upstream reminders. The stage command is permissioned, reasoned, optimistic-concurrency protected and replay safe; a stage can label but never override the derived phase. Job detail combines visible link, source-audit and stage events without rewriting domain history.
+
+Local acceptance is recorded in [the P01.2 evidence](evidence/job-operating-state/README.md). This is a backend/contract slice. Today/Jobs/Job composition, bordered DataGrid, browser accessibility/responsiveness and old-link traversal remain P01.3; provider delivery semantics remain P07; Palm clone/live and deployment remain P09.
+
+### P03.1 local Site/Room/Item identity implementation
+
+The additive `0089_one_tree_identity.sql` migration introduces `one_tree_nodes` and append-only `one_tree_node_revisions`, protected by forced tenant RLS. It adds only a nullable Site identity pointer to existing site records and performs no automatic backfill. Existing Room and included requirement UUIDs become the Room and Item identity IDs; they are not reminted. A case with a valid active Job link gets one primary Site identity. Renames, location changes, scope changes and parent changes append source-hashed revisions. Excluded or archived items retain their identity with archived status. The schema supports Zone nodes but deliberately creates none until a real workflow names one.
+
+Brief, room, scope, definition-publication and site-evidence commands synchronize the adapter within their existing transaction. A missing legacy Job link is returned to the guarded preflight instead of breaking the existing edit or guessing a parent. `GET /workspaces/:workspaceId/jobs/:jobId/tree` returns contract version 1 under `pre_projects.view`; the read never writes or exposes another tenant. The local backfill requires one tenant, is read-only by default and permits apply only against disposable loopback `wodana_job_smoke_*` databases.
+
+Local evidence: [P03.1 acceptance record](evidence/one-tree/README.md), 4 focused identity tests, the full Business Core suite (115 passed/1 skipped files; 686 passed/10 skipped tests), shared-contract checks, a fresh migration, synthetic stable-ID/revision/archive/evidence/API/RLS smoke, guarded dry-run→apply→replay and transactional adapter-removal proof. No Palm/live data or deployment was touched. Multi-site/Zone authoring, client-safe access and room-first discovery UX remain P03.2–P03.4.

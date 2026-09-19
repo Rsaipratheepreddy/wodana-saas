@@ -5,9 +5,9 @@ import { crmScreenFixture, type CrmScreenId } from "@/lib/crm/screens";
 import { CrmScreenPage } from "./crm-screen-page";
 
 const screens: Array<[CrmScreenId, string, string]> = [
-  ["customers", "People", "CRM people"],
+  ["customers", "Customers", "CRM customers"],
   ["organizations", "Companies", "CRM companies"],
-  ["opportunities", "Deals", "CRM deals"],
+  ["opportunities", "Opportunities", "CRM opportunities"],
   ["activities", "Activities", "CRM activities"],
   ["sequences", "Sequences", "CRM sequences"],
   ["crm-reports", "CRM reports", "CRM report rows"],
@@ -16,7 +16,7 @@ const screens: Array<[CrmScreenId, string, string]> = [
 afterEach(() => vi.unstubAllGlobals());
 
 describe("CrmScreenPage", () => {
-  it.each([["crm-overview", "Overview", "Upcoming reminders"], ["conversations", "Chats", "WhatsApp chats"], ["automations", "Automations", "Automation workflows"]] as const)("renders %s as a purpose-built workspace, not a table", (id, title, region) => {
+  it.each([["crm-overview", "Today", "Upcoming reminders"], ["conversations", "Inbox", "Customer conversations"], ["automations", "Smart rules", "Rules"]] as const)("renders %s as a purpose-built workspace, not a table", (id, title, region) => {
     render(<CrmScreenPage initialData={structuredClone(crmScreenFixture(id))} />);
     expect(screen.getByRole("heading", { name: title, level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: region })).toBeInTheDocument();
@@ -49,7 +49,7 @@ describe("CrmScreenPage", () => {
     const fixture = crmScreenFixture("customers");
     render(<CrmScreenPage initialData={{ ...fixture, canView: false, items: [] }} />);
 
-    expect(screen.getByText("People access is restricted")).toBeInTheDocument();
-    expect(screen.queryByRole("table", { name: "CRM people" })).not.toBeInTheDocument();
+    expect(screen.getByText("Customers access is restricted")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "CRM customers" })).not.toBeInTheDocument();
   });
 });

@@ -6,6 +6,7 @@ const input = {
   leadVersion: 4,
   partyId: "party",
   pipelineId: "pipeline",
+  ownerMembershipId: "owner-2",
   title: "Client — interior project",
   nextActionAt: "2026-09-20T09:00:00.000Z",
 };
@@ -13,6 +14,7 @@ const input = {
 function setup(query: ReturnType<typeof vi.fn>) {
   const access = {
     withPermissions: vi.fn(async (_actor, _workspace, _permissions, work) => work({ query }, { userId: "user" })),
+    withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })),
     hasPermission: vi.fn().mockResolvedValue(true),
   };
   const events = { record: vi.fn().mockResolvedValue(undefined) };
@@ -49,11 +51,11 @@ describe("CRM lead conversion integrity", () => {
     expect(query.mock.calls.some(([sql]) => /^\s*(INSERT|UPDATE)\b/.test(sql))).toBe(false);
   });
 
-  it("copies frozen lead qualification evidence into a new linked opportunity", async () => {
+  it("copies frozen lead qualification evidence and the chosen reassigned owner into a new linked opportunity", async () => {
     const evidence = { version: 1, leadId: "lead", selection: "global", form: { id: "form", version: 2 } };
     const evidenceHash = "a".repeat(64);
     const lead = {
-      id: "lead", version: 4, status: "qualified", party_id: "party", enquiry_id: "enquiry",
+      id: "lead", version: 4, status: "qualified", party_id: "party", enquiry_id: "enquiry", owner_membership_id: "owner-1",
       qualification_evidence: evidence, qualification_evidence_hash: evidenceHash,
     };
     const query = vi.fn(async (sql: string, params: unknown[]) => {
@@ -80,5 +82,29 @@ describe("CRM lead conversion integrity", () => {
     expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_leads SET next_action_at=NULL"))).toBe(true);
     expect(slas.recordFirstResponse).toHaveBeenCalledOnce();
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.lead.qualified.v1" }));
+  });
+
+  it("reopens the same lost opportunity with a new next action and keeps its identity", async () => {
+    const before = {
+      id: "opportunity", version: 3, status: "lost", party_id: "party", lead_id: "lead",
+      pipeline_id: "pipeline", stage_id: "stage", owner_membership_id: "owner-2",
+      next_action_at: null, paused_reason: null, amount: null, currency_code: null,
+    };
+    const nextActionAt = "2026-09-21T09:00:00.000Z";
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_opportunities opportunity")) return { rows: [before], rowCount: 1 };
+      if (sql.includes("FROM crm_pipeline_stages")) return { rows: [{ id: "stage", probability: 20, forecast_category: "pipeline", entry_requirements: {} }], rowCount: 1 };
+      if (sql.includes("UPDATE crm_opportunities SET")) return { rows: [{ ...before, version: 4, status: "open", next_action_at: nextActionAt }], rowCount: 1 };
+      if (sql.includes("SELECT * FROM crm_activities")) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { service, events } = setup(query);
+    await expect(service.transition({} as never, "workspace", "opportunity", {
+      version: 3, status: "open", reason: "Client returned", nextActionAt,
+    })).resolves.toMatchObject({ id: "opportunity", status: "open", leadId: "lead", party_id: "party", ownerMembershipId: "owner-2" });
+    expect(query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_opportunities SET"))?.[1]).toEqual([
+      "stage", "open", 20, "pipeline", "Client returned", null, "workspace", "opportunity", 3, new Date(nextActionAt),
+    ]);
+    expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.opportunity.stage_changed.v1", entityId: "opportunity" }));
   });
 });

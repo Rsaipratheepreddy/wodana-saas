@@ -11,6 +11,7 @@ DEPLOY_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST to the production server address}"
 DEPLOY_USER="${DEPLOY_USER:-root}"
 SSH_PORT="${SSH_PORT:-22}"
 PUBLIC_URL="${PUBLIC_URL:-https://iglo.wodana.ai}"
+NGINX_SITE="${NGINX_SITE:-wodana.ai}"
 RELEASE_NAME="${RELEASE_NAME:-$(date -u +%Y%m%d%H%M%S)-web}"
 WEB_PORT="${WEB_PORT:-13230}"
 CORE_PORT="${CORE_PORT:-}"
@@ -19,6 +20,10 @@ CURRENT_INTELLIGENCE_PORT="${CURRENT_INTELLIGENCE_PORT:-}"
 CURRENT_INTELLIGENCE_RELEASE_DIR="${CURRENT_INTELLIGENCE_RELEASE_DIR:-}"
 CURRENT_INTELLIGENCE_WORKER_CONTAINER="${CURRENT_INTELLIGENCE_WORKER_CONTAINER:-}"
 SKIP_LOCAL_CHECKS="${SKIP_LOCAL_CHECKS:-0}"
+SKIP_IMAGE_BUILD="${SKIP_IMAGE_BUILD:-0}"
+REMOTE_IMAGE_READY="${REMOTE_IMAGE_READY:-0}"
+CRM_ONLY_WORKSPACE_SLUGS="${WODANA_CRM_ONLY_WORKSPACE_SLUGS:-}"
+ROUTED_TENANT_HOSTS="${ROUTED_TENANT_HOSTS:-}"
 IMAGE="wodana-web:${RELEASE_NAME}"
 DEPLOY_CORE="${DEPLOY_CORE:-0}"
 CORE_IMAGE="wodana-core:${RELEASE_NAME}"
@@ -27,17 +32,26 @@ INTELLIGENCE_IMAGE="wodana-intelligence:${RELEASE_NAME}"
 CURRENT_CORE_PORT="${CURRENT_CORE_PORT:-}"
 CURRENT_CORE_RELEASE_DIR="${CURRENT_CORE_RELEASE_DIR:-}"
 MIGRATION_FILE="${MIGRATION_FILE:-}"
+APPLY_PENDING_MIGRATIONS="${APPLY_PENDING_MIGRATIONS:-0}"
 REMOTE="${DEPLOY_USER}@${DEPLOY_HOST}"
 REMOTE_ARCHIVE="/tmp/${RELEASE_NAME}.web-image.tar.gz"
 
 [[ "$RELEASE_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]+$ ]] || { echo "RELEASE_NAME contains unsupported characters." >&2; exit 1; }
 [[ "$WEB_PORT" =~ ^[0-9]+$ && ( -z "$CORE_PORT" || "$CORE_PORT" =~ ^[0-9]+$ ) && "$INTELLIGENCE_PORT" =~ ^[0-9]+$ ]] || { echo "Ports must be numeric." >&2; exit 1; }
-[[ "$PUBLIC_URL" == https://* ]] || { echo "PUBLIC_URL must use HTTPS." >&2; exit 1; }
+[[ "$PUBLIC_URL" =~ ^https://[a-z0-9.-]+$ ]] || { echo "PUBLIC_URL must be a path-free HTTPS origin." >&2; exit 1; }
+[[ "$NGINX_SITE" == "wodana.ai" || "$NGINX_SITE" == "plm.wodana.ai" ]] || { echo "NGINX_SITE must be wodana.ai or plm.wodana.ai." >&2; exit 1; }
 [[ "$DEPLOY_CORE" == 0 || "$DEPLOY_CORE" == 1 ]] || exit 1
 [[ "$DEPLOY_INTELLIGENCE" == 0 || "$DEPLOY_INTELLIGENCE" == 1 ]] || exit 1
+[[ "$SKIP_IMAGE_BUILD" == 0 || "$SKIP_IMAGE_BUILD" == 1 ]] || exit 1
+[[ "$REMOTE_IMAGE_READY" == 0 || "$REMOTE_IMAGE_READY" == 1 ]] || exit 1
+[[ "$REMOTE_IMAGE_READY" == 0 || ( "$DEPLOY_CORE" == 0 && "$DEPLOY_INTELLIGENCE" == 0 ) ]] || { echo "A prebuilt remote image is supported for web-only releases." >&2; exit 1; }
+[[ "$APPLY_PENDING_MIGRATIONS" == 0 || "$APPLY_PENDING_MIGRATIONS" == 1 ]] || exit 1
+[[ "$CRM_ONLY_WORKSPACE_SLUGS" =~ ^[a-z0-9,-]*$ ]] || { echo "Invalid CRM-only workspace slugs." >&2; exit 1; }
+[[ "$ROUTED_TENANT_HOSTS" =~ ^[a-z0-9.,-]*$ ]] || { echo "Invalid routed tenant hostnames." >&2; exit 1; }
 [[ ( -z "$CURRENT_CORE_PORT" || "$CURRENT_CORE_PORT" =~ ^[0-9]+$ ) && ( -z "$CURRENT_CORE_RELEASE_DIR" || "$CURRENT_CORE_RELEASE_DIR" =~ ^/opt/wodana/releases/[a-zA-Z0-9._-]+$ ) ]] || exit 1
 [[ ( -z "$CURRENT_INTELLIGENCE_PORT" || "$CURRENT_INTELLIGENCE_PORT" =~ ^[0-9]+$ ) && ( -z "$CURRENT_INTELLIGENCE_RELEASE_DIR" || "$CURRENT_INTELLIGENCE_RELEASE_DIR" =~ ^/opt/wodana/releases/[a-zA-Z0-9._-]+$ ) && ( -z "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" || "$CURRENT_INTELLIGENCE_WORKER_CONTAINER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]+$ ) ]] || exit 1
 [[ -z "$MIGRATION_FILE" || ( "$DEPLOY_CORE" == 1 && "$MIGRATION_FILE" == services/business-core/drizzle/0052_client_design_approval.sql ) ]] || { echo "Unrecognized migration; review its deployment procedure first." >&2; exit 1; }
+[[ "$APPLY_PENDING_MIGRATIONS" == 0 || ( "$DEPLOY_CORE" == 1 && -z "$MIGRATION_FILE" ) ]] || { echo "Pending migrations require a core deployment and cannot be combined with MIGRATION_FILE." >&2; exit 1; }
 
 for command in curl docker gzip scp ssh; do
   command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 1; }
@@ -72,7 +86,7 @@ CURRENT_RELEASE="$(curl -fsSI "${PUBLIC_URL}/login" | tr -d '\r' | sed -n 's/^X-
 CURRENT_RELEASE_DIR="/opt/wodana/releases/${CURRENT_RELEASE}"
 
 echo "Preflight: ${CURRENT_RELEASE} is live."
-"${SSH[@]}" "$REMOTE" "test -f '$CURRENT_RELEASE_DIR/compose.yaml' && test -f '$CURRENT_RELEASE_DIR/web.env'"
+"${SSH[@]}" "$REMOTE" "test -f '$CURRENT_RELEASE_DIR/compose.yaml' && test -f '$CURRENT_RELEASE_DIR/web.env' && test -f '/etc/nginx/sites-available/$NGINX_SITE'"
 DETECTED_CORE_PORT="$("${SSH[@]}" "$REMOTE" "sed -n 's@.*BUSINESS_CORE_URL: http://127.0.0.1:\\([0-9]*\\)/api/v1.*@\\1@p' '$CURRENT_RELEASE_DIR/compose.yaml' | head -n 1")"
 CURRENT_CORE_PORT="${CURRENT_CORE_PORT:-$DETECTED_CORE_PORT}"
 [[ "$CURRENT_CORE_PORT" =~ ^[0-9]+$ ]] || { echo "Could not resolve the live core port." >&2; exit 1; }
@@ -94,12 +108,16 @@ if [[ "$SKIP_LOCAL_CHECKS" != 1 ]]; then
   npm run typecheck --workspace @wodana/web
 fi
 
-echo "Building ${IMAGE} for linux/amd64..."
-docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$IMAGE" -f apps/web/Dockerfile .
-docker image inspect "$IMAGE" >/dev/null
+if [[ "$REMOTE_IMAGE_READY" != 1 && "$SKIP_IMAGE_BUILD" == 0 ]]; then
+  echo "Building ${IMAGE} for linux/amd64..."
+  docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$IMAGE" -f apps/web/Dockerfile .
+fi
+if [[ "$REMOTE_IMAGE_READY" != 1 ]]; then docker image inspect "$IMAGE" >/dev/null; fi
 if [[ "$DEPLOY_CORE" == 1 ]]; then
   npm run typecheck --workspace @wodana/business-core
-  docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$CORE_IMAGE" -f services/business-core/Dockerfile .
+  if [[ "$SKIP_IMAGE_BUILD" == 0 ]]; then
+    docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$CORE_IMAGE" -f services/business-core/Dockerfile .
+  fi
 fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
   (cd services/intelligence-automation && ../../.venv/bin/pytest -q)
@@ -109,19 +127,58 @@ if [[ "$DEPLOY_CORE" == 1 ]]; then docker image inspect "$CORE_IMAGE" >/dev/null
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then docker image inspect "$INTELLIGENCE_IMAGE" >/dev/null; fi
 
 LOCAL_ARCHIVE="$TEMP_DIR/web-image.tar.gz"
-echo "Packaging the web image..."
-IMAGES=("$IMAGE")
-[[ "$DEPLOY_CORE" == 0 ]] || IMAGES+=("$CORE_IMAGE")
-[[ "$DEPLOY_INTELLIGENCE" == 0 ]] || IMAGES+=("$INTELLIGENCE_IMAGE")
-docker save "${IMAGES[@]}" | gzip -1 > "$LOCAL_ARCHIVE"
-sha256sum "$LOCAL_ARCHIVE" > "$TEMP_DIR/web-image.sha256"
+if [[ "$REMOTE_IMAGE_READY" != 1 ]]; then
+  echo "Packaging the web image..."
+  IMAGES=("$IMAGE")
+  [[ "$DEPLOY_CORE" == 0 ]] || IMAGES+=("$CORE_IMAGE")
+  [[ "$DEPLOY_INTELLIGENCE" == 0 ]] || IMAGES+=("$INTELLIGENCE_IMAGE")
+  docker save "${IMAGES[@]}" | gzip -1 > "$LOCAL_ARCHIVE"
+  LOCAL_ARCHIVE_HASH="$(sha256sum "$LOCAL_ARCHIVE" | awk '{print $1}')"
+  printf '%s  %s\n' "$LOCAL_ARCHIVE_HASH" "$(basename "$REMOTE_ARCHIVE")" > "$TEMP_DIR/web-image.sha256"
+fi
 
-echo "Uploading the release image..."
-"${SCP[@]}" "$LOCAL_ARCHIVE" "$REMOTE:$REMOTE_ARCHIVE"
+MIGRATION_ARCHIVE="$TEMP_DIR/migrations.tar.gz"
+MIGRATION_ARCHIVE_HASH=""
+if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then
+  MIGRATION_STAGE="$TEMP_DIR/migrations"
+  mkdir -p "$MIGRATION_STAGE/sql"
+  node - "$ROOT_DIR" "$MIGRATION_STAGE" <<'NODE'
+const { createHash } = require("node:crypto");
+const { copyFileSync, readFileSync, writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const [root, output] = process.argv.slice(2);
+const drizzle = join(root, "services/business-core/drizzle");
+const journal = JSON.parse(readFileSync(join(drizzle, "meta/_journal.json"), "utf8"));
+let previousIndex = -1;
+let previousTimestamp = -1;
+const rows = journal.entries.map((entry) => {
+  if (!Number.isSafeInteger(entry.idx) || entry.idx <= previousIndex || !Number.isSafeInteger(entry.when) || entry.when <= previousTimestamp || !/^\d{4}_[a-z0-9_]+$/.test(entry.tag))
+    throw new Error(`Unsafe migration journal entry: ${JSON.stringify(entry)}`);
+  previousIndex = entry.idx;
+  previousTimestamp = entry.when;
+  const source = join(drizzle, `${entry.tag}.sql`);
+  const body = readFileSync(source);
+  copyFileSync(source, join(output, "sql", `${entry.tag}.sql`));
+  return `${entry.when}\t${entry.tag}\t${createHash("sha256").update(body).digest("hex")}`;
+});
+writeFileSync(join(output, "manifest.tsv"), `${rows.join("\n")}\n`);
+NODE
+  tar -C "$MIGRATION_STAGE" -czf "$MIGRATION_ARCHIVE" manifest.tsv sql
+  MIGRATION_ARCHIVE_HASH="$(sha256sum "$MIGRATION_ARCHIVE" | awk '{print $1}')"
+fi
+
+if [[ "$REMOTE_IMAGE_READY" != 1 ]]; then
+  echo "Uploading the release image..."
+  "${SCP[@]}" "$LOCAL_ARCHIVE" "$REMOTE:$REMOTE_ARCHIVE"
+  "${SCP[@]}" "$TEMP_DIR/web-image.sha256" "$REMOTE:/tmp/${RELEASE_NAME}.web-image.sha256"
+else
+  echo "Using the reviewed image already built on the production host."
+fi
 if [[ -n "$MIGRATION_FILE" ]]; then "${SCP[@]}" "$ROOT_DIR/$MIGRATION_FILE" "$REMOTE:/tmp/${RELEASE_NAME}.migration.sql"; fi
+if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then "${SCP[@]}" "$MIGRATION_ARCHIVE" "$REMOTE:/tmp/${RELEASE_NAME}.migrations.tar.gz"; fi
 
 echo "Staging, backing up, and switching production traffic..."
-"${SSH[@]}" "$REMOTE" "bash -s -- '$RELEASE_NAME' '$IMAGE' '$WEB_PORT' '$CORE_PORT' '$INTELLIGENCE_PORT' '$PUBLIC_URL' '$CURRENT_RELEASE' '$CURRENT_RELEASE_DIR' '$REMOTE_ARCHIVE' '$DEPLOY_CORE' '$CORE_IMAGE' '$CURRENT_CORE_PORT' '$CURRENT_CORE_RELEASE_DIR' '$MIGRATION_FILE' '$DEPLOY_INTELLIGENCE' '$INTELLIGENCE_IMAGE' '$CURRENT_INTELLIGENCE_PORT' '$CURRENT_INTELLIGENCE_RELEASE_DIR' '$CURRENT_INTELLIGENCE_WORKER_CONTAINER'" <<'REMOTE_DEPLOY'
+"${SSH[@]}" "$REMOTE" "bash -s -- '$RELEASE_NAME' '$IMAGE' '$WEB_PORT' '$CORE_PORT' '$INTELLIGENCE_PORT' '$PUBLIC_URL' '$CURRENT_RELEASE' '$CURRENT_RELEASE_DIR' '$REMOTE_ARCHIVE' '$DEPLOY_CORE' '$CORE_IMAGE' '$CURRENT_CORE_PORT' '$CURRENT_CORE_RELEASE_DIR' '$MIGRATION_FILE' '$DEPLOY_INTELLIGENCE' '$INTELLIGENCE_IMAGE' '$CURRENT_INTELLIGENCE_PORT' '$CURRENT_INTELLIGENCE_RELEASE_DIR' '$CURRENT_INTELLIGENCE_WORKER_CONTAINER' '$CRM_ONLY_WORKSPACE_SLUGS' '$ROUTED_TENANT_HOSTS' '$APPLY_PENDING_MIGRATIONS' '$NGINX_SITE' '$MIGRATION_ARCHIVE_HASH' '$REMOTE_IMAGE_READY'" <<'REMOTE_DEPLOY'
 set -euo pipefail
 umask 077
 
@@ -144,10 +201,24 @@ INTELLIGENCE_IMAGE="${16}"
 CURRENT_INTELLIGENCE_PORT="${17}"
 CURRENT_INTELLIGENCE_RELEASE_DIR="${18}"
 CURRENT_INTELLIGENCE_WORKER_CONTAINER="${19}"
+CRM_ONLY_WORKSPACE_SLUGS="${20}"
+ROUTED_TENANT_HOSTS="${21}"
+APPLY_PENDING_MIGRATIONS="${22}"
+NGINX_SITE="${23}"
+MIGRATION_ARCHIVE_HASH="${24}"
+REMOTE_IMAGE_READY="${25}"
 RELEASE_DIR="/opt/wodana/releases/${RELEASE_NAME}"
 
 [[ ! -e "$RELEASE_DIR" ]] || { echo "Release directory already exists: $RELEASE_DIR" >&2; exit 1; }
-[[ -s "$REMOTE_ARCHIVE" ]] || { echo "Uploaded image archive is missing." >&2; exit 1; }
+if [[ "$REMOTE_IMAGE_READY" == 1 ]]; then
+  docker image inspect "$IMAGE" >/dev/null
+else
+  [[ -s "$REMOTE_ARCHIVE" ]] || { echo "Uploaded image archive is missing." >&2; exit 1; }
+  REMOTE_CHECKSUM="/tmp/${RELEASE_NAME}.web-image.sha256"
+  test -s "$REMOTE_CHECKSUM"
+  (cd /tmp && sha256sum --status -c "$(basename "$REMOTE_CHECKSUM")") || { echo "Uploaded image archive checksum failed." >&2; exit 1; }
+  rm -f "$REMOTE_CHECKSUM"
+fi
 if ss -ltn | awk '{print $4}' | grep -Eq ":${WEB_PORT}$"; then
   echo "Web port ${WEB_PORT} is already occupied." >&2
   exit 1
@@ -167,12 +238,27 @@ CURRENT_WEB_PORT="$(awk '$1 == "web:" { in_web=1; next } in_web && $1 == "PORT:"
 
 mkdir -m 700 "$RELEASE_DIR"
 cp "$CURRENT_RELEASE_DIR/web.env" "$RELEASE_DIR/web.env"
-cp /etc/nginx/sites-available/wodana.ai "$RELEASE_DIR/nginx-before.conf"
+cp "/etc/nginx/sites-available/${NGINX_SITE}" "$RELEASE_DIR/nginx-before.conf"
 if [[ "$DEPLOY_CORE" == 1 ]]; then cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"; fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then cp "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env" "$RELEASE_DIR/intelligence.env"; fi
+if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then
+  MIGRATION_ARCHIVE="/tmp/${RELEASE_NAME}.migrations.tar.gz"
+  test -s "$MIGRATION_ARCHIVE"
+  [[ "$MIGRATION_ARCHIVE_HASH" =~ ^[0-9a-f]{64}$ ]]
+  [[ "$(sha256sum "$MIGRATION_ARCHIVE" | awk '{print $1}')" == "$MIGRATION_ARCHIVE_HASH" ]] || {
+    echo "Uploaded migration archive checksum failed." >&2
+    exit 1
+  }
+  mkdir -m 700 "$RELEASE_DIR/migrations"
+  tar -xzf "$MIGRATION_ARCHIVE" -C "$RELEASE_DIR/migrations"
+  rm -f "$MIGRATION_ARCHIVE"
+  test -s "$RELEASE_DIR/migrations/manifest.tsv"
+fi
 
-gzip -dc "$REMOTE_ARCHIVE" | docker load >/dev/null
-rm -f "$REMOTE_ARCHIVE"
+if [[ "$REMOTE_IMAGE_READY" != 1 ]]; then
+  gzip -dc "$REMOTE_ARCHIVE" | docker load >/dev/null
+  rm -f "$REMOTE_ARCHIVE"
+fi
 docker image inspect "$IMAGE" >/dev/null
 if [[ "$DEPLOY_CORE" == 1 ]]; then docker image inspect "$CORE_IMAGE" >/dev/null; fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then docker image inspect "$INTELLIGENCE_IMAGE" >/dev/null; fi
@@ -190,6 +276,7 @@ services:
       HOSTNAME: 127.0.0.1
       PORT: ${WEB_PORT}
       BUSINESS_CORE_URL: http://127.0.0.1:${CORE_PORT}/api/v1
+      WODANA_CRM_ONLY_WORKSPACE_SLUGS: ${CRM_ONLY_WORKSPACE_SLUGS}
       GEMINI_MODEL: gemini-3.5-flash
       INTELLIGENCE_API_URL: http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1
     init: true
@@ -329,16 +416,91 @@ if [[ -n "$MIGRATION_FILE" ]]; then
   cp "$MIGRATION_PATH" ./migration.sql
   rm -f "$MIGRATION_PATH"
 fi
+if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then
+  MIGRATION_DIR="$RELEASE_DIR/migrations"
+  DATABASE_MIGRATIONS="$MIGRATION_DIR/database-before.tsv"
+  PENDING_MIGRATIONS="$MIGRATION_DIR/pending.tsv"
+  sudo -u postgres psql -d wodana_release -AtF $'\t' \
+    -c 'SELECT created_at,hash FROM drizzle.__drizzle_migrations ORDER BY created_at,id' \
+    </dev/null > "$DATABASE_MIGRATIONS"
+  python3 - "$MIGRATION_DIR/manifest.tsv" "$DATABASE_MIGRATIONS" "$PENDING_MIGRATIONS" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+manifest_path, database_path, pending_path = map(Path, sys.argv[1:])
+manifest = []
+for line_number, raw in enumerate(manifest_path.read_text().splitlines(), 1):
+    fields = raw.split("\t")
+    if len(fields) != 3:
+        raise SystemExit(f"Malformed release migration manifest line {line_number}")
+    when, tag, digest = fields
+    if not when.isdigit() or not re.fullmatch(r"\d{4}_[a-z0-9_]+", tag) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SystemExit(f"Unsafe release migration manifest line {line_number}")
+    manifest.append((when, tag, digest))
+
+database = []
+for line_number, raw in enumerate(database_path.read_text().splitlines(), 1):
+    fields = raw.split("\t")
+    if len(fields) != 2 or not fields[0].isdigit() or not re.fullmatch(r"[0-9a-f]{64}", fields[1]):
+        raise SystemExit(f"Malformed database migration history line {line_number}")
+    database.append(tuple(fields))
+
+if len(database) > len(manifest):
+    raise SystemExit("Database migration history is ahead of this release")
+for index, (created_at, digest) in enumerate(database):
+    expected_when, expected_tag, expected_digest = manifest[index]
+    if (created_at, digest) != (expected_when, expected_digest):
+        raise SystemExit(
+            f"Migration history diverges at position {index + 1}: expected {expected_tag}"
+        )
+
+pending_path.write_text(
+    "".join("\t".join(row) + "\n" for row in manifest[len(database):])
+)
+PY
+
+  PENDING_SQL="$MIGRATION_DIR/pending.sql"
+  : > "$PENDING_SQL"
+  while IFS=$'\t' read -r created_at tag expected_hash; do
+    [[ -n "$tag" ]] || continue
+    sql_path="$MIGRATION_DIR/sql/${tag}.sql"
+    test -s "$sql_path"
+    actual_hash="$(sha256sum "$sql_path" | awk '{print $1}')"
+    [[ "$actual_hash" == "$expected_hash" ]] || { echo "Migration checksum mismatch: $tag" >&2; exit 1; }
+    cat "$sql_path" >> "$PENDING_SQL"
+    printf "\nINSERT INTO drizzle.__drizzle_migrations(hash,created_at) VALUES ('%s',%s);\n" "$expected_hash" "$created_at" >> "$PENDING_SQL"
+  done < "$PENDING_MIGRATIONS"
+
+  if [[ -s "$PENDING_SQL" ]]; then
+    { printf 'BEGIN;\n'; cat "$PENDING_SQL"; printf '\nROLLBACK;\n'; } | \
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -d wodana_release > migration-rehearsal.log
+    { printf 'BEGIN;\n'; cat "$PENDING_SQL"; printf '\nCOMMIT;\n'; } | \
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -d wodana_release > migration.log
+  else
+    printf '%s\n' 'No pending migrations.' > migration.log
+  fi
+
+  sudo -u postgres psql -d wodana_release -AtF $'\t' \
+    -c 'SELECT created_at,hash FROM drizzle.__drizzle_migrations ORDER BY created_at,id' \
+    </dev/null > "$MIGRATION_DIR/database-after.tsv"
+  cut -f1,3 "$MIGRATION_DIR/manifest.tsv" > "$MIGRATION_DIR/expected-after.tsv"
+  cmp -s "$MIGRATION_DIR/expected-after.tsv" "$MIGRATION_DIR/database-after.tsv" || {
+    echo "Database migration history does not exactly match the release after applying migrations." >&2
+    exit 1
+  }
+fi
 docker compose -f compose.yaml up -d --wait --wait-timeout 180
 curl -fsS "http://127.0.0.1:${WEB_PORT}/login" >/dev/null
 curl -fsS "http://127.0.0.1:${CORE_PORT}/api/v1/health/ready" >/dev/null
 curl -fsS "http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1/health/ready" >/dev/null
 
-python3 - "$CURRENT_WEB_PORT" "$WEB_PORT" "$CURRENT_RELEASE" "$RELEASE_NAME" "$DEPLOY_CORE" "$CURRENT_CORE_PORT" "$CORE_PORT" "$DEPLOY_INTELLIGENCE" "$CURRENT_INTELLIGENCE_PORT" "$INTELLIGENCE_PORT" <<'PY'
+python3 - "$CURRENT_WEB_PORT" "$WEB_PORT" "$CURRENT_RELEASE" "$RELEASE_NAME" "$DEPLOY_CORE" "$CURRENT_CORE_PORT" "$CORE_PORT" "$DEPLOY_INTELLIGENCE" "$CURRENT_INTELLIGENCE_PORT" "$INTELLIGENCE_PORT" "$ROUTED_TENANT_HOSTS" <<'PY'
 from pathlib import Path
+import re
 import sys
 
-old_port, new_port, old_release, new_release, deploy_core, old_core, new_core, deploy_intelligence, old_intelligence, new_intelligence = sys.argv[1:]
+old_port, new_port, old_release, new_release, deploy_core, old_core, new_core, deploy_intelligence, old_intelligence, new_intelligence, routed_tenant_hosts = sys.argv[1:]
 source = Path("nginx-before.conf").read_text()
 old_upstream = f"127.0.0.1:{old_port}"
 new_upstream = f"127.0.0.1:{new_port}"
@@ -357,6 +519,16 @@ if deploy_intelligence == '1':
     updated = updated.replace(
         f'127.0.0.1:{old_intelligence}', f'127.0.0.1:{new_intelligence}'
     )
+if routed_tenant_hosts:
+    route_names = [host for host in routed_tenant_hosts.split(',') if host]
+    if any(not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*\.wodana\.ai', host) for host in route_names):
+        raise SystemExit('Invalid tenant hostname for Nginx routing')
+    modern_names = re.search(r'(?m)^    server_name wodana\.ai www\.wodana\.ai admin\.wodana\.ai iglo\.wodana\.ai client\.wodana\.ai[^;]*;', updated)
+    if not modern_names:
+        raise SystemExit('Modern Wodana Nginx server block was not found')
+    existing = modern_names.group(0).removeprefix('    server_name ').removesuffix(';').split()
+    replacement = '    server_name ' + ' '.join(existing + [host for host in route_names if host not in existing]) + ';'
+    updated = updated[:modern_names.start()] + replacement + updated[modern_names.end():]
 Path("nginx-current.conf").write_text(updated)
 PY
 
@@ -364,7 +536,7 @@ cat > rollback.sh <<ROLLBACK
 #!/usr/bin/env bash
 set -euo pipefail
 DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-cp "\$DIR/nginx-before.conf" /etc/nginx/sites-available/wodana.ai
+cp "\$DIR/nginx-before.conf" "/etc/nginx/sites-available/${NGINX_SITE}"
 nginx -t
 systemctl reload nginx
 curl -fsSI ${PUBLIC_URL}/login | grep -qi 'X-Wodana-Release: ${CURRENT_RELEASE}'
@@ -388,7 +560,7 @@ restore_proxy() {
     echo "Worker cutover failed; the previous worker was restarted." >&2
   fi
   if [[ "$cutover_started" == 1 ]]; then
-    cp "$RELEASE_DIR/nginx-before.conf" /etc/nginx/sites-available/wodana.ai
+    cp "$RELEASE_DIR/nginx-before.conf" "/etc/nginx/sites-available/${NGINX_SITE}"
     nginx -t >/dev/null
     systemctl reload nginx
     echo "Cutover failed; the previous proxy configuration was restored." >&2
@@ -398,7 +570,7 @@ restore_proxy() {
 trap restore_proxy ERR
 
 cutover_started=1
-cp nginx-current.conf /etc/nginx/sites-available/wodana.ai
+cp nginx-current.conf "/etc/nginx/sites-available/${NGINX_SITE}"
 nginx -t
 systemctl reload nginx
 

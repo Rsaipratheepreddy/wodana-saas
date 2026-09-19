@@ -1,0 +1,147 @@
+import { describe, expect, it } from "vitest";
+import type { CommercialData } from "./types";
+import { commercialReleaseInputsReady } from "./release";
+
+function fixture(): CommercialData {
+  return {
+    revision: 1,
+    financeContext: {
+      legalEntityId: "entity",
+      code: "PLM-AE",
+      displayName: "Palm Living UAE",
+      registeredName: "Palm Living Interiors LLC",
+      countryCode: "AE",
+      baseCurrency: "AED",
+      currency: "AED",
+      taxValidation: "unvalidated",
+      boundAt: "2026-09-18T00:00:00.000Z",
+    },
+    quotes: [{
+      id: "quote",
+      number: 1,
+      kind: "quotation",
+      status: "accepted",
+      title: "Works",
+      currency: "AED",
+      validUntil: "2026-10-01",
+      discount: 0,
+      taxRate: 0,
+      terms: "Terms",
+      exclusions: "",
+      lines: [],
+      requestIds: [],
+      paymentTerms: [],
+      createdAt: "2026-09-18T00:00:00.000Z",
+      hash: "hash",
+      total: 100,
+      clientDecision: {
+        decision: "accept",
+        quoteHash: "hash",
+        selectedOptionLineIds: [],
+        baseTotal: 100,
+        optionsTotal: 0,
+        acceptedTotal: 100,
+        decidedAt: "2026-09-18T00:00:00.000Z",
+        decidedBy: "Client",
+      },
+    }],
+    requests: [],
+    agreement: {
+      quoteId: "quote",
+      quoteHash: "hash",
+      selectedOptionLineIds: [],
+      acceptedTotal: 100,
+      legalEntityId: "entity",
+      currency: "AED",
+      reference: "AGR-1",
+      terms: "Terms",
+      evidence: "Signed document",
+      status: "executed",
+    },
+    payments: [{
+      id: "payment",
+      legalEntityId: "entity",
+      currency: "AED",
+      title: "Advance",
+      amount: 100,
+      dueDate: "2026-09-20",
+      requiredForRelease: true,
+      status: "proof_submitted",
+      proof: "",
+      reference: "INV-1",
+    }],
+    receipts: [{
+      id: "receipt",
+      paymentId: "payment",
+      legalEntityId: "entity",
+      currency: "AED",
+      amount: 100,
+      source: "provider",
+      status: "provider_confirmed",
+      reference: "INV-1",
+      evidence: "Provider settlement",
+      reportedAt: "2026-09-18T00:00:00.000Z",
+      reportedBy: "Accounting provider",
+    }],
+    allocations: [{
+      id: "allocation",
+      receiptId: "receipt",
+      paymentId: "payment",
+      legalEntityId: "entity",
+      currency: "AED",
+      amount: 100,
+      createdAt: "2026-09-18T00:00:00.000Z",
+      createdBy: "Accounting provider",
+    }],
+    financeDocuments: [],
+    credits: [],
+    audit: [],
+    ownerReview: {
+      id: "review",
+      quoteId: "quote",
+      quoteHash: "hash",
+      status: "approved",
+      commission: 0,
+      checklist: { agreement: true, boq: true, documents: true, margin: true, materials: true, payment: true },
+      submissionNote: "Ready",
+      submittedAt: "2026-09-18T00:00:00.000Z",
+      submittedBy: "Sales",
+      submittedById: "sales",
+    },
+    dealFile: {
+      id: "deal",
+      reference: "DF-1",
+      revision: 1,
+      ownerReviewId: "review",
+      quoteId: "quote",
+      quoteNumber: 1,
+      quoteHash: "hash",
+      agreementReference: "AGR-1",
+      paymentIds: ["payment"],
+      value: 100,
+      cost: 50,
+      margin: 50,
+      commission: 0,
+      status: "active",
+      approvedAt: "2026-09-18T00:00:00.000Z",
+      approvedBy: "Owner",
+    },
+    materialApprovals: [],
+    release: null,
+  };
+}
+
+describe("web commercial finance readiness", () => {
+  it("does not treat provider confirmation as finance verification", () => {
+    const data = fixture();
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+    data.receipts![0].status = "finance_verified";
+    data.payments[0].status = "verified";
+    expect(commercialReleaseInputsReady(data)).toBe(true);
+    data.payments[0].requiredForRelease = false;
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+    data.payments[0].requiredForRelease = true;
+    data.allocations![0].reversedAt = "2026-09-18T01:00:00.000Z";
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+  });
+});

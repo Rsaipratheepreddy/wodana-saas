@@ -8,7 +8,7 @@ const setup = (priorAttempt = false) => {
     if (sql.includes("SELECT * FROM notifications")) {
       return { rows: [{ id: "notification", status: "processing", idempotency_key: `message:${messageId}` }], rowCount: 1 };
     }
-    if (sql.includes("SELECT status FROM notification_delivery_attempts")) {
+    if (sql.includes("FROM notification_delivery_attempts")) {
       return { rows: priorAttempt ? [{ status: "delivered" }] : [], rowCount: priorAttempt ? 1 : 0 };
     }
     if (sql.includes("UPDATE notifications SET status")) {

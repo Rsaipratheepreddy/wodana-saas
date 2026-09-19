@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   HrmsBootstrap,
   HrmsPerson,
@@ -16,7 +16,7 @@ import {
   TextField,
 } from "./controls";
 import { hrmsRequest, localDay } from "@/lib/hrms/client";
-import { Modal, Notice, useHrms } from "./shared";
+import { Empty, Modal, Notice, useHrms } from "./shared";
 import Link from "next/link";
 import {
   CalendarDays,
@@ -38,7 +38,38 @@ export function PeoplePanel({ workspaceId, boot, revision, onSaved }: Props) {
       error,
       loading,
     } = useHrms<HrmsPerson[]>(workspaceId, "people", revision),
-    [selected, setSelected] = useState<HrmsPerson | null>(null);
+    [selected, setSelected] = useState<HrmsPerson | null>(null),
+    [query, setQuery] = useState(""),
+    [status, setStatus] = useState("all");
+  const summary = useMemo(() => {
+      const rows = people ?? [];
+      return {
+        enabled: rows.filter((person) => person.enabled).length,
+        departments: new Set(
+          rows.map((person) => person.department).filter(Boolean),
+        ).size,
+        managers: new Set(
+          rows.map((person) => person.managerId).filter(Boolean),
+        ).size,
+      };
+    }, [people]),
+    filtered = useMemo(() => {
+      const needle = query.trim().toLocaleLowerCase();
+      return (people ?? []).filter((person) => {
+        const matchesStatus =
+          status === "all" ||
+          (status === "enabled" ? person.enabled : !person.enabled);
+        const matchesQuery =
+          !needle ||
+          [
+            person.name,
+            person.employeeCode,
+            person.designation,
+            person.department,
+          ].some((value) => value.toLocaleLowerCase().includes(needle));
+        return matchesStatus && matchesQuery;
+      });
+    }, [people, query, status]);
   return (
     <>
       <div className={styles.toolbar}>
@@ -55,77 +86,134 @@ export function PeoplePanel({ workspaceId, boot, revision, onSaved }: Props) {
       </div>
       {!boot.settings ? (
         <Notice>
-          Create a calendar and save attendance settings before enabling
-          employees.
+          <strong>Attendance setup is incomplete.</strong> Create a work
+          calendar and save the policy before enabling employees. {" "}
+          <Link href="/workspace/hrms/settings">Open Calendar & policy →</Link>
         </Notice>
       ) : null}
       {error ? <Notice error>{error}</Notice> : null}
       {loading ? <Notice>Loading people…</Notice> : null}
       {people?.length ? (
-        <DataTable
-          caption="Employee attendance profiles"
-          rows={people}
-          getRowKey={(p) => p.membershipId}
-          columns={[
-            {
-              key: "name",
-              header: "Employee",
-              render: (p) => (
-                <>
-                  <strong>{p.name}</strong>
-                  <small className={styles.block}>
-                    {p.employeeCode || "No employee code"}
-                  </small>
-                </>
-              ),
-            },
-            {
-              key: "role",
-              header: "Role / department",
-              render: (p) => (
-                <>
-                  {p.designation || "—"}
-                  <small className={styles.block}>{p.department}</small>
-                </>
-              ),
-            },
-            {
-              key: "manager",
-              header: "Reports to",
-              render: (p) =>
-                people.find((m) => m.membershipId === p.managerId)?.name ??
-                "Default approver",
-            },
-            {
-              key: "calendar",
-              header: "Calendar",
-              render: (p) =>
-                boot.calendars.find((c) => c.id === p.calendarId)?.name ?? "—",
-            },
-            {
-              key: "status",
-              header: "Attendance",
-              render: (p) => (
-                <span className={styles.status}>
-                  {p.enabled ? "Enabled" : "Not enabled"}
-                </span>
-              ),
-            },
-            {
-              key: "action",
-              header: "",
-              render: (p) => (
-                <Button
-                  variant="secondary"
-                  disabled={!boot.settings || p.status !== "active"}
-                  onClick={() => setSelected(p)}
-                >
-                  {p.version ? "Edit profile" : "Enable attendance"}
-                </Button>
-              ),
-            },
-          ]}
-        />
+        <div className={styles.metricGrid} aria-label="People summary">
+          <div className={styles.metricCard}>
+            <span>Workspace members</span>
+            <strong>{people.length}</strong>
+            <small>Available for HRMS setup</small>
+          </div>
+          <div className={styles.metricCard}>
+            <span>Attendance enabled</span>
+            <strong>{summary.enabled}</strong>
+            <small>{people.length - summary.enabled} not enabled</small>
+          </div>
+          <div className={styles.metricCard}>
+            <span>Departments</span>
+            <strong>{summary.departments}</strong>
+            <small>Across active profiles</small>
+          </div>
+          <div className={styles.metricCard}>
+            <span>Reporting lines</span>
+            <strong>{summary.managers}</strong>
+            <small>Distinct people managers</small>
+          </div>
+        </div>
+      ) : null}
+      {people?.length ? (
+        <>
+          <div className={styles.tableTools}>
+            <TextField
+              id="people-search"
+              label="Search people"
+              type="search"
+              placeholder="Name, code, role or department"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <SelectField
+              id="people-status"
+              label="Attendance status"
+              value={status}
+              onChange={setStatus}
+            >
+              <option value="all">All profiles</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Not enabled</option>
+            </SelectField>
+            <span className={styles.filterCount}>
+              {filtered.length} of {people.length}
+            </span>
+          </div>
+          {filtered.length ? (
+            <DataTable
+              caption="Employee attendance profiles"
+              rows={filtered}
+              getRowKey={(p) => p.membershipId}
+              columns={[
+                {
+                  key: "name",
+                  header: "Employee",
+                  render: (p) => (
+                    <>
+                      <strong>{p.name}</strong>
+                      <small className={styles.block}>
+                        {p.employeeCode || "No employee code"}
+                      </small>
+                    </>
+                  ),
+                },
+                {
+                  key: "role",
+                  header: "Role / department",
+                  render: (p) => (
+                    <>
+                      {p.designation || "—"}
+                      <small className={styles.block}>{p.department}</small>
+                    </>
+                  ),
+                },
+                {
+                  key: "manager",
+                  header: "Reports to",
+                  render: (p) =>
+                    people.find((m) => m.membershipId === p.managerId)?.name ??
+                    "Default approver",
+                },
+                {
+                  key: "calendar",
+                  header: "Calendar",
+                  render: (p) =>
+                    boot.calendars.find((c) => c.id === p.calendarId)?.name ??
+                    "—",
+                },
+                {
+                  key: "status",
+                  header: "Attendance",
+                  render: (p) => (
+                    <span className={styles.status}>
+                      {p.enabled ? "Enabled" : "Not enabled"}
+                    </span>
+                  ),
+                },
+                {
+                  key: "action",
+                  header: "",
+                  render: (p) => (
+                    <Button
+                      variant="secondary"
+                      disabled={!boot.settings || p.status !== "active"}
+                      onClick={() => setSelected(p)}
+                    >
+                      {p.version ? "Edit profile" : "Enable attendance"}
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          ) : (
+            <Empty title="No matching people">
+              Clear the search or choose a different attendance status.
+            </Empty>
+          )}
+        </>
       ) : null}
       {selected ? (
         <PersonForm

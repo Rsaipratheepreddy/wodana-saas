@@ -1,4 +1,6 @@
 "use client";
+import Image from "next/image";
+import { WodanaLogo } from "@/components/brand";
 import { useEffect, useState, type CSSProperties } from "react";
 import {
   ArrowRight,
@@ -8,29 +10,31 @@ import {
   Phone,
   ShieldCheck,
 } from "lucide-react";
-import { ControlledModalDialog, DesignSystemProvider } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, DesignSystemProvider, SelectField, TextAreaField } from "@/design-system";
 import type {
   ClientCase,
   ClientQuote,
   PortalSettings,
 } from "@/lib/commercial/types";
-import { jsonRequest, money, statusLabel } from "@/lib/commercial/client";
+import { jsonRequest, money, quoteSelectionTotals, statusLabel } from "@/lib/commercial/client";
+import { decisionPolicySummary } from "@/lib/commercial/decision-requests";
 import { BrandLogo } from "./portal-settings";
 import { ClientQuotation } from "./client-quotation";
 import p from "./client-portal.module.css";
 type PortalData = { name: string; phone: string; cases: ClientCase[] };
-const onBrand = (hex: string) => {
-  const value = /^#[\da-f]{6}$/i.test(hex) ? hex.slice(1) : "694f7a";
-  const [red, green, blue] = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
-  return red * 0.299 + green * 0.587 + blue * 0.114 > 155 ? "#211b24" : "#ffffff";
-};
 const tabs = [
   ["home", "Home"],
   ["approvals", "Approvals"],
   ["payments", "Payments"],
   ["project", "Progress"],
-  ["requests", "Messages"],
+  ["requests", "Inbox"],
 ];
+const designContext = (design: NonNullable<ClientCase["designs"]>[number]) =>
+  [design.roomName, design.itemName, design.type].filter(Boolean).join(" · ");
+const designDue = (design: NonNullable<ClientCase["designs"]>[number]) =>
+  design.clientReviewExpiresAt
+    ? `Decision due ${new Date(design.clientReviewExpiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+    : "";
 export function ClientPortal({ settings }: { settings: PortalSettings }) {
   const [data, setData] = useState<PortalData | null>(null),
     [loading, setLoading] = useState(true),
@@ -39,6 +43,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     [tab, setTab] = useState("home"),
     [caseId, setCaseId] = useState(""),
     [quoteId, setQuoteId] = useState(""),
+    [definitionOpen, setDefinitionOpen] = useState(false),
     [designVersionId,setDesignVersionId] = useState(""),
     [materialApprovalId,setMaterialApprovalId] = useState(""),
     [handoverId,setHandoverId] = useState(""),
@@ -52,9 +57,11 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     [clock, setClock] = useState(() => Date.now()),
     [dialog, setDialog] = useState(""),
     [decision, setDecision] = useState("accept"),
+    [selectedOptionLineIds, setSelectedOptionLineIds] = useState<string[]>([]),
     [note, setNote] = useState(""),
     [requestTitle, setRequestTitle] = useState(""),
     [requestId, setRequestId] = useState(""),
+    [decisionChoice, setDecisionChoice] = useState(""),
     [paymentId, setPaymentId] = useState(""),
     [notice, setNotice] = useState(""),
     [container, setContainer] = useState<HTMLElement | null>(null);
@@ -64,21 +71,30 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     quote =
       current?.quotes.find((q) => q.id === quoteId) ?? current?.quotes.at(-1),
     request = current?.requests.find((r) => r.id === requestId),
-    brand = settings.brand;
+    brand = { ...settings.brand, primaryColor: "#E4E3DE", accentColor: "#000000" };
   const selectedDesign=current?.designs?.find(d=>d.id===designVersionId);
   const selectedMaterial=current?.materials?.find(item=>item.id===materialApprovalId);
   const selectedHandover=current?.project?.handovers.find(item=>item.id===handoverId);
+  const definition = current?.definitionBaseline;
+  const optionLines = quote?.lines.filter((line) => line.optional) ?? [];
+  const acceptanceTotals = quote
+    ? quoteSelectionTotals(
+        { ...quote, lines: quote.lines.map((line) => ({ ...line, unitCost: 0 })) },
+        selectedOptionLineIds,
+      )
+    : { baseTotal: 0, optionsTotal: 0, acceptedTotal: 0 };
   const decisionPurpose=dialog==='warranty-claim'
     ? `warranty-claim:${current?.id}:${current?.project?.id}:${handoverId}`
-    : `${dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':dialog==='handover-decision'?'handover-decision':'decision'}:${current?.id}:${dialog==='material-decision'?selectedMaterial?.id:dialog==='design-decision'?selectedDesign?.id:dialog==='handover-decision'?`${current?.project?.id}:${handoverId}`:quote?.id}:${decision}`;
+    : `${dialog==='definition-decision'?'definition-decision':dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':dialog==='handover-decision'?'handover-decision':'decision'}:${current?.id}:${dialog==='definition-decision'?definition?.id:dialog==='material-decision'?selectedMaterial?.id:dialog==='design-decision'?selectedDesign?.id:dialog==='handover-decision'?`${current?.project?.id}:${handoverId}`:quote?.id}:${decision}`;
+  function openDefinitionDecision(value:"accept"|"changes"){setDecision(value);setDialog('definition-decision');setNote('');setCode('');setChallenge('');setError('');}
   function openDesignDecision(id:string,value:string){setDesignVersionId(id);setDecision(value);setDialog('design-decision');setNote('');setCode('');setChallenge('');setError('');}
   function openMaterialDecision(id:string,value:string){setMaterialApprovalId(id);setDecision(value);setDialog('material-decision');setNote('');setCode('');setChallenge('');setError('');}
   function openHandoverDecision(id:string,value:"accept"|"changes"){setHandoverId(id);setDecision(value);setDialog('handover-decision');setNote('');setCode('');setChallenge('');setError('');}
   function openWarrantyClaim(id:string){setHandoverId(id);setWarrantyTitle('');setWarrantySeverity('minor');setDialog('warranty-claim');setNote('');setCode('');setChallenge('');setError('');}
   const style = {
-    "--portal-primary": brand.primaryColor,
-    "--portal-accent": brand.accentColor,
-    "--portal-on-primary": onBrand(brand.primaryColor),
+    "--portal-primary": "#000000",
+    "--portal-accent": "#000000",
+    "--portal-on-primary": "#ffffff",
   } as CSSProperties;
   async function load() {
     try {
@@ -154,6 +170,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
   }
   function openDecision(value: string) {
     setDecision(value);
+    setSelectedOptionLineIds([]);
     setDialog("decision");
     setNote("");
     setCode("");
@@ -162,6 +179,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
   }
   function openRequest(id: string) {
     setRequestId(id);
+    setDecisionChoice("");
     setDialog("thread");
     setNote("");
     setError("");
@@ -169,7 +187,8 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
   const pending = current?.quotes.filter((q) => q.canDecide) ?? [];
   const pendingMaterials = current?.materials?.filter((item) => item.canDecide) ?? [];
   const pendingDesigns = current?.designs?.filter((design) => design.status === "client_review") ?? [];
-  const pendingApprovals = pending.length + pendingMaterials.length + pendingDesigns.length;
+  const pendingDecisions = current?.requests.filter((item) => item.status === "awaiting_decision" && item.decisionRequest && !item.decisionRequest.decision) ?? [];
+  const pendingApprovals = pending.length + pendingMaterials.length + pendingDesigns.length + (definition?.canDecide ? 1 : 0);
   return (
     <DesignSystemProvider theme="light" portalContainer={container}>
       <div
@@ -179,7 +198,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
         ref={setContainer}
       >
         <header className={p.header}>
-          <BrandLogo brand={brand} />
+          <div className={p.clientBrand}><BrandLogo brand={brand} /></div>
           <div className={p.headerRight}>
             {data ? (
               <>
@@ -370,6 +389,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   onChange={(e) => {
                     setCaseId(e.target.value);
                     setQuoteId("");
+                    setDefinitionOpen(false);
                     setDesignVersionId("");
                     setMaterialApprovalId("");
                     setRequestId("");
@@ -401,7 +421,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   {label}
                   {id === "approvals" && pendingApprovals > 0
                     ? ` · ${pendingApprovals}`
-                    : ""}
+                    : id === "requests" && pendingDecisions.length > 0 ? ` · ${pendingDecisions.length}` : ""}
                 </button>
               ))}
             </nav>
@@ -422,10 +442,14 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   <p>
                     {pendingApprovals
                       ? `${pendingApprovals} ${pendingApprovals === 1 ? "item is" : "items are"} ready for your review.`
+                      : pendingDecisions.length
+                        ? `${pendingDecisions.length} ${pendingDecisions.length === 1 ? "decision needs" : "decisions need"} your response.`
                       : "You’re up to date. Your project team will share the next steps here."}
                   </p>
                 </div>
                 <h3 style={{ fontWeight: 550 }}>Your next steps</h3>
+                {pendingDecisions.map((item) => <div className={p.section} key={item.id}><div className={p.title}><div><span className={p.status} data-status="issued">Decision requested</span><h3>{item.title}</h3><p className={p.muted}>{item.decisionRequest?.target.label} · Due {item.dueDate}</p></div><button className={p.primary} onClick={() => openRequest(item.id)}>Respond <ArrowRight size={15}/></button></div></div>)}
+                {definition?.canDecide ? <div className={p.section}><div className={p.title}><div><span className={p.status} data-status="issued">Your review</span><h3>Scope definition · V{definition.number}</h3><p className={p.muted}>Confirm the current requirements before quotation.</p></div><button className={p.primary} onClick={() => { setTab("approvals"); setDefinitionOpen(true); }}>Review scope <ArrowRight size={15}/></button></div></div> : null}
                 {pending.map((q) => (
                   <div className={p.section} key={q.id}>
                     <div className={p.title}>
@@ -472,7 +496,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                       <div>
                         <span className={p.status} data-status="issued">Design review</span>
                         <h3>{design.title} · V{design.number}</h3>
-                        <p className={p.muted}>{design.type}</p>
+                        <p className={p.muted}>{designContext(design)}{designDue(design) ? ` · ${designDue(design)}` : ""}</p>
                       </div>
                       <button className={p.primary} onClick={() => setTab("approvals")}>
                         Review design <ArrowRight size={15}/>
@@ -525,27 +549,30 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   </div>
                 </div>
               </>
+            ) : tab === "approvals" && definitionOpen && definition ? (
+              <ClientScopeDefinition definition={definition} onBack={() => setDefinitionOpen(false)} onDecision={openDefinitionDecision} />
             ) : tab === "approvals" && !quoteId ? (
-              current?.designs?.length || current?.materials?.length || current?.quotes.length ? <>
+              definition || current?.designs?.length || current?.materials?.length || current?.quotes.length ? <>
                 <div className={p.approvalHeading}>
-                  <div><h2>Approvals</h2><p className={p.muted}>Designs, material selections and quotations in one review queue.</p></div>
+                  <div><h2>Approvals</h2><p className={p.muted}>Scope, designs, materials and quotations.</p></div>
                   <span>{pendingApprovals} pending</span>
                 </div>
+                {definition ? <section className={p.approvalGroup} aria-labelledby="client-scope-heading"><h3 id="client-scope-heading">Scope</h3><div className={p.approvalRow}><div><span className={p.status} data-status={definition.status}>{definition.status === "confirmed" ? "Confirmed" : definition.status === "changes_requested" ? "Changes requested" : definition.current ? "For your review" : "Earlier version"}</span><strong>Scope definition · V{definition.number}</strong><small>{definition.snapshot.definition.items.length} item{definition.snapshot.definition.items.length === 1 ? "" : "s"}</small></div><button className={definition.canDecide ? p.primary : p.button} onClick={() => setDefinitionOpen(true)}>{definition.canDecide ? "Review scope" : "View scope"}<ArrowRight size={14}/></button></div></section> : null}
                 {current.designs?.length ? <section className={p.approvalGroup} aria-labelledby="client-designs-heading">
                   <h3 id="client-designs-heading">Designs</h3>
-                  {current.designs.map(design=><div className={p.approvalRow} key={design.id}><div><span className={p.status} data-status={design.status}>{design.status==='approved'?'Approved':'For your review'}</span><strong>{design.title} · V{design.number}</strong><small>{design.type}</small></div><div className={p.actions}><a className={p.button} href={`/api/client-portal/${settings.slug}/designs/${design.id}`} target="_blank" rel="noreferrer">Open design ↗</a>{design.status==='client_review'&&current.role==='approver'&&<><button className={p.button} onClick={()=>openDesignDecision(design.id,'changes')}>Reject / remarks</button><button className={p.primary} onClick={()=>openDesignDecision(design.id,'accept')}>Approve design</button></>}</div></div>)}
+                  {current.designs.map(design=><div className={p.approvalRow} key={design.id}><div><span className={p.status} data-status={design.status}>{design.status==='approved'?'Approved':design.status==='changes_requested'?'Changes requested':design.status==='rejected'?'Rejected':design.status==='expired'?'Review expired':'For your review'}</span><strong>{design.title} · V{design.number}</strong><small>{designContext(design)}{designDue(design) ? ` · ${designDue(design)}` : ""}</small></div><div className={p.actions}><a className={p.button} href={`/api/client-portal/${settings.slug}/designs/${design.id}`} target="_blank" rel="noreferrer">Open design ↗</a>{design.status==='client_review'&&current.role==='approver'&&<><button className={p.button} onClick={()=>openDesignDecision(design.id,'changes')}>Request changes</button><button className={p.button} onClick={()=>openDesignDecision(design.id,'decline')}>Reject design</button><button className={p.primary} onClick={()=>openDesignDecision(design.id,'accept')}>Approve design</button></>}</div></div>)}
                 </section> : null}
                 {current.materials?.length ? <section className={p.approvalGroup} aria-labelledby="client-materials-heading">
                   <h3 id="client-materials-heading">Materials</h3>
                   {current.materials.map(material=><div className={p.materialCard} key={material.id}>
-                    {material.photo?<img src={material.photo} alt={`${material.name} material selection`}/>:<span className={p.materialPhoto}>Material</span>}
+                    {material.photo?<Image unoptimized width={96} height={96} src={material.photo} alt={`${material.name} material selection`}/>:<span className={p.materialPhoto}>Material</span>}
                     <div><span className={p.status} data-status={material.status}>{statusLabel[material.status]??material.status.replaceAll('_',' ')}</span><h3>{material.name}</h3><p>{[material.brand,material.code].filter(Boolean).join(' · ')||material.specification}</p><p className={p.muted}>{material.room} · {material.item} · Revision {material.revision}</p>{material.decisionNote&&<p>{material.decisionNote}</p>}</div>
                     {material.canDecide&&<div className={p.actions}><button className={p.button} onClick={()=>openMaterialDecision(material.id,'changes')}>Reject / remarks</button><button className={p.primary} onClick={()=>openMaterialDecision(material.id,'accept')}>Approve material</button></div>}
                   </div>)}
                 </section> : null}
                 {current.quotes.length ? <section className={p.approvalGroup} aria-labelledby="client-quotations-heading">
                   <h3 id="client-quotations-heading">Quotations</h3>
-                  {current.quotes.slice().reverse().map((item) => <div className={p.approvalRow} key={item.id}><div><span className={p.status} data-status={item.status}>{statusLabel[item.status] ?? item.status}</span><strong>Quotation V{item.number}</strong><small>{money(item.total, item.currency)} · Valid until {item.validUntil}</small></div><button className={item.canDecide ? p.primary : p.button} onClick={() => setQuoteId(item.id)}>{item.canDecide ? "Review quotation" : "View quotation"}<ArrowRight size={14}/></button></div>)}
+                  {current.quotes.slice().reverse().map((item) => <div className={p.approvalRow} key={item.id}><div><span className={p.status} data-status={item.expired ? "expired" : item.status}>{item.expired && item.status === "issued" ? "Expired" : statusLabel[item.status] ?? item.status}</span><strong>Quotation V{item.number}</strong><small>{money(item.total, item.currency)} · Valid until {item.validUntil}</small></div><button className={item.canDecide ? p.primary : p.button} onClick={() => setQuoteId(item.id)}>{item.canDecide ? "Review quotation" : "View quotation"}<ArrowRight size={14}/></button></div>)}
                 </section> : null}
               </>:<Empty title="Nothing to review yet" text="Your team will share reviewed designs, materials and quotations here. Drafts stay internal."/>
             ) : tab === "approvals" && quoteId ? (
@@ -556,7 +583,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                     <div className={p.actions}>
                       <a
                         className={p.button}
-                        href={`/portal/${settings.slug}/print?case=${current?.id}&quote=${quote.id}`}
+                        href={`/portal/${settings.slug}/print?case=${current?.id}&quote=${quote.id}${quote.hash ? `&snapshot=${quote.hash}` : ""}`}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -606,7 +633,9 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   ) : (
                     <p className={p.muted}>
                       {quote.status === "issued"
-                        ? "Only the assigned approver can respond while this offer is valid."
+                        ? quote.expired
+                          ? `This quotation expired on ${quote.validUntil}. Ask the project team for a current revision.`
+                          : "Only the assigned approver can respond while this offer is valid."
                         : "This version is kept for your records. Open the latest version for current actions."}
                     </p>
                   )}
@@ -675,7 +704,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                         </button>
                       )}
                     </div>
-                    {payment.invoice && <div className={p.section}><p className={p.muted}>{payment.invoice.provider==='zoho_books'?'Zoho Books':'QuickBooks'} · {payment.invoice.number||payment.invoice.id} · Balance {money(payment.invoice.balance,payment.invoice.currency)}</p>{payment.invoice.paymentUrl&&payment.invoice.balance>0?<a className={p.button} href={payment.invoice.paymentUrl} target="_blank" rel="noreferrer">Open invoice & pay ↗</a>:payment.invoice.balance>0?<p className={p.muted}>Ask your team for the payment method on your invoice.</p>:null}<small className={p.muted}>Last verified {new Date(payment.invoice.refreshedAt).toLocaleString()}{payment.invoice.lastError?" · Verification needs attention. Please contact your project team.":""}</small></div>}
+                    {payment.invoice && <div className={p.section}><p className={p.muted}>{payment.invoice.provider==='zoho_books'?'Zoho Books':'QuickBooks'} · {payment.invoice.number||"Linked invoice"} · Balance {money(payment.invoice.balance,payment.invoice.currency)}</p>{payment.invoice.paymentUrl&&payment.invoice.balance>0?<a className={p.button} href={payment.invoice.paymentUrl} target="_blank" rel="noreferrer">Open invoice & pay ↗</a>:payment.invoice.balance>0?<p className={p.muted}>Ask your team for the payment method on your invoice.</p>:null}<small className={p.muted}>Last checked {new Date(payment.invoice.refreshedAt).toLocaleString()}{payment.invoice.lastError?" · Verification needs attention. Please contact your project team.":""}</small></div>}
                     {payment.reference && (
                       <p className={p.muted}>Reference: {payment.reference}</p>
                     )}
@@ -715,7 +744,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                           {r.owner
                             ? `With ${r.owner}`
                             : "Your team will assign an owner"}{" "}
-                          · {r.comments.length} replies
+                          · {r.comments.length} replies{r.decisionRequest ? ` · ${r.decisionRequest.target.label} · Due ${r.dueDate}` : ""}
                         </p>
                       </div>
                       <button
@@ -744,25 +773,29 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
           </main>
         )}
         <footer className={p.footer}>
-          {brand.supportPhone ? (
-            <a
-              href={`https://wa.me/${brand.supportPhone.replace(/\D/g, "")}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Phone size={12} style={{ display: "inline" }} /> Contact{" "}
-              {brand.name}
-            </a>
-          ) : (
-            brand.name
-          )}{" "}
-          · Client portal
+          <span className={p.portalSupport}>
+            {brand.supportPhone ? (
+              <a
+                href={`https://wa.me/${brand.supportPhone.replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Phone size={12} /> Contact {brand.name}
+              </a>
+            ) : (
+              <>{brand.name} · Client portal</>
+            )}
+          </span>
+          <span className={p.poweredBy} aria-label="Powered by Wodana">
+            <span>Powered by</span>
+            <WodanaLogo size="micro" />
+          </span>
         </footer>
         <ControlledModalDialog
           isOpen={Boolean(dialog)}
           onOpenChange={(open) => !open && setDialog("")}
           title={
-            dialog === 'warranty-claim' ? 'Report a warranty issue' : dialog === 'material-decision' ? decision==='accept'?'Approve material':'Reject material / remarks' : dialog === 'design-decision' ? decision==='accept'?'Approve design':'Reject design / remarks' : dialog === 'handover-decision' ? decision==='accept'?'Accept handover':'Request handover changes' : dialog === "decision"
+            dialog === 'warranty-claim' ? 'Report a warranty issue' : dialog === 'definition-decision' ? decision === 'accept' ? 'Confirm scope' : 'Request scope changes' : dialog === 'material-decision' ? decision==='accept'?'Approve material':'Reject material / remarks' : dialog === 'design-decision' ? decision==='accept'?'Approve design':decision==='changes'?'Request design changes':'Reject design' : dialog === 'handover-decision' ? decision==='accept'?'Accept handover':'Request handover changes' : dialog === "decision"
               ? decision === "accept"
                 ? `Accept quotation V${quote?.number}`
                 : decision === "changes"
@@ -790,19 +823,46 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 <label>Details<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} /></label>
                 {!challenge ? <button className={p.primary} disabled={busy||!warrantyTitle.trim()||!note.trim()} onClick={()=>void sendCode(decisionPurpose)}>Continue to verification</button> : <><label>Confirm with the six-digit code<input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,""))}/></label>{settings.testMode&&<p className={p.test}>Demo code: 123456. This verifies your report separately from sign-in.</p>}<button className={p.primary} disabled={busy||code.length!==6} onClick={()=>void command({action:'warranty-claim',projectId:current?.project?.id,handoverId,title:warrantyTitle,severity:warrantySeverity,detail:note,challengeId:challenge,code})}>Submit warranty request</button><button className={p.button} disabled={busy||clock<resendAt} onClick={()=>void sendCode(decisionPurpose)}>Request a new code{clock<resendAt?` (${Math.ceil((resendAt-clock)/1000)}s)`:""}</button></>}
               </>
-            ) : dialog === "decision" || dialog === 'design-decision' || dialog === 'material-decision' || dialog === 'handover-decision' ? (
+            ) : dialog === "decision" || dialog === 'definition-decision' || dialog === 'design-decision' || dialog === 'material-decision' || dialog === 'handover-decision' ? (
               <>
-                {dialog==='handover-decision'?<><p className={p.muted}>{selectedHandover?.title} · {selectedHandover?.area}</p><p>{decision==='accept'?'You are accepting this exact, versioned handover pack. Warranty and any recorded follow-up will remain visible here.':'Your remarks will return this handover pack to the project team for correction.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='material-decision'?<><p className={p.muted}>{selectedMaterial?.room} · {selectedMaterial?.item}</p><h3>{selectedMaterial?.name}</h3><p>{selectedMaterial?.specification}</p><p>{decision==='accept'?'You are approving this exact material selection.':'Your remarks will return this material selection to the team.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='design-decision'?<><p className={p.muted}>{selectedDesign?.title} · V{selectedDesign?.number}</p><p>{decision==='accept'?'You are approving this exact design file.':'Your remarks will return this file to the design team for revision.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:<>
+                {dialog==='definition-decision'?<><p className={p.muted}>Scope definition · V{definition?.number}</p><p>{decision === 'accept' ? 'You are confirming this exact version of the requirements and scope.' : 'Your remarks will return this scope to the team for revision.'}</p><label>Remarks{decision === 'accept' ? ' · optional' : ''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision !== 'accept'}/></label></>:dialog==='handover-decision'?<><p className={p.muted}>{selectedHandover?.title} · {selectedHandover?.area}</p><p>{decision==='accept'?'You are accepting this exact, versioned handover pack. Warranty and any recorded follow-up will remain visible here.':'Your remarks will return this handover pack to the project team for correction.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='material-decision'?<><p className={p.muted}>{selectedMaterial?.room} · {selectedMaterial?.item}</p><h3>{selectedMaterial?.name}</h3><p>{selectedMaterial?.specification}</p><p>{decision==='accept'?'You are approving this exact material selection.':'Your remarks will return this material selection to the team.'}</p><label>Remarks{decision==='accept'?' · optional':''}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:dialog==='design-decision'?<><p className={p.muted}>{selectedDesign?.title} · V{selectedDesign?.number}</p><p>{decision==='accept'?'You are approving this exact design file.':decision==='changes'?'Your requested changes will return this exact revision to the design team.':'You are rejecting this exact revision. It will remain in the approval history.'}</p><label>{decision==='accept'?'Remarks · optional':decision==='changes'?'Changes needed':'Reason for rejection'}<textarea maxLength={5000} value={note} onChange={e=>setNote(e.target.value)} required={decision!=='accept'}/></label></>:<>
                 <p className={p.muted}>
                   {quote?.title} · V{quote?.number} ·{" "}
                   {money(quote?.total ?? 0, quote?.currency)}
                 </p>
                 {decision === "accept" ? (
-                  <p>
-                    You are accepting the scope, price, exclusions and terms in
-                    this version. Contract signing and execution release follow
-                    separately.
-                  </p>
+                  <>
+                    <p>
+                      You are accepting the scope, price, exclusions and terms in
+                      this exact issued version. Contract signing follows separately.
+                    </p>
+                    {optionLines.length ? (
+                      <fieldset className={p.optionSelection}>
+                        <legend>Optional items</legend>
+                        <p className={p.muted}>Choose only the alternates you want included in the accepted amount.</p>
+                        {optionLines.map((line) => (
+                          <Checkbox
+                            key={line.id}
+                            isSelected={selectedOptionLineIds.includes(line.id)}
+                            onChange={(selected) =>
+                              setSelectedOptionLineIds((current) =>
+                                selected
+                                  ? [...current, line.id]
+                                  : current.filter((id) => id !== line.id),
+                              )
+                            }
+                          >
+                            <span className={p.optionLabel}><strong>{line.title}</strong><small>{line.room} · {money(line.quantity * line.rate, quote?.currency)}</small></span>
+                          </Checkbox>
+                        ))}
+                      </fieldset>
+                    ) : null}
+                    <dl className={p.acceptanceSummary}>
+                      <div><dt>Base quotation</dt><dd>{money(acceptanceTotals.baseTotal, quote?.currency)}</dd></div>
+                      <div><dt>Selected options incl. tax</dt><dd>{money(acceptanceTotals.optionsTotal, quote?.currency)}</dd></div>
+                      <div><dt>Amount you are accepting</dt><dd>{money(acceptanceTotals.acceptedTotal, quote?.currency)}</dd></div>
+                    </dl>
+                  </>
                 ) : (
                   <label>
                     {decision === "changes"
@@ -853,9 +913,10 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                       disabled={busy || code.length !== 6}
                       onClick={() =>
                         void command({
-                          action: dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':dialog==='handover-decision'?'handover-decision':"decision",
-                          ...(dialog==='material-decision'?{materialApprovalId:selectedMaterial?.id}:dialog==='design-decision'?{versionId:selectedDesign?.id}:dialog==='handover-decision'?{projectId:current?.project?.id,handoverId}:{quoteId:quote?.id}),
+                          action: dialog==='definition-decision'?'definition-decision':dialog==='material-decision'?'material-decision':dialog==='design-decision'?'design-decision':dialog==='handover-decision'?'handover-decision':"decision",
+                          ...(dialog==='definition-decision'?{baselineId:definition?.id}:dialog==='material-decision'?{materialApprovalId:selectedMaterial?.id}:dialog==='design-decision'?{versionId:selectedDesign?.id}:dialog==='handover-decision'?{projectId:current?.project?.id,handoverId}:{quoteId:quote?.id}),
                           decision,
+                          ...(dialog === "decision" && decision === "accept" ? { selectedOptionLineIds } : {}),
                           challengeId: challenge,
                           code,
                           note,
@@ -867,7 +928,9 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                         ? "acceptance"
                         : decision === "changes"
                           ? "change request"
-                          : "decline"}
+                          : dialog === "design-decision"
+                            ? "rejection"
+                            : "decline"}
                     </button>
                     <button
                       className={p.button}
@@ -889,6 +952,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
             ) : dialog === "thread" ? (
               <>
                 <p style={{ whiteSpace: "pre-wrap" }}>{request?.detail}</p>
+                {request?.decisionRequest ? <div className={p.section}><span className={p.status} data-status={request.status}>{request.decisionRequest.decision ? "Answered" : "Your decision"}</span><h3>{request.decisionRequest.target.label}</h3><p className={p.muted}>This response applies only to the exact revision above · Due {request.dueDate}</p><p className={p.muted}>{decisionPolicySummary(request.decisionRequest)}</p>{request.decisionRequest.decision ? <p><strong>{request.decisionRequest.decision.choiceLabel}</strong>{request.decisionRequest.decision.note ? ` · ${request.decisionRequest.decision.note}` : ""}</p> : <><SelectField label="Choose your response" isRequired items={request.decisionRequest.allowedChoices} selectedKey={decisionChoice || null} onSelectionChange={(key) => setDecisionChoice(String(key ?? ""))} /><TextAreaField label="Note (optional)" value={note} onChange={setNote} /><Button variant="primary" isLoading={busy} isDisabled={!decisionChoice} onPress={() => void command({ action: "decision_response", requestId, choiceId: decisionChoice, note, responseId: crypto.randomUUID() })}>Submit decision</Button></>}</div> : null}
                 {request?.comments.map((c) => (
                   <div key={c.id} className={p.section}>
                     <strong>{c.author}</strong>
@@ -900,7 +964,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 {request?.resolution && (
                   <p className={p.test}>{request.resolution}</p>
                 )}
-                <label>
+                {!request?.decisionRequest ? <><label>
                   Your reply
                   <textarea
                     value={note}
@@ -916,6 +980,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 >
                   Send reply
                 </button>
+                </> : null}
               </>
             ) : dialog === "proof" ? (
               <>
@@ -985,6 +1050,17 @@ function Empty({ title, text }: { title: string; text: string }) {
       <p className={p.muted}>{text}</p>
     </div>
   );
+}
+function ClientScopeDefinition({ definition, onBack, onDecision }: { definition: NonNullable<ClientCase["definitionBaseline"]>; onBack: () => void; onDecision: (decision: "accept" | "changes") => void }) {
+  const scope = definition.snapshot.definition;
+  return <div className={p.scopeReview}>
+    <button className={p.button} onClick={onBack}>← All approvals</button>
+    <div className={p.approvalHeading}><div><h2>Scope definition · V{definition.number}</h2><p className={p.muted}>The requirements and selections shared by your project team.</p></div><span className={p.status} data-status={definition.status}>{definition.status === "confirmed" ? "Confirmed" : definition.status === "changes_requested" ? "Changes requested" : definition.current ? "For your review" : "Earlier version"}</span></div>
+    {scope.brief.goals || scope.brief.location || scope.brief.timeline || scope.brief.exclusions ? <dl className={p.scopeFacts}>{([ ["Project goal", scope.brief.goals], ["Location", scope.brief.location], ["Timeline", scope.brief.timeline], ["Known exclusions", scope.brief.exclusions] ] as const).filter((entry) => Boolean(entry[1])).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}
+    <div className={p.scopeList}><h3>Items in this version</h3>{scope.items.map((item) => <article key={item.id} className={p.scopeItem}><div><strong>{item.title}</strong><span>{item.scopeStatus === "included" ? "Included" : item.scopeStatus === "excluded" ? "Excluded" : item.scopeStatus.replaceAll("_", " ")}</span></div><small>{item.roomName ?? "Whole project"}{item.quantity ? ` · ${item.quantity} ${item.unit}` : ""}</small>{item.specification?.refinedRequirement ? <p>{item.specification.refinedRequirement}</p> : null}{item.specification?.inclusions ? <p>Includes: {item.specification.inclusions}</p> : null}{item.specification?.exclusions ? <p>Excludes: {item.specification.exclusions}</p> : null}{item.specification?.materials?.length ? <p>Materials: {item.specification.materials.map((material) => [material.application, material.productName, material.productCode].filter(Boolean).join(" · ")).join("; ")}</p> : null}</article>)}</div>
+    {definition.decision ? <p className={p.muted}>{definition.decision.decision === "confirmed" ? "Confirmed" : "Changes requested"} by {definition.decision.decisionBy}{definition.decision.note ? ` · ${definition.decision.note}` : ""}</p> : null}
+    {definition.canDecide ? <div className={p.actions}><button className={p.button} onClick={() => onDecision("changes")}>Request changes</button><button className={p.primary} onClick={() => onDecision("accept")}>Confirm scope</button></div> : null}
+  </div>;
 }
 function ClientQuoteChanges({
   quote,

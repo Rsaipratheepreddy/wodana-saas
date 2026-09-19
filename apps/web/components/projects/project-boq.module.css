@@ -1,5 +1,9 @@
 .summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-block: 1.25rem; }
 .summary strong { font-size: 0.875rem; font-weight: 600; }
 .summary p { color: var(--wd-color-text-secondary); font-size: 0.75rem; margin-block: 0.35rem 0; }
-.summary a { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--crm-accent, #694f7a); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
-@media (max-width: 600px) { .summary { align-items: flex-start; flex-direction: column; } }
+.summary a { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--wd-color-action-primary); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.summaryActions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; }
+.wrap { display: block; min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.coverage { display: grid; justify-items: start; gap: .3rem; }
+.coverage small { color: var(--wd-color-text-secondary); line-height: 1.35; }
+@media (max-width: 600px) { .summary { align-items: flex-start; flex-direction: column; } .summaryActions { justify-content: flex-start; } }

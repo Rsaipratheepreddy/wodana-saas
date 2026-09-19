@@ -1,5 +1,5 @@
 import { Type, Transform } from "class-transformer";
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, IsUrl, Length, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, IsUrl, Length, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
 import { catalogKinds } from "./catalog-structure";
 
 export { catalogKinds };
@@ -76,6 +76,23 @@ export class RecipeSelectionDto {
   @IsUUID() slotId:string;
   @IsUUID() targetId:string;
 }
+export class RecipeSurveyBindingDto {
+  @IsIn(["width","height","length","depth"]) axis:"width"|"height"|"length"|"depth";
+  @IsUUID() dimensionId:string;
+}
+export class RecipeSurveyAdjustmentDto {
+  @IsIn(["width","height","length","depth"]) axis:"width"|"height"|"length"|"depth";
+  @IsNumber() @Min(0.001) @Max(100000) value:number;
+  @Transform(trim) @IsString() @MinLength(8) @MaxLength(500) reason:string;
+}
+export class RecipeSurveySourceDto {
+  @IsUUID() caseId:string;
+  @IsUUID() entryId:string;
+  @IsUUID() measurementId:string;
+  @IsInt() @Min(1) measurementVersion:number;
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(4) @ArrayUnique((row:RecipeSurveyBindingDto)=>row.axis) @ValidateNested({each:true}) @Type(()=>RecipeSurveyBindingDto) bindings:RecipeSurveyBindingDto[];
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @ArrayUnique((row:RecipeSurveyAdjustmentDto)=>row.axis) @ValidateNested({each:true}) @Type(()=>RecipeSurveyAdjustmentDto) adjustments?:RecipeSurveyAdjustmentDto[];
+}
 export class RecipePreviewDto {
   @IsUUID() templateId:string;
   @IsUUID() executionId:string;
@@ -95,6 +112,7 @@ export class RecipePreviewDto {
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(()=>RecipeValueDto) values?:RecipeValueDto[];
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(()=>RecipeSelectionDto) selections?:RecipeSelectionDto[];
   @IsOptional() @IsArray() @ArrayMaxSize(10) @IsUUID(undefined,{each:true}) commercialRuleIds?:string[];
+  @IsOptional() @ValidateNested() @Type(()=>RecipeSurveySourceDto) survey?:RecipeSurveySourceDto;
 }
 
 export class CreateCatalogDto {

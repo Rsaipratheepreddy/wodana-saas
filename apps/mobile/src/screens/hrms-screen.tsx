@@ -6,12 +6,10 @@ import { Attendance } from "../hrms/attendance";
 import { Leave } from "../hrms/leave";
 import { History, Reviews } from "../hrms/history";
 import { Notice } from "../hrms/ui";
-import { HrmsTheme } from "../hrms/theme";
-import { BrandGradient } from "../design-system/brand-gradient";
 import type { HrmsDestination } from "../home/updates";
 type Props = { workspaceId: string; initialDestination?: HrmsDestination };
 export function HrmsScreen(props: Props) {
-  return <HrmsTheme><HrmsWorkspace {...props} /></HrmsTheme>;
+  return <HrmsWorkspace {...props} />;
 }
 function HrmsWorkspace({ workspaceId, initialDestination }: Props) {
   const [revision, setRevision] = useState(0),
@@ -27,9 +25,6 @@ function HrmsWorkspace({ workspaceId, initialDestination }: Props) {
   const refresh = () => setRevision((r) => r + 1);
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas, direction }}>
-      <Text size="sm" tone="textSecondary" style={{ paddingTop: 6, paddingBottom: 18 }}>
-        Your workday, wherever work takes you.
-      </Text>
       <ScrollView
         horizontal
         testID="hrms-tab-bar"
@@ -58,10 +53,10 @@ function HrmsWorkspace({ workspaceId, initialDestination }: Props) {
             onPress={() => setTab(t.id)}
             style={({ pressed }) => ({ flexGrow: 1, flexShrink: 0, minWidth: (t.id === 'attendance' ? 94 : t.id === 'approvals' ? 86 : 68) * Math.max(1, fontScale), height: tabButtonHeight, paddingVertical: 12, paddingHorizontal: 9,
               borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, overflow: 'hidden',
-              borderColor: tab === t.id ? 'rgba(105,79,122,0.16)' : 'transparent',
-              backgroundColor: pressed && tab !== t.id ? colors.surfacePressed : 'transparent' })}
-          >{tab === t.id ? <BrandGradient /> : null}<Text size="xs" weight="semibold" numberOfLines={1}
-              style={{ color: tab === t.id ? '#2f232d' : colors.textSecondary }}>{t.label}</Text></Pressable>
+              borderColor: tab === t.id ? colors.actionPrimary : 'transparent',
+              backgroundColor: tab === t.id ? colors.navigationSelected : pressed ? colors.surfacePressed : 'transparent' })}
+          ><Text size="xs" weight="semibold" numberOfLines={1}
+              style={{ color: tab === t.id ? colors.text : colors.textSecondary }}>{t.label}</Text></Pressable>
         ))}
       </ScrollView>
       <ScrollView

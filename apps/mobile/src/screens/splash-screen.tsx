@@ -5,7 +5,6 @@ import * as NativeSplashScreen from 'expo-splash-screen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text, tokens, useTheme } from '../design-system';
 import { BrandLogo } from '../components/brand-logo';
-import { WelcomeBackdrop } from '../components/welcome-backdrop';
 import { Icon } from '../components/icon';
 
 /** Welcome is a persistent entry screen; the native launch splash is handled separately. */
@@ -35,7 +34,6 @@ export function SplashScreen({ onSignIn, onJoin }: { onSignIn: () => void; onJoi
 
   return <View testID="splash-screen" style={styles.screen}>
     <StatusBar style="dark" />
-    <WelcomeBackdrop />
     <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={[
       styles.scroll, { paddingTop: insets.top + 24, paddingBottom: Math.max(insets.bottom, 20) + 16 },
     ]}>
@@ -48,21 +46,21 @@ export function SplashScreen({ onSignIn, onJoin }: { onSignIn: () => void; onJoi
       </View>
 
       <Animated.View style={[styles.actions, { opacity }]}>
-        <Button label="Sign in with email" variant="white" pill onPress={onSignIn}
-          startIcon={<Icon name="mail" size={19} />} />
-        <Button label="I don’t have an account" variant="glass" pill onPress={onJoin} />
+        <Button label="Sign in with email" variant="brand" onPress={onSignIn}
+          startIcon={<Icon name="mail" size={19} color={tokens.colors.light.actionOnPrimary} />} />
+        <Button label="I don’t have an account" variant="brand-secondary" onPress={onJoin} />
       </Animated.View>
     </ScrollView>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: tokens.brand.lilac },
+  screen: { flex: 1, backgroundColor: tokens.colors.light.canvas },
   scroll: { flexGrow: 1, width: '100%', maxWidth: 468, alignSelf: 'center', paddingHorizontal: 24 },
   hero: { flex: 1, minHeight: 280, justifyContent: 'center', alignItems: 'center', paddingVertical: 24 },
   heroCompact: { minHeight: 220, paddingVertical: 20 },
-  logoTile: { width: 226, height: 164, borderRadius: 44, backgroundColor: 'rgba(255,255,255,0.26)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)', alignItems: 'center', justifyContent: 'center' },
-  logoTileCompact: { height: 126, borderRadius: 36 },
+  logoTile: { width: 226, height: 164, alignItems: 'center', justifyContent: 'center' },
+  logoTileCompact: { height: 126 },
   ink: { color: tokens.brand.ink },
   actions: { gap: 10 },
 });

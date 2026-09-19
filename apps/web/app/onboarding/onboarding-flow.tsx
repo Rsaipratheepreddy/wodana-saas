@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { WodanaLogo } from "@/components/brand";
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Link2, Sparkles, Trash2, Upload, UserPlus } from "lucide-react";
 import {
@@ -15,11 +16,6 @@ import type { AuthProfile } from "@/lib/auth/server";
 import type { CompanyProfileData, CompanyProfileUpdate } from "@/lib/workspace/company-profile";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
-import {
-  announceWorkspacePrimaryColor,
-  DEFAULT_WORKSPACE_PRIMARY_COLOR,
-  workspacePrimaryColorStyle,
-} from "@/lib/workspace/primary-color";
 import styles from "./onboarding.module.css";
 
 type Step = "workspace_profile" | "organization" | "team" | "integrations";
@@ -31,7 +27,6 @@ type Form = {
   defaultLocale: string;
   defaultTimezone: string;
   name: string;
-  primaryColor: string | null;
   registeredName: string;
   unitSystem: string;
   weekStartsOn: string;
@@ -52,7 +47,6 @@ function formFrom(data: CompanyProfileData): Form {
     defaultLocale: data.workspace.defaultLocale,
     defaultTimezone: data.workspace.defaultTimezone,
     name: data.workspace.name,
-    primaryColor: data.branding.primaryColor,
     registeredName: entity.registeredName,
     unitSystem: data.workspace.unitSystem,
     weekStartsOn: String(data.workspace.weekStartsOn),
@@ -230,10 +224,8 @@ export function OnboardingFlow({
           countryCode: form.countryCode,
           version: item.version + 1,
         } : item),
-        branding: { ...data.branding, primaryColor: form.primaryColor },
       };
       setData(updated);
-      announceWorkspacePrimaryColor(form.primaryColor);
       return updated;
     }
     const response = await fetch("/api/workspace/company-profile", {
@@ -261,38 +253,12 @@ export function OnboardingFlow({
     if (!response.ok || !payload?.workspace || !payload.legalEntity) {
       throw new Error(payload?.message ?? "Company details could not be saved.");
     }
-    let updated: CompanyProfileData = {
+    const updated: CompanyProfileData = {
       ...data,
       workspace: payload.workspace,
       legalEntities: data.legalEntities.map((item) => item.id === payload.legalEntity?.id ? payload.legalEntity : item),
     };
     setData(updated);
-    if (form.primaryColor !== data.branding.primaryColor) {
-      const appearance = await fetch("/api/workspace/appearance", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: data.workspace.id,
-          workspaceVersion: payload.workspace.version,
-          primaryColor: form.primaryColor,
-        }),
-      });
-      const appearancePayload = await appearance.json().catch(() => null) as {
-        message?: string;
-        primaryColor?: string | null;
-        workspace?: CompanyProfileData["workspace"];
-      } | null;
-      if (!appearance.ok || !appearancePayload?.workspace || appearancePayload.primaryColor === undefined) {
-        throw new Error(appearancePayload?.message ?? "Workspace colour could not be saved.");
-      }
-      updated = {
-        ...updated,
-        workspace: appearancePayload.workspace,
-        branding: { ...updated.branding, primaryColor: appearancePayload.primaryColor ?? null },
-      };
-      announceWorkspacePrimaryColor(appearancePayload.primaryColor ?? null);
-      setData(updated);
-    }
     return updated;
   };
 
@@ -435,7 +401,7 @@ export function OnboardingFlow({
 
   if (complete) {
     return (
-      <DesignSystemProvider className={styles.root} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
+      <DesignSystemProvider className={styles.root} locale={form.defaultLocale} timeZone={form.defaultTimezone}>
         <main className={styles.complete}>
           <div className={styles.completeGlow} aria-hidden="true" />
           <span className={styles.completeMark}><Check aria-hidden="true" size={26} /></span>
@@ -452,9 +418,9 @@ export function OnboardingFlow({
 
   if (welcomeOpen) {
     return (
-      <DesignSystemProvider className={styles.root} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
+      <DesignSystemProvider className={styles.root} locale={form.defaultLocale} timeZone={form.defaultTimezone}>
         <main className={styles.welcome} data-letter-open={letterOpen || undefined}>
-          <Image alt="Wodana" className={styles.welcomeLogo} height={44} priority src="/brand/wodana/wodana-logo-v4.png" width={132} />
+          <WodanaLogo className={styles.welcomeLogo} />
           <div className={styles.welcomeHeading}>
             <p>{letterOpen ? "A note from our team" : "Something for you"}</p>
             <h1>{letterOpen ? `Welcome, ${form.name || "we’re glad you’re here"}.` : `A welcome note for ${form.name || "your team"}`}</h1>
@@ -466,7 +432,7 @@ export function OnboardingFlow({
             <div className={styles.envelope}>
               <div className={styles.envelopeBack} aria-hidden="true" />
               <article aria-hidden={!letterOpen} className={styles.welcomeLetter}>
-                <Image alt="" height={30} src="/brand/wodana/wodana-logo-v4.png" width={90} />
+                <WodanaLogo className={styles.letterLogo} size="small" />
                 <strong>Dear {form.name || "team"},</strong>
                 <p>Thank you for choosing Wodana. We’re delighted to help your team bring every client, idea, and project into one clear flow.</p>
                 <p>Here’s to great work ahead.</p>
@@ -490,26 +456,33 @@ export function OnboardingFlow({
   }
 
   return (
-    <DesignSystemProvider className={styles.root} currency={form.defaultCurrency} locale={form.defaultLocale} style={workspacePrimaryColorStyle(form.primaryColor)} timeZone={form.defaultTimezone}>
+    <DesignSystemProvider className={styles.root} currency={form.defaultCurrency} locale={form.defaultLocale} timeZone={form.defaultTimezone}>
       <main className={styles.layout}>
         <aside className={styles.story}>
-          <div className={styles.wordmark}><Image alt="Wodana" height={34} priority src="/brand/wodana/wodana-logo-v4.png" width={102} /></div>
+          <div className={styles.workspaceIdentity}>
+            <div className={styles.workspaceLogo} data-has-logo={logoUrl ? true : undefined} style={logoUrl ? undefined : identityStyle(data.workspace.id)}>
+              {logoUrl ? <Image alt="" fill priority sizes="56px" src={logoUrl} unoptimized /> : <span aria-hidden="true">{identityInitials(form.name || "Company")}</span>}
+            </div>
+            <div>
+              <span>Your workspace</span>
+              <strong>{form.name || "Your company"}</strong>
+            </div>
+          </div>
           <div className={styles.storyBody}>
             <div className={styles.storyCopy}>
-              <p>Workspace setup</p>
-              <h1>{form.name || "Your workspace"}</h1>
-              <div aria-hidden="true"><span style={{ inlineSize: `${((currentIndex + 1) / STEPS.length) * 100}%` }} /></div>
+              <p>Getting started</p>
+              <strong>Step {currentIndex + 1} <span>of {STEPS.length}</span></strong>
             </div>
             <ol className={styles.progress} aria-label="Setup progress">
-              {STEPS.map((item) => {
+              {STEPS.map((item, index) => {
                 const done = onboarding.completedSteps.includes(item.id);
                 const active = item.id === step;
                 const state = done ? "complete" : active ? "current" : "upcoming";
-                return <li aria-current={active ? "step" : undefined} aria-label={`${item.shortLabel}, ${state}`} data-active={active || undefined} data-done={done || undefined} key={item.id}><span>{done ? <Check size={13} /> : null}</span><strong>{item.shortLabel}</strong></li>;
+                return <li aria-current={active ? "step" : undefined} aria-label={`${item.shortLabel}, ${state}`} data-active={active || undefined} data-done={done || undefined} key={item.id}><span>{done ? <Check size={13} /> : index + 1}</span><strong>{item.shortLabel}</strong></li>;
               })}
             </ol>
           </div>
-          <small className={styles.stepCount}>Step {currentIndex + 1} of {STEPS.length}</small>
+          <div className={styles.poweredBy} aria-label="Powered by Wodana"><span>Powered by</span><WodanaLogo size="compact" /></div>
         </aside>
 
         <section className={styles.panel}>
@@ -544,7 +517,6 @@ export function OnboardingFlow({
                 <input accept="image/png,image/jpeg,image/webp" aria-label="Choose company logo" className={styles.fileInput} disabled={isUploadingLogo || isRemovingLogo} onChange={(event) => void uploadLogo(event)} ref={fileInput} type="file" />
                 {logoError ? <small className={styles.logoError} role="alert">{logoError}</small> : <small>PNG, JPEG, or WebP · 64–4096 px · up to 5 MB</small>}
               </div>
-              <div className={styles.colourField}><label htmlFor="onboarding-primary-colour">Primary colour</label><div><input aria-label="Primary colour" id="onboarding-primary-colour" onChange={(event) => update("primaryColor", event.target.value.toUpperCase())} type="color" value={form.primaryColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR} /><code>{form.primaryColor ?? DEFAULT_WORKSPACE_PRIMARY_COLOR}</code><Button isDisabled={!form.primaryColor} onPress={() => update("primaryColor", null)} size="compact" variant="quiet">Use default</Button></div><small>Used for actions and selected states. Accessible shades are created automatically.</small></div>
             </div> : null}
 
             {step === "organization" ? <div className={styles.fields}>

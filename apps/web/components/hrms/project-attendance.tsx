@@ -78,7 +78,9 @@ function SiteRecords({
   revision: number;
 }) {
   const today = localDay(timezone),
-    [from, setFrom] = useState(today),
+    [from, setFrom] = useState(
+      localDay(timezone, new Date(Date.now() - 6 * 86400000)),
+    ),
     [to, setTo] = useState(today);
   const { data, error, loading } = useHrms<ProjectSiteAttendance[]>(
     workspaceId,

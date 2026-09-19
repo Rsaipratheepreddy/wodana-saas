@@ -104,7 +104,7 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
           </GridListItem>;
         }}
       </GridList>
-      <p className={styles.hint}>Name, mobile, email and location stay linked to each lead.</p>
+      <p className={styles.hint}>Name, mobile, email and location stay linked to each enquiry.</p>
       {atLimit && <p role="status" className={styles.hint}>50-field limit reached.</p>}
     </aside>
     <section className={styles.formCanvas} aria-label="Form fields">
@@ -122,10 +122,10 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
           return <GridListItem id={question.id} textValue={question.title || "Untitled field"} className={styles.questionCard} data-editing={selected === question.id || undefined}>
             <div className={styles.questionTop}>
               <IconButton slot="drag" className={styles.dragHandle} aria-label={`Drag ${question.title || "field"} to reorder`} isDisabled={busy}><GripVertical size={17} /></IconButton>
-              <button type="button" className={styles.questionSelect} disabled={busy} onClick={() => setSelected(question.id)} aria-expanded={selected === question.id}>
+              <Button variant="quiet" className={styles.questionSelect} isDisabled={busy} onPress={() => setSelected(question.id)} aria-expanded={selected === question.id}>
                 <span className={styles.fieldNumber}>{index + 1}</span><span>{question.title || "Untitled field"}{question.required ? " *" : ""}<small>{formQuestionTypes.find(type => type.id === question.type)?.label}</small></span>
-              </button>
-              {required && <span title="Required lead detail" className={styles.lockedField}><LockKeyhole size={13} /><span className="wd-visually-hidden">Required lead detail</span></span>}
+              </Button>
+              {required && <span title="Required enquiry detail" className={styles.lockedField}><LockKeyhole size={13} /><span className="wd-visually-hidden">Required enquiry detail</span></span>}
               <IconButton aria-label={`Move ${question.title || "field"} up`} size="compact" isDisabled={index === 0 || busy} onPress={() => move(question, -1)}><ArrowUp size={14} /></IconButton>
               <IconButton aria-label={`Move ${question.title || "field"} down`} size="compact" isDisabled={index === draft.questions.length - 1 || busy} onPress={() => move(question, 1)}><ArrowDown size={14} /></IconButton>
             </div>
@@ -136,12 +136,12 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
               </div>
               <TextInput label="Help text · optional" value={question.description} maxLength={1000} onChange={description => updateQuestion(question.id, { description })} />
               {choiceTypes.has(question.type) && <div className={styles.optionList}>
-                {linked ? <><p className={styles.hint}>Choices come from Leads → Field options.</p><p className={styles.choiceSummary}>{question.options.map(option => option.label).join(" · ") || "No choices configured yet."}</p></> : <>
+                {linked ? <><p className={styles.hint}>Choices come from Enquiries → Field options.</p><p className={styles.choiceSummary}>{question.options.map(option => option.label).join(" · ") || "No choices configured yet."}</p></> : <>
                   {question.options.map((option, optionIndex) => <div className={styles.optionRow} key={option.id}><TextInput label={`Option ${optionIndex + 1}`} value={option.label} maxLength={160} onChange={label => updateQuestion(question.id, { options: question.options.map(item => item.id === option.id ? { ...item, label } : item) })} /><IconButton aria-label={`Remove option ${optionIndex + 1}`} onPress={() => updateQuestion(question.id, { options: question.options.filter(item => item.id !== option.id) })}><Trash2 size={14} /></IconButton></div>)}
                   <Button size="compact" variant="quiet" isDisabled={question.options.length >= 50} onPress={() => updateQuestion(question.id, { options: [...question.options, { id: crypto.randomUUID(), label: `Option ${question.options.length + 1}` }] })}><Plus size={14} />Add option</Button>
                 </>}
               </div>}
-              {linked && <p className={styles.hint}>{required ? "Required for new leads" : "Linked to lead details"} · {linkedNames[question.field!]}. You can change the label and position.</p>}
+              {linked && <p className={styles.hint}>{required ? "Required for new enquiries" : "Linked to enquiry details"} · {linkedNames[question.field!]}. You can change the label and position.</p>}
               <footer className={styles.questionFooter}>
                 <Checkbox isSelected={question.required} isDisabled={required || busy} onChange={value => updateQuestion(question.id, { required: value })}>Required</Checkbox>
                 <div className={styles.actions}><Button size="compact" variant="quiet" isDisabled={atLimit || busy} onPress={() => add(question.type, { id: question.id, position: "after" }, question)}><Copy size={14} />Duplicate</Button>
@@ -158,7 +158,7 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
     <aside className={styles.livePreview} aria-label="Live form preview">
       <div className={styles.sectionHeading}><h3>Live preview</h3><Button size="compact" variant="quiet" onPress={() => setPreviewVersion(version => version + 1)}>Reset answers</Button></div>
       <p className={styles.hint}>This is what your customer will see.</p>
-      <div className={styles.previewScroll} ref={previewScroll}><PublicEnquiryFormView key={previewVersion} preview form={{ ...draft, revision: "preview" }} /></div>
+      <div className={styles.previewScroll} ref={previewScroll}><PublicEnquiryFormView key={previewVersion} preview form={{ ...draft, revision: "preview", consentLabel: "I agree to be contacted about this enquiry." }} /></div>
     </aside>
   </div>;
 }

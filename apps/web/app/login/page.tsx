@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { notFound } from "next/navigation";
+import { businessApiUrl } from "@/lib/auth/server";
+import { resolveTenantHost, type TenantBranding } from "@/lib/auth/resolve-tenant-host";
 import { LoginScreen } from "./login-screen";
 
 export const metadata: Metadata = {
@@ -6,26 +10,38 @@ export const metadata: Metadata = {
   description: "Sign in to your Wodana business workspace.",
 };
 
-type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null };
+const FLAT_BEIGE_TENANTS = new Set(["iglo", "iglo-architects", "plm", "palm-living"]);
+
+function applyDemoPalette(branding: TenantBranding): TenantBranding {
+  return FLAT_BEIGE_TENANTS.has(branding.loginSlug)
+    ? { ...branding, primaryColor: "#E4E3DE", secondaryColor: "#000000" }
+    : branding;
+}
 
 async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding> {
+  const resolved = await resolveTenantHost((await headers()).get("host"));
+  if (!resolved) notFound();
+  if (resolved.kind === "tenant") return applyDemoPalette({
+    ...resolved.branding,
+    logoUrl: resolved.branding.logoUrl ? `/api/auth/tenant-logo/${resolved.branding.loginSlug}` : null,
+  });
   const loginSlug = requestedSlug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug)
     ? requestedSlug
     : process.env.LOGIN_TENANT_SLUG ?? "iglo-architects";
-  const base = process.env.BUSINESS_CORE_URL
-    ?? process.env.NEXT_PUBLIC_BUSINESS_API_URL
-    ?? "http://127.0.0.1:8000/api/v1";
-  const response = await fetch(`${base.replace(/\/$/, "")}/auth/tenant/${loginSlug}`, {
+  const response = await fetch(businessApiUrl(`/auth/tenant/${loginSlug}`), {
     cache: "no-store",
   }).catch(() => null);
   if (response?.ok) {
     const branding = await response.json() as TenantBranding;
-    return {
+    return applyDemoPalette({
       ...branding,
       logoUrl: branding.logoUrl ? `/api/auth/tenant-logo/${branding.loginSlug}` : null,
-    };
+    });
   }
-  return { displayName: "Iglo Architects", loginSlug, logoUrl: null, primaryColor: null };
+  return {
+    displayName: "Wodana", loginSlug, logoUrl: null, primaryColor: null,
+    secondaryColor: null, headingFont: null, bodyFont: null,
+  };
 }
 
 export default async function LoginPage({

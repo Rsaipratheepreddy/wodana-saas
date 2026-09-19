@@ -53,4 +53,20 @@ export class UpdateTeamDto {
   @ValidateIf((_, value) => value !== null)
   @IsUUID()
   leadMembershipId?: string | null;
+
+  @ApiPropertyOptional({ type: [String], format: "uuid" })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(25)
+  @IsUUID(undefined, { each: true })
+  roleIds?: string[];
+
+  @ApiPropertyOptional({ type: [String], format: "uuid" })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(25)
+  @IsUUID(undefined, { each: true })
+  queueIds?: string[];
 }

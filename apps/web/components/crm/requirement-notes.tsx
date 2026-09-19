@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { Archive, ArrowLeft, Check, FileText, Pin, Plus, RefreshCw, Search, Undo2 } from 'lucide-react';
-import { Button, IconButton } from '@/design-system';
+import { Button, IconButton, useConfirmationDialog } from '@/design-system';
 import { crmRequest } from '@/lib/crm/client';
 import { entryPayload, caseRequest, type CaseAsset, type ScopeEntry } from '@/lib/pre-project/content';
 import { CaseModal } from '../pre-project/case-controls';
@@ -69,14 +69,15 @@ export type NoteContextRenderer = (note: RequirementNote, onChange: (patch: Part
 export function RequirementNotesWorkspace({ notes, renderContext, newLabel = 'New note', listTitle = 'Requirement notes', sidebarTools, matches = () => true, summary, simple = false }: { notes: NotesModel; renderContext?: NoteContextRenderer; newLabel?: string; listTitle?: string; sidebarTools?: ReactNode; matches?: (note: RequirementNote) => boolean; summary?: (note: RequirementNote) => string; simple?: boolean }) {
   const [selectedId, setSelectedId] = useState<string | null>(null), [search, setSearch] = useState(''), [archived, setArchived] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, RequirementNote>>({}), [busy, setBusy] = useState(false), [mobileEditor, setMobileEditor] = useState(false);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const modified = Object.keys(drafts).length;
   useEffect(() => {
     if (!modified) return;
     const unload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
-    const navigate = (event: MouseEvent) => { const anchor = (event.target as Element)?.closest?.('a[href]') as HTMLAnchorElement | null; if (anchor && !anchor.target && anchor.href !== window.location.href && !window.confirm('You have unsaved notes. Leave without saving?')) { event.preventDefault(); event.stopImmediatePropagation(); } };
+    const navigate = (event: MouseEvent) => { const anchor = (event.target as Element)?.closest?.('a[href]') as HTMLAnchorElement | null; if (anchor && !anchor.target && anchor.href !== window.location.href) { event.preventDefault(); event.stopImmediatePropagation(); requestConfirmation({ title: 'Leave with unsaved notes?', body: `${modified} unsaved ${modified === 1 ? 'note' : 'notes'} will be discarded.`, confirmLabel: 'Discard and leave', onConfirm: () => window.location.assign(anchor.href) }); } };
     window.addEventListener('beforeunload', unload); document.addEventListener('click', navigate, true);
     return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('click', navigate, true); };
-  }, [modified]);
+  }, [modified, requestConfirmation]);
   const combined = new Map(notes.items.map(n => [n.id, n]));
   Object.values(drafts).forEach(n => combined.set(n.id, n));
   const items = [...combined.values()].filter(n => n.archived === archived).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
@@ -107,6 +108,7 @@ export function RequirementNotesWorkspace({ notes, renderContext, newLabel = 'Ne
     <div className={styles.editorPanel}>
       {selected ? <RequirementNotePane key={`${selected.id}:${selected.version}`} note={selected} dirty={Boolean(drafts[selected.id])} renderContext={renderContext} simple={simple} canEdit={notes.canEditNote?.(selected) ?? notes.canEdit} onChange={change} onSave={save} onBusy={setBusy} onBack={() => setMobileEditor(false)} onUpload={(file, id) => notes.upload(selected.id, file, id)} assetUrl={(asset, preview) => notes.fileUrl(selected.id, asset.id, preview)}/> : <div className={styles.emptyEditor}><FileText size={28}/><h3>Your requirements, in one place</h3><p>Write a note, add references, and keep every detail together.</p>{notes.canEdit && <Button variant="primary" size="compact" onPress={add}><Plus size={14}/>{newLabel}</Button>}</div>}
     </div>
+    {confirmationDialog}
   </section>;
 }
 

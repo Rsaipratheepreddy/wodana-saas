@@ -11,13 +11,13 @@ function setup(overrides = {}) {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => url.includes(`/conversations/${record.id}?`) ? record : init?.method === "POST" ? { id: "sent-message" } : { data: [record], nextCursor: null } }));
   vi.stubGlobal("fetch", fetcher); return { data, record, fetcher };
 }
-describe("WhatsApp inbox", () => {
-  it("shows ordinary contacts, excludes other channels and removes notes and templates", async () => {
+describe("CRM inbox", () => {
+  it("shows every customer channel while keeping WhatsApp notes private", async () => {
     const { data, record, fetcher } = setup();render(<CrmInbox initialData={data} initialRecordId={record.id} />);
     expect(await screen.findByText("Hello there")).toBeInTheDocument();
-    expect(screen.queryByText("Old internal note")).not.toBeInTheDocument();expect(screen.queryByText("Email person")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /template|Private team note|All channels/i })).not.toBeInTheDocument();
-    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes("channel=whatsapp"))).toBe(true));
+    expect(screen.queryByText("Old internal note")).not.toBeInTheDocument();expect(screen.getByText("Email person")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /template|Private team note/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes("conversations?limit=100") && !url.includes("channel=whatsapp"))).toBe(true));
   });
   it("sends one reply with a retry identity, then clears the draft", async () => {
     const user = userEvent.setup(), { data, record, fetcher } = setup();render(<CrmInbox initialData={data} initialRecordId={record.id} />);

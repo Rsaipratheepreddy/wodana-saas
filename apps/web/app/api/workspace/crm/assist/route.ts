@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { UUID, invalidRequest, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 
 const requestWindows = new Map<string, { startedAt: number; count: number }>();
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
   if (!isSameOrigin(request)) return NextResponse.json({ message: "This request must come from your workspace." }, { status: 403 });
   const body = await request.json().catch(() => null);
   if (!UUID.test(body?.workspaceId ?? "") || !UUID.test(body?.leadId ?? "")) return invalidRequest("Choose a lead in this workspace.");
+  const requestId = UUID.test(body?.requestId ?? "") ? body.requestId : randomUUID();
   const upstream = await workspaceJsonResponse(`/workspaces/${body.workspaceId}/crm/leads/${body.leadId}`, { method: "GET" }, "The lead could not be loaded.");
   if (!upstream.ok) return upstream;
   const lead = await upstream.json();
@@ -47,7 +49,41 @@ export async function POST(request: Request) {
       summary = generated; mode = "ai"; note = "AI suggestion based on this lead. Review before acting.";
     } catch (error) { console.warn("Woddy provider unavailable:", error instanceof Error ? error.message : "Request failed"); note = "AI is temporarily unavailable. Showing the record-based checklist."; }
   }
-  const response = NextResponse.json({ mode, summary, checks, note }, { headers: { "cache-control": "no-store" } });
-  for (const cookie of upstream.cookies.getAll()) response.cookies.set(cookie);
+  const evidence = [
+    { label: "Enquiry stage", value: String(lead.status).replaceAll("_", " "), source: "CRM lead status" },
+    { label: "Ownership", value: lead.ownerMembershipId ? "Assigned" : "Unassigned", source: "CRM assignment" },
+    { label: "Next action", value: lead.nextActionAt ?? "Not scheduled", source: "CRM follow-up" },
+    { label: "Qualification", value: lead.qualification?.length ? `${lead.qualification.length} answers recorded` : "No answers recorded", source: "CRM qualification" },
+  ];
+  const proposedDiff = [
+    ...(!lead.ownerMembershipId ? [{ field: "ownerMembershipId", label: "Sales owner", before: "Unassigned", after: "Choose an eligible owner" }] : []),
+    ...(!lead.nextActionAt || Date.parse(lead.nextActionAt) < Date.now() ? [{ field: "nextActionAt", label: "Next follow-up", before: lead.nextActionAt ?? "Not scheduled", after: "Choose a future follow-up time" }] : []),
+    ...(!lead.qualification?.length ? [{ field: "qualification", label: "Qualification", before: "No answers", after: "Capture budget, timeline and decision maker" }] : []),
+  ];
+  const uncertainty = [
+    ...(!lead.ownerMembershipId ? ["No owner is selected; Woddy does not choose a person automatically."] : []),
+    ...(!lead.nextActionAt ? ["No follow-up time exists; Woddy did not invent one."] : []),
+    ...(!lead.qualification?.length ? ["Budget, timeline and decision-maker details are missing."] : []),
+    "The suggestion uses the current permission-filtered record and may not include context held outside Wodana.",
+  ];
+  const saved = await workspaceJsonResponse(`/workspaces/${body.workspaceId}/crm/ai-suggestions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      requestId,
+      entityType: "lead",
+      entityId: body.leadId,
+      title: `Enquiry review · ${lead.enquiry?.title ?? "Untitled enquiry"}`,
+      suggestionText: summary,
+      evidence,
+      proposedDiff,
+      uncertainty,
+      provenance: { mode, provider: mode === "ai" ? "gemini" : "wodana_rules", model: mode === "ai" ? process.env.GEMINI_MODEL ?? "gemini-3.5-flash" : "crm_checklist_v1", generatedAt: new Date().toISOString() },
+    }),
+  }, "The review was generated but could not be saved for staff review.");
+  if (!saved.ok) return saved;
+  const suggestion = await saved.json();
+  const response = NextResponse.json({ ...suggestion, mode, summary: suggestion.suggestionText, checks, note }, { headers: { "cache-control": "no-store" } });
+  for (const cookie of [...upstream.cookies.getAll(), ...saved.cookies.getAll()]) response.cookies.set(cookie);
   return response;
 }

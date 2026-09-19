@@ -289,6 +289,30 @@ describe("CrmSlaLifecycleService", () => {
     }
   });
 
+  it("clamps sub-second provider precision at the SLA start boundary", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-15T08:05:00.000Z").getTime());
+    const startedAt = new Date("2026-09-15T08:00:00.750Z");
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_sla_instances")) return { rows: [row({ started_at: startedAt })], rowCount: 1 };
+      if (sql.includes("SELECT id FROM users")) return { rows: [{ id: "user" }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const result = await new CrmSlaLifecycleService().recordFirstResponse(
+      { query } as never,
+      "workspace",
+      "lead",
+      {
+        sourceType: "activity",
+        sourceId: "activity",
+        actorUserId: "user",
+        respondedAt: new Date("2026-09-15T08:00:00.000Z"),
+      },
+    );
+    expect(result).toMatchObject({ recorded: true, respondedAt: startedAt });
+    const update = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_sla_instances SET status='stopped'"));
+    expect(update?.[1]?.[2]).toEqual(startedAt);
+  });
+
   it("accepts an earlier verified correction while retaining an append-only audit trail", async () => {
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-15T12:00:00.000Z").getTime());
     const respondedAt = new Date("2026-09-15T08:30:00.000Z");

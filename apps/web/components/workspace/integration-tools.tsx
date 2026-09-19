@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState, type FormEvent, type HTMLInputTypeAttribute } from "react";
-import { Button, Callout, ControlledModalDialog, SelectField, Switch } from "@/design-system";
+import { useEffect, useState, type FormEvent } from "react";
+import { Button, Callout, ControlledModalDialog, Form, NumericInput, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { IntegrationConnection } from "@/lib/workspace/integrations";
 import styles from "./integration-tools.module.css";
 import { templateBody, type MetaTemplate } from "@/lib/crm/whatsapp-templates";
@@ -81,11 +81,13 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
     }).catch(error => { if (!cancelled) setError(error.message); }).finally(() => { if (!cancelled) setBusy(false); });
     return () => { cancelled = true; };
   }, [base, workspaceId, whatsapp, action, connection.id, onHealthChange]);
-  const input = (name: string, label: string, type: HTMLInputTypeAttribute = "text", required = true) => <label className="wd-field" key={name}><span className="wd-field-label">{label}{required ? " *" : ""}</span><span className="wd-input-group wd-focus-frame"><input className="wd-input" type={type} value={fields[name] ?? ""} required={required} step={type === "number" ? "any" : undefined} onChange={(event) => set(name, event.target.value)} /></span></label>;
+  const input = (name: string, label: string, type: "text" | "email" | "tel" | "date" | "datetime-local" | "number" = "text", required = true) => type === "number"
+    ? <NumericInput isRequired={required} key={name} label={label} onChange={(value) => set(name, String(value))} value={Number(fields[name] ?? 0)} />
+    : <TextInput inputType={type} isRequired={required} key={name} label={label} onChange={(value) => set(name, value)} value={fields[name] ?? ""} />;
   const rowId = (row: RecordRow) => String(row.Id ?? row.invoice_id ?? row.contact_id ?? row.item_id ?? row.id ?? row.name ?? "");
   const rowName = (row: RecordRow) => String(row.DisplayName ?? row.contact_name ?? row.customer_name ?? row.Name ?? row.name ?? row.invoice_number ?? row.DocNumber ?? rowId(row));
   const options = (records: RecordRow[]) => records.map((row) => ({ id: rowId(row), label: rowName(row) }));
-  async function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await run(async () => {
       let payload: Record<string, unknown> = {};
@@ -126,7 +128,7 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
           await load("calendars");
         })}>Save selected calendars</Button> : null}
         {result?.hasMore ? <Button isDisabled={busy} onPress={() => void run(() => load(action, page + 1))}>Next page</Button> : null}
-      </> : <form className={styles.form} onSubmit={(event) => void submit(event)}>
+      </> : <Form className={styles.form} onSubmit={(event) => void submit(event)}>
         {action === "invoice.create" ? <>
           <Button isDisabled={busy} onPress={() => void run(async () => { const [customerData, itemData] = await Promise.all([request("kind=customers"), request("kind=items")]); setCustomers(customerData.items ?? []); setItems(itemData.items ?? []); })}>Load customers and items</Button>
           <SelectField label="Customer" isRequired items={options(customers)} selectedKey={fields.customerId ?? null} onSelectionChange={(value) => value && set("customerId", String(value))} />
@@ -145,7 +147,7 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
           <SelectField label="Calendar" isRequired items={calendarChoices.map((row) => ({ id: String(row.externalId), label: String(row.displayName) }))} selectedKey={fields.calendarId ?? null} onSelectionChange={(value) => value && set("calendarId", String(value))} />
           {input("subject", "Meeting or visit title")}{input("start", "Starts (your local time)", "datetime-local")}{input("end", "Ends (your local time)", "datetime-local")}
         </> : null}
-        {["email.send", "document.create", "calendar.create"].includes(action) ? <label className={styles.field}>{action === "document.create" ? "Document content" : "Message or notes"}<textarea required={action !== "calendar.create"} rows={5} value={fields.body ?? ""} onChange={(event) => set("body", event.target.value)} /></label> : null}
+        {["email.send", "document.create", "calendar.create"].includes(action) ? <TextAreaField isRequired={action !== "calendar.create"} label={action === "document.create" ? "Document content" : "Message or notes"} onChange={(value) => set("body", value)} value={fields.body ?? ""} /> : null}
         {action === "message.send" ? <>
           {input("to", "Recipient phone (with country code)", "tel")}
           <SelectField label="Approved business template" isRequired selectedKey={fields.templateId ?? null} items={whatsappTemplates.filter(item => item.status === "APPROVED" && item.category !== "AUTHENTICATION").map(item => ({ id: `${item.id}/${item.language}`, label: `${item.name.replaceAll("_", " ")} · ${item.language}` }))} onSelectionChange={value => {
@@ -153,13 +155,13 @@ function ConnectedTools({ connection, workspaceId, canManage, onClose, onHealthC
             if (chosen) { setFields(previous => ({ ...previous, templateId: String(value), templateName: chosen.name, language: chosen.language, parameters: "", urlParameter: "" })); setKey(crypto.randomUUID()); setResult(null); }
           }} />
           {selectedTemplate ? <p className={styles.templatePreview}>{templateBody(selectedTemplate)}</p> : <p>Choose from this account’s approved templates. Login codes are sent automatically by the portal.</p>}
-          {bodyVariableCount ? <label className={styles.field}>Template values ({bodyVariableCount}, one per line)<textarea required rows={Math.min(bodyVariableCount + 1, 5)} value={fields.parameters ?? ""} onChange={(event) => set("parameters", event.target.value)} /></label> : null}
+          {bodyVariableCount ? <TextAreaField isRequired label={`Template values (${bodyVariableCount}, one per line)`} onChange={(value) => set("parameters", value)} value={fields.parameters ?? ""} /> : null}
           {dynamicUrl ? input("urlParameter", "Button link value") : null}
           <Switch isSelected={optIn} onChange={(checked) => { setOptIn(checked); setKey(crypto.randomUUID()); }}>The recipient has opted in to messages from this business</Switch>
           <p>Use an approved template from this account. Provider acceptance appears first; delivery and read receipts arrive in Replies and delivery updates.</p>
         </> : null}
         <Button type="submit" variant="primary" isDisabled={!canManage || Boolean(result?.id) || (action === "message.send" && (!optIn || !selectedTemplate))} isLoading={busy}>{action.endsWith("send") ? "Send message" : action === "invoice.create" ? "Create invoice" : action === "calendar.create" ? "Schedule event" : "Create document"}</Button>
-      </form>}
+      </Form>}
     </div>
   </ControlledModalDialog>;
 }

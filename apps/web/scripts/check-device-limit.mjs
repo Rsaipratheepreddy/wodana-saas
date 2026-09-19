@@ -37,7 +37,7 @@ try {
     await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     console.log(`Submitted browser ${i + 1}`);
-    if (i < 2) await expect(page.getByRole('heading', { name: 'User Settings', exact: true })).toBeVisible({ timeout: 45000 });
+    if (i < 2) await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible({ timeout: 45000 });
   }
   await expect(pages[2].getByRole('dialog', { name: 'Device limit reached' })).toBeVisible({ timeout: 15000 });
   assert.equal((await contexts[2].cookies()).some(c => c.name === 'wodana_access'), false, 'Third browser must not receive an access token');
@@ -50,14 +50,14 @@ try {
   await pages[2].setViewportSize({ width: 1365, height: 980 });
   // Free the first device and prove that an open tab exits without user navigation.
   await pages[2].getByRole('listitem').filter({ hasText: 'Google Chrome on Mac' }).getByRole('button', { name: 'Log out device' }).click();
-  await expect(pages[2].getByRole('heading', { name: 'User Settings', exact: true })).toBeVisible({ timeout: 45000 });
+  await expect(pages[2].getByRole('heading', { name: 'Account', exact: true })).toBeVisible({ timeout: 45000 });
   await expect(pages[0]).toHaveURL(/\/login/, { timeout: 20000 });
   assert.equal((await contexts[0].cookies()).some(c => c.name === 'wodana_access'), false);
   const nav = pages[2].getByRole('navigation', { name: 'Main navigation' });
-  await expect(nav.getByRole('link', { name: 'User Settings' })).toHaveAttribute('aria-current', 'page');
-  await expect(nav.getByRole('link', { name: 'Audit Logs', exact: true })).toHaveCount(0);
+  await expect(nav.getByRole('link', { name: 'Security' })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: 'Audit history', exact: true })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: 'Security', exact: true })).toHaveCount(0);
-  const settingsTabs=pages[2].getByRole('navigation', { name: 'User Settings sections' });
+  const settingsTabs=pages[2].getByRole('navigation', { name: 'Account sections' });
   await expect(settingsTabs.getByRole('link')).toHaveCount(2);
   await expect(settingsTabs.getByRole('link', { name: 'Active Sessions' })).toHaveAttribute('aria-current', 'page');
   await expect(pages[2].getByRole('table', { name: 'Active sessions', exact: true }).getByRole('row')).toHaveCount(3);
@@ -65,7 +65,7 @@ try {
   await pages[2].getByRole('button', { name: 'Sign out Microsoft Edge on Windows computer' }).click();
   await pages[2].getByRole('dialog').getByRole('button', { name: 'Sign out session', exact: true }).click();
   await expect(pages[1]).toHaveURL(/\/login/, { timeout: 20000 });
-  await pages[2].getByRole('navigation', { name: 'User Settings sections' }).getByRole('link', { name: 'Audit Logs' }).click();
+  await pages[2].getByRole('navigation', { name: 'Account sections' }).getByRole('link', { name: 'Audit history' }).click();
   await expect(pages[2].getByRole('table', { name: 'Workspace audit log' })).toBeVisible({ timeout: 15000 });
   await pages[2].screenshot({ path: '.artifacts/device-limit/user-settings-audit.png', fullPage: true, animations: 'disabled' });
   await pages[2].setViewportSize({ width: 390, height: 844 });

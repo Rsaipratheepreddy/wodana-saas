@@ -1,5 +1,6 @@
 import { ConflictException } from "@nestjs/common";
 import type { CommercialData, Quote } from "./commercial.types";
+import { acceptedQuoteLines, acceptedQuoteValue } from "./commercial.domain";
 export function sameOffer(a: Quote, b: Quote) {
   return (
     a.kind === b.kind &&
@@ -14,15 +15,15 @@ export function validateDeduction(data: CommercialData, q: Quote) {
     );
   const source = data.quotes
     .filter((v) => v.status === "accepted" && v.direction !== "deduction")
-    .flatMap((v) => v.lines.map((l) => ({ ...l, currency: v.currency })));
+    .flatMap((v) => acceptedQuoteLines(v).map((l) => ({ ...l, currency: v.currency })));
   const prior = data.quotes
     .filter(
       (v) =>
         v.id !== q.id && v.status === "accepted" && v.direction === "deduction",
     )
-    .flatMap((v) => v.lines);
+    .flatMap((v) => acceptedQuoteLines(v));
   const allocated = new Map<string, number>();
-  for (const line of [...prior, ...q.lines]) {
+  for (const line of [...prior, ...acceptedQuoteLines(q)]) {
     if (!line.deductsLineId)
       throw new ConflictException(
         "Link each deduction to an accepted contract item.",
@@ -52,7 +53,7 @@ export function validateDeduction(data: CommercialData, q: Quote) {
         v.direction !== "deduction" &&
         v.currency === q.currency,
     )
-    .reduce((sum, v) => sum + v.total, 0);
+    .reduce((sum, v) => sum + acceptedQuoteValue(v), 0);
   const credited = data.quotes
     .filter(
       (v) =>
@@ -61,8 +62,8 @@ export function validateDeduction(data: CommercialData, q: Quote) {
         v.direction === "deduction" &&
         v.currency === q.currency,
     )
-    .reduce((sum, v) => sum + v.total, 0);
-  if (q.total + credited > contract + 0.01)
+    .reduce((sum, v) => sum + acceptedQuoteValue(v), 0);
+  if (acceptedQuoteValue(q) + credited > contract + 0.01)
     throw new ConflictException(
       "Credits cannot exceed the accepted contract value.",
     );

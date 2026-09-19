@@ -1,4 +1,9 @@
 import { paymentIsVerified } from "./accounting-invoice";
+import { acceptedQuoteLines } from "./commercial.domain";
+import {
+  agreementMatchesFinanceContext,
+  paymentHasFinanceVerifiedReceipt,
+} from "./finance-ledger";
 import type {
   Agreement,
   CommercialData,
@@ -31,8 +36,64 @@ export function agreementIsOperational(agreement: Agreement | null | undefined) 
   );
 }
 
+export function agreementMatchesAcceptedQuote(
+  agreement: Agreement | null | undefined,
+  quote: Quote | null | undefined,
+) {
+  return Boolean(
+    agreement &&
+      quote?.status === "accepted" &&
+      quote.hash &&
+      quote.clientDecision?.decision === "accept" &&
+      quote.clientDecision.quoteHash === quote.hash &&
+      agreement.quoteId === quote.id &&
+      agreement.quoteHash === quote.hash &&
+      agreement.acceptedTotal === quote.clientDecision.acceptedTotal &&
+      JSON.stringify(agreement.selectedOptionLineIds ?? []) ===
+        JSON.stringify(quote.clientDecision.selectedOptionLineIds),
+  );
+}
+
 export function releasePaymentIsOperational(payment: Payment) {
   return paymentIsVerified(payment) && isOperationalEvidence(payment);
+}
+
+export function financeGatePaymentsReady(
+  data: CommercialData,
+  gate: "release" | "production",
+) {
+  const required = data.payments.filter((payment) =>
+    gate === "release"
+      ? payment.requiredForRelease
+      : payment.requiredForProduction === true,
+  );
+  // H2 exists for every released contract. H3 applies only when the accepted
+  // schedule explicitly names a production-start milestone.
+  if (gate === "release" && !required.length) return false;
+  return required.every(
+    (payment) =>
+      releasePaymentIsOperational(payment) &&
+      paymentHasFinanceVerifiedReceipt(data, payment),
+  );
+}
+
+export function variationReleasePaymentsReady(
+  data: CommercialData,
+  quote: Quote,
+) {
+  if (quote.direction === "deduction" || quote.total <= 0) return true;
+  const required = data.payments.filter(
+    (payment) =>
+      payment.sourceQuoteId === quote.id && payment.requiredForRelease,
+  );
+  return (
+    required.length > 0 &&
+    required.every(
+      (payment) =>
+        releasePaymentIsOperational(payment) &&
+        paymentHasFinanceVerifiedReceipt(data, payment),
+    )
+  );
 }
 
 export type ApprovalSource = {
@@ -47,7 +108,7 @@ export type ApprovalSource = {
 };
 
 export function quotationApprovalSources(quote: Quote): ApprovalSource[] {
-  return quote.lines.flatMap((line) => {
+  return acceptedQuoteLines(quote).flatMap((line) => {
     const rows = (line.materialRows ?? [])
       .filter(
         (material) =>
@@ -119,6 +180,50 @@ export function materialApprovalsComplete(
   );
 }
 
+/** H1 review is independent from H2 receipt verification; both meet at release. */
+export function ownerReviewInputsReady(data: CommercialData, quote: Quote) {
+  return (
+    agreementIsOperational(data.agreement) &&
+    agreementMatchesAcceptedQuote(data.agreement, quote) &&
+    materialApprovalsComplete(quote, data.materialApprovals)
+  );
+}
+
+/** Exact approved selection revisions that cross the commercial release boundary. */
+export function approvedMaterialEvidence(
+  quote: Quote,
+  approvals: MaterialApproval[] | undefined,
+) {
+  return quotationApprovalSources(quote)
+    .map((source) => {
+      const approval = (approvals ?? []).find(
+        (candidate) =>
+          candidate.quoteId === quote.id &&
+          candidate.lineId === source.lineId &&
+          candidate.materialRowId === source.materialRowId &&
+          candidate.status === "approved",
+      );
+      return approval ? structuredClone(approval) : null;
+    })
+    .filter((approval): approval is MaterialApproval => Boolean(approval));
+}
+
+export function sameMaterialEvidence(
+  expected: MaterialApproval[] | undefined,
+  current: MaterialApproval[],
+) {
+  if (!expected) return false;
+  const normalize = (items: MaterialApproval[]) =>
+    items
+      .map(({ decisionChallengeId: _challenge, approverId: _approver, ...item }) => item)
+      .sort((left, right) =>
+        `${left.lineId}:${left.materialRowId}`.localeCompare(
+          `${right.lineId}:${right.materialRowId}`,
+        ),
+      );
+  return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(current));
+}
+
 export function commercialReleaseInputsReady(data: CommercialData | null | undefined) {
   const quote = data?.quotes.find(
     (candidate) => candidate.kind === "quotation" && candidate.status === "accepted",
@@ -127,7 +232,8 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     !data ||
     !quote ||
     !agreementIsOperational(data.agreement) ||
-    data.agreement?.quoteId !== quote.id ||
+    !agreementMatchesAcceptedQuote(data.agreement, quote) ||
+    !agreementMatchesFinanceContext(data) ||
     !data.dealFile ||
     data.dealFile.quoteId !== quote.id ||
     data.ownerReview?.status !== "approved" ||
@@ -136,9 +242,7 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
   )
     return false;
   return (
-    data.payments
-      .filter((payment) => payment.requiredForRelease)
-      .every(releasePaymentIsOperational) &&
+    financeGatePaymentsReady(data, "release") &&
     data.requests.every((request) =>
       ["resolved", "declined", "withdrawn"].includes(request.status),
     )

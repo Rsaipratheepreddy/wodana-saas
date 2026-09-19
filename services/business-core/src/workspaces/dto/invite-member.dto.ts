@@ -1,12 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import {
-  ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsEmail,
   IsOptional,
   IsString,
+  IsUUID,
+  ArrayMaxSize,
   MaxLength,
   MinLength,
 } from "class-validator";
@@ -25,10 +26,17 @@ export class InviteMemberDto {
   @IsEmail()
   email!: string;
 
-  @ApiProperty({ type: [String], example: ["viewer"] })
+  @ApiProperty({ type: [String], example: ["viewer"], description: "Direct roles. May be empty when teams provide access." })
   @IsArray()
-  @ArrayNotEmpty()
   @ArrayUnique()
   @IsString({ each: true })
   roleCodes!: string[];
+
+  @ApiPropertyOptional({ type: [String], format: "uuid", description: "Teams joined on invitation activation" })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(25)
+  @IsUUID(undefined, { each: true })
+  teamIds: string[] = [];
 }

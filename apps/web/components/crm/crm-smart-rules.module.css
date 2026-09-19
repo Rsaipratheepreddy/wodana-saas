@@ -1,0 +1,26 @@
+.page { display: grid; gap: var(--wd-space-8); }
+.section { display: grid; gap: var(--wd-space-4); }
+.sectionHeading { align-items: flex-start; display: flex; gap: var(--wd-space-4); justify-content: space-between; }
+.sectionHeading h2, .rule h3 { margin: 0; }
+.sectionHeading p, .rule p, .provider p { color: var(--wd-color-text-secondary); margin: var(--wd-space-1) 0 0; }
+.ruleList { border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); overflow: hidden; }
+.rule { align-items: center; border: 0; border-bottom: 1px solid var(--wd-color-border); border-radius: 0; display: flex; gap: var(--wd-space-6); justify-content: space-between; padding: var(--wd-space-5); }
+.rule:last-child { border-bottom: 0; }
+.ruleCopy { align-items: flex-start; display: flex; gap: var(--wd-space-3); min-width: 0; }
+.ruleCopy a { color: var(--wd-color-link); display: inline-block; font-size: var(--wd-text-sm); margin-top: var(--wd-space-2); text-decoration: none; }
+.ruleCopy a:hover { text-decoration: underline; }
+.ruleIcon { align-items: center; background: var(--wd-color-surface-subtle); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); display: inline-flex; flex: 0 0 auto; justify-content: center; padding: var(--wd-space-2); }
+.ruleControls { align-items: flex-end; display: flex; flex: 0 0 auto; gap: var(--wd-space-4); }
+.ruleControls > :first-child { min-width: 140px; }
+.providerGrid { display: grid; gap: var(--wd-space-3); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.provider { border: 1px solid var(--wd-color-border); padding: var(--wd-space-4); }
+.providerTitle { align-items: center; display: flex; gap: var(--wd-space-3); justify-content: space-between; }
+.providerTitle > span { align-items: center; display: inline-flex; font-weight: 650; gap: var(--wd-space-2); }
+.provider small { align-items: center; color: var(--wd-color-text-secondary); display: flex; gap: var(--wd-space-1); margin-top: var(--wd-space-3); }
+
+@media (max-width: 760px) {
+  .providerGrid { grid-template-columns: 1fr; }
+  .rule, .ruleControls, .sectionHeading { align-items: stretch; flex-direction: column; }
+  .ruleControls { width: 100%; }
+  .ruleControls > :first-child { min-width: 0; }
+}

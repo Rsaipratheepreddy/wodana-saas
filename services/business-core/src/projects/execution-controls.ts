@@ -187,8 +187,21 @@ export function applyControls(
       r.dispatchedAt = a.now;
     }
     if (status === "received") {
-      independent(r.preparedBy);
+      if (r.preparedBy === a.id)
+        throw new ForbiddenException(
+          "Another team member must receive this delivery.",
+        );
       stage(r.status, "dispatched");
+      const receivingTask = get(d.tasks, r.receivingTaskId);
+      if (
+        !a.manage &&
+        !a.review &&
+        receivingTask.ownerId !== a.id &&
+        !receivingTask.assigneeIds.includes(a.id)
+      )
+        throw new ForbiddenException(
+          "Receive only a delivery assigned to your work.",
+        );
       assertFactoryDispatchReceiver(d, get(d.tasks, r.taskId), r.receivingTaskId);
       r.accepted = num(b.accepted);
       r.rejected = num(b.rejected);

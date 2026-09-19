@@ -7,8 +7,12 @@ import { useRouter } from "next/navigation";
 import { QuotationList } from "./quotation-list";
 import { FileText, History, Plus, RefreshCw } from "lucide-react";
 import {
+  Button,
   ControlledModalDialog,
   DesignSystemProvider,
+  IconButton,
+  SelectField,
+  useConfirmationDialog,
   useDesignSystem,
 } from "@/design-system";
 import { usePreProject } from "@/components/pre-project/pre-project-context";
@@ -16,6 +20,7 @@ import type { PreProjectCase } from "@/lib/pre-project/types";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import {
   changedLines,
+  acceptedQuoteValue,
   commercialPath,
   jsonRequest,
   money,
@@ -26,6 +31,7 @@ import { ScopeImport } from "./scope-import";
 import { PreProjectSectionLoading } from "../pre-project/section-loading";
 import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
 import { QuotationEditor } from "./quotation-editor";
+import { QuotationScopeComposer } from "./quotation-scope-composer";
 import {
   CommercialRequests,
   AgreementPayments,
@@ -85,6 +91,7 @@ export function CommercialPage({
     [notice, setNotice] = useState(""),
     [dialog, setDialog] = useState(""),
     [approver, setApprover] = useState("");
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const saved = state.data.quotes.find((q) => q.id === selected),
     dirty = Boolean(
       draft && saved && JSON.stringify(draft) !== JSON.stringify(saved),
@@ -115,15 +122,13 @@ export function CommercialPage({
         anchor.href === window.location.href
       )
         return;
-      if (!window.confirm("Discard unsaved quotation edits?")) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+      event.preventDefault(); event.stopPropagation();
+      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", onConfirm: () => window.location.assign(anchor.href) });
     };
     document.addEventListener("click", leave, true);
     window.addEventListener("beforeunload", warn);
     return () => { window.removeEventListener("beforeunload", warn); document.removeEventListener("click", leave, true); };
-  }, [dirty]);
+  }, [dirty, requestConfirmation]);
   const path = commercialPath(state.workspaceId, `cases/${state.caseId}`);
   async function reload(choose?: string) {
     const next = await jsonRequest<CommercialState>(path);
@@ -163,18 +168,30 @@ export function CommercialPage({
           ...(action === "save" ? { quote: draft } : {}),
         },
       );
-      await reload(
-        ["create", "revise", "variation"].includes(action)
-          ? result.data.quotes.at(-1)?.id
-          : undefined,
-      );
-      setNotice(
-        action === "issue"
+      const createdId = ["create", "revise", "variation"].includes(action)
+        ? result.data.quotes.at(-1)?.id
+        : undefined;
+      let refreshFailed = false;
+      try {
+        await reload(createdId);
+      } catch {
+        // The mutation succeeded. Keep its authoritative response so a failed
+        // follow-up read cannot invite the user to repeat a non-idempotent action.
+        refreshFailed = true;
+        const quote = result.data.quotes.find((item) => item.id === (createdId ?? selected))
+          ?? (quotationId ? null : result.data.quotes.at(-1))
+          ?? null;
+        setState((current) => ({ ...current, data: result.data }));
+        setSelectedQuote(quote?.id ?? "");
+        setDraft(quote);
+      }
+      setNotice(refreshFailed
+        ? "Saved. Latest changes are shown; refresh when the connection returns."
+        : action === "issue"
           ? "Issued to the client portal. Copy the portal link to share it."
           : action === "save"
             ? "Quotation saved."
-            : "Saved.",
-      );
+            : "Saved.");
       setDialog("");
       if (
         section === "quotations" &&
@@ -192,10 +209,16 @@ export function CommercialPage({
     }
   }
   function choose(id: string) {
-    if (dirty && !window.confirm("Discard unsaved quotation edits?")) return;
-    if (section === "quotations") router.push(quoteHref(id));
-    setSelectedQuote(id);
-    setDraft(state.data.quotes.find((q) => q.id === id) ?? null);
+    const applyChoice = () => {
+      if (section === "quotations") router.push(quoteHref(id));
+      setSelectedQuote(id);
+      setDraft(state.data.quotes.find((q) => q.id === id) ?? null);
+    };
+    if (dirty) {
+      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", onConfirm: applyChoice });
+      return;
+    }
+    applyChoice();
   }
   const quotePage = ["boq", "quotations"].includes(section),
     root = `/workspace/pre-projects/cases/${state.caseId}`,
@@ -214,20 +237,21 @@ export function CommercialPage({
               <h1>{labels[section]}</h1>
             </div>
             <div className={s.actions}>
-              <button
-                className={s.icon}
+              <IconButton
                 aria-label="Reload commercial"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    !dirty ||
-                    window.confirm("Discard unsaved edits and reload?")
-                  )
-                    void reload().catch((e) => setError(e.message));
+                size="compact"
+                isDisabled={busy}
+                onPress={() => {
+                  const reloadLatest = () => void reload().catch((e) => setError(e.message));
+                  if (dirty) {
+                    requestConfirmation({ title: "Discard edits and reload?", body: "Your unsaved quotation edits will be replaced by the latest saved version.", confirmLabel: "Reload saved version", onConfirm: reloadLatest });
+                    return;
+                  }
+                  reloadLatest();
                 }}
               >
                 <RefreshCw size={16} />
-              </button>
+              </IconButton>
             </div>
           </header>
         )}
@@ -258,26 +282,21 @@ export function CommercialPage({
         ) : quotePage ? (
           draft ? (
             <>
-              <div className={s.toolbar}>
+              <div className={s.toolbar} data-quotation-toolbar={section === "quotations" || undefined}>
                 <div className={s.actions}>
-                  <strong>
+                  {section !== "quotations" ? <strong>
                     {draft.kind === "variation" ? "Variation" : "Quotation"}
-                  </strong>
-                  <select
-                    aria-label="Quotation version"
-                    value={selected}
-                    onChange={(e) => choose(e.target.value)}
-                    disabled={busy}
-                  >
-                    {state.data.quotes.map((q) => (
-                      <option key={q.id} value={q.id}>
-                        V{q.number} · {statusLabel[q.status]}
-                      </option>
-                    ))}
-                  </select>
-                  <span className={s.status} data-status={draft.status}>
+                  </strong> : null}
+                  <SelectField
+                    label={<span className="wd-visually-hidden">Quotation version</span>}
+                    items={state.data.quotes.map((q) => ({ id: q.id, label: `V${q.number} · ${statusLabel[q.status]}` }))}
+                    selectedKey={selected}
+                    onSelectionChange={(key) => choose(String(key))}
+                    isDisabled={busy}
+                  />
+                  {section !== "quotations" ? <span className={s.status} data-status={draft.status}>
                     {statusLabel[draft.status]}
-                  </span>
+                  </span> : null}
                   {dirty ? (
                     <span className={s.muted}>Unsaved edits</span>
                   ) : (
@@ -288,18 +307,29 @@ export function CommercialPage({
                     )
                   )}
                 </div>
+                {state.canEdit && draft.status === "draft" && draft.direction !== "deduction" && section === "quotations" ? <QuotationScopeComposer
+                  key={draft.id}
+                  compact
+                  workspaceId={state.workspaceId}
+                  caseId={state.caseId}
+                  quoteId={draft.id}
+                  revision={state.data.revision}
+                  lineCount={draft.lines.length}
+                  dirty={dirty}
+                  onApplied={() => reload(draft.id)}
+                /> : null}
                 <div className={s.actions}>
-                  <button
-                    className={s.icon}
+                  <IconButton
                     aria-label="Version history"
-                    onClick={() => setDialog("history")}
+                    size="compact"
+                    onPress={() => setDialog("history")}
                   >
                     <History size={16} />
-                  </button>
+                  </IconButton>
                   {draft.issuedAt && (
                     <a
                       className={s.button}
-                      href={`/quotation/${state.caseId}?quote=${draft.id}`}
+                      href={`/quotation/${state.caseId}?quote=${draft.id}${draft.hash ? `&snapshot=${draft.hash}` : ""}`}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -308,88 +338,89 @@ export function CommercialPage({
                   )}
                   {state.canEdit && draft.status === "draft" && (
                     <>
-                      <button
-                        className={s.button}
-                        disabled={busy}
+                      <Button
+                        size="compact"
+                        isDisabled={busy}
                         hidden={section === "quotations"}
-                        onClick={() => setDialog("scope")}
+                        onPress={() => setDialog("scope")}
                       >
                         Import scope
-                      </button>
-                      <button
-                        className={s.button}
-                        disabled={busy || !dirty}
-                        onClick={() => void run("save")}
+                      </Button>
+                      <Button
+                        size="compact"
+                        isDisabled={busy || !dirty}
+                        onPress={() => void run("save")}
                       >
                         Save changes
-                      </button>
-                      <button
-                        className={s.primary}
-                        disabled={busy || !draft.lines.length}
-                        onClick={() => void run("submit")}
+                      </Button>
+                      <Button
+                        size="compact"
+                        variant="primary"
+                        isDisabled={busy || !draft.lines.length}
+                        onPress={() => void run("submit")}
                       >
                         Submit for review
-                      </button>
+                      </Button>
                     </>
                   )}
                   {state.canEdit &&
                     ["internal_review", "internal_approved"].includes(
                       draft.status,
                     ) && (
-                      <button
-                        className={s.button}
-                        disabled={busy}
-                        onClick={() => void run("return")}
+                      <Button
+                        size="compact"
+                        isDisabled={busy}
+                        onPress={() => void run("return")}
                       >
                         Return to draft
-                      </button>
+                      </Button>
                     )}
                   {state.canApprove && draft.status === "internal_review" && (
-                    <button
-                      className={s.primary}
-                      disabled={busy}
-                      onClick={() => void run("approve")}
+                    <Button
+                      size="compact"
+                      variant="primary"
+                      isDisabled={busy}
+                      onPress={() => void run("approve")}
                     >
                       Approve pricing
-                    </button>
+                    </Button>
                   )}
                   {state.canEdit && draft.status === "internal_approved" && (
-                    <button
-                      className={s.primary}
-                      disabled={busy}
-                      onClick={() => setDialog("issue")}
+                    <Button
+                      size="compact"
+                      variant="primary"
+                      isDisabled={busy}
+                      onPress={() => setDialog("issue")}
                     >
                       Issue quotation
-                    </button>
+                    </Button>
                   )}
                   {state.canEdit && draft.status === "issued" && (
-                    <button
-                      className={s.button}
-                      disabled={busy}
-                      onClick={() => void run("withdraw")}
+                    <Button
+                      size="compact"
+                      isDisabled={busy}
+                      onPress={() => void run("withdraw")}
                     >
                       Withdraw
-                    </button>
+                    </Button>
+                  )}
+                  {state.canEdit && draft.status === "accepted" && (
+                    <Link className={s.primary} href={`${root}/variations`}>
+                      Start change case
+                    </Link>
                   )}
                   {state.canEdit &&
-                    !["draft", "internal_review", "internal_approved"].includes(
+                    !["draft", "internal_review", "internal_approved", "accepted"].includes(
                       draft.status,
                     ) && (
-                      <button
-                        className={s.primary}
-                        disabled={busy}
-                        onClick={() =>
-                          void run(
-                            draft.status === "accepted"
-                              ? "variation"
-                              : "revise",
-                          )
-                        }
+                      <Button
+                        size="compact"
+                        variant="primary"
+                        isDisabled={busy}
+                        onPress={() => void run("revise")}
                       >
-                        {draft.status === "accepted"
-                          ? "Create variation"
-                          : "Create revision"}
-                      </button>
+                        Create revision
+                      </Button>
                     )}
                 </div>
               </div>
@@ -417,9 +448,11 @@ export function CommercialPage({
                   studio={section === "quotations"}
                   workspaceId={state.workspaceId}
                   caseId={state.caseId}
+                  canOverridePrice={Boolean(state.canOverridePrice)}
+                  canEditCosts={Boolean(state.canEditCosts)}
                   quote={draft}
                   onChange={setDraft}
-                  costing={section === "boq"}
+                  costing={section === "boq" && Boolean(state.canViewCosts)}
                   readOnly={!state.canEdit || draft.status !== "draft"}
                   requests={state.data.requests}
                 />
@@ -438,14 +471,15 @@ export function CommercialPage({
                 same items carry into your quotation.
               </p>
               {state.canEdit && (
-                <button
-                  className={s.primary}
-                  disabled={busy}
-                  onClick={() => void run("create")}
+                <Button
+                  size="compact"
+                  variant="primary"
+                  isDisabled={busy}
+                  onPress={() => void run("create")}
                 >
                   <Plus size={15} />
                   Create quotation
-                </button>
+                </Button>
               )}
             </div>
           )
@@ -480,16 +514,17 @@ export function CommercialPage({
               .reverse()
               .map((q) => (
                 <li key={q.id}>
-                  <button
-                    className={s.requestButton}
-                    onClick={() => {
+                  <Button
+                    size="compact"
+                    variant="quiet"
+                    onPress={() => {
                       choose(q.id);
                       setDialog("");
                     }}
                   >
                     V{q.number} · {statusLabel[q.status]} ·{" "}
-                    {money(q.total, q.currency)}
-                  </button>
+                    {money(acceptedQuoteValue(q), q.currency)}
+                  </Button>
                   <p className={s.muted}>
                     {q.decidedBy
                       ? `${q.decidedBy} · ${q.decidedAt?.slice(0, 10)}`
@@ -521,13 +556,14 @@ export function CommercialPage({
           onOpenChange={(open) => !open && setDialog("")}
           title="Issue this quotation"
           footer={
-            <button
-              className={s.primary}
-              disabled={busy || !approver}
-              onClick={() => void run("issue", { approverId: approver })}
+            <Button
+              size="compact"
+              variant="primary"
+              isDisabled={busy || !approver}
+              onPress={() => void run("issue", { approverId: approver })}
             >
               Issue V{draft?.number}
-            </button>
+            </Button>
           }
         >
           <div className={s.form}>
@@ -535,22 +571,15 @@ export function CommercialPage({
               Freeze this version and make it available for the client’s
               decision. Any previous pending version is replaced.
             </p>
-            <label>
-              Client approver
-              <select
-                value={approver}
-                onChange={(e) => setApprover(e.target.value)}
-              >
-                <option value="">Choose an approver</option>
-                {state.contacts
-                  .filter((c) => c.active && c.role === "approver")
-                  .map((c) => (
-                    <option value={c.id} key={c.id}>
-                      {c.name} · {c.phone}
-                    </option>
-                  ))}
-              </select>
-            </label>
+            <SelectField
+              label="Client approver"
+              placeholder="Choose an approver"
+              items={state.contacts
+                .filter((c) => c.active && c.role === "approver")
+                .map((c) => ({ id: c.id, label: `${c.name} · ${c.phone}` }))}
+              selectedKey={approver || null}
+              onSelectionChange={(key) => setApprover(String(key))}
+            />
             {!state.contacts.some((c) => c.active && c.role === "approver") && (
               <p>
                 Add an approver in the{" "}
@@ -568,6 +597,7 @@ export function CommercialPage({
             </p>
           </div>
         </ControlledModalDialog>
+        {confirmationDialog}
       </section>
     </DesignSystemProvider>
   );
@@ -615,7 +645,7 @@ function Editor(
   },
 ) {
   return props.studio ? (
-    <QuotationStudio key={props.quote.id} {...props} />
+    <QuotationStudio key={props.quote.id} {...props} initialMode="design" />
   ) : (
     <QuotationEditor {...props} />
   );

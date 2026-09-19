@@ -1,83 +1,78 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function signIn(page: Page) {
+  const session = await page.request.post("/api/auth/login", {
+    data: {
+      email: "admin@igloarchitects.com",
+      password: "IgloDemo#2026",
+      tenantSlug: "iglo-architects",
+    },
+  });
+  expect(session.ok()).toBe(true);
+}
 
 test.beforeEach(async ({ page }) => {
-  const session = await page.request.post("/api/auth/login", { data: { email: "admin@igloarchitects.com", password: "IgloDemo#2026", tenantSlug: "iglo-architects" } });
-  expect(session.ok()).toBe(true);
+  await signIn(page);
   await page.goto("/workspace/projects/demo/plan-teams");
-  await expect(page.getByRole("table", { name: "Project work plan" })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Schedules workspace" }),
+  ).toBeVisible();
 });
 
-test("resolve a crew clash, preserve readiness checks, create work and persist bookings", async ({ page }, testInfo) => {
-  test.setTimeout(60000);
+test("moves through the connected schedule, task, resource and calendar views", async ({
+  page,
+}) => {
   const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
-  const table = page.getByRole("table", { name: "Project work plan" });
-  await expect(table.getByRole("row")).toHaveCount(9);
-  await page.getByRole("button", { name: "Resolve clash", exact: true }).click();
-  const editor = page.getByRole("dialog");
-  await expect(editor.getByText("Dubai Hills residence: Wardrobe fabrication, 7 Sept–9 Sept.")).toBeVisible();
-  await expect(editor.getByRole("button", { name: "Confirm booking", exact: true })).toBeDisabled();
-  await editor.getByRole("button", { name: "Use Joinery team B", exact: true }).click();
-  await expect(editor.getByText("Team available for the full date range.")).toBeVisible();
-  await page.screenshot({ animations: "disabled", path: testInfo.outputPath("booking-inspector.png") });
-  await editor.getByRole("button", { name: "Confirm booking", exact: true }).click();
-  await expect(editor).toHaveCount(0);
-  await expect(page.getByText("No team booking clashes.", { exact: true })).toBeVisible();
-  await page.reload();
-  const wardrobe = table.getByRole("row").filter({ hasText: "Wardrobe fabrication" });
-  await expect(wardrobe).toContainText("Joinery team B");
-  await expect(wardrobe).toContainText("Booked");
-  await page.getByRole("button", { name: "Edit Wardrobe fabrication", exact: true }).click();
-  await editor.getByRole("combobox", { name: "Work status", exact: true }).selectOption("in-progress");
-  await expect(editor.getByText("Work cannot start yet", { exact: true })).toBeVisible();
-  await expect(editor.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
-  await editor.getByLabel("Materials ready", { exact: true }).check();
-  await expect(editor.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
-  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-  await expect(editor).toHaveCount(0);
+  page.on("pageerror", (error) => errors.push(error.message));
 
-  await page.getByRole("button", { name: "Plan work", exact: true }).click();
-  await editor.getByLabel("Task name", { exact: true }).fill("Kitchen measurement check");
-  await editor.getByLabel("BOQ reference", { exact: true }).fill("JNR-02");
-  await editor.getByLabel("Area / room", { exact: true }).fill("Kitchen");
-  await editor.getByRole("combobox", { name: "Trade", exact: true }).selectOption("Survey");
-  await editor.getByLabel("Start date", { exact: true }).fill("2026-09-14");
-  await editor.getByLabel("Finish date", { exact: true }).fill("2026-09-14");
-  await editor.getByRole("combobox", { name: "Assigned team", exact: true }).selectOption("survey");
-  await editor.getByRole("button", { name: "Confirm booking", exact: true }).click();
-  await expect(editor).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Search work plan" }).fill("Kitchen measurement");
-  await expect(table.getByRole("row")).toHaveCount(2);
-  await expect(table).toContainText("Survey team");
-  await page.reload();
-  await expect(table.getByRole("row")).toHaveCount(10);
-  await expect(table).toContainText("Kitchen measurement check");
+  await expect(
+    page.getByRole("radio", { name: "Schedule & milestones" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await expect(
+    page.getByRole("heading", { name: "Milestone timeline" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Baseline vs current forecast" }),
+  ).toBeVisible();
+
+  await page.getByRole("radio", { name: "Tasks" }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Project task board" })
+      .or(page.getByText("No tasks match this view", { exact: true })),
+  ).toBeVisible();
+
+  await page.getByRole("radio", { name: "Teams & bookings" }).click();
+  await expect(
+    page.getByRole("region", { name: "Project resources" }),
+  ).toBeVisible();
+
+  await page.getByRole("radio", { name: "Work calendars" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Working hours & exceptions" }),
+  ).toBeVisible();
+  await expect(page.getByText(/Bookings use the resource shift/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("filter work, inspect the cross-project calendar, navigate weeks and reset the demo", async ({ page }, testInfo) => {
-  await page.getByRole("combobox", { name: "Work status", exact: true }).selectOption("unassigned");
-  await expect(page.getByRole("table")).toContainText("Wall preparation & painting");
-  await expect(page.getByRole("table").getByRole("row")).toHaveCount(2);
-  await page.getByRole("textbox", { name: "Search work plan" }).fill("no-such-work");
-  await expect(page.getByRole("heading", { name: "No work matches these filters" })).toBeVisible();
-  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await expect(page.getByRole("table").getByRole("row")).toHaveCount(9);
-  await page.screenshot({ animations: "disabled", path: testInfo.outputPath("work-plan.png") });
-  await page.getByRole("tab", { name: /Team availability/ }).click();
-  const calendar = page.getByRole("region", { name: "Weekly team bookings", exact: true });
-  await expect(calendar.getByRole("button", { name: /Wardrobe fabrication · Dubai Hills residence/ })).toBeDisabled();
-  await expect(calendar.getByRole("button", { name: /Wardrobe fabrication · Jumeirah villa interiors/ })).toBeEnabled();
-  await page.getByRole("button", { name: "Use dark mode", exact: true }).click();
-  await page.screenshot({ animations: "disabled", path: testInfo.outputPath("team-calendar-dark.png") });
-  await page.getByRole("button", { name: "Next week", exact: true }).click();
-  await expect(page.getByText("14 Sept – 20 Sept, 2026", { exact: true })).toBeVisible();
-  await calendar.getByRole("button", { name: "Plan work for Survey team", exact: true }).click();
-  await expect(page.getByRole("dialog").getByLabel("Start date", { exact: true })).toHaveValue("2026-09-14");
-  await page.getByRole("button", { name: "Close inspector", exact: true }).click();
-  await page.getByRole("button", { name: "Reset demo plan", exact: true }).click();
-  await page.getByRole("button", { name: "Reset demo", exact: true }).click();
-  await expect(page.getByText("Original demo plan restored.", { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+test("keeps the planning workspace usable across themes and viewport sizes", async ({
+  page,
+}) => {
+  await page.getByRole("radio", { name: "Teams & bookings" }).click();
+  await expect(
+    page.getByRole("region", { name: "Project resources" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Use dark mode" }).click();
+  await expect(
+    page.getByRole("button", { name: "Use light mode" }),
+  ).toBeVisible();
+
+  await page.getByRole("radio", { name: "Schedule & milestones" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Milestone timeline" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
+  ).toBeLessThanOrEqual(1);
 });

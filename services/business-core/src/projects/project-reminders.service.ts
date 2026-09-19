@@ -65,6 +65,164 @@ export class ProjectRemindersService {
         correlationId: randomUUID(),
       }).catch(() => undefined);
     }
-    return { created: result.rowCount ?? 0 };
+    const decisionReminders = await this.sendDecisionReminders();
+    const weeklySummaries = projectId ? 0 : await this.sendWeeklyProgress();
+    return {
+      created: (result.rowCount ?? 0) + decisionReminders + weeklySummaries,
+      dueReminders: result.rowCount ?? 0,
+      decisionReminders,
+      weeklySummaries,
+    };
+  }
+
+  private async sendDecisionReminders() {
+    const result = await this.db.query(
+      `WITH due AS (
+        SELECT commercial.workspace_id, commercial.case_id, request,
+          membership.user_id,
+          (now() AT TIME ZONE workspace.default_timezone)::date::text AS today
+        FROM commercial_cases commercial
+        JOIN workspaces workspace ON workspace.id=commercial.workspace_id
+        CROSS JOIN LATERAL jsonb_array_elements(coalesce(commercial.content->'requests','[]'::jsonb)) request
+        JOIN workspace_memberships membership
+          ON membership.workspace_id=commercial.workspace_id
+         AND membership.id=(request->'decisionRequest'->>'ownerMembershipId')::uuid
+         AND membership.status='active'
+        WHERE request->>'status'='awaiting_decision'
+          AND request->'decisionRequest' IS NOT NULL
+          AND coalesce((request->'decisionRequest'->'notificationPolicy'->>'remindersEnabled')::boolean,false)
+          AND request->'decisionRequest'->'decision'='null'::jsonb
+          AND request->>'dueDate'~'^\\d{4}-\\d{2}-\\d{2}$'
+          AND request->>'dueDate'<=(now() AT TIME ZONE workspace.default_timezone)::date::text
+          AND request->'decisionRequest'->'notificationPolicy'->'channels' ? 'in_app'
+          AND EXISTS (
+            SELECT 1 FROM notification_policies policy
+            WHERE policy.workspace_id=commercial.workspace_id
+              AND policy.event_type='commercial.decision.reminder'
+              AND policy.status='active'
+              AND policy.channels ? 'in_app'
+          )
+      )
+      INSERT INTO notifications(
+        workspace_id,recipient_type,recipient_id,channel,event_type,status,
+        subject,body,deep_link,idempotency_key,correlation_id,delivered_at
+      )
+      SELECT workspace_id,'user',user_id,'in_app','commercial.decision.reminder','delivered',
+        'Client decision due · '||(request->>'title'),
+        (request->'decisionRequest'->'target'->>'label')||' · Due '||(request->>'dueDate'),
+        '/workspace/pre-projects/'||case_id||'/commercial?request='||(request->>'id'),
+        'decision-reminder:'||case_id||':'||(request->>'id')||':'||today,
+        gen_random_uuid(),now()
+      FROM due
+      WHERE coalesce((
+        SELECT preference.enabled FROM notification_preferences preference
+        WHERE preference.workspace_id=due.workspace_id
+          AND preference.recipient_type='user'
+          AND preference.recipient_id=due.user_id
+          AND preference.channel='in_app'
+          AND preference.event_type IN ('commercial.decision.reminder','commercial.*','*')
+        ORDER BY CASE preference.event_type
+          WHEN 'commercial.decision.reminder' THEN 0 WHEN 'commercial.*' THEN 1 ELSE 2 END
+        LIMIT 1
+      ),true)
+      ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
+    );
+    return result.rowCount ?? 0;
+  }
+
+  private async sendWeeklyProgress() {
+    const emailPolicies = await this.db.query<{ workspace_id: string }>(
+      `SELECT DISTINCT workspace_id FROM notification_policies
+       WHERE event_type='project.weekly_progress' AND status='active' AND channels ? 'email'`,
+    );
+    const emailWorkspaces = new Set(emailPolicies.rows.map((row) => row.workspace_id));
+    const summaries = await this.db.query<{
+      workspace_id: string;
+      project_id: string;
+      recipient_id: string;
+      project_name: string;
+      body: string;
+      deep_link: string;
+      idempotency_key: string;
+    }>(
+      `WITH eligible AS (
+        SELECT project.workspace_id,project.id AS project_id,project.name,
+          execution.content,membership.user_id,
+          (now() AT TIME ZONE workspace.default_timezone)::date AS today,
+          to_char((now() AT TIME ZONE workspace.default_timezone)::date,'IYYY-IW') AS week_key
+        FROM delivery_projects project
+        JOIN project_execution execution
+          ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+        JOIN workspaces workspace ON workspace.id=project.workspace_id
+        JOIN project_assignments assignment
+          ON assignment.workspace_id=project.workspace_id AND assignment.project_id=project.id AND assignment.active
+        JOIN workspace_memberships membership
+          ON membership.workspace_id=assignment.workspace_id AND membership.id=assignment.membership_id AND membership.status='active'
+        WHERE project.status='active'
+          AND EXISTS (
+            SELECT 1 FROM notification_policies policy
+            WHERE policy.workspace_id=project.workspace_id
+              AND policy.event_type='project.weekly_progress'
+              AND policy.status='active'
+              AND policy.channels ? 'in_app'
+              AND lower(coalesce(policy.conditions->>'weekday','friday'))=
+                  lower(trim(to_char((now() AT TIME ZONE workspace.default_timezone),'Day')))
+          )
+      ), counts AS (
+        SELECT eligible.*,
+          (SELECT count(*) FROM jsonb_array_elements(coalesce(content->'tasks','[]'::jsonb)) task
+            WHERE task->>'status' NOT IN ('completed','cancelled')) AS open_tasks,
+          (SELECT count(*) FROM jsonb_array_elements(coalesce(content->'tasks','[]'::jsonb)) task
+            WHERE task->>'status' NOT IN ('completed','cancelled')
+              AND task->>'end'~'^\\d{4}-\\d{2}-\\d{2}$'
+              AND (task->>'end')::date<today) AS overdue_tasks,
+          (SELECT count(*) FROM jsonb_array_elements(coalesce(content->'snags','[]'::jsonb)) snag
+            WHERE snag->>'status'<>'closed') AS open_snags
+        FROM eligible
+      )
+      INSERT INTO notifications(
+        workspace_id,recipient_type,recipient_id,channel,event_type,status,
+        subject,body,deep_link,idempotency_key,correlation_id,delivered_at
+      )
+      SELECT workspace_id,'user',user_id,'in_app','project.weekly_progress','delivered',
+        'Weekly progress · '||name,
+        open_tasks||' open tasks · '||overdue_tasks||' overdue · '||open_snags||' open snags',
+        '/workspace/projects/'||project_id||'/overview',
+        'weekly-progress:'||project_id||':'||user_id||':'||week_key,
+        gen_random_uuid(),now()
+      FROM counts
+      WHERE coalesce((
+        SELECT preference.enabled FROM notification_preferences preference
+        WHERE preference.workspace_id=counts.workspace_id
+          AND preference.recipient_type='user'
+          AND preference.recipient_id=counts.user_id
+          AND preference.channel='in_app'
+          AND preference.event_type IN ('project.weekly_progress','project.*','*')
+        ORDER BY CASE preference.event_type
+          WHEN 'project.weekly_progress' THEN 0 WHEN 'project.*' THEN 1 ELSE 2 END
+        LIMIT 1
+      ),true)
+      ON CONFLICT(workspace_id,idempotency_key) DO NOTHING
+      RETURNING workspace_id,split_part(deep_link,'/',4)::uuid AS project_id,
+        recipient_id,split_part(subject,' · ',2) AS project_name,body,deep_link,idempotency_key`,
+    );
+    for (const summary of summaries.rows) {
+      if (!emailWorkspaces.has(summary.workspace_id)) continue;
+      await this.notifications.queueScheduledEmail({
+        workspaceId: summary.workspace_id,
+        userId: summary.recipient_id,
+        eventType: "project.weekly_progress",
+        projectId: summary.project_id,
+        projectName: summary.project_name,
+        action: "weekly progress summary",
+        recordId: summary.project_id,
+        recordTitle: "Weekly progress",
+        body: summary.body,
+        deepLink: summary.deep_link,
+        idempotencyKey: `${summary.idempotency_key}:email`,
+        correlationId: randomUUID(),
+      }).catch(() => undefined);
+    }
+    return summaries.rowCount ?? 0;
   }
 }

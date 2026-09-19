@@ -84,7 +84,8 @@ describe("OnboardingFlow", () => {
     expect(screen.getByRole("combobox", { name: "Country / region" })).toBeRequired();
     expect(screen.getByRole("button", { name: "Choose logo" })).toBeEnabled();
     expect(screen.getByLabelText("Choose company logo")).toHaveAttribute("accept", "image/png,image/jpeg,image/webp");
-    expect(screen.getByLabelText("Primary colour")).toHaveAttribute("type", "color");
+    expect(screen.queryByText("Workspace accent")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Primary colour")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Save and continue/ }));
 

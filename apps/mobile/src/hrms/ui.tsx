@@ -106,3 +106,19 @@ export function Choice({ label, value, options, onChange }: {
     </Sheet>}
   </>;
 }
+
+export function CheckRow({ label, description, checked, onChange, disabled = false }: {
+  label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean;
+}) {
+  const { colors } = useTheme();
+  return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked, disabled }} disabled={disabled}
+    onPress={() => onChange(!checked)} style={({ pressed }) => ({ minHeight: 52, borderRadius: 14, borderWidth: 1,
+      borderColor: checked ? colors.actionPrimary : colors.borderControl, backgroundColor: pressed ? colors.surfacePressed : colors.surface,
+      padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 })}>
+    <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: checked ? colors.actionPrimary : colors.borderControl,
+      backgroundColor: checked ? colors.actionPrimary : colors.surface, alignItems: 'center', justifyContent: 'center' }}>
+      {checked && <Icon name="check" size={16} color={colors.actionOnPrimary} />}
+    </View>
+    <View style={{ flex: 1, gap: 3 }}><Text size="sm" weight="medium">{label}</Text>{description && <Text size="xs" tone="textSecondary">{description}</Text>}</View>
+  </Pressable>;
+}

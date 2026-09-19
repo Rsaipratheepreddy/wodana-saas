@@ -188,10 +188,15 @@ test("settings use workspace colors and shared form controls in both themes", as
     });
     await expect
       .poll(() => button.evaluate((el) => getComputedStyle(el).backgroundImage))
-      .toContain("214, 185, 243");
-    expect(await button.evaluate((el) => getComputedStyle(el).color)).toBe(
-      "rgb(47, 35, 45)",
-    );
+      .toBe("none");
+    await expect.poll(() => button.evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.backgroundColor = "var(--wd-color-action-primary)";
+      el.parentElement?.append(probe);
+      const matches = getComputedStyle(el).backgroundColor === getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return matches;
+    })).toBe(true);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth - innerWidth,

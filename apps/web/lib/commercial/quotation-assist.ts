@@ -34,10 +34,12 @@ export type QuotationAnalysis = {
   analyzedAt: string;
 };
 export type AssistCatalogRecord = CommercialCatalogChoice & {
+  primaryAsset?: CommercialCatalogChoice["primaryAsset"];
   content?: {
     description?: string;
     configuration?: Record<string, string | number>;
     aliases?: string[];
+    attributes?: Array<{ name: string; value: string }>;
   };
 };
 export type AssistLink = {
@@ -77,6 +79,8 @@ export function resolveRoomSuggestions(
     catalogId: r.catalogId,
     catalogName: r.catalogName,
     description: r.content?.description,
+    attributes: r.content?.attributes,
+    primaryAsset: r.primaryAsset,
     configuration:
       r.kind === "unit"
         ? {

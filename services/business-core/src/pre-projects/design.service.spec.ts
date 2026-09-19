@@ -1,10 +1,10 @@
 import {describe,it,expect,vi} from 'vitest';
-import {validateDesignTransition,DesignService} from './design.service';
+import {validateDesignTransition,DesignService,nextIncludedClientRounds,clientReviewExpiry,clientRoundOverrideRequired} from './design.service';
 import {BriefService} from './brief.service';
 import {plainToInstance} from 'class-transformer';
 import {validate} from 'class-validator';
 import {SaveBriefEntryDto} from './brief.dto';
-import {SaveDesignFolderDto,UploadDesignFilesDto} from './design.dto';
+import {AddDesignVersionDto,SaveDesignFolderDto,UploadDesignFilesDto} from './design.dto';
 import type {WorkspaceAccessService} from '../workspaces/workspace-access.service';
 import type {CrmEventsService} from '../crm/shared/crm-events.service';
 import type {BrandAssetStorageService} from '../workspaces/brand-asset-storage.service';
@@ -25,10 +25,30 @@ describe('design organization contracts',()=>{
   expect(await validate(dto)).toHaveLength(0);
  });
  it('requires a valid design type for every uploaded file',async()=>{
-  const valid=plainToInstance(UploadDesignFilesDto,{folderId:null,roomId:null,scopeEntryId:null,note:'',files:[{id,versionId:id,assetId:id,title:'Reception plan',documentType:'2D floor plan'}]});
+  const valid=plainToInstance(UploadDesignFilesDto,{folderId:null,roomId:null,scopeEntryId:null,note:'',files:[{id,versionId:id,assetId:id,title:'Reception plan',documentType:'2D floor plan',includedClientRounds:2}]});
   expect(await validate(valid)).toHaveLength(0);
   const invalid=plainToInstance(UploadDesignFilesDto,{folderId:null,roomId:null,scopeEntryId:null,note:'',files:[{id,versionId:id,assetId:id,title:'Reception plan',documentType:'Something vague'}]});
   expect(await validate(invalid)).not.toHaveLength(0);
+ });
+ it('accepts an optional included-round allowance and rejects values outside the supported range',async()=>{
+  expect(await validate(plainToInstance(AddDesignVersionDto,{id,version:1,assetId:id,note:'',includedClientRounds:null}))).toHaveLength(0);
+  expect(await validate(plainToInstance(AddDesignVersionDto,{id,version:1,assetId:id,note:'',includedClientRounds:100}))).not.toHaveLength(0);
+ });
+ it('carries the prior allowance unless the new draft explicitly changes or clears it',()=>{
+  expect(nextIncludedClientRounds(undefined,2)).toBe(2);
+  expect(nextIncludedClientRounds(null,2)).toBeNull();
+  expect(nextIncludedClientRounds(3,2)).toBe(3);
+ });
+ it('keeps round-limit handling guided and requires a reason only after the allowance is used',()=>{
+  expect(clientRoundOverrideRequired(1,2)).toBe(false);
+  expect(clientRoundOverrideRequired(2,2)).toBe(true);
+  expect(clientRoundOverrideRequired(5,null)).toBe(false);
+ });
+ it('defaults a client review to seven days and rejects past or excessively distant deadlines',()=>{
+  const now=new Date('2026-09-18T08:00:00.000Z');
+  expect(clientReviewExpiry(undefined,now)).toBe('2026-09-25T08:00:00.000Z');
+  expect(()=>clientReviewExpiry('2026-09-18T07:59:59.000Z',now)).toThrow('future');
+  expect(()=>clientReviewExpiry('2027-01-01T00:00:00.000Z',now)).toThrow('within 90 days');
  });
 });
 describe('folder and file write safeguards',()=>{
@@ -46,6 +66,16 @@ describe('folder and file write safeguards',()=>{
  it('rejects duplicate room/item contexts even with a different folder name',async()=>{const {service,query}=make(true);await expect(service.saveFolder(actor,'w','c',{id:'new',version:0,name:'Reception + Counter',description:'',roomId:'room',scopeEntryId:'item'})).rejects.toThrow('already exists');expect(query).toHaveBeenCalledWith(expect.stringContaining('scope_entry_id=$5::uuid'),['w','c','Reception + Counter','new','item','room']);expect(query.mock.calls.some(([sql])=>sql.startsWith('INSERT'))).toBe(false);});
  it('does not accept custom names or unlinked new folders',async()=>{const {service}=make();await expect(service.saveFolder(actor,'w','c',{id:'new',version:0,name:'Random folder',description:'',roomId:'room',scopeEntryId:null})).rejects.toThrow('name must match');await expect(service.saveFolder(actor,'w','c',{id:'new',version:0,name:'Random folder',description:'',roomId:null,scopeEntryId:null})).rejects.toThrow('Choose a room');});
  it('accepts the generated room + item name',async()=>{const {service,query}=make();await service.saveFolder(actor,'w','c',{id:'new',version:0,name:'Reception + Counter',description:'',roomId:'room',scopeEntryId:'item'});expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO pre_project_design_folders'),['w','c','new','Reception + Counter','','room','item','user']);});
+});
+describe('design revision round policy',()=>{
+ it('pins the carried allowance onto a newly uploaded revision',async()=>{
+  const design={id:'design',version:4,archivedAt:null,versions:[{id:'current',number:2,status:'changes_requested',includedClientRounds:2,asset:{id:'old'},note:'Old'}],activity:[],threads:[]};
+  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
+  const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
+  await service.addVersion(actor,'workspace','case','design',{id:'revision',version:4,assetId:'asset',note:'Changed joinery'});
+  expect(query).toHaveBeenCalledWith(expect.stringContaining('included_client_rounds) VALUES'),['revision','workspace','case','design',3,'asset','Changed joinery','user',2]);
+ });
 });
 describe('case write safeguards',()=>{
  it('requires both viewing and editing permissions, and rejects released cases',async()=>{const query=vi.fn(async()=>({rowCount:1,rows:[{status:'released'}]}));const withPermissions=vi.fn(async(_a,_w,_p,work)=>work({query},{userId:'user'}));const service=new BriefService({withPermissions} as unknown as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);const write=vi.fn();await expect(service.edit(actor,'workspace','case',write)).rejects.toThrow('read-only');expect(withPermissions).toHaveBeenCalledWith(actor,'workspace',['pre_projects.view','pre_projects.edit'],expect.any(Function));expect(write).not.toHaveBeenCalled();});
@@ -70,9 +100,28 @@ describe('assigned design review',()=>{
  });
 });
 
+describe('recorded client decision permissions',()=>{
+ it('does not let an editor record a client decision without the dedicated permission',async()=>{
+  const design={id:'design',version:4,versions:[{id:'current',status:'client_review',createdAt:'2026-01-01T00:00:00Z'}],activity:[]};
+  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
+  const access={hasPermission:vi.fn(async()=>false)};
+  const service=new DesignService(access as unknown as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
+  await expect(service.activity(actor,'workspace','case','design',{id:'activity',version:4,versionId:'current',action:'approved',note:'Approved in meeting',decisionBy:'Client',decisionSource:'meeting',decisionAt:'2026-02-01T00:00:00.000Z'})).rejects.toThrow('Permission to record client design decisions');
+  expect(query.mock.calls.some(([sql])=>String(sql).startsWith('UPDATE'))).toBe(false);
+ });
+ it('rejects a client-review deadline on an unrelated transition',async()=>{
+  const design={id:'design',version:4,versions:[{id:'current',status:'draft',createdAt:'2026-01-01T00:00:00Z'}],activity:[]};
+  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
+  const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
+  await expect(service.activity(actor,'workspace','case','design',{id:'activity',version:4,versionId:'current',action:'internal_review',note:'',decisionBy:'',reviewerId:'reviewer',contextConfirmed:true,reviewExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()})).rejects.toThrow('deadline belongs only');
+ });
+});
+
 describe('client portal handoff readiness',()=>{
- const make=(portal:{enabled:boolean;hasApprover:boolean}|null)=>{
-  const design={id:'design',version:4,versions:[{id:'current',status:'internal_approved'}],activity:[]};
+ const make=(portal:{enabled:boolean;hasApprover:boolean}|null,rounds={used:0,included:null as number|null})=>{
+  const design={id:'design',version:4,clientRoundsUsed:rounds.used,versions:[{id:'current',status:'internal_approved',includedClientRounds:rounds.included}],activity:[]};
   const query=vi.fn(async(sql:string)=>sql.startsWith('SELECT s.enabled')?{rows:portal?[portal]:[],rowCount:portal?1:0}:{rowCount:1,rows:[design]});
   const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
   return {service:new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService),query};
@@ -88,6 +137,13 @@ describe('client portal handoff readiness',()=>{
  });
  it('shares an internally approved revision when the portal is ready',async()=>{
   const {service,query}=make({enabled:true,hasApprover:true});await service.activity(actor,'w','c','design',input);
-  expect(query).toHaveBeenCalledWith(expect.stringContaining('SET status=$4'),['w','design','current','client_review']);
+  expect(query).toHaveBeenCalledWith(expect.stringContaining('SET status=$4'),['w','design','current','client_review',expect.any(String)]);
+ });
+ it('requires a recorded exception reason after the included rounds are used',async()=>{
+  const {service,query}=make({enabled:true,hasApprover:true},{used:2,included:2});
+  await expect(service.activity(actor,'w','c','design',input)).rejects.toThrow('approved exception reason');
+  const reviewExpiresAt=new Date(Date.now()+10*24*60*60*1000).toISOString();
+  await service.activity(actor,'w','c','design',{...input,id:'exception',note:'Client approved one additional review round.',reviewExpiresAt});
+  expect(query).toHaveBeenCalledWith(expect.stringContaining('client_review_expires_at'),['w','design','current','client_review',reviewExpiresAt]);
  });
 });

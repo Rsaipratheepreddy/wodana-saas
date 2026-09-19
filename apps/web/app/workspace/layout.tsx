@@ -1,19 +1,36 @@
 import { SessionMonitor } from "@/components/workspace/session-monitor";
 import { WorkspaceShell, workspaceModules } from "@/components/workspace";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
+import { visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
 
 export default async function WorkspaceLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const profile = await getAuthenticatedProfile();
-  const workspaces = profile.memberships.map((membership) => ({
-    description: "Business workspace",
-    id: membership.workspaceId,
-    imageUrl: membership.workspaceLogoUrl ?? undefined,
-    name: membership.workspaceName,
-    primaryColor: membership.workspacePrimaryColor,
-  }));
-  const user = { email: profile.primaryEmail, name: profile.displayName, platformRole: profile.platformRole };
+  const activeMembership = profile.memberships[0];
+  const ownerAccess = activeMembership?.roles.some((role) => role === "owner" || role === "administrator") ?? false;
+  const allowedModules = ownerAccess
+    ? (["workspace", "crm", "pre-project", "projects", "hrms"] as const)
+    : activeMembership?.allowedModules ?? (["workspace", "crm", "pre-project", "projects", "hrms"] as const);
+  const workspaces = profile.memberships.map((membership) => {
+    return {
+      description: `${membership.accountName ?? "Organization"} · Active`,
+      id: membership.workspaceId,
+      imageUrl: membership.workspaceLogoUrl
+        ? `${membership.workspaceLogoUrl}${membership.workspaceLogoUrl.includes("?") ? "&" : "?"}variant=square`
+        : undefined,
+      name: membership.workspaceName,
+      primaryColor: membership.workspacePrimaryColor,
+      secondaryColor: membership.workspaceSecondaryColor,
+      headingFont: membership.workspaceHeadingFont,
+      bodyFont: membership.workspaceBodyFont,
+    };
+  });
+  const user = { email: profile.primaryEmail, name: profile.displayName };
   return (
-    <WorkspaceShell modules={workspaceModules} user={user} workspaces={workspaces}>
+    <WorkspaceShell
+      modules={visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules)}
+      unavailableOrganizations={profile.unavailableOrganizations ?? []}
+      user={user}
+      workspaces={workspaces}>
       {!(process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") ? <SessionMonitor /> : null}
       {children}
     </WorkspaceShell>

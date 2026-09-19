@@ -9,10 +9,12 @@ import {
   Checkbox,
   ConfirmationDialog,
   ControlledModalDialog,
+  DataGrid,
   DesignSystemProvider,
   formatDate,
   OtpInput,
   TextInput,
+  type DataGridColumn,
 } from "@/design-system";
 import type { MfaSecurityStatus, SecurityPageData, SecuritySession } from "@/lib/workspace/security";
 import { deviceDetails } from "@/lib/auth/device-details";
@@ -134,7 +136,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       setMfaSetup(null);
       setMfaQrCode("");
       setMfaCode("");
-      setStatus("Authenticator verification is now enabled.");
+      setStatus("Two-step verification is now on.");
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "Authenticator setup could not be confirmed.");
     } finally {
@@ -161,7 +163,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
         setStatus("New recovery codes were generated. Your previous codes no longer work.");
       } else {
         setMfa((current) => ({ ...current, enabled: false, confirmedAt: null, recoveryCodesRemaining: 0 }));
-        setStatus("Authenticator verification was disabled. Other sessions were signed out.");
+        setStatus("Two-step verification was turned off. Other sessions were signed out.");
         setMfaDialog(null);
         setMfaSetup(null);
         setMfaQrCode("");
@@ -198,10 +200,16 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
     }
   };
 
-  const mfaDialogTitle = mfaDialog === "setup" ? "Connect an authenticator"
-    : mfaDialog === "regenerate" ? "Generate new recovery codes"
-      : mfaDialog === "disable" ? "Disable authenticator verification"
+  const mfaDialogTitle = mfaDialog === "setup" ? "Set up two-step verification"
+    : mfaDialog === "regenerate" ? "Get new recovery codes"
+      : mfaDialog === "disable" ? "Turn off two-step verification"
         : "Save your recovery codes";
+  const sessionColumns: DataGridColumn<SecuritySession>[] = [
+    { id: "device", accessorFn: sessionLabel, header: "Device", size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser}</strong><small>{details.device}</small></span>; } },
+    { accessorKey: "ipAddress", header: "IP address", size: 145, cell: ({ row }) => row.original.ipAddress ?? "—" },
+    { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: "Last active", size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" })}</time> },
+    { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <span className={styles.current}>This device</span> : <Button aria-label={`Sign out ${sessionLabel(row.original)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">Sign out</Button> },
+  ];
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label="Account security" className={styles.page}>
@@ -211,50 +219,36 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
         <div className={styles.mfaIcon}><ShieldCheck aria-hidden="true" size={20} /></div>
         <div className={styles.mfaSummary}>
           <div className={styles.mfaTitleRow}>
-            <h2 id="mfa-heading">Authenticator verification</h2>
-            <span className={mfa.enabled ? styles.enabled : styles.disabled}>{mfa.enabled ? "Enabled" : "Not enabled"}</span>
+            <h2 id="mfa-heading">Two-step verification</h2>
+            <span className={mfa.enabled ? styles.enabled : styles.disabled}>{mfa.enabled ? "On" : "Off"}</span>
           </div>
           <p>{mfa.enabled
-            ? "A password and a verification code are required when you sign in."
-            : "Add a verification code to protect your account if your password is compromised."}</p>
+            ? "Your password and an authenticator-app code are required when you sign in."
+            : "Add an authenticator-app code after your password for stronger sign-in protection."}</p>
           {mfa.enabled ? <div className={styles.mfaFacts}>
             <span><strong>{mfa.recoveryCodesRemaining}</strong> recovery codes remaining</span>
-            {mfa.confirmedAt ? <span>Enabled {formatDate(mfa.confirmedAt, DUBAI_FORMAT, { dateStyle: "medium" })}</span> : null}
+            {mfa.confirmedAt ? <span>Turned on {formatDate(mfa.confirmedAt, DUBAI_FORMAT, { dateStyle: "medium" })}</span> : null}
             {mfa.required ? <span>Required by account policy</span> : null}
           </div> : mfa.required && mfa.enrollmentDeadline ? <p className={styles.deadline}>
-            Setup required by {formatDate(mfa.enrollmentDeadline, DUBAI_FORMAT, { dateStyle: "medium" })}.
+            Turn this on by {formatDate(mfa.enrollmentDeadline, DUBAI_FORMAT, { dateStyle: "medium" })}.
           </p> : null}
         </div>
         <div className={styles.mfaActions}>
           {mfa.enabled ? <>
-            <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("regenerate"); }} size="compact" variant="quiet"><KeyRound size={14} />New recovery codes</Button>
-            {!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">Disable</Button> : null}
-          </> : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">Set up authenticator</Button>}
+            <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("regenerate"); }} size="compact" variant="quiet"><KeyRound size={14} />Recovery codes</Button>
+            {!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">Turn off</Button> : null}
+          </> : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">Set up two-step verification</Button>}
         </div>
       </section>
 
       <header className={styles.sessionsHeader}><h2>Active sessions</h2><p>Browsers and devices currently signed in to your account.</p></header>
-      <div aria-label="Active sessions table" className={styles.tableScroll} role="region" tabIndex={0}>
-        <table data-record-table="" aria-label="Active sessions" className={styles.sessionTable}>
-          <thead><tr><th scope="col">Device</th><th scope="col">IP address</th><th scope="col">Last active</th><th scope="col">Status / action</th></tr></thead>
-          <tbody>{sessions.map((session) => {
-            const details = deviceDetails(session.userAgent);
-            return <tr key={session.familyId}>
-              <td><span className={styles.device}><strong>{details.browser}</strong><small>{details.device}</small></span></td>
-              <td>{session.ipAddress ?? "—"}</td>
-              <td><time dateTime={session.lastActiveAt}>{formatDate(session.lastActiveAt, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" })}</time></td>
-              <td>{session.current ? <span className={styles.current}>This device</span> : <Button aria-label={`Sign out ${sessionLabel(session)}`} isDisabled={working} onPress={() => setSelectedSession(session)} size="compact" variant="quiet">Sign out</Button>}</td>
-            </tr>;
-          })}
-          {!sessions.length ? <tr><td colSpan={4}>No active sessions.</td></tr> : null}</tbody>
-        </table>
-      </div>
+      <DataGrid ariaLabel="Active sessions" appearance="flush" columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle="No active sessions" emptyDescription="Signed-in browsers and devices will appear here." />
     </section>
 
     <ControlledModalDialog
-      description={mfaDialog === "setup" ? "Scan the QR code, then enter the current six-digit code."
+      description={mfaDialog === "setup" ? "Scan the QR code with your authenticator app, then enter its current six-digit code."
         : mfaDialog === "codes" ? "Each code works once if your authenticator is unavailable."
-          : mfaDialog === "disable" ? "Confirm with a current code. Other signed-in devices will be logged out."
+          : mfaDialog === "disable" ? "Confirm with a current code. Other signed-in devices will be signed out."
             : "Confirm with a current code. All previous recovery codes will stop working."}
       footer={mfaDialog === "codes" ? <>
         <Button isDisabled={working} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.")).catch(() => setFailure("Select and copy the codes manually."))} variant="quiet"><Copy size={14} />Copy all</Button>
@@ -262,7 +256,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       </> : <>
         <Button isDisabled={working} onPress={closeMfaDialog}>Cancel</Button>
         <Button isDisabled={working} isLoading={working} onPress={() => void (mfaDialog === "setup" ? confirmMfaSetup() : runSensitiveMfaAction(mfaDialog === "disable" ? "disable" : "recovery"))} variant={mfaDialog === "disable" ? "danger" : "primary"}>
-          {mfaDialog === "setup" ? "Confirm authenticator" : mfaDialog === "disable" ? "Disable verification" : "Generate new codes"}
+          {mfaDialog === "setup" ? "Turn on verification" : mfaDialog === "disable" ? "Turn off verification" : "Generate codes"}
         </Button>
       </>}
       isDismissable={!working && (mfaDialog !== "codes" || recoveryCodesSaved)}

@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { ItemDimensionDto } from './item-specification.dto';
 
 const trim=({value}:{value:unknown})=>typeof value==='string'?value.trim():value;
@@ -9,6 +9,7 @@ export class SiteRecordDto {
  @Transform(trim) @IsString() @MinLength(1) @MaxLength(240) title!:string;
  @IsString() @MaxLength(6000) note!:string;
  @IsArray() @ArrayMaxSize(20) @ArrayUnique() @IsUUID(undefined,{each:true}) assetIds!:string[];
+ @IsOptional() @IsBoolean() evidenceConsentConfirmed?:boolean;
 }
 export class SiteLocationDto extends SiteRecordDto {
  @IsOptional() @IsUUID() roomId?:string|null;

@@ -26,6 +26,7 @@ import {
   legalEntities,
   users,
   workspaceMemberships,
+  workspaceTeams,
   workspaces,
 } from "./schema";
 
@@ -454,6 +455,7 @@ export const crmQueues = pgTable(
     name: varchar("name", { length: 160 }).notNull(),
     status: varchar("status", { length: 30 }).notNull().default("active"),
     isFallback: boolean("is_fallback").notNull().default(false),
+    takeoverAfterMinutes: integer("takeover_after_minutes"),
     roundRobinCursor: integer("round_robin_cursor").notNull().default(0),
     ...versionColumn,
     ...auditColumns,
@@ -461,6 +463,25 @@ export const crmQueues = pgTable(
   (table) => [
     uniqueIndex("crm_queues_code_uidx").on(table.workspaceId, table.code),
     index("crm_queues_fallback_idx").on(table.workspaceId, table.isFallback),
+    check("crm_queues_takeover_after_minutes_check", sql`${table.takeoverAfterMinutes} IS NULL OR ${table.takeoverAfterMinutes} BETWEEN 1 AND 10080`),
+  ],
+);
+
+export const workspaceTeamQueueSettings = pgTable(
+  "workspace_team_queue_settings",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    teamId: uuid("team_id").notNull().references(() => workspaceTeams.id, { onDelete: "cascade" }),
+    queueId: uuid("queue_id").notNull().references(() => crmQueues.id, { onDelete: "cascade" }),
+    capacity: integer("capacity").notNull().default(25),
+    weight: integer("weight").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.teamId, table.queueId] }),
+    index("workspace_team_queue_settings_queue_idx").on(table.workspaceId, table.queueId),
+    check("workspace_team_queue_settings_capacity_check", sql`${table.capacity} BETWEEN 1 AND 10000`),
+    check("workspace_team_queue_settings_weight_check", sql`${table.weight} BETWEEN 1 AND 100`),
   ],
 );
 
@@ -536,6 +557,7 @@ export const crmLeads = pgTable(
     disqualificationReason: varchar("disqualification_reason", { length: 160 }),
     pausedReason: varchar("paused_reason", { length: 160 }),
     nextActionAt: timestamp("next_action_at", { withTimezone: true }),
+    ownershipDueAt: timestamp("ownership_due_at", { withTimezone: true }),
     qualifiedAt: timestamp("qualified_at", { withTimezone: true }),
     qualificationEvidence: jsonb("qualification_evidence").$type<Record<string, unknown>>(),
     qualificationEvidenceHash: varchar("qualification_evidence_hash", { length: 64 }),
@@ -549,6 +571,7 @@ export const crmLeads = pgTable(
     index("crm_leads_owner_status_idx").on(table.workspaceId, table.ownerMembershipId, table.status),
     index("crm_leads_queue_status_idx").on(table.workspaceId, table.queueId, table.status),
     index("crm_leads_next_action_idx").on(table.workspaceId, table.nextActionAt),
+    index("crm_leads_ownership_due_idx").on(table.workspaceId, table.ownershipDueAt).where(sql`${table.ownershipDueAt} IS NOT NULL`),
     check("crm_leads_qualification_evidence_check", sql`${table.qualificationEvidence} IS NULL OR jsonb_typeof(${table.qualificationEvidence}) = 'object'`),
     check("crm_leads_qualification_hash_check", sql`${table.qualificationEvidenceHash} IS NULL OR ${table.qualificationEvidenceHash} ~ '^[0-9a-f]{64}$'`),
     check("crm_leads_qualification_state_check", sql`(
@@ -828,6 +851,7 @@ export const crmMessages = pgTable(
     senderId: uuid("sender_id"),
     authorship: varchar("authorship", { length: 20 }).notNull().default("automation"),
     providerMessageId: varchar("provider_message_id", { length: 500 }),
+    destinationReference: varchar("destination_reference", { length: 500 }),
     bodyText: text("body_text"),
     bodyHtml: text("body_html"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
@@ -1450,13 +1474,37 @@ export const notificationPreferences = pgTable(
   (table) => [uniqueIndex("notification_preferences_scope_uidx").on(table.workspaceId, table.recipientType, table.recipientId, table.eventType, table.channel)],
 );
 
+export const notificationDeviceConsents = pgTable(
+  "notification_device_consents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    installationId: uuid("installation_id").notNull(),
+    lastRequestId: uuid("last_request_id").notNull(),
+    platform: varchar("platform", { length: 30 }).notNull(),
+    permissionStatus: varchar("permission_status", { length: 30 }).notNull(),
+    locale: varchar("locale", { length: 35 }).notNull(),
+    timezone: varchar("timezone", { length: 64 }).notNull(),
+    permissionUpdatedAt: timestamp("permission_updated_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    ...versionColumn,
+    ...auditColumns,
+  },
+  (table) => [uniqueIndex("notification_device_consents_installation_uidx").on(table.workspaceId, table.userId, table.installationId)],
+);
+
 export const deviceEndpoints = pgTable(
   "device_endpoints",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    installationId: uuid("installation_id").notNull(),
+    lastRequestId: uuid("last_request_id").notNull(),
     platform: varchar("platform", { length: 30 }).notNull(),
+    tokenType: varchar("token_type", { length: 20 }).notNull().default("expo"),
+    consentId: uuid("consent_id").references(() => notificationDeviceConsents.id, { onDelete: "set null" }),
     tokenHash: varchar("token_hash", { length: 128 }).notNull(),
     encryptedTokenReference: varchar("encrypted_token_reference", { length: 500 }).notNull(),
     locale: varchar("locale", { length: 35 }).notNull(),
@@ -1466,7 +1514,10 @@ export const deviceEndpoints = pgTable(
     ...versionColumn,
     ...auditColumns,
   },
-  (table) => [uniqueIndex("device_endpoints_token_uidx").on(table.workspaceId, table.tokenHash)],
+  (table) => [
+    uniqueIndex("device_endpoints_token_uidx").on(table.workspaceId, table.tokenHash),
+    uniqueIndex("device_endpoints_installation_uidx").on(table.workspaceId, table.userId, table.installationId),
+  ],
 );
 
 export type CrmParty = typeof crmParties.$inferSelect;

@@ -2,6 +2,8 @@ from hashlib import sha256
 from typing import Any, Protocol
 from uuid import UUID
 
+import httpx
+
 from wodana_intelligence.integrations.business_core import BusinessCoreClient, BusinessCoreError
 from wodana_intelligence.integrations.google_actions import execute_google
 from wodana_intelligence.integrations.google_service import (
@@ -10,11 +12,12 @@ from wodana_intelligence.integrations.google_service import (
 )
 from wodana_intelligence.integrations.provider_models import OperationRequest
 from wodana_intelligence.integrations.provider_service import ProviderService
-from wodana_intelligence.worker.models import DeliveryJob, DeliveryResult
+from wodana_intelligence.worker.models import DeliveryJob, DeliveryResult, PushReceiptJob
 
 
 class NotificationAdapter(Protocol):
     async def deliver(self, job: DeliveryJob) -> DeliveryResult: ...
+    async def verify_push(self, receipt: PushReceiptJob) -> DeliveryResult: ...
 
 
 class DeterministicTestAdapter:
@@ -27,6 +30,12 @@ class DeterministicTestAdapter:
             result="delivered", provider=self.provider, provider_message_id=message_id
         )
 
+    async def verify_push(self, receipt: PushReceiptJob) -> DeliveryResult:
+        return DeliveryResult(
+            result="delivered", provider=self.provider,
+            provider_message_id=receipt.provider_message_id,
+        )
+
 
 class UnconfiguredAdapter:
     async def deliver(self, job: DeliveryJob) -> DeliveryResult:
@@ -35,6 +44,14 @@ class UnconfiguredAdapter:
             provider="unconfigured",
             error_code=f"{job.channel.upper()}_PROVIDER_UNCONFIGURED",
             error_message=f"No live {job.channel} provider is configured",
+        )
+
+    async def verify_push(self, receipt: PushReceiptJob) -> DeliveryResult:
+        return DeliveryResult(
+            result="permanent_failure", provider="unconfigured",
+            provider_message_id=receipt.provider_message_id,
+            error_code="PUSH_PROVIDER_UNCONFIGURED",
+            error_message="No live push provider is configured",
         )
 
 
@@ -111,19 +128,132 @@ class ConnectedProviderAdapter:
                     provider="whatsapp",
                     provider_message_id=str(result["id"]),
                 )
+            if job.channel == "push":
+                destination = job.destination or {}
+                reference = str(destination.get("tokenReference") or "")
+                expected = f"redis:push:{job.workspace_id}:"
+                if not reference.startswith(expected):
+                    return DeliveryResult(
+                        result="permanent_failure", provider="expo",
+                        error_code="PUSH_DESTINATION_INVALID",
+                        error_message="Push destination is not bound to this workspace",
+                    )
+                token = await self.providers.redis.get(reference)
+                if not token:
+                    return DeliveryResult(
+                        result="permanent_failure", provider="expo",
+                        endpoint_reference=reference,
+                        error_code="DeviceNotRegistered",
+                        error_message="The registered push token is no longer available",
+                    )
+                response = await self.providers.client.http.post(
+                    "https://exp.host/--/api/v2/push/send",
+                    json={
+                        "to": token,
+                        "title": job.subject or "Wodana",
+                        "body": job.body,
+                        "data": {
+                            "notificationId": str(job.id),
+                            "workspaceId": str(job.workspace_id),
+                            "deepLink": job.deep_link,
+                        },
+                    },
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                )
+                if response.status_code == 429 or response.status_code >= 500:
+                    return DeliveryResult(
+                        result="retry", provider="expo", endpoint_reference=reference,
+                        error_code="PUSH_PROVIDER_UNAVAILABLE",
+                        error_message="Expo Push Service is temporarily unavailable",
+                    )
+                if response.is_error:
+                    return DeliveryResult(
+                        result="permanent_failure", provider="expo",
+                        endpoint_reference=reference, error_code="PUSH_REQUEST_REJECTED",
+                        error_message="Expo Push Service rejected the request",
+                    )
+                payload = response.json()
+                ticket_data = payload.get("data", {}) if isinstance(payload, dict) else {}
+                ticket = ticket_data[0] if isinstance(ticket_data, list) and ticket_data else (
+                    ticket_data if isinstance(ticket_data, dict) else {}
+                )
+                if ticket.get("status") == "ok" and ticket.get("id"):
+                    return DeliveryResult(
+                        result="accepted", provider="expo",
+                        provider_message_id=str(ticket["id"]),
+                        endpoint_reference=reference,
+                    )
+                details = ticket.get("details", {}) if isinstance(ticket, dict) else {}
+                code = str(details.get("error") or "PUSH_TICKET_REJECTED")
+                return DeliveryResult(
+                    result="permanent_failure", provider="expo",
+                    endpoint_reference=reference, error_code=code,
+                    error_message=str(ticket.get("message") or "Push ticket was rejected")[:1000],
+                )
             return DeliveryResult(
                 result="permanent_failure",
                 provider="unconfigured",
                 error_code=f"{job.channel.upper()}_PROVIDER_UNCONFIGURED",
                 error_message=f"No live {job.channel} provider is configured",
             )
-        except (BusinessCoreError, IntegrationFlowError) as error:
+        except (BusinessCoreError, IntegrationFlowError, httpx.HTTPError, ValueError) as error:
             status = getattr(error, "status_code", 502)
             return DeliveryResult(
                 result="retry" if status == 429 or status >= 500 else "permanent_failure",
                 provider="google_workspace" if job.channel == "email" else job.channel,
                 error_code=getattr(error, "code", "PROVIDER_DELIVERY_FAILED"),
                 error_message=str(error)[:1000],
+            )
+
+    async def verify_push(self, receipt: PushReceiptJob) -> DeliveryResult:
+        try:
+            response = await self.providers.client.http.post(
+                "https://exp.host/--/api/v2/push/getReceipts",
+                json={"ids": [receipt.provider_message_id]},
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+            if response.status_code == 429 or response.status_code >= 500:
+                return DeliveryResult(
+                    result="retry", provider="expo",
+                    provider_message_id=receipt.provider_message_id,
+                    error_code="PUSH_RECEIPT_UNAVAILABLE",
+                    error_message="Push receipt verification is temporarily unavailable",
+                )
+            if response.is_error:
+                return DeliveryResult(
+                    result="permanent_failure", provider="expo",
+                    provider_message_id=receipt.provider_message_id,
+                    error_code="PUSH_RECEIPT_REJECTED",
+                    error_message="Expo Push Service rejected receipt verification",
+                )
+            payload = response.json()
+            data = payload.get("data", {}) if isinstance(payload, dict) else {}
+            value = data.get(receipt.provider_message_id) if isinstance(data, dict) else None
+            if not value:
+                return DeliveryResult(
+                    result="retry", provider="expo",
+                    provider_message_id=receipt.provider_message_id,
+                    error_code="PUSH_RECEIPT_MISSING",
+                    error_message="Push receipt was not available after the verification window",
+                )
+            if value.get("status") == "ok":
+                return DeliveryResult(
+                    result="delivered", provider="expo",
+                    provider_message_id=receipt.provider_message_id,
+                )
+            details = value.get("details", {}) if isinstance(value, dict) else {}
+            code = str(details.get("error") or "PUSH_DELIVERY_FAILED")
+            retryable = code in {"MessageRateExceeded", "ProviderError"}
+            return DeliveryResult(
+                result="retry" if retryable else "permanent_failure", provider="expo",
+                provider_message_id=receipt.provider_message_id, error_code=code,
+                error_message=str(value.get("message") or "Push delivery failed")[:1000],
+            )
+        except Exception as error:
+            return DeliveryResult(
+                result="retry", provider="expo",
+                provider_message_id=receipt.provider_message_id,
+                error_code="PUSH_RECEIPT_UNAVAILABLE", error_message=str(error)[:1000],
             )
 
 

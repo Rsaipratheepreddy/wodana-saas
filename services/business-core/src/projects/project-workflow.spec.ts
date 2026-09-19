@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   adoptProjectWorkflow,
   builtInProjectWorkflow,
@@ -12,6 +14,19 @@ import {
   type ExecutionActor,
 } from "./execution.domain";
 import type { Task } from "./execution.types";
+
+const palmWorkflow = () =>
+  parseProjectWorkflowTemplate(
+    JSON.parse(
+      readFileSync(
+        resolve(
+          __dirname,
+          "../../../../docs/fixtures/palm-project-workflow.json",
+        ),
+        "utf8",
+      ),
+    ),
+  );
 
 function input() {
   const fallback = builtInProjectWorkflow();
@@ -314,5 +329,82 @@ describe("project workflow templates", () => {
         { key: "finance_closed", passed: true },
       ]),
     });
+  });
+
+  it("keeps On Hold outside the Palm stage model and preserves all delivery history", () => {
+    const template = {
+      ...palmWorkflow(),
+      id: "workflow-palm-1",
+      status: "active" as const,
+      source: "workspace" as const,
+      updatedAt: "2026-09-15T08:00:00.000Z",
+    };
+    const data = emptyProject();
+    data.phase = "active";
+    data.workflow = adoptProjectWorkflow(
+      template,
+      "2026-09-15T08:00:00.000Z",
+      "manager",
+      "Project Manager",
+    );
+    data.workflow.currentStageKey = "site_works";
+    data.workPackages = [{
+      id: "package-1",
+      scopeLineIds: ["line-1"],
+      title: "Wardrobe",
+      area: "Primary bedroom",
+      deliveryRoute: "site",
+      status: "ready",
+      ownerId: "manager",
+      plannedStart: "2026-09-15",
+      plannedEnd: "2026-09-20",
+      blocker: "",
+      createdAt: "2026-09-15T08:00:00.000Z",
+      updatedAt: "2026-09-15T08:00:00.000Z",
+    }];
+    data.tasks = [{ id: "task-1", status: "planned" } as Task];
+    const beforePackages = structuredClone(data.workPackages);
+    const beforeTaskIdentity = data.tasks.map(({ id, status }) => ({ id, status }));
+    const actor: ExecutionActor = {
+      id: "manager",
+      name: "Project Manager",
+      manage: true,
+      review: true,
+      report: true,
+      buy: true,
+      memberIds: ["manager"],
+      resourceIds: [],
+      now: "2026-09-15T09:00:00.000Z",
+      released: true,
+    };
+
+    applyExecution(data, "project_controls", {
+      controls: {
+        ...data.controls,
+        reference: "PRJ-PLM-001",
+        onHold: true,
+        holdReason: "Site access is temporarily unavailable.",
+        holdOwnerId: "manager",
+      },
+    }, actor);
+
+    expect(data.workflow.currentStageKey).toBe("site_works");
+    expect(data.workflow.template.stages.some((stage) => stage.key === "on_hold")).toBe(false);
+    expect(data.workPackages).toEqual(beforePackages);
+    expect(data.tasks.map(({ id, status }) => ({ id, status }))).toEqual(beforeTaskIdentity);
+    expect(data.holdHistory).toEqual([
+      expect.objectContaining({
+        action: "placed",
+        reason: "Site access is temporarily unavailable.",
+        ownerId: "manager",
+      }),
+    ]);
+    expect(() =>
+      transitionProjectWorkflow(data, "installation", "", {
+        id: "manager",
+        name: "Project Manager",
+        now: "2026-09-15T10:00:00.000Z",
+      }),
+    ).toThrow(/Release the project hold/);
   });
 });

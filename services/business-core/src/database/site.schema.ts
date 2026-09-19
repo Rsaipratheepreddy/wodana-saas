@@ -6,7 +6,7 @@ import { preProjectBriefAssets, preProjectBriefEntries, preProjectCases, preProj
 const scope=()=>({workspaceId:uuid('workspace_id').notNull(),caseId:uuid('case_id').notNull()});
 const creator=()=>({createdBy:uuid('created_by').notNull().references(()=>users.id),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()});
 export const preProjectSiteRecords=pgTable('pre_project_site_records',{
- id:uuid('id').primaryKey(),...scope(),kind:varchar('kind',{length:20}).notNull(),roomId:uuid('room_id'),entryId:uuid('entry_id'),visitId:uuid('visit_id'),
+ id:uuid('id').primaryKey(),...scope(),siteId:uuid('site_id'),kind:varchar('kind',{length:20}).notNull(),roomId:uuid('room_id'),entryId:uuid('entry_id'),visitId:uuid('visit_id'),
  title:varchar('title',{length:240}).notNull(),status:varchar('status',{length:24}).notNull(),version:integer('version').notNull(),content:jsonb('content').notNull(),...creator(),updatedBy:uuid('updated_by').notNull().references(()=>users.id),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull().defaultNow(),
 },t=>[unique().on(t.workspaceId,t.caseId,t.id),
  foreignKey({columns:[t.workspaceId,t.caseId],foreignColumns:[preProjectCases.workspaceId,preProjectCases.id]}),

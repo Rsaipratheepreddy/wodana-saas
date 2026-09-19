@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { PreProjectCase } from "@/lib/pre-project/types";
 import { CommercialPage } from "./commercial-page";
@@ -43,6 +43,7 @@ const state: CommercialState = {
   contacts: [],
   canEdit: true,
   canApprove: true,
+  canVerifyFinance: true,
   canRelease: true,
   canManagePortal: true,
   portalSlug: null,
@@ -62,6 +63,7 @@ const record = {
   customerName: "Client",
 } as PreProjectCase;
 describe("Quotation entry flow", () => {
+  afterEach(() => vi.unstubAllGlobals());
   it("opens with a table and links each quotation to its own builder", () => {
     render(
       <CommercialPage
@@ -90,6 +92,15 @@ describe("Quotation entry flow", () => {
     );
     expect(await screen.findByText("Builder for Proposal 1")).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+  it("routes an accepted quotation into controlled change cases", async () => {
+    const accepted = structuredClone(state);
+    accepted.data.quotes[1].status = "accepted";
+    render(<CommercialPage initial={accepted} record={record} section="quotations" quotationId="q2" search="" />);
+    expect(await screen.findByRole("link", { name: "Start change case" })).toHaveAttribute(
+      "href", "/workspace/pre-projects/cases/case1/variations",
+    );
+    expect(screen.queryByRole("button", { name: "Create variation" })).toBeNull();
   });
   it("shows a recovery link when a quotation no longer exists", () => {
     render(
@@ -126,5 +137,19 @@ describe("Quotation entry flow", () => {
     expect(
       screen.getByRole("link", { name: /Change control/ }),
     ).toHaveAttribute("aria-current", "step");
+  });
+  it("keeps a successful quotation creation when its follow-up read fails", async () => {
+    const empty = structuredClone(state);
+    empty.data.quotes = [];
+    const created = quote("q3", 1);
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { ...empty.data, revision: 2, quotes: [created] } }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ message: "Refresh unavailable" }) });
+    vi.stubGlobal("fetch", fetcher);
+    render(<CommercialPage initial={empty} record={record} section="quotations" search="" />);
+    fireEvent.click(screen.getByRole("button", { name: "Create quotation" }));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Saved. Latest changes are shown"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });

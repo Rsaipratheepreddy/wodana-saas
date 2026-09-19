@@ -40,6 +40,12 @@ export function QuotationCover({
     subtitle: "Interior design & fit-out proposal",
   };
   const reference = `QT-${quote.id.slice(0, 8).toUpperCase()}`;
+  const coverStyle = {
+    "--quotation-cover-color": brand?.primaryColor || "#E4E3DE",
+    ...(cover.banner
+      ? { "--quotation-banner": `url("${cover.banner}")` }
+      : {}),
+  } as CSSProperties;
   return (
     <section
       className={s.cover}
@@ -47,7 +53,7 @@ export function QuotationCover({
       data-editable={Boolean(onChange)}
       data-canvas={canvas || undefined}
       data-compact={compact || undefined}
-      style={cover.banner ? { '--quotation-banner': `url("${cover.banner}")` } as CSSProperties : undefined}
+      style={coverStyle}
     >
       <header className={s.top}>
         {cover.logo ? <div className={s.customLogo}><img src={cover.logo} alt={brand?.name || 'Company logo'}/>{brand?.name && <strong>{brand.name}</strong>}</div> : brand ? (
@@ -56,7 +62,7 @@ export function QuotationCover({
           <strong>Interior design studio</strong>
         )}
         <span>
-          Professional quotation{" "}
+          Estimate proposal{" "}
           <b>
             V{quote.number} · {quote.currency}
           </b>

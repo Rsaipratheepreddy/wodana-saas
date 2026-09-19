@@ -2,6 +2,7 @@
 .page > section { min-inline-size: 0; }
 .toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem; padding-block-end: .65rem; }
 .toolbar h2 { margin: 0; font-size: .8125rem; font-weight: 600; }
+.toolbar h2 small { display: block; margin-block-start: .2rem; color: var(--wd-color-text-secondary); font-size: .6875rem; font-weight: 400; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .queue { display: flex; align-items: center; gap: .5rem; color: var(--wd-color-text-secondary); }
 .tableScroll { position: relative; min-inline-size: 0; overflow-x: auto; }
@@ -38,9 +39,14 @@
 .queue { min-inline-size: 10rem; max-inline-size: 18rem; }
 .queue :global(.wd-field) { display: flex; align-items: center; gap: .5rem; }
 .queue :global(.wd-select-button) { min-block-size: 2.25rem; font-size: .75rem; }
-.tableScroll { border: 1px solid var(--wd-color-structural-divider); border-radius: .7rem; }
-.table tr > * + * { border-inline-start: 1px solid var(--wd-color-structural-divider); }
+.tableScroll { border-block-start: 1px solid var(--wd-color-structural-divider); }
 .table tbody tr:last-child > * { border-block-end: 0; }
+.health { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-sm); }
+.health > div { min-inline-size: 0; padding: var(--wd-space-3); }
+.health > div + div { border-inline-start: 1px solid var(--wd-color-structural-divider); }
+.health dt { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.health dd { margin: var(--wd-space-1) 0 0; color: var(--wd-color-text); font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+@media (max-width: 36rem) { .health { grid-template-columns: 1fr; } .health > div + div { border-inline-start: 0; border-block-start: 1px solid var(--wd-color-structural-divider); } }
 .personCell { display: flex; align-items: center; gap: .5rem; }
 @media (max-width: 48rem) { .queue { max-inline-size: none; } .queue :global(.wd-field) { inline-size: 100%; } .queue :global(.wd-select-button) { min-block-size: 2.75rem; } }
 

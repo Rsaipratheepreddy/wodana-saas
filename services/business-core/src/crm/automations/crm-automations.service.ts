@@ -8,7 +8,9 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { CrmLeadsService } from "../leads/crm-leads.service";
 import { CrmNotificationsService } from "../notifications/crm-notifications.service";
 import { validateAutomationDefinition } from "./automation-definition.validator";
-import { AdvanceAutomationRunDto, ApprovalDecisionDto, AutomationVersionDto, ClaimWorkspaceDto, CompleteAutomationWaitDto, CreateAutomationDto, ExecuteAutomationStepDto, StartAutomationRunDto, UpdateAutomationDto } from "./dto/automations.dto";
+import { AUTOMATION_PRESETS, automationPreset, providerCapability } from "./automation-presets";
+import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "./default-automation-templates";
+import { AdvanceAutomationRunDto, ApprovalDecisionDto, AutomationVersionDto, ClaimWorkspaceDto, CompleteAutomationWaitDto, CreateAutomationDto, ExecuteAutomationStepDto, StartAutomationRunDto, UpdateAutomationDto, UpdateAutomationPresetDto } from "./dto/automations.dto";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
@@ -21,6 +23,102 @@ export class CrmAutomationsService {
     private readonly leads: CrmLeadsService,
     private readonly notifications: CrmNotificationsService,
   ) {}
+  presets(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.automations.view", async (client) => {
+      const definitions = await client.query<Row>(
+        `SELECT code,status,version FROM automation_definitions WHERE workspace_id=$1 AND code=ANY($2::text[])`,
+        [workspaceId, AUTOMATION_PRESETS.flatMap((preset) => preset.definitionCode ? [preset.definitionCode] : [])],
+      );
+      const policies = await client.query<Row>(
+        `SELECT event_type AS "eventType",status,channels,conditions,version FROM notification_policies WHERE workspace_id=$1 AND event_type=ANY($2::text[]) ORDER BY updated_at DESC`,
+        [workspaceId, AUTOMATION_PRESETS.flatMap((preset) => preset.eventType ? [preset.eventType] : [])],
+      );
+      const connections = await client.query<Row>(
+        `SELECT provider,status,configuration FROM integration_connections WHERE workspace_id=$1 AND status IN ('connected','degraded')`,
+        [workspaceId],
+      );
+      const deviceEndpoints = await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM device_endpoints WHERE workspace_id=$1 AND status='active'`,
+        [workspaceId],
+      );
+      const delivery = await client.query<Row>(
+        `SELECT notification.channel,
+          count(*) FILTER (WHERE attempt.status='delivered')::int AS delivered,
+          count(*) FILTER (WHERE attempt.status IN ('retry','permanent_failure'))::int AS failed,
+          max(attempt.completed_at) FILTER (WHERE attempt.status='delivered') AS "lastDeliveredAt"
+         FROM notifications notification
+         LEFT JOIN notification_delivery_attempts attempt ON attempt.workspace_id=notification.workspace_id AND attempt.notification_id=notification.id
+         WHERE notification.workspace_id=$1 AND notification.created_at>=now()-interval '30 days'
+         GROUP BY notification.channel`,
+        [workspaceId],
+      );
+      const connected = (provider: string, predicate?: (configuration: Row) => boolean) => connections.rows.some((row) => row.provider === provider && row.status === "connected" && (!predicate || predicate((row.configuration as Row) ?? {})));
+      const channel = (name: "in_app" | "email" | "whatsapp" | "push", isConnected: boolean) => {
+        const evidence = delivery.rows.find((row) => row.channel === name);
+        return providerCapability({ channel: name, connected: isConnected, delivered: Number(evidence?.delivered ?? 0), failed: Number(evidence?.failed ?? 0), lastDeliveredAt: evidence?.lastDeliveredAt ? String(evidence.lastDeliveredAt) : null });
+      };
+      return {
+        items: AUTOMATION_PRESETS.map((preset) => {
+          const definition = definitions.rows.find((row) => row.code === preset.definitionCode);
+          const policy = policies.rows.find((row) => row.eventType === preset.eventType);
+          const source = preset.definitionCode ? definition : policy;
+          const conditions = policy?.conditions && typeof policy.conditions === "object" ? policy.conditions as Row : {};
+          return {
+            ...preset,
+            enabled: source?.status === "active",
+            status: source?.status ?? "not_configured",
+            version: Number(source?.version ?? 0),
+            channels: Array.isArray(policy?.channels) ? policy.channels.map(String) : ["in_app"],
+            weekday: typeof conditions.weekday === "string" ? conditions.weekday : "friday",
+          };
+        }),
+        providers: [
+          channel("in_app", true),
+          channel("email", connected("google_workspace", (configuration) => configuration.gmailSend === true)),
+          channel("whatsapp", connected("whatsapp")),
+          channel("push", Number(deviceEndpoints.rows[0]?.count ?? 0) > 0),
+        ],
+      };
+    });
+  }
+  updatePreset(actor: RequestActor, workspaceId: string, code: string, input: UpdateAutomationPresetDto) {
+    const preset = automationPreset(code);
+    if (!preset) throw new NotFoundException("Smart rule not found");
+    return this.access.withPermission(actor, workspaceId, "crm.automations.manage", async (client, actorUser) => {
+      if (preset.definitionCode) {
+        let definition = await client.query<Row>(`SELECT * FROM automation_definitions WHERE workspace_id=$1 AND code=$2 FOR UPDATE`, [workspaceId, preset.definitionCode]);
+        if (!definition.rowCount) {
+          const template = DEFAULT_CRM_AUTOMATION_TEMPLATES.find((candidate) => candidate.code === preset.definitionCode);
+          if (!template) throw new NotFoundException("Smart rule template not found");
+          const created = await client.query<Row>(`INSERT INTO automation_definitions(workspace_id,code,name,description,status,run_once_per_aggregate,created_by) VALUES($1,$2,$3,$4,'draft',$5,$6) RETURNING *`, [workspaceId, template.code, template.name, template.description, template.runOncePerAggregate, actorUser.userId]);
+          await this.insertVersion(client, workspaceId, String(created.rows[0].id), 1, template.definition);
+          definition = created;
+        }
+        const latest = await client.query<Row>(`SELECT id,definition FROM automation_versions WHERE workspace_id=$1 AND definition_id=$2 ORDER BY version_number DESC LIMIT 1`, [workspaceId, definition.rows[0].id]);
+        if (!latest.rowCount) throw new ConflictException("Smart rule has no saved version");
+        this.assertValid(latest.rows[0].definition as Record<string, unknown>);
+        const result = await client.query<Row>(
+          `UPDATE automation_definitions SET status=$1,active_version_id=CASE WHEN $1='active' THEN $2 ELSE active_version_id END,version=version+1 WHERE workspace_id=$3 AND id=$4 RETURNING id,code,status,version`,
+          [input.enabled ? "active" : "paused", latest.rows[0].id, workspaceId, definition.rows[0].id],
+        );
+        if (input.enabled) await client.query(`UPDATE automation_versions SET published_at=COALESCE(published_at,now()),published_by=COALESCE(published_by,$1) WHERE workspace_id=$2 AND id=$3`, [actorUser.userId, workspaceId, latest.rows[0].id]);
+        await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "automation.preset.changed.v1", entityType: "automation_definition", entityId: String(result.rows[0].id), before: definition.rows[0], after: result.rows[0] });
+        return result.rows[0];
+      }
+      if (!(await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.notifications.manage")))
+        throw new UnprocessableEntityException("Notification management access is required for this smart rule");
+      const channels = [...new Set(input.channels?.length ? input.channels : ["in_app"])];
+      if (channels.some((channel) => !preset.availableChannels.includes(channel as never)))
+        throw new BadRequestException("Choose only channels supported by this smart rule");
+      const conditions = preset.code === "weekly_progress" ? { weekday: input.weekday ?? "friday" } : {};
+      const current = await client.query<Row>(`SELECT * FROM notification_policies WHERE workspace_id=$1 AND event_type=$2 ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`, [workspaceId, preset.eventType]);
+      const result = current.rowCount
+        ? await client.query<Row>(`UPDATE notification_policies SET name=$1,channels=$2,conditions=$3,status=$4,version=version+1 WHERE workspace_id=$5 AND id=$6 RETURNING id,event_type AS "eventType",name,channels,conditions,status,version`, [preset.name, JSON.stringify(channels), conditions, input.enabled ? "active" : "paused", workspaceId, current.rows[0].id])
+        : await client.query<Row>(`INSERT INTO notification_policies(workspace_id,event_type,name,channels,conditions,status) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,event_type AS "eventType",name,channels,conditions,status,version`, [workspaceId, preset.eventType, preset.name, JSON.stringify(channels), conditions, input.enabled ? "active" : "paused"]);
+      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "automation.preset.changed.v1", entityType: "notification_policy", entityId: String(result.rows[0].id), before: current.rows[0], after: result.rows[0] });
+      return result.rows[0];
+    });
+  }
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.automations.view", async (client) => (await client.query(`SELECT definition.id, definition.code, definition.name, definition.description, definition.status, definition.active_version_id AS "activeVersionId", definition.run_once_per_aggregate AS "runOncePerAggregate", definition.version, version.version_number AS "activeVersionNumber" FROM automation_definitions definition LEFT JOIN automation_versions version ON version.id = definition.active_version_id WHERE definition.workspace_id = $1 ORDER BY definition.name`, [workspaceId])).rows);
   }

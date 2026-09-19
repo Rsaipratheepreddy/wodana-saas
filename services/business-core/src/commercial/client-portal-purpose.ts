@@ -31,7 +31,7 @@ export function parsePortalChallengePurpose(value: string): PortalChallengePurpo
     const kind = parts[0] as typeof decisionKinds[number];
     const decision = parts[3] as "accept" | "changes" | "decline";
     if (
-      (["design-decision", "material-decision", "definition-decision"] as string[]).includes(kind) &&
+      (["material-decision", "definition-decision"] as string[]).includes(kind) &&
       decision === "decline"
     ) return null;
     return { kind, caseId: parts[1], recordId: parts[2], decision };

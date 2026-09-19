@@ -9,14 +9,14 @@ afterEach(() => {
 });
 
 describe("RolesPermissionsPage", () => {
-  it("shows a role dropdown and saves module permissions for a custom role", async () => {
+  it("shows every product area and saves an enforced capability for a custom role", async () => {
     const interaction = userEvent.setup();
     const data = structuredClone(rolesPermissionsFixture);
     const customRole = data.roles.find((role) => role.code === "studio_lead")!;
     const savedRole = {
       ...customRole,
       version: 2,
-      permissions: [...customRole.permissions, "module.integrations.write"],
+      permissions: [...customRole.permissions, "commercial.costs.manage"],
     };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => savedRole });
     vi.stubGlobal("fetch", fetchMock);
@@ -24,9 +24,16 @@ describe("RolesPermissionsPage", () => {
     render(<RolesPermissionsPage initialData={data} />);
 
     expect(screen.getByLabelText("Role")).toHaveTextContent("Studio lead");
-    const integrationSwitch = screen.getByRole("switch", { name: "Studio lead: Integrations Write" });
-    expect(integrationSwitch).not.toBeChecked();
-    await interaction.click(integrationSwitch);
+    expect(screen.getByRole("button", { name: "Workspace 29" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "CRM 26" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pre-execution 22" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Projects 8" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "HRMS 4" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI & platform 1" })).toBeInTheDocument();
+
+    const costSwitch = screen.getByRole("switch", { name: "Studio lead: Manage internal quotation costs" });
+    expect(costSwitch).not.toBeChecked();
+    await interaction.click(costSwitch);
     await interaction.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -38,9 +45,12 @@ describe("RolesPermissionsPage", () => {
         "module.organization.read",
         "module.organization.edit",
         "module.members.read",
-        "module.members.edit",
         "module.teams.read",
-        "module.integrations.write",
+        "crm.leads.view",
+        "pre_projects.view",
+        "projects.manage",
+        "hrms.self",
+        "commercial.costs.manage",
       ]),
     });
     expect(await screen.findByText("Studio lead permissions updated.")).toBeInTheDocument();
@@ -51,7 +61,7 @@ describe("RolesPermissionsPage", () => {
     data.roles = data.roles.filter((role) => role.code !== "studio_lead");
     render(<RolesPermissionsPage initialData={data} />);
 
-    expect(screen.getByRole("switch", { name: "Owner: Organization profile Read" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Owner: View organization profile" })).toBeDisabled();
     expect(screen.getByText("System role permissions are managed by Wodana and cannot be changed.")).toBeInTheDocument();
   });
 

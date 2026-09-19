@@ -35,7 +35,7 @@ export function ClientCredits({
                   <small className={s.detail}>{c.reference}</small>
                 </>;}},
 {id:"action",header:"Action",size:200,enableSorting:false,enableColumnFilter:false,cell:({row:{original:c}})=>{return <>
-                  {c.status === "pending" && state.canApprove && (
+                  {c.status === "pending" && state.canVerifyFinance && (
                     <button
                       className={s.button}
                       disabled={busy}

@@ -7,8 +7,23 @@ import type { WorkspaceBillingData } from "@/lib/internal/types";
 
 const fixture: WorkspaceBillingData = {
   workspace: { id: "00000000-0000-4000-8000-000000000002", name: "Iglo Architects", status: "active", defaultCurrency: "INR" },
-  subscription: { amount: "0", billingCycle: "monthly", currency: "INR", planCode: "starter", projectLimit: 25, renewsAt: null, seatLimit: 5, startedAt: new Date().toISOString(), status: "trial", updatedAt: new Date().toISOString(), version: 1 },
-  usage: { members: 1, projects: 0 },
+  account: { id: "00000000-0000-4000-8000-000000000003", displayName: "Iglo Architects" },
+  contract: { version: 1, status: "trial_uncontracted", planCode: "starter", planVersion: 1,
+    currency: "INR", billingCycle: "monthly", recurringAmount: "0", seatLimit: 5, projectLimit: 25,
+    trialEndsAt: null, termStartsAt: new Date().toISOString(), renewsAt: null, endsAt: null,
+    taxValidationState: "unverified", effectiveFrom: new Date().toISOString(), effectiveUntil: null },
+  organizationAllocation: { version: 1, status: "active", allocatedAmount: "0", seatLimit: 5,
+    projectLimit: 25, effectiveFrom: new Date().toISOString(), effectiveUntil: null },
+  collection: { version: 1, status: "current", overdueAmount: "0", currency: "INR",
+    effectiveAt: new Date().toISOString(), nextReviewAt: null },
+  accessPolicy: { state: "trial", effect: "unchanged", warning: false, actionDueAt: null,
+    affectedModules: [], message: "Trial access follows the current organization allocation." },
+  usage: { members: 1, invitedMembers: 0, pendingInvitations: 0, reservedSeats: 1, projects: 0 },
+  accountUsageSnapshot: null,
+  documents: [],
+  authority: "account_contract",
+  taxCompliance: "unverified",
+  observedAt: new Date().toISOString(),
 };
 
 export async function getBillingPageData(): Promise<WorkspaceBillingData> {

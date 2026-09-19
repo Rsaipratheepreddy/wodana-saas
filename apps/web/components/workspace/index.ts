@@ -1,6 +1,7 @@
 export { WorkspaceShell } from "./workspace-shell";
 export { WorkspaceSidebar } from "./workspace-sidebar";
 export { CompanyProfile } from "./company-profile";
+export { WorkspaceConfigurationPage } from "./workspace-configuration-page";
 export { MembersPage } from "./members-page";
 export { OrganizationStructurePage } from "./organization-structure-page";
 export { RolesPermissionsPage } from "./roles-permissions-page";

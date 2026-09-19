@@ -302,18 +302,42 @@ export class MfaService {
     });
   }
 
-  async startTotpEnrollment(userId: string, workspaceId: string) {
+  async platformMfaEnabled(userId: string) {
+    const result = await this.database.query<{ enabled: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM user_mfa_credentials
+         WHERE user_id = $1 AND confirmed_at IS NOT NULL AND disabled_at IS NULL
+       ) AS enabled`,
+      [userId],
+    );
+    return result.rows[0]?.enabled ?? false;
+  }
+
+  async verifyPlatformFactor(client: PoolClient, userId: string, factor: string, ipAddress?: string) {
+    const result = await this.verifyFactor(client, userId, factor);
+    await this.recordEvent(client, userId, null, result.ok
+      ? "mfa.platform_verified" : "mfa.platform_failed", result.ok
+      ? { method: result.method } : { locked: result.locked }, ipAddress);
+    return result;
+  }
+
+  async startTotpEnrollment(userId: string, workspaceId: string | null, transactionClient?: PoolClient) {
     const key = this.encryptionKey();
-    return this.database.transaction(async (client) => {
+    const work = async (client: PoolClient) => {
       await this.setActorContext(client, workspaceId, userId);
       const existing = await this.credential(client, userId, true);
       if (this.isActive(existing)) throw new ConflictException("MFA is already enabled");
-      const identity = await client.query<{ email: string; workspaceName: string }>(
-        `SELECT app_user.primary_email AS email, workspace.name AS "workspaceName"
-         FROM users app_user CROSS JOIN workspaces workspace
-         WHERE app_user.id = $1 AND workspace.id = $2`,
-        [userId, workspaceId],
-      );
+      const identity = workspaceId
+        ? await client.query<{ email: string; workspaceName: string }>(
+          `SELECT app_user.primary_email AS email, workspace.name AS "workspaceName"
+           FROM users app_user CROSS JOIN workspaces workspace
+           WHERE app_user.id = $1 AND workspace.id = $2`,
+          [userId, workspaceId],
+        )
+        : await client.query<{ email: string; workspaceName: string }>(
+          `SELECT primary_email AS email, 'Wodana Control' AS "workspaceName"
+           FROM users WHERE id = $1`, [userId],
+        );
       if (!identity.rowCount) throw new NotFoundException("User or workspace not found");
       const secret = generateTotpSecret();
       const encrypted = encryptMfaSecret(secret, key);
@@ -348,12 +372,27 @@ export class MfaService {
         accountName: identity.rows[0].workspaceName,
         setupExpiresInSeconds: SETUP_MINUTES * 60,
       };
-    });
+    };
+    return transactionClient ? work(transactionClient) : this.database.transaction(work);
   }
 
-  async confirmTotpEnrollment(userId: string, workspaceId: string, code: string) {
+  async confirmTotpEnrollment(
+    userId: string, workspaceId: string | null, code: string,
+  ): Promise<{ state: "confirmed"; recoveryCodes: string[]; assurance: MfaSessionAssurance }>;
+  async confirmTotpEnrollment(
+    userId: string, workspaceId: string | null, code: string, transactionClient: PoolClient,
+  ): Promise<
+    | { state: "confirmed"; recoveryCodes: string[]; assurance: MfaSessionAssurance }
+    | { state: "locked" | "invalid" }
+  >;
+  async confirmTotpEnrollment(
+    userId: string, workspaceId: string | null, code: string, transactionClient?: PoolClient,
+  ): Promise<
+    | { state: "confirmed"; recoveryCodes: string[]; assurance: MfaSessionAssurance }
+    | { state: "locked" | "invalid" }
+  > {
     const key = this.encryptionKey();
-    const outcome = await this.database.transaction(async (client) => {
+    const work = async (client: PoolClient) => {
       await this.setActorContext(client, workspaceId, userId);
       const credential = await this.credential(client, userId, true);
       if (!credential) throw new NotFoundException("Start MFA setup first");
@@ -370,8 +409,10 @@ export class MfaService {
         await this.recordFailedFactor(client, userId);
         return { state: "invalid" as const };
       }
-      const policy = await this.policyContext(client, userId, workspaceId);
-      const recoveryCodes = generateRecoveryCodes(policy.policy.recoveryCodeCount);
+      const recoveryCodeCount = workspaceId
+        ? (await this.policyContext(client, userId, workspaceId)).policy.recoveryCodeCount
+        : DEFAULT_POLICY.recoveryCodeCount;
+      const recoveryCodes = generateRecoveryCodes(recoveryCodeCount);
       await client.query(
         `UPDATE user_mfa_credentials
          SET confirmed_at = now(), last_used_step = $2, failed_attempts = 0, locked_until = NULL
@@ -401,7 +442,9 @@ export class MfaService {
           mfaSessionVersion: version.rows[0].mfaSessionVersion,
         } satisfies MfaSessionAssurance,
       };
-    });
+    };
+    const outcome = transactionClient ? await work(transactionClient) : await this.database.transaction(work);
+    if (transactionClient) return outcome;
     if (outcome.state === "locked") {
       throw new HttpException("Too many MFA attempts. Try again later", HttpStatus.TOO_MANY_REQUESTS);
     }
@@ -649,8 +692,8 @@ export class MfaService {
     return result.rows[0].version;
   }
 
-  private async setActorContext(client: PoolClient, workspaceId: string, userId: string) {
-    await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
+  private async setActorContext(client: PoolClient, workspaceId: string | null, userId: string) {
+    if (workspaceId) await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
     await client.query("SELECT set_config('app.current_actor_id', $1, true)", [userId]);
   }
 

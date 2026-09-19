@@ -43,6 +43,7 @@ import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminolog
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
 import { CompleteOnboardingDto, UpdateOnboardingDto } from "./dto/update-onboarding.dto";
 import { VersionDto } from "./dto/version.dto";
+import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 import {
   AuditPageResponseDto,
   BusinessUnitResponseDto,
@@ -276,6 +277,28 @@ export class WorkspacesController {
     return this.workspaces.updateTerminology(actor, workspaceId, key, input);
   }
 
+  @Get(":workspaceId/terminology/:key/history")
+  @ApiOperation({ summary: "List immutable revisions for one tenant terminology value" })
+  terminologyHistory(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("key") key: string,
+  ) {
+    return this.workspaces.terminologyHistory(actor, workspaceId, key);
+  }
+
+  @Post(":workspaceId/terminology/:key/rollback")
+  @ApiOperation({ summary: "Restore one tenant terminology value from an immutable revision" })
+  @ApiOkResponse({ type: WorkspaceTerminologyItemResponseDto })
+  rollbackTerminology(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("key") key: string,
+    @Body() input: RestoreConfigurationRevisionDto,
+  ) {
+    return this.workspaces.rollbackTerminology(actor, workspaceId, key, input);
+  }
+
   @Delete(":workspaceId/terminology/:key")
   @ApiOperation({ summary: "Restore one tenant terminology value to its default" })
   @ApiOkResponse({ type: WorkspaceTerminologyItemResponseDto })
@@ -389,6 +412,27 @@ export class WorkspacesController {
     @Body() input: UpdateTeamDto,
   ) {
     return this.workspaces.updateTeam(actor, workspaceId, teamId, input);
+  }
+
+  @Get(":workspaceId/teams/:teamId/history")
+  @ApiOperation({ summary: "List immutable revisions for a team's members, roles and queue defaults" })
+  teamHistory(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("teamId", ParseUUIDPipe) teamId: string,
+  ) {
+    return this.workspaces.teamHistory(actor, workspaceId, teamId);
+  }
+
+  @Post(":workspaceId/teams/:teamId/rollback")
+  @ApiOperation({ summary: "Restore a team and its inherited access defaults from a revision" })
+  rollbackTeam(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("teamId", ParseUUIDPipe) teamId: string,
+    @Body() input: RestoreConfigurationRevisionDto,
+  ) {
+    return this.workspaces.rollbackTeam(actor, workspaceId, teamId, input);
   }
 
   @Post(":workspaceId/teams/:teamId/archive")

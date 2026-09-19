@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
 import { briefFields, type CaseContent } from "./content";
 import { type PreProjectCase, type PreProjectList, listSearch } from "./types";
+import type { DefinitionPageData, DefinitionState, ReadinessState } from "./definition";
 
 const e2eCaseId = "00000000-0000-4000-8000-000000000001";
 const e2eCase: PreProjectCase = {
@@ -21,6 +22,8 @@ const e2eCase: PreProjectCase = {
   currencyCode: "AED",
   createdAt: "2026-09-06T10:00:00.000Z",
   updatedAt: "2026-09-09T10:00:00.000Z",
+  phase: "define", version: 1, ownerMembershipId: "00000000-0000-4000-8000-000000000003", engagementOwnerName: "Iglo Administrator",
+  targetDate: null, priority: "normal", riskLevel: "none", activatedAt: "2026-09-06T10:00:00.000Z", holdReason: null, cancellationReason: null, releasedAt: null, canManageLifecycle: true,
 };
 
 function isE2eBypass() {
@@ -41,6 +44,7 @@ function e2eContent(workspaceId: string): CaseContent {
       { id: "00000000-0000-4000-8000-000000000103", name: "Workplace", version: 1 },
     ],
     entries: [],
+    coverage: { roomCount: 3, coveredRoomCount: 0, uncoveredRooms: [{ id: "00000000-0000-4000-8000-000000000101", name: "Reception" }, { id: "00000000-0000-4000-8000-000000000102", name: "Meeting room" }, { id: "00000000-0000-4000-8000-000000000103", name: "Workplace" }], wholeProjectRequirementCount: 0, undecidedItemIds: [], clientDraftItemIds: [], missingMeasurementItemIds: [], verifiedMeasurementItemIds: [] },
     brief: {
       ...(Object.fromEntries(Object.keys(briefFields).map((key) => [key, ""])) as Record<keyof typeof briefFields, string>),
       currencyCode: "AED",
@@ -92,6 +96,17 @@ export async function getPreProject(id: string): Promise<PreProjectCase | { erro
   return response.json();
 }
 
+export async function getCaseOverviewData(): Promise<{ workspaceId: string; members: { id: string; displayName: string }[] }> {
+  const { workspaceId, token } = await context();
+  if (isE2eBypass()) return { workspaceId, members: [{ id: e2eCase.ownerMembershipId!, displayName: e2eCase.engagementOwnerName! }] };
+  const response = await fetch(businessApiUrl(`/workspaces/${workspaceId}/members`), {
+    headers: { authorization: `Bearer ${token}` }, cache: "no-store",
+  }).catch(() => null);
+  if (!response?.ok) return { workspaceId, members: [] };
+  const members = await response.json() as { id: string; displayName: string; status: string }[];
+  return { workspaceId, members: members.filter((member) => member.status === "active").map(({ id, displayName }) => ({ id, displayName })) };
+}
+
 export async function getCaseContent(id:string,includeDesigns=false,includeSite=false):Promise<{data:import('./content').CaseContent;designs:import('./content').CaseDesign[];designOptions?:import('./content').DesignOptions;site?:import('./site').SiteData}|{error:string}> {
  const {workspaceId,token}=await context();
  if(isE2eBypass()){
@@ -102,4 +117,40 @@ export async function getCaseContent(id:string,includeDesigns=false,includeSite=
  if(!brief?.ok||(includeDesigns&&!designs?.ok)||(includeSite&&!site?.ok))return {error:'This section could not be loaded. Please reload to try again.'};
  const designData=designs?await designs.json():null;
  return {data:await brief.json(),designs:designData?.items??[],...(designData?{designOptions:designData}:{}),...(site?{site:await site.json()}:{})};
+}
+
+export async function getDefinitionPageData(id: string): Promise<DefinitionPageData> {
+  const { workspaceId, token } = await context();
+  if (isE2eBypass()) {
+    if (id !== e2eCaseId) notFound();
+    return {
+      workspaceId,
+      caseId: id,
+      definition: {
+        caseStatus: e2eCase.status,
+        draft: {
+          sourceHash: "local-e2e-definition",
+          readyToPublish: false,
+          issues: [{ code: "missing_requirements", detail: "Add and review project requirements before sending the scope." }],
+        },
+        current: null,
+        history: [],
+        confirmed: false,
+        nextAction: "complete_requirements",
+        canPublish: false,
+        canRecordClientDecision: false,
+      },
+      readiness: {
+        ready: false,
+        summary: { includedItemCount: 0, readyItemCount: 0, blockerCount: 1, warningCount: 0 },
+        blockers: [{ code: "missing_scope", label: "Scope", detail: "Add a scope item before preparing a quotation." }],
+      },
+    };
+  }
+  const [definition, readiness] = await Promise.all([
+    read(workspaceId, token, `/${id}/definition-baselines`),
+    read(workspaceId, token, `/${id}/readiness?target=pricing`),
+  ]);
+  if (!definition?.ok || !readiness?.ok) return { error: definition?.status === 403 || readiness?.status === 403 ? "You don’t have access to this scope confirmation." : "Scope confirmation could not be loaded. Please try again." };
+  return { workspaceId, caseId: id, definition: await definition.json() as DefinitionState, readiness: await readiness.json() as ReadinessState };
 }

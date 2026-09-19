@@ -25,6 +25,9 @@ export const designStateLabels: Record<string, string> = {
   client_review: "Awaiting client",
   approved: "Approved",
   changes_requested: "Changes requested",
+  rejected: "Rejected",
+  expired: "Review expired",
+  superseded: "Superseded",
   no_file: "File needed",
 };
 export const designTabHints: Record<DesignTab, string> = {

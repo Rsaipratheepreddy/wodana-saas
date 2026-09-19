@@ -23,6 +23,11 @@ export class CustomerAccountSummaryResponseDto {
   @ApiProperty() displayName!: string;
   @ApiProperty({ minimum: 1 }) organizationLimit!: number;
   @ApiProperty() isDefaultOrganization!: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true }) contractContactName?: string | null;
+  @ApiPropertyOptional({ type: String, format: "email", nullable: true }) contractContactEmail?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) contractStatus?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) contractPlanCode?: string | null;
+  @ApiPropertyOptional({ type: Number, nullable: true }) contractPlanVersion?: number | null;
 }
 
 export class LegalEntityResponseDto {
@@ -118,7 +123,7 @@ export class WorkspaceDetailResponseDto {
   @ApiProperty({ type: [LegalEntityResponseDto] }) legalEntities!: LegalEntityResponseDto[];
   @ApiProperty({ type: [BusinessUnitResponseDto] }) businessUnits!: BusinessUnitResponseDto[];
   @ApiProperty({ type: "object", additionalProperties: true })
-  branding!: { logoAssetId: string | null; logoUrl: string | null; logoUpdatedAt: string | null; primaryColor: string | null };
+  branding!: { logoAssetId: string | null; logoUrl: string | null; logoUpdatedAt: string | null; primaryColor: string | null; secondaryColor: string | null; headingFont: string | null; bodyFont: string | null };
   @ApiProperty({ type: "object", additionalProperties: true })
   terminology!: Record<string, { visibleName: string; visibleNamePlural: string }>;
 }
@@ -127,6 +132,12 @@ export class WorkspaceAppearanceResponseDto {
   @ApiProperty({ type: WorkspaceResponseDto }) workspace!: WorkspaceResponseDto;
   @ApiPropertyOptional({ example: "#0B7F5D", type: String, nullable: true })
   primaryColor!: string | null;
+  @ApiPropertyOptional({ example: "#000000", type: String, nullable: true })
+  secondaryColor!: string | null;
+  @ApiPropertyOptional({ example: "alta", type: String, nullable: true })
+  headingFont!: string | null;
+  @ApiPropertyOptional({ example: "montserrat", type: String, nullable: true })
+  bodyFont!: string | null;
 }
 
 export class CompanyProfileUpdateResponseDto {
@@ -176,6 +187,10 @@ export class ProvisionedOwnerInvitationResponseDto {
   })
   invitationToken!: string | null;
   @ApiProperty() tokenNotice!: string;
+  @ApiProperty({ enum: ["not_requested", "pending", "sent", "not_configured", "failed", "superseded", "untracked"] }) deliveryStatus!: string;
+  @ApiPropertyOptional({ minimum: 0 }) deliveryAttempts?: number;
+  @ApiPropertyOptional({ type: String, format: "date-time", nullable: true }) deliveryAttemptedAt?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) providerMessageId?: string | null;
 }
 
 export class ProvisionTenantResponseDto {
@@ -188,6 +203,7 @@ export class ProvisionTenantResponseDto {
   ownerInvitation!: ProvisionedOwnerInvitationResponseDto;
   @ApiProperty({ type: WorkspaceOnboardingResponseDto })
   onboarding!: WorkspaceOnboardingResponseDto;
+  @ApiPropertyOptional({ type: "object", additionalProperties: true, nullable: true }) setupVersions?: Record<string, unknown> | null;
   @ApiProperty({
     description: "True when an earlier safe response was replayed for this tenant or key",
   })

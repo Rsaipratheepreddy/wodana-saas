@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { ArrayNotEmpty, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
 
 export class UpdateMemberDto {
   @ApiProperty({ minimum: 1 })
@@ -15,7 +15,6 @@ export class UpdateMemberDto {
   @ApiPropertyOptional({ type: [String], example: ["viewer"] })
   @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @ArrayUnique()
   @IsString({ each: true })
   roleCodes?: string[];

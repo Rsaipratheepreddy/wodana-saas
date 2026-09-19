@@ -8,13 +8,13 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ caseId: string }>;
-  searchParams: Promise<{ quote?: string }>;
+  searchParams: Promise<{ quote?: string; snapshot?: string }>;
 }) {
   const { caseId } = await params,
-    { quote: id } = await searchParams;
+    { quote: id, snapshot } = await searchParams;
   const data = await getCommercial(caseId),
     quote = data.data.quotes.find((q) => q.id === id && q.issuedAt);
-  if (!quote) notFound();
+  if (!quote || (snapshot && snapshot !== quote.hash)) notFound();
   const safe: ClientQuote = {
     id: quote.id, number: quote.number, kind: quote.kind, direction: quote.direction,
     status: quote.status, title: quote.title, cover: quote.cover, brand: quote.brand,
@@ -22,8 +22,10 @@ export default async function Page({
     taxRate: quote.taxRate, terms: quote.terms, inclusions: quote.inclusions,
     exclusions: quote.exclusions, createdAt: quote.createdAt, issuedAt: quote.issuedAt,
     decidedAt: quote.decidedAt, decidedBy: quote.decidedBy, total: quote.total,
+    clientDecision: quote.clientDecision, hash: quote.hash,
     paymentTerms: quote.paymentTerms, paymentTemplate: quote.paymentTemplate,
     rooms: quote.rooms?.map(({id,name}) => ({id,name})), canDecide: false,
+    expired: false,
     lines: quote.lines.map(line => {
       return {
         id: line.id, room: line.room, title: line.title, specification: line.specification,
@@ -32,6 +34,7 @@ export default async function Page({
         variantLabel: quotationLineVariant(line),
         variant: line.variant, photo: line.photo,
         materialRows: line.materialRows, pricingMode: line.pricingMode,
+        optional: line.optional,
       };
     }),
   };

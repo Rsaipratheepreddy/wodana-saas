@@ -133,9 +133,35 @@ const completedStatus = await request(`/internal/tenants/${externalTenantId}`, {
 assert.equal(completedStatus.ownerInvitation.status, "accepted");
 assert.equal(completedStatus.onboarding.status, "completed");
 
+const intake = await request(`/workspaces/${provisioned.workspace.id}/crm/intake-events`, {
+  body: {
+    source: "company",
+    channel: "website",
+    intakeMethod: "form",
+    externalEventId: `onboarded-${runId}`,
+    party: {
+      displayName: "Onboarding CRM Sample",
+      email: `customer-${runId}@example.com`,
+      preferredLocale: "en-AE",
+      preferredTimezone: "Asia/Dubai",
+    },
+    title: "New interior enquiry",
+    summary: "Verifies that the newly onboarded owner can use CRM in the same workspace.",
+    serviceType: "not_sure",
+    originalPayload: { form: "onboarding-crm-smoke" },
+  },
+  headers: { ...owner, "idempotency-key": `onboarding-crm-${runId}` },
+  expected: 201,
+});
+const enquiries = await request(`/workspaces/${provisioned.workspace.id}/crm/enquiries`, { headers: owner });
+assert.ok(enquiries.data.some((enquiry) => enquiry.id === intake.enquiryId));
+const leads = await request(`/workspaces/${provisioned.workspace.id}/crm/leads`, { headers: owner });
+assert.ok(leads.data.some((lead) => lead.partyId === intake.partyId));
+
 process.stdout.write(`${JSON.stringify({
   ok: true,
   externalTenantId,
   workspaceId: provisioned.workspace.id,
-  flow: ["provisioned", "invited", "accepted", "onboarded", "ready"],
+  enquiryId: intake.enquiryId,
+  flow: ["provisioned", "invited", "accepted", "onboarded", "ready", "crm_enquiry_visible"],
 }, null, 2)}\n`);

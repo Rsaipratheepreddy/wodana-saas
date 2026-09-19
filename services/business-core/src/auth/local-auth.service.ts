@@ -87,12 +87,16 @@ export class LocalAuthService {
       loginSlug: string;
       logoUrl: string | null;
       primaryColor: string | null;
+      secondaryColor: string | null;
+      headingFont: string | null;
+      bodyFont: string | null;
     }>(
       `SELECT display_name AS "displayName", login_slug AS "loginSlug",
               CASE WHEN logo_asset_id IS NOT NULL
                    THEN '/api/auth/tenant-logo/' || login_slug || '?v=' || logo_asset_id::text
                    ELSE logo_url END AS "logoUrl",
-              primary_color AS "primaryColor"
+              primary_color AS "primaryColor", secondary_color AS "secondaryColor",
+              heading_font AS "headingFont", body_font AS "bodyFont"
        FROM tenant_login_branding WHERE login_slug = $1`,
       [loginSlug.toLowerCase()],
     );
@@ -100,8 +104,69 @@ export class LocalAuthService {
     return result.rows[0];
   }
 
+  async getTenantBrandingForHost(hostname: string) {
+    if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(hostname) || hostname.length > 253) {
+      throw new NotFoundException("Tenant login was not found");
+    }
+    const result = await this.database.query<{
+      displayName: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null;
+      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+    }>(
+      "SELECT * FROM wodana_public_tenant_host($1::varchar)",
+      [hostname.toLowerCase()],
+    );
+    if (!result.rowCount) throw new NotFoundException("Tenant login was not found");
+    return result.rows[0];
+  }
+
   async login(email: string, password: string, tenantSlug: string, metadata: LoginMetadata = {}) {
     this.assertLocalAuthAvailable();
+    const user = await this.verifyLocalPassword(email, password);
+
+    const branding = await this.database.query<{ workspaceId: string }>(
+      `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
+      [tenantSlug.toLowerCase()],
+    );
+    const membership = branding.rowCount
+      ? await this.database.actorTransaction(user.id, (client) => client.query(
+        `SELECT membership.id FROM workspace_memberships membership
+         JOIN workspaces workspace ON workspace.id = membership.workspace_id
+         WHERE membership.workspace_id = $1
+           AND membership.user_id = $2
+           AND membership.status = 'active'
+           AND workspace.status = 'active'`,
+        [branding.rows[0].workspaceId, user.id],
+      ))
+      : null;
+    if (!branding.rowCount || !membership?.rowCount) {
+      throw new UnauthorizedException("Email, password, or tenant is incorrect");
+    }
+
+    await this.recordSuccessfulPasswordLogin(user.id);
+
+    return this.completePrimaryAuthentication(
+      this.actorFor(user),
+      user.id,
+      branding.rows[0].workspaceId,
+      user.passwordChangedAt,
+      { ...metadata, verifiedPasswordHash: user.passwordHash },
+    );
+  }
+
+  async verifyPlatformCredentials(email: string, password: string) {
+    this.assertLocalAuthAvailable();
+    const user = await this.verifyLocalPassword(email, password);
+    const administrator = await this.database.query(
+      `SELECT 1 FROM platform_administrators
+       WHERE user_id = $1 AND status = 'active' AND role = 'administrator'`,
+      [user.id],
+    );
+    if (!administrator.rowCount) throw new UnauthorizedException("Email or password is incorrect");
+    await this.recordSuccessfulPasswordLogin(user.id);
+    return user;
+  }
+
+  private async verifyLocalPassword(email: string, password: string): Promise<LocalUserRow> {
     const result = await this.database.query<LocalUserRow>(
       `SELECT app_user.id, app_user.primary_email AS "primaryEmail",
               app_user.display_name AS "displayName", app_user.status,
@@ -140,42 +205,19 @@ export class LocalAuthService {
       throw new UnauthorizedException("Email, password, or tenant is incorrect");
     }
 
-    const branding = await this.database.query<{ workspaceId: string }>(
-      `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
-      [tenantSlug.toLowerCase()],
-    );
-    const membership = branding.rowCount
-      ? await this.database.actorTransaction(user.id, (client) => client.query(
-        `SELECT membership.id FROM workspace_memberships membership
-         JOIN workspaces workspace ON workspace.id = membership.workspace_id
-         WHERE membership.workspace_id = $1
-           AND membership.user_id = $2
-           AND membership.status = 'active'
-           AND workspace.status = 'active'`,
-        [branding.rows[0].workspaceId, user.id],
-      ))
-      : null;
-    if (!branding.rowCount || !membership?.rowCount) {
-      throw new UnauthorizedException("Email, password, or tenant is incorrect");
-    }
+    return user;
+  }
 
+  private async recordSuccessfulPasswordLogin(userId: string) {
     await this.database.query(
       `UPDATE local_auth_credentials SET failed_attempts = 0, locked_until = NULL, updated_at = now()
        WHERE user_id = $1`,
-      [user.id],
+      [userId],
     );
     await this.database.query(
       `UPDATE user_identities SET last_login_at = now(), updated_at = now()
        WHERE provider = 'local' AND provider_subject = $1`,
-      [`local:${user.id}`],
-    );
-
-    return this.completePrimaryAuthentication(
-      this.actorFor(user),
-      user.id,
-      branding.rows[0].workspaceId,
-      user.passwordChangedAt,
-      { ...metadata, verifiedPasswordHash: user.passwordHash },
+      [`local:${userId}`],
     );
   }
 
@@ -250,6 +292,14 @@ export class LocalAuthService {
          WHERE assigned.invitation_id = $3
          ON CONFLICT DO NOTHING`,
         [row.workspaceId, membership.rows[0].id, row.id],
+      );
+      await client.query(
+        `INSERT INTO workspace_team_members (workspace_id, team_id, membership_id, is_lead)
+         SELECT invited_team.workspace_id, invited_team.team_id, $2, false
+         FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
+         WHERE invited_team.invitation_id=$1 AND team.status='active'
+         ON CONFLICT (team_id,membership_id) DO NOTHING`,
+        [row.id, membership.rows[0].id],
       );
       await client.query(
         `UPDATE workspace_invitations SET status = 'accepted', accepted_at = now(), updated_at = now()

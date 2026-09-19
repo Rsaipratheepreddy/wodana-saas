@@ -4,17 +4,19 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Text, TextField } from '../design-system';
 import { loginTheme } from '../design-system/login-theme';
-import { BrandBackdrop } from '../components/brand-backdrop';
 import { BrandLogo } from '../components/brand-logo';
 import { Icon } from '../components/icon';
-import { GoogleIcon } from '../components/google-icon';
 import { validateCredentials } from '../auth/validation';
 import { AuthError } from '../auth/client';
 
-export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
+export function LoginScreen({ onBack, onSignIn, onRecovery, onVerifyMfa, mfaRequired = false, initialTenantSlug = '', workspaceLocked = false, message }: {
   onBack: () => void;
-  onSignIn: (email: string, password: string) => Promise<void>;
-  onRecovery: (email: string) => Promise<void>;
+  onSignIn: (email: string, password: string, tenantSlug: string) => Promise<void>;
+  onRecovery: (email: string, tenantSlug: string) => Promise<void>;
+  onVerifyMfa: (code: string) => Promise<void>;
+  mfaRequired?: boolean;
+  initialTenantSlug?: string;
+  workspaceLocked?: boolean;
   message?: string;
 }) {
   const insets = useSafeAreaInsets();
@@ -22,9 +24,11 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const [email, setEmail] = useState('');
+  const [tenantSlug, setTenantSlug] = useState(initialTenantSlug);
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({ email: '', password: '' });
+  const [errors, setErrors] = useState({ tenant: '', email: '', password: '' });
   const [status, setStatus] = useState(message ?? '');
   const [pending, setPending] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -34,15 +38,34 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
 
   const submit = async () => {
     if (submitting.current) return;
+    if (mfaRequired) {
+      if (!/^\d{6}$/.test(mfaCode) && !/^[A-Za-z0-9-]{8,32}$/.test(mfaCode)) {
+        setStatus('Enter your six-digit authenticator code or a recovery code.');
+        return;
+      }
+      submitting.current = true;
+      setPending(true);
+      Keyboard.dismiss();
+      try { await onVerifyMfa(mfaCode); }
+      catch (error) {
+        if (!(error instanceof AuthError) || error.code !== 'cancelled') {
+          setStatus(error instanceof AuthError ? error.message : 'Unable to verify your code. Please try again.');
+        }
+      } finally { submitting.current = false; setPending(false); }
+      return;
+    }
     const nextErrors = validateCredentials(email, password);
-    setErrors(nextErrors);
+    const tenantError = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tenantSlug.trim().toLowerCase()) && tenantSlug.trim().length <= 80
+      ? '' : 'Enter your workspace code.';
+    setErrors({ ...nextErrors, tenant: tenantError });
     setStatus('');
+    if (tenantError) return;
     if (nextErrors.email) return emailRef.current?.focus();
     if (nextErrors.password) return passwordRef.current?.focus();
     submitting.current = true;
     setPending(true);
     Keyboard.dismiss();
-    try { await onSignIn(email, password); }
+    try { await onSignIn(email, password, tenantSlug); }
     catch (error) {
       if (!(error instanceof AuthError) || error.code !== 'cancelled') {
         setStatus(error instanceof AuthError ? error.message : 'Unable to sign in. Please try again.');
@@ -51,6 +74,9 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
   };
   const recover = async () => {
     if (submitting.current) return;
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tenantSlug.trim().toLowerCase())) {
+      setErrors((prev) => ({ ...prev, tenant: 'Enter your workspace code.' })); return;
+    }
     const emailError = validateCredentials(email, '').email;
     if (emailError) { setErrors((prev) => ({ ...prev, email: emailError })); emailRef.current?.focus(); return; }
     submitting.current = true;
@@ -58,7 +84,7 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
     setStatus('');
     Keyboard.dismiss();
     try {
-      await onRecovery(email);
+      await onRecovery(email, tenantSlug);
       setStatus('If your account exists, a reset has been requested. Contact your administrator for the reset link.');
     } catch (error) {
       setStatus(error instanceof AuthError ? error.message : 'Unable to request a reset. Please try again.');
@@ -67,7 +93,6 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
 
   return <View testID="login-screen" style={styles.screen}>
     <StatusBar style="dark" />
-    <BrandBackdrop />
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}>
       <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" bounces={false}
         contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
@@ -80,9 +105,17 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
         </View>
 
         <View style={[styles.body, compact && styles.bodyCompact]}>
-          <Text accessibilityRole="header" weight="semibold" style={styles.heading}>Sign in</Text>
+          <Text accessibilityRole="header" weight="semibold" style={styles.heading}>{mfaRequired ? 'Verify it’s you' : 'Sign in'}</Text>
 
           <View style={styles.form}>
+            {mfaRequired ? <TextField label="Authenticator or recovery code" variant="login" placeholder="Enter your code" value={mfaCode}
+              editable={!busy} autoComplete="one-time-code" keyboardType="default" autoCapitalize="characters" autoCorrect={false}
+              returnKeyType="go" onSubmitEditing={submit}
+              onChangeText={(value) => { setMfaCode(value); setStatus(''); }} /> : <>
+            {!workspaceLocked && <TextField label="Workspace code" variant="login" placeholder="your-company" value={tenantSlug}
+              editable={!busy} error={errors.tenant} autoCapitalize="none" autoCorrect={false}
+              returnKeyType="next" onSubmitEditing={() => emailRef.current?.focus()}
+              onChangeText={(value) => { setTenantSlug(value.toLowerCase()); setErrors((prev) => ({ ...prev, tenant: '' })); setStatus(''); }} />}
             <TextField label="Work email" variant="login" placeholder="you@company.com" value={email}
               editable={!busy}
               inputRef={emailRef} error={errors.email} keyboardType="email-address" autoComplete="email"
@@ -102,18 +135,10 @@ export function LoginScreen({ onBack, onSignIn, onRecovery, message }: {
             <Pressable accessibilityRole="button" onPress={recover} disabled={busy} style={styles.recovery}>
               <Text size="sm" style={styles.recoveryText}>{recovering ? 'Requesting reset…' : 'Forgot password?'}</Text>
             </Pressable>
-            <Button label={pending ? 'Signing in…' : 'Sign in'} variant="brand" onPress={submit} loading={pending} disabled={recovering}
+            </>}
+            <Button label={pending ? (mfaRequired ? 'Verifying…' : 'Signing in…') : (mfaRequired ? 'Verify and sign in' : 'Sign in')} variant="brand" onPress={submit} loading={pending} disabled={recovering}
               endIcon={<Icon name="arrow-up-right" size={16} />} />
             {!!status && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" size="sm" style={styles.status}>{status}</Text>}
-          </View>
-          <View style={styles.sso}>
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text size="2xs" weight="semibold" style={styles.dividerText}>OR</Text>
-              <View style={styles.dividerLine} />
-            </View>
-            <Button label="Google Workspace · coming soon" variant="brand-secondary" disabled
-              startIcon={<GoogleIcon />} accessibilityHint="Single sign-on is not available yet." />
           </View>
         </View>
 
@@ -137,8 +162,4 @@ const styles = StyleSheet.create({
   recovery: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginVertical: -10 },
   recoveryText: { color: loginTheme.accent, lineHeight: 19 },
   status: { color: loginTheme.muted, textAlign: 'center', lineHeight: 19 },
-  sso: { gap: 22 },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: loginTheme.line },
-  dividerText: { color: loginTheme.muted, lineHeight: 16 },
 });

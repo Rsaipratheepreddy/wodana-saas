@@ -48,15 +48,17 @@ export class HrmsAccessService {
       );
       if (!member.rowCount) throw new NotFoundException("Workspace not found.");
       const grants = await client.query(
-        `SELECT DISTINCT p.code FROM member_roles mr JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE mr.workspace_id=$1 AND mr.membership_id=$2`,
+        `SELECT DISTINCT p.code FROM effective_member_roles mr JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE mr.workspace_id=$1 AND mr.membership_id=$2`,
         [workspaceId, member.rows[0].id],
       );
+      const permissionCodes = grants.rows.map((row: { code: string }) => row.code);
+      const effectivePermissions = await this.access.effectivePermissions(client, workspaceId, permissionCodes);
       return work({
         client,
         workspaceId,
         userId: user.userId,
         membershipId: member.rows[0].id,
-        permissions: new Set(grants.rows.map((r) => r.code)),
+        permissions: new Set(effectivePermissions),
       });
     });
   }

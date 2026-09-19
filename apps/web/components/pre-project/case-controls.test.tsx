@@ -1,6 +1,6 @@
 import {render,screen,fireEvent,waitFor} from '@testing-library/react';
 import {describe,it,expect,vi} from 'vitest';
-import {AssetUpload} from './case-controls';
+import {AssetFiles,AssetUpload} from './case-controls';
 import {caseRequest} from '@/lib/pre-project/content';
 vi.mock('@/lib/pre-project/content',async importOriginal=>({...await importOriginal<typeof import('@/lib/pre-project/content')>(),caseRequest:vi.fn()}));
 describe('multiple record attachments',()=>{
@@ -21,5 +21,15 @@ describe('multiple record attachments',()=>{
   render(<AssetUpload workspaceId="w" caseId="c" onUploaded={saved} onError={error}/>);
   fireEvent.change(screen.getByLabelText('Attach reference files'),{target:{files:[new File(['one'],'one.png'),new File(['two'],'two.png')]}});
   await waitFor(()=>expect(error).toHaveBeenCalledWith('Connection interrupted'));expect(saved).toHaveBeenCalledTimes(1);
+ });
+});
+describe('web photo drawing',()=>{
+ it('offers the same draw action for editable image attachments, not PDFs or read-only files',()=>{
+  const images=[{id:'image',name:'Living room.jpg',mimeType:'image/jpeg',byteSize:2048,hasPreview:true},{id:'pdf',name:'Plan.pdf',mimeType:'application/pdf',byteSize:2048,hasPreview:false}];
+  const {rerender}=render(<AssetFiles workspaceId="w" caseId="c" assets={images} onMarked={vi.fn()}/>);
+  expect(screen.getByRole('button',{name:'Draw on Living room.jpg'})).toHaveTextContent('Draw');
+  expect(screen.queryByRole('button',{name:'Draw on Plan.pdf'})).not.toBeInTheDocument();
+  rerender(<AssetFiles workspaceId="w" caseId="c" assets={images}/>);
+  expect(screen.queryByRole('button',{name:'Draw on Living room.jpg'})).not.toBeInTheDocument();
  });
 });

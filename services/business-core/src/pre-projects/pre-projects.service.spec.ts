@@ -4,6 +4,11 @@ import type { WorkspaceAccessService } from "../workspaces/workspace-access.serv
 import type { CrmEventsService } from "../crm/shared/crm-events.service";
 import type { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import type { RequestActor } from "../auth/actor";
+import { ensureJobForSource } from "../jobs/job-identity.store";
+
+vi.mock("../jobs/job-identity.store", () => ({
+  ensureJobForSource: vi.fn().mockResolvedValue({ id: "job-1", reference: "J-000001", workspaceId: "workspace-1" }),
+}));
 
 const actor = { subject: "test", email: "test@example.com", displayName: "Test", provider: "development" } as RequestActor;
 function setup(status = "open", existing = false) {
@@ -25,7 +30,11 @@ describe("pre-project case boundary", () => {
     await expect(service.start(actor, "workspace-1", "opportunity-1")).resolves.toEqual(record);
     expect(withPermissions).toHaveBeenCalledWith(actor, "workspace-1", ["pre_projects.view", "pre_projects.create", "crm.opportunities.view"], expect.any(Function));
     expect(query).toHaveBeenCalledWith(expect.stringContaining("FOR UPDATE"), ["workspace-1", "opportunity-1"]);
+    expect(query.mock.calls.find(([sql]) => sql.includes("INSERT INTO pre_project_cases"))?.[0]).toContain("COALESCE(CASE WHEN active_owner_account.id IS NOT NULL THEN active_owner.id END, actor_membership.id)");
     expect(query.mock.calls.some(([sql]) => sql.startsWith("UPDATE"))).toBe(false);
+    expect(ensureJobForSource).toHaveBeenCalledWith(
+      expect.anything(), "workspace-1", { type: "case", id: "case-1" }, "user-1",
+    );
     expect(events.record).toHaveBeenCalledOnce();
   });
   it.each(["lost", "paused", "cancelled"])("does not start a new case for %s opportunity", async (status) => {
@@ -90,5 +99,40 @@ describe("pre-project case boundary", () => {
       leadId: "lead-1", version: 4, ownerMembershipId: "owner-1", nextActionAt: "2026-09-20T09:00:00.000Z",
     })).rejects.toThrow("Qualification evidence is missing");
     expect(opportunities.createQualifiedHandoff).not.toHaveBeenCalled();
+  });
+
+  it("returns the existing case when a qualified-lead handoff is retried", async () => {
+    const record = { id: "case-1", opportunityId: "opportunity-1", leadId: "lead-1" };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{ id: "lead-1", status: "qualified", version: 5, party_id: "party-1" }], rowCount: 1 };
+      if (sql.includes("SELECT id, status FROM crm_opportunities")) return { rows: [{ id: "opportunity-1", status: "open" }], rowCount: 1 };
+      if (sql.startsWith("SELECT id FROM pre_project_cases")) return { rows: [{ id: "case-1" }], rowCount: 1 };
+      if (sql.includes("FROM pre_project_cases c")) return { rows: [record], rowCount: 1 };
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const withPermissions = vi.fn(async (_actor, _workspace, _permissions, callback) => callback({ query }, { userId: "user-1" }));
+    const opportunities = { createQualifiedHandoff: vi.fn() };
+    const service = new PreProjectsService({ withPermissions } as never, { record: vi.fn() } as never, opportunities as never);
+    await expect(service.startFromLead(actor, "workspace-1", {
+      leadId: "lead-1", version: 4, ownerMembershipId: "owner-2", nextActionAt: "2026-09-20T09:00:00.000Z",
+    })).resolves.toEqual(record);
+    expect(opportunities.createQualifiedHandoff).not.toHaveBeenCalled();
+    expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO pre_project_cases"))).toBe(false);
+  });
+
+  it("requires a lost linked opportunity to be reopened before discovery starts", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{ id: "lead-1", status: "qualified", version: 4, party_id: "party-1" }], rowCount: 1 };
+      if (sql.includes("SELECT id, status FROM crm_opportunities")) return { rows: [{ id: "opportunity-1", status: "lost" }], rowCount: 1 };
+      if (sql.startsWith("SELECT id FROM pre_project_cases")) return { rows: [], rowCount: 0 };
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const withPermissions = vi.fn(async (_actor, _workspace, _permissions, callback) => callback({ query }, { userId: "user-1" }));
+    const opportunities = { createQualifiedHandoff: vi.fn() };
+    const service = new PreProjectsService({ withPermissions } as never, { record: vi.fn() } as never, opportunities as never);
+    await expect(service.startFromLead(actor, "workspace-1", {
+      leadId: "lead-1", version: 4, ownerMembershipId: "owner-2", nextActionAt: "2026-09-20T09:00:00.000Z",
+    })).rejects.toThrow("Reopen the linked opportunity");
+    expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO pre_project_cases"))).toBe(false);
   });
 });

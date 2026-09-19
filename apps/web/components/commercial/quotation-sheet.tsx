@@ -15,6 +15,7 @@ import {
 import type {
   Quote,
   QuoteLine,
+  PortalBrand,
   QuotationMaterialRow,
 } from "@/lib/commercial/types";
 import {
@@ -37,12 +38,18 @@ import {
   quotationMaterialRows,
   pricedLine,
   quotationPhoto,
+  applyCatalogMedia,
 } from "@/lib/commercial/quotation-table";
 import {
+  Badge,
   Button,
+  Checkbox,
   ControlledModalDialog,
+  NumericInput,
   SelectField,
+  TextAreaField,
   TextInput,
+  useConfirmationDialog,
 } from "@/design-system";
 import {
   CommercialCatalogPicker,
@@ -52,6 +59,8 @@ import { QuotationNumberInput } from "./quotation-number-input";
 import { QuotationUnitPicker } from "./quotation-unit-picker";
 import { PaymentScheduleEditor } from "./payment-schedule-editor";
 import { QuotationMaterialBreakdown } from "./quotation-material-breakdown";
+import { QuotationCatalogPrice } from "./quotation-catalog-price";
+import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
 import s from "./quotation-sheet.module.css";
 
 import { QuotationTextCell as Cell } from "./quotation-text-cell";
@@ -62,7 +71,10 @@ type Props = {
   readOnly: boolean;
   workspaceId: string;
   caseId: string;
+  canOverridePrice?: boolean;
+  canViewCosts?: boolean;
   search?: string;
+  brand?: Pick<PortalBrand, "primaryColor" | "accentColor">;
 };
 export function QuotationSheet({
   quote,
@@ -70,6 +82,8 @@ export function QuotationSheet({
   readOnly,
   workspaceId,
   caseId,
+  canOverridePrice = false,
+  canViewCosts = false,
   search = "",
 }: Props) {
   const [materialDraft, setMaterialDraft] = useState<QuoteLine | null>(null);
@@ -86,12 +100,14 @@ export function QuotationSheet({
   const [error, setError] = useState(""),
     [uploading, setUploading] = useState<string | null>(null);
   const [variantDraft, setVariantDraft] = useState("");
+  const [manualDraft, setManualDraft] = useState<{ room: string; reason: string } | null>(null);
   const [termsOpen, setTermsOpen] = useState(false);
   const [paymentsOpen, setPaymentsOpen] = useState(false);
   const [collapsedRooms, setCollapsedRooms] = useState<Set<string>>(
     () => new Set(),
   );
   const [focusLineId, setFocusLineId] = useState<string | null>(null);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const latest = useRef(quote);
   const startingLine = useRef<QuoteLine | null>(null);
   const editTarget = useRef({ readOnly, onChange });
@@ -115,6 +131,14 @@ export function QuotationSheet({
     }
     editTarget.current.onChange({ ...current, lines: next });
   };
+  const applyCatalogPrice = (basis: QuoteLine, currency: string, taxRate: number, patch: Partial<QuoteLine>) => {
+    const current = latest.current;
+    const line = current.lines.find((item) => item.id === basis.id);
+    if (!line || current.currency !== currency || current.taxRate !== taxRate ||
+      JSON.stringify(catalogPriceInput(line, currency, taxRate)) !== JSON.stringify(catalogPriceInput(basis, currency, taxRate))) return false;
+    patchLine(basis.id, patch);
+    return true;
+  };
   const changeMaterials = (patch: Partial<QuoteLine>) => {
     if (readOnly) return;
     setMaterialDraft((current) => {
@@ -130,6 +154,13 @@ export function QuotationSheet({
   };
   const rowsChange = (_line: QuoteLine, rows: QuotationMaterialRow[]) =>
     changeMaterials({ materialRows: rows });
+  const changeDimension = (key: "length" | "height" | "depth", value: number) => {
+    if (!materialDraft) return;
+    const next: NonNullable<QuoteLine["dimensions"]> = { ...(materialDraft.dimensions ?? { unit: "cm" }) };
+    if (Number.isFinite(value) && value > 0) next[key] = value;
+    else delete next[key];
+    changeMaterials({ dimensions: next.length || next.height || next.depth ? next : undefined });
+  };
   const addRow = (line: QuoteLine) => {
     rowsChange(line, [
       ...quotationMaterialRows(line),
@@ -145,8 +176,8 @@ export function QuotationSheet({
       },
     ]);
   };
-  const addItem = (room: string) => {
-    const line = newLine(room);
+  const addItem = (room: string, reason: string) => {
+    const line = { ...newLine(room), manualReason: reason.trim() };
     setCollapsedRooms((current) => {
       const next = new Set(current);
       next.delete(room);
@@ -154,26 +185,29 @@ export function QuotationSheet({
     });
     setFocusLineId(line.id);
     onChange({ ...quote, lines: [...quote.lines, line] });
+    setManualDraft(null);
   };
-  const choose = (record: CommercialCatalogChoice | null) => {
+  const choose = async (record: CommercialCatalogChoice | null) => {
     if (!record || !picker) return;
     const line =
       materialDraft?.id === picker.lineId &&
       ["material", "finish"].includes(picker.kind)
         ? materialDraft
         : quote.lines.find((line) => line.id === picker.lineId);
-    if (picker.kind === "work")
-      onChange({
-        ...quote,
-        lines: [...quote.lines, catalogItem(picker.room, record)],
-      });
-    else if (line && picker.kind === "variant")
+    if (picker.kind === "work") {
+      const prepared = await applyCatalogMedia(workspaceId, catalogItem(picker.room, record), record);
+      const current = latest.current;
+      if (current.lines.length < 300)
+        editTarget.current.onChange({ ...current, lines: [...current.lines, prepared] });
+    } else if (line && picker.kind === "variant") {
+      const work = line.catalogLinks?.find((link) => link.role === "work")?.snapshot;
+      const prepared = await applyCatalogMedia(workspaceId, selectVariant(line, record), record, work);
       patchLine(line.id, {
-        ...selectVariant(line, record),
+        ...prepared,
         materialRows: line.materialRows ?? quotationMaterialRows(line),
         variant: undefined,
       });
-    else if (line) {
+    } else if (line) {
       const unit = record.links?.find((link) => link.role === "unit")?.snapshot;
       rowsChange(line, [
         ...quotationMaterialRows(line),
@@ -227,11 +261,13 @@ export function QuotationSheet({
       .includes(search.toLowerCase()),
   );
   return (
-    <div className={s.sheet}>
+    <div
+      className={s.sheet}
+      data-empty={!rooms.length || undefined}
+    >
       <div className={s.toolbar}>
         <span>
-          Build by area · Edit every outlined field · Totals update
-          automatically
+          Each area is a clear section. Edit fields directly; totals update automatically.
         </span>
         {!readOnly && quote.direction !== "deduction" && (
           <button
@@ -255,11 +291,11 @@ export function QuotationSheet({
         </p>
       )}
       {!visible.length && (
-        <p className={s.empty}>
-          {search
-            ? "No matching rooms, items or materials."
-            : "Add a room or section to start your quotation."}
-        </p>
+        <div className={s.empty}>
+          <h3>{search ? "Nothing matches this search" : "Your quotation sheet is ready"}</h3>
+          <p>{search ? "Try a room, item or material name." : "Add the confirmed scope above for the fastest start, or create a blank area for work outside the confirmed scope."}</p>
+          {!search && !readOnly && quote.direction !== "deduction" ? <Button variant="quiet" size="compact" onPress={() => { setError(""); setRoomDraft({ original: null, name: "", catalog: null }); }}><Plus size={14}/>Start with a blank area</Button> : null}
+        </div>
       )}
       <div
         className={s.scroll}
@@ -302,7 +338,7 @@ export function QuotationSheet({
               expanded = Boolean(search.trim()) || !collapsedRooms.has(room),
               areaTotal = roundMoney(
                 lines.reduce(
-                  (sum, line) => sum + roundMoney(line.quantity * line.rate),
+                  (sum, line) => sum + (line.optional ? 0 : roundMoney(line.quantity * line.rate)),
                   0,
                 ),
               );
@@ -342,15 +378,15 @@ export function QuotationSheet({
                       </strong>
                       {!readOnly && quote.direction !== "deduction" && (
                         <div className={s.areaAddActions}>
-                          <button
+                          {canOverridePrice ? <button
                             className={s.addItemPrimary}
                             disabled={quote.lines.length >= 300}
-                            onClick={() => addItem(room)}
+                            onClick={() => setManualDraft({ room, reason: "" })}
                             aria-label={`Add item to ${room}`}
                           >
                             <Plus size={14} />
-                            Add item
-                          </button>
+                            Manual item
+                          </button> : null}
                           <button
                             className={s.catalogAction}
                             disabled={quote.lines.length >= 300}
@@ -399,20 +435,11 @@ export function QuotationSheet({
                             aria-label={`Remove ${room}`}
                             title="Remove area"
                             onClick={() => {
-                              if (
-                                !window.confirm(
-                                  `Remove ${room} and its ${lines.length} items? You can undo this change.`,
-                                )
-                              )
-                                return;
-                              onChange({
-                                ...quote,
-                                rooms: quote.rooms?.filter(
-                                  (r) => r.name !== room,
-                                ),
-                                lines: quote.lines.filter(
-                                  (l) => l.room !== room,
-                                ),
+                              requestConfirmation({
+                                title: `Remove ${room}?`,
+                                body: `${lines.length} quoted ${lines.length === 1 ? "item" : "items"} in this area will also be removed. You can undo this change before saving.`,
+                                confirmLabel: "Remove area",
+                                onConfirm: () => onChange({ ...quote, rooms: quote.rooms?.filter((r) => r.name !== room), lines: quote.lines.filter((l) => l.room !== room) }),
                               });
                             }}
                           >
@@ -517,6 +544,10 @@ export function QuotationSheet({
                             }}
                             onChange={(title) => patchLine(line.id, { title })}
                           />
+                          <div className={s.lineMeta}>
+                            {line.manualReason ? <Badge tone="warning">Manual</Badge> : null}
+                            {readOnly ? line.optional ? <Badge tone="info">Option</Badge> : null : <Checkbox aria-label={`Price ${line.title} as option`} isSelected={Boolean(line.optional)} onChange={(optional) => patchLine(line.id, { optional })}>Option</Checkbox>}
+                          </div>
                         </td>
                         <td
                           className={s.descriptionCell}
@@ -629,7 +660,11 @@ export function QuotationSheet({
                           className={s.amount}
                           data-label={`Rate · ${quote.currency}`}
                         >
-                          {readOnly ? (
+                          {usesCatalogPricing(line) ? <QuotationCatalogPrice
+                            line={line} currency={quote.currency} taxRate={quote.taxRate}
+                            workspaceId={workspaceId} caseId={caseId} readOnly={readOnly}
+                            canOverride={canOverridePrice} onApply={applyCatalogPrice}
+                          /> : readOnly ? (
                             line.rate.toFixed(2)
                           ) : (
                             <QuotationNumberInput
@@ -697,17 +732,7 @@ export function QuotationSheet({
                               <button
                                 aria-label={`Remove item ${line.title}`}
                                 onClick={() => {
-                                  if (
-                                    window.confirm(
-                                      `Remove ${line.title}? You can undo this change.`,
-                                    )
-                                  )
-                                    onChange({
-                                      ...quote,
-                                      lines: quote.lines.filter(
-                                        (l) => l.id !== line.id,
-                                      ),
-                                    });
+                                  requestConfirmation({ title: `Remove ${line.title}?`, body: "The item will be removed from this draft. You can undo the change before saving.", confirmLabel: "Remove item", onConfirm: () => onChange({ ...quote, lines: quote.lines.filter((l) => l.id !== line.id) }) });
                                 }}
                               >
                                 <Trash2 size={14} />
@@ -722,10 +747,10 @@ export function QuotationSheet({
                   <tr className={s.emptyArea}>
                     <td colSpan={10}>
                       <span>No items in this area yet.</span>
-                      {!readOnly && quote.direction !== "deduction" && (
-                        <button onClick={() => addItem(room)}>
-                          <Plus size={14} /> Add the first item
-                        </button>
+                      {!readOnly && quote.direction !== "deduction" && (canOverridePrice ?
+                        <Button size="compact" onPress={() => setManualDraft({ room, reason: "" })}>
+                          <Plus size={14} /> Add a manual item
+                        </Button> : <Button size="compact" onPress={() => setPicker({ kind: "work", room })}>Choose from library</Button>
                       )}
                     </td>
                   </tr>
@@ -779,6 +804,10 @@ export function QuotationSheet({
               <dt>Items subtotal</dt>
               <dd>{money(totals.subtotal, quote.currency)}</dd>
             </div>
+            {quote.lines.some((line) => line.optional) ? <div>
+              <dt>Priced options · not included</dt>
+              <dd>{money(quote.lines.filter((line) => line.optional).reduce((sum, line) => sum + roundMoney(line.quantity * line.rate), 0), quote.currency)}</dd>
+            </div> : null}
             <div>
               <dt>Discount · {quote.currency}</dt>
               <dd>
@@ -826,6 +855,10 @@ export function QuotationSheet({
               </dt>
               <dd>{money(totals.total, quote.currency)}</dd>
             </div>
+            {canViewCosts ? <div>
+              <dt>Gross margin · internal</dt>
+              <dd>{totals.margin.toFixed(1)}%</dd>
+            </div> : null}
           </dl>
           {quote.discount > totals.subtotal && (
             <p role="alert" className={s.error}>
@@ -870,6 +903,15 @@ export function QuotationSheet({
         )}
       </section>
       <ControlledModalDialog
+        title="Authorize manual item"
+        description={manualDraft ? `${manualDraft.room} · This item has no confirmed scope or catalogue source.` : undefined}
+        isOpen={Boolean(manualDraft)}
+        onOpenChange={(open) => { if (!open) setManualDraft(null); }}
+        footer={manualDraft ? <div className="wd-dialog-actions"><Button onPress={() => setManualDraft(null)}>Cancel</Button><Button variant="primary" isDisabled={!manualDraft.reason.trim()} onPress={() => addItem(manualDraft.room, manualDraft.reason)}>Add manual item</Button></div> : undefined}
+      >
+        {manualDraft ? <TextAreaField label="Authorization reason" description="Recorded in the commercial audit history and never shown to the client." isRequired value={manualDraft.reason} onChange={(reason) => setManualDraft({ ...manualDraft, reason })} placeholder="Why is this item outside the confirmed scope or catalogue?" /> : null}
+      </ControlledModalDialog>
+      <ControlledModalDialog
         title="Materials"
         description={
           materialDraft
@@ -904,6 +946,7 @@ export function QuotationSheet({
                     materialRows: materialDraft.materialRows,
                     pricingMode: materialDraft.pricingMode,
                     specification: materialDraft.specification,
+                    dimensions: materialDraft.dimensions,
                   });
                   setMaterialDraft(null);
                 }}
@@ -916,6 +959,29 @@ export function QuotationSheet({
       >
         {materialDraft && (
           <>
+            <section aria-label="Finished item size" className={s.sizeSection}>
+              <div><strong>Finished item size</strong><small>Optional · shown on the client quotation. Confirm site measurements separately.</small></div>
+              <div className={s.sizeFields}>
+                {(["length", "height", "depth"] as const).map((key) => (
+                  <NumericInput
+                    key={key}
+                    label={key[0].toUpperCase() + key.slice(1)}
+                    minValue={0.0001}
+                    maxValue={1e6}
+                    isDisabled={readOnly}
+                    value={materialDraft.dimensions?.[key] ?? NaN}
+                    onChange={(value) => changeDimension(key, value)}
+                  />
+                ))}
+                <SelectField
+                  label="Size unit"
+                  isDisabled={readOnly}
+                  selectedKey={materialDraft.dimensions?.unit ?? "cm"}
+                  items={["mm", "cm", "m", "in", "ft"].map((unit) => ({ id: unit, label: unit }))}
+                  onSelectionChange={(unit) => unit && materialDraft.dimensions && changeMaterials({ dimensions: { ...materialDraft.dimensions, unit: String(unit) as NonNullable<QuoteLine["dimensions"]>["unit"] } })}
+                />
+              </div>
+            </section>
             <QuotationMaterialBreakdown
               line={materialDraft}
               rows={quotationMaterialRows(materialDraft)}
@@ -1143,15 +1209,12 @@ export function QuotationSheet({
                 </div>
               </>
             ) : (
-              <p>
-                Selected names and specifications can be edited in this
-                quotation. Enter the agreed selling rate in {quote.currency};
-                catalog reference prices are not applied automatically.
-              </p>
+              <p>Check linked selling prices in the quotation rate column.</p>
             )}
           </div>
         )}
       </ControlledModalDialog>
+      {confirmationDialog}
     </div>
   );
 }

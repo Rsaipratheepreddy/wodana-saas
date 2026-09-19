@@ -9,7 +9,7 @@ import { caseHref, requirementViews, PRE_PROJECT_ROOT, listSearch, type PreProje
 import { StartQualifiedLead } from "./start-qualified-lead";
 import styles from "./pre-project.module.css";
 
-const statusLabel = (status: PreProjectListItem["status"]) => status === "active" ? "In progress" : status[0].toUpperCase() + status.slice(1);
+const statusLabel = (status: PreProjectListItem["status"]) => status === "active" ? "In progress" : status === "on_hold" ? "On hold" : status[0].toUpperCase() + status.slice(1);
 
 export function PreProjectListPage({ initialData, search }: { initialData: PreProjectList; search: string }) {
   const router = useRouter();
@@ -41,7 +41,7 @@ export function PreProjectListPage({ initialData, search }: { initialData: PrePr
     const timer = setTimeout(() => update({ search: term.trim() }), 300);
     return () => clearTimeout(timer);
   }, [term, appliedSearch, update]);
-  const destination = (id: string) => caseHref(id, params, [...requirementViews.map(item => item.section), "designs", "quotations", "client-portal"].includes(params.get("section") ?? "") ? params.get("section")! : "requirements");
+  const destination = (id: string) => caseHref(id, params, ["overview", ...requirementViews.map(item => item.section), "definition", "designs", "quotations", "client-portal"].includes(params.get("section") ?? "") ? params.get("section")! : "overview");
   const canStart = (record: PreProjectListItem) => !pending && !openingId && Boolean(record.opportunityId ? initialData.canCreate : initialData.canStartLead);
   const startQualified = async (record: PreProjectListItem) => {
     if (!canStart(record)) return;
@@ -57,9 +57,9 @@ export function PreProjectListPage({ initialData, search }: { initialData: PrePr
   };
   const columns: DataGridColumn<PreProjectListItem>[] = [
     { accessorKey: "customerName", header: "Client", size: 210, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({ row: { original: record } }) => <div className={styles.qualifiedIdentity}><Avatar name={record.customerName} size="sm"/><span title={record.customerName}>{record.customerName}</span></div> },
-    { accessorKey: "title", header: "Pre-execution", size: 290, meta: { headerIcon: <BriefcaseBusiness size={14}/> }, cell: ({ row: { original: record } }) => record.qualifiedLead ? <button type="button" className={styles.qualifiedName} disabled={!canStart(record)} onClick={() => void startQualified(record)} title={record.title}>{record.title}</button> : <Link className={styles.qualifiedName} title={record.title} href={destination(record.id)}>{record.title}</Link> },
+    { accessorKey: "title", header: "Pre-execution", size: 290, meta: { headerIcon: <BriefcaseBusiness size={14}/> }, cell: ({ row: { original: record } }) => record.qualifiedLead ? <span className={styles.qualifiedName} title={record.title}>{record.title}</span> : <Link className={styles.qualifiedName} title={record.title} href={destination(record.id)}>{record.title}</Link> },
     { id: "leadManagerName", header: "Lead manager", size: 205, accessorFn: record => record.leadManagerName ?? "Unassigned", meta: { headerIcon: <UsersRound size={14}/> }, cell: ({ row: { original: record } }) => record.leadManagerName ? <div className={styles.qualifiedIdentity}><Avatar name={record.leadManagerName} size="sm"/><span title={record.leadManagerName}>{record.leadManagerName}</span></div> : <span className={styles.qualifiedMuted}>Unassigned</span> },
-    { id: "status", header: "Status", size: 140, accessorFn: record => statusLabel(record.status), filterFn: "equalsString", meta: { headerIcon: <CircleCheck size={14}/>, filterOptions: ["qualified", "active", "released", "archived"].map(status => ({ id: statusLabel(status as PreProjectListItem["status"]), label: statusLabel(status as PreProjectListItem["status"]) })) }, cell: ({ row: { original: record } }) => {
+    { id: "status", header: "Status", size: 140, accessorFn: record => statusLabel(record.status), filterFn: "equalsString", meta: { headerIcon: <CircleCheck size={14}/>, filterOptions: ["qualified", "draft", "active", "on_hold", "released", "cancelled"].map(status => ({ id: statusLabel(status as PreProjectListItem["status"]), label: statusLabel(status as PreProjectListItem["status"]) })) }, cell: ({ row: { original: record } }) => {
       const Icon = record.status === "active" ? Clock3 : ["released", "qualified"].includes(record.status) ? CircleCheck : Archive;
       return <span className={styles.qualifiedStatus} data-status={record.status}><Icon size={13} aria-hidden="true"/>{statusLabel(record.status)}</span>;
     } },

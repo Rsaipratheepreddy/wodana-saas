@@ -294,6 +294,63 @@ describe("design folder workflow", () => {
       screen.queryByRole("list", { name: "Review progress" }),
     ).not.toBeInTheDocument();
   });
+  it("shows the revision author, source context and included client-review usage", () => {
+    setupReview({
+      ...design,
+      roomName: "Reception",
+      scopeTitle: "Custom counter",
+      clientRoundsUsed: 3,
+      versions: [
+        { ...design.versions[0], includedClientRounds: 2 },
+      ],
+    });
+    expect(screen.getByText("R1 · Designer")).toBeInTheDocument();
+    expect(
+      screen.getByText("Room: Reception · Item: Custom counter"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("3 of 2 used · over allowance")).toBeInTheDocument();
+  });
+  it("compares two exact revisions side by side and labels feedback with its revision", async () => {
+    const user = setupReview({
+      ...design,
+      activity: [
+        {
+          id: "comment",
+          versionId: "v2",
+          action: "comment",
+          note: "Keep the earlier ceiling line.",
+          decisionBy: "",
+          createdAt: "2026-09-08T00:00:00Z",
+          createdByName: "Reviewer",
+        },
+      ],
+      versions: [
+        {
+          ...design.versions[0],
+          id: "v2",
+          number: 2,
+          note: "Raised ceiling",
+          asset: { ...design.versions[0].asset, id: "a2", name: "layout-r2.pdf" },
+        },
+        {
+          ...design.versions[0],
+          id: "v1",
+          number: 1,
+          note: "Original ceiling",
+        },
+      ],
+    });
+    expect(screen.getByText("Pinned to R2")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Compare revisions" }));
+    expect(
+      screen.getByRole("region", { name: "Revision 2 comparison" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Revision 1 comparison" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Raised ceiling")).toBeInTheDocument();
+    expect(screen.getByText("Original ceiling")).toBeInTheDocument();
+  });
   it("keeps existing unfiled documents discoverable", async () => {
     const user = setup({ ...design, folderId: null });
     await user.click(
@@ -452,7 +509,6 @@ describe("stable design library and review queues", () => {
   it("preserves unsent comments on failed requests and guards the back action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline")));
     const close = vi.fn();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(
       <DesignSystemProvider>
         <DesignFileDetails
@@ -477,7 +533,7 @@ describe("stable design library and review queues", () => {
       "Please check clearance",
     );
     await user.click(screen.getByRole("button", { name: "Back to files" }));
-    expect(confirm).toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Discard your unsent comment?" })).toBeInTheDocument();
     expect(close).not.toHaveBeenCalled();
   });
   it("shows a setup action instead of sending to an unavailable portal", async () => {

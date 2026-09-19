@@ -30,6 +30,24 @@ export function agreementIsOperational(agreement: Agreement | null | undefined) 
   );
 }
 
+export function agreementMatchesAcceptedQuote(
+  agreement: Agreement | null | undefined,
+  quote: Quote | null | undefined,
+) {
+  return Boolean(
+    agreement &&
+      quote?.status === "accepted" &&
+      quote.hash &&
+      quote.clientDecision?.decision === "accept" &&
+      quote.clientDecision.quoteHash === quote.hash &&
+      agreement.quoteId === quote.id &&
+      agreement.quoteHash === quote.hash &&
+      agreement.acceptedTotal === quote.clientDecision.acceptedTotal &&
+      JSON.stringify(agreement.selectedOptionLineIds ?? []) ===
+        JSON.stringify(quote.clientDecision.selectedOptionLineIds),
+  );
+}
+
 function paymentIsVerified(payment: Payment, now = Date.now()) {
   if (payment.status !== "verified") return false;
   if (!payment.invoice) return true;
@@ -48,10 +66,43 @@ export function releasePaymentIsOperational(payment: Payment) {
   return paymentIsVerified(payment) && isOperationalEvidence(payment);
 }
 
+function agreementMatchesFinanceContext(data: CommercialData) {
+  return Boolean(
+    data.financeContext &&
+      data.agreement?.legalEntityId === data.financeContext.legalEntityId &&
+      data.agreement.currency === data.financeContext.currency,
+  );
+}
+
+function paymentHasFinanceVerifiedReceipt(
+  data: CommercialData,
+  payment: Payment,
+) {
+  if (!data.financeContext) return false;
+  const receipt = data.receipts?.find(
+    (item) =>
+      item.paymentId === payment.id &&
+      item.status === "finance_verified" &&
+      item.legalEntityId === data.financeContext?.legalEntityId &&
+      item.currency === data.financeContext.currency,
+  );
+  if (!receipt) return false;
+  const allocated = (data.allocations ?? [])
+    .filter(
+      (allocation) =>
+        allocation.paymentId === payment.id &&
+        allocation.receiptId === receipt.id &&
+        !allocation.reversedAt,
+    )
+    .reduce((sum, allocation) => sum + allocation.amount, 0);
+  return Math.round(allocated * 100) === Math.round(payment.amount * 100);
+}
+
 type ApprovalSource = { lineId: string; materialRowId: string };
 
 function quotationApprovalSources(quote: Quote): ApprovalSource[] {
-  return quote.lines.flatMap((line) => {
+  const selected = new Set(quote.clientDecision?.selectedOptionLineIds ?? []);
+  return quote.lines.filter((line) => !line.optional || selected.has(line.id)).flatMap((line) => {
     const rows = (line.materialRows ?? [])
       .filter(
         (material) =>
@@ -102,7 +153,8 @@ export function commercialReleaseInputsReady(
     !data ||
     !quote ||
     !agreementIsOperational(data.agreement) ||
-    data.agreement?.quoteId !== quote.id ||
+    !agreementMatchesAcceptedQuote(data.agreement, quote) ||
+    !agreementMatchesFinanceContext(data) ||
     !data.dealFile ||
     data.dealFile.quoteId !== quote.id ||
     data.ownerReview?.status !== "approved" ||
@@ -110,10 +162,16 @@ export function commercialReleaseInputsReady(
     !materialApprovalsComplete(quote, data.materialApprovals)
   )
     return false;
+  const releasePayments = data.payments.filter(
+    (payment) => payment.requiredForRelease,
+  );
   return (
-    data.payments
-      .filter((payment) => payment.requiredForRelease)
-      .every(releasePaymentIsOperational) &&
+    releasePayments.length > 0 &&
+    releasePayments.every(
+        (payment) =>
+          releasePaymentIsOperational(payment) &&
+          paymentHasFinanceVerifiedReceipt(data, payment),
+      ) &&
     data.requests.every((request) =>
       ["resolved", "declined", "withdrawn"].includes(request.status),
     )

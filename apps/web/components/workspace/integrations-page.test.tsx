@@ -9,16 +9,23 @@ afterEach(() => {
 });
 
 describe("IntegrationsPage", () => {
-  it("searches one integration catalog while preserving compact provider cards", async () => {
+  it("separates available and planned integrations while keeping search useful", async () => {
     const interaction = userEvent.setup();
     render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
 
-    expect(screen.getAllByRole("article")).toHaveLength(9);
+    expect(screen.getAllByRole("article")).toHaveLength(12);
     const googleCard = screen.getByRole("article", { name: "Google Workspace integration" });
     expect(googleCard).toBeInTheDocument();
     expect(within(googleCard).getByRole("link", { name: /workspace.google.com/ })).toHaveAttribute("href", "https://workspace.google.com/");
-    expect(screen.getByRole("switch", { name: "Connect Zoho Books" })).toBeEnabled();
-    expect(screen.getByRole("switch", { name: "Connect WhatsApp Business" })).toBeEnabled();
+    expect(within(screen.getByRole("article", { name: "Zoho Books integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
+    expect(within(screen.getByRole("article", { name: "WhatsApp Business integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
+    expect(within(googleCard).getByText("Setup: Configured · Evidence: Provider operation confirmed")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Built into Wodana" })).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Wodana AI review integration" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Planned" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "External lead capture" })).toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "Meta Lead Ads integration" })).getByText("Details required")).toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "PlyLeads integration" })).getByText("Details required")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Custom integration" })).not.toBeInTheDocument();
 
     await interaction.type(screen.getByRole("searchbox", { name: "Search integrations" }), "accounting");
@@ -49,7 +56,7 @@ describe("IntegrationsPage", () => {
     render(<IntegrationsPage initialData={data} />);
 
     const card = screen.getByRole("article", { name: "Google Workspace integration" });
-    await interaction.click(within(card).getByRole("button", { name: "View integration" }));
+    await interaction.click(within(card).getByRole("button", { name: "Connect" }));
     const dialog = await screen.findByRole("dialog", { name: "Connect Google Workspace" });
     await interaction.click(within(dialog).getByRole("button", { name: /Organization/ }));
     await interaction.click(await screen.findByRole("option", { name: data.legalEntities[0].displayName }));
@@ -75,7 +82,7 @@ describe("IntegrationsPage", () => {
     data.connections = [];
     render(<IntegrationsPage initialData={data} />);
 
-    await interaction.click(screen.getByRole("switch", { name: "Connect Google Workspace" }));
+    await interaction.click(within(screen.getByRole("article", { name: "Google Workspace integration" })).getByRole("button", { name: "Connect" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Connect Google Workspace" });
     expect(within(dialog).getByRole("button", { name: "Save and connect" })).toBeInTheDocument();
@@ -101,7 +108,7 @@ describe("IntegrationsPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<IntegrationsPage initialData={data} />);
 
-    await interaction.click(screen.getByRole("switch", { name: "Connect Google Workspace" }));
+    await interaction.click(within(screen.getByRole("article", { name: "Google Workspace integration" })).getByRole("button", { name: "Connect" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/workspace/integration-connections/${draft.id}/connect`);
@@ -117,12 +124,31 @@ describe("IntegrationsPage", () => {
     render(<IntegrationsPage initialData={data} />);
 
     const card = screen.getByRole("article", { name: "Google Workspace integration" });
-    await interaction.click(within(card).getByRole("button", { name: "Connect another" }));
+    await interaction.click(within(card).getByRole("button", { name: "Add account" }));
 
     const setup = await screen.findByRole("dialog", { name: "Connect Google Workspace" });
     expect(within(setup).getByRole("button", { name: "Save and connect" })).toBeInTheDocument();
     expect(within(setup).getByRole("textbox", { name: "Connection name" })).toHaveValue("Google Workspace connection");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(within(card).getByText("Iglo Google Workspace · Iglo Architects")).toBeInTheDocument();
+  });
+
+  it("keeps disconnect behind an account action and confirmation", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(integrationsPageFixture);
+    const account = data.connections[0];
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...account, status: "revoked", version: account.version + 1 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<IntegrationsPage initialData={data} />);
+
+    await interaction.click(screen.getByRole("button", { name: `Actions for ${account.displayName}` }));
+    await interaction.click(await screen.findByRole("menuitem", { name: "Disconnect" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Disconnect integration?" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await interaction.click(within(confirmation).getByRole("button", { name: "Disconnect" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/workspace/integration-connections/${account.id}?workspaceId=${data.workspaceId}&version=${account.version}`);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
   });
 });

@@ -1,0 +1,17 @@
+.wrap { position: relative; flex: none; }
+.trigger { position: relative; display: grid; place-items: center; inline-size: 2.25rem; block-size: 2.25rem; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); background: transparent; color: var(--wd-color-text); cursor: pointer; }
+.trigger:hover { background: var(--wd-color-surface-hover); }
+.badge { position: absolute; inset-block-start: -.35rem; inset-inline-end: -.35rem; display: grid; min-inline-size: 1.1rem; block-size: 1.1rem; place-items: center; border-radius: 999px; padding-inline: .15rem; background: var(--wd-color-action-primary); color: var(--wd-color-on-primary, #fff); font-size: .62rem; font-weight: 700; }
+.panel { position: absolute; z-index: calc(var(--wd-z-sticky) + 2); inset-block-start: calc(100% + .55rem); inset-inline-end: 0; inline-size: min(22rem, calc(100vw - 1.5rem)); max-block-size: min(28rem, 70vh); overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); color: var(--wd-color-text); box-shadow: 0 .75rem 2rem #0002; }
+.panel header { display: flex; align-items: center; justify-content: space-between; min-block-size: 3rem; padding-inline: 1rem .55rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.panel header button { display: grid; inline-size: 2rem; block-size: 2rem; place-items: center; border: 0; border-radius: var(--wd-radius-sm); background: transparent; color: inherit; cursor: pointer; }
+.panel header button:hover { background: var(--wd-color-surface-hover); }
+.list { max-block-size: calc(min(28rem, 70vh) - 3rem); overflow-y: auto; }
+.item + .item { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.item a, .item button { display: grid; inline-size: 100%; gap: .2rem; padding: .8rem 1rem; border: 0; background: transparent; color: inherit; text-align: start; text-decoration: none; cursor: pointer; }
+.item a:hover, .item button:hover { background: var(--wd-color-surface-hover); }
+.item[data-unread] a, .item[data-unread] button { box-shadow: inset .2rem 0 var(--wd-color-action-primary); }
+.item strong { font-size: .8rem; }
+.item span, .message { color: var(--wd-color-text-secondary); font-size: .75rem; line-height: 1.45; }
+.message { margin: 0; padding: 1rem; }
+.message button { border: 0; background: none; color: var(--wd-color-action-primary); cursor: pointer; text-decoration: underline; }

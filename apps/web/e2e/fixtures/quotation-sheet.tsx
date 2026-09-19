@@ -167,7 +167,7 @@ export function QuotationSheetFixture() {
         costing={false}
         requests={[]}
         customerName="Sample Client"
-        state={{ data: { revision, quotes: [quote] } } as CommercialState}
+        state={{ data: { revision, quotes: [quote] }, canOverridePrice: true } as CommercialState}
         onSave={save}
         onImportScope={() => {}}
       />

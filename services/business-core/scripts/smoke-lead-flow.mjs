@@ -33,7 +33,7 @@ let form;
 await check('Forms start as private drafts',async()=>{form=await req(base+'/lead-forms',{body:{}});assert.equal(form.status,'draft');await req('/public/crm/lead-forms/'+form.token,{headers:{},expected:404});});
 await check('Publish preserves internal field privacy',async()=>{form=await req(base+'/lead-forms/'+form.id,{method:'PATCH',body:{version:form.version,action:'publish',draft:form.draft}});const pub=await req('/public/crm/lead-forms/'+form.token,{headers:{}});assert.equal(pub.source,undefined);assert.equal(pub.workspaceId,undefined);assert.ok(pub.questions.every(q=>q.field===undefined));});
 let answered;
-await check('Customer response creates and auto-routes lead; retries are safe',async()=>{const pub=await req('/public/crm/lead-forms/'+form.token,{headers:{}});const map={displayName:'Public '+randomUUID(),email:randomUUID()+'@example.com',mobile:'+971502224455',location:'Business Bay',serviceType:'not_sure',budgetRange:'not_sure',summary:'Please redesign my office'};const answers=Object.fromEntries(form.draft.questions.map(q=>[q.id,map[q.field]]));answered={requestId:randomUUID(),revision:pub.revision,answers};await req('/public/crm/lead-forms/'+form.token,{headers:{},body:answered});await req('/public/crm/lead-forms/'+form.token,{headers:{},body:answered});const page=await req(base+'/lead-forms/'+form.id+'/responses');assert.equal(page.data.length,1);assert.ok(page.data[0].reference);const found=await req(base+'/leads?search='+page.data[0].reference);assert.equal(found.data[0].intakeMethod,'form');assert.equal(found.data[0].ownerMembershipId,ownerId);assert.equal(found.data[0].details.location,'Business Bay');});
+await check('Customer response creates and auto-routes lead; retries are safe',async()=>{const pub=await req('/public/crm/lead-forms/'+form.token,{headers:{}});const map={displayName:'Public '+randomUUID(),email:randomUUID()+'@example.com',mobile:'+971502224455',location:'Business Bay',serviceType:'not_sure',budgetRange:'not_sure',summary:'Please redesign my office'};const answers=Object.fromEntries(form.draft.questions.map(q=>[q.id,map[q.field]]));answered={requestId:randomUUID(),revision:pub.revision,answers,serviceConsent:true};await req('/public/crm/lead-forms/'+form.token,{headers:{},body:answered});await req('/public/crm/lead-forms/'+form.token,{headers:{},body:answered});const page=await req(base+'/lead-forms/'+form.id+'/responses');assert.equal(page.data.length,1);assert.ok(page.data[0].reference);const found=await req(base+'/leads?search='+page.data[0].reference);assert.equal(found.data[0].intakeMethod,'form');assert.equal(found.data[0].ownerMembershipId,ownerId);assert.equal(found.data[0].details.location,'Business Bay');});
 await check('Draft edits do not affect the published form',async()=>{const pub=await req('/public/crm/lead-forms/'+form.token,{headers:{}});form=await req(base+'/lead-forms/'+form.id,{method:'PATCH',body:{version:form.version,draft:{...form.draft,title:'Changed draft'}}});const current=await req('/public/crm/lead-forms/'+form.token,{headers:{}});assert.equal(current.title,pub.title);assert.equal(current.revision,pub.revision);});
 await check('Published forms require a name and a configurable contact method',async()=>{
  await req(base+'/lead-forms/'+form.id,{method:'PATCH',body:{version:form.version,action:'publish',draft:{...form.draft,questions:form.draft.questions.filter(q=>q.field!=='displayName')}},expected:400});
@@ -46,7 +46,7 @@ await check('Email-only tenant forms publish and accept enquiries',async()=>{
  const pub=await req('/public/crm/lead-forms/'+emailForm.token,{headers:{}});
  const map={displayName:'Email customer',email:'email-only-'+run+'@example.com',location:'Dubai',serviceType:'not_sure',budgetRange:'not_sure',summary:''};
  const values=Object.fromEntries(emailForm.draft.questions.map(q=>[q.id,map[q.field]]));
- await req('/public/crm/lead-forms/'+emailForm.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:values}});
+ await req('/public/crm/lead-forms/'+emailForm.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:values,serviceConsent:true}});
 });
 await check('Paused forms reject submissions',async()=>{form=await req(base+'/lead-forms/'+form.id,{method:'PATCH',body:{version:form.version,action:'pause'}});await req('/public/crm/lead-forms/'+form.token,{headers:{},body:answered,expected:404});});
 await check('Unauthenticated CRM access denied',async()=>{await req(base+'/leads',{headers:{},expected:401});await req(base+'/lead-forms',{headers:{},expected:401});});
@@ -88,20 +88,20 @@ await check('Custom questions preserve readable answers and response pagination'
  form=await req(base+'/lead-forms/'+form.id,{method:'PATCH',body:{version:form.version,action:'publish',draft:{...form.draft,source:'company',channel:'walk_in',questions}}});
  const pub=await req('/public/crm/lead-forms/'+form.token,{headers:{}});
  const values=()=>Object.fromEntries(form.draft.questions.map(q=>[q.id,({displayName:randomUUID(),mobile:'+971'+String(Math.floor(500000000+Math.random()*90000000)),email:randomUUID()+'@example.com',location:'Dubai',serviceType:'not_sure',budgetRange:'not_sure',custom:['oak','stone']})[q.field]]));
- for(let i=0;i<5;i++)await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:values()}});
+ for(let i=0;i<5;i++)await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:values(),serviceConsent:true}});
  const firstPage=await req(base+'/lead-forms/'+form.id+'/responses?limit=2');assert.equal(firstPage.data.length,2);assert.ok(firstPage.nextCursor);assert.deepEqual(firstPage.data[0].answers.at(-1).value,['Oak','Stone']);
  const second=await req(base+'/lead-forms/'+form.id+'/responses?limit=2&cursor='+firstPage.nextCursor);assert.equal(second.data.length,2);assert.ok(second.data.every(row=>!firstPage.data.some(old=>old.id===row.id)));
  await req(base+'/lead-forms/'+form.id+'/responses?cursor=bad',{expected:400});
- const bad=values();bad.custom_materials=['unknown'];await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:bad},expected:400});
- const good=values();await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:'old-revision',answers:good},expected:409});
+ const bad=values();bad.custom_materials=['unknown'];await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:bad,serviceConsent:true},expected:400});
+ const good=values();await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:'old-revision',answers:good,serviceConsent:true},expected:409});
  const report=await req(base+'/reports/lead-flow');assert.ok(report.walkIns.some(row=>row.intakeMethod==='form'&&row.leads>=5));assert.ok(report.walkIns.some(row=>row.intakeMethod==='manual'));
 });
 await check('Form limits normalize mobile formatting and retries conflict on changed answers',async()=>{
  const pub=await req('/public/crm/lead-forms/'+form.token,{headers:{}}),phone='+971509991111';
  const make=(mobile)=>Object.fromEntries(form.draft.questions.map(q=>[q.id,({displayName:randomUUID(),mobile,email:randomUUID()+'@example.com',location:'Dubai',serviceType:'not_sure',budgetRange:'not_sure',custom:['oak']})[q.field]]));
- for(let i=0;i<5;i++)await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:make(i%2?'+971 50 999 1111':phone)}});
- await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:make('971-50-999-1111')},expected:429});
- const submitted={requestId:randomUUID(),revision:pub.revision,answers:make('+971508884444')};await req('/public/crm/lead-forms/'+form.token,{headers:{},body:submitted});
+ for(let i=0;i<5;i++)await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:make(i%2?'+971 50 999 1111':phone),serviceConsent:true}});
+ await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{requestId:randomUUID(),revision:pub.revision,answers:make('971-50-999-1111'),serviceConsent:true},expected:429});
+ const submitted={requestId:randomUUID(),revision:pub.revision,answers:make('+971508884444'),serviceConsent:true};await req('/public/crm/lead-forms/'+form.token,{headers:{},body:submitted});
  const nameId=form.draft.questions.find(q=>q.field==='displayName').id;
  await req('/public/crm/lead-forms/'+form.token,{headers:{},body:{...submitted,answers:{...submitted.answers,[nameId]:'Changed'}},expected:409});
 });

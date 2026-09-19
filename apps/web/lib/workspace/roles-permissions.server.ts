@@ -10,8 +10,6 @@ import {
   type WorkspacePermissionDefinition,
 } from "./roles-permissions";
 
-const INITIAL_PERMISSION_PREFIXES = ["module."];
-
 export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPageData> {
   const authProfile = await getAuthenticatedProfile();
   const membership = authProfile.memberships[0];
@@ -51,9 +49,7 @@ export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPag
   return {
     canManage,
     memberCount: members.length,
-    permissions: permissions.filter((permission) =>
-      INITIAL_PERMISSION_PREFIXES.some((prefix) => permission.code.startsWith(prefix)),
-    ),
+    permissions,
     roles: await rolesResponse.json() as WorkspaceRole[],
     workspaceId: membership.workspaceId,
   };

@@ -1,20 +1,17 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowUpRight,
-  Check,
+  CircleAlert,
   CircleCheck,
-  Clock3,
-  TriangleAlert,
-  Users,
-  ClipboardCheck,
+  CircleDot,
   CalendarDays,
-  MessageSquare,
-  Camera,
-  Layers3,
 } from "lucide-react";
 import { money } from "@/lib/commercial/client";
+import { quantityToSource } from "@/lib/projects/purchasing";
 import {
+  projectActionRoute,
   taskProgress,
   label,
   type ProjectState,
@@ -35,6 +32,16 @@ export const shortDate = (day: string) =>
     month: "short",
     timeZone: "UTC",
   });
+
+type DeliveryStageState = "complete" | "current" | "attention" | "upcoming";
+
+function deliveryState(total: number, done: number, attention = false): DeliveryStageState {
+  if (attention) return "attention";
+  if (!total) return "upcoming";
+  if (done === total) return "complete";
+  return "current";
+}
+
 export function ProjectOverview({
   state,
   today,
@@ -52,12 +59,7 @@ export function ProjectOverview({
     live = d.tasks.filter((t) => t.status !== "cancelled"),
     leaf = live.filter((t) => !live.some((c) => c.parentId === t.id)),
     done = leaf.filter((t) => t.status === "completed").length,
-    attention = live.filter(
-      (t) =>
-        t.status === "blocked" ||
-        (!["completed", "cancelled"].includes(t.status) && t.end < today),
-    ),
-    reports = d.reports.filter((r) => r.status === "submitted"),
+    nextActions = state.pulse.nextActions,
     last = [...d.reports].sort((a, b) => b.date.localeCompare(a.date))[0],
     upcoming = [...(d.milestones ?? [])]
       .filter((m) => !m.acceptedAt)
@@ -70,223 +72,138 @@ export function ProjectOverview({
           (f) => f.recordId === last.id && f.mimeType.startsWith("image/"),
         )
       : [];
-  const approvedDesigns = d.documents.filter((document) => document.status === "approved").length;
-  const supplyComplete =
-    d.orders.length > 0 &&
-    d.orders.every((order) => ["closed", "cancelled"].includes(order.status));
+  const packages = (d.workPackages ?? []).filter((item) => item.status !== "cancelled");
+  const completedPackages = packages.filter((item) => item.status === "completed").length;
+  const packageAttention = packages.some((item) => ["blocked", "on_hold"].includes(item.status));
+  const activeOrders = d.orders.filter((order) => order.status !== "cancelled");
+  const closedOrders = activeOrders.filter((order) => order.status === "closed").length;
+  const overdueOrders = activeOrders.filter((order) => order.status !== "closed" && order.promisedDate < today).length;
+  const materialsReady = d.materials.length > 0
+    && d.materials.every((material) => quantityToSource(material, d.orders) === 0)
+    && activeOrders.every((order) => order.status === "closed");
+  const factoryTasks = leaf.filter((task) => task.location === "factory");
+  const factoryDone = factoryTasks.filter((task) => task.status === "completed").length;
+  const factoryAttention = factoryTasks.some((task) => ["blocked", "on_hold"].includes(task.status));
   const siteTasks = leaf.filter((task) => task.location === "site");
-  const siteComplete =
-    siteTasks.length > 0 && siteTasks.every((task) => task.status === "completed");
-  const openSnags = d.snags.filter((snag) => snag.status !== "closed").length;
-  const snaggingComplete = siteComplete && openSnags === 0;
-  const handoverComplete =
-    d.phase === "completed" ||
-    (d.handovers.length > 0 && d.handovers.every((handover) => handover.status === "accepted"));
-  const operatingStages = [
-    { label: "New project", range: "03", detail: "Created", href: root, state: "complete" },
+  const siteDone = siteTasks.filter((task) => task.status === "completed").length;
+  const siteAttention = siteTasks.some((task) => ["blocked", "on_hold"].includes(task.status));
+  const openSnags = d.snags.filter((snag) => snag.status !== "closed");
+  const acceptedHandovers = d.handovers.filter((handover) => handover.status === "accepted").length;
+  const qualityAttention = openSnags.some((snag) => snag.severity === "critical" || snag.dueDate < today)
+    || d.handovers.some((handover) => handover.status === "returned");
+  const deliveryStages: Array<{ href: string; label: string; detail: string; state: DeliveryStageState }> = [
     {
-      label: "Design",
-      range: "04–09",
-      detail: `${approvedDesigns} approved`,
-      href: `${root}/documents`,
-      state: approvedDesigns > 0 ? "complete" : "current",
+      href: `${root}/plan-teams`,
+      label: "Plan",
+      detail: packages.length ? `${completedPackages}/${packages.length} packages complete` : "No work packages yet",
+      state: deliveryState(packages.length, completedPackages, packageAttention),
     },
     {
-      label: "Costing & supply",
-      range: "10–13",
-      detail: `${d.scope?.lines.length ?? 0} BOQ · ${d.orders.filter((order) => !["closed", "cancelled"].includes(order.status)).length} open`,
-      href: `${root}/procurement`,
-      state: approvedDesigns === 0 ? "pending" : supplyComplete ? "complete" : "current",
+      href: `${root}/material-planning`,
+      label: "Materials & orders",
+      detail: d.materials.length || activeOrders.length ? `${d.materials.length} requirements · ${activeOrders.length - closedOrders} open orders` : "No material demand yet",
+      state: materialsReady ? "complete" : deliveryState(activeOrders.length || d.materials.length, 0, overdueOrders > 0),
     },
     {
-      label: "Site & installation",
-      range: "14–15",
-      detail: `${siteTasks.filter((task) => task.status === "completed").length}/${siteTasks.length} complete`,
+      href: `${root}/production`,
+      label: "Production",
+      detail: factoryTasks.length ? `${factoryDone}/${factoryTasks.length} factory tasks complete` : "No factory work yet",
+      state: deliveryState(factoryTasks.length, factoryDone, factoryAttention),
+    },
+    {
       href: `${root}/site-work`,
-      state: !supplyComplete ? "pending" : siteComplete ? "complete" : "current",
+      label: "Onsite",
+      detail: siteTasks.length ? `${siteDone}/${siteTasks.length} site tasks complete` : "No site work yet",
+      state: deliveryState(siteTasks.length, siteDone, siteAttention),
     },
     {
-      label: "Snagging",
-      range: "16",
-      detail: `${openSnags} open`,
-      href: `${root}/snagging`,
-      state: !siteComplete ? "pending" : snaggingComplete ? "complete" : "current",
-    },
-    {
-      label: "Handover",
-      range: "17",
-      detail: `${d.handovers.filter((handover) => handover.status === "accepted").length}/${d.handovers.length} accepted`,
-      href: `${root}/handover`,
-      state: !snaggingComplete ? "pending" : handoverComplete ? "complete" : "current",
+      href: `${root}/${openSnags.length ? "snagging" : "handover"}`,
+      label: "Quality & close",
+      detail: d.snags.length || d.handovers.length ? `${openSnags.length} open snags · ${acceptedHandovers}/${d.handovers.length} handovers accepted` : "No quality or handover records yet",
+      state: qualityAttention
+        ? "attention"
+        : d.handovers.length && acceptedHandovers === d.handovers.length && !openSnags.length
+          ? "complete"
+          : d.handovers.length || d.snags.length
+            ? "current"
+            : "upcoming",
     },
   ];
+  const mentions = d.comments.filter((comment) => comment.mentions?.includes(state.memberId) && !comment.resolved).slice(-2);
+  const showAside = Boolean(d.scope || mentions.length || d.audit.length);
   const person = (id: string) =>
     state.members.find((m) => m.id === id)?.name ?? "Unassigned";
   return (
     <div className={v.overview}>
-      <div className={v.projectPulse}>
-        <div className={v.pulseCopy}>
-          <span className={v.eyebrow}>
-            <Layers3 size={14} /> PROJECT PULSE
-          </span>
-          <h2>
-            {attention.length
-              ? `${attention.length} ${attention.length === 1 ? "task needs" : "tasks need"} a closer look`
-              : "A clear view of the work ahead"}
-          </h2>
-          <p>
-            {upcoming[0]
-              ? `Next milestone · ${upcoming[0].title} · ${shortDate(upcoming[0].dueDate)}`
-              : "Keep teams, materials and site updates moving together."}
-          </p>
-          <Link href={`${root}/plan-teams`} className={s.button}>
-            Open work plan <ArrowUpRight size={14} />
-          </Link>
+      {leaf.length || upcoming[0] ? <div className={v.projectSummary}>
+        {leaf.length ? <span><strong>{progress}%</strong> approved work · {done} of {leaf.length} tasks complete</span> : null}
+        {upcoming[0] ? <span>Next milestone · {upcoming[0].title} · {shortDate(upcoming[0].dueDate)}</span> : null}
+      </div> : null}
+      <section aria-labelledby="delivery-flow-title">
+        <div className={v.flowHeading}>
+          <div><span className={v.eyebrow}>LIVE DELIVERY FLOW</span><h2 id="delivery-flow-title">Plan to handover</h2></div>
+          <p>Verified project records, not AI estimates. Open any stage to continue.</p>
         </div>
-        <div className={v.pulseProgress}>
-          <div className={v.progressSummary}>
-            <strong>{progress}%</strong>
-            <span>{done} of {leaf.length} tasks complete</span>
-          </div>
-          <span className={v.pulseTrack} aria-label={`${progress}% approved`}>
-            <span style={{ width: `${progress}%` }} />
-          </span>
-        </div>
-      </div>
-      <nav className={v.stageRail} aria-label="Project operating stages">
-        <ol>
-          {operatingStages.map((stage) => (
-            <li key={stage.range} data-state={stage.state}>
+        <nav className={v.stageRail} aria-label="Project delivery flow">
+          <ol>
+            {deliveryStages.map((stage, index) => <li key={stage.href} data-state={stage.state}>
               <Link href={stage.href}>
                 <span className={v.stageNode} aria-hidden="true">
-                  {stage.state === "complete" ? <Check size={12} /> : stage.range}
+                  {stage.state === "complete" ? <CircleCheck size={15} /> : stage.state === "attention" ? <CircleAlert size={15} /> : stage.state === "current" ? <CircleDot size={15} /> : index + 1}
                 </span>
-                <span>
-                  <strong>{stage.label}</strong>
-                  <small>{stage.range} · {stage.detail}</small>
-                </span>
+                <span><strong>{stage.label}</strong><small>{stage.detail}</small></span>
               </Link>
-            </li>
-          ))}
-        </ol>
-      </nav>
-      <div className={v.quickMetrics}>
-        {[
-          {
-            title: "Work in progress",
-            value: leaf.filter((t) => t.status === "in_progress").length,
-            hint: "Live tasks",
-            icon: Clock3,
-            to: "plan-teams",
-            tone: "lilac",
-          },
-          {
-            title: "Updates to review",
-            value: reports.length,
-            hint: "Awaiting a manager",
-            icon: ClipboardCheck,
-            to: "daily-progress",
-            tone: "peach",
-          },
-          {
-            title: "Open snags",
-            value: d.snags.filter((t) => t.status !== "closed").length,
-            hint: "Quality follow-up",
-            icon: TriangleAlert,
-            to: "snagging",
-            tone: "rose",
-          },
-          {
-            title: "Teams booked",
-            value: new Set(
-              state.bookings
-                .filter(
-                  (b) =>
-                    b.projectId === state.id &&
-                    b.start <= today &&
-                    b.end >= today,
-                )
-                .map((b) => b.resourceId),
-            ).size,
-            hint: "On the plan today",
-            icon: Users,
-            to: "plan-teams",
-            tone: "lilac",
-          },
-        ].map((m) => (
-          <Link
-            key={m.title}
-            className={v.quickMetric}
-            href={`${root}/${m.to}`}
-          >
-            <span className={v.metricIcon} data-tone={m.tone}>
-              <m.icon size={18} />
-            </span>
-            <div>
-              <span>{m.title}</span>
-              <strong>{m.value}</strong>
-              <small>{m.hint}</small>
-            </div>
-            <ArrowUpRight className={v.metricArrow} size={14} />
-          </Link>
-        ))}
-      </div>
-      <div className={v.overviewColumns}>
+            </li>)}
+          </ol>
+        </nav>
+      </section>
+      <div className={v.overviewColumns} data-single={!showAside || undefined}>
         <div>
           <section className={v.section}>
             <div className={v.sectionHeading}>
-              <h2>
-                <TriangleAlert size={16} /> Needs attention{" "}
-                <span>{attention.length}</span>
-              </h2>
+              <h2>Next actions <span>{nextActions.length}</span></h2>
               <Link href={`${root}/plan-teams`}>
                 View work plan <ArrowUpRight size={13} />
               </Link>
             </div>
-            {attention.slice(0, 5).map((t) => (
-              <button
+            {nextActions.slice(0, 5).map((action) => (
+              <Link
                 className={v.attentionRow}
-                key={t.id}
-                onClick={() => open(t.id)}
+                href={projectActionRoute(state.id, action)}
+                key={action.id}
               >
-                <span className={v.priorityDot} />
+                <span className={v.priorityDot} data-priority={action.priority} />
                 <div>
-                  <strong>{t.title}</strong>
+                  <strong>{action.title}</strong>
                   <small>
-                    {t.blocker || `Planned finish ${shortDate(t.end)}`} ·{" "}
-                    {person(t.ownerId)}
+                    {action.detail}{action.ownerId ? ` · ${person(action.ownerId)}` : ""}
                   </small>
                 </div>
-                <span
-                  className={s.status}
-                  data-state={t.status === "blocked" ? "blocked" : "returned"}
-                >
-                  {t.status === "blocked" ? "Blocked" : "Overdue"}
-                </span>
+                {action.priority !== "normal" ? <span className={s.status} data-state={action.priority === "critical" ? "blocked" : "returned"}>{label(action.priority)}</span> : null}
                 <ArrowUpRight size={14} />
-              </button>
+              </Link>
             ))}
-            {!attention.length && (
+            {!nextActions.length && (
               <p className={v.quietState}>
-                <CircleCheck size={18} /> No blocked or overdue work.
+                <CircleCheck size={18} /> No project decisions are waiting.
               </p>
             )}
           </section>
-          <section className={v.section}>
+          {last ? <section className={v.section}>
             <div className={v.sectionHeading}>
-              <h2>
-                <Camera size={16} /> Latest from the field
-              </h2>
+              <h2>Latest from the field</h2>
               <Link href={`${root}/daily-progress`}>
                 Site diary <ArrowUpRight size={13} />
               </Link>
             </div>
-            {last ? (
-              <button className={v.latestReport} onClick={() => open(last.id)}>
+            <button className={v.latestReport} onClick={() => open(last.id)}>
                 {photos[0] ? (
-                  <img
+                  <Image
                     src={`/api/project-files/${state.id}/${photos[0].id}?workspaceId=${state.workspaceId}`}
                     alt={`Site evidence · ${photos[0].name}`}
+                    width={84}
+                    height={80}
+                    unoptimized
                   />
                 ) : (
                   <span className={v.reportDate}>
@@ -324,24 +241,16 @@ export function ProjectOverview({
                   </small>
                 </div>
                 <ArrowUpRight size={16} />
-              </button>
-            ) : (
-              <p className={v.quietState}>
-                The first site report will appear here.
-              </p>
-            )}
-          </section>
-          <section className={v.section}>
+            </button>
+          </section> : null}
+          {deliveryTimeline.length ? <section className={v.section}>
             <div className={v.sectionHeading}>
-              <h2>
-                <CalendarDays size={16} /> Delivery timeline
-              </h2>
+              <h2>Delivery timeline</h2>
               <Link href={`${root}/plan-teams?view=schedule`}>
                 Schedule <ArrowUpRight size={13} />
               </Link>
             </div>
-            {deliveryTimeline.length ? (
-              <ol className={v.deliveryTimeline}>
+            <ol className={v.deliveryTimeline}>
                 {deliveryTimeline.slice(0, 5).map((milestone) => {
                   const complete = milestone.taskIds.filter(
                     (id) => d.tasks.find((task) => task.id === id)?.status === "completed",
@@ -370,84 +279,27 @@ export function ProjectOverview({
                     </li>
                   );
                 })}
-              </ol>
-            ) : (
-              <p className={v.quietState}>No milestones added yet.</p>
-            )}
-          </section>
+            </ol>
+          </section> : null}
         </div>
-        <aside>
-          <section className={v.decisionPanel}>
-            <div className={v.sectionHeading}>
-              <h2>Ready for your decision</h2>
-            </div>
-            {[
-              {
-                name: "Daily reports",
-                n: reports.length,
-                to: "daily-progress",
-                icon: ClipboardCheck,
-              },
-              {
-                name: "Inspection checks",
-                n: d.tasks.filter((t) => t.status === "awaiting_inspection")
-                  .length,
-                to: "site-work",
-                icon: CircleCheck,
-              },
-              {
-                name: "Purchase orders",
-                n: d.orders.filter((o) => o.status === "submitted").length,
-                to: "procurement",
-                icon: Layers3,
-              },
-            ].map((x) => (
-              <Link
-                key={x.name}
-                className={v.decisionRow}
-                href={`${root}/${x.to}`}
-              >
-                <x.icon size={17} />
-                <span>{x.name}</span>
-                <strong>{x.n}</strong>
-                <ArrowUpRight size={14} />
-              </Link>
-            ))}
-          </section>
-          <section className={v.scopePanel}>
-            <span className={v.eyebrow}>AGREED SCOPE</span>
+        {showAside ? <aside>
+          {d.scope ? <section className={v.scopePanel}>
+            <span className={v.eyebrow}>Agreed scope</span>
             <strong>
-              {d.scope
-                ? money(
-                    d.scope.value +
-                      (d.variations ?? []).reduce((n, x) => n + x.value, 0),
-                    d.scope.currency,
-                  )
-                : "Awaiting release"}
+              {money(d.scope.value + (d.variations ?? []).reduce((n, x) => n + x.value, 0), d.scope.currency)}
             </strong>
-            <p>
-              {d.scope
-                ? `${d.scope.lines.length} BOQ lines · Quotation V${d.scope.quoteNumber}`
-                : "Scope appears after commercial release."}
-            </p>
+            <p>{d.scope.lines.length} BOQ lines · Quotation V{d.scope.quoteNumber}</p>
             <Link
-              href={`/workspace/pre-projects/cases/${state.caseId}/quotations${d.scope ? `?quote=${d.scope.quoteId}` : ""}`}
+              href={`/workspace/pre-projects/cases/${state.caseId}/quotations?quote=${d.scope.quoteId}`}
             >
               View quotation <ArrowUpRight size={14} />
             </Link>
-          </section>
-          <section className={v.section}>
+          </section> : null}
+          {mentions.length || d.audit.length ? <section className={v.section}>
             <div className={v.sectionHeading}>
-              <h2>
-                <MessageSquare size={16} /> Team activity
-              </h2>
+              <h2>Team activity</h2>
             </div>
-            {d.comments
-              .filter(
-                (c) => c.mentions?.includes(state.memberId) && !c.resolved,
-              )
-              .slice(-2)
-              .map((c) => (
+            {mentions.map((c) => (
                 <button
                   className={v.mention}
                   key={c.id}
@@ -479,8 +331,8 @@ export function ProjectOverview({
                   </li>
                 ))}
             </ol>
-          </section>
-        </aside>
+          </section> : null}
+        </aside> : null}
       </div>
     </div>
   );

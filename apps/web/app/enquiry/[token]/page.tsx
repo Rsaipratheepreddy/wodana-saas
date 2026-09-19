@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import { businessApiUrl } from "@/lib/auth/server";
+import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { DesignSystemProvider } from "@/design-system";
 import { PublicEnquiryFormView } from "@/components/crm/public-enquiry-form";
 import type { PublicEnquiryForm } from "@/lib/crm/lead-forms";
@@ -14,5 +16,10 @@ export default async function EnquiryPage({ params }: { params: Promise<{ token:
   if (response.status === 404) notFound();
   if (!response.ok) throw new Error("The enquiry form is temporarily unavailable. Please try again.");
   const form = await response.json() as PublicEnquiryForm;
-  return <DesignSystemProvider className={theme.theme} locale="en-AE" currency="AED" timeZone="Asia/Dubai"><main className={styles.publicPage}><PublicEnquiryFormView form={form} token={token} /></main></DesignSystemProvider>;
+  return <DesignSystemProvider className={theme.theme} style={workspacePrimaryColorStyle(form.branding)} locale="en-AE" currency="AED" timeZone="Asia/Dubai"><main className={styles.publicPage}>
+    {form.branding && <div className={styles.publicBrand}>{form.branding.logoUrl
+      ? <Image src={form.branding.logoUrl} alt={form.branding.displayName} width={220} height={70} unoptimized />
+      : <strong>{form.branding.displayName}</strong>}</div>}
+    <PublicEnquiryFormView form={form} token={token} />
+  </main></DesignSystemProvider>;
 }

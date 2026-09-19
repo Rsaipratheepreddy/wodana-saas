@@ -29,6 +29,23 @@ test('refresh token is HttpOnly and excluded from browser JSON; rotation uses on
   const refreshed = await request('/auth/refresh', { refreshToken: 'untrusted-body-token' }, { cookie: cookie.split(';')[0] });
   assert.equal(refreshed.status, 200);
 });
+test('browser preview passes MFA challenges without a cookie and seals the verified session', async (t) => {
+  const request = await setup(t, async (url, init) => {
+    if (url.endsWith('/login')) return Response.json({ mfaRequired: true, challengeToken: 'challenge', selectedWorkspaceId: 'workspace-1' }, { status: 201 });
+    assert.ok(url.endsWith('/mfa/verify'));
+    assert.deepEqual(JSON.parse(init.body), { challengeToken: 'challenge', code: '123456' });
+    return Response.json({ accessToken: 'access', refreshToken: 'private-refresh', selectedWorkspaceId: 'workspace-1', accessTokenExpiresIn: 900, refreshTokenExpiresIn: 2592000 }, { status: 201 });
+  });
+  const challenge = await request('/auth/login', { email: 'member@example.com', password: 'test', tenantSlug: 'plm' });
+  assert.equal(challenge.status, 201);
+  assert.equal(challenge.headers.get('set-cookie'), null);
+  assert.deepEqual(await challenge.json(), { mfaRequired: true, challengeToken: 'challenge', selectedWorkspaceId: 'workspace-1' });
+  const verified = await request('/auth/mfa/verify', { challengeToken: 'challenge', code: '123456' });
+  assert.match(verified.headers.get('set-cookie'), /HttpOnly/);
+  const payload = await verified.json();
+  assert.equal(payload.refreshToken, 'http-only-cookie');
+  assert.equal(JSON.stringify(payload).includes('private-refresh'), false);
+});
 test('cross-origin auth requests and missing refresh cookies are rejected before upstream', async (t) => {
   const request = await setup(t, async () => { assert.fail('must not reach upstream'); });
   assert.equal((await request('/auth/login', {}, { origin: 'https://evil.example' })).status, 403);
@@ -83,5 +100,16 @@ test('field proxy forwards private markups and rejects unrelated write routes',a
  assert.equal((await request(`${base}/assets/${id}/markup`,{id:'same-drawing',strokes:[]},{authorization:'Bearer field-token'})).status,200);
  assert.equal((await request(`${base}/designs`,{},{authorization:'Bearer field-token'})).status,404);
  assert.equal((await request(`${base}/site/${id}/review`,{},{origin:'https://outside.example',authorization:'Bearer field-token'})).status,403);
+ assert.equal(calls,1);
+});
+
+test('project field proxy allows only the assigned-action and evidence surface',async(t)=>{
+ const id='00000000-0000-4000-8000-000000000001';const record='task_01';let calls=0;
+ const request=await setup(t,async(url,init)=>{calls++;assert.match(url,/\/projects\/.+\/field-actions$/);assert.equal(init.headers.authorization,'Bearer field-token');return Response.json({data:{revision:2}});});
+ const base=`/workspaces/${id}/projects`;
+ const action=await request(`${base}/${id}/field-actions`,{action:'report_task'},{authorization:'Bearer field-token'});
+ assert.equal(action.status,200);
+ assert.equal((await request(`${base}/${id}/execution`,{action:'task_status'},{authorization:'Bearer field-token'})).status,404);
+ assert.equal((await request(`${base}/${id}/files/${record}/not-a-uuid`,{},{authorization:'Bearer field-token'})).status,404);
  assert.equal(calls,1);
 });

@@ -4,7 +4,8 @@ import { CrmSettingsService } from "./crm-settings.service";
 function setup(query = vi.fn()) {
   const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })) };
   const events = { record: vi.fn().mockResolvedValue(undefined) };
-  return { service: new CrmSettingsService(access as never, events as never), query, events };
+  const revisions = { ensureBaseline: vi.fn().mockResolvedValue(null), record: vi.fn().mockResolvedValue({ id: "revision" }) };
+  return { service: new CrmSettingsService(access as never, events as never, revisions as never), query, events, revisions };
 }
 
 describe("CRM qualification form integrity", () => {
@@ -51,6 +52,9 @@ describe("CRM qualification form integrity", () => {
         return { rows: [{ id: "form", version: 2, status: "draft", service_type: null }], rowCount: 1 };
       }
       if (sql.includes("id<>$2 AND status='active'")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT form.id,form.code")) {
+        return { rows: [{ id: "form", code: "global", name: "Global", version: 2, status: "draft", serviceType: null, questions: [] }], rowCount: 1 };
+      }
       if (sql.includes("UPDATE crm_qualification_forms SET")) {
         throw Object.assign(new Error("duplicate"), { code: "23505", constraint: "crm_qualification_forms_active_scope_uidx" });
       }

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
-import { IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
+import { Equals, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min } from "class-validator";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { Public } from "../../auth/public.decorator";
@@ -15,6 +15,8 @@ class SubmitFormDto {
   @IsUUID() requestId!: string;
   @IsString() @MaxLength(100) revision!: string;
   @IsObject() answers!: Record<string, unknown>;
+  @IsBoolean() @Equals(true, { message: "Consent is required before submitting an enquiry" })
+  serviceConsent!: boolean;
 }
 @Controller("workspaces/:workspaceId/crm/lead-forms")
 export class LeadFormsController {

@@ -3,7 +3,6 @@ import { ActivityIndicator, Pressable, View, type PressableProps } from 'react-n
 import { Text } from './primitives';
 import { useTheme } from './provider';
 import { tokens } from './tokens.generated';
-import { BrandGradient } from './brand-gradient';
 import { loginTheme } from './login-theme';
 
 export function Button({ label, variant = 'primary', pill = false, startIcon, endIcon, loading = false, disabled, style, onFocus, onBlur, ...props }: Omit<PressableProps, 'children'> & {
@@ -18,9 +17,11 @@ export function Button({ label, variant = 'primary', pill = false, startIcon, en
   const [focused, setFocused] = useState(false);
   const unavailable = disabled || loading;
   const publicBrand = variant === 'brand' || variant === 'brand-secondary';
-  const foreground = publicBrand || variant === 'white' || variant === 'glass' ? loginTheme.ink : variant === 'primary' ? colors.actionOnPrimary : colors.text;
+  const foreground = variant === 'brand' ? tokens.colors.light.actionOnPrimary
+    : variant === 'brand-secondary' || variant === 'white' || variant === 'glass' ? loginTheme.ink
+      : variant === 'primary' ? colors.actionOnPrimary : colors.text;
   const background = (pressed: boolean) => {
-    if (variant === 'brand') return 'transparent';
+    if (variant === 'brand') return pressed ? tokens.colors.light.actionPrimaryPressed : loginTheme.accent;
     if (variant === 'brand-secondary') return pressed ? loginTheme.accentSoft : loginTheme.secondary;
     if (variant === 'white') return pressed ? 'rgba(255,255,255,0.72)' : '#ffffff';
     if (variant === 'glass') return pressed ? 'rgba(255,255,255,0.54)' : 'rgba(255,255,255,0.30)';
@@ -42,7 +43,6 @@ export function Button({ label, variant = 'primary', pill = false, startIcon, en
         : variant === 'brand-secondary' ? loginTheme.line : variant === 'secondary' ? colors.borderControl : 'transparent',
       opacity: unavailable ? (publicBrand ? 0.62 : 0.5) : state.pressed && variant === 'brand' ? 0.85 : 1,
     }, typeof style === 'function' ? style(state) : style]}>
-    {variant === 'brand' && <BrandGradient />}
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, flexShrink: 1, zIndex: 1 }}>
     {loading && <ActivityIndicator color={foreground} />}
     {!loading && startIcon}

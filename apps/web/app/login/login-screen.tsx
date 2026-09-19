@@ -20,7 +20,15 @@ import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./login.module.css";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 
-type TenantBranding = { displayName: string; loginSlug: string; logoUrl: string | null; primaryColor?: string | null };
+type TenantBranding = {
+  displayName: string;
+  loginSlug: string;
+  logoUrl: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  headingFont?: string | null;
+  bodyFont?: string | null;
+};
 type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
 type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
 
@@ -450,7 +458,7 @@ export function LoginScreen({
             : passwordResetToken ? "Save new password" : invitationToken ? "Activate invitation" : "Sign in";
 
   return (
-    <DesignSystemProvider className={styles.loginRoot} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant.primaryColor)}>
+    <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
       <main className={styles.loginLayout}>
         <section aria-labelledby="welcome-heading" className={styles.brandPanel}>
           <div className={styles.brandStory}>
@@ -464,7 +472,7 @@ export function LoginScreen({
                 <strong className={styles.tenantName}>{tenant.displayName}</strong>
               )}
             </div>
-            <h2 id="welcome-heading">Hey, hello!</h2>
+            <h2 id="welcome-heading">From vision to handover.</h2>
             <p className={styles.brandLead}>
               One workspace for the whole customer journey.
             </p>

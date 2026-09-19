@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, CircleUserRound, LogOut } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -64,14 +64,9 @@ export function WorkspaceAccountMenu({ user }: { user: WorkspaceUser }) {
                     <small>{user.email}</small>
                   </span>
                 </div>
-                <Link href="/workspace/settings" onClick={close}>
-                  <CircleUserRound aria-hidden="true" size={16} /> User settings
+                <Link href="/workspace/settings/security" onClick={close}>
+                  <ShieldCheck aria-hidden="true" size={16} /> Sign-in security
                 </Link>
-                {user.platformRole === "administrator" ? (
-                  <Link href="/internal" onClick={close}>
-                    <Building2 aria-hidden="true" size={16} /> Internal portal
-                  </Link>
-                ) : null}
                 <button
                   className={styles.accountAction}
                   disabled={isSigningOut}

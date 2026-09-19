@@ -8,12 +8,12 @@ import { draftFromImportedPrice, importedPrices, priceLabel, recordPrices, sourc
 import { CatalogRecordPicker } from "./catalog-picker";
 import styles from "./catalog-settings-page.module.css";
 
-export function CatalogPriceDialog({target,items,canManage,initialSourceKey,onClose,onSave,onSaved,onArchive}:{target:CatalogRecord;items:CatalogRecord[];canManage:boolean;initialSourceKey?:string;onClose:()=>void;onSave:(r:CatalogRecord)=>Promise<CatalogRecord>;onSaved:(r:CatalogRecord)=>void;onArchive:(r:CatalogRecord)=>Promise<CatalogRecord>}) {
+export function CatalogPriceDialog({target,items,canManage,canViewCosts,initialSourceKey,onClose,onSave,onSaved,onArchive}:{target:CatalogRecord;items:CatalogRecord[];canManage:boolean;canViewCosts:boolean;initialSourceKey?:string;onClose:()=>void;onSave:(r:CatalogRecord)=>Promise<CatalogRecord>;onSaved:(r:CatalogRecord)=>void;onArchive:(r:CatalogRecord)=>Promise<CatalogRecord>}) {
   const {timeZone,currency}=useDesignSystem();
   const prices=recordPrices(target,items);
-  const sourcePrices=importedPrices(target);
+  const sourcePrices=importedPrices(target).filter(price=>canViewCosts||price.key.trim().toLowerCase().startsWith("selling_"));
   const blank=()=>{
-    const r=withRecordGroup({...blankCatalogRecord("rate_card"),catalogId:target.catalogId,name:`${target.name} price`,configuration:{currency,priceType:"cost",effectiveFrom:new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}},recordGroupId(target)??"");
+    const r=withRecordGroup({...blankCatalogRecord("rate_card"),catalogId:target.catalogId,name:`${target.name} price`,configuration:{currency,priceType:canViewCosts?"cost":"selling",effectiveFrom:new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}},recordGroupId(target)??"");
     r.code=recordCode(r.name,r.id).slice(0,64)+"_"+r.id.slice(0,8).toUpperCase();
     r.links.push({relation:target.kind,targetId:target.id},...target.links.filter(l=>l.relation==="unit"));return r;
   };
@@ -35,7 +35,7 @@ export function CatalogPriceDialog({target,items,canManage,initialSourceKey,onCl
       <small>{rate.configuration?.priceType?`${rate.configuration.priceType} · `:""}{String(rate.configuration?.costIncludes??"Inclusions not set").replaceAll("_"," ")} · Tax {rate.configuration?.taxIncluded==="yes"?"included":"extra"}</small>
     </button>)}</div>}
     {draft&&canManage?<form id="catalog-price-form" className={styles.form} onSubmit={save}><fieldset disabled={saving}><div className={styles.grid}>
-      <SelectField label="Price type" isRequired selectedKey={draft.configuration?.priceType?String(draft.configuration.priceType):null} onSelectionChange={k=>k&&config("priceType",String(k))} items={[{id:"purchase",label:"Purchase price"},{id:"cost",label:"Internal cost"},{id:"selling",label:"Selling price"}]}/>
+      <SelectField label="Price type" isRequired selectedKey={draft.configuration?.priceType?String(draft.configuration.priceType):null} onSelectionChange={k=>k&&config("priceType",String(k))} items={(canViewCosts?[{id:"purchase",label:"Purchase price"},{id:"cost",label:"Internal cost"}]:[]).concat({id:"selling",label:"Selling price"})}/>
       <NumericInput label="Price per unit" isRequired minValue={0} formatOptions={{maximumFractionDigits:6}} value={draft.configuration?.amount===undefined||draft.configuration.amount===""?NaN:Number(draft.configuration.amount)} onChange={value=>config("amount",Number.isFinite(value)?value:"")}/>
       <SelectField label="Currency" selectedKey={String(draft.configuration?.currency||currency)} onSelectionChange={k=>k&&config("currency",String(k))} items={Array.from(new Set([currency,"INR","AED","USD",String(draft.configuration?.currency||currency)])).map(id=>({id,label:id}))}/>
       <CatalogRecordPicker label="Unit" isRequired selectedKey={draft.links.find(l=>l.relation==="unit")?.targetId??null} onChange={k=>setLink("unit",k)} items={items.filter(r=>r.kind==="unit"&&!r.archived).map(r=>({id:r.id,label:r.name}))}/>

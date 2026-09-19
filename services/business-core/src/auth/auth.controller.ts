@@ -31,6 +31,13 @@ export class AuthController {
     return this.auth.getTenantBranding(loginSlug);
   }
 
+  @Get("tenant-host/:hostname")
+  @ApiOperation({ summary: "Resolve an active, verified custom hostname for sign-in" })
+  @ApiOkResponse()
+  brandingForHost(@Param("hostname") hostname: string) {
+    return this.auth.getTenantBrandingForHost(hostname);
+  }
+
   @Post("login")
   @ApiOperation({ summary: "Sign in with a tenant-scoped local credential" })
   @ApiCreatedResponse()

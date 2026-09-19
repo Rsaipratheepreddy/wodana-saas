@@ -1,16 +1,17 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { Text, useTheme } from '../design-system';
-import { HrmsTheme } from '../hrms/theme';
 import { MoreView } from '../crm/more-views';
 import { DealsView, InboxView, LeadsView, TodayView } from '../crm/work-views';
 import { CrmTabs, type CrmTab } from '../crm/ui';
 
-export function CrmScreen({ workspaceId }: { workspaceId: string }) {
-  return <HrmsTheme><CrmWorkspace workspaceId={workspaceId} /></HrmsTheme>;
+export type CrmDestination = { screen: string; recordId?: string | null };
+
+export function CrmScreen({ workspaceId, initialDestination }: { workspaceId: string; initialDestination?: CrmDestination | null }) {
+  return <CrmWorkspace workspaceId={workspaceId} initialDestination={initialDestination} />;
 }
 
-function CrmWorkspace({ workspaceId }: { workspaceId: string }) {
+function CrmWorkspace({ workspaceId, initialDestination }: { workspaceId: string; initialDestination?: CrmDestination | null }) {
   const { colors } = useTheme();
   const [tab, setTab] = useState<CrmTab>('today');
   const [revision, setRevision] = useState(0);
@@ -24,9 +25,16 @@ function CrmWorkspace({ workspaceId }: { workspaceId: string }) {
     if (['sla_breach', 'stale_lead'].includes(kind)) { setRecord({ tab: 'leads', id }); setTab('leads'); return; }
     setRecord({ tab: 'more', more: 'activities' }); setTab('more');
   };
+  useEffect(() => {
+    if (!initialDestination) return;
+    const next: CrmTab = initialDestination.screen === 'leads' ? 'leads'
+      : initialDestination.screen === 'deals' ? 'deals'
+        : initialDestination.screen === 'inbox' ? 'inbox' : 'today';
+    setRecord({ tab: next, id: initialDestination.recordId ?? undefined });
+    setTab(next);
+  }, [initialDestination]);
   return <View style={{ flex: 1, backgroundColor: colors.canvas }}>
     <View style={{ width: '100%', maxWidth: 720, alignSelf: 'center', gap: 12, paddingBottom: 12 }}>
-      <Text size="sm" tone="textSecondary">Follow customers from first enquiry through delivery handoff.</Text>
       <CrmTabs value={tab} onChange={changeTab} />
     </View>
     <ScrollView ref={scroll} key={tab} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}

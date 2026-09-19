@@ -1,12 +1,13 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { Checkbox } from "../components/forms";
 
 export type GroupedTableColumn<T> = {
   id: string;
   label: string;
   mobileHidden?: boolean;
+  mobileWidth?: string;
   render: (row: T) => ReactNode;
   width?: string;
 };
@@ -48,7 +49,7 @@ export function GroupedTable<T>({
     onSelectionChange?.(next);
   };
 
-  return <div className="wd-grouped-table-scroll" data-appearance={appearance} data-selectable={selectable} tabIndex={0}><table aria-label={ariaLabel} className="wd-grouped-table wd-record-table"><colgroup>{selectable ? <col className="wd-grouped-select-column" /> : null}{columns.map((column) => <col key={column.id} style={column.width ? { inlineSize: column.width } : undefined} />)}</colgroup>{sections.map((section) => {
+  return <div className="wd-grouped-table-scroll" data-appearance={appearance} data-selectable={selectable} tabIndex={0}><table aria-label={ariaLabel} className="wd-grouped-table wd-record-table"><colgroup>{selectable ? <col className="wd-grouped-select-column" /> : null}{columns.map((column) => <col data-mobile-hidden={column.mobileHidden || undefined} key={column.id} style={{ "--wd-grouped-column-width": column.width ?? "auto", "--wd-grouped-column-mobile-width": column.mobileWidth ?? "auto" } as CSSProperties} />)}</colgroup>{sections.map((section) => {
     const rowIds = section.rows.map(getRowId);
     const selectedCount = rowIds.filter((id) => selectedIds.has(id)).length;
     return <tbody key={section.id}>

@@ -74,7 +74,14 @@
   border: 0;
   border-radius: 0;
 }
+.provider :global(.wd-table-frame) {
+  overflow: hidden;
+  border: 1px solid var(--wd-color-border);
+  border-radius: 12px;
+  background: var(--wd-color-surface);
+}
 .provider :global(.wd-table) {
+  inline-size: 100%;
   min-inline-size: 40rem;
   font-size: 0.75rem;
 }
@@ -100,6 +107,15 @@
 .provider :global(.wd-table-scroll:focus-visible) {
   outline: 2px solid var(--wd-color-focus);
   outline-offset: 2px;
+}
+.provider :global(.wd-table-footer) {
+  min-block-size: 42px;
+  display: flex;
+  align-items: center;
+  padding-inline: 14px;
+  border-block-start: 1px solid var(--wd-color-border);
+  color: var(--wd-color-text-tertiary);
+  font-size: 11px;
 }
 .provider :global(.wd-dialog h2) {
   font-size: 1rem;
@@ -235,7 +251,7 @@ a.setupStep:focus-visible {
   color: var(--wd-color-text);
   background: var(--wd-color-surface);
   min-height: 100%;
-  padding: 20px 24px 40px;
+  padding: 12px 16px 24px;
 }
 .header,
 .toolbar,
@@ -246,14 +262,17 @@ a.setupStep:focus-visible {
   gap: 20px;
 }
 .header {
-  padding-block-end: 20px;
+  min-block-size: 36px;
+  padding-block-end: 8px;
 }
 .header h1 {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.5px;
-  margin: 0 0 4px;
+  margin: 0;
 }
+.header p { display: none; }
+.header button { min-block-size: 32px; }
 .page h2 {
   font-size: 16px;
   font-weight: 600;
@@ -285,7 +304,47 @@ a.setupStep:focus-visible {
   gap: 10px;
 }
 .toolbar {
-  margin: 4px 0 16px;
+  margin: 2px 0 10px;
+}
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.metricCard {
+  min-inline-size: 0;
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--wd-color-border);
+  border-radius: 12px;
+  background: var(--wd-color-surface);
+}
+.metricCard span,
+.metricCard small {
+  color: var(--wd-color-text-tertiary);
+  font-size: 11px;
+}
+.metricCard strong {
+  color: var(--wd-color-text);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+}
+.tableTools {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 220px auto;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0 12px;
+}
+.filterCount {
+  align-self: center;
+  color: var(--wd-color-text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
 }
 .sectionHeading {
   margin: 24px 0 12px;
@@ -671,6 +730,9 @@ a.setupStep:focus-visible {
   .balanceGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 640px) {
   .page {
@@ -703,6 +765,13 @@ a.setupStep:focus-visible {
   .balanceGrid {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+  .metricGrid,
+  .tableTools {
+    grid-template-columns: 1fr;
+  }
+  .filterCount {
+    justify-self: start;
   }
   .balanceCard {
     padding: 20px;

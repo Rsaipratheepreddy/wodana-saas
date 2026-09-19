@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { QuotationStudio } from "./quotation-studio";
@@ -56,11 +56,17 @@ const request: ChangeRequest = {
 function Harness({
   readOnly = false,
   withRequest = false,
+  catalogPriced = false,
 }: {
   readOnly?: boolean;
   withRequest?: boolean;
+  catalogPriced?: boolean;
 }) {
-  const [quote, setQuote] = useState(initial());
+  const [quote, setQuote] = useState(() => {
+    const value = initial();
+    if (catalogPriced) value.lines[0].catalogLinks = [{ role: "work", recordId: "work-1", version: 2, snapshot: { id: "work-1", name: "Wardrobe", code: "W", kind: "work", version: 2, catalogId: "catalog-1", commerce: { pricingMode: "fixed" } } }];
+    return value;
+  });
   return (
     <QuotationStudio
       quote={quote}
@@ -69,7 +75,7 @@ function Harness({
         setQuote(q);
       }}
       state={
-        { data: { revision: 1, quotes: [] } } as unknown as CommercialState
+        { data: { revision: 1, quotes: [] }, canOverridePrice: true } as unknown as CommercialState
       }
       workspaceId="w"
       caseId="c"
@@ -95,6 +101,14 @@ beforeEach(() => {
   );
 });
 describe("quotation spreadsheet workspace", () => {
+  it("uses backend catalogue pricing in the builder instead of an editable rate", async () => {
+    const snapshot = { status: "resolved", source: "catalog", mode: "fixed", catalogId: "catalog-1", work: { id: "work-1", version: 2 }, unitLabel: "nos", quantity: 2, currency: "AED", pricingDate: "2026-09-17", taxRate: 0, resolvedAt: "2026-09-17T00:00:00Z", rateCard: { appliedUnitRate: 275 } };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes("/catalog-price") ? { status: "resolved", code: "resolved", message: "Price resolved", snapshot } : { items: [], templates: [] }), { headers: { "content-type": "application/json" } })));
+    render(<Harness catalogPriced />);
+    expect(screen.queryByRole("textbox", { name: "Rate for Wardrobe" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Check price" }));
+    await waitFor(() => expect(onChange.mock.lastCall?.[0].lines[0]).toMatchObject({ rate: 275, catalogPriceRequest: { action: "resolve" }, catalogPrice: snapshot }));
+  });
   it("shows a table and compact toolbar with preview behind one button", async () => {
     render(<Harness />);
     expect(
@@ -237,7 +251,31 @@ describe("quotation spreadsheet workspace", () => {
     await user.click(
       screen.getByRole("button", { name: "Add item to Delivery" }),
     );
+    const authorizationDialog = await screen.findByRole("dialog", {
+      name: "Authorize manual item",
+    });
+    await user.type(
+      within(authorizationDialog).getByRole("textbox", {
+        name: /Authorization reason/,
+      }),
+      "Client-requested delivery allowance",
+    );
+    await user.click(
+      within(authorizationDialog).getByRole("button", {
+        name: "Add manual item",
+      }),
+    );
     expect(onChange.mock.lastCall?.[0].lines[1].room).toBe("Delivery");
+    expect(onChange.mock.lastCall?.[0].lines[1].manualReason).toBe("Client-requested delivery allowance");
+  });
+
+  it("prices an option separately from the base total", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole("checkbox", { name: "Price Wardrobe as option" }));
+    expect(onChange.mock.lastCall?.[0].lines[0].optional).toBe(true);
+    expect(screen.getByText("Priced options · not included")).toBeVisible();
+    expect(screen.getAllByText("AED 0.00").length).toBeGreaterThan(0);
   });
   it("protects read-only versions and still shows all prices and materials", () => {
     render(<Harness readOnly />);
@@ -266,6 +304,17 @@ describe("quotation spreadsheet workspace", () => {
         screen.getByRole("article", { name: "Quotation document" }),
       ).getByText("Premium"),
     ).toBeVisible();
+  });
+  it("adds finished-item size once and shows it in the client quotation", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Materials for Wardrobe" }));
+    const dialog = screen.getByRole("dialog", { name: "Materials" });
+    await user.type(within(dialog).getByRole("textbox", { name: "Length" }), "220");
+    await user.click(within(dialog).getByRole("button", { name: "Apply materials" }));
+    expect(onChange.mock.lastCall?.[0].lines[0].dimensions).toEqual({ length: 220, unit: "cm" });
+    await user.click(screen.getByRole("button", { name: "Preview quotation" }));
+    expect(within(screen.getByRole("article", { name: "Quotation document" })).getByText("L 220 cm")).toBeVisible();
   });
   it("keeps the header editable and the AI assistant available without changing existing scope", async () => {
     const user = userEvent.setup();

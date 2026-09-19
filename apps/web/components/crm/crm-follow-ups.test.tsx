@@ -32,7 +32,8 @@ function sheet() { const onSaved = vi.fn(), onClose = vi.fn(); render(<FollowUpS
 describe("Follow-up list", () => {
   it("shows overdue and unscheduled reminders by default without mixing in completed records", () => {
     render(<CrmFollowUps initialData={fixture([initial, { ...initial, id: "no-date", title: "Choose next step", dueAt: null }, { ...initial, id: "done", title: "Already finished", status: "completed" }])} />);
-    expect(screen.getByRole("region", { name: "Overdue follow-ups" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Follow-ups" })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Discuss quotation/ })).toHaveTextContent("Overdue");
     expect(screen.getByRole("button", { name: /Choose next step/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Already finished/ })).not.toBeInTheDocument();
     expect(api).not.toHaveBeenCalled();
@@ -46,14 +47,15 @@ describe("Follow-up list", () => {
     expect(screen.getByRole("button", { name: /Discuss quotation/ })).toBeInTheDocument();
     await user.clear(search); await user.type(search, "no match");
     expect(screen.getByText("No matching follow-ups")).toBeInTheDocument();
-    await user.clear(search); await user.click(screen.getByRole("button", { name: "Completed 1" }));
+    await user.clear(search); await user.click(screen.getByRole("button", { name: /Table view/ }));
+    await user.click(screen.getByRole("option", { name: "Completed (1)" }));
     expect(screen.getByRole("button", { name: /Already finished/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Discuss quotation/ })).not.toBeInTheDocument();
   });
 
   it("opens the dedicated editor when any part of a reminder is clicked", async () => {
     const user = userEvent.setup(); render(<CrmFollowUps initialData={fixture()} />);
-    await user.click(screen.getByRole("button", { name: /Open follow-up: Discuss quotation/ }));
+    await user.click(screen.getByRole("button", { name: /Discuss quotation/ }));
     expect(await screen.findByRole("textbox", { name: "Notes" })).toHaveValue(String(initial.description));
     expect(api).toHaveBeenCalledWith(workspaceId, "activities/reminder", "GET", undefined, expect.any(AbortSignal));
   });
@@ -61,7 +63,7 @@ describe("Follow-up list", () => {
   it("supports opening reminders by keyboard and links to the correct calendar route", async () => {
     const user = userEvent.setup(); render(<CrmFollowUps initialData={fixture()} />);
     expect(screen.getByRole("link", { name: "Open calendar" })).toHaveAttribute("href", "/workspace/crm/calendar");
-    screen.getByRole("button", { name: /Open follow-up: Discuss quotation/ }).focus();
+    screen.getByRole("button", { name: /Discuss quotation/ }).focus();
     await user.keyboard("{Enter}");
     expect(await screen.findByRole("textbox", { name: "Notes" })).toBeInTheDocument();
     await user.keyboard("{Escape}");
@@ -94,7 +96,7 @@ describe("Notes and rescheduling", () => {
     fireEvent.change(screen.getByLabelText("Reminder date"), { target: { value: "2026-09-08" } });
     fireEvent.change(screen.getByLabelText("Reminder time"), { target: { value: "10:30" } });
     await user.click(screen.getByRole("button", { name: "Save changes" }));
-    await screen.findByText("Saved. Your reminder is updated in Overview and Calendar.");
+    await screen.findByText("Saved. Your reminder is updated in Today and Calendar.");
     expect(api).toHaveBeenCalledWith(workspaceId, "activities/reminder", "PATCH", { version: 3, title: initial.title, description: "Client asked me to call tomorrow.", dueAt: new Date("2026-09-08T10:30").toISOString() });
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ version: 4 }));
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
@@ -108,7 +110,7 @@ describe("Notes and rescheduling", () => {
     expect(await screen.findByText("Connection lost")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Notes" })).toHaveValue("Client wants a revised quote. Extra detail.");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
-    expect(await screen.findByText("Saved. Your reminder is updated in Overview and Calendar.")).toBeInTheDocument();
+    expect(await screen.findByText("Saved. Your reminder is updated in Today and Calendar.")).toBeInTheDocument();
   });
 
   it("saves edited notes before completion and uses the new version", async () => {
@@ -146,11 +148,12 @@ describe("Notes and rescheduling", () => {
 
   it("asks before discarding notes when the editor is closed", async () => {
     const user = userEvent.setup(); const { onClose } = sheet();
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     await user.type(await screen.findByRole("textbox", { name: "Notes" }), " Keep this.");
     await user.click(screen.getByRole("button", { name: "Close inspector" }));
     expect(onClose).not.toHaveBeenCalled();
-    expect(window.confirm).toHaveBeenCalledWith("Discard unsaved changes?");
+    expect(screen.getByRole("dialog", { name: "Discard unsaved follow-up changes?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("rejects an incomplete or invalid schedule without changing the record", () => {
@@ -170,7 +173,7 @@ describe("Create a follow-up", () => {
     const user = userEvent.setup(); render(<CrmFollowUps initialData={fixture()} />);
     await user.click(screen.getByRole("button", { name: "Add follow-up" }));
     const dialog = await screen.findByRole("dialog", { name: "Add follow-up" });
-    const combo = within(dialog).getByRole("combobox", { name: /Lead or client/ });
+    const combo = within(dialog).getByRole("combobox", { name: /Enquiry or customer/ });
     await waitFor(() => expect(combo).toBeEnabled());
     await user.type(combo, "Maya");
     await user.click(await screen.findByRole("option", { name: "Maya Nair · Clinic design" }));

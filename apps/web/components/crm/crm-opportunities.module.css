@@ -1,0 +1,8 @@
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-2); }
+.identity { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.identity strong, .identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity strong { color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.identity small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.stage[data-unplaced="true"] { color: var(--wd-color-warning); }
+.money { color: var(--wd-color-text); font-variant-numeric: tabular-nums; }
+.due { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }

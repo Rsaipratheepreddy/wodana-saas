@@ -185,13 +185,29 @@ export async function hrmsFixture(page: Page) {
 export async function openHrms(page: Page) {
   await page.goto("/workspace/hrms");
   if (new URL(page.url()).pathname === "/login") {
-    const response = await page.request.post("/api/auth/login", {
-      data: {
-        email: "admin@igloarchitects.com",
-        password: "IgloDemo#2026",
-        tenantSlug: "iglo-architects",
-      },
+    const credentials = {
+      email: process.env.E2E_LOGIN_EMAIL ?? "admin@igloarchitects.com",
+      password: process.env.E2E_LOGIN_PASSWORD ?? "IgloDemo#2026",
+      tenantSlug: process.env.E2E_TENANT_SLUG ?? "iglo-architects",
+    };
+    let response = await page.request.post("/api/auth/login", {
+      data: credentials,
     });
+    if (response.status() === 409 && process.env.E2E_RECLAIM_DEVICE === "true") {
+      const payload = await response.json();
+      const previousTestSession = payload.sessions?.find(
+        (session: { familyId?: string; userAgent?: string }) =>
+          session.familyId &&
+          /Playwright|HeadlessChrome|Windows NT/i.test(session.userAgent ?? ""),
+      );
+      if (previousTestSession?.familyId)
+        response = await page.request.post("/api/auth/login", {
+          data: {
+            ...credentials,
+            revokeFamilyId: previousTestSession.familyId,
+          },
+        });
+    }
     if (!response.ok()) throw new Error("Local demo login failed.");
     await page.goto("/workspace/hrms");
   }

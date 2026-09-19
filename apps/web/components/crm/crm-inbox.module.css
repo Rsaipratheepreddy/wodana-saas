@@ -7,12 +7,8 @@
 .listHeading svg { color: var(--chat-accent); }
 .listHeading h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.3px; }
 .actions { flex-shrink: 0; }
-.search { display: flex; align-items: center; gap: 10px; min-inline-size: 0; margin: 2px 16px 12px; padding: 0 12px; min-block-size: 40px; border: 1px solid transparent; border-radius: 7px; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
-.search:focus-within { border-color: var(--chat-accent); }
-.search input { min-inline-size: 0; inline-size: 100%; border: 0; padding: 8px 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: 13px; outline: none; }
-.filters { display: flex; gap: 8px; padding: 0 16px 12px; border-block-end: 1px solid var(--wd-color-structural-divider); }
-.filters button { min-block-size: 32px; padding: 5px 12px; border: 1px solid var(--wd-color-structural-divider); border-radius: 6px; background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
-.filters button[aria-pressed="true"] { background: var(--chat-soft); color: var(--chat-accent); border-color: transparent; font-weight: 600; }
+.searchArea { min-inline-size: 0; padding: 2px 16px 12px; }
+.filters { padding: 0 16px 12px; border-block-end: 1px solid var(--wd-color-structural-divider); }
 .threadItems { flex: 1; overflow-y: auto; min-block-size: 0; }
 .threadItem { inline-size: 100%; display: flex; gap: 12px; align-items: center; min-block-size: 78px; padding: 14px 16px; border: 0; border-block-end: 1px solid var(--wd-color-structural-divider); background: transparent; color: var(--wd-color-text); text-align: start; cursor: pointer; }
 .threadItem:hover { background: var(--wd-color-surface-muted); }
@@ -23,7 +19,7 @@
 .threadTop strong { min-inline-size: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .threadTop time { flex-shrink: 0; font-size: 10px; color: var(--wd-color-text-tertiary); }
 .preview { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--wd-color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unread { display: inline-grid; place-items: center; flex-shrink: 0; min-inline-size: 19px; block-size: 19px; padding-inline: 4px; border-radius: 50%; background: var(--chat-accent); color: white; font-size: 10px; font-weight: 600; }
+.unread { display: inline-grid; place-items: center; flex-shrink: 0; min-inline-size: 19px; block-size: 19px; padding-inline: 4px; border-radius: 50%; background: var(--chat-accent); color: var(--wd-color-action-on-primary); font-size: 10px; font-weight: 600; }
 .thread { display: flex; flex-direction: column; min-inline-size: 0; min-block-size: 0; }
 .headingIdentity { min-inline-size: 0; flex: 1; }
 .headingIdentity h2 { font-size: 15px; margin: 0 0 4px; overflow-wrap: anywhere; }
@@ -39,10 +35,10 @@
 .message p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
 .message footer { display: flex; align-items: center; justify-content: flex-end; gap: 5px; padding-block-start: 4px; font-size: 10px; color: var(--wd-color-text-secondary); }
 .delivery { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--wd-color-text-secondary); }
-.delivery[data-status="read"] { color: #078bb6; }
+.delivery[data-status="read"] { color: var(--wd-color-info); }
 .delivery[data-status="failed"], .error { color: var(--wd-color-danger); }
 .error { margin: 8px 12px; font-size: 12px; overflow-wrap: anywhere; }
-.error button { color: inherit; background: transparent; border: 0; text-decoration: underline; cursor: pointer; }
+.error :global(.wd-button) { color: inherit; text-decoration: underline; }
 .mediaPreview { display: grid; gap: 6px; color: inherit; text-decoration: none; }
 .mediaPreview img { inline-size: min(360px, 100%); block-size: auto; max-block-size: 260px; object-fit: cover; border-radius: 5px; }
 .mediaPreview span, .mediaFile { display: flex; align-items: center; gap: 6px; color: var(--chat-accent); font-size: 12px; }
@@ -52,7 +48,7 @@
 .composerInput { display: flex; align-items: flex-end; gap: 10px; }
 .composer textarea { flex: 1; min-inline-size: 0; inline-size: 100%; min-block-size: 42px; max-block-size: 112px; resize: none; padding: 10px 12px; border: 1px solid var(--wd-color-structural-divider); border-radius: 7px; background: var(--wd-color-surface-muted); color: var(--wd-color-text); outline: none; font: inherit; font-size: 14px; line-height: 1.5; }
 .composer textarea:focus { border-color: var(--chat-accent); }
-.inbox .sendButton { inline-size: 42px; block-size: 42px; min-inline-size: 42px; min-block-size: 42px; padding: 0; border: 0; border-radius: 8px; background: var(--crm-gradient); color: var(--crm-on-gradient); }
+.inbox .sendButton { inline-size: 42px; block-size: 42px; min-inline-size: 42px; min-block-size: 42px; padding: 0; border: 0; border-radius: 8px; background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
 .composerFooter { display: flex; justify-content: space-between; gap: 8px; min-block-size: 15px; color: var(--wd-color-text-tertiary); font-size: 10px; }
 .composerFooter small { font-size: inherit; }
 .empty { display: flex; flex: 1; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 24px; text-align: center; color: var(--wd-color-text-secondary); }
@@ -62,10 +58,9 @@
 .newChat { display: grid; gap: 16px; }
 .newChat small { color: var(--wd-color-text-secondary); }
 .contacts { max-block-size: 320px; overflow-y: auto; }
-.contacts button { display: flex; align-items: center; gap: 12px; inline-size: 100%; min-block-size: 54px; padding: 10px 8px; border: 0; border-block-end: 1px solid var(--wd-color-structural-divider); background: transparent; color: var(--wd-color-text); text-align: start; cursor: pointer; }
-.contacts button span { flex: 1; }
-.contacts button:hover { background: var(--wd-color-surface-muted); }
-.filters button:focus-visible, .threadItem:focus-visible, .contacts button:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: -2px; }
+.contactItem { display: flex; align-items: center; gap: 12px; inline-size: 100%; min-block-size: 54px; justify-content: flex-start; border-block-end: 1px solid var(--wd-color-structural-divider); text-align: start; }
+.contactItem span { flex: 1; }
+.threadItem:focus-visible, .contactItem:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: -2px; }
 @media (max-width: 64rem) { .inbox { grid-template-columns: 280px minmax(0, 1fr); } .messages { padding-inline: 16px; } }
 @media (max-width: 48rem) {
   .inbox { grid-template-columns: minmax(0, 1fr); }
@@ -75,19 +70,18 @@
   .threadHeading { min-block-size: 66px; gap: 8px; padding: 10px; flex-wrap: wrap; }
   .threadHeading .actions { margin-inline-start: auto; }
   .headingIdentity { min-inline-size: calc(100% - 96px); }
-  .filters button { min-block-size: 44px; }
   .messages { padding: 12px 10px; }
   .message { max-inline-size: 90%; }
   .composer { padding: 10px; }
-  .composer textarea, .search input { font-size: 16px; }
+  .composer textarea { font-size: 16px; }
   .inbox .sendButton { min-inline-size: 44px; min-block-size: 44px; }
 }
 
 
 
-.inbox .brandButton { background: var(--crm-gradient); color: var(--crm-on-gradient); border-color: transparent; }
-.inbox .brandButton:global(.wd-button[data-variant="primary"]), .inbox .sendButton:global(.wd-button[data-variant="primary"]) { border-color: transparent; background: var(--crm-gradient); color: var(--crm-on-gradient); box-shadow: none; }
-.inbox .brandButton:global(.wd-button[data-variant="primary"]):hover, .inbox .sendButton:global(.wd-button[data-variant="primary"]):hover { background: var(--crm-gradient); border-color: var(--crm-accent); }
+.inbox .brandButton { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); border-color: transparent; }
+.inbox .brandButton:global(.wd-button[data-variant="primary"]), .inbox .sendButton:global(.wd-button[data-variant="primary"]) { border-color: transparent; background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); box-shadow: none; }
+.inbox .brandButton:global(.wd-button[data-variant="primary"]):hover, .inbox .sendButton:global(.wd-button[data-variant="primary"]):hover { background: var(--wd-color-action-primary-hover); border-color: var(--wd-color-action-primary-hover); }
 
 
 .conversation { display: grid; grid-template-columns: minmax(0, 1fr) 230px; min-inline-size: 0; min-block-size: 0; }

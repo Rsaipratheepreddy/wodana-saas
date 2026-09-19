@@ -18,6 +18,10 @@ export class CrmReportingService {
           source: "enquiry.source || ' / ' || enquiry.channel", enquiryType: "enquiry.service_type",
           customerType: "enquiry.details->>'customerType'", budget: "enquiry.details->>'budgetRange'",
           owner: "account.display_name", team: "queue.name", intake: "intake.intake_method",
+          freshness: `CASE
+            WHEN lead.status IN ('qualified','disqualified') THEN 'closed'
+            WHEN greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days' THEN 'stale'
+            ELSE 'current' END`,
           day: "to_char(date_trunc('day', lead.created_at AT TIME ZONE workspace.default_timezone), 'YYYY-MM-DD')",
           week: "to_char(date_trunc('week', lead.created_at AT TIME ZONE workspace.default_timezone), 'YYYY-MM-DD')",
           month: "to_char(date_trunc('month', lead.created_at AT TIME ZONE workspace.default_timezone), 'YYYY-MM')",
@@ -45,6 +49,13 @@ export class CrmReportingService {
           GROUP BY ${dimension}, ${groupId} ORDER BY label`, [workspaceId, from, to]);
         const processing = await client.query(`SELECT status,count(*)::int AS count FROM crm_intake_events
           WHERE workspace_id=$1 AND received_at >= $2 AND received_at < $3 GROUP BY status`, [workspaceId, from, to]);
+        const summary = await client.query(`SELECT count(*)::int AS leads,
+          count(*) FILTER (WHERE lead.owner_membership_id IS NULL)::int AS unassigned,
+          count(*) FILTER (WHERE lead.status='qualified')::int AS qualified,
+          count(*) FILTER (WHERE lead.status='disqualified')::int AS disqualified,
+          count(*) FILTER (WHERE lead.status NOT IN ('qualified','disqualified') AND greatest(lead.updated_at,enquiry.updated_at) < now()-interval '7 days')::int AS stale
+          FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
+          WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3`, [workspaceId, from, to]);
         const walkIns = await client.query(`SELECT intake.intake_method AS "intakeMethod",count(*)::int AS count,
           count(lead.id)::int AS leads, count(lead.id) FILTER (WHERE lead.status='qualified')::int AS qualified,
           count(lead.id) FILTER (WHERE lead.status='disqualified')::int AS disqualified,
@@ -52,7 +63,19 @@ export class CrmReportingService {
           FROM crm_intake_events intake LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id=intake.id AND enquiry.workspace_id=intake.workspace_id
           LEFT JOIN crm_leads lead ON lead.enquiry_id=enquiry.id AND lead.workspace_id=enquiry.workspace_id
           WHERE intake.workspace_id=$1 AND intake.source='company' AND intake.channel='walk_in' AND intake.received_at >= $2 AND intake.received_at < $3 GROUP BY intake.intake_method`, [workspaceId, from, to]);
-        return { report, from: from.toISOString(), to: to.toISOString(), groupBy: query.groupBy ?? "source", rows: grouped.rows, processing: processing.rows, walkIns: walkIns.rows };
+        const totals = summary.rows[0] ?? { leads: 0, unassigned: 0, qualified: 0, disqualified: 0, stale: 0 };
+        const groupedLeads = grouped.rows.reduce((total, row) => total + Number(row.leads ?? 0), 0);
+        return {
+          report,
+          from: from.toISOString(),
+          to: to.toISOString(),
+          groupBy: query.groupBy ?? "source",
+          rows: grouped.rows,
+          summary: totals,
+          reconciliation: { totalLeads: Number(totals.leads ?? 0), groupedLeads, matches: groupedLeads === Number(totals.leads ?? 0) },
+          processing: processing.rows,
+          walkIns: walkIns.rows,
+        };
       }
       if (report === "sla") {
         const withinTarget = `(instance.responded_at IS NOT NULL AND
@@ -114,12 +137,15 @@ export class CrmReportingService {
            ORDER BY breached DESC,total DESC,owner`,
           [workspaceId, from, to],
         );
+        const total = Number(summary.rows[0]?.total ?? 0);
+        const groupedTotal = rows.rows.reduce((count, row) => count + Number(row.count ?? 0), 0);
         return {
           report,
           from: from.toISOString(),
           to: to.toISOString(),
           rows: rows.rows,
           summary: summary.rows[0] ?? {},
+          reconciliation: { total, groupedTotal, matches: total === groupedTotal },
           owners: owners.rows,
         };
       }

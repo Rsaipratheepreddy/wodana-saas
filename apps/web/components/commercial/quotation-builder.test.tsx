@@ -67,8 +67,20 @@ beforeEach(() =>
     vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [] }) }),
   ),
 );
-function Editor() {
-  const [quote, setQuote] = useState(initial);
+function Editor({
+  catalogPriced = false,
+  costing = false,
+  canEditCosts = false,
+}: {
+  catalogPriced?: boolean;
+  costing?: boolean;
+  canEditCosts?: boolean;
+}) {
+  const [quote, setQuote] = useState(() => {
+    const value = initial();
+    if (catalogPriced) value.lines[0].catalogLinks = [{ role: "work", recordId: "work-1", version: 2, snapshot: { id: "work-1", name: "Wardrobe", code: "W", kind: "work", version: 2, catalogId: "catalog-1", commerce: { pricingMode: "fixed" } } }];
+    return value;
+  });
   return (
     <QuotationEditor
       quote={quote}
@@ -76,13 +88,44 @@ function Editor() {
       workspaceId="workspace"
       caseId="case"
       readOnly={false}
-      costing={false}
+      costing={costing}
+      canEditCosts={canEditCosts}
       requests={[]}
       itemsOnly
     />
   );
 }
 describe("Quotation builder interactions", () => {
+  it("keeps internal cost and margin absent without cost-view capability", () => {
+    render(<Editor />);
+    expect(
+      screen.queryByRole("columnheader", { name: "Unit cost" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Gross margin")).not.toBeInTheDocument();
+    expect(screen.queryByText(/61\.00/)).not.toBeInTheDocument();
+  });
+
+  it("shows read-only cost evidence separately from cost-edit permission", () => {
+    const { unmount } = render(<Editor costing />);
+    expect(
+      screen.getByRole("columnheader", { name: "Unit cost" }),
+    ).toBeVisible();
+    expect(screen.getByRole("table")).toHaveTextContent("61.00");
+    expect(screen.queryByLabelText("Cost for Wardrobe")).not.toBeInTheDocument();
+    unmount();
+
+    render(<Editor costing canEditCosts />);
+    expect(screen.getByLabelText("Cost for Wardrobe")).toHaveValue("61.00");
+  });
+
+  it("keeps the BOQ rate consistent with backend catalogue pricing", async () => {
+    const snapshot = { status: "resolved", source: "catalog", mode: "fixed", catalogId: "catalog-1", work: { id: "work-1", version: 2 }, unitLabel: "nos", quantity: 1, currency: "AED", pricingDate: "2026-09-17", taxRate: 0, resolvedAt: "2026-09-17T00:00:00Z", rateCard: { appliedUnitRate: 275 } };
+    vi.mocked(fetch).mockImplementation(async (url) => ({ ok: true, json: async () => String(url).includes("/catalog-price") ? { status: "resolved", code: "resolved", message: "Price resolved", snapshot } : { items: [] } }) as Response);
+    render(<Editor catalogPriced />);
+    expect(screen.queryByRole("textbox", { name: "Rate for Wardrobe" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Check price" }));
+    await waitFor(() => expect(screen.getByRole("table", { name: "Quotation items · Bedroom" })).toHaveTextContent("275.00"));
+  });
   it("shows material in a dedicated column and applies edited material to the correct item", async () => {
     const user = userEvent.setup();
     render(<Editor />);
@@ -220,9 +263,9 @@ describe("Quotation builder interactions", () => {
   });
   it("client document shows cover, materials and included scope without internal cost analysis", () => {
     const quote = initial();
-    render(<ClientQuotation quote={{ ...quote, canDecide: false }} />);
+    render(<ClientQuotation quote={{ ...quote, canDecide: false, expired: false }} />);
     expect(screen.getByText("Oak veneer · Matte lacquer · Soft-close doors")).toBeVisible();
-    expect(screen.getByRole("columnheader", {name:"Variant"})).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Reference image" })).toBeVisible();
     expect(screen.getByText("Delivery included")).toBeVisible();
     expect(within(screen.getByRole("region", { name: "Quotation cover" })).getByText("Demo customer")).toBeVisible();
     expect(screen.queryByText(/61\.00/)).not.toBeInTheDocument();

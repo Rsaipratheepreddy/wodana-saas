@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { notFound, redirect } from "next/navigation";
 import { LandingPage } from "@/components/landing/landing-page";
+import { classifyTenantHost } from "@/lib/auth/tenant-host";
 
 export const metadata: Metadata = {
-  title: "Wodana — Beautiful spaces. Beautifully managed.",
-  description: "Bring your interior business together. Manage leads, plan rooms, build quotations, and keep your team connected in one Wodana workspace.",
+  title: "Wodana — One connected flow for interior businesses",
+  description: "Run enquiries, pre-execution, quotations, project delivery, people, and client handover in one connected Wodana workspace.",
 };
 
-export default function Home() {
+export default async function Home() {
+  const host = (await headers()).get("host");
+  const route = classifyTenantHost(host);
+  if (route.kind === "invalid") notFound();
+  if (route.kind !== "generic") redirect("/login");
   return <LandingPage />;
 }

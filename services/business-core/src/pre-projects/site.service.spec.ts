@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { assertSurveyReview, normalizeSurveyDimensions, SiteService, validateVisit } from './site.service';
+import { applyEvidenceConsent, assertSurveyReview, normalizeSurveyDimensions, SiteService, validateVisit } from './site.service';
 import { preserveSurveyDimensions } from './item-specification.service';
 import { SaveSiteMeasurementDto, SaveSiteVisitDto } from './site.dto';
 import { BriefService } from './brief.service';
@@ -44,6 +44,20 @@ describe('site survey boundaries',()=>{
  it('rejects client-supplied verification flags and duplicate dimensions',async()=>{
   const dto=plainToInstance(SaveSiteMeasurementDto,{id,version:0,title:'Room',note:'',assetIds:[],roomId:id,entryId:null,visitId:null,specificationVersion:0,dimensions:[dimension,dimension],status:'verified',verifiedBy:id});
   expect(await validate(dto,{whitelist:true,forbidNonWhitelisted:true})).not.toHaveLength(0);
+ });
+ it('accepts only a boolean evidence-consent confirmation flag',async()=>{
+  const valid=plainToInstance(SaveSiteVisitDto,{...visit,evidenceConsentConfirmed:true});
+  const invalid=plainToInstance(SaveSiteVisitDto,{...visit,evidenceConsentConfirmed:'yes'});
+  expect(await validate(valid,{whitelist:true,forbidNonWhitelisted:true})).toHaveLength(0);
+  expect(await validate(invalid,{whitelist:true,forbidNonWhitelisted:true})).not.toHaveLength(0);
+  const spoofed=plainToInstance(SaveSiteVisitDto,{...visit,evidenceConsent:{confirmedBy:id,confirmedAt:'2020-01-01'}});
+  expect(await validate(spoofed,{whitelist:true,forbidNonWhitelisted:true})).not.toHaveLength(0);
+ });
+ it('records evidence consent with the authenticated actor and server time, then preserves it',()=>{
+  const at=new Date('2026-09-18T00:00:00Z');const content={id,version:1,kind:'observation',title:'Site photos',status:'open',assetIds:[id],evidenceConsentConfirmed:true};
+  const recorded=applyEvidenceConsent(content,null,'actor',()=>at);
+  expect(recorded).toMatchObject({evidenceConsent:{confirmedBy:'actor',confirmedAt:at.toISOString()}});expect(recorded).not.toHaveProperty('evidenceConsentConfirmed');
+  expect(applyEvidenceConsent({...content,evidenceConsentConfirmed:false},recorded,'another',()=>new Date())).toMatchObject({evidenceConsent:{confirmedBy:'actor',confirmedAt:at.toISOString()}});
  });
  it('validates positive visit duration',async()=>expect(await validate(plainToInstance(SaveSiteVisitDto,{...visit,durationMinutes:0}))).not.toHaveLength(0));
 });

@@ -1,0 +1,70 @@
+import { describe, expect, it, vi } from "vitest";
+import { stableHash } from "../shared/crm-types";
+import { LeadFormsService } from "./lead-forms.service";
+
+const token = "a".repeat(32);
+const schema = {
+  title: "Palm project enquiry",
+  description: "Tell us about the project",
+  source: "company",
+  channel: "website",
+  questions: [
+    { id: "name", title: "Your name", description: "", type: "text", required: true, field: "displayName", options: [] },
+    { id: "mobile", title: "Mobile", description: "", type: "tel", required: true, field: "mobile", options: [] },
+    { id: "email", title: "Email", description: "", type: "email", required: true, field: "email", options: [] },
+    { id: "location", title: "Property location", description: "", type: "text", required: true, field: "location", options: [] },
+    { id: "service", title: "What can we help with?", description: "", type: "dropdown", required: true, field: "serviceType", options: [{ id: "renovation_fit_out", label: "Renovation / Fit-Out" }] },
+    { id: "budget", title: "Approximate project budget", description: "", type: "dropdown", required: false, field: "budgetRange", options: [{ id: "not_sure", label: "Not sure yet" }] },
+    { id: "summary", title: "Tell us about your project", description: "", type: "paragraph", required: false, field: "summary", options: [] },
+  ],
+};
+const answers = {
+  name: "Noor Al Mansoori",
+  mobile: "+971500000001",
+  email: "noor@example.test",
+  location: "Dubai Hills",
+  service: "renovation_fit_out",
+  budget: "not_sure",
+  summary: "Villa renovation",
+};
+
+function setup() {
+  const query = vi.fn(async (sql: string) => {
+    if (sql.includes("SELECT published FROM crm_lead_forms")) return { rows: [{ published: schema }], rowCount: 1 };
+    if (sql.includes("SELECT payload_hash, original_payload")) return { rows: [], rowCount: 0 };
+    if (sql.includes("SELECT count(*)::int AS total")) return { rows: [{ total: 0, contact: 0 }], rowCount: 1 };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const db = { tenantTransaction: vi.fn(async (_workspaceId: string, _actorId: string, work: (client: unknown) => Promise<unknown>) => work({ query })) };
+  const intake = { createFormIntake: vi.fn().mockResolvedValue({ status: "ready" }) };
+  const service = new LeadFormsService(db as never, {} as never, {} as never, intake as never);
+  vi.spyOn(service as never, "resolve" as never).mockResolvedValue({ id: "form-id", workspace_id: "workspace-id", published: schema } as never);
+  return { intake, service };
+}
+
+describe("public enquiry submission evidence", () => {
+  it("requires explicit service contact consent", async () => {
+    const { intake, service } = setup();
+    await expect(service.submit(token, { requestId: "10000000-0000-4000-8000-000000000001", revision: stableHash(schema), answers, serviceConsent: false }))
+      .rejects.toThrow("Consent is required");
+    expect(intake.createFormIntake).not.toHaveBeenCalled();
+  });
+
+  it("retains raw and readable answers with server-authored consent and separate routing dimensions", async () => {
+    const { intake, service } = setup();
+    await expect(service.submit(token, { requestId: "10000000-0000-4000-8000-000000000001", revision: stableHash(schema), answers, serviceConsent: true }))
+      .resolves.toEqual({ received: true });
+    expect(intake.createFormIntake).toHaveBeenCalledWith(expect.anything(), "workspace-id", "lead-form:form-id:10000000-0000-4000-8000-000000000001", expect.objectContaining({
+      source: "company",
+      channel: "website",
+      intakeMethod: "form",
+      assignment: { mode: "automatic" },
+      consents: [expect.objectContaining({ purpose: "service", channel: "all", status: "granted", evidence: expect.objectContaining({ method: "public_enquiry_form", formId: "form-id", formRevision: stableHash(schema), capturedAt: expect.any(String) }) })],
+      originalPayload: expect.objectContaining({
+        formRawAnswers: answers,
+        formAnswers: expect.arrayContaining([expect.objectContaining({ questionId: "service", value: "Renovation / Fit-Out" })]),
+        consent: expect.objectContaining({ method: "public_enquiry_form", capturedAt: expect.any(String) }),
+      }),
+    }));
+  });
+});

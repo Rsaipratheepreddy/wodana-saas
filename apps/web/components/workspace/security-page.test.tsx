@@ -11,7 +11,7 @@ afterEach(() => {
 describe("SecurityPage", () => {
   it("shows active sessions directly with a current-device label", () => {
     render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
-    expect(screen.getByRole("heading", { name: "Authenticator verification" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Two-step verification" })).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "9 recovery codes remaining")).toBeInTheDocument();
     expect(screen.getByText("Required by account policy")).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
@@ -45,10 +45,10 @@ describe("SecurityPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
 
-    await interaction.click(screen.getByRole("button", { name: "New recovery codes" }));
-    const dialog = await screen.findByRole("dialog", { name: "Generate new recovery codes" });
+    await interaction.click(screen.getByRole("button", { name: "Recovery codes" }));
+    const dialog = await screen.findByRole("dialog", { name: "Get new recovery codes" });
     await interaction.type(within(dialog).getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
-    await interaction.click(within(dialog).getByRole("button", { name: "Generate new codes" }));
+    await interaction.click(within(dialog).getByRole("button", { name: "Generate codes" }));
 
     expect(await screen.findByRole("dialog", { name: "Save your recovery codes" })).toBeInTheDocument();
     expect(screen.getByText(codes[0])).toBeInTheDocument();

@@ -4,6 +4,7 @@ import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { CrmSettingsService } from "./crm-settings.service";
 import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
+import { RestoreConfigurationRevisionDto } from "../../workspaces/dto/restore-configuration-revision.dto";
 @ApiTags("crm-settings") @ApiBearerAuth() @Controller("workspaces/:workspaceId/crm")
 export class CrmSettingsController {
   constructor(private readonly settings: CrmSettingsService) {}
@@ -18,4 +19,6 @@ export class CrmSettingsController {
   @Post("saved-views") view(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateSavedViewDto) { return this.settings.createView(actor, workspaceId, input); }
   @Patch("saved-views/:viewId") updateView(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("viewId", ParseUUIDPipe) viewId: string, @Body() input: UpdateSavedViewDto) { return this.settings.updateView(actor, workspaceId, viewId, input); }
   @Post("settings/:type/:id/archive") archive(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("type") type: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: ArchiveSettingDto) { return this.settings.archive(actor, workspaceId, type, id, input); }
+  @Get("settings/:type/:id/history") history(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("type") type: string, @Param("id", ParseUUIDPipe) id: string) { return this.settings.history(actor, workspaceId, type, id); }
+  @Post("settings/:type/:id/rollback") rollback(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("type") type: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: RestoreConfigurationRevisionDto) { return this.settings.rollback(actor, workspaceId, type, id, input); }
 }

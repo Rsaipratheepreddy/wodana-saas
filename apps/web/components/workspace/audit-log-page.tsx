@@ -6,9 +6,12 @@ import {
   Button,
   Callout,
   ControlledModalDialog,
+  DataGrid,
   DesignSystemProvider,
+  SearchInput,
   SelectField,
   formatDate,
+  type DataGridColumn,
 } from "@/design-system";
 import type { AuditEvent, AuditLogPageData } from "@/lib/workspace/audit-log";
 import styles from "./audit-log-page.module.css";
@@ -80,6 +83,14 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
         .includes(normalized);
     });
   }, [items, loadedAt, period, query, source]);
+  const columns: DataGridColumn<AuditEvent>[] = [
+    { id: "event", accessorFn: (item) => actionLabel(item.action), header: "Event", size: 230, meta: { primary: true } },
+    { id: "actor", accessorFn: (item) => item.actorName ?? "System", header: "Actor", size: 215, cell: ({ row }) => <span className={styles.actor}><span>{row.original.actorName ?? "System"}</span>{row.original.actorEmail ? <small>{row.original.actorEmail}</small> : null}</span> },
+    { id: "source", accessorFn: (item) => humanize(item.source), header: "Source", size: 115 },
+    { id: "record", accessorFn: (item) => humanize(item.entityType), header: "Record", size: 165 },
+    { id: "occurred", accessorFn: (item) => item.occurredAt, header: "Date & time", size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt)}</time> },
+    { id: "action", header: "Action", size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={`View ${actionLabel(row.original.action)} details`} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">View</Button> },
+  ];
 
   const exportAudit = () => {
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -127,41 +138,20 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
       {!initialData.canView ? <Callout title="Audit log access is restricted" tone="warning">Ask a workspace owner or administrator for audit viewing permission.</Callout> : <>
         <section aria-label="Audit filters" className={styles.filters}>
           <div className={styles.filterControls}>
-            <label className={styles.searchField}>
-              <input aria-label="Search audit log" onChange={(event) => setQuery(event.target.value)} placeholder="Search actions, people, or records…" type="search" value={query} />
-            </label>
+            <div className={styles.searchField}><SearchInput label="Search audit log" onChange={setQuery} placeholder="Search actions, people, or records…" value={query} /></div>
             <div className={styles.selectField}>
               <SelectField accent="neutral" aria-label="Audit source" items={sourceItems} label={<span className={styles.visuallyHidden}>Source</span>} onSelectionChange={(key) => key && setSource(String(key))} selectedKey={source} />
             </div>
             <div className={styles.selectField}>
               <SelectField accent="neutral" aria-label="Audit period" items={[{ id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }]} label={<span className={styles.visuallyHidden}>Period</span>} onSelectionChange={(key) => key && setPeriod(String(key))} selectedKey={period} />
             </div>
-            <Button isDisabled={!visibleItems.length} onPress={exportAudit} size="compact">Export</Button>
+            <Button isDisabled={!visibleItems.length} onPress={exportAudit}>Export</Button>
           </div>
         </section>
 
         {failure ? <Callout title="Audit log could not be updated" tone="danger">{failure}</Callout> : null}
 
-        <div aria-label="Audit logs table" className={styles.tableRegion} role="region" tabIndex={0}>
-          <table data-record-table="" aria-label="Workspace audit log" className={styles.auditTable}>
-            <colgroup><col className={styles.eventColumn} /><col className={styles.actorColumn} /><col className={styles.sourceColumn} /><col className={styles.recordColumn} /><col className={styles.dateColumn} /><col className={styles.actionColumn} /></colgroup>
-            <thead><tr><th scope="col">Event</th><th scope="col">Actor</th><th scope="col">Source</th><th scope="col">Record</th><th scope="col">Date &amp; time</th><th scope="col"><span className={styles.visuallyHidden}>Actions</span></th></tr></thead>
-            <tbody>{visibleItems.map((item) => <tr key={item.id}>
-              <td>{actionLabel(item.action)}</td>
-              <td><span className={styles.actor}><span>{item.actorName ?? "System"}</span>{item.actorEmail ? <small>{item.actorEmail}</small> : null}</span></td>
-              <td>{humanize(item.source)}</td>
-              <td>{humanize(item.entityType)}</td>
-              <td><time dateTime={item.occurredAt}>{timestamp(item.occurredAt)}</time></td>
-              <td><Button aria-label={`View ${actionLabel(item.action)} details`} onPress={() => setSelectedEvent(item)} size="compact" variant="quiet">View</Button></td>
-            </tr>)}
-            {!visibleItems.length ? <tr className={styles.emptyRow}><td colSpan={6}>No audit events found.</td></tr> : null}</tbody>
-          </table>
-        </div>
-
-        <div className={styles.tableFooter}>
-          <span>{visibleItems.length} event{visibleItems.length === 1 ? "" : "s"}</span>
-          {nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">Load more</Button> : null}
-        </div>
+        <DataGrid ariaLabel="Workspace audit log" appearance="flush" columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">Load more</Button> : undefined} emptyTitle="No audit events found" emptyDescription="Try a different source, period, or search." />
       </>}
     </section>
 

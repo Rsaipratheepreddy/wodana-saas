@@ -1,12 +1,12 @@
 .workspace,
 .settings,
 .library {
-  --ink: var(--wd-color-text, #302b35);
-  --muted: var(--wd-color-text-secondary, #776a80);
-  --surface: var(--wd-color-surface, #fff);
-  --line: var(--wd-color-border, #e7e0eb);
+  --ink: var(--wd-color-text);
+  --muted: var(--wd-color-text-secondary);
+  --surface: var(--wd-color-surface);
+  --line: var(--wd-color-structural-divider);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
 }
 .workspace {
   display: flex;
@@ -14,6 +14,45 @@
   block-size: calc(100dvh - 144px);
   min-block-size: 440px;
   background: var(--surface);
+}
+.viewBar {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-block-size: 46px;
+  padding: .45rem 1.25rem;
+  border-block: 1px solid var(--line);
+  background: var(--wd-color-surface);
+  flex: none;
+}
+.locationInput { display: flex; align-items: stretch; min-inline-size: 0; }
+.locationInput input { border-start-end-radius: 0; border-end-end-radius: 0; }
+.locationInput button { display: grid; flex: none; inline-size: 34px; place-items: center; border: 1px solid var(--wd-color-border-control); border-inline-start: 0; border-radius: 0 5px 5px 0; background: var(--wd-color-surface); color: var(--wd-color-text-secondary); }
+.locationInput button:hover { color: var(--wd-color-text); background: var(--wd-color-surface-hover); }
+.viewBar > span { color: var(--muted); font-size: 11px; }
+.viewBar > .previewButton { margin-inline-start: auto; }
+.viewSwitch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--wd-color-border-control);
+  border-radius: 7px;
+  background: var(--wd-color-surface-subtle);
+}
+.viewSwitch button {
+  min-block-size: 29px;
+  border: 0;
+  border-radius: 5px;
+  padding: .35rem .8rem;
+  background: transparent;
+  color: var(--wd-color-text-secondary);
+  font: inherit;
+  font-size: 11px;
+}
+.viewSwitch button[aria-pressed="true"] {
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
 }
 .workspace button,
 .settings button,
@@ -30,7 +69,7 @@
 .workspace :is(button, input, textarea, select):focus-visible,
 .settings :is(button, input, textarea, select):focus-visible,
 .library :is(button, input):focus-visible {
-  outline: 2px solid #76538f;
+  outline: 2px solid var(--wd-color-focus);
   outline-offset: 3px;
 }
 .topbar {
@@ -70,10 +109,10 @@
 }
 .button {
   padding: 8px 12px;
-  border: 1px solid var(--wd-color-border, #ddd3e3);
+  border: 1px solid var(--wd-color-border, var(--wd-color-structural-divider));
   border-radius: 7px;
   background: var(--wd-color-surface, #fff);
-  color: var(--wd-color-text, #403148);
+  color: var(--wd-color-text, var(--wd-color-text));
   font-size: 12px;
 }
 .primary,
@@ -81,8 +120,8 @@
   padding: 8px 12px;
   border: 0;
   border-radius: 7px;
-  background: #76538f;
-  color: #fff;
+  background: var(--wd-color-action-primary);
+  color: var(--wd-color-action-on-primary);
   font-size: 12px;
   font-weight: 550;
 }
@@ -92,8 +131,8 @@
   cursor: default;
 }
 .previewButton {
-  background: color-mix(in srgb, #76538f 12%, var(--surface));
-  color: #76538f;
+  background: var(--wd-color-action-primary-subtle);
+  color: var(--wd-color-action-primary);
   border: 0;
   padding: 8px 12px;
   border-radius: 7px;
@@ -102,18 +141,18 @@
   background: none;
   border: 0;
   padding: 5px 0;
-  color: #76538f;
+  color: var(--wd-color-action-primary);
   font-size: 12px;
 }
 .iconButton {
   background: none;
   border: 0;
   padding: 5px;
-  color: var(--wd-color-text-secondary, #88768f);
+  color: var(--wd-color-text-secondary, var(--wd-color-text-secondary));
   border-radius: 5px;
 }
 .iconButton:hover {
-  background: #76538f12;
+  background: var(--wd-color-surface-hover);
 }
 .split {
   display: grid;
@@ -134,12 +173,12 @@
   align-items: center;
   justify-content: center;
   background: var(--line);
-  color: #ab95b7;
+  color: var(--wd-color-text-secondary);
 }
 .resize:hover,
 .resize:focus-visible {
-  background: #d6b4e3;
-  color: #78508e;
+  background: var(--wd-color-action-primary-subtle);
+  color: var(--wd-color-action-primary);
 }
 .resize svg {
   flex: none;
@@ -187,7 +226,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: var(--wd-color-surface-subtle, #f6f3f8);
+  background: var(--wd-color-surface-subtle, var(--wd-color-surface-muted));
   border-radius: 7px;
   color: var(--muted);
   min-inline-size: 0;
@@ -204,6 +243,13 @@
 .roomHeading .search {
   inline-size: 210px;
 }
+.toolsMenu { position: relative; }
+.toolsMenu > summary { display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; border-radius: 6px; padding: 5px 8px; color: var(--wd-color-text-secondary); font-size: 12px; cursor: pointer; list-style: none; }
+.toolsMenu > summary::-webkit-details-marker { display: none; }
+.toolsMenu > summary:hover, .toolsMenu[open] > summary { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.toolsMenu > div { position: absolute; z-index: 20; inset-block-start: calc(100% + 5px); inset-inline-end: 0; display: grid; min-inline-size: 12rem; padding: 5px; border: 1px solid var(--wd-color-border); border-radius: 7px; background: var(--wd-color-surface); box-shadow: var(--wd-shadow-lg, 0 12px 28px rgba(0,0,0,.16)); }
+.toolsMenu > div button { display: flex; align-items: center; justify-content: flex-start; gap: 8px; inline-size: 100%; border: 0; border-radius: 5px; padding: 8px; background: transparent; color: var(--wd-color-text); font: inherit; font-size: 12px; text-align: start; }
+.toolsMenu > div button:hover { background: var(--wd-color-surface-hover); }
 .selectionToolbar {
   display: flex;
   align-items: center;
@@ -224,7 +270,7 @@
   gap: 14px;
 }
 .roomCard {
-  background: #f8f2fa;
+  background: var(--wd-color-surface-muted);
   border-radius: 10px;
   padding: 15px 16px;
   min-inline-size: 0;
@@ -235,16 +281,16 @@
   position: relative;
 }
 .roomCard[data-tone="1"] {
-  background: #fff3ed;
+  background: var(--wd-color-surface-muted);
 }
 .roomCard[data-tone="2"] {
-  background: #f7f0f3;
+  background: var(--wd-color-surface-muted);
 }
 .roomCard[data-tone="3"] {
-  background: #f1f0fa;
+  background: var(--wd-color-surface-muted);
 }
 .roomCard[data-selected] {
-  box-shadow: inset 0 -2px #bb8ac8;
+  box-shadow: inset 0 -2px var(--wd-color-action-primary);
 }
 .cardTop {
   display: flex;
@@ -258,7 +304,7 @@
 .cardTop input,
 .proposalLabel input,
 .checkLabel input {
-  accent-color: #b180c0;
+  accent-color: var(--wd-color-action-primary);
   inline-size: 14px;
   block-size: 14px;
   margin: 0;
@@ -269,7 +315,7 @@
 }
 .versionBadge {
   background: #fff9;
-  color: #805593;
+  color: var(--wd-color-action-primary);
   padding: 3px 6px;
   border-radius: 4px;
   font-size: 9px;
@@ -295,7 +341,7 @@
 }
 .roomTitle svg {
   flex: none;
-  color: #a18ca9;
+  color: var(--wd-color-text-secondary);
 }
 .roomStats {
   display: flex;
@@ -334,7 +380,7 @@
   gap: 6px;
   border: 0;
   background: none;
-  color: #79548b;
+  color: var(--wd-color-action-primary);
   padding: 5px 0;
   font-size: 11px !important;
   font-weight: 500 !important;
@@ -352,10 +398,10 @@
   justify-content: center;
   gap: 11px;
   min-block-size: 190px;
-  border: 1.5px dashed #c9b6d3;
+  border: 1.5px dashed var(--wd-color-text-secondary);
   border-radius: 10px;
-  background: #fbf8fd;
-  color: #77528a;
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-action-primary);
   padding: 22px;
   text-align: center;
 }
@@ -364,7 +410,7 @@
   place-items: center;
   inline-size: 36px;
   block-size: 36px;
-  background: #efe2f5;
+  background: var(--wd-color-surface-muted);
   border-radius: 10px;
 }
 .addRoomCard strong {
@@ -378,7 +424,7 @@
   color: var(--muted);
 }
 .addRoomCard:hover {
-  background: #f7f0fa;
+  background: var(--wd-color-surface-muted);
 }
 .importButton {
   display: flex;
@@ -417,8 +463,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #805791;
-  background: #f5eefa;
+  color: var(--wd-color-action-primary);
+  background: var(--wd-color-surface-muted);
   font-size: 11px;
   padding: 10px 12px;
   border-radius: 7px;
@@ -443,7 +489,7 @@
 .chatPanel {
   min-inline-size: 0;
   min-block-size: 0;
-  background: var(--wd-color-surface-subtle, #fcfafd);
+  background: var(--wd-color-surface-subtle, var(--wd-color-surface-muted));
 }
 .chat {
   display: flex;
@@ -463,9 +509,9 @@
   place-items: center;
   inline-size: 30px;
   block-size: 30px;
-  background: linear-gradient(135deg, #e4c6f1, #ffd5bc);
+  background: var(--wd-color-action-primary-subtle);
   border-radius: 9px;
-  color: #7d4e91;
+  color: var(--wd-color-action-primary);
 }
 .chatHeader strong {
   font-size: 13px;
@@ -485,7 +531,7 @@
 }
 .welcome {
   margin-block: 25px;
-  color: #9a73a8;
+  color: var(--wd-color-text-secondary);
 }
 .welcome h2 {
   color: var(--ink);
@@ -517,8 +563,8 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  background: #f0e6f7;
-  color: #79518b;
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-action-primary);
   border: 0;
   border-radius: 7px;
   padding: 10px 12px;
@@ -541,18 +587,18 @@
 }
 .chatMessage[data-role="user"] {
   padding: 11px 13px;
-  background: #f0e7f5;
+  background: var(--wd-color-surface-muted);
   border-radius: 9px;
 }
 .chatMessage[data-role="user"] small {
-  color: #805791;
+  color: var(--wd-color-action-primary);
 }
 .thinking {
   display: flex;
   align-items: center;
   gap: 7px;
   line-height: 1.7;
-  color: #94709f;
+  color: var(--wd-color-text-secondary);
   font-size: 11px;
 }
 .chatReview {
@@ -581,7 +627,7 @@
   margin: 12px 14px 16px;
   padding: 11px 12px;
   background: var(--surface);
-  border: 1px solid #ded1e6;
+  border: 1px solid var(--wd-color-structural-divider);
   border-radius: 10px;
 }
 .composer textarea {
@@ -617,11 +663,11 @@
 .chatContext {
   display: block;
   font-size: 10px;
-  color: #9465a6;
+  color: var(--wd-color-action-primary);
   margin-block-end: 8px;
 }
 .proposal {
-  background: #fbf7fd;
+  background: var(--wd-color-surface-muted);
   padding: 15px;
   border-radius: 10px;
   margin-block-end: 22px;
@@ -640,7 +686,7 @@
   font-weight: 550;
 }
 .proposalHeading svg {
-  color: #9b6cab;
+  color: var(--wd-color-action-primary);
 }
 .proposalHeading span {
   font-size: 10px;
@@ -659,7 +705,7 @@
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .proposalCard[data-selected] {
-  box-shadow: inset 0 0 0 1px #c3a1d1;
+  box-shadow: inset 0 0 0 1px var(--wd-color-text-secondary);
 }
 .proposalLabel {
   display: flex;
@@ -715,12 +761,12 @@
 }
 .hint {
   font-size: 11px;
-  color: var(--wd-color-text-secondary, #827088);
+  color: var(--wd-color-text-secondary, var(--wd-color-text-secondary));
   line-height: 1.7;
 }
 .error {
   font-size: 12px;
-  color: #b33b5c;
+  color: var(--wd-color-danger);
   line-height: 1.7;
 }
 .modalFooter {
@@ -733,7 +779,7 @@
 }
 .modalFooter > span {
   font-size: 11px;
-  color: var(--wd-color-text-secondary, #827088);
+  color: var(--wd-color-text-secondary, var(--wd-color-text-secondary));
 }
 .modalFooter > div {
   display: flex;
@@ -753,7 +799,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  background: var(--wd-color-surface-subtle, #f9f4fb);
+  background: var(--wd-color-surface-subtle, var(--wd-color-surface-muted));
   border: 1px solid transparent;
   border-radius: 7px;
   padding: 15px;
@@ -761,8 +807,8 @@
   color: var(--ink);
 }
 .roomChoice[aria-pressed="true"] {
-  border-color: #c7a7d6;
-  background: #f2e7f9;
+  border-color: var(--wd-color-text-secondary);
+  background: var(--wd-color-surface-muted);
 }
 .roomChoice small {
   font-size: 10px;
@@ -773,19 +819,19 @@
   block-size: 15px;
   display: grid;
   place-items: center;
-  border: 1px solid #c9b8d4;
+  border: 1px solid var(--wd-color-text-secondary);
   border-radius: 4px;
   flex: none;
 }
 .choiceCheck[data-checked] {
-  background: #b786c6;
-  border-color: #b786c6;
+  background: var(--wd-color-action-primary);
+  border-color: var(--wd-color-action-primary);
   color: white;
 }
 .settingsTabs {
   display: flex;
   gap: 5px;
-  background: var(--wd-color-surface-subtle, #f8f4fa);
+  background: var(--wd-color-surface-subtle, var(--wd-color-surface-muted));
   padding: 4px;
   border-radius: 8px;
   margin-block-end: 22px;
@@ -800,8 +846,8 @@
   border-radius: 6px;
 }
 .settingsTabs button[aria-pressed="true"] {
-  color: #674279;
-  background: linear-gradient(110deg, #ead5f5, #f9e2d4);
+  color: var(--wd-color-action-primary);
+  background: var(--wd-color-action-primary-subtle);
 }
 .settings fieldset {
   border: 0;
@@ -878,9 +924,9 @@
   place-items: center;
   inline-size: 64px;
   block-size: 64px;
-  background: var(--wd-color-surface-subtle, #f6f1f9);
+  background: var(--wd-color-surface-subtle, var(--wd-color-surface-muted));
   border-radius: 8px;
-  color: #b499c0;
+  color: var(--wd-color-text-secondary);
 }
 .imageField label {
   position: relative;
@@ -893,7 +939,7 @@
   clip-path: inset(50%);
 }
 .previewDialog {
-  background: #efebf2;
+  background: var(--wd-color-structural-divider);
   padding: 20px;
 }
 .previewDialog > article {
@@ -954,8 +1000,8 @@
     color: var(--muted);
   }
   .mobileTabs button[aria-pressed="true"] {
-    background: #f1e5f7;
-    color: #78518b;
+    background: var(--wd-color-surface-muted);
+    color: var(--wd-color-action-primary);
   }
   .roomPanelScroll {
     padding: 18px 14px;
@@ -1035,46 +1081,46 @@
 }
 :global([data-theme="dark"]) .workspace,
 :global([data-wd-theme="dark"]) .workspace {
-  --line: #44354e;
+  --line: var(--wd-color-structural-divider);
 }
 :global([data-wd-theme="dark"]) :is(.roomCard, .proposal, .addRoomCard) {
-  background: #302438;
+  background: var(--wd-color-surface-muted);
 }
 :global([data-wd-theme="dark"]) .roomCard[data-tone="1"] {
-  background: #35272c;
+  background: var(--wd-color-surface-muted);
 }
 :global([data-wd-theme="dark"]) .roomCard[data-tone="2"] {
-  background: #332538;
+  background: var(--wd-color-surface-muted);
 }
 :global([data-wd-theme="dark"]) .roomCard[data-tone="3"] {
-  background: #2d283e;
+  background: var(--wd-color-surface-muted);
 }
 :global([data-wd-theme="dark"]) .chatMessage[data-role="user"] {
-  background: #3a2945;
+  background: var(--wd-color-action-primary-subtle);
 }
 :global([data-wd-theme="dark"]) .roomChoice[aria-pressed="true"] {
-  background: #48314f;
+  background: var(--wd-color-action-primary-subtle);
 }
 :global([data-wd-theme="dark"]) .versionBadge {
-  background: #64446f;
-  color: #efdaff;
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-text-secondary);
 }
 :global([data-wd-theme="dark"])
   :is(.linkButton, .configure, .configureProposal, .previewButton) {
-  color: #d4ace4;
+  color: var(--wd-color-action-primary);
 }
 :global([data-wd-theme="dark"]) :is(.promptStarter, .previewButton, .notice) {
-  background: #3d2b48;
-  color: #d6b5e5;
+  background: var(--wd-color-surface-muted);
+  color: var(--wd-color-text);
 }
 :global([data-wd-theme="dark"]) .addRoomCard > span {
-  background: #483252;
+  background: var(--wd-color-surface);
 }
 :global([data-wd-theme="dark"]) .composer {
-  border-color: #60486d;
+  border-color: var(--wd-color-border-control);
 }
 :global([data-wd-theme="dark"]) .previewDialog {
-  background: #29202f;
+  background: var(--wd-color-surface);
 }
 
 @media (max-width: 760px) {
@@ -1095,7 +1141,7 @@
 
 :global([data-wd-theme="dark"]) .addRoomCard,
 :global([data-wd-theme="dark"]) .chatMessage > small {
-  color: #d4ace4;
+  color: var(--wd-color-text-secondary);
 }
 .workspace {
   block-size: auto;
@@ -1125,7 +1171,7 @@
   block-size: calc(100dvh - 210px);
   min-block-size: 440px;
   max-block-size: 760px;
-  background: color-mix(in srgb, #9970af 7%, var(--surface));
+  background: color-mix(in srgb, var(--wd-color-action-primary) 7%, var(--surface));
   border-inline-start: 1px solid var(--line);
 }
 .workspace .chat {
@@ -1172,8 +1218,21 @@
   align-items: end;
   padding: 14px 16px;
   border-block-end: 1px solid var(--line);
-  background: color-mix(in srgb, #897495 5%, var(--surface));
+  background: color-mix(in srgb, var(--wd-color-text-secondary) 5%, var(--surface));
 }
+
+/* Deep quotation workspaces reserve the viewport for the document, not chrome. */
+.workspace { block-size: calc(100dvh - 86px); }
+.workspace .quoteHeader { padding: 6px 16px; gap: 8px; }
+.workspace .quoteHeader label { gap: 2px; font-size: 9px; }
+.workspace .quoteHeader input,
+.workspace .aiContext select { min-block-size: 30px; block-size: 30px; padding: 4px 7px; font-size: 11px; }
+.workspace .quoteHeader .quoteTitle input { font-size: 12px; }
+.workspace .currencyLabel { font-size: 11px; }
+.workspace .currencyLabel small { margin-block-start: 2px; }
+.workspace .viewBar { min-block-size: 34px; padding: 2px 12px; }
+.workspace .viewSwitch { padding: 2px; }
+.workspace .viewSwitch button { min-block-size: 25px; padding: 2px 9px; }
 .quoteHeader label {
   display: grid;
   gap: 5px;
@@ -1237,7 +1296,7 @@
     gap: 6px;
     border: 0;
     padding: 8px;
-    background: color-mix(in srgb, #9970af 12%, var(--surface));
+    background: color-mix(in srgb, var(--wd-color-action-primary) 12%, var(--surface));
     color: var(--ink);
     border-radius: 4px;
   }
@@ -1294,7 +1353,7 @@
   padding-block: 8px;
 }
 .aiSuggestions input {
-  accent-color: #805791;
+  accent-color: var(--wd-color-action-primary);
   margin-block-start: 3px;
 }
 .aiSuggestions strong {
@@ -1431,7 +1490,7 @@
 
 /* Flagship quotation workspace: quiet CRM chrome, branded actions, dense costing canvas. */
 .workspace {
-  --brand: #76538f;
+  --brand: var(--wd-color-action-primary);
   --brand-soft: color-mix(in srgb, var(--brand) 9%, var(--surface));
   font-size: 13px;
 }

@@ -52,6 +52,42 @@ export type BusinessUnitRecord = {
   version: number;
 };
 
+export type WorkspaceTerminologyItem = {
+  key: string;
+  defaultVisibleName: string;
+  defaultVisibleNamePlural: string;
+  visibleName: string;
+  visibleNamePlural: string;
+  overridden: boolean;
+  version: number;
+  updatedAt: string | null;
+};
+
+export type WorkspaceTerminologyData = {
+  items: WorkspaceTerminologyItem[];
+  map: Record<string, { visibleName: string; visibleNamePlural: string }>;
+};
+
+export type WorkspaceConfigurationChange = {
+  path: string;
+  before?: unknown;
+  after?: unknown;
+};
+
+export type WorkspaceConfigurationRevision = {
+  id: string;
+  resourceType: string;
+  resourceId: string;
+  revisionNumber: number;
+  sourceVersion: number;
+  action: "baseline" | "created" | "saved" | "archived" | "restored_default" | "rolled_back";
+  snapshot: Record<string, unknown>;
+  sourceRevisionId: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  changes: WorkspaceConfigurationChange[];
+};
+
 export type CompanyProfileData = {
   workspace: WorkspaceRecord;
   legalEntities: LegalEntityRecord[];
@@ -61,7 +97,11 @@ export type CompanyProfileData = {
     logoUrl: string | null;
     logoUpdatedAt: string | null;
     primaryColor: string | null;
+    secondaryColor: string | null;
+    headingFont: string | null;
+    bodyFont: string | null;
   };
+  terminology: Record<string, { visibleName: string; visibleNamePlural: string }>;
 };
 
 export type CompanyProfileUpdate = {
@@ -113,5 +153,26 @@ export const companyProfileFixture: CompanyProfileData = {
     logoUrl: null,
     logoUpdatedAt: null,
     primaryColor: null,
+    secondaryColor: null,
+    headingFont: null,
+    bodyFont: null,
+  },
+  terminology: {
+    workspace: { visibleName: "Workspace", visibleNamePlural: "Workspaces" },
+    crm: { visibleName: "CRM", visibleNamePlural: "CRM" },
+    lead: { visibleName: "Lead", visibleNamePlural: "Leads" },
+    opportunity: { visibleName: "Deal", visibleNamePlural: "Deals" },
+    client: { visibleName: "Client", visibleNamePlural: "Clients" },
+    pre_execution: { visibleName: "Pre-execution", visibleNamePlural: "Pre-execution" },
+    quotation: { visibleName: "Quotation", visibleNamePlural: "Quotations" },
+    catalog: { visibleName: "Catalog", visibleNamePlural: "Catalogs" },
+    vendor: { visibleName: "Vendor", visibleNamePlural: "Vendors" },
+    procurement: { visibleName: "Procurement", visibleNamePlural: "Procurement" },
+    project: { visibleName: "Project", visibleNamePlural: "Projects" },
+    business_unit: { visibleName: "Business unit", visibleNamePlural: "Business units" },
+    team: { visibleName: "Team", visibleNamePlural: "Teams" },
+    resource: { visibleName: "Resource", visibleNamePlural: "Resources" },
+    schedule: { visibleName: "Schedule", visibleNamePlural: "Schedules" },
+    file: { visibleName: "File", visibleNamePlural: "Files" },
   },
 };

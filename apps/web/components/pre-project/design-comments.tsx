@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Button, useDesignSystem } from "@/design-system";
+import { Button, TextAreaField, useDesignSystem } from "@/design-system";
 import {
   caseRequest,
   type CaseContent,
@@ -112,15 +112,13 @@ export function DesignComments({
             }
           }}
         >
-          <label htmlFor="design-comment">Add a comment</label>
-          <textarea
-            id="design-comment"
+          <TextAreaField
+            label="Add a comment"
             placeholder="Leave feedback about this revision…"
-            rows={2}
             maxLength={5000}
             value={note}
-            disabled={busy}
-            onChange={(e) => setNote(e.target.value)}
+            isDisabled={busy}
+            onChange={setNote}
           />
           <div>
             <Button
@@ -158,6 +156,9 @@ export function DesignComments({
               {c.decision && (
                 <small className={view.decisionLabel}>{c.decision}</small>
               )}
+              <small className={view.pinnedRevision}>
+                Pinned to R{revision.number}
+              </small>
               {c.body && <p>{c.body}</p>}
             </article>
           ))}

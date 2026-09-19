@@ -91,6 +91,22 @@ export class IntegrationsController {
   }
 }
 
+@ApiTags("integrations")
+@ApiBearerAuth()
+@Controller("workspaces/:workspaceId/integration-capabilities")
+export class ProviderCapabilitiesController {
+  constructor(private readonly integrations: IntegrationsService) {}
+
+  @Get()
+  @ApiOperation({ summary: "List provider capability, connection and verification states" })
+  capabilities(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.integrations.capabilities(actor, workspaceId);
+  }
+}
+
 @ApiTags("internal-integrations")
 @ApiExcludeController()
 @Public()

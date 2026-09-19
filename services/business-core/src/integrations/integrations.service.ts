@@ -20,6 +20,7 @@ import {
   RecordIntegrationActivityDto,
 } from "./dto/integration-runtime.dto";
 import { UpdateIntegrationResourcesDto } from "./dto/update-integration-resources.dto";
+import { providerCapabilityView } from "./provider-capabilities";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -29,6 +30,32 @@ export class IntegrationsService {
     private readonly database: DatabaseService,
     private readonly access: WorkspaceAccessService,
   ) {}
+
+  capabilities(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "integrations.view", async (client) => {
+      const [connections, evidence] = await Promise.all([
+        client.query(
+          `SELECT id,provider,status,display_name AS "displayName",updated_at AS "updatedAt"
+           FROM integration_connections
+           WHERE workspace_id=$1
+           ORDER BY updated_at DESC,id`,
+          [workspaceId],
+        ),
+        client.query(
+          `SELECT entity_id AS "connectionId",action,occurred_at AS "occurredAt"
+           FROM audit_events
+           WHERE workspace_id=$1 AND entity_type='integration_connection'
+             AND occurred_at>=now()-interval '90 days'
+           ORDER BY occurred_at DESC,id DESC`,
+          [workspaceId],
+        ),
+      ]);
+      return {
+        generatedAt: new Date().toISOString(),
+        providers: providerCapabilityView(connections.rows as never, evidence.rows as never),
+      };
+    });
+  }
 
   authorizeUse(actor: RequestActor, workspaceId: string, connectionId: string, access: "read" | "write") {
     return this.access.withPermission(actor, workspaceId, access === "write" ? "integrations.manage" : "integrations.view", async (client) => {

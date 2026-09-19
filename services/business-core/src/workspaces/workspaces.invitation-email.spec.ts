@@ -36,10 +36,13 @@ describe("WorkspacesService invitation email", () => {
           }],
         };
       }
-      if (sql.includes("FROM workspace_subscriptions subscription")) {
+      if (sql.includes("FROM workspace_seat_capacity")) {
         return {
           rowCount: 1,
-          rows: [{ seatLimit: 5, activeMembers: 1, pendingInvitations: 0 }],
+          rows: [{
+            seatLimit: 5, activeMembers: 1, invitedMembers: 0,
+            pendingInvitations: 0, reservedSeats: 1,
+          }],
         };
       }
       if (sql.includes("FROM workspace_memberships membership")) {

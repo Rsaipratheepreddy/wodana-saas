@@ -12,7 +12,7 @@ export function CrmProductShell({ title, description, canView, actions, children
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
     <section className={compact ? styles.focusedPage : base.page} aria-label={`${title} workspace`}>
-      {!compact ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div><h1>{title}</h1><p>{description}</p></div>{canView && actions ? <div className={styles.actions}>{actions}</div> : null}</header> : null}
+      {!compact ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div><h1>{title}</h1>{description ? <p>{description}</p> : null}</div>{canView && actions ? <div className={styles.actions}>{actions}</div> : null}</header> : null}
       {canView ? children : <Callout title={`${title} access is restricted`} tone="warning">Ask an administrator for the required CRM permission.</Callout>}
     </section>
   </DesignSystemProvider>;

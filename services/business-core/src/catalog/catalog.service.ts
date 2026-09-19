@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -26,6 +27,9 @@ import {
   starterId,
 } from "./catalog-starter";
 import { catalogStructure } from "./catalog-structure";
+import { catalogRecordsForViewer, isRestrictedCostRecord } from "./catalog-pricing-visibility";
+import { catalogRecordRole } from "./catalog-record-model";
+import { applySurveyMeasurement, type StoredRecipeSurvey } from "./catalog-recipe-measurement";
 
 type Row = {
   catalogId: string | null;
@@ -38,10 +42,16 @@ type Row = {
   archived: boolean;
   starterVersion: string | null;
   updatedAt: string;
+  primaryAsset?: { id: string; recordId: string; name: string; mimeType: string; hasPreview: boolean } | null;
 };
-const select = `SELECT id,catalog_id AS "catalogId",kind,code,name,content,version,archived,starter_version AS "starterVersion",updated_at AS "updatedAt" FROM workspace_catalog_records WHERE workspace_id=$1`;
+const select = `SELECT id,catalog_id AS "catalogId",kind,code,name,content,version,archived,starter_version AS "starterVersion",updated_at AS "updatedAt",
+  (SELECT jsonb_build_object('id',asset.id,'recordId',asset.catalog_record_id,'name',asset.original_name,'mimeType',asset.mime_type,'hasPreview',asset.preview_key IS NOT NULL)
+   FROM workspace_catalog_assets asset WHERE asset.workspace_id=workspace_catalog_records.workspace_id AND asset.catalog_record_id=workspace_catalog_records.id
+     AND asset.status='active' AND asset.role='primary_image' ORDER BY asset.sort_order,asset.created_at,asset.id LIMIT 1) AS "primaryAsset"
+  FROM workspace_catalog_records WHERE workspace_id=$1`;
 const payload = (row: Row) => ({
   ...row.content,
+  recordType: catalogRecordRole({ kind: row.kind, configuration: row.content.configuration as Record<string, unknown> | undefined }),
   catalogId: row.catalogId ?? undefined,
   id: row.id,
   kind: row.kind,
@@ -51,6 +61,7 @@ const payload = (row: Row) => ({
   archived: row.archived,
   starterVersion: row.starterVersion,
   updatedAt: row.updatedAt,
+  primaryAsset: row.primaryAsset ?? null,
 });
 const writable = (input: SaveCatalogRecordDto) => {
   const {
@@ -309,6 +320,9 @@ export class CatalogService {
   ) {}
   importRecords(actor: RequestActor, workspaceId: string, input: ImportCatalogDto) {
     return this.access.withPermissions(actor, workspaceId, ["catalog.view", "catalog.manage"], async (client, user) => {
+      if (input.records.some((record) => isRestrictedCostRecord(record)) &&
+        !(await this.access.hasPermission(client, workspaceId, user.userId, "supplier_offers.manage")))
+        throw new ForbiddenException("Supplier cost management permission is required for purchase and internal rates.");
       await this.lock(client, workspaceId);
       await this.assertCatalog(client, workspaceId, input.catalogId);
       if (!input.records.length || input.records.length > 500) throw new BadRequestException("Import between 1 and 500 records at a time.");
@@ -378,7 +392,33 @@ export class CatalogService {
       actor,
       workspaceId,
       "catalog.view",
-      async (client) => {
+      async (client, user) => {
+        let resolvedInput = input;
+        let measurementSource: ReturnType<typeof applySurveyMeasurement>["source"] = null;
+        let measurementChanges: string[] = [];
+        if (input.survey) {
+          if (!(await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.view")))
+            throw new ForbiddenException("Pre-execution access is required to use survey measurements.");
+          const survey = await client.query<{
+            id: string;
+            version: number;
+            status: string;
+            entryId: string | null;
+            dimensions: StoredRecipeSurvey["dimensions"];
+          }>(
+            `SELECT id::text,version,status,entry_id::text AS "entryId",
+                    COALESCE(content->'dimensions','[]'::jsonb) AS dimensions
+               FROM pre_project_site_records
+              WHERE workspace_id=$1 AND case_id=$2 AND id=$3 AND kind='measurement'`,
+            [workspaceId, input.survey.caseId, input.survey.measurementId],
+          );
+          if (!survey.rows[0])
+            throw new BadRequestException("Choose a measurement from this pre-execution.");
+          const applied = applySurveyMeasurement(input, survey.rows[0]);
+          resolvedInput = applied.input;
+          measurementSource = applied.source;
+          measurementChanges = applied.changes;
+        }
         const records = (
           await client.query<Row>(select, [workspaceId])
         ).rows.map((row) => ({
@@ -392,7 +432,7 @@ export class CatalogService {
           version: row.version,
           archived: row.archived,
         })) as Parameters<typeof previewRecipe>[0];
-        const template = records.find((r) => r.id === input.templateId) as
+        const template = records.find((r) => r.id === resolvedInput.templateId) as
           | ((typeof records)[number] & { catalogId?: string })
           | undefined;
         const owner = template?.catalogId
@@ -407,12 +447,17 @@ export class CatalogService {
           throw new BadRequestException(
             "Choose a recipe in an active catalog.",
           );
-        return previewRecipe(
+        const preview = previewRecipe(
           records.filter(
             (r) => (r as typeof template)?.catalogId === template!.catalogId,
           ),
-          input,
+          resolvedInput,
         );
+        return {
+          ...preview,
+          measurementSource,
+          changes: [...measurementChanges, ...preview.changes],
+        };
       },
     );
   }
@@ -421,27 +466,46 @@ export class CatalogService {
       actor,
       workspaceId,
       "catalog.view",
-      async (client, user) => ({
-        workspaceId,
-        overview: Boolean(options.overview),
-        currency: (await client.query(`SELECT default_currency FROM workspaces WHERE id=$1`,[workspaceId])).rows[0]?.default_currency,
-        canManage: await this.access.hasPermission(
+      async (client, user) => {
+        const canManage = await this.access.hasPermission(
           client,
           workspaceId,
           user.userId,
           "catalog.manage",
-        ),
-        items: (
+        );
+        const canViewCosts = await this.access.hasPermission(
+          client,
+          workspaceId,
+          user.userId,
+          "supplier_offers.view",
+        );
+        const items = (
           await client.query<Row>(`${select}${options.catalogId ? " AND (catalog_id=$2 OR kind='catalog_group')" : ""}${options.overview ? " AND kind IN ('catalog_group','room','work','variant','unit')" : ""} ORDER BY kind,name`, options.catalogId ? [workspaceId, options.catalogId] : [workspaceId])
-        ).rows.map(payload),
-        componentCounts: options.overview ? (await client.query(`SELECT link.target_id AS id, count(*)::int AS count FROM workspace_catalog_links link JOIN workspace_catalog_records record ON record.workspace_id=link.workspace_id AND record.id=link.record_id WHERE link.workspace_id=$1 AND link.relation='work' AND NOT record.archived AND record.kind='construction' AND record.content->'configuration'->>'recordRole'='component' GROUP BY link.target_id`, [workspaceId])).rows : undefined,
-        starter: {
-          version: STARTER_VERSION,
-          count: CATALOG_STARTER.length,
-          market:
-            "Interior specification, factory and on-site masters; workspace rates and approval values remain configurable",
-        },
-      }),
+        ).rows.map(payload);
+        const workspace = (await client.query<{ defaultCurrency: string }>(
+          `SELECT default_currency AS "defaultCurrency" FROM workspaces WHERE id=$1`, [workspaceId],
+        )).rows[0];
+        const legalEntities = (await client.query<{ id: string; name: string; baseCurrency: string }>(
+          `SELECT id,display_name AS name,base_currency AS "baseCurrency" FROM legal_entities
+           WHERE workspace_id=$1 AND status='active' ORDER BY display_name`, [workspaceId],
+        )).rows;
+        return {
+          workspaceId,
+          overview: Boolean(options.overview),
+          currency: workspace?.defaultCurrency,
+          legalEntities,
+          canManage,
+          canViewCosts,
+          priceVisibility: canViewCosts ? "selling_and_cost" : "selling_only",
+          items: catalogRecordsForViewer(items, canViewCosts),
+          componentCounts: options.overview ? (await client.query(`SELECT link.target_id AS id, count(*)::int AS count FROM workspace_catalog_links link JOIN workspace_catalog_records record ON record.workspace_id=link.workspace_id AND record.id=link.record_id WHERE link.workspace_id=$1 AND link.relation='work' AND NOT record.archived AND record.kind='construction' AND record.content->'configuration'->>'recordRole'='component' GROUP BY link.target_id`, [workspaceId])).rows : undefined,
+          starter: {
+            version: STARTER_VERSION,
+            count: CATALOG_STARTER.length,
+            market: "Interior specification, factory and on-site masters; workspace rates and approval values remain configurable",
+          },
+        };
+      },
     );
   }
   save(actor: RequestActor, workspaceId: string, input: SaveCatalogRecordDto) {
@@ -452,6 +516,9 @@ export class CatalogService {
       async (client, user) => {
         await this.lock(client, workspaceId);
         validateCatalogRecord(input);
+        if (isRestrictedCostRecord(input) &&
+          !(await this.access.hasPermission(client, workspaceId, user.userId, "supplier_offers.manage")))
+          throw new ForbiddenException("Supplier cost management permission is required for purchase and internal rates.");
         const current = (
           await client.query<Row>(`${select} AND id=$2`, [
             workspaceId,
@@ -598,6 +665,9 @@ export class CatalogService {
           await client.query<Row>(`${select} AND id=$2`, [workspaceId, id])
         ).rows[0];
         if (!current) throw new NotFoundException("Catalog record not found.");
+        if (isRestrictedCostRecord(payload(current)) &&
+          !(await this.access.hasPermission(client, workspaceId, user.userId, "supplier_offers.manage")))
+          throw new ForbiddenException("Supplier cost management permission is required for purchase and internal rates.");
         if (current.version !== input.version)
           throw new ConflictException(
             "This record changed. Refresh the catalog before trying again.",

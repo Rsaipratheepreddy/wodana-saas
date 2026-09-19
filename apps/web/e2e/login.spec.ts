@@ -59,45 +59,46 @@ test.describe("login UI", () => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.emulateMedia({ reducedMotion: "reduce", colorScheme: workspaceTheme });
-      await page.goto("/login");
-      // Interact before applying the saved theme so initial hydration has finished.
-      await page.getByRole("button", { name: "Show password" }).click();
-      await page.getByRole("button", { name: "Hide password" }).click();
-      // Client-side navigation from Workspace preserves the document's theme.
-      await page.evaluate((theme) => {
-        document.documentElement.dataset.theme = theme;
-      }, workspaceTheme);
+      await page.goto("/login?tenant=missing-default-brand");
+      await expect(page.getByRole("button", { name: workspaceTheme === "dark" ? "Use light mode" : "Use dark mode" })).toBeVisible();
+
+      const ink = workspaceTheme === "dark" ? "rgb(243, 243, 246)" : "rgb(25, 25, 31)";
+      const accent = workspaceTheme === "dark" ? "rgb(150, 167, 255)" : "rgb(74, 70, 243)";
+      const link = workspaceTheme === "dark" ? "rgb(174, 189, 255)" : "rgb(64, 73, 164)";
+      const onAccent = workspaceTheme === "dark" ? "rgb(17, 17, 17)" : "rgb(255, 255, 255)";
 
       const email = page.getByRole("textbox", { name: "Work email" });
       const password = page.getByRole("textbox", { name: "Password" });
       const submit = page.getByRole("button", { name: "Sign in", exact: true });
-      await expect(email).toHaveCSS("color", "rgb(47, 35, 45)");
-      await expect(password).toHaveCSS("color", "rgb(47, 35, 45)");
+      await expect(email).toHaveCSS("color", ink);
+      await expect(password).toHaveCSS("color", ink);
       for (const field of [email, password]) {
-        await expect(field).toHaveCSS("-webkit-text-fill-color", "rgb(47, 35, 45)");
-        await expect(field).toHaveCSS("color-scheme", "light");
-        await expect(field).toHaveCSS("caret-color", "rgb(105, 79, 122)");
+        await expect(field).toHaveCSS("-webkit-text-fill-color", ink);
+        await expect(field).toHaveCSS("color-scheme", workspaceTheme);
+        await expect(field).toHaveCSS("caret-color", accent);
       }
-      await expect(submit).toHaveCSS("color", "rgb(47, 35, 45)");
-      await expect(page.getByRole("button", { name: "Forgot password?" })).toHaveCSS("color", "rgb(105, 79, 122)");
-      await expect(submit).toHaveCSS("background-image", "linear-gradient(120deg, rgb(214, 185, 243) 0%, rgb(228, 162, 188) 48%, rgb(243, 155, 84) 100%)");
+      await expect(submit).toHaveCSS("color", onAccent);
+      await expect(page.getByRole("button", { name: "Forgot password?" })).toHaveCSS("color", link);
+      await expect(submit).toHaveCSS("background-color", accent);
+      await expect(submit).toHaveCSS("background-image", "none");
       const backdrop = await page.getByRole("main").evaluate((main) => getComputedStyle(main).getPropertyValue("--login-backdrop"));
-      expect(backdrop).toMatch(/#fff(?:fff)? 44%/);
-      expect(backdrop).toContain("#d6b9f3");
-      expect(backdrop).toContain("#f39b54");
-      await expect(page.locator('[aria-label="Wodana"]:visible img')).toHaveAttribute("src", /wodana-logo-v4\.png/);
+      expect(backdrop.trim()).toBe(workspaceTheme === "dark" ? "#111115" : "#fafafb");
+      await expect(page.locator('[aria-label="Wodana"]:visible img')).toHaveAttribute("src", /wodana-logo-v5\.png/);
+      const markGradient = await page.locator('[aria-label="Wodana"]:visible [class*="artwork"]').first()
+        .evaluate((mark) => getComputedStyle(mark, "::before").backgroundImage);
+      expect(markGradient).toMatch(/^linear-gradient\(/);
 
       await email.focus();
-      await expect(page.locator(".wd-input-group").first()).toHaveCSS("border-color", "rgb(105, 79, 122)");
+      await expect(page.locator(".wd-input-group").first()).toHaveCSS("border-color", accent);
       await expect(page.locator(".wd-input-group").first()).not.toHaveCSS("box-shadow", "none");
       await page.keyboard.press("Tab");
       await expect(password).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(page.getByRole("button", { name: "Show password" })).toBeFocused();
-      await expect(page.getByRole("button", { name: "Show password" })).toHaveCSS("outline-color", "rgb(105, 79, 122)");
+      await expect(page.getByRole("button", { name: "Show password" })).toHaveCSS("outline-color", accent);
       await page.keyboard.press("Enter");
       await expect(password).toHaveAttribute("type", "text");
-      await expect(password).toHaveCSS("-webkit-text-fill-color", "rgb(47, 35, 45)");
+      await expect(password).toHaveCSS("-webkit-text-fill-color", ink);
       await page.keyboard.press("Enter");
       await expect(password).toHaveAttribute("type", "password");
 
@@ -123,14 +124,12 @@ test.describe("login UI", () => {
       });
       expect(violations).toEqual([]);
 
-      await page.goto("/login?invitation=ui-theme-check");
-      await page.getByRole("button", { name: "Show password" }).click();
-      await page.getByRole("button", { name: "Hide password" }).click();
-      await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, workspaceTheme);
-      await expect(page.getByRole("button", { name: "Activate invitation" })).toHaveCSS("color", "rgb(47, 35, 45)");
-      await expect(page.getByRole("textbox", { name: "New password", exact: false })).toHaveCSS("color", "rgb(47, 35, 45)");
-      await expect(page.getByRole("textbox", { name: "New password", exact: false })).toHaveCSS("-webkit-text-fill-color", "rgb(47, 35, 45)");
-      await expect(page.getByRole("textbox", { name: "Confirm password", exact: false })).toHaveCSS("-webkit-text-fill-color", "rgb(47, 35, 45)");
+      await page.goto("/login?tenant=missing-default-brand&invitation=ui-theme-check");
+      await expect(page.getByRole("button", { name: workspaceTheme === "dark" ? "Use light mode" : "Use dark mode" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Activate invitation" })).toHaveCSS("color", onAccent);
+      await expect(page.getByRole("textbox", { name: "New password", exact: false })).toHaveCSS("color", ink);
+      await expect(page.getByRole("textbox", { name: "New password", exact: false })).toHaveCSS("-webkit-text-fill-color", ink);
+      await expect(page.getByRole("textbox", { name: "Confirm password", exact: false })).toHaveCSS("-webkit-text-fill-color", ink);
       await page.getByRole("button", { name: "Activate invitation" }).click();
       await expect(page.getByText("Use 10+ characters with uppercase, lowercase, a number, and a symbol.")).toBeVisible();
       await expect(page.locator(".wd-field-error").first()).toHaveCSS("color", "rgb(168, 63, 70)");
@@ -138,7 +137,7 @@ test.describe("login UI", () => {
     });
   }
 
-  test("creates a browser session and enters the workspace", async ({ page }, testInfo) => {
+  test("enters the workspace or required MFA challenge", async ({ page }, testInfo) => {
     await page.route("**/api/auth/login", async (route) => {
       const payload = route.request().postDataJSON();
       expect(payload).toMatchObject({
@@ -153,7 +152,7 @@ test.describe("login UI", () => {
     await page.goto("/login");
 
     await expect(page.locator('[aria-label="Wodana"]:visible')).toBeVisible();
-    await expect(page.locator('[aria-label="Wodana and Iglo Architects"]:visible')).toBeVisible();
+    await expect(page.getByLabel("Iglo Architects workspace")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Google Workspace/ })).toHaveCount(0);
 
@@ -164,9 +163,17 @@ test.describe("login UI", () => {
     await expect(password).toHaveAttribute("type", "text");
     const loginResponse = page.waitForResponse("**/api/auth/login");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    expect((await loginResponse).ok()).toBe(true);
+    const response = await loginResponse;
+    expect(response.ok()).toBe(true);
+    const result = await response.json() as { mfaRequired?: boolean };
+    if (result.mfaRequired) {
+      await expect(page.getByRole("heading", { name: "Verify it’s you" })).toBeVisible();
+      await expect(page.getByRole("group", { name: "One-time password" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Use a recovery code" })).toBeVisible();
+      return;
+    }
     await expect(page).toHaveURL(/\/workspace$/, { timeout: 15_000 });
-    await expect(page.getByRole("region", { name: "Org profile workspace" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Company profile" })).toBeVisible();
     await page.waitForLoadState("networkidle");
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();
@@ -178,11 +185,12 @@ test.describe("login UI", () => {
     await expect(navigation.getByRole("button", { name: "Switch workspace. Current: Iglo Architects" })).toBeVisible();
   });
 
-  test("presents the Wodana operating-workspace story", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name === "mobile", "The brand story is desktop-only");
+  test("keeps client identity visible without a marketing sidebar", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.getByRole("heading", { name: "Hey, hello!" })).toBeVisible();
-    await expect(page.getByText("One workspace for the whole customer journey.")).toBeVisible();
+    await expect(page.getByLabel("Iglo Architects workspace")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+    await expect(page.getByLabel("Powered by Wodana")).toBeVisible();
+    await expect(page.getByText("One workspace for the whole customer journey.")).toHaveCount(0);
   });
 
   test("validates incomplete sign-in details without leaving the page", async ({ page }) => {
@@ -215,14 +223,14 @@ test.describe("login UI", () => {
   });
 
   test("uses a compact product typography hierarchy", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name === "mobile", "Desktop split-screen hierarchy");
+    test.skip(testInfo.project.name === "mobile", "Desktop typography hierarchy");
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
     const sizes = await page.evaluate(() => ({
       body: Number.parseFloat(getComputedStyle(document.body).fontSize),
-      welcomeHeading: Number.parseFloat(
-        getComputedStyle(document.querySelector("#welcome-heading") as HTMLElement).fontSize,
+      tenantName: Number.parseFloat(
+        getComputedStyle(document.querySelector('[aria-label="Iglo Architects workspace"] strong') as HTMLElement).fontSize,
       ),
       loginHeading: Number.parseFloat(
         getComputedStyle(document.querySelector("#login-heading") as HTMLElement).fontSize,
@@ -233,10 +241,10 @@ test.describe("login UI", () => {
     }));
 
     expect(sizes.body).toBe(14);
-    expect(sizes.loginHeading).toBeGreaterThanOrEqual(27);
-    expect(sizes.loginHeading).toBeLessThanOrEqual(30);
-    expect(sizes.welcomeHeading).toBeGreaterThanOrEqual(49);
-    expect(sizes.welcomeHeading).toBeLessThanOrEqual(93);
+    expect(sizes.loginHeading).toBeGreaterThanOrEqual(24);
+    expect(sizes.loginHeading).toBeLessThanOrEqual(26);
+    expect(sizes.tenantName).toBeGreaterThanOrEqual(18);
+    expect(sizes.tenantName).toBeLessThanOrEqual(20);
     expect(sizes.workEmailLabel).toBe(12);
   });
 

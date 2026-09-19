@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/react';
-import type { CaseAsset, ScopeEntry } from '@/lib/pre-project/content';
+import type { CaseAsset, ScopeEntry } from '../pre-project/content';
 
 export type NoteDocument = { version: 1; content: JSONContent };
 export type RequirementNote = { storage?: 'case'; scope?: ScopeEntry; id: string; version: number; title: string; note: string; archived: boolean; pinned?: boolean; document?: NoteDocument; assets?: CaseAsset[]; links?: string[]; updatedAt?: string; updatedByName?: string };

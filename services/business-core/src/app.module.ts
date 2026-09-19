@@ -27,6 +27,9 @@ import { PreProjectsModule } from "./pre-projects/pre-projects.module";
 import { HrmsModule } from "./hrms/hrms.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { SourcingModule } from "./sourcing/sourcing.module";
+import { JobsModule } from "./jobs/jobs.module";
+import { WorkspaceSearchModule } from "./search/workspace-search.module";
+import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 
 @Module({
   imports: [
@@ -65,6 +68,9 @@ import { SourcingModule } from "./sourcing/sourcing.module";
     CommercialModule,
     CatalogModule,
     SourcingModule,
+    JobsModule,
+    WorkspaceSearchModule,
+    AiSuggestionsModule,
     HrmsModule,
   ],
   controllers: [AppController],

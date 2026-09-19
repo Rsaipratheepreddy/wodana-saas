@@ -1,6 +1,7 @@
 .provider, .page { min-inline-size: 0; background: var(--wd-color-surface); }
-.liveStatus { margin: 0; padding: .75rem 1.5rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.mfaCard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 1rem; margin: 1.25rem 1.5rem; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-lg); padding: 1.25rem; background: var(--wd-color-surface-raised); }
+.page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); min-block-size: 100%; margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
+.liveStatus { margin: 0; padding-block: .75rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.mfaCard { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 1rem; margin: 0; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); padding: var(--wd-workspace-card-padding, 1rem); background: var(--wd-color-surface); }
 .mfaIcon { inline-size: 2.5rem; block-size: 2.5rem; display: grid; place-items: center; border-radius: 50%; background: var(--wd-brand-100); color: var(--wd-brand-700); }
 .mfaSummary { min-inline-size: 0; }
 .mfaTitleRow { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
@@ -13,21 +14,13 @@
 .mfaFacts strong { color: var(--wd-color-text); }
 .deadline { color: var(--wd-warning) !important; }
 .mfaActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
-.sessionsHeader { border-block-start: 1px solid var(--wd-color-structural-divider); padding: 1rem 1.5rem .6rem; }
-.tableScroll { overflow-x: auto; }
-.tableScroll:focus-visible { outline: 2px solid var(--wd-color-text); outline-offset: -2px; }
-.sessionTable { inline-size: 100%; min-inline-size: 40rem; border-collapse: collapse; }
-.sessionTable th, .sessionTable td { height: 3.25rem; border-block-end: 1px solid var(--wd-color-structural-divider); padding: .5rem 1.5rem; color: var(--wd-color-text); font-size: var(--wd-text-xs); text-align: start; vertical-align: middle; }
-.sessionTable th { height: 2.6rem; color: var(--wd-color-text-secondary); font-weight: 500; }
-.sessionTable th:last-child { inline-size: 8rem; }
-.sessionTable time { white-space: nowrap; }
+.sessionsHeader { border-block-start: 1px solid var(--wd-color-structural-divider); margin-block-start: 1.25rem; padding: var(--wd-workspace-row-padding, .875rem) 0 .5rem; }
+.page time { white-space: nowrap; }
 .device { display: grid; gap: .1rem; }
 .device strong { font-weight: 500; }
 .device small, .current { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-@media (max-width: 48rem) { .sessionTable th, .sessionTable td { padding-inline: 1rem; } }
 
 .provider :global(.wd-dialog > footer .wd-button) { min-block-size: 2.75rem; }
-@media (max-width: 48rem) { .sessionTable :global(.wd-button) { min-block-size: 2.75rem; } }
 
 .mfaDialogBody { display: grid; gap: 1rem; min-inline-size: 0; }
 .qrPanel { inline-size: 12.75rem; min-block-size: 12.75rem; display: grid; place-items: center; justify-self: center; overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); background: #fff; }
@@ -41,7 +34,8 @@
 .recoveryCodes code { color: var(--wd-color-text); font-size: .74rem; font-weight: 600; user-select: all; }
 
 @media (max-width: 48rem) {
-  .mfaCard { grid-template-columns: auto minmax(0, 1fr); margin-inline: 1rem; }
+  .page { padding: 1.25rem 1rem 2.5rem; }
+  .mfaCard { grid-template-columns: auto minmax(0, 1fr); }
   .mfaActions { grid-column: 1 / -1; justify-content: flex-start; }
 }
 

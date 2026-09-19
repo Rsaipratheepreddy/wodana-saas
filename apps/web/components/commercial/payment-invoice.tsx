@@ -49,7 +49,7 @@ export function PaymentInvoice({
   workspaceId,
   payment,
   busy,
-  canApprove,
+  canVerifyFinance,
   run,
   currency = "AED",
   customerName = "",
@@ -57,7 +57,7 @@ export function PaymentInvoice({
   workspaceId: string;
   payment: Payment;
   busy: boolean;
-  canApprove: boolean;
+  canVerifyFinance: boolean;
   run: (action: string, body: Record<string, unknown>) => Promise<boolean>;
   currency?: string;
   customerName?: string;
@@ -178,7 +178,7 @@ export function PaymentInvoice({
             </small>
           </span>
         )}
-        {canApprove && (
+        {canVerifyFinance && (
           <button
             className={s.button}
             disabled={busy}

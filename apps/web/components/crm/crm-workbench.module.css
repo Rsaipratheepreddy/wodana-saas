@@ -11,6 +11,8 @@
 .nativeField { display: grid; gap: .5rem; font-size: var(--wd-text-sm); }
 .nativeField input { box-sizing: border-box; inline-size: 100%; min-inline-size: 0; min-block-size: var(--wd-control-lg); padding: .5rem .75rem; border: 1px solid var(--wd-color-border-control); border-radius: .5rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; }
 .nativeField input:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.multiSelect { display: grid; gap: .45rem; border: 0; margin: 0; padding: 0; }
+.multiSelect legend { margin-bottom: .45rem; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 .fields .field :global(.wd-field) { min-block-size: 0; }
 .actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }
 .section { display: grid; gap: .8rem; padding-block: .25rem 1rem; border-block-end: 1px solid var(--wd-color-structural-divider); }

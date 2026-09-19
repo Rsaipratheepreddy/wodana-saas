@@ -22,6 +22,7 @@ import { CreateRoleDto } from "./dto/create-role.dto";
 import { CreateWorkspaceDto } from "./dto/create-workspace.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 import { ProvisionTenantDto } from "./dto/provision-tenant.dto";
+import type { TenantContractContactDto, TenantSetupSelectionsDto } from "./dto/tenant-provisioning-draft.dto";
 import {
   CompleteOnboardingDto,
   REQUIRED_ONBOARDING_STEPS,
@@ -40,6 +41,7 @@ import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminolog
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
 import { WorkspaceAccessService } from "./workspace-access.service";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "../crm/automations/default-automation-templates";
+import { parseProjectWorkflowTemplate } from "../projects/project-workflow";
 import {
   assertValidIdempotencyKey,
   provisioningRequestHash,
@@ -55,6 +57,8 @@ import {
   workspaceTerminologyDefault,
   type WorkspaceTerminologyOverride,
 } from "./workspace-terminology";
+import { ConfigurationRevisionsService } from "./configuration-revisions.service";
+import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
   id: string;
@@ -131,6 +135,7 @@ export class WorkspacesService {
     private readonly access: WorkspaceAccessService,
     private readonly brandStorage: BrandAssetStorageService,
     private readonly transactionalEmail: TransactionalEmailService,
+    private readonly revisions: ConfigurationRevisionsService = new ConfigurationRevisionsService(),
   ) {}
 
   async create(actor: RequestActor, input: CreateWorkspaceDto) {
@@ -233,7 +238,10 @@ export class WorkspacesService {
     }
   }
 
-  async provisionTenant(input: ProvisionTenantDto, suppliedIdempotencyKey?: string) {
+  async provisionTenant(
+    input: ProvisionTenantDto & { account?: TenantContractContactDto; defaults?: TenantSetupSelectionsDto }, suppliedIdempotencyKey?: string,
+    operatorUserId?: string, correlationId?: string,
+  ) {
     let idempotencyKey: string;
     try {
       idempotencyKey = assertValidIdempotencyKey(suppliedIdempotencyKey);
@@ -245,6 +253,8 @@ export class WorkspacesService {
     const workspaceId = randomUUID();
     const legalEntityId = randomUUID();
     const invitationId = randomUUID();
+    const auditCorrelationId = correlationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(correlationId)
+      ? correlationId : randomUUID();
     const slug = input.slug ?? this.toSlug(input.name);
 
     try {
@@ -276,7 +286,7 @@ export class WorkspacesService {
           const replay = prior.rows[0].response_body;
           return {
             ...replay,
-            replayed: true,
+            replayed: true as const,
             ownerInvitation: {
               ...(replay.ownerInvitation as Record<string, unknown>),
               invitationToken: null,
@@ -285,15 +295,32 @@ export class WorkspacesService {
           };
         }
 
-        const owner = await client.query<{ id: string }>(
+        if (Boolean(input.account) !== Boolean(input.defaults)) {
+          throw new BadRequestException("Account contact and setup versions must be supplied together");
+        }
+        const setup = input.defaults ? await this.resolveTenantSetup(client, input.defaults) : null;
+        if (setup) {
+          const region = setup.region.configuration;
+          if (input.defaultCurrency !== region.currency || input.defaultLocale !== region.locale
+            || input.defaultTimezone !== region.timezone || input.unitSystem !== region.unitSystem
+            || input.weekStartsOn !== region.weekStartsOn
+            || input.firstLegalEntity.countryCode !== region.countryCode) {
+            throw new BadRequestException("Organization regional defaults do not match the pinned region version");
+          }
+        }
+
+        const insertedOwner = await client.query<{ id: string }>(
           `INSERT INTO users (primary_email, display_name, preferred_locale, preferred_timezone)
            VALUES ($1, $2, $3, $4)
-           ON CONFLICT (primary_email)
-           DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = now()
+           ON CONFLICT (primary_email) DO NOTHING
            RETURNING id`,
           [input.owner.email, input.owner.displayName, input.defaultLocale, input.defaultTimezone],
         );
-        const ownerUserId = owner.rows[0].id;
+        const existingOwner = insertedOwner.rowCount ? null : await client.query<{ id: string }>(
+          `SELECT id FROM users WHERE primary_email = $1`, [input.owner.email],
+        );
+        const ownerUserId = insertedOwner.rows[0]?.id ?? existingOwner?.rows[0]?.id;
+        if (!ownerUserId) throw new ConflictException("Owner identity could not be resolved");
         await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
         await client.query("SELECT set_config('app.current_actor_id', $1, true)", [ownerUserId]);
 
@@ -341,6 +368,11 @@ export class WorkspacesService {
            VALUES ($1, $2, $3)`,
           [workspaceId, invitationId, roleIds.get("owner")],
         );
+        await client.query(
+          `INSERT INTO workspace_invitation_delivery (invitation_id, workspace_id)
+           VALUES ($1, $2)`,
+          [invitationId, workspaceId],
+        );
         const onboarding = await this.insertOnboarding(client, workspaceId);
         await this.insertDefaultSequences(
           client,
@@ -349,29 +381,76 @@ export class WorkspacesService {
           input.firstLegalEntity.code,
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
+        if (setup) {
+          const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
+          await client.query(
+            `INSERT INTO project_workflow_templates
+               (workspace_id, code, name, description, is_default, version, stages, created_by)
+             VALUES ($1, $2, $3, $4, true, $5, $6, $7)`,
+            [workspaceId, workflow.code, workflow.name, workflow.description,
+              workflow.version, JSON.stringify(workflow.stages), ownerUserId],
+          );
+        }
 
         const workspaceResponse = this.mapWorkspace(workspace.rows[0]);
-        await client.query(
-          `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
-           VALUES ($1, $2, now() + interval '14 days')`,
-          [workspaceId, input.defaultCurrency],
-        );
+        if (setup) {
+          const plan = setup.plan.configuration;
+          await client.query(
+            `INSERT INTO workspace_subscriptions
+              (workspace_id, plan_code, billing_cycle, seat_limit, project_limit, currency, renews_at)
+             VALUES ($1, $2, $3, $4, $5, $6, now() + interval '14 days')`,
+            [workspaceId, input.defaults!.plan.code, plan.billingCycle, plan.seatLimit, plan.projectLimit, input.defaultCurrency],
+          );
+          await client.query(
+            `INSERT INTO workspace_setup_versions
+              (workspace_id, region_code, region_version, firm_kit_code, firm_kit_version,
+               plan_code, plan_version, configuration_snapshot)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [workspaceId, input.defaults!.region.code, input.defaults!.region.version,
+              input.defaults!.firmKit.code, input.defaults!.firmKit.version,
+              input.defaults!.plan.code, input.defaults!.plan.version, setup],
+          );
+        } else {
+          await client.query(
+            `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
+             VALUES ($1, $2, now() + interval '14 days')`,
+            [workspaceId, input.defaultCurrency],
+          );
+        }
         await this.insertCustomerAccountFoundation(client, {
           accountId,
           workspaceId,
           ownerUserId,
-          displayName: input.name,
+          displayName: input.account?.displayName ?? input.name,
           externalCustomerId: input.externalTenantId,
+          contractContactName: input.account?.contactName ?? null,
+          contractContactEmail: input.account?.contactEmail ?? null,
         });
+        if (setup) {
+          const plan = setup.plan.configuration;
+          await client.query(
+            `INSERT INTO customer_account_contracts
+              (account_id, plan_code, plan_version, currency, billing_cycle,
+               seat_limit, project_limit, trial_ends_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '14 days')`,
+            [accountId, input.defaults!.plan.code, input.defaults!.plan.version,
+              input.defaultCurrency, plan.billingCycle, plan.seatLimit, plan.projectLimit],
+          );
+        }
         const legalEntityResponse = this.mapLegalEntity(legalEntity);
         const onboardingResponse = this.mapOnboarding(onboarding);
         const safeResponse = {
           externalTenantId: input.externalTenantId,
           account: {
             id: accountId,
-            displayName: input.name,
+            displayName: input.account?.displayName ?? input.name,
             organizationLimit: 1,
             isDefaultOrganization: true,
+            contractContactName: input.account?.contactName ?? null,
+            contractContactEmail: input.account?.contactEmail ?? null,
+            contractStatus: setup ? "trial_uncontracted" : null,
+            contractPlanCode: input.defaults?.plan.code ?? null,
+            contractPlanVersion: input.defaults?.plan.version ?? null,
           },
           workspace: workspaceResponse,
           legalEntity: legalEntityResponse,
@@ -382,29 +461,33 @@ export class WorkspacesService {
             status: "pending",
             expiresAt,
             acceptedAt: null,
+            deliveryStatus: "not_requested",
             invitationToken: null,
             tokenNotice: "Token returned only on initial provisioning or explicit rotation.",
           },
           onboarding: onboardingResponse,
+          setupVersions: input.defaults ?? null,
           replayed: false,
         };
 
         await this.recordChange(client, {
           workspaceId,
-          actorUserId: null,
+          actorUserId: operatorUserId ?? null,
           source: "internal",
           action: "workspace.provisioned",
           entityType: "workspace",
           entityId: workspaceId,
+          correlationId: auditCorrelationId,
           after: { ...workspaceResponse, externalTenantId: input.externalTenantId },
         });
         await this.recordChange(client, {
           workspaceId,
-          actorUserId: null,
+          actorUserId: operatorUserId ?? null,
           source: "internal",
           action: "workspace.owner_invited",
           entityType: "workspace_invitation",
           entityId: invitationId,
+          correlationId: auditCorrelationId,
           after: { email: input.owner.email, role: "owner", expiresAt },
         });
         await client.query(
@@ -414,6 +497,15 @@ export class WorkspacesService {
            VALUES ($1, $2, $3, $4, $5, now() + interval '30 days')`,
           [input.externalTenantId, idempotencyKey, requestHash, workspaceId, safeResponse],
         );
+        if (operatorUserId) {
+          await client.query(
+            `INSERT INTO platform_operator_audit
+               (actor_user_id, action, target_type, target_id, correlation_id, details)
+             VALUES ($1, 'tenant.provisioned', 'tenant', $2, $3, $4)`,
+            [operatorUserId, input.externalTenantId, auditCorrelationId,
+              { workspaceId, accountId }],
+          );
+        }
 
         return {
           ...safeResponse,
@@ -542,28 +634,47 @@ export class WorkspacesService {
         status: string;
         expiresAt: Date;
         acceptedAt: Date | null;
+        deliveryStatus: string;
+        deliveryAttempts: number;
+        deliveryAttemptedAt: Date | null;
+        providerMessageId: string | null;
       }>(
-        `SELECT id, email,
-                CASE WHEN status = 'pending' AND expires_at <= now()
-                     THEN 'expired' ELSE status::text END AS status,
-                expires_at AS "expiresAt", accepted_at AS "acceptedAt"
-         FROM workspace_invitations
-         WHERE id = $1 AND workspace_id = $2`,
+        `SELECT invitation.id, invitation.email,
+                CASE WHEN invitation.status = 'pending' AND invitation.expires_at <= now()
+                     THEN 'expired' ELSE invitation.status::text END AS status,
+                invitation.expires_at AS "expiresAt", invitation.accepted_at AS "acceptedAt",
+                COALESCE(delivery.status, 'untracked') AS "deliveryStatus",
+                COALESCE(delivery.attempts, 0) AS "deliveryAttempts",
+                delivery.last_attempted_at AS "deliveryAttemptedAt",
+                delivery.provider_message_id AS "providerMessageId"
+         FROM workspace_invitations invitation
+         LEFT JOIN workspace_invitation_delivery delivery ON delivery.invitation_id = invitation.id
+         WHERE invitation.id = $1 AND invitation.workspace_id = $2`,
         [ownerInvitationId, workspaceId],
       );
       if (!invitation.rowCount) throw new NotFoundException("Owner invitation not found");
       const account = await client.query<{
         id: string;
         displayName: string;
+        contractContactName: string | null;
+        contractContactEmail: string | null;
+        contractStatus: string | null;
+        contractPlanCode: string | null;
+        contractPlanVersion: number | null;
         organizationLimit: number;
         version: number;
         isDefaultOrganization: boolean;
       }>(
         `SELECT account.id, account.display_name AS "displayName",
+                account.contract_contact_name AS "contractContactName",
+                account.contract_contact_email AS "contractContactEmail",
+                contract.status AS "contractStatus", contract.plan_code AS "contractPlanCode",
+                contract.plan_version AS "contractPlanVersion",
                 account.organization_limit AS "organizationLimit", account.version,
                 linked.is_default AS "isDefaultOrganization"
          FROM customer_account_organizations linked
          JOIN customer_accounts account ON account.id = linked.account_id
+         LEFT JOIN customer_account_contracts contract ON contract.account_id = account.id
          WHERE linked.workspace_id = $1`,
         [workspaceId],
       );
@@ -587,20 +698,33 @@ export class WorkspacesService {
     };
   }
 
-  async resendProvisionedOwnerInvitation(externalTenantId: string) {
+  async resendProvisionedOwnerInvitation(
+    externalTenantId: string, operatorUserId?: string, correlationId?: string,
+    suppliedIdempotencyKey?: string,
+  ) {
+    let idempotencyKey: string | null = null;
+    if (suppliedIdempotencyKey !== undefined) {
+      try { idempotencyKey = assertValidIdempotencyKey(suppliedIdempotencyKey); }
+      catch (error) { throw new BadRequestException((error as Error).message); }
+    }
+    const auditCorrelationId = correlationId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(correlationId)
+      ? correlationId : randomUUID();
     const provisioned = await this.database.query<{ workspace_id: string }>(
       `SELECT workspace_id FROM tenant_provisioning_requests WHERE external_tenant_id = $1`,
       [externalTenantId],
     );
     if (!provisioned.rowCount) throw new NotFoundException("Provisioned tenant not found");
     const workspaceId = provisioned.rows[0].workspace_id;
-    return this.database.tenantTransaction(workspaceId, workspaceId, async (client) => {
+    const rotated = await this.database.tenantTransaction(workspaceId, operatorUserId ?? workspaceId, async (client) => {
       await this.lockWorkspace(client, workspaceId);
-      const pending = await client.query<{ id: string; email: string }>(
-        `SELECT invitation.id, invitation.email
+      const pending = await client.query<{ id: string; email: string; recipientName: string; workspaceName: string; expiresAt: Date }>(
+        `SELECT invitation.id, invitation.email, app_user.display_name AS "recipientName",
+                workspace.name AS "workspaceName", invitation.expires_at AS "expiresAt"
          FROM workspace_invitations invitation
          JOIN invitation_roles assigned ON assigned.invitation_id = invitation.id
          JOIN roles role ON role.id = assigned.role_id
+         JOIN workspaces workspace ON workspace.id = invitation.workspace_id
+         LEFT JOIN users app_user ON app_user.primary_email = invitation.email
          WHERE invitation.workspace_id = $1
            AND invitation.status = 'pending'
            AND role.code = 'owner'
@@ -612,6 +736,34 @@ export class WorkspacesService {
       if (!pending.rowCount) {
         throw new NotFoundException("Pending owner invitation not found");
       }
+      if (idempotencyKey) {
+        const prior = await client.query<{ status: string; providerMessageId: string | null }>(
+          `SELECT status, provider_message_id AS "providerMessageId"
+           FROM workspace_invitation_delivery_commands
+           WHERE invitation_id = $1 AND idempotency_key = $2`,
+          [pending.rows[0].id, idempotencyKey],
+        );
+        if (prior.rowCount) {
+          return {
+            id: pending.rows[0].id, email: pending.rows[0].email, role: "owner",
+            status: "pending", expiresAt: pending.rows[0].expiresAt, acceptedAt: null,
+            invitationToken: null, deliveryStatus: prior.rows[0].status,
+            providerMessageId: prior.rows[0].providerMessageId,
+            recipientName: pending.rows[0].recipientName || pending.rows[0].email,
+            workspaceName: pending.rows[0].workspaceName,
+            tokenHash: null,
+            replayed: true as const,
+            tokenNotice: "Token omitted on replay; use a new send key to rotate it if the original was lost.",
+          };
+        }
+        const inFlight = await client.query(
+          `SELECT 1 FROM workspace_invitation_delivery_commands
+           WHERE invitation_id = $1 AND status = 'pending'
+             AND created_at > now() - interval '60 seconds' LIMIT 1`,
+          [pending.rows[0].id],
+        );
+        if (inFlight.rowCount) throw new ConflictException("Owner invitation delivery is still in progress");
+      }
       const invitationToken = randomBytes(32).toString("base64url");
       const tokenHash = createHash("sha256").update(invitationToken).digest("hex");
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -621,15 +773,45 @@ export class WorkspacesService {
          WHERE id = $3`,
         [tokenHash, expiresAt, pending.rows[0].id],
       );
+      await client.query(
+        `INSERT INTO workspace_invitation_delivery (invitation_id, workspace_id, status)
+         VALUES ($1, $2, 'pending')
+         ON CONFLICT (invitation_id) DO UPDATE SET status = 'pending',
+           provider = NULL, provider_message_id = NULL, updated_at = now()`,
+        [pending.rows[0].id, workspaceId],
+      );
+      await client.query(
+        `UPDATE workspace_invitation_delivery_commands SET status = 'superseded', updated_at = now()
+         WHERE invitation_id = $1 AND status <> 'superseded'`,
+        [pending.rows[0].id],
+      );
+      if (idempotencyKey) {
+        await client.query(
+          `INSERT INTO workspace_invitation_delivery_commands
+             (workspace_id, invitation_id, idempotency_key)
+           VALUES ($1, $2, $3)`,
+          [workspaceId, pending.rows[0].id, idempotencyKey],
+        );
+      }
       await this.recordChange(client, {
         workspaceId,
-        actorUserId: null,
+        actorUserId: operatorUserId ?? null,
         source: "internal",
-        action: "workspace.owner_invitation_resent",
+        action: "workspace.owner_invitation_rotated",
         entityType: "workspace_invitation",
         entityId: pending.rows[0].id,
+        correlationId: auditCorrelationId,
         after: { email: pending.rows[0].email, role: "owner", expiresAt },
       });
+      if (operatorUserId) {
+        await client.query(
+          `INSERT INTO platform_operator_audit
+             (actor_user_id, action, target_type, target_id, correlation_id, details)
+           VALUES ($1, 'tenant.owner_invitation_rotated', 'tenant', $2, $3, $4)`,
+          [operatorUserId, externalTenantId, auditCorrelationId,
+            { workspaceId, invitationId: pending.rows[0].id }],
+        );
+      }
       return {
         id: pending.rows[0].id,
         email: pending.rows[0].email,
@@ -638,9 +820,69 @@ export class WorkspacesService {
         expiresAt,
         acceptedAt: null,
         invitationToken,
+        deliveryStatus: "pending",
+        providerMessageId: null,
+        recipientName: pending.rows[0].recipientName || pending.rows[0].email,
+        workspaceName: pending.rows[0].workspaceName,
+        tokenHash,
+        replayed: false as const,
         tokenNotice: "This replacement token is returned once and is never stored in plaintext.",
       };
     });
+    if (rotated.replayed) {
+      const { recipientName: _recipientName, workspaceName: _workspaceName,
+        tokenHash: _tokenHash, ...publicReplay } = rotated;
+      return publicReplay;
+    }
+    const delivery = await this.transactionalEmail.sendWorkspaceInvitation({
+      email: rotated.email,
+      expiresAt: rotated.expiresAt,
+      invitationToken: rotated.invitationToken,
+      inviterName: "Wodana",
+      recipientName: rotated.recipientName,
+      roleCodes: ["owner"],
+      workspaceName: rotated.workspaceName,
+    });
+    await this.database.tenantTransaction(workspaceId, operatorUserId ?? workspaceId, async (client) => {
+      await client.query(
+        `UPDATE workspace_invitation_delivery SET status = $3, attempts = attempts + 1,
+           provider = $4, provider_message_id = $5, last_attempted_at = now(), updated_at = now()
+         WHERE invitation_id = $1 AND workspace_id = $2
+           AND EXISTS (SELECT 1 FROM workspace_invitations invitation
+                       WHERE invitation.id = $1 AND invitation.token_hash = $6)`,
+        [rotated.id, workspaceId, delivery.status, delivery.provider, delivery.messageId, rotated.tokenHash],
+      );
+      if (idempotencyKey) {
+        await client.query(
+          `UPDATE workspace_invitation_delivery_commands
+           SET status = $3, provider_message_id = $4, updated_at = now()
+           WHERE invitation_id = $1 AND idempotency_key = $2 AND status = 'pending'`,
+          [rotated.id, idempotencyKey, delivery.status, delivery.messageId],
+        );
+      }
+      await this.recordChange(client, {
+        workspaceId,
+        actorUserId: operatorUserId ?? null,
+        source: "internal",
+        action: "workspace.owner_invitation_delivery_attempted",
+        entityType: "workspace_invitation",
+        entityId: rotated.id,
+        correlationId: auditCorrelationId,
+        after: { status: delivery.status, provider: delivery.provider, providerMessageId: delivery.messageId },
+      });
+      if (operatorUserId) {
+        await client.query(
+          `INSERT INTO platform_operator_audit
+             (actor_user_id, action, target_type, target_id, correlation_id, details)
+           VALUES ($1, 'tenant.owner_invitation_delivery_attempted', 'tenant', $2, $3, $4)`,
+          [operatorUserId, externalTenantId, auditCorrelationId,
+            { workspaceId, invitationId: rotated.id, status: delivery.status, provider: delivery.provider }],
+        );
+      }
+    });
+    const { recipientName: _recipientName, workspaceName: _workspaceName,
+      tokenHash: _tokenHash, ...publicResult } = rotated;
+    return { ...publicResult, deliveryStatus: delivery.status, providerMessageId: delivery.messageId };
   }
 
   async list(actor: RequestActor) {
@@ -846,10 +1088,16 @@ export class WorkspacesService {
         logoAssetId: string | null;
         logoUpdatedAt: Date | null;
         primaryColor: string | null;
+        secondaryColor: string | null;
+        headingFont: string | null;
+        bodyFont: string | null;
       }>(
         `SELECT branding.logo_asset_id AS "logoAssetId",
                 asset.updated_at AS "logoUpdatedAt",
-                branding.primary_color AS "primaryColor"
+                branding.primary_color AS "primaryColor",
+                branding.secondary_color AS "secondaryColor",
+                branding.heading_font AS "headingFont",
+                branding.body_font AS "bodyFont"
          FROM tenant_login_branding branding
          LEFT JOIN workspace_brand_assets asset ON asset.id = branding.logo_asset_id
          WHERE branding.workspace_id = $1`,
@@ -871,6 +1119,12 @@ export class WorkspacesService {
       this.resolvedTerminology(client, workspaceId));
   }
 
+  async terminologyHistory(actor: RequestActor, workspaceId: string, key: string) {
+    if (!workspaceTerminologyDefault(key)) throw new BadRequestException("Choose a supported terminology key");
+    return this.access.asMember(actor, workspaceId, (client) =>
+      this.revisions.history(client, workspaceId, "workspace_terminology", key));
+  }
+
   async updateAppearance(
     actor: RequestActor,
     workspaceId: string,
@@ -883,12 +1137,27 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const beforeWorkspace = await this.requireWorkspace(client, workspaceId);
-        const beforeBranding = await client.query<{ primaryColor: string | null }>(
-          `SELECT primary_color AS "primaryColor"
+        const beforeBranding = await client.query<{
+          primaryColor: string | null;
+          secondaryColor: string | null;
+          headingFont: string | null;
+          bodyFont: string | null;
+        }>(
+          `SELECT primary_color AS "primaryColor", secondary_color AS "secondaryColor",
+                  heading_font AS "headingFont", body_font AS "bodyFont"
            FROM tenant_login_branding
            WHERE workspace_id = $1`,
           [workspaceId],
         );
+        const before = beforeBranding.rows[0] ?? {
+          primaryColor: null, secondaryColor: null, headingFont: null, bodyFont: null,
+        };
+        const appearance = {
+          primaryColor: input.primaryColor,
+          secondaryColor: input.secondaryColor === undefined ? before.secondaryColor : input.secondaryColor,
+          headingFont: input.headingFont === undefined ? before.headingFont : input.headingFont,
+          bodyFont: input.bodyFont === undefined ? before.bodyFont : input.bodyFont,
+        };
         const workspace = await client.query<WorkspaceRow>(
           `UPDATE workspaces
            SET version = version + 1, updated_at = now()
@@ -901,15 +1170,20 @@ export class WorkspacesService {
         }
         await client.query(
           `INSERT INTO tenant_login_branding
-             (workspace_id, login_slug, display_name, primary_color)
-           VALUES ($1, $2, $3, $4)
+             (workspace_id, login_slug, display_name, primary_color, secondary_color, heading_font, body_font)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (workspace_id)
-           DO UPDATE SET primary_color = EXCLUDED.primary_color, updated_at = now()`,
-          [workspaceId, beforeWorkspace.slug, beforeWorkspace.name, input.primaryColor],
+           DO UPDATE SET primary_color = EXCLUDED.primary_color,
+                         secondary_color = EXCLUDED.secondary_color,
+                         heading_font = EXCLUDED.heading_font,
+                         body_font = EXCLUDED.body_font,
+                         updated_at = now()`,
+          [workspaceId, beforeWorkspace.slug, beforeWorkspace.name,
+            appearance.primaryColor, appearance.secondaryColor, appearance.headingFont, appearance.bodyFont],
         );
         const response = {
           workspace: this.mapWorkspace(workspace.rows[0]),
-          primaryColor: input.primaryColor,
+          ...appearance,
         };
         await this.recordChange(client, {
           workspaceId,
@@ -919,8 +1193,8 @@ export class WorkspacesService {
             : "workspace.appearance_restored",
           entityType: "workspace_branding",
           entityId: workspaceId,
-          before: { primaryColor: beforeBranding.rows[0]?.primaryColor ?? null },
-          after: { primaryColor: input.primaryColor },
+          before,
+          after: appearance,
         });
         return response;
       },
@@ -950,6 +1224,14 @@ export class WorkspacesService {
           [workspaceId, key],
         );
         const before = resolveWorkspaceTerminology(existing.rows).items.find((item) => item.key === key)!;
+        await this.revisions.ensureBaseline(client, {
+          workspaceId,
+          resourceType: "workspace_terminology",
+          resourceId: key,
+          sourceVersion: before.version,
+          snapshot: this.terminologyRevisionSnapshot(before),
+          actorUserId: actorUser.userId,
+        });
         let saved;
         if (existing.rowCount) {
           if (input.version !== existing.rows[0].version) {
@@ -979,6 +1261,15 @@ export class WorkspacesService {
         }
         if (!saved.rowCount) throw new ConflictException("Terminology changed; reload and try again");
         const response = resolveWorkspaceTerminology(saved.rows).items.find((item) => item.key === key)!;
+        await this.revisions.record(client, {
+          workspaceId,
+          resourceType: "workspace_terminology",
+          resourceId: key,
+          sourceVersion: response.version,
+          action: "saved",
+          snapshot: this.terminologyRevisionSnapshot(response),
+          actorUserId: actorUser.userId,
+        });
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
@@ -1019,6 +1310,14 @@ export class WorkspacesService {
           throw new ConflictException("Terminology changed; reload and try again");
         }
         const before = resolveWorkspaceTerminology(existing.rows).items.find((item) => item.key === key)!;
+        await this.revisions.ensureBaseline(client, {
+          workspaceId,
+          resourceType: "workspace_terminology",
+          resourceId: key,
+          sourceVersion: before.version,
+          snapshot: this.terminologyRevisionSnapshot(before),
+          actorUserId: actorUser.userId,
+        });
         const removed = await client.query(
           `DELETE FROM workspace_terminology
            WHERE workspace_id = $1 AND key = $2 AND version = $3`,
@@ -1026,6 +1325,15 @@ export class WorkspacesService {
         );
         if (!removed.rowCount) throw new ConflictException("Terminology changed; reload and try again");
         const response = resolveWorkspaceTerminology([]).items.find((item) => item.key === key)!;
+        await this.revisions.record(client, {
+          workspaceId,
+          resourceType: "workspace_terminology",
+          resourceId: key,
+          sourceVersion: response.version,
+          action: "restored_default",
+          snapshot: this.terminologyRevisionSnapshot(response),
+          actorUserId: actorUser.userId,
+        });
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
@@ -1034,6 +1342,110 @@ export class WorkspacesService {
           entityId: workspaceId,
           before: { ...before },
           after: { ...response },
+        });
+        return response;
+      },
+    );
+  }
+
+  async rollbackTerminology(
+    actor: RequestActor,
+    workspaceId: string,
+    key: string,
+    input: RestoreConfigurationRevisionDto,
+  ) {
+    if (!workspaceTerminologyDefault(key)) throw new BadRequestException("Choose a supported terminology key");
+    return this.access.withAnyPermission(
+      actor,
+      workspaceId,
+      ["module.organization.edit", "workspace.settings.manage"],
+      async (client, actorUser) => {
+        await this.lockWorkspace(client, workspaceId);
+        const existing = await client.query<WorkspaceTerminologyOverride>(
+          `SELECT key,visible_name AS "visibleName",visible_name_plural AS "visibleNamePlural",
+                  version,updated_at AS "updatedAt"
+           FROM workspace_terminology WHERE workspace_id=$1 AND key=$2 FOR UPDATE`,
+          [workspaceId, key],
+        );
+        const before = resolveWorkspaceTerminology(existing.rows).items.find((item) => item.key === key)!;
+        if (before.version !== input.version) {
+          throw new ConflictException("Terminology changed; reload and try again");
+        }
+        const revision = await this.revisions.requireRevision(
+          client,
+          workspaceId,
+          "workspace_terminology",
+          key,
+          input.revisionId,
+        );
+        const target = revision.snapshot;
+        if (
+          target.key !== key ||
+          typeof target.visibleName !== "string" ||
+          typeof target.visibleNamePlural !== "string" ||
+          typeof target.overridden !== "boolean"
+        ) throw new BadRequestException("This terminology revision cannot be restored");
+
+        await this.revisions.ensureBaseline(client, {
+          workspaceId,
+          resourceType: "workspace_terminology",
+          resourceId: key,
+          sourceVersion: before.version,
+          snapshot: this.terminologyRevisionSnapshot(before),
+          actorUserId: actorUser.userId,
+        });
+
+        let response;
+        if (!target.overridden) {
+          if (existing.rowCount) {
+            const removed = await client.query(
+              `DELETE FROM workspace_terminology WHERE workspace_id=$1 AND key=$2 AND version=$3`,
+              [workspaceId, key, input.version],
+            );
+            if (!removed.rowCount) throw new ConflictException("Terminology changed; reload and try again");
+          }
+          response = resolveWorkspaceTerminology([]).items.find((item) => item.key === key)!;
+        } else if (existing.rowCount) {
+          const saved = await client.query<WorkspaceTerminologyOverride>(
+            `UPDATE workspace_terminology
+             SET visible_name=$1,visible_name_plural=$2,version=version+1,updated_by=$3,updated_at=now()
+             WHERE workspace_id=$4 AND key=$5 AND version=$6
+             RETURNING key,visible_name AS "visibleName",visible_name_plural AS "visibleNamePlural",
+                       version,updated_at AS "updatedAt"`,
+            [target.visibleName, target.visibleNamePlural, actorUser.userId, workspaceId, key, input.version],
+          );
+          if (!saved.rowCount) throw new ConflictException("Terminology changed; reload and try again");
+          response = resolveWorkspaceTerminology(saved.rows).items.find((item) => item.key === key)!;
+        } else {
+          const saved = await client.query<WorkspaceTerminologyOverride>(
+            `INSERT INTO workspace_terminology
+              (workspace_id,key,visible_name,visible_name_plural,updated_by)
+             VALUES($1,$2,$3,$4,$5)
+             RETURNING key,visible_name AS "visibleName",visible_name_plural AS "visibleNamePlural",
+                       version,updated_at AS "updatedAt"`,
+            [workspaceId, key, target.visibleName, target.visibleNamePlural, actorUser.userId],
+          );
+          response = resolveWorkspaceTerminology(saved.rows).items.find((item) => item.key === key)!;
+        }
+
+        await this.revisions.record(client, {
+          workspaceId,
+          resourceType: "workspace_terminology",
+          resourceId: key,
+          sourceVersion: response.version,
+          action: "rolled_back",
+          snapshot: this.terminologyRevisionSnapshot(response),
+          actorUserId: actorUser.userId,
+          sourceRevisionId: revision.id,
+        });
+        await this.recordChange(client, {
+          workspaceId,
+          actorUserId: actorUser.userId,
+          action: "workspace.terminology_rolled_back",
+          entityType: "workspace_terminology",
+          entityId: workspaceId,
+          before: { ...before },
+          after: { ...response, sourceRevisionId: revision.id },
         });
         return response;
       },
@@ -1180,7 +1592,7 @@ export class WorkspacesService {
             expiresAt,
           ],
         );
-        const uploadUrl = await this.brandStorage.createUploadUrl(objectKey, input.mimeType);
+        const uploadUrl = await this.brandStorage.createUploadUrl(objectKey, input.mimeType, input.byteSize);
         return {
           assetId,
           expiresAt,
@@ -1237,6 +1649,7 @@ export class WorkspacesService {
         if (stored.byteSize !== asset.expected_byte_size || stored.byteSize > COMPANY_LOGO_MAX_BYTES) {
           throw new BadRequestException("Uploaded logo size does not match the requested file");
         }
+        await this.brandStorage.confirmUpload(asset.object_key, stored.body, asset.mime_type);
 
         const metadata = await sharp(stored.body, { failOn: "warning" }).metadata().catch(() => null);
         const detectedMime = metadata?.format === "jpeg"
@@ -1352,7 +1765,7 @@ export class WorkspacesService {
     );
   }
 
-  async readPublicCompanyLogo(loginSlug: string) {
+  async readPublicCompanyLogo(loginSlug: string, variant: "display" | "square" = "display") {
     const branding = await this.database.query<{ workspaceId: string; assetId: string | null }>(
       `SELECT workspace_id AS "workspaceId", logo_asset_id AS "assetId"
        FROM tenant_login_branding WHERE login_slug = $1`,
@@ -1367,7 +1780,7 @@ export class WorkspacesService {
         [row.assetId, row.workspaceId],
       );
       if (!asset.rowCount) throw new NotFoundException("Company logo was not found");
-      const objectKey = asset.rows[0].variants.display ?? asset.rows[0].object_key;
+      const objectKey = asset.rows[0].variants[variant] ?? asset.rows[0].variants.display ?? asset.rows[0].object_key;
       const stored = await this.brandStorage.read(objectKey).catch(() => null);
       if (!stored) throw new NotFoundException("Company logo was not found");
       return {
@@ -1851,6 +2264,10 @@ export class WorkspacesService {
       const result = await client.query(
         `SELECT team.id, team.business_unit_id AS "businessUnitId", team.code,
                 team.name, team.description, team.status, team.version,
+                (SELECT COALESCE(array_agg(grant_role.role_id ORDER BY grant_role.role_id), '{}')
+                 FROM workspace_team_roles grant_role WHERE grant_role.team_id = team.id) AS "roleIds",
+                (SELECT COALESCE(array_agg(routing.queue_id ORDER BY routing.queue_id), '{}')
+                 FROM workspace_team_queue_settings routing WHERE routing.team_id = team.id) AS "queueIds",
                 COALESCE(jsonb_agg(jsonb_build_object(
                   'membershipId', membership.id,
                   'userId', app_user.id,
@@ -1904,7 +2321,19 @@ export class WorkspacesService {
           memberIds,
           input.leadMembershipId ?? null,
         );
+        if ((input.roleIds?.length ?? 0) > 0 && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "workspace.roles.manage")) {
+          throw new ForbiddenException("Role management permission is required to set team access");
+        }
+        if ((input.queueIds?.length ?? 0) > 0 && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage")) {
+          throw new ForbiddenException("CRM settings permission is required to set team routing");
+        }
+        await this.replaceTeamAccess(client, workspaceId, teamId, input.roleIds ?? [], input.queueIds ?? [], actorUser.userId);
         const response = await this.requireTeam(client, workspaceId, teamId);
+        await this.revisions.record(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(response.version), action: "created", snapshot: response,
+          actorUserId: actorUser.userId,
+        });
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
@@ -1931,6 +2360,10 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const before = await this.requireTeam(client, workspaceId, teamId);
+        await this.revisions.ensureBaseline(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(before.version), snapshot: before, actorUserId: actorUser.userId,
+        });
         if (input.businessUnitId) {
           await this.requireBusinessUnit(client, workspaceId, input.businessUnitId);
         }
@@ -1972,7 +2405,26 @@ export class WorkspacesService {
             leadMembershipId,
           );
         }
+        if (input.roleIds !== undefined || input.queueIds !== undefined) {
+          if (input.roleIds !== undefined && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "workspace.roles.manage")) {
+            throw new ForbiddenException("Role management permission is required to change team access");
+          }
+          if (input.queueIds !== undefined && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage")) {
+            throw new ForbiddenException("CRM settings permission is required to change team routing");
+          }
+          await this.replaceTeamAccess(
+            client, workspaceId, teamId,
+            input.roleIds ?? (before.roleIds as string[]),
+            input.queueIds ?? (before.queueIds as string[]),
+            actorUser.userId,
+          );
+        }
         const response = await this.requireTeam(client, workspaceId, teamId);
+        await this.revisions.record(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(response.version), action: "saved", snapshot: response,
+          actorUserId: actorUser.userId,
+        });
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
@@ -1995,6 +2447,10 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const before = await this.requireTeam(client, workspaceId, teamId);
+        await this.revisions.ensureBaseline(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(before.version), snapshot: before, actorUserId: actorUser.userId,
+        });
         const archived = await client.query(
           `UPDATE workspace_teams SET status = 'archived', version = version + 1
            WHERE id = $1 AND workspace_id = $2 AND version = $3 AND status = 'active'
@@ -2002,7 +2458,12 @@ export class WorkspacesService {
           [teamId, workspaceId, version],
         );
         if (!archived.rowCount) throw new ConflictException("Team changed; reload and try again");
-        const response = archived.rows[0] as Record<string, unknown>;
+        const response = await this.requireTeam(client, workspaceId, teamId, true);
+        await this.revisions.record(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(response.version), action: "archived", snapshot: response,
+          actorUserId: actorUser.userId,
+        });
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
@@ -2013,6 +2474,79 @@ export class WorkspacesService {
           after: response,
         });
         return response;
+      },
+    );
+  }
+
+  async teamHistory(actor: RequestActor, workspaceId: string, teamId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["module.teams.read", "legal_entities.view"], (client) =>
+      this.revisions.history(client, workspaceId, "workspace_team", teamId));
+  }
+
+  async rollbackTeam(
+    actor: RequestActor,
+    workspaceId: string,
+    teamId: string,
+    input: RestoreConfigurationRevisionDto,
+  ) {
+    return this.access.withAnyPermission(
+      actor,
+      workspaceId,
+      ["module.teams.edit", "legal_entities.manage"],
+      async (client, actorUser) => {
+        await this.lockWorkspace(client, workspaceId);
+        const before = await this.requireTeam(client, workspaceId, teamId, true);
+        if (Number(before.version) !== input.version) throw new ConflictException("Team changed; reload and try again");
+        const revision = await this.revisions.requireRevision(client, workspaceId, "workspace_team", teamId, input.revisionId);
+        const target = revision.snapshot;
+        if (
+          target.code !== before.code || typeof target.name !== "string" ||
+          typeof target.businessUnitId !== "string" || !["active", "archived"].includes(String(target.status)) ||
+          !Array.isArray(target.members) || !Array.isArray(target.roleIds) || !Array.isArray(target.queueIds)
+        ) throw new UnprocessableEntityException("This team revision cannot be restored");
+        await this.requireBusinessUnit(client, workspaceId, target.businessUnitId);
+        const beforeRoleIds = before.roleIds as string[];
+        const beforeQueueIds = before.queueIds as string[];
+        const targetRoleIds = target.roleIds as string[];
+        const targetQueueIds = target.queueIds as string[];
+        const accessChanged = (left: string[], right: string[]) =>
+          left.length !== right.length || [...left].sort().some((value, index) => value !== [...right].sort()[index]);
+        if (accessChanged(beforeRoleIds, targetRoleIds) && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "workspace.roles.manage")) {
+          throw new ForbiddenException("Role management permission is required to restore team access");
+        }
+        if (accessChanged(beforeQueueIds, targetQueueIds) && !await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.settings.manage")) {
+          throw new ForbiddenException("CRM settings permission is required to restore team routing");
+        }
+        const members = target.members as Array<{ membershipId?: unknown; isLead?: unknown }>;
+        const memberIds = members.map((member) => member.membershipId).filter((id): id is string => typeof id === "string");
+        if (memberIds.length !== members.length || target.roleIds.some((id) => typeof id !== "string") || target.queueIds.some((id) => typeof id !== "string")) {
+          throw new UnprocessableEntityException("This team revision has invalid access defaults");
+        }
+        const leadMembershipId = members.find((member) => member.isLead)?.membershipId;
+        await this.revisions.ensureBaseline(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(before.version), snapshot: before, actorUserId: actorUser.userId,
+        });
+        const updated = await client.query(
+          `UPDATE workspace_teams SET business_unit_id=$1,name=$2,description=$3,status=$4,version=version+1,updated_at=now()
+           WHERE workspace_id=$5 AND id=$6 AND version=$7 RETURNING id`,
+          [target.businessUnitId, target.name, typeof target.description === "string" ? target.description : null, target.status, workspaceId, teamId, input.version],
+        );
+        if (!updated.rowCount) throw new ConflictException("Team changed; reload and try again");
+        await this.replaceTeamMembers(client, workspaceId, teamId, memberIds, typeof leadMembershipId === "string" ? leadMembershipId : null);
+        await this.replaceTeamAccess(client, workspaceId, teamId, targetRoleIds, targetQueueIds, actorUser.userId);
+        const after = await this.requireTeam(client, workspaceId, teamId, true);
+        await this.revisions.record(client, {
+          workspaceId, resourceType: "workspace_team", resourceId: teamId,
+          sourceVersion: Number(after.version), action: "rolled_back", snapshot: after,
+          actorUserId: actorUser.userId, sourceRevisionId: revision.id,
+        });
+        await this.recordChange(client, {
+          workspaceId, actorUserId: actorUser.userId, action: "workspace.team_rolled_back",
+          entityType: "workspace_team", entityId: teamId, before,
+          after: { ...after, sourceRevisionId: revision.id },
+        });
+        return after;
       },
     );
   }
@@ -2160,17 +2694,18 @@ export class WorkspacesService {
         if (before.isSystem) {
           throw new ConflictException("System roles cannot be deleted");
         }
-        const assignments = await client.query<{ members: number; invitations: number }>(
+        const assignments = await client.query<{ members: number; invitations: number; teams: number }>(
           `SELECT
              (SELECT count(*)::int FROM member_roles WHERE role_id = $1) AS members,
+             (SELECT count(*)::int FROM workspace_team_roles WHERE role_id = $1) AS teams,
              (SELECT count(*)::int FROM invitation_roles assigned
               JOIN workspace_invitations invitation ON invitation.id = assigned.invitation_id
               WHERE assigned.role_id = $1 AND invitation.status = 'pending') AS invitations`,
           [roleId],
         );
-        if (assignments.rows[0].members > 0 || assignments.rows[0].invitations > 0) {
+        if (assignments.rows[0].members > 0 || assignments.rows[0].invitations > 0 || assignments.rows[0].teams > 0) {
           throw new ConflictException({
-            message: "Reassign members and pending invitations before deleting this role",
+            message: "Reassign members, teams, and pending invitations before deleting this role",
             assignments: assignments.rows[0],
           });
         }
@@ -2237,6 +2772,17 @@ export class WorkspacesService {
         if (roles.rowCount !== input.roleCodes.length) {
           throw new UnprocessableEntityException("One or more workspace roles are invalid");
         }
+        const teamIds = Array.from(new Set(input.teamIds ?? []));
+        if (!input.roleCodes.length && !teamIds.length) {
+          throw new UnprocessableEntityException("Choose a role or a team for this invitation");
+        }
+        if (teamIds.length) {
+          const teams = await client.query<{ id: string }>(
+            `SELECT id FROM workspace_teams WHERE workspace_id=$1 AND id=ANY($2::uuid[]) AND status='active'`,
+            [workspaceId, teamIds],
+          );
+          if (teams.rowCount !== teamIds.length) throw new UnprocessableEntityException("One or more teams are not active");
+        }
 
         const displayName = input.displayName
           ?? input.email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -2270,13 +2816,19 @@ export class WorkspacesService {
             [workspaceId, invitation.rows[0].id, role.id],
           );
         }
+        for (const teamId of teamIds) {
+          await client.query(
+            `INSERT INTO invitation_teams (workspace_id, invitation_id, team_id) VALUES ($1,$2,$3)`,
+            [workspaceId, invitation.rows[0].id, teamId],
+          );
+        }
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
           action: "workspace.member_invited",
           entityType: "workspace_invitation",
           entityId: invitation.rows[0].id,
-          after: { displayName, email: input.email, roleCodes: input.roleCodes, expiresAt },
+          after: { displayName, email: input.email, roleCodes: input.roleCodes, teamIds, expiresAt },
         });
 
         return {
@@ -2285,6 +2837,7 @@ export class WorkspacesService {
             email: input.email,
             displayName,
             roleCodes: input.roleCodes,
+            teamIds,
             expiresAt,
             invitationToken,
             tokenNotice: "This token is returned once and is never stored in plaintext.",
@@ -2313,7 +2866,15 @@ export class WorkspacesService {
                 app_user.id AS "userId", app_user.primary_email AS email,
                 app_user.display_name AS "displayName",
                 COALESCE(json_agg(role.code ORDER BY role.code)
-                  FILTER (WHERE role.code IS NOT NULL), '[]') AS roles
+                  FILTER (WHERE role.code IS NOT NULL), '[]') AS roles,
+                (SELECT COALESCE(json_agg(DISTINCT inherited_role.code), '[]')
+                 FROM effective_member_roles inherited
+                 JOIN roles inherited_role ON inherited_role.id=inherited.role_id
+                 WHERE inherited.membership_id=membership.id AND inherited.team_id IS NOT NULL) AS "inheritedRoles",
+                (SELECT COALESCE(json_agg(json_build_object('id', team.id, 'name', team.name)), '[]')
+                 FROM workspace_team_members team_member
+                 JOIN workspace_teams team ON team.id=team_member.team_id AND team.status='active'
+                 WHERE team_member.membership_id=membership.id) AS teams
          FROM workspace_memberships membership
          JOIN users app_user ON app_user.id = membership.user_id
          LEFT JOIN member_roles assigned ON assigned.membership_id = membership.id
@@ -2345,6 +2906,17 @@ export class WorkspacesService {
           ? undefined
           : await this.resolveRoles(client, workspaceId, input.roleCodes);
         const nextRoleCodes = input.roleCodes ?? (before.roles as string[]);
+        if (input.roleCodes?.length === 0) {
+          const inherited = await client.query(
+            `SELECT 1 FROM workspace_team_members member_team
+             JOIN workspace_teams team ON team.id=member_team.team_id AND team.status='active'
+             JOIN workspace_team_roles grant_role ON grant_role.team_id=team.id
+             WHERE member_team.workspace_id=$1 AND member_team.membership_id=$2
+             LIMIT 1`,
+            [workspaceId, membershipId],
+          );
+          if (!inherited.rowCount) throw new BadRequestException("A member needs a direct role or an active team role");
+        }
         const nextStatus = input.status ?? String(before.status);
         if (String(before.status) !== "active" && nextStatus === "active") {
           await this.assertSeatAvailable(client, workspaceId);
@@ -2409,6 +2981,9 @@ export class WorkspacesService {
                   invitation.cancelled_at AS "cancelledAt",
                   invitation.created_at AS "createdAt",
                   inviter.display_name AS "invitedByName",
+                  (SELECT COALESCE(json_agg(json_build_object('id', team.id, 'name', team.name)), '[]')
+                   FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
+                   WHERE invited_team.invitation_id=invitation.id) AS teams,
                   COALESCE(json_agg(role.code ORDER BY role.code)
                     FILTER (WHERE role.code IS NOT NULL), '[]') AS roles
            FROM workspace_invitations invitation
@@ -3027,14 +3602,35 @@ export class WorkspacesService {
     return resolveWorkspaceTerminology(overrides.rows);
   }
 
+  private terminologyRevisionSnapshot(item: {
+    key: string;
+    visibleName: string;
+    visibleNamePlural: string;
+    overridden: boolean;
+    version: number;
+  }) {
+    return {
+      key: item.key,
+      visibleName: item.visibleName,
+      visibleNamePlural: item.visibleNamePlural,
+      overridden: item.overridden,
+      version: item.version,
+    };
+  }
+
   private async requireTeam(
     client: PoolClient,
     workspaceId: string,
     teamId: string,
+    includeArchived = false,
   ): Promise<Record<string, unknown>> {
     const result = await client.query(
       `SELECT team.id, team.business_unit_id AS "businessUnitId", team.code,
               team.name, team.description, team.status, team.version,
+              (SELECT COALESCE(array_agg(grant_role.role_id ORDER BY grant_role.role_id), '{}')
+               FROM workspace_team_roles grant_role WHERE grant_role.team_id = team.id) AS "roleIds",
+              (SELECT COALESCE(array_agg(routing.queue_id ORDER BY routing.queue_id), '{}')
+               FROM workspace_team_queue_settings routing WHERE routing.team_id = team.id) AS "queueIds",
               COALESCE(jsonb_agg(jsonb_build_object(
                 'membershipId', membership.id,
                 'userId', app_user.id,
@@ -3047,9 +3643,9 @@ export class WorkspacesService {
        LEFT JOIN workspace_team_members assigned ON assigned.team_id = team.id
        LEFT JOIN workspace_memberships membership ON membership.id = assigned.membership_id
        LEFT JOIN users app_user ON app_user.id = membership.user_id
-       WHERE team.id = $1 AND team.workspace_id = $2 AND team.status = 'active'
+       WHERE team.id = $1 AND team.workspace_id = $2 AND ($3::boolean OR team.status = 'active')
        GROUP BY team.id`,
-      [teamId, workspaceId],
+      [teamId, workspaceId, includeArchived],
     );
     if (!result.rowCount) throw new NotFoundException("Team not found");
     return result.rows[0] as Record<string, unknown>;
@@ -3082,6 +3678,46 @@ export class WorkspacesService {
          VALUES ($1, $2, $3, $4)`,
         [workspaceId, teamId, membershipId, membershipId === leadMembershipId],
       );
+    }
+  }
+
+  private async replaceTeamAccess(
+    client: PoolClient,
+    workspaceId: string,
+    teamId: string,
+    roleIds: string[],
+    queueIds: string[],
+    actorUserId: string,
+  ): Promise<void> {
+    const uniqueRoleIds = Array.from(new Set(roleIds));
+    const uniqueQueueIds = Array.from(new Set(queueIds));
+    if (uniqueRoleIds.length && !await this.access.hasPermission(client, workspaceId, actorUserId, "workspace.roles.manage")) {
+      throw new ForbiddenException("Role management permission is required to grant team access");
+    }
+    if (uniqueQueueIds.length && !await this.access.hasPermission(client, workspaceId, actorUserId, "crm.settings.manage")) {
+      throw new ForbiddenException("CRM settings permission is required to route enquiries to a team");
+    }
+    if (uniqueRoleIds.length) {
+      const roles = await client.query<{ id: string }>(
+        `SELECT id FROM roles WHERE workspace_id=$1 AND id=ANY($2::uuid[]) AND code NOT IN ('owner','administrator')`,
+        [workspaceId, uniqueRoleIds],
+      );
+      if (roles.rowCount !== uniqueRoleIds.length) throw new UnprocessableEntityException("Team roles must be valid non-administrator roles");
+    }
+    if (uniqueQueueIds.length) {
+      const queues = await client.query<{ id: string }>(
+        `SELECT id FROM crm_queues WHERE workspace_id=$1 AND id=ANY($2::uuid[]) AND status='active'`,
+        [workspaceId, uniqueQueueIds],
+      );
+      if (queues.rowCount !== uniqueQueueIds.length) throw new UnprocessableEntityException("One or more enquiry queues are not active");
+    }
+    await client.query(`DELETE FROM workspace_team_roles WHERE workspace_id=$1 AND team_id=$2`, [workspaceId, teamId]);
+    await client.query(`DELETE FROM workspace_team_queue_settings WHERE workspace_id=$1 AND team_id=$2`, [workspaceId, teamId]);
+    for (const roleId of uniqueRoleIds) {
+      await client.query(`INSERT INTO workspace_team_roles(workspace_id,team_id,role_id) VALUES($1,$2,$3)`, [workspaceId, teamId, roleId]);
+    }
+    for (const queueId of uniqueQueueIds) {
+      await client.query(`INSERT INTO workspace_team_queue_settings(workspace_id,team_id,queue_id) VALUES($1,$2,$3)`, [workspaceId, teamId, queueId]);
     }
   }
 
@@ -3315,6 +3951,14 @@ export class WorkspacesService {
       [invitation.workspace_id, membership.rows[0].id, invitation.id],
     );
     await client.query(
+      `INSERT INTO workspace_team_members (workspace_id, team_id, membership_id, is_lead)
+       SELECT invited_team.workspace_id, invited_team.team_id, $2, false
+       FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
+       WHERE invited_team.invitation_id=$1 AND team.status='active'
+       ON CONFLICT (team_id, membership_id) DO NOTHING`,
+      [invitation.id, membership.rows[0].id],
+    );
+    await client.query(
       `UPDATE workspace_invitations
        SET status = 'accepted', accepted_at = now()
        WHERE id = $1`,
@@ -3375,34 +4019,28 @@ export class WorkspacesService {
     const capacity = await client.query<{
       seatLimit: number;
       activeMembers: number;
+      invitedMembers: number;
       pendingInvitations: number;
+      reservedSeats: number;
     }>(
-      `SELECT subscription.seat_limit AS "seatLimit",
-              (SELECT count(*)::int
-               FROM workspace_memberships membership
-               WHERE membership.workspace_id = subscription.workspace_id
-                 AND membership.status IN ('active', 'invited')) AS "activeMembers",
-              (SELECT count(*)::int
-               FROM workspace_invitations invitation
-               WHERE invitation.workspace_id = subscription.workspace_id
-                 AND invitation.status = 'pending'
-                 AND invitation.expires_at > now()
-                 AND ($2::uuid IS NULL OR invitation.id <> $2::uuid)) AS "pendingInvitations"
-       FROM workspace_subscriptions subscription
-       WHERE subscription.workspace_id = $1`,
+      `SELECT seat_limit AS "seatLimit", active_members AS "activeMembers",
+              invited_members AS "invitedMembers", pending_invitations AS "pendingInvitations",
+              reserved_seats AS "reservedSeats"
+       FROM workspace_seat_capacity($1, $2)`,
       [workspaceId, excludeInvitationId],
     );
     if (!capacity.rowCount) {
       throw new ConflictException("Workspace subscription is not configured");
     }
     const usage = capacity.rows[0];
-    const usedSeats = usage.activeMembers + usage.pendingInvitations;
+    const usedSeats = usage.reservedSeats;
     if (usedSeats >= usage.seatLimit) {
       throw new ConflictException({
         message: "Workspace seat limit reached",
         seatLimit: usage.seatLimit,
         usedSeats,
         activeMembers: usage.activeMembers,
+        invitedMembers: usage.invitedMembers,
         pendingInvitations: usage.pendingInvitations,
       });
     }
@@ -3447,13 +4085,16 @@ export class WorkspacesService {
       ownerUserId: string;
       displayName: string;
       externalCustomerId: string | null;
+      contractContactName?: string | null;
+      contractContactEmail?: string | null;
     },
   ): Promise<void> {
     await client.query(
       `INSERT INTO customer_accounts
-        (id, external_customer_id, display_name, created_by)
-       VALUES ($1, $2, $3, $4)`,
-      [input.accountId, input.externalCustomerId, input.displayName, input.ownerUserId],
+        (id, external_customer_id, display_name, created_by, contract_contact_name, contract_contact_email)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [input.accountId, input.externalCustomerId, input.displayName, input.ownerUserId,
+        input.contractContactName ?? null, input.contractContactEmail ?? null],
     );
     await client.query(
       `INSERT INTO customer_account_memberships
@@ -3467,6 +4108,37 @@ export class WorkspacesService {
        VALUES ($1, $2, true)`,
       [input.accountId, input.workspaceId],
     );
+  }
+
+  private async resolveTenantSetup(client: PoolClient, selected: TenantSetupSelectionsDto) {
+    const profiles = await client.query<{
+      kind: "region" | "firm_kit" | "plan";
+      code: string;
+      version: number;
+      configuration: Record<string, unknown>;
+    }>(
+      `SELECT kind, code, version, configuration FROM tenant_setup_profiles
+       WHERE selectable = true AND (
+         (kind = 'region' AND code = $1 AND version = $2)
+         OR (kind = 'firm_kit' AND code = $3 AND version = $4)
+         OR (kind = 'plan' AND code = $5 AND version = $6))`,
+      [selected.region.code, selected.region.version,
+        selected.firmKit.code, selected.firmKit.version,
+        selected.plan.code, selected.plan.version],
+    );
+    if (profiles.rowCount !== 3) {
+      throw new BadRequestException("Select published region, firm kit and plan versions");
+    }
+    const region = profiles.rows.find((profile) => profile.kind === "region")!;
+    const firmKit = profiles.rows.find((profile) => profile.kind === "firm_kit")!;
+    const plan = profiles.rows.find((profile) => profile.kind === "plan")!;
+    parseProjectWorkflowTemplate(firmKit.configuration.projectWorkflow);
+    if (!Number.isInteger(plan.configuration.seatLimit) || Number(plan.configuration.seatLimit) < 1
+      || !Number.isInteger(plan.configuration.projectLimit) || Number(plan.configuration.projectLimit) < 1
+      || !["monthly", "yearly", "custom"].includes(String(plan.configuration.billingCycle))) {
+      throw new BadRequestException("The pinned plan defaults are invalid");
+    }
+    return { region, firmKit, plan };
   }
 
   private async insertSystemRoles(
@@ -3579,12 +4251,13 @@ export class WorkspacesService {
       action: string;
       entityType: string;
       entityId: string;
+      correlationId?: string;
       before?: Record<string, unknown>;
       after?: Record<string, unknown>;
     },
   ): Promise<void> {
     const eventId = randomUUID();
-    const correlationId = randomUUID();
+    const correlationId = change.correlationId ?? randomUUID();
     const occurredAt = new Date().toISOString();
     const payload = {
       schemaVersion: 1,
@@ -3651,7 +4324,10 @@ export class WorkspacesService {
 
   private mapBranding(
     loginSlug: string,
-    row?: { logoAssetId: string | null; logoUpdatedAt: Date | null; primaryColor: string | null },
+    row?: {
+      logoAssetId: string | null; logoUpdatedAt: Date | null; primaryColor: string | null;
+      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+    },
   ) {
     return {
       logoAssetId: row?.logoAssetId ?? null,
@@ -3660,6 +4336,9 @@ export class WorkspacesService {
         : null,
       logoUpdatedAt: row?.logoUpdatedAt ?? null,
       primaryColor: row?.primaryColor ?? null,
+      secondaryColor: row?.secondaryColor ?? null,
+      headingFont: row?.headingFont ?? null,
+      bodyFont: row?.bodyFont ?? null,
     };
   }
 

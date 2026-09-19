@@ -33,6 +33,8 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
   const [data, setData] = useState(initialData);
   const [catalogId, setCatalogId] = useState(defaultCatalog(initialData.items)?.id ?? '');
   const [loadedCatalogs, setLoadedCatalogs] = useState(() => new Set(initialData.overview ? [] : initialData.items.filter(r => r.kind === 'catalog_group').map(r => r.id)));
+  const [allCatalogsLoaded, setAllCatalogsLoaded] = useState(!initialData.overview);
+  const [allCatalogsFailed, setAllCatalogsFailed] = useState(false);
   const [failedCatalog, setFailedCatalog] = useState('');
   const [loadRetry, setLoadRetry] = useState(0);
   const [view, setView] = useState<CatalogView>('room');
@@ -63,12 +65,29 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
     }).catch(e => { if (current) { setFailedCatalog(catalogId); setError(e instanceof Error ? e.message : 'Could not load master data.'); } });
     return () => { current = false; };
   }, [catalogId, data.workspaceId, loadRetry, loadedCatalogs]);
-  const catalogReady = !catalogId || loadedCatalogs.has(catalogId);
+  useEffect(() => {
+    if (view !== 'products' || allCatalogsLoaded) return;
+    let current = true;
+    setAllCatalogsFailed(false);
+    requestCatalog(data.workspaceId).then(next => {
+      if (!current) return;
+      setData(next);
+      setLoadedCatalogs(new Set(next.items.filter((r: CatalogRecord) => r.kind === 'catalog_group').map((r: CatalogRecord) => r.id)));
+      setAllCatalogsLoaded(true);
+    }).catch(e => {
+      if (!current) return;
+      setAllCatalogsFailed(true);
+      setError(e instanceof Error ? e.message : 'Could not load materials.');
+    });
+    return () => { current = false; };
+  }, [view, allCatalogsLoaded, data.workspaceId, loadRetry]);
+  const selectedCatalogReady = !catalogId || loadedCatalogs.has(catalogId);
+  const catalogReady = view === 'products' ? allCatalogsLoaded : selectedCatalogReady;
   const loading = !catalogReady && failedCatalog !== catalogId;
   const report = (e: unknown) => setError(e instanceof Error ? e.message : 'The request could not be completed.');
   const upsert = (record: CatalogRecord) => setData(d => ({ ...d, items: [...d.items.filter(r => r.id !== record.id), record] }));
   const write = (record: CatalogRecord): Promise<CatalogRecord> => requestCatalog(data.workspaceId, '/records', 'PUT', savePayload(record));
-  const refresh = async () => { setError(''); try { const next = await requestCatalog(data.workspaceId, '', 'GET', undefined, catalogId); setLoadedCatalogs(previous => new Set(previous).add(catalogId)); if (!catalogId) setCatalogId(defaultCatalog(next.items)?.id ?? ''); setData(previous => ({...next, items:[...previous.items.filter(r => r.catalogId !== catalogId && r.kind !== 'catalog_group'), ...next.items]})); } catch (e) { report(e); } };
+  const refresh = async () => { setError(''); try { const refreshAll = view === 'products'; const next = await requestCatalog(data.workspaceId, '', 'GET', undefined, refreshAll ? undefined : catalogId); if (refreshAll) { setData(next); setLoadedCatalogs(new Set(next.items.filter((r: CatalogRecord) => r.kind === 'catalog_group').map((r: CatalogRecord) => r.id))); setAllCatalogsLoaded(true); } else { setLoadedCatalogs(previous => new Set(previous).add(catalogId)); if (!catalogId) setCatalogId(defaultCatalog(next.items)?.id ?? ''); setData(previous => ({...next, items:[...previous.items.filter(r => r.catalogId !== catalogId && r.kind !== 'catalog_group'), ...next.items]})); } } catch (e) { report(e); } };
   const changeView = (next: CatalogView, nextRoom = '', nextItem = '', nextVariant = '', nextCatalog = catalogId) => {
     const action = () => { setFailedCatalog(''); setArchived(false); setView(next); setRoomId(nextRoom); setItemId(nextItem); setVariantId(nextVariant); setCatalogId(nextCatalog); setSearch(''); setCategory('all'); setPage(1); setEditingTable(false); setSheetDirty(false); setError(''); setMessage(''); };
     if (sheetDirty) setDiscard(() => action); else action();
@@ -97,17 +116,19 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
     };
     if (dirty) setDiscard(() => action); else action();
   };
+  const activeGraph = useMemo(() => view === 'products' ? catalogHierarchy(data.items, archived) : graph, [view, data.items, archived, graph]);
+  const viewItems = view === 'products' ? data.items : items;
   const sourceRows = useMemo(() => {
     if (view === 'work') return room ? graph.related('work', 'room', room.id) : graph.active.filter(r => r.kind === 'work');
     if (view === 'variant') return item ? graph.related('variant', 'work', item.id) : [];
     if (view === 'components') return item ? graph.materials(item.id, variant?.id) : [];
-    if (view === 'products') return graph.active.filter(isMaterialEntry);
+    if (view === 'products') return activeGraph.active.filter(isMaterialEntry);
     if (view === 'material') return graph.active.filter(r => r.kind === 'material' && !['family', 'component specification'].includes(catalogAttribute(r, 'Catalog role') ?? '') && !catalogAttribute(r, 'Import role'));
     return graph.active.filter(r => r.kind === view);
-  }, [view, graph, room, item, variant]);
-  const categoryOf = useCallback((record: CatalogRecord) => graph.names(record, 'category') || catalogAttribute(record, 'category') || graph.names(record, 'material') || '', [graph]);
+  }, [view, graph, activeGraph, room, item, variant]);
+  const categoryOf = useCallback((record: CatalogRecord) => activeGraph.names(record, 'category') || catalogAttribute(record, 'category') || activeGraph.names(record, 'material') || '', [activeGraph]);
   const categories = [...new Set(sourceRows.map(categoryOf).filter(Boolean))].sort();
-  const filtered = useMemo(() => sourceRows.filter(r => (category === 'all' || categoryOf(r) === category) && (!search.trim() || [r.name, r.code, ...r.aliases, ...r.attributes.map(a => a.value), ...r.links.map(l => graph.byId.get(l.targetId)?.name ?? '')].join(' ').toLowerCase().includes(search.trim().toLowerCase()))).sort((a, b) => catalogRecordName(a).localeCompare(catalogRecordName(b))), [sourceRows, category, search, graph, categoryOf]);
+  const filtered = useMemo(() => sourceRows.filter(r => (category === 'all' || categoryOf(r) === category) && (!search.trim() || [r.name, r.code, ...r.aliases, ...r.attributes.map(a => a.value), ...r.links.map(l => activeGraph.byId.get(l.targetId)?.name ?? '')].join(' ').toLowerCase().includes(search.trim().toLowerCase()))).sort((a, b) => catalogRecordName(a).localeCompare(catalogRecordName(b))), [sourceRows, category, search, activeGraph, categoryOf]);
   const pages = Math.max(1, Math.ceil(filtered.length / 50)), currentPage = Math.min(page, pages), visible = filtered.slice((currentPage - 1) * 50, currentPage * 50);
   const recordKind: CatalogKind = view === 'products' ? 'sku' : view === 'components' ? 'construction' : view;
   const makeRecord = (): CatalogRecord => ({ ...blankCatalogRecord(recordKind), catalogId: catalogId || undefined, links: [
@@ -158,7 +179,7 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
       {message && <p className={styles.success} role="status">{message}</p>}
       {(data.error || error) && !draft && !selected && <p className={styles.error} role="alert">{data.error || error}</p>}
       {!data.error && <>
-        {!catalogReady && <p role="status" className={styles.context}>{loading ? 'Loading materials and prices…' : <><span>Materials could not be loaded. </span><Button size="compact" onPress={() => { setError(''); setFailedCatalog(''); setLoadRetry(n => n + 1); }}>Retry</Button></>}</p>}
+        {!catalogReady && <p role="status" className={styles.context}>{loading && !allCatalogsFailed ? 'Loading materials and prices…' : <><span>Materials could not be loaded. </span><Button size="compact" onPress={() => { setError(''); setFailedCatalog(''); setAllCatalogsFailed(false); setLoadRetry(n => n + 1); }}>Retry</Button></>}</p>}
         {!room || item ? <div className={styles.tabs} role="group" aria-label={item ? 'Item sections' : 'Master Data sections'}>{tabs.map(tab => <button key={tab} aria-pressed={view === tab} id={`catalog-tab-${tab}`} onClick={() => changeView(tab, item ? roomId : '', item?.id ?? '')}>{viewLabels[tab]}</button>)}</div> : null}
         {variant && <dl className={styles.summary}>{['board_choice', 'laminate_choice', 'hardware_choice', 'accessory_choice'].map(key => { const relation = ({board_choice:'material',laminate_choice:'sku',hardware_choice:'hardware',accessory_choice:'consumable'})[key]; const value = graph.names(variant, relation ?? '') || catalogAttribute(variant, key); return value ? <div key={key}><dt>{({ board_choice: 'Board', laminate_choice: 'Finish', hardware_choice: 'Hardware', accessory_choice: 'Accessories' })[key]}</dt><dd>{value}</dd></div> : null; })}</dl>}
         {view === 'components' && <p className={styles.context}>{variant ? 'Shared item materials and additions for this variant.' : 'Shared materials used by every variant of this item.'} Each row shows a component, its required specification and the selected material product.</p>}
@@ -168,15 +189,15 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
             {archiveCheckbox}
             {editTableButton}
           </div></div>}
-          {!catalogReady && !['room','work','variant','unit'].includes(view) ? <p role="status">{loading ? 'Loading master data…' : 'Use Retry to load this section.'}</p> : editingTable ? <CatalogSheet key={`${catalogId}:${view}:${roomId}:${itemId}`} kind={view === 'products' ? 'all' : recordKind} items={items} rows={visible} canManage={data.canManage && !saving && !archived && catalogReady} createRow={makeRecord} onDirtyChange={setSheetDirty} onSave={write} onSaved={upsert} onSaveComplete={(saved, failed) => setMessage(`${saved} saved.${failed ? ` ${failed} need attention.` : ''}`)} onOpen={open} /> : view === 'room' ? <CatalogRoomGrid rooms={visible} items={items} canManage={data.canManage && !saving && catalogReady} filtered={Boolean(search.trim()) || category !== 'all' || archived} onOpen={open} onEdit={edit} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }}/> : <CatalogHierarchyTable key={`${catalogId}:${view}:${roomId}:${itemId}:${variantId}:${archived}`} view={view} items={items} rows={filtered} searchValue={search} onSearchChange={value => { setSearch(value); setPage(1); }} totalRowCount={sourceRows.length} toolbarActions={<>{editTableButton}{addButton}</>} footerActions={archiveCheckbox} canManage={data.canManage && !saving && !archived && catalogReady} componentCounts={data.componentCounts} pricesLoading={!catalogReady} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }} onRelated={related} onOpen={open} onEdit={edit} onPrice={price} />}
+          {!catalogReady && !['room','work','variant','unit'].includes(view) ? <p role="status">{loading && !allCatalogsFailed ? 'Loading master data…' : 'Use Retry to load this section.'}</p> : editingTable ? <CatalogSheet key={`${catalogId}:${view}:${roomId}:${itemId}`} kind={view === 'products' ? 'all' : recordKind} items={viewItems} rows={visible} canManage={data.canManage && !saving && !archived && catalogReady} createRow={makeRecord} onDirtyChange={setSheetDirty} onSave={write} onSaved={upsert} onSaveComplete={(saved, failed) => setMessage(`${saved} saved.${failed ? ` ${failed} need attention.` : ''}`)} onOpen={open} /> : view === 'room' ? <CatalogRoomGrid rooms={visible} items={items} canManage={data.canManage && !saving && catalogReady} filtered={Boolean(search.trim()) || category !== 'all' || archived} onOpen={open} onEdit={edit} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }}/> : <CatalogHierarchyTable key={`${catalogId}:${view}:${roomId}:${itemId}:${variantId}:${archived}`} view={view} items={viewItems} rows={filtered} workspaceId={data.workspaceId} searchValue={search} onSearchChange={value => { setSearch(value); setPage(1); }} totalRowCount={sourceRows.length} toolbarActions={<>{editTableButton}{addButton}</>} footerActions={archiveCheckbox} canManage={data.canManage && !saving && !archived && catalogReady} componentCounts={data.componentCounts} pricesLoading={!catalogReady} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }} onRelated={related} onOpen={open} onEdit={edit} onPrice={price} />}
           {!tableMode && <div className={styles.pager}><span>{filtered.length} {viewLabels[view].toLowerCase()} · Page {currentPage} of {pages}</span><div className={styles.actions}><Button size="compact" isDisabled={sheetDirty || currentPage === 1} onPress={() => setPage(currentPage - 1)}>Previous</Button><Button size="compact" isDisabled={sheetDirty || currentPage === pages} onPress={() => setPage(currentPage + 1)}>Next</Button></div></div>}
         </section>
       </>}
       <InspectorSheet isOpen={Boolean(selected || draft)} onOpenChange={opened => { if (!opened) close(); }} isDirty={dirty && !saving} size="md" title={draft ? `${draft.version ? 'Edit' : 'New'} ${catalogRecordName(draft) || singular[view]}` : selected ? catalogRecordName(selected) : 'Details'} footer={draft ? <div className={styles.actions}><Button isDisabled={saving} onPress={() => dirty ? setDiscard(() => close) : close()}>Cancel</Button><Button variant="primary" type="submit" form="catalog-editor" isLoading={saving}>Save</Button></div> : selected && data.canManage ? <div className={styles.actions}><Button isDisabled={saving} onPress={() => void archive()}>{selected.archived ? 'Restore' : 'Archive'}</Button><Button variant="primary" isDisabled={saving || selected.archived} onPress={() => edit(selected)}>Edit</Button></div> : undefined}>
         {error && <p className={styles.error} role="alert">{error}</p>}
-        {draft ? (['work','variant',...materialKinds].includes(draft.kind) || draft.kind === 'construction' && draft.configuration?.recordRole === 'component') ? <CatalogEntryEditor key={draft.id} draft={draft} setDraft={setDraft} items={items} onSubmit={save} saving={saving} onRelated={related} onPrice={() => price(selected || draft)} /> : <CatalogEditor draft={draft} setDraft={setDraft} items={items} onSubmit={save} saving={saving} fixedKind /> : selected && <CatalogRecordDetails record={selected} items={items} canManage={data.canManage && !selected.archived} busy={saving} onOpen={related} onEdit={edit} onPrice={key => price(selected, key)} onAddComponent={parent => void addComponent(parent)} />}
+        {draft ? (['work','variant',...materialKinds].includes(draft.kind) || draft.kind === 'construction' && draft.configuration?.recordRole === 'component') ? <CatalogEntryEditor key={draft.id} draft={draft} setDraft={setDraft} items={viewItems} onSubmit={save} saving={saving} onRelated={related} onPrice={() => price(selected || draft)} /> : <CatalogEditor draft={draft} setDraft={setDraft} items={viewItems} onSubmit={save} saving={saving} fixedKind /> : selected && <CatalogRecordDetails record={selected} items={viewItems} canManage={data.canManage && !selected.archived} busy={saving} onOpen={related} onEdit={edit} onPrice={key => price(selected, key)} onAddComponent={parent => void addComponent(parent)} />}
       </InspectorSheet>
-      {priceTarget && <CatalogPriceDialog key={priceTarget.id} target={priceTarget} initialSourceKey={priceSourceKey} items={items} canManage={data.canManage && !priceTarget.archived && priceableKinds.includes(priceTarget.kind)} onClose={() => { setPriceTarget(null); setPriceSourceKey(undefined); }} onSave={write} onSaved={upsert} onArchive={record => requestCatalog(data.workspaceId, `/records/${record.id}`, 'PATCH', { version: record.version, archived: true })} />}
+      {priceTarget && <CatalogPriceDialog key={priceTarget.id} target={priceTarget} initialSourceKey={priceSourceKey} items={viewItems} canManage={data.canManage && !priceTarget.archived && priceableKinds.includes(priceTarget.kind)} canViewCosts={data.canViewCosts === true} onClose={() => { setPriceTarget(null); setPriceSourceKey(undefined); }} onSave={write} onSaved={upsert} onArchive={record => requestCatalog(data.workspaceId, `/records/${record.id}`, 'PATCH', { version: record.version, archived: true })} />}
       {importOpen && <CatalogImportDialog catalogId={catalogId} items={items} initialKind={recordKind} groupId="" onClose={() => setImportOpen(false)} onValidate={plan => requestCatalog(data.workspaceId, '/import', 'POST', { catalogId, dryRun: true, records: plan.records.map(savePayload), references: plan.references })} onImport={plan => requestCatalog(data.workspaceId, '/import', 'POST', { catalogId, records: plan.records.map(savePayload), references: plan.references })} onImported={result => { setData(d => ({ ...d, items: [...d.items.filter(r => !result.items.some(saved => saved.id === r.id)), ...result.items] })); setMessage(`${result.created} records imported.`); }} />}
     </div>
     <ConfirmationDialog isOpen={Boolean(discard)} onOpenChange={opened => { if (!opened) setDiscard(null); }} title="Discard unsaved changes?" body="Your saved records remain available." confirmLabel="Discard changes" onConfirm={() => { const action = discard; setDiscard(null); action?.(); }} />

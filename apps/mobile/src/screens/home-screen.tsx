@@ -1,48 +1,72 @@
 import { PreProjectScreen } from './pre-project-screen';
 import { HrmsScreen } from './hrms-screen';
 import { CrmScreen } from './crm-screen';
-import { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Easing, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { ProjectsScreen } from './projects-screen';
+import { NotificationsScreen } from './notifications-screen';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, BackHandler, Easing, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text, tokens, useTheme } from '../design-system';
-import { loginTheme } from '../design-system/login-theme';
+import { Surface, Text, useTheme } from '../design-system';
 import { useAuth } from '../auth/provider';
 import { BottomNavigation, homeTabs, type HomeTab } from '../components/bottom-navigation';
-import { BrandLogo } from '../components/brand-logo';
+import { brandMarkSource } from '../components/brand-logo';
 import { Icon } from '../components/icon';
-import { homeModules, type HomeModule } from '../components/home-modules';
+import { visibleHomeModules, type HomeModule } from '../components/home-modules';
 import { HomeUpdates } from '../components/home-updates';
 import type { HrmsDestination } from '../home/updates';
+import { revokeCurrentNotificationDevice, watchNotificationOpens, type MobileDestination } from '../notifications/native-notifications';
+import { BillingSummary } from '../billing/summary';
 
 export function HomeScreen({ onSignOut }: { onSignOut: () => void }) {
   const insets = useSafeAreaInsets();
-  const { height, width, fontScale } = useWindowDimensions();
-  const usableHeight = height - insets.top - insets.bottom;
-  const bottomGap = usableHeight < 440 ? 16 : usableHeight < 620 ? 24 : 32;
-  const { reducedMotion, direction } = useTheme();
-  const { state } = useAuth();
+  const { reducedMotion, direction, colors, mode } = useTheme();
+  const { client, state } = useAuth();
   const profile = state.status === 'signedIn' ? state.profile : null;
   const workspace = state.status === 'signedIn' ? state.profile.memberships.find(item => item.workspaceId === state.workspaceId) : null;
+  const availableModules = useMemo(() => visibleHomeModules(workspace?.allowedModules), [workspace?.allowedModules]);
+  const logoUrl = workspace?.workspaceLogoUrl?.startsWith('https://') ? workspace.workspaceLogoUrl
+    : workspace?.workspaceLogoUrl?.startsWith('/') && process.env.EXPO_PUBLIC_WORKSPACE_ORIGIN
+      ? `${process.env.EXPO_PUBLIC_WORKSPACE_ORIGIN.replace(/\/$/, '')}${workspace.workspaceLogoUrl}` : null;
   const initials = profile?.displayName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'W';
+  const firstName = profile?.displayName.trim().split(/\s+/)[0] || 'there';
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const [activeTab, setActiveTab] = useState<HomeTab>('home');
   const [module, setModule] = useState<HomeModule | null>(null);
   const [hrmsDestination, setHrmsDestination] = useState<HrmsDestination>({ tab: 'attendance' });
+  const [notificationDestination, setNotificationDestination] = useState<MobileDestination | null>(null);
   const entrance = useRef(new Animated.Value(1)).current;
   const currentTab = homeTabs.find(tab => tab.id === activeTab) ?? homeTabs[0];
   const onHome = currentTab.id === 'home' && !module;
   const title = module?.label ?? currentTab.label;
-  const availableWidth = width - insets.left - insets.right;
-  const compact = availableWidth < 360;
-  const oneColumn = fontScale > 1.5 || availableWidth < 300;
   const changeTab = (tab: HomeTab) => { Keyboard.dismiss(); setModule(null); setActiveTab(tab); };
-  const openModule = (item: HomeModule) => { Keyboard.dismiss(); setHrmsDestination({ tab: 'attendance' }); setModule(item); };
+  const openModule = (item: HomeModule) => { Keyboard.dismiss(); setHrmsDestination({ tab: 'attendance' }); setNotificationDestination(null); setModule(item); };
   const openUpdate = (destination: HrmsDestination) => {
     Keyboard.dismiss();
     setHrmsDestination(destination);
-    setModule(homeModules.find(item => item.id === 'hrms') ?? null);
+    setModule(availableModules.find(item => item.id === 'hrms') ?? null);
   };
+  const openNotificationDestination = useCallback((destination: MobileDestination) => {
+    Keyboard.dismiss();
+    const moduleId = destination.module === 'pre-project' ? 'pre-project' : destination.module;
+    const next = availableModules.find(item => item.id === moduleId)
+      ?? availableModules.find(item => item.id === 'crm');
+    setNotificationDestination(next?.id === moduleId ? destination : { module: 'crm', screen: 'inbox' });
+    setActiveTab('home');
+    setModule(next ?? null);
+  }, [availableModules]);
+
+  useEffect(() => {
+    if (module && !availableModules.some(item => item.id === module.id)) {
+      setModule(null);
+      setNotificationDestination(null);
+    }
+  }, [availableModules, module]);
+
+  useEffect(() => state.status === 'signedIn'
+    ? watchNotificationOpens(client, state.workspaceId, openNotificationDestination)
+    : undefined, [client, openNotificationDestination, state]);
 
   useEffect(() => {
     entrance.setValue(reducedMotion ? 1 : 0);
@@ -61,97 +85,151 @@ export function HomeScreen({ onSignOut }: { onSignOut: () => void }) {
     return () => subscription.remove();
   }, [activeTab, module]);
 
-  return <SafeAreaView testID="home-screen" edges={['right', 'bottom', 'left']} style={styles.screen}>
-    <StatusBar style="dark" />
+  return <SafeAreaView testID="home-screen" edges={['right', 'bottom', 'left']} style={[styles.screen, { backgroundColor: colors.canvas }]}>
+    <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
     <Animated.View nativeID="home-tab-panel" role="tabpanel" accessibilityLabel={title}
       style={[styles.content, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }] }]}>
       {onHome ? <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.hero, { paddingTop: insets.top + 12 }]}>
-          <LinearGradient colors={['#e3cdf4', '#f0dbe5', '#fad6bb']} locations={[0, 0.5, 1]}
-            start={{ x: 0, y: 0.05 }} end={{ x: 1, y: 0.9 }} style={StyleSheet.absoluteFill} />
+        <View style={[styles.hero, { paddingTop: insets.top + 12, backgroundColor: colors.canvas }]}>
           <View style={[styles.topRow, { flexDirection: direction === 'rtl' ? 'row-reverse' : 'row' }]}>
-            <BrandLogo width={130} />
+            <View style={styles.brand} accessibilityLabel="Wodana">
+              <Image source={brandMarkSource} style={styles.brandMark} resizeMode="contain" />
+              <Text size="xl" weight="semibold" style={{ color: colors.text }}>wodana</Text>
+            </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Open profile" onPress={() => changeTab('profile')}
-              style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}>
-              <Text weight="semibold" style={styles.initials}>{initials}</Text>
+              style={({ pressed }) => [styles.avatar, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, pressed && styles.pressed]}>
+              <Text weight="semibold" style={{ color: colors.text }}>{initials}</Text>
             </Pressable>
           </View>
-          {state.status === 'signedIn' && <HomeUpdates key={state.workspaceId} workspaceId={state.workspaceId}
-            workspaceName={workspace?.workspaceName || 'Wodana'} onOpen={openUpdate} />}
-        </View>
-        <View style={styles.modules}>
-          <Text accessibilityRole="header" weight="medium" style={styles.sectionTitle}>Modules</Text>
-          <View style={[styles.grid, { flexDirection: direction === 'rtl' ? 'row-reverse' : 'row' }]}>
-            {homeModules.map(item => <Pressable key={item.id} testID={`module-${item.id}`} accessibilityRole="button" accessibilityLabel={`Open ${item.label}`}
-              onPress={() => openModule(item)} style={({ pressed }) => [styles.card, { width: oneColumn ? '100%' : '48%', minHeight: compact ? 156 : 164 }, pressed && styles.cardPressed]}>
-              <View style={styles.artFrame}>
-                {item.image && <Image source={item.image} resizeMode="contain" style={styles.moduleArt} accessible={false} fadeDuration={0} />}
-              </View>
-              <View style={[styles.cardLabel, { flexDirection: direction === 'rtl' ? 'row-reverse' : 'row' }]}>
-                <Text weight="medium" style={styles.moduleName}>{item.label}</Text>
-                <Icon name="arrow-up-right" size={15} color="#9b8d9f" />
-              </View>
-            </Pressable>)}
+          <View style={styles.greeting}>
+            <Text size="3xl" weight="semibold">{greeting}, {firstName}</Text>
+            <Text size="sm" tone="textSecondary">Here’s what’s happening across your work.</Text>
           </View>
         </View>
-      </ScrollView> : <View style={[styles.destination, { paddingTop: insets.top + 12 }]}>
-        <View style={styles.destinationHeader}>
+        <View style={styles.homeBody}>
+          {workspace && <View accessibilityLabel={`Active organization: ${workspace.workspaceName}`}
+            style={[styles.organization, { backgroundColor: colors.surface, borderColor: colors.border,
+              flexDirection: direction === 'rtl' ? 'row-reverse' : 'row' }]}>
+            {logoUrl ? <Image source={{ uri: logoUrl }} style={styles.organizationMark} resizeMode="contain" />
+              : <View style={[styles.organizationMark, styles.organizationFallback, { borderColor: workspace.workspacePrimaryColor ?? colors.actionPrimary, backgroundColor: colors.actionPrimarySubtle }]}>
+                <Text size="xs" weight="semibold" style={{ color: colors.actionPrimary }}>{workspace.workspaceName.slice(0, 2).toUpperCase()}</Text>
+              </View>}
+            <View style={{ flex: 1, flexShrink: 1 }}>
+              <Text size="2xs" tone="textSecondary">ACTIVE WORKSPACE</Text>
+              <Text size="md" weight="semibold" numberOfLines={1}>{workspace.workspaceName}</Text>
+            </View>
+          </View>}
+
+          {workspace?.billingAccess?.warning && <Surface muted accessibilityLiveRegion="polite"
+            style={[styles.billingNotice, { borderColor: colors.border }]}>
+            <Text size="2xs" weight="semibold" style={{ color: colors.actionPrimary }}>BILLING NOTICE</Text>
+            <Text size="xs" tone="textSecondary">{workspace.billingAccess.message}</Text>
+          </Surface>}
+
+          {state.status === 'signedIn' && availableModules.some(item => item.id === 'hrms') && <HomeUpdates key={state.workspaceId} workspaceId={state.workspaceId}
+            workspaceName={workspace?.workspaceName || 'Wodana'} onOpen={openUpdate} />}
+
+          <View style={styles.modules}>
+            <View style={styles.sectionHeading}>
+              <Text accessibilityRole="header" size="xl" weight="semibold">Your workspace</Text>
+              <Text size="xs" tone="textSecondary">Only tools available to your role are shown.</Text>
+            </View>
+            <View style={styles.grid}>
+              {availableModules.map((item, index) => {
+                const featured = index === 0;
+                return <Pressable key={item.id} testID={`module-${item.id}`} accessibilityRole="button"
+                  accessibilityLabel={`Open ${item.label}. ${item.description}`} onPress={() => openModule(item)}
+                  style={({ pressed }) => [styles.card, featured ? styles.cardFeatured : styles.cardCompact,
+                    { backgroundColor: featured ? colors.actionPrimarySubtle : pressed ? colors.surfacePressed : colors.surface,
+                      borderColor: featured ? colors.actionPrimary : colors.border }, pressed && styles.pressed]}>
+                  <View style={[styles.moduleIcon, { backgroundColor: featured ? colors.navigationSelected : colors.surfaceMuted }]}>
+                    <Icon name={item.id} size={featured ? 24 : 21} color={colors.actionPrimary} />
+                  </View>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text size="2xs" weight="semibold" style={{ color: colors.actionPrimary }}>{item.group.toUpperCase()}</Text>
+                    <Text size={featured ? 'xl' : 'md'} weight="semibold">{item.label}</Text>
+                    <Text size="xs" tone="textSecondary">{item.description}</Text>
+                  </View>
+                  {featured && <View style={[styles.openAction, { backgroundColor: colors.actionPrimary }]}>
+                    <Icon name={direction === 'rtl' ? 'arrow-left' : 'arrow-right'} size={17} color={colors.actionOnPrimary} />
+                  </View>}
+                </Pressable>;
+              })}
+            </View>
+          </View>
+        </View>
+      </ScrollView> : <View style={[styles.destination, { paddingTop: insets.top + 12, backgroundColor: colors.canvas }]}>
+        <View style={[styles.destinationHeader, { borderBottomColor: colors.border, backgroundColor: colors.canvas }]}>
           {module && <Pressable accessibilityRole="button" accessibilityLabel="Back to Home" onPress={() => setModule(null)} style={styles.back}>
-            <Icon name="arrow-left" size={22} />
+            <Icon name="arrow-left" size={22} color={colors.icon} />
           </Pressable>}
-          <Text accessibilityRole="header" weight="medium" style={styles.destinationTitle}>{title}</Text>
+          {module && <View style={[styles.moduleHeaderIcon, { backgroundColor: colors.actionPrimarySubtle }]}>
+            <Icon name={module.id} size={20} color={colors.actionPrimary} />
+          </View>}
+          <View style={{ flex: 1 }}>
+            <Text accessibilityRole="header" size="xl" weight="semibold">{title}</Text>
+            {module && <Text size="2xs" tone="textSecondary" numberOfLines={1}>{module.description}</Text>}
+          </View>
         </View>
         {module?.id === 'hrms' && state.status === 'signedIn' && <HrmsScreen key={state.workspaceId} workspaceId={state.workspaceId} initialDestination={hrmsDestination}/>}
-        {module?.id === 'pre-project' && state.status === 'signedIn' && <PreProjectScreen key={state.workspaceId} workspaceId={state.workspaceId} />}
-        {module?.id === 'crm' && state.status === 'signedIn' && <CrmScreen key={state.workspaceId} workspaceId={state.workspaceId} />}
+        {module?.id === 'pre-project' && state.status === 'signedIn' && <PreProjectScreen key={state.workspaceId} workspaceId={state.workspaceId} initialRecordId={notificationDestination?.module === 'pre-project' ? notificationDestination.recordId : null} />}
+        {module?.id === 'crm' && state.status === 'signedIn' && <CrmScreen key={state.workspaceId} workspaceId={state.workspaceId} initialDestination={notificationDestination?.module === 'crm' ? notificationDestination : null} />}
+        {module?.id === 'projects' && state.status === 'signedIn' && <ProjectsScreen key={state.workspaceId} workspaceId={state.workspaceId} initialRecordId={notificationDestination?.module === 'projects' ? notificationDestination.recordId : null} initialActionId={notificationDestination?.module === 'projects' ? notificationDestination.actionId : null} />}
+        {currentTab.id === 'notifications' && state.status === 'signedIn' && <NotificationsScreen workspaceId={state.workspaceId} onOpen={openNotificationDestination} />}
         {currentTab.id === 'profile' && <View style={styles.profile}>
-          <View style={[styles.avatar, styles.profileAvatar]}><Text weight="semibold" style={styles.initials}>{initials}</Text></View>
-          <Text weight="semibold" style={styles.profileName}>{profile?.displayName}</Text>
-          <Text style={styles.profileEmail}>{profile?.primaryEmail}</Text>
-          <Text style={styles.profileWorkspace}>{workspace?.workspaceName}</Text>
-          <Pressable accessibilityRole="button" onPress={onSignOut} style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}>
-            <Text weight="medium" style={styles.link}>Sign out</Text>
+          <View style={[styles.avatar, styles.profileAvatar, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Text weight="semibold">{initials}</Text></View>
+          <Text size="xl" weight="semibold">{profile?.displayName}</Text>
+          <Text size="sm" tone="textSecondary" style={styles.profileMeta}>{profile?.primaryEmail}</Text>
+          <Text size="sm" tone="textSecondary" style={styles.profileMeta}>{workspace?.workspaceName}</Text>
+          {state.status === 'signedIn' && <BillingSummary workspaceId={state.workspaceId}/>}
+          <Pressable accessibilityRole="button" onPress={() => { if (state.status === 'signedIn') void revokeCurrentNotificationDevice(client, state.workspaceId).finally(onSignOut); else onSignOut(); }}
+            style={({ pressed }) => [styles.signOut, { backgroundColor: pressed ? colors.surfacePressed : colors.surface,
+              borderColor: colors.borderControl }, pressed && styles.pressed]}>
+            <Text size="sm" weight="medium">Sign out</Text>
           </Pressable>
         </View>}
       </View>}
     </Animated.View>
-    {!module && <View style={[styles.dock, { paddingBottom: bottomGap }]}>
+    {!module && <View style={[styles.dock, { backgroundColor: colors.canvas }]}>
       <BottomNavigation activeTab={currentTab.id} onTabChange={changeTab} />
     </View>}
   </SafeAreaView>;
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f6f3f9' },
+  screen: { flex: 1 },
   content: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingBottom: 16 },
-  hero: { paddingHorizontal: 24, paddingBottom: 24, borderBottomLeftRadius: 32, borderBottomRightRadius: 32, overflow: 'hidden' },
+  scrollContent: { flexGrow: 1, paddingBottom: 28 },
+  hero: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20, paddingBottom: 8 },
   topRow: { alignItems: 'center', justifyContent: 'space-between' },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.68)', borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.88)', alignItems: 'center', justifyContent: 'center' },
-  initials: { fontSize: 14, lineHeight: 20, color: tokens.brand.ink },
-  modules: { width: '100%', maxWidth: 600, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 22 },
-  sectionTitle: { fontSize: 13, lineHeight: 20, marginBottom: 12, color: '#786b7a' },
-  grid: { flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
-  card: { padding: 16, borderRadius: 24, backgroundColor: '#ffffff', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: '#eee7f2', boxShadow: '0px 4px 16px rgba(75,48,85,0.025)' },
-  artFrame: { width: 100, height: 100, alignItems: 'center', justifyContent: 'center', marginLeft: -5, marginTop: -5 },
-  moduleArt: { width: 108, height: 108 },
-  cardLabel: { alignItems: 'center', justifyContent: 'space-between', gap: 4 },
-  moduleName: { fontSize: 15, lineHeight: 22, color: tokens.brand.ink, flexShrink: 1 },
-  cardPressed: { transform: [{ scale: 0.975 }], backgroundColor: '#fcf9ff' },
-  dock: { paddingTop: 12, backgroundColor: '#f6f3f9' },
-  destination: { flex: 1, paddingHorizontal: 24, backgroundColor: '#f8faf9' },
-  destinationHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  destinationTitle: { fontSize: 22, lineHeight: 30, color: tokens.brand.ink },
+  brand: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  brandMark: { width: 30, height: 30 },
+  greeting: { paddingTop: 28, paddingBottom: 18, gap: 6 },
+  homeBody: { width: '100%', maxWidth: 640, alignSelf: 'center', paddingHorizontal: 20 },
+  organization: { alignItems: 'center', gap: 12, padding: 12, borderWidth: 1, borderRadius: 14 },
+  organizationMark: { width: 38, height: 38, borderRadius: 10 },
+  organizationFallback: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  billingNotice: { gap: 4, marginTop: 10, padding: 12, borderWidth: 1, borderRadius: 12 },
+  avatar: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  modules: { paddingTop: 14 },
+  sectionHeading: { gap: 4, marginBottom: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  card: { borderRadius: 16, borderWidth: 1, gap: 12 },
+  cardFeatured: { width: '100%', minHeight: 142, padding: 18, flexDirection: 'row', alignItems: 'center' },
+  cardCompact: { flexGrow: 1, flexBasis: '46%', minHeight: 150, padding: 16, alignItems: 'flex-start' },
+  moduleIcon: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  openAction: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  dock: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6 },
+  destination: { flex: 1, paddingHorizontal: 20 },
+  destinationHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, marginHorizontal: -20, paddingHorizontal: 16, marginBottom: 12 },
   back: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  profile: { alignItems: 'center', paddingVertical: 36 },
-  profileAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#eadbf3', marginBottom: 20 },
-  profileName: { fontSize: 20, lineHeight: 28, color: tokens.brand.ink },
-  profileEmail: { fontSize: 13, color: '#786b7a', marginTop: 8 },
-  profileWorkspace: { fontSize: 13, color: '#786b7a', marginTop: 4 },
-  signOut: { minHeight: 48, paddingHorizontal: 32, justifyContent: 'center', borderRadius: 24, backgroundColor: '#eee5f4', marginTop: 28 },
-  link: { fontSize: 13, color: loginTheme.accent },
+  moduleHeaderIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  profile: { alignItems: 'center', paddingVertical: 32 },
+  profileAvatar: { width: 72, height: 72, borderRadius: 36, marginBottom: 20 },
+  profileMeta: { marginTop: 4 },
+  signOut: { minHeight: 48, minWidth: 160, alignItems: 'center', justifyContent: 'center', borderRadius: 10,
+    borderWidth: 1, marginTop: 28 },
   pressed: { opacity: 0.7 },
 });

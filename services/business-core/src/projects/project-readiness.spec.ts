@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialData } from "../commercial/commercial.types";
 import { commercialExecutionReady } from "./project-readiness";
+import { financeGatePaymentsReady } from "../commercial/release-integrity";
 
 const fixture = () =>
   ({
     release: { quoteId: "q", dealFileId: "deal" },
+    financeContext: {
+      legalEntityId: "entity",
+      code: "PLM-AE",
+      displayName: "Palm Living UAE",
+      registeredName: "Palm Living Interiors LLC",
+      countryCode: "AE",
+      baseCurrency: "AED",
+      currency: "AED",
+      taxValidation: "unvalidated",
+      boundAt: "2026-09-18T00:00:00.000Z",
+    },
     agreement: {
       quoteId: "q",
+      quoteHash: "quote-hash",
+      selectedOptionLineIds: [],
+      acceptedTotal: 100,
+      legalEntityId: "entity",
+      currency: "AED",
       status: "executed",
       evidence: "Signed contract SIG-100",
       reference: "AGR-100",
@@ -28,6 +45,17 @@ const fixture = () =>
         id: "q",
         kind: "quotation",
         status: "accepted",
+        hash: "quote-hash",
+        clientDecision: {
+          decision: "accept",
+          quoteHash: "quote-hash",
+          selectedOptionLineIds: [],
+          baseTotal: 100,
+          optionsTotal: 0,
+          acceptedTotal: 100,
+          decidedAt: "2026-09-18T00:00:00.000Z",
+          decidedBy: "Client",
+        },
         lines: [
           {
             id: "line",
@@ -41,9 +69,41 @@ const fixture = () =>
     payments: [
       {
         id: "p",
+        legalEntityId: "entity",
+        currency: "AED",
+        amount: 100,
         requiredForRelease: true,
         status: "verified",
         reference: "RECEIPT-100",
+      },
+    ],
+    receipts: [
+      {
+        id: "receipt",
+        paymentId: "p",
+        legalEntityId: "entity",
+        currency: "AED",
+        amount: 100,
+        source: "manual",
+        status: "finance_verified",
+        reference: "RECEIPT-100",
+        evidence: "Bank record",
+        reportedAt: "2026-09-18T00:00:00.000Z",
+        reportedBy: "Operations",
+        verifiedAt: "2026-09-18T00:05:00.000Z",
+        verifiedBy: "Finance",
+      },
+    ],
+    allocations: [
+      {
+        id: "allocation",
+        receiptId: "receipt",
+        paymentId: "p",
+        legalEntityId: "entity",
+        currency: "AED",
+        amount: 100,
+        createdAt: "2026-09-18T00:00:00.000Z",
+        createdBy: "Operations",
       },
     ],
     requests: [],
@@ -92,6 +152,15 @@ describe("execution commercial readiness", () => {
     ).toISOString();
     expect(commercialExecutionReady(data)).toBe(false);
     payment.requiredForRelease = false;
-    expect(commercialExecutionReady(data)).toBe(true);
+    expect(commercialExecutionReady(data)).toBe(false);
+  });
+
+  it("uses the explicit accepted production milestone for H3", () => {
+    const data = fixture();
+    expect(financeGatePaymentsReady(data, "production")).toBe(true);
+    data.payments[0].requiredForProduction = true;
+    expect(financeGatePaymentsReady(data, "production")).toBe(true);
+    data.receipts![0].status = "rejected";
+    expect(financeGatePaymentsReady(data, "production")).toBe(false);
   });
 });

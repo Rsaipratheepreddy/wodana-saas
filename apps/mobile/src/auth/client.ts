@@ -1,7 +1,22 @@
-export type Membership = { workspaceId: string; workspaceSlug: string; workspaceName: string; status: string; roles: string[] };
-export type Profile = { id: string; primaryEmail: string; displayName: string; status: string; memberships: Membership[]; nextAction: string };
+export type TenantModuleId = 'workspace' | 'crm' | 'pre-project' | 'projects' | 'hrms';
+export type Membership = {
+  workspaceId: string; workspaceSlug: string; workspaceName: string; workspaceStatus: string;
+  workspaceLogoUrl: string | null; workspacePrimaryColor: string | null; workspaceSecondaryColor: string | null;
+  workspaceHeadingFont: string | null; workspaceBodyFont: string | null;
+  accountName?: string | null; status: string; roles: string[]; allowedModules: TenantModuleId[];
+  billingAccess?: {
+    state: 'not_configured' | 'trial' | 'trial_expired' | 'current' | 'grace' | 'past_due' | 'collections' | 'suspended' | 'closed';
+    effect: 'unchanged'; warning: boolean; actionDueAt: string | null; affectedModules: []; message: string;
+  };
+};
+export type Profile = {
+  id: string; primaryEmail: string; displayName: string; status: string;
+  memberships: Membership[]; nextAction: string;
+  unavailableOrganizations?: Array<{ workspaceId: string; workspaceName: string; workspaceStatus: string }>;
+};
 export type AuthState =
   | { status: 'checking' | 'authenticating' }
+  | { status: 'mfa' }
   | { status: 'signedOut'; message?: string }
   | { status: 'unavailable'; message: string }
   | { status: 'signedIn'; profile: Profile; workspaceId: string };
@@ -25,22 +40,38 @@ export class AuthClient {
   private session: Session | null = null;
   private epoch = 0;
   private rotation: Promise<Session> | null = null;
+  private accessRevalidation: Promise<void> | null = null;
   private restoration: Promise<void> | null = null;
   private storageWork: Promise<unknown> = Promise.resolve();
   private readonly base: string;
-  private readonly scope: string;
+  private scope: string;
+  private tenant: string;
+  private challenge: { token: string; workspaceId: string } | null = null;
   private readonly now: () => number;
   private readonly fetcher: typeof fetch;
 
   constructor(private options: Options) {
     this.base = options.baseUrl.replace(/\/$/, '');
-    this.scope = `${this.base}|${options.tenantSlug}`;
+    this.tenant = options.tenantSlug;
+    this.scope = `${this.base}|${this.tenant}`;
     this.now = options.now ?? Date.now;
     this.fetcher = options.fetch ?? fetch.bind(globalThis);
   }
   getSnapshot = (): AuthState => this.state;
+  get tenantSlug() { return this.tenant; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(state: AuthState) { this.state = state; this.listeners.forEach((listener) => listener()); }
+  private selectTenant(value: string) {
+    const slug = value.trim().toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 80) {
+      throw new AuthError('Enter a valid workspace code.', 'configuration');
+    }
+    if (this.options.tenantSlug && slug !== this.options.tenantSlug) {
+      throw new AuthError('This app is configured for a different workspace.', 'access');
+    }
+    this.tenant = slug;
+    this.scope = `${this.base}|${slug}`;
+  }
   private writeStorage(operation: () => Promise<void>) {
     const next = this.storageWork.catch(() => {}).then(operation);
     this.storageWork = next;
@@ -65,7 +96,9 @@ export class AuthClient {
       });
       if (!response.ok) {
         if (response.status === 401) throw path === '/auth/login'
-          ? new AuthError('Email or password is incorrect.', 'credentials') : expired();
+          ? new AuthError('Email or password is incorrect.', 'credentials')
+          : path === '/auth/mfa/verify' ? new AuthError('Verification code is incorrect.', 'credentials') : expired();
+        if (response.status === 410 && path === '/auth/mfa/verify') throw expired();
         if(api){const payload=await response.json().catch(()=>null);throw new ApiError(Array.isArray(payload?.message)?payload.message.join(' '):payload?.message??'The request could not be completed.',response.status,payload?.issues??[]);}
         if (response.status === 403) throw new AuthError('You no longer have access to this workspace.', 'access');
         if (response.status === 429) throw new AuthError('Too many attempts. Please try again later.', 'server');
@@ -116,17 +149,52 @@ export class AuthClient {
       throw new AuthError('Unable to verify your account. Please try again.', 'server');
     }
     const membership = value.memberships.find((item) => isRecord(item) && item.workspaceId === session.workspaceId
-      && item.workspaceSlug === this.options.tenantSlug && item.status === 'active');
+      && item.workspaceSlug === this.tenant && item.status === 'active' && item.workspaceStatus === 'active');
     if (value.status !== 'active' || !membership) throw new AuthError('You no longer have access to this workspace.', 'access');
+    const tenantModules = new Set<TenantModuleId>(['workspace', 'crm', 'pre-project', 'projects', 'hrms']);
+    if (!Array.isArray(membership.roles) || membership.roles.some((role: unknown) => typeof role !== 'string' || !role)
+      || !Array.isArray(membership.allowedModules)
+      || membership.allowedModules.some((module: unknown) => typeof module !== 'string' || !tenantModules.has(module as TenantModuleId))
+      || !membership.allowedModules.includes('workspace')) {
+      throw new AuthError('Workspace access could not be verified. Sign in again later.', 'access');
+    }
     return value as Profile;
   }
-  async signIn(email: string, password: string) {
+  private async revalidateAccess(session: Session, epoch: number) {
+    if (this.accessRevalidation) return this.accessRevalidation;
+    const operation = (async () => {
+      try {
+        const profile = await this.profile(session);
+        if (epoch === this.epoch)
+          this.publish({ status: 'signedIn', profile, workspaceId: session.workspaceId });
+      } catch (error) {
+        if (epoch === this.epoch && error instanceof AuthError && ['access', 'expired'].includes(error.code))
+          await this.signOut(error.message);
+      }
+    })();
+    this.accessRevalidation = operation;
+    void operation.finally(() => {
+      if (this.accessRevalidation === operation) this.accessRevalidation = null;
+    }).catch(() => {});
+    return operation;
+  }
+  async signIn(email: string, password: string, tenantSlug = this.tenant) {
     if (this.state.status === 'authenticating') return;
     const epoch = ++this.epoch;
-    this.publish({ status: 'authenticating' });
     let tokens: Session | undefined;
     try {
-      const payload = await this.request('/auth/login', { email: email.trim().toLowerCase(), password, tenantSlug: this.options.tenantSlug });
+      this.selectTenant(tenantSlug);
+      this.challenge = null;
+      this.publish({ status: 'authenticating' });
+      const payload = await this.request('/auth/login', { email: email.trim().toLowerCase(), password, tenantSlug: this.tenant });
+      if (isRecord(payload) && payload.mfaRequired === true) {
+        if (typeof payload.challengeToken !== 'string' || !payload.challengeToken
+          || typeof payload.selectedWorkspaceId !== 'string') throw new AuthError('The verification request was incomplete. Sign in again.', 'server');
+        if (epoch !== this.epoch) throw cancelled();
+        this.challenge = { token: payload.challengeToken, workspaceId: payload.selectedWorkspaceId };
+        this.publish({ status: 'mfa' });
+        return;
+      }
       if (!isRecord(payload) || typeof payload.selectedWorkspaceId !== 'string') throw new AuthError('Unable to verify your workspace.', 'server');
       tokens = this.decodeTokens(payload, payload.selectedWorkspaceId);
       if (epoch !== this.epoch) throw cancelled();
@@ -138,6 +206,38 @@ export class AuthClient {
       if (epoch === this.epoch) this.publish({ status: 'signedOut' });
       throw error;
     }
+  }
+  async verifyMfa(code: string) {
+    const challenge = this.challenge;
+    if (!challenge || this.state.status !== 'mfa') throw expired();
+    const epoch = this.epoch;
+    let tokens: Session | undefined;
+    try {
+      const payload = await this.request('/auth/mfa/verify', { challengeToken: challenge.token, code: code.trim() });
+      if (!isRecord(payload) || payload.selectedWorkspaceId !== challenge.workspaceId) {
+        throw new AuthError('The verification response did not match this workspace.', 'server');
+      }
+      tokens = this.decodeTokens(payload, challenge.workspaceId);
+      if (epoch !== this.epoch) throw cancelled();
+      const profile = await this.profile(tokens);
+      await this.remember(tokens, epoch);
+      this.challenge = null;
+      this.publish({ status: 'signedIn', profile, workspaceId: tokens.workspaceId });
+    } catch (error) {
+      if (tokens) await this.revoke(tokens.refreshToken);
+      if (epoch === this.epoch) {
+        if (error instanceof AuthError && error.code === 'expired') {
+          this.challenge = null;
+          this.publish({ status: 'signedOut', message: error.message });
+        } else this.publish({ status: 'mfa' });
+      }
+      throw error;
+    }
+  }
+  cancelMfa() {
+    ++this.epoch;
+    this.challenge = null;
+    this.publish({ status: 'signedOut' });
   }
   private rotate(saved: SavedSession): Promise<Session> {
     if (this.rotation) return this.rotation;
@@ -166,6 +266,10 @@ export class AuthClient {
         if (!raw) { this.publish({ status: 'signedOut' }); return; }
         let saved: SavedSession;
         try { saved = JSON.parse(raw); } catch { throw expired(); }
+        if (!this.options.tenantSlug && typeof saved?.scope === 'string'
+          && saved.scope.startsWith(`${this.base}|`)) {
+          this.selectTenant(saved.scope.slice(this.base.length + 1));
+        }
         if (!saved || saved.version !== 1 || saved.scope !== this.scope || typeof saved.refreshToken !== 'string'
           || !saved.refreshToken || typeof saved.workspaceId !== 'string' || !Number.isFinite(saved.refreshExpiresAt)) throw expired();
         const session = await this.rotate(saved);
@@ -209,24 +313,35 @@ export class AuthClient {
   async api<T>(path:string,method='GET',body?:unknown,binary=false):Promise<T>{
     const epoch=this.epoch;let session=this.session;
     if(!session||this.state.status!=='signedIn')throw expired();
-    const prefix=`/workspaces/${session.workspaceId}/`;
-    if(!path.startsWith(prefix)||!['crm','hrms','projects','pre-projects'].includes(path.slice(prefix.length).split(/[/?]/)[0])||path.includes('..'))throw new AuthError('This request is outside the active workspace.','access');
+    const workspaceId=session.workspaceId;
+    const prefix=`/workspaces/${workspaceId}/`;
+    const segment=path.startsWith(prefix)?path.slice(prefix.length).split(/[/?]/)[0]:'';
+    const module:TenantModuleId|undefined=segment==='pre-projects'?'pre-project':segment==='billing'?'workspace':(['crm','hrms','projects'].includes(segment)?segment as TenantModuleId:undefined);
+    if(!path.startsWith(prefix)||!module||path.includes('..'))throw new AuthError('This request is outside the active workspace.','access');
+    const membership=this.state.profile.memberships.find(item=>item.workspaceId===workspaceId);
+    if(!membership?.allowedModules.includes(module))throw new ApiError('This module is no longer available in your workspace.',403);
     try{
       if(session.accessExpiresAt<=this.now()+30000)session=await this.rotate(session);
       let result:unknown;
       try{result=await this.request(path,body,session.accessToken,{method,binary});}
       catch(error){if(!(error instanceof AuthError)||error.code!=='expired')throw error;session=this.session&&this.session!==session?this.session:await this.rotate(session);result=await this.request(path,body,session.accessToken,{method,binary});}
       if(epoch!==this.epoch)throw cancelled();return result as T;
-    }catch(error){if(epoch===this.epoch&&error instanceof AuthError&&error.code==='expired')await this.signOut(error.message);throw error;}
+    }catch(error){
+      if(epoch===this.epoch&&error instanceof ApiError&&error.status===403)await this.revalidateAccess(session,epoch);
+      if(epoch===this.epoch&&error instanceof AuthError&&error.code==='expired')await this.signOut(error.message);
+      throw error;
+    }
   }
-  async requestPasswordReset(email: string) {
-    await this.request('/auth/password/forgot', { email: email.trim().toLowerCase(), tenantSlug: this.options.tenantSlug });
+  async requestPasswordReset(email: string, tenantSlug = this.tenant) {
+    this.selectTenant(tenantSlug);
+    await this.request('/auth/password/forgot', { email: email.trim().toLowerCase(), tenantSlug: this.tenant });
   }
   private async revoke(refreshToken: string) {
     await this.request('/auth/logout', { refreshToken }).catch(() => {});
   }
   async signOut(message?: string) {
     ++this.epoch;
+    this.challenge = null;
     const prior = this.session;
     this.session = null;
     this.publish({ status: 'signedOut', message });

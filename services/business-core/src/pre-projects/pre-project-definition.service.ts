@@ -17,6 +17,7 @@ import type {
 } from "./pre-project-definition.dto";
 import {
   clientSafeSpecification,
+  definitionChanges,
   definitionIssues,
   definitionSnapshotHash,
   definitionSourceHash,
@@ -24,6 +25,7 @@ import {
   type DefinitionDecision,
   type DefinitionSourceSnapshot,
 } from "./pre-project-definition";
+import { syncOneTreeFromCase } from "../jobs/one-tree.store";
 
 type DefinitionRow = {
   id: string;
@@ -230,6 +232,7 @@ export class PreProjectDefinitionService {
           decisionEvidence: null,
           decidedAt: null,
         };
+        await syncOneTreeFromCase(client, workspaceId, caseId, user.userId);
         await this.events.record(client, {
           workspaceId,
           actorUserId: user.userId,
@@ -527,12 +530,14 @@ export class PreProjectDefinitionService {
               : current.status === "changes_requested"
                 ? "APPLY_DEFINITION_CHANGES"
                 : null;
+    const published=current?.snapshot&&object(current.snapshot).definition as DefinitionSourceSnapshot|undefined;
     return {
       caseStatus: capture.caseStatus,
       draft: {
         sourceHash: capture.sourceHash,
         readyToPublish: capture.issues.length === 0,
         issues: capture.issues,
+        changes: published&&!current.current?definitionChanges(published,capture.snapshot):null,
       },
       current,
       history: baselines,

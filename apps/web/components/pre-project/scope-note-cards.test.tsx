@@ -6,8 +6,9 @@ import { blankEntry, blankSpecification, briefFields, type CaseContent, type Sco
 import { ScopeNoteCards } from './scope-note-cards';
 import { BriefScopePage } from './brief-scope-page';
 vi.mock('next/font/google',()=>({Caveat:()=>({variable:'note-font'})}));
-vi.mock('next/navigation',()=>({useSearchParams:()=>new URLSearchParams(),useRouter:()=>({push:vi.fn()})}));
-beforeEach(()=>vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({items:[],canEdit:true})})));
+let activeSearchParams = new URLSearchParams();
+vi.mock('next/navigation',()=>({useSearchParams:()=>activeSearchParams,useRouter:()=>({push:vi.fn()})}));
+beforeEach(()=>{activeSearchParams=new URLSearchParams();vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({items:[],canEdit:true})}));});
 afterEach(()=>vi.unstubAllGlobals());
 const entry:ScopeEntry={...blankEntry(),id:'entry',version:1,title:'Reception desk',roomName:'Reception',note:'Sample data for testing — Warm oak finish.',quantity:1,unit:'nos',specification:{...blankSpecification(),version:1,dimensions:[{id:'width',name:'Width',unit:'mm',approximate:2400,measured:2385,basis:'site_opening',source:'client',evidence:'Client sketch'}]}};
 function cardSetup(value=entry,measurements=false){
@@ -43,9 +44,36 @@ describe('client note cards',()=>{
 
 });
 
-const gatheringData:CaseContent={workspaceId:'workspace',caseId:'case',canEdit:true,caseStatus:'active',fromCrm:false,crmContext:{description:null,opportunityAmount:null,currencyCode:'AED'},rooms:[],entries:[entry],brief:{...(Object.fromEntries(Object.keys(briefFields).map(k=>[k,''])) as Record<keyof typeof briefFields,string>),currencyCode:'AED',budgetAmount:'',version:0}};
+const gatheringData:CaseContent={workspaceId:'workspace',caseId:'case',canEdit:true,caseStatus:'active',fromCrm:false,crmContext:{description:null,opportunityAmount:null,currencyCode:'AED'},rooms:[],entries:[entry],coverage:{roomCount:0,coveredRoomCount:0,uncoveredRooms:[],wholeProjectRequirementCount:1,undecidedItemIds:['entry'],clientDraftItemIds:[],missingMeasurementItemIds:[],verifiedMeasurementItemIds:[]},brief:{...(Object.fromEntries(Object.keys(briefFields).map(k=>[k,''])) as Record<keyof typeof briefFields,string>),currencyCode:'AED',budgetAmount:'',version:0}};
 const linkedNote={id:'entry',version:2,title:'Kitchen storage',note:'Deep drawers',archived:false,assets:[{id:'photo',name:'Kitchen.png',mimeType:'image/png',byteSize:240,hasPreview:true}],links:['https://example.com/plan']};
 describe('Requirements tabs and original forms', () => {
+ it('opens a universal-search room link with that room already selected',()=>{
+  activeSearchParams=new URLSearchParams('room=bedroom');
+  const living={id:'living',name:'Living room',version:1};const bedroom={id:'bedroom',name:'Bedroom',version:1};
+  const livingEntry={...entry,id:'living-entry',title:'Living sofa',roomId:'living',roomName:'Living room'};
+  const bedroomEntry={...entry,id:'bedroom-entry',title:'Bedroom wardrobe',roomId:'bedroom',roomName:'Bedroom'};
+  render(<DesignSystemProvider><BriefScopePage initialData={{...gatheringData,rooms:[living,bedroom],entries:[livingEntry,bedroomEntry]}}/></DesignSystemProvider>);
+  expect(screen.getByRole('article',{name:'Bedroom wardrobe'})).toBeVisible();
+  expect(screen.queryByRole('article',{name:'Living sofa'})).not.toBeInTheDocument();
+ });
+ it('shows room, client-review, scope-decision, and verified-measurement gaps without opening another screen',()=>{
+  const living={id:'living',name:'Living room',version:1};const bedroom={id:'bedroom',name:'Bedroom',version:1};
+  const draft={...entry,id:'client-draft',roomId:'living',roomName:'Living room',source:'client',reviewStatus:'captured',scopeStatus:'undecided'};
+  const included={...entry,id:'included',title:'Bedroom wardrobe',roomId:'bedroom',roomName:'Bedroom',source:'team',reviewStatus:'reviewed',scopeStatus:'included'};
+  render(<DesignSystemProvider><BriefScopePage initialData={{...gatheringData,rooms:[living,bedroom],entries:[draft,included],coverage:{roomCount:2,coveredRoomCount:2,uncoveredRooms:[],wholeProjectRequirementCount:0,undecidedItemIds:['client-draft'],clientDraftItemIds:['client-draft'],missingMeasurementItemIds:['included'],verifiedMeasurementItemIds:[]}}}/></DesignSystemProvider>);
+  const summary=screen.getByRole('region',{name:'Discovery coverage'});
+  expect(within(summary).getByText('2 of 2')).toBeVisible();
+  expect(within(summary).getByText('1 to review')).toBeVisible();
+  expect(within(summary).getByText('1 open')).toBeVisible();
+  expect(within(summary).getByText('1 need verification')).toBeVisible();
+ });
+ it('treats a client-submitted enquiry requirement as a client draft for consultant review',async()=>{
+  vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>({items:[linkedNote],canEdit:true})} as Response);
+  render(<DesignSystemProvider><BriefScopePage initialData={{...gatheringData,entries:[]}}/></DesignSystemProvider>);
+  const summary=screen.getByRole('region',{name:'Discovery coverage'});
+  expect(await within(summary).findByText('1 to review')).toBeVisible();
+  expect(within(summary).getByText('1 open')).toBeVisible();
+ });
  it('adds a measurement from the top button and preserves existing dimensions',async()=>{
   vi.mocked(fetch).mockImplementation(async(url,init)=>({ok:true,json:async()=>String(url).includes('/specifications/')?{...blankSpecification(),...JSON.parse(String(init?.body)),version:2}:{items:[],canEdit:true}} as Response));
   const user=userEvent.setup();

@@ -22,6 +22,7 @@ import {
 } from "./project-workflow";
 import {
   activeReleasedScopeLines,
+  assertWorkPackageGraph,
   assertUniqueWorkPackageScope,
   routeSupportsLocation,
   workPackageForTask,
@@ -910,14 +911,34 @@ export function applyExecution(
     const status = choice(value.status, [
       "planning",
       "ready",
+      "in_progress",
       "on_hold",
       "blocked",
       "completed",
       "cancelled",
     ] as const);
+    if (status === "in_progress" && workPackage.status !== "in_progress")
+      throw new ConflictException(
+        "Start a ready package through its first task, not by changing the package status directly.",
+      );
     const ownerId = member(value.ownerId);
     const plannedStart = day(value.plannedStart);
     const plannedEnd = day(value.plannedEnd);
+    const predecessorPackageIds = ids(value.predecessorPackageIds);
+    const priority = choice(value.priority ?? "normal", [
+      "normal",
+      "high",
+      "critical",
+    ] as const);
+    const risk = choice(value.risk ?? "on_track", [
+      "on_track",
+      "watch",
+      "blocked",
+    ] as const);
+    const nextAction = str(value.nextAction, 500);
+    const nextActionOwnerId = member(value.nextActionOwnerId);
+    const nextActionDate = day(value.nextActionDate);
+    const recoveryPlan = str(value.recoveryPlan, 3000);
     const blocker = str(value.blocker, 1000);
     const deliveryRoute = choice(value.deliveryRoute, [
       "site",
@@ -928,6 +949,24 @@ export function applyExecution(
     ] as const);
     if (plannedStart && plannedEnd && plannedEnd < plannedStart)
       throw new BadRequestException("Package finish must be on or after start.");
+    if (
+      (nextAction || nextActionOwnerId || nextActionDate) &&
+      (!nextAction || !nextActionOwnerId || !nextActionDate)
+    )
+      throw new BadRequestException(
+        "Enter the package next action, owner and due date together.",
+      );
+    if (risk === "blocked" && !recoveryPlan)
+      throw new BadRequestException("Record a recovery plan for a blocked package risk.");
+    if (
+      d.controls?.targetCompletion &&
+      plannedEnd &&
+      plannedEnd > d.controls.targetCompletion &&
+      !recoveryPlan
+    )
+      throw new BadRequestException(
+        "This package finishes after the client target. Record the recovery plan.",
+      );
     if (status === "ready" && !ownerId)
       throw new ConflictException(
         "Assign an accountable owner before marking a work package ready.",
@@ -935,14 +974,39 @@ export function applyExecution(
     if (["on_hold", "blocked", "cancelled"].includes(status) && !blocker)
       throw new BadRequestException("Record why this work package is unavailable.");
     const linkedTasks = d.tasks.filter((task) => task.packageId === workPackage.id);
-    if (status === "ready") {
-      const issues = workPackageReadiness(d, {
+    const plannedPackage = {
         ...workPackage,
         ownerId,
         deliveryRoute,
         plannedStart,
         plannedEnd,
-      });
+        predecessorPackageIds,
+        priority,
+        risk,
+        nextAction,
+        nextActionOwnerId,
+        nextActionDate,
+        recoveryPlan,
+      };
+    const graphCandidate = structuredClone(d);
+    Object.assign(
+      get(graphCandidate.workPackages ?? [], workPackage.id),
+      plannedPackage,
+    );
+    assertWorkPackageGraph(graphCandidate);
+    for (const dependencyId of predecessorPackageIds) {
+      const dependency = get(d.workPackages ?? [], dependencyId);
+      if (
+        plannedStart &&
+        dependency.plannedEnd &&
+        plannedStart < dependency.plannedEnd
+      )
+        throw new BadRequestException(
+          `${workPackage.title} cannot start before ${dependency.title} finishes.`,
+        );
+    }
+    if (status === "ready") {
+      const issues = workPackageReadiness(d, plannedPackage);
       if (issues.length) throw new ConflictException(issues[0].detail);
     }
     if (
@@ -972,6 +1036,13 @@ export function applyExecution(
       ownerId,
       plannedStart,
       plannedEnd,
+      predecessorPackageIds,
+      priority,
+      risk,
+      nextAction,
+      nextActionOwnerId,
+      nextActionDate,
+      recoveryPlan,
       blocker,
       updatedAt: a.now,
     });
@@ -1420,6 +1491,9 @@ export function applyExecution(
       unitCost: num(v.unitCost),
       currency: d.scope?.currency ?? "AED",
       promisedDate: day(v.promisedDate, true),
+      leadTimeDays: v.leadTimeDays === undefined || v.leadTimeDays === null || v.leadTimeDays === ""
+        ? undefined
+        : num(v.leadTimeDays, 730),
       status: (action === "enquiry" ? "enquiry" : "draft") as
         "enquiry" | "draft",
       acknowledgement: "",
@@ -1429,6 +1503,8 @@ export function applyExecution(
       throw new BadRequestException("Link this factory order to its manufacturing task.");
     if (!value.quantity)
       throw new BadRequestException("Enter the order quantity.");
+    if (value.leadTimeDays !== undefined && value.leadTimeDays < 1)
+      throw new BadRequestException("Supplier lead time must be at least one day.");
     if (materialId && get(d.materials, materialId).unit !== value.unit)
       throw new ConflictException(
         "Order unit must match the material requirement.",
@@ -1561,6 +1637,7 @@ export function applyExecution(
       replaces: str(v.replaces, 80),
       published: false,
       sourceDesignVersionId: str(v.sourceDesignVersionId, 80),
+      sourceDesignAssetId: str(v.sourceDesignAssetId, 80),
       scopeLineIds: ids(v.scopeLineIds),
     };
     if (!value.url && !value.note)
@@ -1575,6 +1652,13 @@ export function applyExecution(
       if (!links.length)
         throw new BadRequestException(
           "Choose an approved design revision captured with this project.",
+        );
+      if (
+        value.sourceDesignAssetId &&
+        !links.some((link) => link.assetId === value.sourceDesignAssetId)
+      )
+        throw new BadRequestException(
+          "Choose the file captured for this approved design revision.",
         );
       if (!value.scopeLineIds.length)
         value.scopeLineIds = [...new Set(links.map((link) => link.scopeLineId))];
@@ -1756,12 +1840,39 @@ export function applyExecution(
     });
     recordId = handover.id;
   } else if (action === "handover_outstanding_status") {
-    review();
     const handover = get(d.handovers, str(b.handoverId, 80, true));
+    const item = get(
+      handover.outstandingItems ?? [],
+      str(b.itemId, 80, true),
+    );
+    const status = choice(
+      b.status,
+      ["open", "ready", "closed", "warranty"] as const,
+    );
+    if (status === "ready") {
+      if (!a.manage && item.ownerId !== a.id)
+        throw new ForbiddenException(
+          "Only the assigned person can submit this handover commitment.",
+        );
+      if (item.status !== "open")
+        throw new ConflictException("Review the current handover commitment status.");
+    } else {
+      review();
+      if (status === "closed") {
+        if (item.status !== "ready")
+          throw new ConflictException(
+            "Submit completion evidence before verifying this handover commitment.",
+          );
+        if (item.resolutionBy === a.id)
+          throw new ForbiddenException(
+            "Another reviewer must verify this handover commitment.",
+          );
+      }
+    }
     setHandoverOutstandingStatus(
       handover,
-      str(b.itemId, 80, true),
-      choice(b.status, ["open", "ready", "closed", "warranty"] as const),
+      item.id,
+      status,
       note,
       a.id,
     );

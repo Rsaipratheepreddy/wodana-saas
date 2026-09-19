@@ -5,6 +5,8 @@ import {
   ChevronRight,
   Eye,
   Link2,
+  LocateFixed,
+  MoreHorizontal,
   Redo2,
   Search,
   Sparkles,
@@ -19,21 +21,25 @@ import {
   addQuotationSuggestions,
   type QuotationAnalysis,
 } from "@/lib/commercial/quotation-assist";
-import { Checkbox, ControlledModalDialog, SelectField } from "@/design-system";
+import { Checkbox, ControlledModalDialog, SelectField, useConfirmationDialog } from "@/design-system";
 import type { QuotationEditor } from "./quotation-editor";
 import { CatalogOptionsProvider } from "./catalog-options-cache";
 import { QuotationTemplateLibrary } from "./quotation-sidebar-tools";
 import { QuotationDocument } from "./quotation-document";
 import { QuotationBaseSettings } from "./quotation-base-settings";
 import { QuotationSheet } from "./quotation-sheet";
+import { QuotationRoomDialog } from "./quotation-room-dialog";
 import { QuotationAiPanel } from "./quotation-ai-panel";
+import { QuotationCanvas, QuotationCanvasPreview } from "./quotation-canvas";
 import { QuotationTextCell } from "./quotation-text-cell";
+import { applyQuoteCatalogMedia } from "@/lib/commercial/quotation-table";
 import s from "./quotation-workspace.module.css";
 type Props = React.ComponentProps<typeof QuotationEditor> & {
   state: CommercialState;
   customerName: string;
   onSave: () => Promise<boolean>;
   onImportScope: () => void;
+  initialMode?: "items" | "design";
 };
 export function QuotationStudio(props: Props) {
   return (
@@ -57,21 +63,29 @@ function Studio({
   caseId,
   onSave,
   onImportScope,
+  costing,
+  initialMode = "items",
 }: Props) {
   const [preview, setPreview] = useState(false),
     [settings, setSettings] = useState(false),
     [templates, setTemplates] = useState(false),
     [requestDialog, setRequestDialog] = useState(false),
-    [search, setSearch] = useState("");
+    [search, setSearch] = useState(""),
+    [mode, setMode] = useState<"items" | "design">(initialMode),
+    [itemDialog, setItemDialog] = useState(false);
   const [analysis, setAnalysis] = useState<QuotationAnalysis | null>(null);
   const [review, setReview] = useState(false);
   const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
   const [aiRoom, setAiRoom] = useState("");
   const [aiNotice, setAiNotice] = useState("");
+  const [aiAdding, setAiAdding] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationNotice, setLocationNotice] = useState("");
   const editSession = useRef<Element | null>(null);
   const aiPanel = useRef<HTMLElement>(null);
   const aiToggle = useRef<HTMLButtonElement>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const [past, setPast] = useState<Quote[]>([]),
     [future, setFuture] = useState<Quote[]>([]),
     [revision, setRevision] = useState(state.data.revision);
@@ -108,7 +122,7 @@ function Studio({
         editSession.current = null;
       }}
     >
-      <header className={s.quoteHeader} aria-label="Quotation header">
+      {mode === "items" ? <header className={s.quoteHeader} aria-label="Quotation header">
         <label className={s.quoteTitle}>
           Quotation title
           <QuotationTextCell
@@ -139,25 +153,63 @@ function Studio({
             }
           />
         </label>
-        <label>
+        <label className={s.locationField}>
           Location
-          <QuotationTextCell
-            label="Quotation location"
-            value={quote.cover?.location ?? ""}
-            placeholder="Project location"
-            max={300}
-            readOnly={readOnly}
-            onChange={(location) =>
-              patch({
-                cover: {
-                  preparedFor: customerName,
-                  subtitle: "",
-                  ...quote.cover,
-                  location,
-                },
-              })
-            }
-          />
+          <span className={s.locationInput}>
+            <QuotationTextCell
+              label="Quotation location"
+              value={quote.cover?.location ?? ""}
+              placeholder="Project location"
+              max={300}
+              readOnly={readOnly}
+              onChange={(location) =>
+                patch({
+                  cover: {
+                    preparedFor: customerName,
+                    subtitle: "",
+                    ...quote.cover,
+                    location,
+                  },
+                })
+              }
+            />
+            {!readOnly ? <button
+              type="button"
+              aria-label="Use current location"
+              title={locationNotice || "Use current location"}
+              disabled={locating}
+              onClick={() => {
+                if (!navigator.geolocation) {
+                  setLocationNotice("Location is not available in this browser.");
+                  return;
+                }
+                setLocating(true);
+                setLocationNotice("");
+                navigator.geolocation.getCurrentPosition(
+                  ({ coords }) => {
+                    const latitude = Number(coords.latitude.toFixed(6));
+                    const longitude = Number(coords.longitude.toFixed(6));
+                    patch({
+                      cover: {
+                        preparedFor: customerName,
+                        subtitle: "",
+                        ...quote.cover,
+                        location: quote.cover?.location || `${latitude}, ${longitude}`,
+                        coordinates: { latitude, longitude, accuracy: Math.round(coords.accuracy) },
+                      },
+                    });
+                    setLocationNotice(`Pinned ${latitude}, ${longitude}`);
+                    setLocating(false);
+                  },
+                  (error) => {
+                    setLocationNotice(error.code === error.PERMISSION_DENIED ? "Location permission was not allowed." : "Current location could not be detected.");
+                    setLocating(false);
+                  },
+                  { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+                );
+              }}
+            ><LocateFixed size={15} /></button> : null}
+          </span>
         </label>
         <label>
           Valid until
@@ -175,8 +227,29 @@ function Studio({
           {quote.currency}
           <small>All prices</small>
         </span>
-      </header>
-      <div className={s.split} data-ai-open={aiOpen}>
+      </header> : null}
+      {mode === "items" ? <div className={s.viewBar}>
+        <div className={s.viewSwitch} aria-label="Quotation workspace view">
+          <button type="button" aria-pressed={false} onClick={() => { setMode("design"); setAiOpen(false); }}>Design</button>
+          <button type="button" aria-pressed onClick={() => setMode("items")}>Items & pricing</button>
+        </div>
+        <span>Build scope and pricing</span>
+      </div> : null}
+      {mode === "design" ? (
+        <QuotationCanvas
+          quote={quote}
+          brand={quote.brand ?? state.portalBrand}
+          customerName={customerName}
+          readOnly={readOnly}
+          onChange={change}
+          onEditItems={() => setItemDialog(true)}
+          toolbarStart={<div className={s.viewSwitch} aria-label="Quotation workspace view">
+            <button type="button" aria-pressed onClick={() => { setMode("design"); setAiOpen(false); }}>Design</button>
+            <button type="button" aria-pressed={false} onClick={() => setMode("items")}>Items & pricing</button>
+          </div>}
+          toolbarEnd={<button type="button" className={s.previewButton} onClick={() => setPreview(true)}><Eye size={15} />Preview</button>}
+        />
+      ) : <div className={s.split} data-ai-open={aiOpen}>
         <section className={s.roomPanel} aria-label="Quotation room builder">
           <div className={s.roomPanelScroll}>
             <div className={s.roomHeading}>
@@ -234,33 +307,14 @@ function Studio({
                     <Redo2 size={15} />
                   </button>
                 </div>
-                <button
-                  className={s.linkButton}
-                  aria-label="Base settings"
-                  onClick={() => setSettings(true)}
-                >
-                  <Settings2 size={15} />
-                  <span>Base settings</span>
-                </button>
-                <button
-                  className={s.linkButton}
-                  aria-label="Templates"
-                  onClick={() => setTemplates(true)}
-                >
-                  <BookCopy size={15} />
-                  <span>Templates</span>
-                </button>
-                <button
-                  className={s.linkButton}
-                  aria-label="Link change requests"
-                  onClick={() => setRequestDialog(true)}
-                >
-                  <Link2 size={15} />
-                  <span>
-                    Change requests
-                    {linkedRequests.length ? ` · ${linkedRequests.length}` : ""}
-                  </span>
-                </button>
+                <details className={s.toolsMenu}>
+                  <summary><MoreHorizontal size={16}/><span>More</span></summary>
+                  <div>
+                    <button aria-label="Base settings" onClick={() => setSettings(true)}><Settings2 size={15}/><span>Document settings</span></button>
+                    <button aria-label="Templates" onClick={() => setTemplates(true)}><BookCopy size={15}/><span>Templates</span></button>
+                    <button aria-label="Link change requests" onClick={() => setRequestDialog(true)}><Link2 size={15}/><span>Change requests{linkedRequests.length ? ` · ${linkedRequests.length}` : ""}</span></button>
+                  </div>
+                </details>
                 <button
                   className={s.previewButton}
                   aria-label="Preview quotation"
@@ -315,20 +369,12 @@ function Studio({
                   onSelectionChange={(key) => {
                     const direction =
                       key === "deduction" ? "deduction" : "addition";
-                    if (
-                      quote.lines.length &&
-                      !window.confirm(
-                        "Changing the variation effect clears its items. Continue?",
-                      )
-                    )
+                    const applyDirection = () => patch({ direction, lines: [], rooms: [], paymentTerms: direction === "deduction" ? [] : quote.paymentTerms });
+                    if (quote.lines.length) {
+                      requestConfirmation({ title: "Change variation effect?", body: "Changing between additional work and a deduction removes the current variation items so the commercial basis stays consistent.", confirmLabel: "Change and clear items", onConfirm: applyDirection });
                       return;
-                    patch({
-                      direction,
-                      lines: [],
-                      rooms: [],
-                      paymentTerms:
-                        direction === "deduction" ? [] : quote.paymentTerms,
-                    });
+                    }
+                    applyDirection();
                   }}
                 />
                 <p>
@@ -391,11 +437,14 @@ function Studio({
               readOnly={readOnly}
               workspaceId={workspaceId}
               caseId={caseId}
+              canOverridePrice={Boolean(state.canOverridePrice)}
+              canViewCosts={Boolean(costing)}
               search={search}
+              brand={quote.brand ?? state.portalBrand}
             />
             {!readOnly && quote.direction !== "deduction" && (
               <button className={s.importButton} onClick={onImportScope}>
-                Import existing requirements
+                Import unconfirmed requirements
                 <ChevronRight size={13} />
               </button>
             )}
@@ -466,7 +515,7 @@ function Studio({
             onReview={() => setReview(true)}
           />
         </aside>
-      </div>
+      </div>}
       <ControlledModalDialog
         title="Review AI suggestions"
         size="lg"
@@ -523,10 +572,11 @@ function Studio({
             </button>
             <button
               className={s.primary}
-              disabled={readOnly || !selectedSuggestions.length}
-              onClick={() => {
+              disabled={readOnly || aiAdding || !selectedSuggestions.length}
+              onClick={async () => {
                 if (!analysis) return;
-                const next = addQuotationSuggestions(
+                setAiAdding(true);
+                const proposed = addQuotationSuggestions(
                   quote,
                   analysis.rooms.map((room) => ({
                     ...room,
@@ -535,9 +585,16 @@ function Studio({
                     ),
                   })),
                 );
+                const previousIds = new Set(quote.lines.map((line) => line.id));
+                const next = await applyQuoteCatalogMedia(
+                  workspaceId,
+                  proposed,
+                  new Set(proposed.lines.filter((line) => !previousIds.has(line.id)).map((line) => line.id)),
+                );
                 const count = next.lines.length - quote.lines.length;
                 change(next);
                 setReview(false);
+                setAiAdding(false);
                 setAiNotice(
                   count
                     ? `${count} AI-suggested ${count === 1 ? "item added" : "items added"}. Check quantities and enter prices, then save.`
@@ -545,7 +602,7 @@ function Studio({
                 );
               }}
             >
-              Add selected items
+              {aiAdding ? "Preparing items…" : "Add selected items"}
             </button>
           </div>
         </div>
@@ -597,13 +654,25 @@ function Studio({
         onOpenChange={setPreview}
       >
         <div className={s.previewDialog}>
-          <QuotationDocument
-            quote={quote}
-            brand={quote.brand ?? state.portalBrand}
-            customerName={customerName}
-          />
+          <article aria-label="Quotation document">
+            <QuotationCanvasPreview
+              quote={quote}
+              brand={quote.brand ?? state.portalBrand}
+              customerName={customerName}
+            />
+          </article>
         </div>
       </ControlledModalDialog>
+      {itemDialog ? (
+        <QuotationRoomDialog
+          quote={quote}
+          room={rooms[0] ?? null}
+          workspaceId={workspaceId}
+          caseId={caseId}
+          onClose={() => setItemDialog(false)}
+          onApply={change}
+        />
+      ) : null}
       {settings && (
         <QuotationBaseSettings
           quote={quote}
@@ -631,6 +700,7 @@ function Studio({
           />
         </div>
       </ControlledModalDialog>
+      {confirmationDialog}
     </div>
   );
 }

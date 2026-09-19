@@ -1,11 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { PoolClient } from "pg";
 import { freezeHash } from "../commercial/commercial.domain";
 import type { CommercialData, Quote } from "../commercial/commercial.types";
 import { emptyProject } from "./execution.domain";
 import { releaseDeliveryProject } from "./project-release";
+import { ensureJobForSource } from "../jobs/job-identity.store";
+import type { ProjectWorkflowTemplateInput } from "./project-workflow";
+
+vi.mock("../jobs/job-identity.store", () => ({
+  ensureJobForSource: vi.fn().mockResolvedValue({ id: "job-1", reference: "J-000001", workspaceId: "workspace-1" }),
+}));
 
 const now = "2026-09-15T10:00:00.000Z";
+
+const palmWorkflow = () =>
+  JSON.parse(
+    readFileSync(
+      resolve(
+        __dirname,
+        "../../../../docs/fixtures/palm-project-workflow.json",
+      ),
+      "utf8",
+    ),
+  ) as ProjectWorkflowTemplateInput;
 
 function fixture(): CommercialData {
   const quote: Quote = {
@@ -42,6 +61,7 @@ function fixture(): CommercialData {
         variant: "Premium",
         pricingMode: "materials",
         photo: "data:image/webp;base64,cHJpdmF0ZQ==",
+        dimensions: { length: 2400, height: 2600, depth: 600, unit: "mm" },
         materialRows: [
           {
             id: "veneer",
@@ -83,14 +103,62 @@ function fixture(): CommercialData {
         ],
       },
     ],
+    designEvidence: {
+      capturedAt: now,
+      links: [
+        {
+          scopeLineId: "quote-line-1",
+          sourceScopeId: "scope-1",
+          sourceScopeVersion: 4,
+          sourceSpecificationVersion: 3,
+          designVersionId: "design-version-1",
+          designId: "design-1",
+          assetId: "design-asset-1",
+          fileName: "Wardrobe elevation.pdf",
+          mimeType: "application/pdf",
+          byteSize: 2048,
+          hasPreview: false,
+          title: "Wardrobe elevation",
+          documentType: "drawing",
+          revision: 2,
+          approvedAt: now,
+        },
+      ],
+    },
   };
   quote.hash = freezeHash(quote);
+  quote.clientDecision = {
+    decision: "accept",
+    quoteHash: quote.hash,
+    selectedOptionLineIds: [],
+    baseTotal: quote.total,
+    optionsTotal: 0,
+    acceptedTotal: quote.total,
+    decidedAt: now,
+    decidedBy: "Client",
+  };
   return {
     revision: 1,
+    financeContext: {
+      legalEntityId: "entity-1",
+      code: "PLM-AE",
+      displayName: "Palm Living UAE",
+      registeredName: "Palm Living Interiors LLC",
+      countryCode: "AE",
+      baseCurrency: "AED",
+      currency: "AED",
+      taxValidation: "unvalidated",
+      boundAt: now,
+    },
     quotes: [quote],
     requests: [],
     agreement: {
       quoteId: quote.id,
+      quoteHash: quote.hash,
+      selectedOptionLineIds: [],
+      acceptedTotal: quote.total,
+      legalEntityId: "entity-1",
+      currency: "AED",
       reference: "AGR-1",
       terms: "Signed terms",
       evidence: "Signed contract SIG-1",
@@ -98,7 +166,54 @@ function fixture(): CommercialData {
       executedAt: now,
       executedBy: "Client",
     },
-    payments: [],
+    payments: [
+      {
+        id: "payment-1",
+        sourceQuoteId: quote.id,
+        legalEntityId: "entity-1",
+        currency: "AED",
+        agreementReference: "AGR-1",
+        title: "Contract deposit",
+        amount: quote.total,
+        dueDate: "2026-09-15",
+        trigger: "On contract",
+        requiredForRelease: true,
+        status: "verified",
+        proof: "Bank receipt",
+        reference: "RCT-1",
+        verifiedBy: "Finance",
+        verifiedAt: now,
+      },
+    ],
+    receipts: [
+      {
+        id: "receipt-1",
+        paymentId: "payment-1",
+        legalEntityId: "entity-1",
+        currency: "AED",
+        amount: quote.total,
+        source: "manual",
+        status: "finance_verified",
+        reference: "RCT-1",
+        evidence: "Bank receipt",
+        reportedAt: now,
+        reportedBy: "Operations",
+        verifiedAt: now,
+        verifiedBy: "Finance",
+      },
+    ],
+    allocations: [
+      {
+        id: "allocation-1",
+        receiptId: "receipt-1",
+        paymentId: "payment-1",
+        legalEntityId: "entity-1",
+        currency: "AED",
+        amount: quote.total,
+        createdAt: now,
+        createdBy: "Operations",
+      },
+    ],
     audit: [],
     ownerReview: {
       id: "review-1",
@@ -130,8 +245,28 @@ function fixture(): CommercialData {
       quoteId: quote.id,
       quoteNumber: quote.number,
       quoteHash: quote.hash,
+      designEvidence: structuredClone(quote.designEvidence),
+      materialEvidence: [
+        {
+          id: "approval-1",
+          quoteId: quote.id,
+          lineId: "quote-line-1",
+          materialRowId: "veneer",
+          revision: 1,
+          room: "Primary bedroom",
+          item: "Wardrobe",
+          name: "Oak veneer",
+          code: "",
+          brand: "",
+          specification: "Quarter-cut A grade",
+          note: "Approved sample",
+          status: "approved",
+          decidedAt: now,
+          decidedBy: "Client",
+        },
+      ],
       agreementReference: "AGR-1",
-      paymentIds: [],
+      paymentIds: ["payment-1"],
       value: quote.total,
       cost: 600,
       margin: 650,
@@ -170,7 +305,11 @@ function fixture(): CommercialData {
   };
 }
 
-function database(options: { existing?: ReturnType<typeof emptyProject>; scopeVersion?: number } = {}) {
+function database(options: {
+  existing?: ReturnType<typeof emptyProject>;
+  scopeVersion?: number;
+  workflow?: ProjectWorkflowTemplateInput;
+} = {}) {
   let stored: ReturnType<typeof emptyProject> | undefined;
   const query = vi.fn(async (sql: string, values?: unknown[]) => {
     if (
@@ -195,6 +334,11 @@ function database(options: { existing?: ReturnType<typeof emptyProject>; scopeVe
           {
             designVersionId: "design-version-1",
             designId: "design-1",
+            assetId: "design-asset-1",
+            fileName: "Wardrobe elevation.pdf",
+            mimeType: "application/pdf",
+            byteSize: 2048,
+            hasPreview: false,
             title: "Wardrobe elevation",
             documentType: "drawing",
             revision: 2,
@@ -222,7 +366,17 @@ function database(options: { existing?: ReturnType<typeof emptyProject>; scopeVe
         rows: options.existing ? [{ content: options.existing }] : [],
       };
     if (sql.includes("FROM project_workflow_templates"))
-      return { rowCount: 0, rows: [] };
+      return options.workflow
+        ? {
+            rowCount: 1,
+            rows: [{
+              id: "workflow-palm-1",
+              ...options.workflow,
+              version: 1,
+              updatedAt: now,
+            }],
+          }
+        : { rowCount: 0, rows: [] };
     if (sql.startsWith("INSERT INTO project_execution")) {
       stored = JSON.parse(String(values?.[3]));
       return { rowCount: 1, rows: [] };
@@ -243,6 +397,9 @@ describe("commercial project release", () => {
     const data = fixture(), db = database();
 
     await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", data);
+    expect(ensureJobForSource).toHaveBeenCalledWith(
+      db.client, "workspace-1", { type: "project", id: "project-1" }, "user-1",
+    );
 
     const scope = db.stored()?.scope;
     expect(scope).toMatchObject({
@@ -263,6 +420,7 @@ describe("commercial project release", () => {
       sourceSpecificationVersion: 3,
       specification: "2400 mm high, soft-close hardware",
       finish: "Natural oak",
+      dimensions: { length: 2400, height: 2600, depth: 600, unit: "mm" },
       rate: 625,
       lineTotal: 1250,
       variant: "Premium",
@@ -318,9 +476,15 @@ describe("commercial project release", () => {
         title: "Wardrobe elevation · Rev 2",
         status: "approved",
         sourceDesignVersionId: "design-version-1",
+        sourceDesignAssetId: "design-asset-1",
         scopeLineIds: ["quote-line-1"],
       }),
     );
+    const capturedDesignQuery = db.query.mock.calls.find(([sql]) =>
+      String(sql).includes('SELECT version.id AS "designVersionId"'),
+    )?.[0];
+    expect(capturedDesignQuery).toContain("version.created_at");
+    expect(capturedDesignQuery).not.toContain("version.updated_at");
   });
 
   it("rejects accepted-price drift against the approved Deal File", async () => {
@@ -339,6 +503,31 @@ describe("commercial project release", () => {
     await expect(
       releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", fixture()),
     ).rejects.toThrow("Preparation changed for Wardrobe");
+    expect(db.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO delivery_projects"))).toBe(false);
+  });
+
+  it("rejects design evidence drift before creating a project", async () => {
+    const data = fixture(), db = database();
+    data.quotes[0].designEvidence!.links[0].assetId = "superseded-asset";
+    data.quotes[0].hash = freezeHash(data.quotes[0]);
+    data.quotes[0].clientDecision!.quoteHash = data.quotes[0].hash!;
+    data.agreement!.quoteHash = data.quotes[0].hash!;
+    data.ownerReview!.quoteHash = data.quotes[0].hash!;
+    data.dealFile!.quoteHash = data.quotes[0].hash!;
+
+    await expect(
+      releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", data),
+    ).rejects.toThrow("approved design evidence no longer matches");
+    expect(db.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO delivery_projects"))).toBe(false);
+  });
+
+  it("rejects material evidence drift before creating a project", async () => {
+    const data = fixture(), db = database();
+    data.materialApprovals![0].revision = 2;
+
+    await expect(
+      releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", data),
+    ).rejects.toThrow("approved material evidence no longer matches");
     expect(db.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO delivery_projects"))).toBe(false);
   });
 
@@ -388,5 +577,52 @@ describe("commercial project release", () => {
     expect(db.stored()?.workPackages).toEqual([
       expect.objectContaining({ scopeLineIds: ["quote-line-1"], title: "Wardrobe" }),
     ]);
+  });
+
+  it("freezes the configured Palm stages alongside released scope, design evidence and packages", async () => {
+    const workflow = palmWorkflow();
+    const db = database({ workflow });
+
+    await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", fixture());
+
+    expect(db.stored()?.workflow).toMatchObject({
+      currentStageKey: "project_setup",
+      template: {
+        id: "workflow-palm-1",
+        code: "palm_design_build_delivery",
+        version: 1,
+        source: "workspace",
+      },
+    });
+    expect(db.stored()?.workflow?.template.stages.map((stage) => stage.visibleName)).toEqual([
+      "Project setup",
+      "Concept & moodboard",
+      "Space planning",
+      "Renders & client approval",
+      "Technical drawings & materials",
+      "BOQ & procurement",
+      "Manufacturing readiness",
+      "Manufacturing",
+      "Site works",
+      "Installation",
+      "Snagging & handover",
+      "Completed",
+    ]);
+    expect(db.stored()?.workPackages).toEqual([
+      expect.objectContaining({
+        scopeLineIds: ["quote-line-1"],
+        title: "Wardrobe",
+        status: "planning",
+      }),
+    ]);
+    expect(db.stored()?.designBaseline?.links).toEqual([
+      expect.objectContaining({
+        scopeLineId: "quote-line-1",
+        designVersionId: "design-version-1",
+      }),
+    ]);
+
+    workflow.stages[0].visibleName = "Changed after project release";
+    expect(db.stored()?.workflow?.template.stages[0].visibleName).toBe("Project setup");
   });
 });

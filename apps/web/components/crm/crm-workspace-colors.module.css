@@ -1,32 +1,14 @@
-/* Exact hues from Workspace's composers and organization cards. Scoped to opted-in CRM screens. */
+/* CRM inherits the workspace palette. These aliases describe meaning, not a
+   second brand theme, so tenant and light/dark changes remain in sync. */
 .theme {
-  --crm-lilac: var(--wd-brand-lilac);
-  --crm-rose: var(--wd-brand-rose);
-  --crm-peach: var(--wd-brand-peach);
-  --crm-on-gradient: var(--wd-brand-ink);
-  --crm-gradient: var(--wd-brand-gradient);
-  --crm-accent: var(--wd-workspace-brand-light-600, #694f7a);
-  --crm-accent-soft: var(--wd-workspace-brand-light-50, #f0e8fa);
-  --crm-note: #775b35;
-  --crm-note-soft: #fff0df;
-  --crm-soft-gradient: linear-gradient(120deg, color-mix(in srgb, var(--wd-color-surface) 70%, var(--crm-lilac)), color-mix(in srgb, var(--wd-color-surface) 78%, var(--crm-rose)), color-mix(in srgb, var(--wd-color-surface) 86%, var(--crm-peach)));
-  --wd-color-action-primary: var(--crm-accent);
-  --wd-color-action-primary-hover: color-mix(in srgb, var(--crm-accent) 85%, var(--wd-color-text));
-  --wd-color-action-primary-subtle: var(--crm-accent-soft);
-  --wd-color-action-on-primary: var(--wd-color-surface);
-  --wd-color-link: var(--crm-accent);
-  --wd-color-link-hover: var(--wd-color-action-primary-hover);
-  --wd-color-focus: var(--crm-accent);
-  --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--crm-accent) 20%, transparent);
-  --wd-focus: var(--wd-focus-ring);
-  --wd-on-brand: var(--wd-color-action-on-primary);
-}
-.theme :global(.wd-tab[data-selected])::after { background: var(--crm-accent); }
-.theme :global(.wd-tab-scroll:focus-visible) { box-shadow: inset 0 0 0 2px var(--crm-accent); }
-.theme :global(.wd-picker-check) { color: var(--crm-accent); }
-:global([data-theme="dark"]) .theme, .theme:global([data-wd-theme="dark"]) {
-  --crm-accent: var(--wd-workspace-brand-dark-600, var(--crm-lilac));
-  --crm-accent-soft: var(--wd-workspace-brand-dark-50, color-mix(in srgb, var(--wd-color-surface) 84%, var(--crm-lilac)));
-  --crm-note: #ffd598;
-  --crm-note-soft: color-mix(in srgb, var(--wd-color-surface) 90%, var(--crm-peach));
+  --crm-lilac: var(--wd-color-info);
+  --crm-rose: var(--wd-color-danger);
+  --crm-peach: var(--wd-color-warning);
+  --crm-on-gradient: var(--wd-color-action-on-primary);
+  --crm-gradient: var(--wd-color-action-primary);
+  --crm-accent: var(--wd-color-action-primary);
+  --crm-accent-soft: var(--wd-color-action-primary-subtle);
+  --crm-note: var(--wd-color-warning);
+  --crm-note-soft: var(--wd-color-warning-subtle);
+  --crm-soft-gradient: var(--wd-color-surface-muted);
 }

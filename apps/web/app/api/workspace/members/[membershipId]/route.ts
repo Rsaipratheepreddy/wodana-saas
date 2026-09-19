@@ -22,10 +22,10 @@ export async function PATCH(
   if (status !== undefined && status !== "active" && status !== "suspended") {
     return invalidRequest("Select a valid member status.");
   }
-  if (roleCodes !== undefined && (!Array.isArray(roleCodes) || !roleCodes.length
+  if (roleCodes !== undefined && (!Array.isArray(roleCodes) || roleCodes.length > 20
     || new Set(roleCodes).size !== roleCodes.length
     || roleCodes.some((role) => typeof role !== "string" || !ROLE_CODE.test(role)))) {
-    return invalidRequest("Select at least one valid workspace role.");
+    return invalidRequest("Choose valid direct workspace roles.");
   }
   if (status === undefined && roleCodes === undefined) {
     return invalidRequest("No member changes were provided.");

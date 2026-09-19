@@ -4,6 +4,7 @@ import type { CrmEventsService } from "../crm/shared/crm-events.service";
 import type { HrmsAccessService } from "../hrms/hrms-access.service";
 import { builtInProjectWorkflow } from "./project-workflow";
 import { ProjectWorkflowService } from "./project-workflow.service";
+import type { ConfigurationRevisionsService } from "../workspaces/configuration-revisions.service";
 
 const actor = { sub: "user" } as RequestActor;
 const workspaceId = "10000000-0000-4000-8000-000000000001";
@@ -33,14 +34,19 @@ function harness(query: ReturnType<typeof vi.fn>) {
     }),
   );
   const record = vi.fn().mockResolvedValue("event-1");
+  const ensureBaseline = vi.fn().mockResolvedValue(null);
+  const recordRevision = vi.fn().mockResolvedValue({ id: "revision-1" });
   return {
     service: new ProjectWorkflowService(
       { run, require: requirePermission } as unknown as HrmsAccessService,
       { record } as unknown as CrmEventsService,
+      { ensureBaseline, record: recordRevision } as unknown as ConfigurationRevisionsService,
     ),
     run,
     requirePermission,
     record,
+    ensureBaseline,
+    recordRevision,
   };
 }
 
@@ -73,7 +79,7 @@ describe("ProjectWorkflowService", () => {
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [saved] });
-    const { service, record } = harness(query);
+    const { service, record, recordRevision } = harness(query);
     const result = await service.save(
       actor,
       workspaceId,
@@ -92,6 +98,10 @@ describe("ProjectWorkflowService", () => {
         action: "project.workflow_template_saved.v1",
         entityId: templateId,
       }),
+    );
+    expect(recordRevision).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "created", resourceId: templateId }),
     );
   });
 

@@ -48,4 +48,20 @@ export class CreateTeamDto {
   @IsOptional()
   @IsUUID()
   leadMembershipId?: string;
+
+  @ApiPropertyOptional({ type: [String], format: "uuid", description: "Roles inherited by every active team member" })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(25)
+  @IsUUID(undefined, { each: true })
+  roleIds: string[] = [];
+
+  @ApiPropertyOptional({ type: [String], format: "uuid", description: "Lead queues inherited by every active team member" })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(25)
+  @IsUUID(undefined, { each: true })
+  queueIds: string[] = [];
 }

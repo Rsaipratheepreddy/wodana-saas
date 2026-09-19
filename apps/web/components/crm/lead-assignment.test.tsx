@@ -7,6 +7,24 @@ import { LeadRouting } from "./lead-operations";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Auto-assignment settings", () => {
+  it("sets the unanswered-owner handoff on the selected queue", async () => {
+    const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
+    data.queues[0].takeoverAfterMinutes = 60;
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LeadRouting initialData={data} />);
+    expect(await screen.findByText(/elapsed minutes, including outside business hours/i)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Lead handoff" }));
+    const dialog = await screen.findByRole("dialog", { name: "Unanswered lead handoff" });
+    const minutes = within(dialog).getByRole("textbox", { name: /Elapsed minutes before another sales owner/ });
+    await user.clear(minutes);
+    await user.type(minutes, "60");
+    await user.click(within(dialog).getByRole("button", { name: "Save handoff" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
+    const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
+    expect(String(call[0])).toContain(`/queues/${data.queues[0].id}`);
+    expect(JSON.parse(String(call[1].body))).toEqual({ version: data.queues[0].version, takeoverAfterMinutes: 60 });
+  });
   it("updates capacity without clearing existing skills, languages, or territories", async () => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
     const member = data.queues[0].members[0];
@@ -14,8 +32,8 @@ describe("Auto-assignment settings", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
     await user.click(await screen.findByRole("button", { name: `Edit ${member.name}` }));
-    const dialog = await screen.findByRole("dialog", { name: "Edit lead manager" });
-    const capacity = within(dialog).getByRole("spinbutton", { name: /Maximum active leads/ });
+    const dialog = await screen.findByRole("dialog", { name: "Edit sales owner" });
+    const capacity = within(dialog).getByRole("textbox", { name: /Maximum active enquiries/ });
     await user.clear(capacity); await user.type(capacity, "40");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PUT")).toBe(true));
@@ -31,7 +49,7 @@ describe("Auto-assignment settings", () => {
     await user.click(await screen.findByRole("tab", { name: "Routing order" }));
     await user.click(await screen.findByRole("button", { name: `Edit ${policy.name}` }));
     const dialog = await screen.findByRole("dialog", { name: "Edit auto-assignment" });
-    const order = within(dialog).getByRole("spinbutton", { name: /Order/ });
+    const order = within(dialog).getByRole("textbox", { name: /Order/ });
     await user.clear(order); await user.type(order, "5");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
@@ -45,9 +63,9 @@ describe("Auto-assignment settings", () => {
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PUT" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
-    await user.click(await screen.findByRole("button", { name: "Add lead manager" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add lead manager" });
-    await user.click(within(dialog).getByRole("button", { name: /Lead manager/ }));
+    await user.click(await screen.findByRole("button", { name: "Add sales owner" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add sales owner" });
+    await user.click(within(dialog).getByRole("button", { name: /Sales owner/ }));
     await user.click(await screen.findByRole("option", { name: data.members[0].displayName }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PUT")).toBe(true));

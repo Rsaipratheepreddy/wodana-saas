@@ -69,7 +69,10 @@ export async function captureApprovedDesignBaseline(
         `SELECT version.id AS "designVersionId",version.design_id AS "designId",
                 design.title,design.document_type AS "documentType",
                 version.number AS revision,
-                coalesce(decision.decision_at,version.updated_at)::text AS "approvedAt"
+                asset.id AS "assetId",asset.original_name AS "fileName",
+                asset.mime_type AS "mimeType",asset.byte_size AS "byteSize",
+                asset.preview_key IS NOT NULL AS "hasPreview",
+                coalesce(decision.decision_at,version.created_at)::text AS "approvedAt"
          FROM pre_project_item_design_refs reference
          JOIN pre_project_design_versions version
            ON version.workspace_id=reference.workspace_id
@@ -88,6 +91,10 @@ export async function captureApprovedDesignBaseline(
            ORDER BY activity.decision_at DESC NULLS LAST,activity.created_at DESC
            LIMIT 1
          ) decision ON true
+         JOIN pre_project_brief_assets asset
+           ON asset.workspace_id=version.workspace_id
+          AND asset.case_id=version.case_id
+          AND asset.id=version.asset_id
          WHERE reference.workspace_id=$1 AND reference.case_id=$2
            AND reference.entry_id=$3 AND reference.version=$4
            AND version.status='approved'
@@ -160,12 +167,13 @@ export function synchroniseApprovedDesignDocuments(
       kind: documentKind(design.documentType),
       revision: `D${design.revision}`,
       url: "",
-      note: "Approved design revision captured from Pre-execution.",
+      note: `Approved design revision captured from Pre-execution · ${design.fileName}`,
       status: "approved",
       replaces: "",
       published: false,
       approvedBy: "Approved in Pre-execution",
       sourceDesignVersionId: design.designVersionId,
+      sourceDesignAssetId: design.assetId,
       scopeLineIds: [design.scopeLineId],
     });
   }
@@ -190,6 +198,45 @@ export function mergeDesignBaseline(
     definitionBaseline: current?.definitionBaseline ?? addition.definitionBaseline,
     links,
   };
+}
+
+/** Compare contractual design evidence without treating the capture timestamp as content. */
+export function sameDesignEvidence(
+  expected: ProjectDesignBaseline | undefined,
+  current: ProjectDesignBaseline,
+) {
+  if (!expected) return false;
+  const definition = (value: ProjectDesignBaseline) =>
+    value.definitionBaseline
+      ? `${value.definitionBaseline.id}:${value.definitionBaseline.number}:${value.definitionBaseline.hash}`
+      : "";
+  const links = (value: ProjectDesignBaseline) =>
+    value.links
+      .map((link) => ({
+        scopeLineId: link.scopeLineId,
+        sourceScopeId: link.sourceScopeId,
+        sourceScopeVersion: link.sourceScopeVersion,
+        sourceSpecificationVersion: link.sourceSpecificationVersion,
+        designVersionId: link.designVersionId,
+        designId: link.designId,
+        assetId: link.assetId,
+        fileName: link.fileName,
+        mimeType: link.mimeType,
+        byteSize: link.byteSize,
+        title: link.title,
+        documentType: link.documentType,
+        revision: link.revision,
+        approvedAt: link.approvedAt,
+      }))
+      .sort((left, right) =>
+        `${left.scopeLineId}:${left.designVersionId}`.localeCompare(
+          `${right.scopeLineId}:${right.designVersionId}`,
+        ),
+      );
+  return (
+    definition(expected) === definition(current) &&
+    JSON.stringify(links(expected)) === JSON.stringify(links(current))
+  );
 }
 
 export function designReadinessForTask(data: ProjectData, task: Task) {

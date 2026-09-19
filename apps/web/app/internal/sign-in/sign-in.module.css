@@ -1,0 +1,7 @@
+.page {
+  min-block-size: 100dvh;
+  display: grid;
+  align-items: center;
+  background: var(--wd-canvas);
+  padding-block: var(--wd-space-8);
+}

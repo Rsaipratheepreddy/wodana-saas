@@ -29,6 +29,9 @@ const workspaceId = me.memberships.find((membership) => membership.workspaceSlug
 const vendorsRoot = `/workspaces/${workspaceId}/vendors`;
 const offersRoot = `/workspaces/${workspaceId}/supplier-offers`;
 const catalogRoot = `/workspaces/${workspaceId}/catalog`;
+const workspace = await request(`/workspaces/${workspaceId}`, { token });
+const legalEntityId = workspace.legalEntities?.find((entity) => entity.status === "active")?.id;
+assert(legalEntityId, "supplier offers need an active legal entity");
 
 await request(`${catalogRoot}/starter`, { method: "POST", body: {}, token }, 201);
 const catalogBefore = await request(catalogRoot, { token });
@@ -58,7 +61,7 @@ await activeVendor(`Unsourced directory vendor ${randomUUID().slice(0, 8)}`);
 assert(!JSON.stringify(await request(`${vendorsRoot}/${zeta.vendor.id}`, { token })).includes('"amount"'), "vendor directory must not expose supplier prices");
 
 const draftId = randomUUID();
-const draft = { id: draftId, version: 0, vendorId: zeta.vendor.id, vendorSiteId: zeta.site.id,
+const draft = { id: draftId, version: 0, vendorId: zeta.vendor.id, vendorSiteId: zeta.site.id, legalEntityId,
   catalogRecordId: target.id, notes: "Incomplete draft is intentional." };
 let first = await request(offersRoot, { method: "POST", token, body: draft }, 201);
 assert.equal(first.status, "draft");
@@ -78,7 +81,7 @@ await request(`${offersRoot}/${draftId}`, { method: "PATCH", token, body: { vers
 const competitorId = randomUUID();
 const competitor = await request(offersRoot, { method: "POST", token, body: {
   id: competitorId, version: 0, vendorId: zeta.vendor.id, vendorSiteId: zeta.site.id,
-  catalogRecordId: target.id, unitRecordId: unitId, amount: 105, currency: "AED",
+  legalEntityId, catalogRecordId: target.id, unitRecordId: unitId, amount: 105, currency: "AED",
   effectiveFrom: "2026-01-01", sourceType: "price_list", sourceReference: "ZETA-LIST-2026",
   taxTreatment: "exclusive",
 } }, 201);
@@ -102,7 +105,7 @@ await request(`${offersRoot}/${winnerId}`, { method: "PATCH", token, body: { ver
 
 const tier = await request(offersRoot, { method: "POST", token, body: {
   id: randomUUID(), version: 0, vendorId: zeta.vendor.id, vendorSiteId: zeta.site.id,
-  catalogRecordId: target.id, unitRecordId: unitId, amount: 90, currency: "AED", quantityFrom: 10,
+  legalEntityId, catalogRecordId: target.id, unitRecordId: unitId, amount: 90, currency: "AED", quantityFrom: 10,
   minimumOrderQuantity: 10, orderMultiple: 5, effectiveFrom: "2026-01-01",
   sourceType: "contract", sourceReference: "ZETA-TIER-10", taxTreatment: "exclusive",
 } }, 201);
@@ -112,7 +115,7 @@ await request(`${offersRoot}/${tier.id}/lifecycle`, { method: "POST", token, bod
 
 const alphaOffer = await request(offersRoot, { method: "POST", token, body: {
   id: randomUUID(), version: 0, vendorId: alpha.vendor.id, catalogRecordId: target.id,
-  unitRecordId: unitId, amount: 200, currency: "AED", effectiveFrom: "2026-01-01",
+  legalEntityId, unitRecordId: unitId, amount: 200, currency: "AED", effectiveFrom: "2026-01-01",
   effectiveTo: "2026-12-31", sourceType: "vendor_quote", sourceReference: "ALPHA-Q-1",
   taxTreatment: "inclusive", inclusions: ["warranty"],
 } }, 201);
@@ -120,7 +123,7 @@ await request(`${offersRoot}/${alphaOffer.id}/lifecycle`, { method: "POST", toke
   requestId: randomUUID(), version: alphaOffer.version, action: "activate",
 } }, 201);
 
-const optionsQuery = `catalogRecordId=${target.id}&unitRecordId=${unitId}&currency=AED&quantity=15&validOn=2026-09-15`;
+const optionsQuery = `catalogRecordId=${target.id}&unitRecordId=${unitId}&legalEntityId=${legalEntityId}&currency=AED&quantity=15&validOn=2026-09-15`;
 const options = await request(`${offersRoot}/options?${optionsQuery}`, { token });
 assert.equal(options.options.length, 2, "one applicable tier per vendor/location must be returned");
 assert.equal(options.options[0].vendorId, alpha.vendor.id, "choices are stable by vendor name, not cheapest price");

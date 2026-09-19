@@ -1,6 +1,6 @@
 .page {
   min-block-size: 100%;
-  padding: 1.75rem clamp(1rem, 3vw, 2rem);
+  padding: 1.25rem 1.5rem 2rem;
   background: var(--wd-color-surface);
   color: var(--wd-color-text);
 }
@@ -44,3 +44,4 @@
   font-weight: var(--wd-weight-semibold);
 }
 .notice p { margin: .5rem 0; }
+@media (max-width: 850px) { .page { padding: 1rem; } }

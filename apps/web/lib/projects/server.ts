@@ -8,7 +8,7 @@ const e2ePortfolio = [{
   caseId: 'demo-case',
   name: 'Jumeirah villa interiors',
   customer: 'Amira Hassan',
-  phase: 'active',
+  phase: 'planning',
   manager: 'Omar Rahman',
   reference: 'PRJ-2026-001',
   priority: 'high',
@@ -19,11 +19,57 @@ const e2ePortfolio = [{
   nextActionDate: '2026-09-12',
 }];
 
+// The auth-bypass workspace has no project API behind it. Keep its read-only
+// design fixture addressable so the local portfolio never links to a 404.
+const e2eProject = (workspaceId: string): ProjectState => ({
+  workspaceId,
+  id: 'demo',
+  caseId: 'demo-case',
+  name: 'Jumeirah villa interiors',
+  customer: 'Amira Hassan',
+  memberId: 'demo-manager',
+  canManage: false,
+  canReview: false,
+  canReport: false,
+  canBuy: false,
+  commercialReady: false,
+  members: [{ id: 'demo-manager', name: 'Omar Rahman' }],
+  resources: [],
+  bookings: [],
+  pulse: {
+    health: 'watch',
+    counts: { packages: 0, readyPackages: 0, activePackages: 0, blockedPackages: 0, overdueTasks: 0, awaitingInspection: 0 },
+    nextActions: [{ id: 'demo-next-action', kind: 'prepare_package', priority: 'normal', title: 'Confirm joinery production slot', detail: 'Review the work plan with the project manager.', recordId: 'demo' }],
+  },
+  data: {
+    revision: 1,
+    phase: 'planning',
+    scope: null,
+    tasks: [],
+    reports: [],
+    materials: [],
+    orders: [],
+    documents: [],
+    snags: [],
+    handovers: [],
+    comments: [],
+    audit: [],
+    processed: [],
+    budget: 0,
+    forecast: 0,
+    financeClosed: false,
+    financeEvidence: '',
+  },
+});
+
 export async function projectRead<T>(path:string){
   const profile=await getAuthenticatedProfile(),w=profile.memberships[0]?.workspaceId;
   if(!w)throw Error('Workspace unavailable.');
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'portfolio') {
     return {workspaceId:w,data:e2ePortfolio as T};
+  }
+  if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'demo/execution') {
+    return {workspaceId:w,data:e2eProject(w) as T};
   }
   const r=await authenticatedBackendFetch(`/workspaces/${w}/projects/${path}`);
   if(!r.upstream?.ok)throw Error('Projects could not be loaded. Check your access or refresh.');

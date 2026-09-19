@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, View } from 'react-native';
 import { Text, useTheme } from '../design-system';
-import { BrandGradient } from '../design-system/brand-gradient';
 import { Icon, type IconName } from '../components/icon';
 import { Button as HrmsButton, Card, Notice, StatusBadge, TextField } from '../hrms/ui';
 import { crmLabel } from './api';
+import { contactUrl, type ContactKind } from './response';
 
 export { Button, Card, Choice, EmptyState, FieldTrigger, Notice, Sheet, TextField } from '../hrms/ui';
 
@@ -23,10 +23,9 @@ export function CrmTabs({ value, onChange }: { value: CrmTab; onChange: (tab: Cr
     {tabs.map(tab => <Pressable key={tab.id} accessibilityRole="tab" accessibilityState={{ selected: value === tab.id }}
       accessibilityLabel={tab.label} onPress={() => onChange(tab.id)}
       style={({ pressed }) => ({ flex: 1, minHeight: 54, paddingVertical: 7, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden',
-        backgroundColor: pressed && value !== tab.id ? colors.surfacePressed : 'transparent',
-        borderWidth: 1, borderColor: value === tab.id ? 'rgba(105,79,122,0.16)' : 'transparent' })}>
-      {value === tab.id ? <BrandGradient /> : null}
-      <Icon name={tab.icon} size={18} color={value === tab.id ? '#2f232d' : colors.iconSubtle} filled={value === tab.id && tab.id === 'today'} />
+        backgroundColor: value === tab.id ? colors.navigationSelected : pressed ? colors.surfacePressed : 'transparent',
+        borderWidth: 1, borderColor: value === tab.id ? colors.actionPrimary : 'transparent' })}>
+      <Icon name={tab.icon} size={18} color={value === tab.id ? colors.actionPrimary : colors.iconSubtle} filled={value === tab.id && tab.id === 'today'} />
       <Text size="xs" weight="semibold" numberOfLines={1} style={{ color: value === tab.id ? colors.text : colors.textSecondary, fontSize: 11 }}>{tab.label}</Text>
     </Pressable>)}
   </View>;
@@ -57,11 +56,10 @@ export function ResourceState({ loading, error, empty, emptyTitle, children }: {
 
 export function Metric({ value, label, accent = false }: { value: string | number; label: string; accent?: boolean }) {
   const { colors } = useTheme();
-  return <View style={{ flexGrow: 1, flexBasis: '46%', minHeight: 84, padding: 14, borderRadius: 18, overflow: 'hidden',
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-    {accent ? <BrandGradient /> : null}
+  return <View style={{ flexGrow: 1, flexBasis: '46%', minHeight: 84, padding: 14, borderRadius: 12,
+    backgroundColor: accent ? colors.actionPrimarySubtle : colors.surface, borderWidth: 1, borderColor: colors.border }}>
     <Text size="xl" weight="bold" style={{ color: colors.text }}>{value}</Text>
-    <Text size="xs" style={{ color: accent ? '#5f5360' : colors.textSecondary }}>{label}</Text>
+    <Text size="xs" tone="textSecondary">{label}</Text>
   </View>;
 }
 
@@ -122,12 +120,32 @@ async function openPhone(phone: string) {
   }
 }
 
+async function openContact(kind: ContactKind, value: string) {
+  const url = contactUrl(kind, value);
+  if (!url) return;
+  try {
+    if (!await Linking.canOpenURL(url)) throw new Error('unsupported');
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('Contact option unavailable', `Your device could not open ${kind === 'whatsapp' ? 'WhatsApp' : kind}. No customer message was marked as sent.`);
+  }
+}
+
 export function CallButton({ phone, label = 'Call' }: { phone: string; label?: string }) {
   const { colors } = useTheme();
   const url = phoneUrl(phone);
   return <HrmsButton label={label} variant="secondary" disabled={!url}
     accessibilityLabel={`${label} ${phone}`} startIcon={<Icon name="phone" size={18} color={colors.actionPrimary} />}
     onPress={() => { if (url) void openPhone(phone); }} />;
+}
+
+export function ContactButton({ kind, value, label }: { kind: ContactKind; value: string; label: string }) {
+  const { colors } = useTheme();
+  const url = contactUrl(kind, value);
+  const icon: IconName = kind === 'phone' ? 'phone' : 'mail';
+  return <HrmsButton label={label} variant="secondary" disabled={!url}
+    accessibilityLabel={`${label} ${value}`} startIcon={<Icon name={icon} size={18} color={colors.actionPrimary} />}
+    onPress={() => { if (url) void openContact(kind, value); }} />;
 }
 
 export function HorizontalFilters({ items, value, onChange }: { items: { id: string; label: string }[]; value: string; onChange: (value: string) => void }) {

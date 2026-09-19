@@ -43,9 +43,11 @@ const TRANSITIONS: Record<string, Set<string>> = {
 
 interface LeadContext {
   id: string;
+  enquiry_id: string;
   party_id: string;
   owner_membership_id: string | null;
   queue_id: string | null;
+  ownership_due_at?: Date | null;
   status: string;
   version: number;
   source: string;
@@ -173,6 +175,94 @@ export class CrmLeadsService {
     });
   }
 
+  processDueTakeoversInternal(workspaceId: string, limit = 100) {
+    return this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:lead-assignment`]);
+      const due = await client.query<{ id: string }>(
+        `SELECT lead.id FROM crm_leads lead
+         WHERE lead.workspace_id=$1 AND lead.ownership_due_at<=now()
+           AND lead.owner_membership_id IS NOT NULL
+           AND lead.status IN ('new','attempting_contact','connected','nurturing')
+         ORDER BY lead.ownership_due_at,lead.id
+         FOR UPDATE OF lead SKIP LOCKED LIMIT $2`,
+        [workspaceId, Math.min(Math.max(limit, 1), 100)],
+      );
+      const reassigned: Array<{ leadId: string; ownerMembershipId: string | null; queueId: string | null }> = [];
+      const engaged: string[] = [];
+      for (const item of due.rows) {
+        const lead = await this.requireLead(client, workspaceId, item.id, false);
+        if (!lead.owner_membership_id || !lead.queue_id) {
+          await this.clearOwnershipDeadline(client, workspaceId, lead.id);
+          continue;
+        }
+        const assignment = await client.query<{ assignedAt: Date; userId: string | null }>(
+          `SELECT history.assigned_at AS "assignedAt", membership.user_id AS "userId"
+           FROM crm_assignment_history history
+           LEFT JOIN workspace_memberships membership ON membership.id=history.owner_membership_id
+             AND membership.workspace_id=history.workspace_id
+           WHERE history.workspace_id=$1 AND history.lead_id=$2
+             AND history.owner_membership_id=$3
+           ORDER BY history.assigned_at DESC,history.id DESC LIMIT 1`,
+          [workspaceId, lead.id, lead.owner_membership_id],
+        );
+        if (!assignment.rowCount || !assignment.rows[0].userId) {
+          await this.clearOwnershipDeadline(client, workspaceId, lead.id);
+          continue;
+        }
+        const { assignedAt, userId } = assignment.rows[0];
+        const response = await client.query(
+          `SELECT 1 FROM crm_sla_instances
+           WHERE workspace_id=$1 AND lead_id=$2 AND event_type='first_response'
+             AND responded_at >= $3::timestamptz LIMIT 1`,
+          [workspaceId, lead.id, assignedAt],
+        );
+        const activity = response.rowCount ? response : await client.query(
+          `SELECT 1 FROM audit_events event
+           WHERE event.workspace_id=$1 AND event.actor_user_id=$2
+             AND event.occurred_at >= $3::timestamptz
+             AND (
+               (event.action='crm.lead.requirement_note_saved.v1'
+                 AND event.entity_id=$4::uuid
+                 AND event.after->'note'->>'archived'='false'
+                 AND length(trim(COALESCE(event.after->'note'->>'note','')))>0)
+               OR (event.action IN ('crm.activity.created.v1','crm.activity.completed.v1')
+                 AND event.after->>'leadId'=$4::text
+                 AND ((event.action='crm.activity.created.v1' AND event.after->>'type'='note')
+                   OR (event.action='crm.activity.completed.v1' AND event.after->>'type'='call')))
+             ) LIMIT 1`,
+          [workspaceId, userId, assignedAt, lead.id],
+        );
+        if (activity.rowCount) {
+          await this.clearOwnershipDeadline(client, workspaceId, lead.id);
+          engaged.push(lead.id);
+          await this.events.record(client, {
+            workspaceId, actorUserId: null, source: "automation",
+            action: "crm.lead.takeover_cancelled.v1", entityType: "crm_lead", entityId: lead.id,
+            after: { ownerMembershipId: lead.owner_membership_id, reason: "Owner recorded a call, note, or verified response" },
+          });
+          continue;
+        }
+        const selection = await this.selectAssignment(client, workspaceId, lead, true, {
+          queueId: lead.queue_id, excludedOwnerId: lead.owner_membership_id,
+        });
+        const changed = await this.applyAssignment(
+          client, workspaceId, lead, selection, null, "automatic",
+          "No call or note was logged before the ownership deadline",
+        );
+        reassigned.push({ leadId: lead.id, ownerMembershipId: changed.assignment.ownerMembershipId,
+          queueId: changed.assignment.queueId });
+      }
+      return { reassigned, engaged };
+    });
+  }
+
+  private async clearOwnershipDeadline(client: PoolClient, workspaceId: string, leadId: string) {
+    await client.query(
+      `UPDATE crm_leads SET ownership_due_at=NULL WHERE workspace_id=$1 AND id=$2 AND ownership_due_at IS NOT NULL`,
+      [workspaceId, leadId],
+    );
+  }
+
   list(actor: RequestActor, workspaceId: string, query: ListLeadsQueryDto) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
       const cursor = decodeCursor(query.cursor);
@@ -205,6 +295,7 @@ export class CrmLeadsService {
                 lead.engagement_score AS "engagementScore",
                 COALESCE(converted_owner.owner_membership_id, lead.owner_membership_id) AS "ownerMembershipId", lead.queue_id AS "queueId",
                 lead.next_action_at AS "nextActionAt", lead.version,
+                lead.ownership_due_at AS "ownershipDueAt",
                 EXISTS (SELECT 1 FROM crm_opportunities converted WHERE converted.workspace_id = lead.workspace_id AND converted.lead_id = lead.id) AS "isConverted",
                 lead.created_at AS "createdAt", lead.updated_at AS "updatedAt",
                 party.id AS "partyId", party.display_name AS "partyName",
@@ -261,7 +352,7 @@ export class CrmLeadsService {
            ORDER BY history.assigned_at DESC`, [workspaceId, leadId],
         );
       const sla = await client.query(
-          `SELECT id, status, started_at AS "startedAt", warning_at AS "warningAt",
+          `SELECT id, event_type AS "eventType", status, started_at AS "startedAt", warning_at AS "warningAt",
                   due_at AS "dueAt", warned_at AS "warnedAt", breached_at AS "breachedAt",
                   stopped_at AS "stoppedAt", responded_at AS "respondedAt",
                   response_source_type AS "responseSourceType", response_source_id AS "responseSourceId",
@@ -274,6 +365,8 @@ export class CrmLeadsService {
         enquiry.summary, enquiry.service_type AS "serviceType", enquiry.source, enquiry.channel,
         intake.intake_method AS "intakeMethod", intake.received_at AS "receivedAt",
         intake.processed_at AS "processedAt", intake.original_payload AS "originalSubmission",
+        intake.external_event_id AS "externalEventId", intake.correlation_id AS "correlationId",
+        intake.payload_reference AS "payloadReference",
         (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=party.workspace_id AND cp.party_id=party.id AND cp.type='email' AND cp.status='active' ORDER BY cp.is_primary DESC,cp.created_at DESC LIMIT 1) AS "primaryEmail",
         (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=party.workspace_id AND cp.party_id=party.id AND cp.type='phone' AND cp.status='active' AND cp.label='mobile' ORDER BY cp.is_primary DESC,cp.created_at DESC LIMIT 1) AS "primaryMobile",
         (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=party.workspace_id AND cp.party_id=party.id AND cp.type='phone' AND cp.status='active' AND cp.label IS DISTINCT FROM 'mobile' ORDER BY cp.is_primary DESC,cp.created_at DESC LIMIT 1) AS "primaryPhone",
@@ -282,6 +375,14 @@ export class CrmLeadsService {
         JOIN crm_parties party ON party.id=lead.party_id AND party.workspace_id=lead.workspace_id
         JOIN crm_intake_events intake ON intake.id=enquiry.intake_event_id AND intake.workspace_id=lead.workspace_id
         WHERE lead.workspace_id=$1 AND lead.id=$2`, [workspaceId, leadId]);
+      const attribution = await client.query(
+        `SELECT id, source, medium, campaign, content, term, referrer,
+                external_click_id AS "externalClickId", touched_at AS "touchedAt", metadata
+           FROM crm_attribution_touches
+          WHERE workspace_id = $1 AND enquiry_id = $2
+          ORDER BY touched_at, id`,
+        [workspaceId, lead.enquiry_id],
+      );
       const canViewOpportunities = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.view");
       const opportunities = canViewOpportunities ? await client.query(`SELECT id, title, status FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2`, [workspaceId, leadId]) : { rows: [] };
       const frozenQualification = lead.status === "qualified" && lead.qualification_evidence
@@ -293,13 +394,13 @@ export class CrmLeadsService {
         ? null
         : await evaluateQualification(client, workspaceId, leadId);
       return {
-        ...this.mapLead(lead), enquiry: enquiry.rows[0], opportunities: opportunities.rows,
+        ...this.mapLead(lead), enquiry: { ...enquiry.rows[0], attribution: attribution.rows }, opportunities: opportunities.rows,
         qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows,
         qualificationState: {
           ready: frozenQualification ? true : qualificationState!.ready,
           missingRequired: frozenQualification ? [] : qualificationState!.missingRequired,
-          selection: frozenQualification?.selection ?? qualificationState!.evidence.selection,
-          form: frozenQualification?.form ?? qualificationState!.evidence.form,
+          selection: frozenQualification ? frozenQualification.selection : qualificationState!.evidence.selection,
+          form: frozenQualification ? frozenQualification.form : qualificationState!.evidence.form,
           frozen: Boolean(frozenQualification),
         },
       };
@@ -316,11 +417,12 @@ export class CrmLeadsService {
         await client.query(`UPDATE crm_queues SET is_fallback = false, version = version + 1 WHERE workspace_id = $1 AND is_fallback`, [workspaceId]);
       }
       const result = await client.query(
-        `INSERT INTO crm_queues (workspace_id, business_unit_id, code, name, is_fallback)
-         VALUES ($1, $2, lower($3), $4, $5)
+        `INSERT INTO crm_queues (workspace_id, business_unit_id, code, name, is_fallback, takeover_after_minutes)
+         VALUES ($1, $2, lower($3), $4, $5, $6)
          RETURNING id, business_unit_id AS "businessUnitId", code, name, status,
-                   is_fallback AS "isFallback", round_robin_cursor AS "roundRobinCursor", version`,
-        [workspaceId, input.businessUnitId ?? null, input.code, input.name, input.isFallback ?? false],
+                   is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes",
+                   round_robin_cursor AS "roundRobinCursor", version`,
+        [workspaceId, input.businessUnitId ?? null, input.code, input.name, input.isFallback ?? false, input.takeoverAfterMinutes ?? null],
       );
       const response = result.rows[0] as Record<string, unknown>;
       await this.events.record(client, {
@@ -336,16 +438,17 @@ export class CrmLeadsService {
       const result = await client.query(
         `SELECT queue.id, queue.code, queue.name, queue.status,
                 queue.business_unit_id AS "businessUnitId", queue.is_fallback AS "isFallback",
+                queue.takeover_after_minutes AS "takeoverAfterMinutes",
                 queue.round_robin_cursor AS "roundRobinCursor", queue.version,
                 COALESCE(jsonb_agg(jsonb_build_object(
                   'membershipId', member.membership_id, 'name', account.display_name,
                   'capacity', member.capacity, 'weight', member.weight,
                   'isAvailable', member.is_available, 'skills', member.skills,
                   'languages', member.languages, 'territories', member.territories,
-                  'unavailableUntil', member.unavailable_until
+                  'unavailableUntil', member.unavailable_until, 'teamId', member.team_id
                 ) ORDER BY account.display_name) FILTER (WHERE member.membership_id IS NOT NULL), '[]'::jsonb) AS members
          FROM crm_queues queue
-         LEFT JOIN crm_queue_members member ON member.queue_id = queue.id AND member.workspace_id = queue.workspace_id
+         LEFT JOIN crm_effective_queue_members member ON member.queue_id = queue.id AND member.workspace_id = queue.workspace_id
          LEFT JOIN workspace_memberships membership ON membership.id = member.membership_id
          LEFT JOIN users account ON account.id = membership.user_id
          WHERE queue.workspace_id = $1 AND queue.status = 'active'
@@ -375,13 +478,27 @@ export class CrmLeadsService {
            name = COALESCE($1, name),
            business_unit_id = CASE WHEN $2::boolean THEN $3::uuid ELSE business_unit_id END,
            is_fallback = COALESCE($4, is_fallback), status = COALESCE($5, status),
+           takeover_after_minutes = CASE WHEN $9::boolean THEN $10::integer ELSE takeover_after_minutes END,
            version = version + 1, updated_at = now()
          WHERE workspace_id = $6 AND id = $7 AND version = $8
          RETURNING id, business_unit_id AS "businessUnitId", code, name, status,
-                   is_fallback AS "isFallback", round_robin_cursor AS "roundRobinCursor", version`,
-        [input.name?.trim() ?? null, input.businessUnitId !== undefined, input.businessUnitId ?? null, input.isFallback ?? null, input.status ?? null, workspaceId, queueId, input.version],
+                   is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes",
+                   round_robin_cursor AS "roundRobinCursor", version`,
+        [input.name?.trim() ?? null, input.businessUnitId !== undefined, input.businessUnitId ?? null, input.isFallback ?? null, input.status ?? null, workspaceId, queueId, input.version, input.takeoverAfterMinutes !== undefined, input.takeoverAfterMinutes ?? null],
       );
       if (!result.rowCount) throw new ConflictException("Queue changed; reload and try again");
+      if (input.takeoverAfterMinutes !== undefined) {
+        await client.query(
+          `UPDATE crm_leads lead SET ownership_due_at = CASE WHEN $3::integer IS NULL THEN NULL
+             ELSE COALESCE((SELECT history.assigned_at FROM crm_assignment_history history
+               WHERE history.workspace_id=lead.workspace_id AND history.lead_id=lead.id
+                 AND history.owner_membership_id=lead.owner_membership_id
+               ORDER BY history.assigned_at DESC,history.id DESC LIMIT 1),now()) + $3::integer * interval '1 minute' END
+           WHERE lead.workspace_id=$1 AND lead.queue_id=$2 AND lead.owner_membership_id IS NOT NULL
+             AND lead.status IN ('new','attempting_contact','connected','nurturing')`,
+          [workspaceId, queueId, input.takeoverAfterMinutes ?? null],
+        );
+      }
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.queue.updated.v1", entityType: "crm_queue", entityId: queueId, before, after: result.rows[0] as Record<string, unknown> });
       return result.rows[0];
     });
@@ -427,7 +544,7 @@ export class CrmLeadsService {
       await this.requireQueue(client, workspaceId, queueId);
       const result = await client.query(`INSERT INTO crm_queue_members(workspace_id,queue_id,membership_id,capacity,weight,is_available,skills,languages,territories)
         SELECT DISTINCT $1::uuid,$2::uuid,m.id,30,1,true,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb
-        FROM workspace_memberships m JOIN member_roles mr ON mr.membership_id=m.id AND mr.workspace_id=m.workspace_id JOIN roles r ON r.id=mr.role_id AND r.workspace_id=m.workspace_id
+        FROM workspace_memberships m JOIN effective_member_roles mr ON mr.membership_id=m.id AND mr.workspace_id=m.workspace_id JOIN roles r ON r.id=mr.role_id AND r.workspace_id=m.workspace_id
         WHERE m.workspace_id=$1 AND m.status='active' AND r.code IN ('owner','administrator','sales_executive')
         ON CONFLICT(queue_id,membership_id) DO NOTHING RETURNING membership_id AS "membershipId"`, [workspaceId, queueId]);
       if (result.rowCount) await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source:'user', action:'crm.queue.default_managers_added.v1', entityType:'crm_queue', entityId:queueId, after:{members:result.rows} });
@@ -666,11 +783,10 @@ export class CrmLeadsService {
       return this.applyAssignment(client, workspaceId, lead, selection, actorUserId, "automatic", "Initial routing");
     }
     if (input.mode === "manual" && !input.ownerMembershipId) throw new UnprocessableEntityException("Choose a salesperson");
-    if (input.ownerMembershipId) {
-      const member = await client.query(`SELECT 1 FROM workspace_memberships WHERE workspace_id=$1 AND id=$2 AND status='active'`, [workspaceId, input.ownerMembershipId]);
-      if (!member.rowCount) throw new UnprocessableEntityException("Choose an active salesperson");
-    }
     if (input.queueId) await this.requireQueue(client, workspaceId, input.queueId);
+    if (input.ownerMembershipId) {
+      await this.requireEligibleOwner(client, workspaceId, input.ownerMembershipId, input.queueId ?? null);
+    }
     if (input.mode === "unassigned") {
       await client.query(`INSERT INTO crm_assignment_history (workspace_id, lead_id, assignment_method, explanation, reason, assigned_by)
         VALUES ($1,$2,'manual',$3,'Left unassigned during creation',$4)`, [workspaceId, leadId, { mode: "unassigned" }, actorUserId]);
@@ -701,11 +817,10 @@ export class CrmLeadsService {
       if (!input.ownerMembershipId && !input.queueId) throw new UnprocessableEntityException("Choose an owner or queue");
       const lead = await this.requireLead(client, workspaceId, leadId, true);
       if (lead.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
-      if (input.ownerMembershipId) {
-        const member = await client.query(`SELECT 1 FROM workspace_memberships WHERE id = $1 AND workspace_id = $2 AND status = 'active'`, [input.ownerMembershipId, workspaceId]);
-        if (!member.rowCount) throw new UnprocessableEntityException("Owner is not an active workspace member");
-      }
       if (input.queueId) await this.requireQueue(client, workspaceId, input.queueId);
+      if (input.ownerMembershipId) {
+        await this.requireEligibleOwner(client, workspaceId, input.ownerMembershipId, input.queueId ?? null);
+      }
       return this.applyAssignment(client, workspaceId, lead, {
         ownerMembershipId: input.ownerMembershipId ?? null,
         queueId: input.queueId ?? null,
@@ -892,8 +1007,9 @@ export class CrmLeadsService {
     });
   }
 
-  private async selectAssignment(client: PoolClient, workspaceId: string, lead: LeadContext, advanceCursor: boolean) {
-    const policies = await client.query<Record<string, any>>(
+  private async selectAssignment(client: PoolClient, workspaceId: string, lead: LeadContext, advanceCursor: boolean,
+    takeover?: { queueId: string; excludedOwnerId: string }) {
+    const policies = takeover ? { rows: [] as Record<string, any>[] } : await client.query<Record<string, any>>(
       `SELECT policy.*, COALESCE(jsonb_agg(jsonb_build_object(
           'id', rule.id, 'queueId', rule.queue_id, 'name', rule.name,
           'priority', rule.priority, 'conditions', rule.conditions
@@ -906,6 +1022,7 @@ export class CrmLeadsService {
       [workspaceId],
     );
     let policy = policies.rows[0];
+    if (takeover) policy = { id: null, fallback_queue_id: takeover.queueId, rules: [], preserve_relationship_owner: false };
     if (!policy) {
       const fallback = await client.query<{ id: string }>(
         `SELECT id FROM crm_queues WHERE workspace_id = $1 AND status = 'active' AND is_fallback ORDER BY created_at LIMIT 1`,
@@ -949,7 +1066,7 @@ export class CrmLeadsService {
               member.unavailable_until AS "unavailableUntil",
               count(active.id)::int AS "activeLoad",
               (count(active.id)::numeric / member.capacity / member.weight) AS "loadRatio"
-       FROM crm_queue_members member
+       FROM crm_effective_queue_members member
        JOIN workspace_memberships membership ON membership.id = member.membership_id
         AND membership.workspace_id = member.workspace_id AND membership.status = 'active'
        JOIN users account ON account.id = membership.user_id AND account.status = 'active'
@@ -966,6 +1083,7 @@ export class CrmLeadsService {
     const serviceType = lead.service_type?.toLowerCase();
     const language = lead.preferred_locale?.split("-")[0]?.toLowerCase();
     const eligible = candidates.rows.filter((candidate) => {
+      if (takeover?.excludedOwnerId === candidate.membershipId) return false;
       if (!candidate.isAvailable) return false;
       if (candidate.unavailableUntil && new Date(candidate.unavailableUntil) > new Date()) return false;
       if (Number(candidate.activeLoad) >= Number(candidate.capacity)) return false;
@@ -978,7 +1096,7 @@ export class CrmLeadsService {
         ownerMembershipId: null, queueId,
         ruleId: matchedRule?.id ?? null,
         explanation: {
-          reason: "no_eligible_member", policyId: policy.id,
+          reason: takeover ? "no_eligible_alternate" : "no_eligible_member", policyId: policy.id,
           ruleId: matchedRule?.id ?? null,
           considered: candidates.rows.map((candidate) => ({
             membershipId: candidate.membershipId,
@@ -1005,12 +1123,46 @@ export class CrmLeadsService {
       queueId,
       ruleId: matchedRule?.id ?? null,
       explanation: {
-        reason: matchedRule ? "matching_rule" : policy.id ? "policy_fallback" : "workspace_fallback",
+        reason: takeover ? "unanswered_takeover" : matchedRule ? "matching_rule" : policy.id ? "policy_fallback" : "workspace_fallback",
         policyId: policy.id, ruleId: matchedRule?.id ?? null, queueId,
         selected: { membershipId: selected.membershipId, activeLoad: selected.activeLoad, capacity: selected.capacity, loadRatio: selected.loadRatio },
         eligible: eligible.map((candidate) => ({ membershipId: candidate.membershipId, activeLoad: candidate.activeLoad, capacity: candidate.capacity })),
       },
     };
+  }
+
+  private async requireEligibleOwner(
+    client: PoolClient,
+    workspaceId: string,
+    membershipId: string,
+    queueId: string | null,
+  ) {
+    const eligible = await client.query(
+      `SELECT 1
+       FROM workspace_memberships membership
+       JOIN users account ON account.id=membership.user_id AND account.status='active'
+       WHERE membership.workspace_id=$1 AND membership.id=$2 AND membership.status='active'
+         AND (SELECT count(DISTINCT permission.code)
+              FROM effective_member_roles assigned
+              JOIN role_permissions granted ON granted.role_id=assigned.role_id
+              JOIN permissions permission ON permission.id=granted.permission_id
+              WHERE assigned.workspace_id=membership.workspace_id
+                AND assigned.membership_id=membership.id
+                AND permission.code=ANY($3::text[]))=$4
+         AND ($5::uuid IS NULL OR EXISTS (
+           SELECT 1 FROM crm_effective_queue_members queue_member
+           WHERE queue_member.workspace_id=membership.workspace_id
+             AND queue_member.queue_id=$5 AND queue_member.membership_id=membership.id
+             AND queue_member.is_available
+             AND (queue_member.unavailable_until IS NULL OR queue_member.unavailable_until<=now())
+         ))`,
+      [workspaceId, membershipId, ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"], 3, queueId],
+    );
+    if (!eligible.rowCount) {
+      throw new UnprocessableEntityException(
+        "Choose an active sales owner with enquiry and follow-up access in the selected queue",
+      );
+    }
   }
 
   private async applyAssignment(
@@ -1023,12 +1175,20 @@ export class CrmLeadsService {
     reason: string | null,
   ) {
     if (["qualified", "disqualified"].includes(lead.status)) throw new UnprocessableEntityException("Closed leads cannot be routed. Continue in the opportunity or reopen the lead first.");
+    const takeoverPolicy = selection.ownerMembershipId && selection.queueId
+      ? await client.query<{ takeover_after_minutes: number | null }>(
+        `SELECT takeover_after_minutes FROM crm_queues WHERE workspace_id=$1 AND id=$2 AND status='active'`,
+        [workspaceId, selection.queueId],
+      ) : null;
+    const takeoverMinutes = takeoverPolicy?.rows[0]?.takeover_after_minutes ?? null;
     const result = await client.query(
       `UPDATE crm_leads SET owner_membership_id = $1, queue_id = $2,
-         next_action_at = COALESCE(next_action_at, now()), version = version + 1
+         next_action_at = COALESCE(next_action_at, now()),
+         ownership_due_at = CASE WHEN $6::integer IS NULL THEN NULL ELSE now() + $6::integer * interval '1 minute' END,
+         version = version + 1
        WHERE id = $3 AND workspace_id = $4 AND version = $5
        RETURNING *`,
-      [selection.ownerMembershipId, selection.queueId, lead.id, workspaceId, lead.version],
+      [selection.ownerMembershipId, selection.queueId, lead.id, workspaceId, lead.version, takeoverMinutes],
     );
     if (!result.rowCount) throw new ConflictException("Lead changed; reload and try again");
     await client.query(
@@ -1056,7 +1216,54 @@ export class CrmLeadsService {
       entityType: "crm_lead", entityId: lead.id,
       before: this.mapLead(lead), after: { ...response, assignment: selection },
     });
+    await this.notifyLeadAssignment(client, workspaceId, lead.id, Number(response.version), selection);
     return { ...response, assignment: selection };
+  }
+
+  private async notifyLeadAssignment(
+    client: PoolClient,
+    workspaceId: string,
+    leadId: string,
+    assignmentVersion: number,
+    selection: { ownerMembershipId: string | null; queueId: string | null },
+  ) {
+    const recipients = await client.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId"
+       FROM workspace_memberships membership
+       JOIN users account ON account.id=membership.user_id AND account.status='active'
+       WHERE membership.workspace_id=$1 AND membership.status='active'
+         AND (membership.id=$2::uuid OR ($2::uuid IS NULL AND EXISTS (
+           SELECT 1 FROM crm_effective_queue_members member
+           WHERE member.workspace_id=$1 AND member.queue_id=$3::uuid
+             AND member.membership_id=membership.id AND member.is_available
+             AND (member.unavailable_until IS NULL OR member.unavailable_until<=now())
+         )))`,
+      [workspaceId, selection.ownerMembershipId, selection.queueId],
+    );
+    const eventType = selection.ownerMembershipId ? "crm.lead.assigned" : "crm.lead.queue_waiting";
+    const subject = selection.ownerMembershipId ? "New enquiry assigned" : "New enquiry in your queue";
+    const correlationId = randomUUID();
+    for (const recipient of recipients.rows) {
+      const preference = await client.query<{ enabled: boolean }>(
+        `SELECT enabled FROM notification_preferences
+         WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2
+           AND channel='in_app' AND event_type IN ($3,'crm.lead.*','*')
+         ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'crm.lead.*' THEN 1 ELSE 2 END LIMIT 1`,
+        [workspaceId, recipient.userId, eventType],
+      );
+      if (preference.rows[0]?.enabled === false) continue;
+      await client.query(
+        `INSERT INTO notifications
+          (workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,
+           deep_link,idempotency_key,correlation_id,delivered_at)
+         VALUES ($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now())
+         ON CONFLICT (workspace_id,idempotency_key) DO NOTHING`,
+        [workspaceId, recipient.userId, eventType, subject,
+          "Please review this enquiry and record your next action.",
+          `/workspace/crm/leads?lead=${leadId}`,
+          `crm:assignment:${leadId}:${assignmentVersion}:${recipient.userId}`, correlationId],
+      );
+    }
   }
 
   private async startFirstResponseSla(
@@ -1251,6 +1458,7 @@ export class CrmLeadsService {
       fitScore: source.fit_score,
       engagementScore: source.engagement_score,
       nextActionAt: source.next_action_at,
+      ownershipDueAt: source.ownership_due_at ?? null,
       disqualificationReason: source.disqualification_reason,
       pausedReason: source.paused_reason,
       qualifiedAt: source.qualified_at,

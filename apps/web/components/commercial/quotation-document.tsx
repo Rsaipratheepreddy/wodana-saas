@@ -17,10 +17,12 @@ import {
 } from "@/lib/commercial/client";
 import {
   quotationDescription,
+  quotationDimensionsText,
   quotationItemName,
   quotationLineVariant,
 } from "@/lib/commercial/presentation";
 import { QuotationCover } from "./quotation-cover";
+import { QuotationCanvasPreview } from "./quotation-canvas";
 import s from "./quotation-document.module.css";
 
 type DocumentQuote = Omit<ClientQuote, "canDecide"> | Quote;
@@ -37,10 +39,28 @@ export function QuotationDocument({
   onConfigure?: (room: string, item?: string) => void;
   onEditHeader?: () => void;
 }) {
+  if (quote.presentation && !onConfigure && !onEditHeader) {
+    const printable = {
+      ...quote,
+      lines: quote.lines.map((line) => ({ ...line, unitCost: "unitCost" in line ? line.unitCost : 0 })),
+    } as Quote;
+    return <QuotationCanvasPreview quote={printable} brand={brand ?? quote.brand} customerName={customerName ?? quote.cover?.preparedFor ?? "Client"} />;
+  }
   const totals = quoteTotals({
     ...quote,
-    lines: quote.lines.map((l) => ({ ...l, unitCost: 0 })),
+    lines: quote.lines.map((line) => ({
+      ...line,
+      unitCost: 0,
+      optional:
+        line.optional &&
+        !quote.clientDecision?.selectedOptionLineIds.includes(line.id),
+    })),
   });
+  const selectedOptionIds = new Set(
+    quote.clientDecision?.decision === "accept"
+      ? quote.clientDecision.selectedOptionLineIds
+      : [],
+  );
   const rooms = [
     ...new Set([
       ...(quote.rooms ?? []).map((r) => r.name),
@@ -50,17 +70,19 @@ export function QuotationDocument({
   return (
     <article className={s.document} aria-label="Quotation document">
       <div className={s.cover}>
+        {onEditHeader && (
+          <div className={s.coverActions}>
+            <button className={s.editHeader} onClick={onEditHeader}>
+              Edit header &amp; logo
+            </button>
+          </div>
+        )}
         <QuotationCover
           compact
           quote={quote}
           brand={brand ?? quote.brand}
           customerName={customerName}
         />
-        {onEditHeader && (
-          <button className={s.editHeader} onClick={onEditHeader}>
-            Edit header
-          </button>
-        )}
       </div>
       <div className={s.body}>
         {!rooms.length && (
@@ -96,18 +118,20 @@ export function QuotationDocument({
                 <div className={s.tableScroll}>
                   <table>
                     <colgroup>
-                      <col style={{ width: "20%" }} />
-                      <col style={{ width: "12%" }} />
-                      <col style={{ width: "32%" }} />
-                      <col style={{ width: "10%" }} />
-                      <col style={{ width: "12%" }} />
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "18%" }} />
                       <col style={{ width: "14%" }} />
+                      <col style={{ width: "24%" }} />
+                      <col style={{ width: "8%" }} />
+                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "9%" }} />
                     </colgroup>
                     <thead>
                       <tr>
                         <th>Item</th>
-                        <th>Variant</th>
-                        <th>Description</th>
+                        <th>Reference image</th>
+                        <th>Size</th>
+                        <th>Materials &amp; details</th>
                         <th>Qty / unit</th>
                         <th>Rate</th>
                         <th>Amount</th>
@@ -131,24 +155,14 @@ export function QuotationDocument({
                                   {quotationItemName(line.title, room)}
                                 </strong>
                               )}
-                              {line.photo && (
-                                <img
-                                  className={s.itemPhoto}
-                                  src={line.photo}
-                                  alt={line.title}
-                                />
-                              )}
+                              {line.optional ? <small>{selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total"}</small> : null}
+                              {(('variantLabel' in line ? line.variantLabel : undefined) || quotationLineVariant(line as QuoteLine)) && <small className={s.variant}>{('variantLabel' in line ? line.variantLabel : undefined) || quotationLineVariant(line as QuoteLine)}</small>}
                             </td>
-                            <td data-label="Variant">
-                              <span className={s.variant}>
-                                {("variantLabel" in line
-                                  ? line.variantLabel
-                                  : undefined) ||
-                                  quotationLineVariant(line as QuoteLine) ||
-                                  "—"}
-                              </span>
+                            <td data-label="Reference image">
+                              {line.photo ? <img className={s.itemPhoto} src={line.photo} alt={`Reference for ${line.title}`} /> : <span className={s.muted}>—</span>}
                             </td>
-                            <td className={s.description} data-label="Description">
+                            <td data-label="Size">{quotationDimensionsText(line.dimensions) || "—"}</td>
+                            <td className={s.description} data-label="Materials & details">
                               {quotationDescription(line) || "—"}
                             </td>
                             <td data-label="Quantity">
@@ -167,7 +181,7 @@ export function QuotationDocument({
                           </tr>
                           {!!line.materialRows?.length && (
                             <tr className={s.materialBreakdown}>
-                              <td colSpan={6}>
+                              <td colSpan={7}>
                                 <p>
                                   Materials per 1 {line.unit} ·{" "}
                                   {line.pricingMode === "materials"
@@ -254,7 +268,7 @@ export function QuotationDocument({
                   <span>{room} subtotal</span>
                   <strong>
                     {money(
-                      lines.reduce(
+                      lines.filter((line) => !line.optional || selectedOptionIds.has(line.id)).reduce(
                         (sum, l) =>
                           sum + Math.round(l.quantity * l.rate * 100) / 100,
                         0,
@@ -293,7 +307,7 @@ export function QuotationDocument({
             </div>
             <div className={s.grandTotal}>
               <dt>
-                {quote.direction === "deduction" ? "Client credit" : "Total"}
+                {quote.direction === "deduction" ? "Client credit" : quote.clientDecision?.decision === "accept" ? "Accepted total" : "Total"}
               </dt>
               <dd>{money(totals.total, quote.currency)}</dd>
             </div>
@@ -315,13 +329,17 @@ export function QuotationDocument({
                 <tbody>
                   {quote.paymentTerms.map((term, i) => (
                     <tr key={term.id}>
-                      <td>{term.title}</td>
+                      <td>
+                        {term.title}
+                        {term.requiredForRelease && <small>Before project release</small>}
+                        {term.requiredForProduction && <small>Before manufacturing starts</small>}
+                      </td>
                       <td>{term.trigger}</td>
                       <td>{term.percent}%</td>
                       <td>
                         {money(
                           paymentMilestoneAmounts(
-                            totals.total,
+                            quote.clientDecision?.acceptedTotal ?? totals.total,
                             quote.paymentTerms,
                           )[i],
                           quote.currency,

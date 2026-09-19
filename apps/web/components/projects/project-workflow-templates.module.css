@@ -1,0 +1,148 @@
+.page {
+  display: grid;
+  gap: var(--wd-space-6);
+  padding-block: var(--wd-space-6) var(--wd-space-10);
+}
+
+.name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name strong,
+.name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name small,
+.muted,
+.stageHeading p,
+.history small {
+  color: var(--wd-color-text-muted);
+}
+
+.form {
+  display: grid;
+  gap: var(--wd-space-6);
+}
+
+.details,
+.stageFields {
+  display: grid;
+  gap: var(--wd-space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.stageHeading,
+.stageTop,
+.footer,
+.history > li > div {
+  align-items: center;
+  display: flex;
+}
+
+.stageHeading {
+  justify-content: space-between;
+  gap: var(--wd-space-4);
+  padding-top: var(--wd-space-2);
+}
+
+.stageHeading h2,
+.stageHeading p {
+  margin: 0;
+}
+
+.stageHeading h2 {
+  font-size: var(--wd-font-size-md);
+}
+
+.stageHeading p {
+  font-size: var(--wd-font-size-sm);
+  margin-top: var(--wd-space-1);
+}
+
+.stages,
+.history {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.stages > li,
+.history > li {
+  border-top: 1px solid var(--wd-color-border-subtle);
+  padding-block: var(--wd-space-5);
+}
+
+.stages > li:last-child,
+.history > li:last-child {
+  border-bottom: 1px solid var(--wd-color-border-subtle);
+}
+
+.stageTop {
+  gap: var(--wd-space-2);
+  margin-bottom: var(--wd-space-4);
+}
+
+.stageTop > span {
+  align-items: center;
+  background: var(--wd-color-surface-subtle);
+  border: 1px solid var(--wd-color-border-subtle);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: var(--wd-font-size-xs);
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.stageTop > :last-child {
+  margin-inline-start: auto;
+}
+
+.footer {
+  gap: var(--wd-space-2);
+  width: 100%;
+}
+
+.footer > span {
+  flex: 1;
+}
+
+.history > li {
+  display: grid;
+  gap: var(--wd-space-2);
+}
+
+.history > li > div {
+  gap: var(--wd-space-2);
+}
+
+.history button {
+  justify-self: start;
+}
+
+@media (max-width: 720px) {
+  .details,
+  .stageFields {
+    grid-template-columns: 1fr;
+  }
+
+  .wide {
+    grid-column: auto;
+  }
+
+  .stageHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

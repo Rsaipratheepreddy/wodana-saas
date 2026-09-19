@@ -10,8 +10,16 @@ export type CatalogSelection = {
     version: number;
     catalogId: string;
     catalogName?: string;
+    attributes?: Array<{ name: string; value: string }>;
     configuration?: Record<string, string | number>;
     commerce?: { pricingMode: CatalogPricingMode };
+    primaryAsset?: {
+      id: string;
+      recordId: string;
+      name: string;
+      mimeType: string;
+      hasPreview: boolean;
+    };
   };
 };
 export type CatalogPricingMode = "unpriced" | "fixed" | "on_request";
@@ -44,6 +52,12 @@ export type CatalogPriceSnapshot = {
     minimumQuantity?: number;
     minimumCharge?: number;
     reference?: string;
+    sourceUnit?: {
+      id: string;
+      version: number;
+      label: string;
+      conversionFactor: number;
+    };
   };
   override?: {
     amount: number;
@@ -65,12 +79,16 @@ export type PaymentTerm = {
   percent: number;
   trigger: string;
   requiredForRelease: boolean;
+  /** Explicit H3 applicability; never inferred from free-text trigger/title. */
+  requiredForProduction?: boolean;
 };
 export type PaymentTemplate = {
   id: string;
   name: string;
   version: number;
   milestones: PaymentTerm[];
+  status?: "active" | "archived";
+  updatedAt?: string;
 };
 export type QuotationMaterial = {
   id: string;
@@ -85,7 +103,37 @@ export type QuotationTemplate = {
   name: string;
   version: number;
   updatedAt: string;
-  content: Pick<Quote, "rooms" | "lines" | "currency" | "discount" | "taxRate" | "inclusions" | "terms" | "exclusions" | "paymentTerms">;
+  status?: "active" | "archived";
+  content: Pick<Quote, "rooms" | "lines" | "currency" | "discount" | "taxRate" | "inclusions" | "terms" | "exclusions" | "paymentTerms" | "presentation">;
+};
+export type QuoteCanvasElement = {
+  id: string;
+  type: "text" | "image";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text?: string;
+  src?: string;
+  color?: string;
+  fontSize?: number;
+  align?: "left" | "center" | "right";
+};
+export type QuoteCanvasPage = {
+  id: string;
+  /** Custom pages have no system-generated commercial block beneath them. */
+  kind?: "custom";
+  title?: string;
+  background?: string;
+  backgroundImage?: string;
+  elements: QuoteCanvasElement[];
+};
+export type QuotePresentation = {
+  version: 1;
+  pageBackground: string;
+  textColor: string;
+  accentColor: string;
+  pages: QuoteCanvasPage[];
 };
 export type QuoteLine = {
   id: string;
@@ -100,6 +148,13 @@ export type QuoteLine = {
   rate: number;
   variant?: string;
   photo?: string;
+  /** Client-facing finished-item size; not a substitute for verified site measurements. */
+  dimensions?: {
+    length?: number;
+    height?: number;
+    depth?: number;
+    unit: "mm" | "cm" | "m" | "in" | "ft";
+  };
   pricingMode?: "item" | "materials";
   materialRows?: QuotationMaterialRow[];
   catalogLinks?: CatalogSelection[];
@@ -111,6 +166,10 @@ export type QuoteLine = {
   scopeId?: string;
   scopeVersion?: number;
   specificationVersion?: number;
+  /** Client-visible alternate that is priced but excluded from the base total until selected. */
+  optional?: boolean;
+  /** Internal authorization evidence for a line with no confirmed scope or catalogue source. */
+  manualReason?: string;
 };
 /** Selling-price breakdown per ONE item unit. Never contains internal purchase costs. */
 export type QuotationMaterialRow = {
@@ -133,6 +192,20 @@ export type QuoteStatus =
   | "declined"
   | "superseded"
   | "withdrawn";
+export type QuoteDecisionEvidence = {
+  decision: "accept" | "changes" | "decline";
+  /** Hash of the immutable, issued quotation the client reviewed. */
+  quoteHash: string;
+  /** Optional item IDs selected by the client for this decision. */
+  selectedOptionLineIds: string[];
+  baseTotal: number;
+  optionsTotal: number;
+  /** Present only when the quotation was accepted. */
+  acceptedTotal?: number;
+  decidedAt: string;
+  decidedBy: string;
+  note?: string;
+};
 export type Quote = {
   rooms?: { id:string; name:string; catalog?:CatalogSelection }[];
   direction?:"addition"|"deduction";
@@ -142,14 +215,19 @@ export type Quote = {
   kind: "quotation" | "variation";
   baselineId?: string;
   definitionBaseline?: { id: string; number: number; hash: string };
+  /** Exact approved design files used to review and price this quotation. */
+  designEvidence?: import("../projects/execution.types").ProjectDesignBaseline;
   status: QuoteStatus;
   title: string;
   cover?: {
     preparedFor: string; location: string; subtitle: string;
+    coordinates?: { latitude: number; longitude: number; accuracy?: number };
     logo?: string; banner?: string; signature?: string;
     signerName?: string; signerTitle?: string; clientSignature?: boolean;
     taxLabel?: string; taxRegistration?: string;
   };
+  /** Client-facing page styling. Prices and scope remain controlled fields. */
+  presentation?: QuotePresentation;
   inclusions?: string;
   currency: string;
   validUntil: string;
@@ -168,6 +246,7 @@ export type Quote = {
   decisionChallengeId?: string;
   decidedAt?: string;
   decidedBy?: string;
+  clientDecision?: QuoteDecisionEvidence;
   hash?: string;
   total: number;
   brand?: PortalBrand;
@@ -243,9 +322,63 @@ export type ChangeRequest = {
   comments: CommercialComment[];
   createdAt: string;
   control?: ControlledChange;
+  decisionRequest?: {
+    ownerMembershipId: string;
+    clientApproverGrantId: string;
+    target: {
+      type: "quotation" | "material";
+      id: string;
+      revision: number;
+      label: string;
+    };
+    allowedChoices: Array<{ id: string; label: string }>;
+    escalationMinutes: number | null;
+    notificationPolicy: {
+      remindersEnabled: boolean;
+      channels: Array<"in_app" | "email" | "whatsapp">;
+    };
+    decision: null | {
+      responseId: string;
+      choiceId: string;
+      choiceLabel: string;
+      note: string;
+      decidedAt: string;
+      decidedBy: string;
+      clientGrantId: string;
+    };
+  };
+};
+export type ClientChangeRequest = Omit<
+  ChangeRequest,
+  "control" | "decisionRequest"
+> & {
+  decisionRequest?: {
+    target: NonNullable<ChangeRequest["decisionRequest"]>["target"];
+    allowedChoices: Array<{ id: string; label: string }>;
+    escalationMinutes: number | null;
+    notificationPolicy: {
+      remindersEnabled: boolean;
+      channels: Array<"in_app" | "email" | "whatsapp">;
+    };
+    decision: null | {
+      responseId: string;
+      choiceId: string;
+      choiceLabel: string;
+      note: string;
+      decidedAt: string;
+      decidedBy: string;
+    };
+  };
 };
 export type Agreement = {
   quoteId: string;
+  /** Exact accepted quotation snapshot bound to this agreement. */
+  quoteHash?: string;
+  selectedOptionLineIds?: string[];
+  acceptedTotal?: number;
+  /** Legal entity that owns the contract and every related finance record. */
+  legalEntityId?: string;
+  currency?: string;
   reference: string;
   terms: string;
   evidence: string;
@@ -254,15 +387,99 @@ export type Agreement = {
   executedBy?: string;
   executedAt?: string;
 };
+export type CommercialFinanceContext = {
+  legalEntityId: string;
+  code: string;
+  displayName: string;
+  registeredName: string;
+  countryCode: string;
+  baseCurrency: string;
+  currency: string;
+  taxRegistrationNumber?: string;
+  /** Tax fields are informational until a regional policy has been validated. */
+  taxValidation: "unvalidated" | "validated";
+  boundAt: string;
+};
+export type FinanceDocument = {
+  id: string;
+  kind: "invoice" | "credit_note";
+  source: "provider" | "manual";
+  legalEntityId: string;
+  currency: string;
+  number: string;
+  total: number;
+  status: string;
+  paymentId?: string;
+  creditId?: string;
+  provider?: string;
+  connectionId?: string;
+  providerDocumentId?: string;
+  evidence?: string;
+  issuedAt: string;
+  updatedAt: string;
+};
+export type FinanceReceipt = {
+  id: string;
+  paymentId: string;
+  legalEntityId: string;
+  currency: string;
+  amount: number;
+  source: "provider" | "manual";
+  status:
+    | "reported"
+    | "provider_confirmed"
+    | "finance_verified"
+    | "rejected";
+  reference: string;
+  evidence: string;
+  provider?: string;
+  connectionId?: string;
+  providerDocumentId?: string;
+  reportedAt: string;
+  reportedBy: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
+};
+export type FinanceAllocation = {
+  id: string;
+  receiptId: string;
+  paymentId: string;
+  legalEntityId: string;
+  currency: string;
+  amount: number;
+  createdAt: string;
+  createdBy: string;
+  reversedAt?: string;
+  reversalReason?: string;
+};
+export type ClientCredit = {
+  id: string;
+  quoteId: string;
+  legalEntityId?: string;
+  amount: number;
+  currency: string;
+  status: "pending" | "verified";
+  reference: string;
+  evidence: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+};
 export type Payment = {
   invoice?: { accountId?:string; lastError?:string; checkedAt?:string; connectionId:string; provider:string; id:string; number:string; customer:string; total:number; balance:number; currency:string; status:string; paymentUrl:string|null; refreshedAt:string };
   id: string;
   sourceQuoteId?: string;
+  legalEntityId?: string;
+  currency?: string;
+  agreementReference?: string;
   trigger?: string;
   title: string;
   amount: number;
   dueDate: string;
   requiredForRelease: boolean;
+  /** Finance-verified receipt is required before manufacturing starts. */
+  requiredForProduction?: boolean;
   status: "pending" | "proof_submitted" | "verified";
   proof: string;
   reference: string;
@@ -311,6 +528,8 @@ export type DealFile = {
   quoteNumber: number;
   quoteHash: string;
   definitionBaseline?: { id: string; number: number; hash: string };
+  designEvidence?: import("../projects/execution.types").ProjectDesignBaseline;
+  materialEvidence?: MaterialApproval[];
   agreementReference: string;
   paymentIds: string[];
   value: number;
@@ -349,7 +568,11 @@ export type MaterialApproval = {
   decisionChallengeId?: string;
 };
 export type CommercialData = {
-  credits?:{id:string;quoteId:string;amount:number;currency:string;status:"pending"|"verified";reference:string;evidence:string;verifiedBy?:string;verifiedAt?:string}[];
+  financeContext?: CommercialFinanceContext | null;
+  financeDocuments?: FinanceDocument[];
+  receipts?: FinanceReceipt[];
+  allocations?: FinanceAllocation[];
+  credits?: ClientCredit[];
   ownerReview?: OwnerReview | null;
   dealFile?: DealFile | null;
   materialApprovals?: MaterialApproval[];
@@ -406,7 +629,10 @@ export type CommercialState = {
   contacts: PortalGrant[];
   canEdit: boolean;
   canApprove: boolean;
+  canVerifyFinance: boolean;
   canOverridePrice?: boolean;
+  canViewCosts?: boolean;
+  canEditCosts?: boolean;
   canRelease: boolean;
   canManagePortal: boolean;
   portalSlug: string | null;
@@ -431,24 +657,53 @@ export type ClientQuote = Omit<
     | "catalogLinks"
     | "catalogPrice"
     | "catalogPriceRequest"
+    | "manualReason"
   > & { variantLabel?: string })[];
   canDecide: boolean;
+  expired: boolean;
 };
 export type ClientMaterialApproval = Omit<
   MaterialApproval,
   "approverId" | "decisionChallengeId"
 > & { canDecide: boolean };
 export type ClientCase = {
-  credits?:CommercialData["credits"];
-  designs?:{id:string;title:string;type:string;number:number;status:string;name:string;mimeType:string}[];
+  credits?:Array<Omit<ClientCredit, "legalEntityId" | "verifiedBy" | "evidence">>;
+  definitionBaseline?: {
+    id: string;
+    number: number;
+    status: "awaiting_confirmation" | "confirmed" | "changes_requested" | "superseded";
+    current: boolean;
+    canDecide: boolean;
+    publishedAt: string;
+    snapshot: { definition: {
+      brief: { goals?: string; propertyType?: string; location?: string; area?: string; timeline?: string; exclusions?: string };
+      items: Array<{ id: string; title: string; roomName: string | null; scopeStatus: string; quantity: number | null; unit: string; specification: null | { refinedRequirement?: string; inclusions?: string; exclusions?: string; materials?: Array<{ application?: string; productName?: string; productCode?: string }> } }>;
+    } };
+    decision: null | { decision: "confirmed" | "changes_requested"; decisionBy: string; note: string; decidedAt: string };
+  } | null;
+  designs?:{id:string;title:string;type:string;number:number;status:string;name:string;mimeType:string;clientReviewExpiresAt?:string|null;roomName?:string|null;itemName?:string|null}[];
   materials?:ClientMaterialApproval[];
   id: string;
   title: string;
   customerName: string;
   quotes: ClientQuote[];
-  requests: ChangeRequest[];
+  requests: ClientChangeRequest[];
   agreement: Agreement | null;
-  payments: Payment[];
+  payments: Array<
+    Omit<Payment, "legalEntityId" | "agreementReference" | "verifiedBy" | "invoice"> & {
+      invoice?: Pick<
+        NonNullable<Payment["invoice"]>,
+        | "provider"
+        | "number"
+        | "balance"
+        | "currency"
+        | "status"
+        | "paymentUrl"
+        | "refreshedAt"
+        | "lastError"
+      >;
+    }
+  >;
   released: boolean;
   project?: import("../projects/execution.types").PublicProject;
   role: "viewer" | "approver";

@@ -1,39 +1,47 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { Building2, KeyRound, Network, Plug, Plus, ShieldCheck, Users } from "lucide-react";
+import { Building2, ClipboardCheck, FolderKanban, Handshake, KeyRound, Plus, ShieldCheck, Sparkles, Users } from "lucide-react";
 import {
   Badge,
   Button,
   Callout,
   ConfirmationDialog,
   ControlledModalDialog,
+  DataGrid,
   DesignSystemProvider,
   IconMenuButton,
+  SearchInput,
   SelectField,
   Switch,
   TextAreaField,
   TextInput,
+  type DataGridColumn,
 } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
-  ROLE_PERMISSION_ACTIONS,
-  ROLE_PERMISSION_MODULES,
-  modulePermissionCode,
+  PERMISSION_AREAS,
+  permissionArea,
+  permissionAreaLabel,
+  permissionLabel,
+  type PermissionAreaId,
   type RolesPermissionsPageData,
-  type WorkspacePermissionModule,
+  type WorkspacePermissionDefinition,
 } from "@/lib/workspace/roles-permissions";
 import styles from "./roles-permissions-page.module.css";
 
 const SYSTEM_ROLE_ORDER: Record<string, number> = { owner: 0, administrator: 1, member: 2, viewer: 3 };
 
-const MODULE_ICONS = {
-  organization: Building2,
-  members: Users,
-  teams: Network,
-  roles: ShieldCheck,
-  integrations: Plug,
+const AREA_ICONS = {
+  workspace: Building2,
+  crm: Handshake,
+  "pre-execution": ClipboardCheck,
+  projects: FolderKanban,
+  hrms: Users,
+  platform: Sparkles,
 } as const;
+
+const AREA_ORDER = Object.fromEntries(PERMISSION_AREAS.map((area, index) => [area.id, index]));
 
 function responseMessage(response: Response, fallback: string) {
   return response.json()
@@ -75,6 +83,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const [deleting, setDeleting] = useState(false);
   const [failure, setFailure] = useState("");
   const [status, setStatus] = useState("");
+  const [permissionAreaFilter, setPermissionAreaFilter] = useState<PermissionAreaId>("all");
+  const [permissionSearch, setPermissionSearch] = useState("");
   const selectedRole = roles.find((role) => role.id === selectedRoleId) ?? roles[0];
   const customRoleCount = roles.filter((role) => !role.isSystem).length;
   const changed = Boolean(selectedRole && !selectedRole.isSystem
@@ -95,9 +105,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     setStatus("");
   };
 
-  const togglePermission = (module: WorkspacePermissionModule, action: typeof ROLE_PERMISSION_ACTIONS[number], enabled: boolean) => {
+  const togglePermission = (permissionCode: string, enabled: boolean) => {
     if (!selectedRole || selectedRole.isSystem || !initialData.canManage) return;
-    const permissionCode = modulePermissionCode(module.id, action.id);
     setDrafts((current) => {
       const nextPermissions = new Set(current[selectedRole.id] ?? selectedRole.permissions);
       if (enabled) nextPermissions.add(permissionCode); else nextPermissions.delete(permissionCode);
@@ -164,13 +173,63 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   if (!selectedRole) return null;
   const selectedPermissions = drafts[selectedRole.id] ?? new Set(selectedRole.permissions);
   const isEditable = initialData.canManage && !selectedRole.isSystem;
+  const normalizedPermissionSearch = permissionSearch.trim().toLocaleLowerCase();
+  const visiblePermissions = initialData.permissions
+    .filter((permission) => permissionAreaFilter === "all" || permissionArea(permission.code) === permissionAreaFilter)
+    .filter((permission) => !normalizedPermissionSearch || [permission.code, permission.description, permissionLabel(permission.code), permissionAreaLabel(permission.code)]
+      .some((value) => value.toLocaleLowerCase().includes(normalizedPermissionSearch)))
+    .sort((left, right) => (AREA_ORDER[permissionArea(left.code)] ?? 99) - (AREA_ORDER[permissionArea(right.code)] ?? 99)
+      || permissionLabel(left.code).localeCompare(permissionLabel(right.code)));
+  const columns: DataGridColumn<WorkspacePermissionDefinition>[] = [
+    {
+      id: "capability",
+      accessorFn: (permission) => permissionLabel(permission.code),
+      header: "Capability",
+      size: 560,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const permission = row.original;
+        const label = permissionLabel(permission.code);
+        const ModuleIcon = AREA_ICONS[permissionArea(permission.code)];
+        return <span className={styles.moduleIdentity}>
+          <span className={styles.moduleIcon}><ModuleIcon aria-hidden="true" size={15} /></span>
+          <span className={styles.moduleDetails}><strong>{label}</strong><small>{permission.description === label ? permission.code : permission.description}</small></span>
+        </span>;
+      },
+    },
+    {
+      id: "productArea",
+      accessorFn: (permission) => permissionAreaLabel(permission.code),
+      header: "Product area",
+      size: 180,
+      enableSorting: false,
+      cell: ({ row }) => <span className={styles.parentModule}><Badge>{permissionAreaLabel(row.original.code)}</Badge></span>,
+    },
+    {
+      id: "access",
+      accessorFn: (permission) => selectedPermissions.has(permission.code),
+      header: "Access",
+      size: 120,
+      enableSorting: false,
+      meta: { align: "center" },
+      cell: ({ row }) => {
+        const permission = row.original;
+        return <Switch
+          aria-label={`${selectedRole.name}: ${permissionLabel(permission.code)}`}
+          isDisabled={!isEditable}
+          isSelected={selectedPermissions.has(permission.code)}
+          onChange={(enabled) => togglePermission(permission.code, enabled)}
+        />;
+      },
+    },
+  ];
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
       <section aria-labelledby="roles-heading" className={styles.page}>
         <header className={styles.pageHeading}>
           <h1 id="roles-heading">Roles &amp; permissions</h1>
-          <p>Create roles and control access by module.</p>
+          <p>Create roles and control real access across every product capability.</p>
         </header>
 
         <div aria-label="Role actions" className={styles.toolbar}>
@@ -178,6 +237,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
             <span><ShieldCheck aria-hidden="true" size={15} /><strong>{roles.length}</strong> roles</span>
             <span><KeyRound aria-hidden="true" size={15} /><strong>{customRoleCount}</strong> custom</span>
             <span><Users aria-hidden="true" size={15} /><strong>{initialData.memberCount}</strong> member{initialData.memberCount === 1 ? "" : "s"}</span>
+            <span><ClipboardCheck aria-hidden="true" size={15} /><strong>{initialData.permissions.length}</strong> capabilities</span>
           </div>
           <div className={styles.actions}>
             <SelectField
@@ -206,54 +266,43 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
             <Badge>{selectedRole.isSystem ? "System" : "Custom"}</Badge>
             <span>{selectedRole.memberCount ?? 0} member{selectedRole.memberCount === 1 ? "" : "s"}</span>
           </div>
-          <p>{selectedRole.description || "Module permissions for this role."}</p>
+          <p>{selectedRole.description || "Product capabilities available to this role."}</p>
         </div>
 
-        <div className={styles.tableScroll} tabIndex={0}>
-          <table data-record-table="" aria-label={`Module permissions for ${selectedRole.name}`} className={styles.permissionTable}>
-            <colgroup>
-              <col className={styles.moduleColumn} />
-              <col className={styles.parentColumn} />
-              {ROLE_PERMISSION_ACTIONS.map((action) => <col className={styles.actionColumn} key={action.id} />)}
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col">Module</th>
-                <th scope="col">Parent module</th>
-                {ROLE_PERMISSION_ACTIONS.map((action) => <th key={action.id} scope="col">{action.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {ROLE_PERMISSION_MODULES.map((module) => {
-                const ModuleIcon = MODULE_ICONS[module.id];
-                return <tr key={module.id}>
-                  <th scope="row">
-                    <span className={styles.moduleIdentity}>
-                      <span className={styles.moduleIcon}><ModuleIcon aria-hidden="true" size={15} /></span>
-                      <span><strong>{module.label}</strong><small>{module.description}</small></span>
-                    </span>
-                  </th>
-                  <td className={styles.parentModule}><Badge>{module.parentModule}</Badge></td>
-                  {ROLE_PERMISSION_ACTIONS.map((action) => {
-                    const code = modulePermissionCode(module.id, action.id);
-                    return <td key={action.id}>
-                      <Switch
-                        aria-label={`${selectedRole.name}: ${module.label} ${action.label}`}
-                        isDisabled={!isEditable}
-                        isSelected={selectedPermissions.has(code)}
-                        onChange={(enabled) => togglePermission(module, action, enabled)}
-                      />
-                    </td>;
-                  })}
-                </tr>;
-              })}
-            </tbody>
-          </table>
+        <div className={styles.permissionToolbar}>
+          <div aria-label="Permission product area" className={styles.areaFilters} role="group">
+            {PERMISSION_AREAS.map((area) => {
+              const count = area.id === "all"
+                ? initialData.permissions.length
+                : initialData.permissions.filter((permission) => permissionArea(permission.code) === area.id).length;
+              return count ? <button aria-pressed={permissionAreaFilter === area.id} key={area.id} onClick={() => setPermissionAreaFilter(area.id)} type="button">{area.label}<span>{count}</span></button> : null;
+            })}
+          </div>
+          <SearchInput label="Search permissions" onChange={setPermissionSearch} placeholder="Search capabilities…" value={permissionSearch} />
+        </div>
+
+        <div className={styles.permissionGrid}>
+          <DataGrid
+            appearance="flush"
+            ariaLabel={`Permissions for ${selectedRole.name}`}
+            columns={columns}
+            data={visiblePermissions}
+            emptyDescription="Try another product area or search term."
+            emptyTitle="No matching permissions"
+            getRowId={(permission) => permission.code}
+            pageSize={100}
+            pinFirstColumn={false}
+            rowNumbers={false}
+            selectable={false}
+            showFooter
+            showToolbar={false}
+            totalRowCount={visiblePermissions.length}
+          />
         </div>
         <p className={styles.permissionNote}>
           {selectedRole.isSystem
             ? "System role permissions are managed by Wodana and cannot be changed."
-            : "Each setting applies to every feature inside that module."}
+            : "Every switch maps to a permission enforced by the corresponding product service."}
         </p>
       </section>
 
@@ -298,7 +347,7 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
     }
   };
 
-  return <ControlledModalDialog description={existing ? "Update the role details. Module permissions stay in the table." : "Create the role, then choose its module access from the table."} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">Save role</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit custom role" : "Create custom role"}>
+  return <ControlledModalDialog description={existing ? "Update the role details. Product capabilities stay in the table." : "Create the role, then choose its product capabilities from the table."} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">Save role</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit custom role" : "Create custom role"}>
     <form className={styles.form} id={formId} onSubmit={save}>
       {failure ? <Callout title="Could not save role" tone="danger">{failure}</Callout> : null}
       <div className={styles.formColumns}>

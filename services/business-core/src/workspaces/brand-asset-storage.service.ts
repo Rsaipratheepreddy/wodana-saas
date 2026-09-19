@@ -6,12 +6,15 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional, PayloadTooLargeException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
+import { DatabaseService } from "../database/database.service";
+import { assertObjectSafe } from "./file-safety";
 
 type StoredObject = {
   body: Buffer;
@@ -26,7 +29,10 @@ export class BrandAssetStorageService {
   private readonly signingClient?: S3Client;
   private readonly localRoot: string;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly database?: DatabaseService,
+  ) {
     this.bucket = config.get<string>("OBJECT_STORAGE_BUCKET") || undefined;
     this.localRoot = resolve(
       config.get<string>("BRAND_ASSET_STORAGE_DIR", ".data/workspace-brand-assets"),
@@ -49,8 +55,9 @@ export class BrandAssetStorageService {
     return Boolean(this.bucket && this.dataClient && this.signingClient);
   }
 
-  async createUploadUrl(objectKey: string, contentType: string): Promise<string | null> {
+  async createUploadUrl(objectKey: string, contentType: string, expectedByteSize?: number): Promise<string | null> {
     if (!this.usesObjectStorage) return null;
+    if (expectedByteSize !== undefined) await this.reserve(objectKey, expectedByteSize, contentType, "pending");
     return getSignedUrl(
       this.signingClient!,
       new PutObjectCommand({
@@ -63,17 +70,49 @@ export class BrandAssetStorageService {
   }
 
   async writeLocal(objectKey: string, body: Buffer): Promise<void> {
+    assertObjectSafe(body);
     if (this.usesObjectStorage) {
       throw new Error("Direct local uploads are disabled when object storage is configured");
     }
-    const target = this.localPath(objectKey);
-    await mkdir(dirname(target), { recursive: true });
-    const temporary = `${target}.${process.pid}.upload`;
-    await writeFile(temporary, body, { flag: "wx" });
-    await rename(temporary, target);
+    await this.reserve(objectKey, body.byteLength, "application/octet-stream", "baseline_passed", body);
+    try {
+      const target = this.localPath(objectKey);
+      await mkdir(dirname(target), { recursive: true });
+      const temporary = `${target}.${process.pid}.upload`;
+      await writeFile(temporary, body, { flag: "wx" });
+      await rename(temporary, target);
+      await this.activate(objectKey, body);
+    } catch (error) {
+      await this.fail(objectKey);
+      throw error;
+    }
   }
 
   async put(objectKey: string, body: Buffer, contentType: string): Promise<void> {
+    assertObjectSafe(body);
+    await this.reserve(objectKey, body.byteLength, contentType, "baseline_passed", body);
+    try {
+      if (this.usesObjectStorage) {
+        await this.dataClient!.send(new PutObjectCommand({
+          Bucket: this.bucket!,
+          Key: objectKey,
+          Body: body,
+          ContentType: contentType,
+        }));
+      } else {
+        const target = this.localPath(objectKey);
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, body);
+      }
+      await this.activate(objectKey, body);
+    } catch (error) {
+      await this.fail(objectKey);
+      throw error;
+    }
+  }
+
+  async putSystemArtifact(objectKey: string, body: Buffer, contentType: string): Promise<{ byteSize: number; sha256: string }> {
+    const sha256 = createHash("sha256").update(body).digest("hex");
     if (this.usesObjectStorage) {
       await this.dataClient!.send(new PutObjectCommand({
         Bucket: this.bucket!,
@@ -81,11 +120,20 @@ export class BrandAssetStorageService {
         Body: body,
         ContentType: contentType,
       }));
-      return;
+    } else {
+      const target = this.localPath(objectKey);
+      await mkdir(dirname(target), { recursive: true });
+      const temporary = `${target}.${process.pid}.artifact`;
+      await writeFile(temporary, body, { flag: "wx" });
+      await rename(temporary, target);
     }
-    const target = this.localPath(objectKey);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, body);
+    return { byteSize: body.byteLength, sha256 };
+  }
+
+  async confirmUpload(objectKey: string, body: Buffer, contentType: string): Promise<void> {
+    assertObjectSafe(body);
+    await this.reserve(objectKey, body.byteLength, contentType, "baseline_passed", body);
+    await this.activate(objectKey, body);
   }
 
   async read(objectKey: string): Promise<StoredObject> {
@@ -125,9 +173,10 @@ export class BrandAssetStorageService {
         Bucket: this.bucket!,
         Key: objectKey,
       }));
-      return;
+    } else {
+      await rm(this.localPath(objectKey), { force: true });
     }
-    await rm(this.localPath(objectKey), { force: true });
+    await this.markRemoved(objectKey);
   }
 
   createLocalReadStream(objectKey: string) {
@@ -141,6 +190,103 @@ export class BrandAssetStorageService {
       throw new Error("Invalid object key");
     }
     return target;
+  }
+
+  private workspaceId(objectKey: string) {
+    return objectKey.match(/(?:^|\/)([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\/|$)/i)?.[1] ?? null;
+  }
+
+  private async reserve(
+    objectKey: string,
+    byteSize: number,
+    contentType: string,
+    scannerStatus: "pending" | "baseline_passed",
+    body?: Buffer,
+  ) {
+    const workspaceId = this.workspaceId(objectKey);
+    if (!this.database || !workspaceId) return;
+    await this.database.tenantTransaction(workspaceId, workspaceId, async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('workspace-storage:' || $1,0))", [workspaceId]);
+      const policy = await client.query<{ quota: string; retentionDays: number }>(
+        `SELECT storage_quota_bytes::text AS quota,retention_days AS "retentionDays"
+         FROM workspace_data_policies WHERE workspace_id=$1`, [workspaceId],
+      );
+      const existing = await client.query<{ bytes: string }>(
+        `WITH managed AS (
+           SELECT object_key,byte_size::bigint AS byte_size FROM workspace_stored_objects
+           WHERE workspace_id=$1 AND object_key<>$2 AND removed_at IS NULL
+             AND (status='active' OR (status='pending' AND reservation_expires_at>now()))
+         ), legacy AS (
+           SELECT object_key,COALESCE(byte_size,expected_byte_size)::bigint AS byte_size
+             FROM workspace_brand_assets WHERE workspace_id=$1 AND status IN ('pending','active') AND object_key<>$2
+           UNION ALL SELECT object_key,byte_size::bigint FROM pre_project_brief_assets WHERE workspace_id=$1 AND object_key<>$2
+           UNION ALL SELECT object_key,byte_size::bigint FROM workspace_catalog_assets WHERE workspace_id=$1 AND status='active' AND object_key<>$2
+           UNION ALL SELECT object_key,byte_size::bigint FROM hrms_captures WHERE workspace_id=$1 AND object_key IS NOT NULL AND object_key<>$2
+           UNION ALL SELECT 'projects/' || execution.workspace_id || '/' || execution.project_id || '/' || (attachment.value->>'id'),
+             COALESCE((attachment.value->>'bytes')::bigint,0)
+             FROM project_execution execution
+             CROSS JOIN LATERAL jsonb_array_elements(COALESCE(execution.content->'files','[]'::jsonb)) AS attachment(value)
+             WHERE execution.workspace_id=$1
+               AND ('projects/' || execution.workspace_id || '/' || execution.project_id || '/' || (attachment.value->>'id'))<>$2
+         ), files AS (
+           SELECT object_key,byte_size FROM managed
+           UNION ALL SELECT legacy.object_key,legacy.byte_size FROM legacy
+           WHERE NOT EXISTS (SELECT 1 FROM managed WHERE managed.object_key=legacy.object_key)
+         ) SELECT COALESCE(sum(byte_size),0)::text AS bytes FROM files`,
+        [workspaceId, objectKey],
+      );
+      const used = Number(existing.rows[0]?.bytes ?? 0);
+      const quota = policy.rowCount ? Number(policy.rows[0].quota) : null;
+      if (quota !== null && used + byteSize > quota) {
+        throw new PayloadTooLargeException({
+          message: "This upload exceeds the organization's storage allowance",
+          usedBytes: used,
+          requestedBytes: byteSize,
+          quotaBytes: quota,
+        });
+      }
+      const retentionDays = policy.rows[0]?.retentionDays ?? null;
+      await client.query(
+        `INSERT INTO workspace_stored_objects
+          (workspace_id,object_key,byte_size,content_type,sha256,status,scanner_status,reservation_expires_at,retention_until,removed_at)
+         VALUES($1,$2,$3,$4,$5,'pending',$6,now()+interval '15 minutes',
+           CASE WHEN $7::int IS NULL THEN NULL ELSE now()+($7*interval '1 day') END,NULL)
+         ON CONFLICT(workspace_id,object_key) DO UPDATE SET
+           byte_size=excluded.byte_size,content_type=excluded.content_type,sha256=excluded.sha256,
+           status='pending',scanner_status=excluded.scanner_status,
+           reservation_expires_at=excluded.reservation_expires_at,retention_until=excluded.retention_until,removed_at=NULL`,
+        [workspaceId, objectKey, byteSize, contentType,
+          body ? createHash("sha256").update(body).digest("hex") : null, scannerStatus, retentionDays],
+      );
+    });
+  }
+
+  private async activate(objectKey: string, body: Buffer) {
+    const workspaceId = this.workspaceId(objectKey);
+    if (!this.database || !workspaceId) return;
+    await this.database.tenantTransaction(workspaceId, workspaceId, (client) => client.query(
+      `UPDATE workspace_stored_objects SET status='active',scanner_status='baseline_passed',
+         sha256=$3,reservation_expires_at=NULL WHERE workspace_id=$1 AND object_key=$2`,
+      [workspaceId, objectKey, createHash("sha256").update(body).digest("hex")],
+    ));
+  }
+
+  private async fail(objectKey: string) {
+    const workspaceId = this.workspaceId(objectKey);
+    if (!this.database || !workspaceId) return;
+    await this.database.tenantTransaction(workspaceId, workspaceId, (client) => client.query(
+      `UPDATE workspace_stored_objects SET status='failed',scanner_status='failed',reservation_expires_at=NULL
+       WHERE workspace_id=$1 AND object_key=$2`, [workspaceId, objectKey],
+    )).catch(() => undefined);
+  }
+
+  private async markRemoved(objectKey: string) {
+    const workspaceId = this.workspaceId(objectKey);
+    if (!this.database || !workspaceId) return;
+    await this.database.tenantTransaction(workspaceId, workspaceId, (client) => client.query(
+      `UPDATE workspace_stored_objects SET status='removed',removed_at=now(),reservation_expires_at=NULL
+       WHERE workspace_id=$1 AND object_key=$2`, [workspaceId, objectKey],
+    ));
   }
 
   private async toBuffer(body: Readable | ReadableStream | Blob): Promise<Buffer> {

@@ -366,18 +366,22 @@ export class CrmSlaLifecycleService {
     if (!current.rowCount) return null;
     const before = current.rows[0];
     const startedAt = new Date(before.started_at);
-    if (input.respondedAt < startedAt) {
+    const skewMilliseconds = startedAt.getTime() - input.respondedAt.getTime();
+    if (skewMilliseconds > 1_000) {
       return { instanceId: before.id, recorded: false, respondedAt: input.respondedAt, reason: "before_sla_start" };
     }
-    if (before.responded_at && new Date(before.responded_at) <= input.respondedAt) {
+    // PostgreSQL and external interaction providers can differ at sub-second
+    // precision. Clamp only that narrow boundary; older evidence stays rejected.
+    const respondedAt = skewMilliseconds > 0 ? startedAt : input.respondedAt;
+    if (before.responded_at && new Date(before.responded_at) <= respondedAt) {
       return { instanceId: before.id, recorded: false, respondedAt: new Date(before.responded_at), reason: "existing_earlier_response" };
     }
     if (
       !before.responded_at
       && before.status === "stopped"
-      && (!before.stopped_at || input.respondedAt > new Date(before.stopped_at))
+      && (!before.stopped_at || respondedAt > new Date(before.stopped_at))
     ) {
-      return { instanceId: before.id, recorded: false, respondedAt: input.respondedAt, reason: "after_sla_stopped" };
+      return { instanceId: before.id, recorded: false, respondedAt, reason: "after_sla_stopped" };
     }
     const actor = await client.query<{ id: string }>(
       `SELECT id FROM users WHERE id=$1 FOR KEY SHARE`,
@@ -389,8 +393,8 @@ export class CrmSlaLifecycleService {
     let warnedAt = before.warned_at;
     let breachedAt = before.breached_at;
     if (before.status !== "paused") {
-      const afterWarning = input.respondedAt >= new Date(before.warning_at);
-      const afterDeadline = input.respondedAt >= new Date(before.due_at);
+      const afterWarning = respondedAt >= new Date(before.warning_at);
+      const afterDeadline = respondedAt >= new Date(before.due_at);
       warnedAt = afterWarning ? warnedAt ?? new Date(before.warning_at) : null;
       breachedAt = afterDeadline ? breachedAt ?? new Date(before.due_at) : null;
       if (before.status === "active" && afterWarning && !before.warned_at) {
@@ -412,7 +416,7 @@ export class CrmSlaLifecycleService {
       : priorPausedAt && Number.isFinite(priorPausedAt.getTime())
         ? priorPausedAt
         : null;
-    const responseClockAt = pausedAt && input.respondedAt >= pausedAt ? pausedAt : input.respondedAt;
+    const responseClockAt = pausedAt && respondedAt >= pausedAt ? pausedAt : respondedAt;
     const responseElapsedMinutes = this.elapsedMinutesAt(before, responseClockAt);
     const evidence = {
       ...(input.details ?? {}),
@@ -420,7 +424,7 @@ export class CrmSlaLifecycleService {
       sourceId: input.sourceId,
       actorUserId: input.actorUserId,
       actorUserAvailable: Boolean(persistedActorUserId),
-      respondedAt: input.respondedAt.toISOString(),
+      respondedAt: respondedAt.toISOString(),
       responseElapsedMinutes,
       ...(pausedAt ? { slaPausedAt: pausedAt.toISOString() } : {}),
       ...(isCorrection ? {
@@ -440,7 +444,7 @@ export class CrmSlaLifecycleService {
          paused_at=NULL,paused_from_status=NULL,remaining_warning_minutes=NULL,remaining_breach_minutes=NULL,
          version=version+1,updated_at=now()
        WHERE workspace_id=$1 AND id=$2 RETURNING *`,
-      [workspaceId, before.id, input.respondedAt, evidence, input.sourceType, warnedAt, breachedAt, input.sourceId, persistedActorUserId, responseElapsedMinutes],
+      [workspaceId, before.id, respondedAt, evidence, input.sourceType, warnedAt, breachedAt, input.sourceId, persistedActorUserId, responseElapsedMinutes],
     );
     await this.recordTransition(
       client,
@@ -452,14 +456,14 @@ export class CrmSlaLifecycleService {
       isCorrection ? "Earlier verified human first response recorded" : "Verified human first response recorded",
       evidence,
       persistedActorUserId,
-      input.respondedAt,
+      respondedAt,
     );
     await client.query(
       `UPDATE crm_activities SET status='completed',completed_at=COALESCE(completed_at,$3),
          completion_outcome=COALESCE(completion_outcome,'First response recorded'),
          is_next_action=false,version=version+1,updated_at=now()
        WHERE workspace_id=$1 AND sla_instance_id=$2 AND status='pending'`,
-      [workspaceId, before.id, input.respondedAt],
+      [workspaceId, before.id, respondedAt],
     );
     await client.query(
       `UPDATE crm_leads SET next_action_at=(
@@ -469,7 +473,7 @@ export class CrmSlaLifecycleService {
        ) WHERE workspace_id=$1 AND id=$2`,
       [workspaceId, leadId],
     );
-    return { instanceId: before.id, recorded: true, respondedAt: input.respondedAt };
+    return { instanceId: before.id, recorded: true, respondedAt };
   }
 
   private snapshotSchedule(row: SlaRow): SlaSchedule {

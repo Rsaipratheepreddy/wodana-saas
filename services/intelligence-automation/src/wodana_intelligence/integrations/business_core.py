@@ -221,6 +221,13 @@ class BusinessCoreClient:
             json={"limit": 100},
         )
 
+    async def process_due_takeovers(self, workspace_id: str) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/slas/workspaces/{workspace_id}/process-takeovers",
+            json={"limit": 100},
+        )
+
     async def process_due_sequences(self, workspace_id: str) -> dict[str, Any]:
         return await self._internal_request(
             "POST",
@@ -247,6 +254,24 @@ class BusinessCoreClient:
     ) -> dict[str, Any]:
         return await self._internal_request(
             "POST", f"/internal/crm/notifications/{notification_id}/result", json=payload
+        )
+
+    async def claim_push_receipts(self, workspace_id: str) -> list[dict[str, Any]]:
+        payload = await self._internal_request(
+            "POST",
+            "/internal/crm/notifications/push-receipts/claim",
+            json={"workspaceId": workspace_id, "limit": 100},
+        )
+        items = payload.get("items", [])
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    async def record_push_receipt(
+        self, notification_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._internal_request(
+            "POST",
+            f"/internal/crm/notifications/{notification_id}/push-receipt",
+            json=payload,
         )
 
     async def close(self) -> None:

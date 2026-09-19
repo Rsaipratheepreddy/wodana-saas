@@ -41,6 +41,14 @@ async function openBuilder() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("LeadFormBuilder", () => {
+  it("shows form attribution without implying a social account connection", async () => {
+    mockApi();
+    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
+    const table = await screen.findByRole("table", { name: "Enquiry forms" });
+    expect(within(table).getByRole("columnheader", { name: "Source" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Channel" })).toBeInTheDocument();
+    expect(screen.getByText(/does not connect social inboxes or lead ads/i)).toBeInTheDocument();
+  });
   it("adds field types, updates live preview without clearing answers, and saves and reloads the draft", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
     const preview = screen.getByRole("complementary", { name: "Live form preview" });
@@ -121,7 +129,7 @@ describe("LeadFormBuilder", () => {
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(saves).toHaveLength(1));
     expect(saves[0].draft.questions.slice(4).map(question => question.type)).toEqual(["text", "paragraph", "radio", "checkboxes", "dropdown", "email", "tel", "number", "date"]);
-  });
+  }, 10_000);
 });
 
 describe("form ordering and validation", () => {

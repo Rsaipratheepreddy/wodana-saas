@@ -3,6 +3,7 @@ import { applyExecution, emptyProject, type ExecutionActor } from "./execution.d
 import {
   designReadinessForTask,
   mergeDesignBaseline,
+  sameDesignEvidence,
   synchroniseApprovedDesignDocuments,
 } from "./project-design-control";
 import type { Task } from "./execution.types";
@@ -47,6 +48,11 @@ const baseline = {
       sourceSpecificationVersion: 2,
       designVersionId: "design-version-1",
       designId: "design-1",
+      assetId: "asset-1",
+      fileName: "wardrobe-elevation.pdf",
+      mimeType: "application/pdf",
+      byteSize: 1024,
+      hasPreview: false,
       title: "Wardrobe elevation",
       documentType: "drawing",
       revision: 4,
@@ -65,9 +71,21 @@ describe("project design control", () => {
         id: "document-1",
         status: "approved",
         sourceDesignVersionId: "design-version-1",
+        sourceDesignAssetId: "asset-1",
         scopeLineIds: ["scope-line-1"],
       }),
     ]);
+  });
+
+  it("compares exact contractual evidence while ignoring only capture time", () => {
+    expect(sameDesignEvidence(baseline, { ...baseline, capturedAt: "later" })).toBe(true);
+    expect(
+      sameDesignEvidence(baseline, {
+        ...baseline,
+        links: [{ ...baseline.links[0], assetId: "new-asset" }],
+      }),
+    ).toBe(false);
+    expect(sameDesignEvidence(undefined, baseline)).toBe(false);
   });
 
   it("requires delivery work to point to the approved design captured for its scope", () => {

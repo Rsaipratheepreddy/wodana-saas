@@ -16,11 +16,28 @@ import {
   validateControlledChangeSources,
 } from "./change-control";
 import { releaseDeliveryProject } from "../projects/project-release";
+import { captureApprovedDesignBaseline } from "../projects/project-design-control";
+import { ensureJobForSource } from "../jobs/job-identity.store";
 import { verifiedInvoiceSnapshot } from "./accounting-invoice";
 import {
+  agreementMatchesFinanceContext,
+  bindFinanceContext,
+  paymentHasFinanceVerifiedReceipt,
+  recordCreditNote,
+  recordProviderSettlement,
+  reportManualReceipt,
+  reverseProviderSettlement,
+  upsertProviderInvoiceDocument,
+  verifyReceipt,
+} from "./finance-ledger";
+import {
   agreementIsOperational,
+  agreementMatchesAcceptedQuote,
+  approvedMaterialEvidence,
+  financeGatePaymentsReady,
   isOperationalEvidence,
   materialApprovalsComplete,
+  ownerReviewInputsReady,
   quotationApprovalSources,
   releasePaymentIsOperational,
 } from "./release-integrity";
@@ -39,7 +56,10 @@ import { ConfigService } from "@nestjs/config";
 import { CatalogSellingPriceService } from "./catalog-selling-price.service";
 import { PreProjectReadinessService } from "../pre-projects/pre-project-readiness.service";
 import {
+  acceptedQuoteTotals,
+  acceptedQuoteValue,
   actionable,
+  assertQuoteSnapshot,
   date,
   defaultBrand,
   editable,
@@ -52,6 +72,7 @@ import {
   parseCover,
   parseLines,
   parsePaymentTerms,
+  parseQuotePresentation,
   phone,
   text,
   totals,
@@ -66,8 +87,57 @@ import type {
   CatalogPriceSnapshot,
   ChangeDisposition,
   ControlledChangeKind,
+  QuoteLine,
 } from "./commercial.types";
 import type { ProjectData } from "../projects/execution.types";
+import { ConfigurationRevisionsService } from "../workspaces/configuration-revisions.service";
+import type { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
+
+/** Remove internal cost and margin truth without mutating the persisted commercial aggregate. */
+export function commercialDataForCostAccess(data: CommercialData, canViewCosts: boolean): CommercialData {
+  if (canViewCosts) return data;
+  return {
+    ...data,
+    quotes: data.quotes.map((quote) => ({ ...quote, lines: quote.lines.map((line) => ({ ...line, unitCost: 0 })) })),
+    ...(data.dealFile ? { dealFile: { ...data.dealFile, cost: 0, margin: 0 } } : {}),
+  };
+}
+
+export function preserveUnauthorizedCosts(lines: QuoteLine[], previous: Map<string, QuoteLine>, canEditCosts: boolean) {
+  if (canEditCosts) return lines;
+  for (const line of lines) line.unitCost = previous.get(line.id)?.unitCost ?? 0;
+  return lines;
+}
+
+export function isManualQuotationLine(line: QuoteLine) {
+  return !line.scopeId && !line.catalogLinks?.some((selection) => selection.role === "work");
+}
+
+export function commercialCommandPermission(action: string) {
+  if (["verify_payment", "verify_credit"].includes(action))
+    return "commercial.finance.verify";
+  if (["approve", "decide_owner_review", "execute_agreement"].includes(action))
+    return "commercial.approve";
+  if (action === "release") return "commercial.release";
+  return "pre_projects.edit";
+}
+
+export function manualLineAuthorizations(
+  lines: QuoteLine[],
+  previous: Map<string, QuoteLine>,
+) {
+  return lines.filter((line) => {
+    if (!isManualQuotationLine(line)) {
+      if (line.manualReason)
+        throw new BadRequestException(
+          "A manual-line reason belongs only to an item without confirmed scope or a catalogue source.",
+        );
+      return false;
+    }
+    const old = previous.get(line.id);
+    return !old || !isManualQuotationLine(old) || line.manualReason !== old.manualReason;
+  });
+}
 
 @Injectable()
 export class CommercialService {
@@ -76,6 +146,7 @@ export class CommercialService {
     private readonly config: ConfigService,
     private readonly sellingPrices: CatalogSellingPriceService,
     private readonly preparationReadiness: PreProjectReadinessService,
+    private readonly revisions: ConfigurationRevisionsService = new ConfigurationRevisionsService(),
   ) {}
   get testMode() {
     return (
@@ -90,7 +161,15 @@ export class CommercialService {
     lock = false,
   ) {
     const result = await client.query(
-      `SELECT c.status,o.title,p.display_name AS "customerName",o.currency_code AS currency FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id JOIN crm_parties p ON p.workspace_id=o.workspace_id AND p.id=o.party_id WHERE c.workspace_id=$1 AND c.id=$2 ${lock ? "FOR UPDATE OF c" : ""}`,
+      `SELECT c.status,o.title,p.display_name AS "customerName",o.currency_code AS currency,
+        e.id AS "legalEntityId",e.code AS "legalEntityCode",e.display_name AS "legalEntityName",
+        e.registered_name AS "legalEntityRegisteredName",e.country_code AS "legalEntityCountryCode",
+        e.base_currency AS "legalEntityBaseCurrency",e.tax_registration_number AS "legalEntityTaxRegistrationNumber"
+       FROM pre_project_cases c
+       JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id
+       JOIN crm_parties p ON p.workspace_id=o.workspace_id AND p.id=o.party_id
+       LEFT JOIN legal_entities e ON e.workspace_id=o.workspace_id AND e.id=o.legal_entity_id AND e.status='active'
+       WHERE c.workspace_id=$1 AND c.id=$2 ${lock ? "FOR UPDATE OF c" : ""}`,
       [workspaceId, caseId],
     );
     if (!result.rowCount)
@@ -143,6 +222,11 @@ export class CommercialService {
       ownerReview: stored.ownerReview ?? null,
       dealFile: stored.dealFile ?? null,
       materialApprovals: stored.materialApprovals ?? [],
+      financeContext: stored.financeContext ?? null,
+      financeDocuments: stored.financeDocuments ?? [],
+      receipts: stored.receipts ?? [],
+      allocations: stored.allocations ?? [],
+      credits: stored.credits ?? [],
     };
   }
   async persist(
@@ -154,6 +238,7 @@ export class CommercialService {
     action: string,
     quoteId?: string,
     note = "",
+    actorUserId: string | null = null,
   ) {
     data.revision++;
     data.audit.push({
@@ -168,6 +253,8 @@ export class CommercialService {
       `INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,$3,$4) ON CONFLICT(case_id) DO UPDATE SET revision=$3,content=$4,updated_at=now() WHERE commercial_cases.workspace_id=$1`,
       [workspaceId, caseId, data.revision, JSON.stringify(data)],
     );
+    for (const quote of data.quotes)
+      await ensureJobForSource(client, workspaceId, { type: "quote", id: quote.id, caseId }, actorUserId);
     for (const payment of data.payments) {
       if (!payment.invoice) continue;
       const invoice = payment.invoice;
@@ -322,6 +409,20 @@ export class CommercialService {
       async (client, user) => {
         const record = await this.caseRecord(client, workspaceId, caseId);
         const data = await this.load(client, workspaceId, caseId);
+        const canEditCosts = await this.access.hasPermission(
+          client,
+          workspaceId,
+          user.userId,
+          "commercial.costs.manage",
+        );
+        const canViewCosts =
+          canEditCosts ||
+          (await this.access.hasPermission(
+            client,
+            workspaceId,
+            user.userId,
+            "commercial.costs.view",
+          ));
         const accepted = data.quotes.find(
           (quote) => quote.kind === "quotation" && quote.status === "accepted",
         );
@@ -355,7 +456,7 @@ export class CommercialService {
           workspaceId,
           caseId,
           ...record,
-          data,
+          data: commercialDataForCostAccess(data, canViewCosts),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
           portalBrand: settings.rows[0]?.brand,
@@ -376,12 +477,20 @@ export class CommercialService {
             user.userId,
             "commercial.approve",
           ),
+          canVerifyFinance: await this.access.hasPermission(
+            client,
+            workspaceId,
+            user.userId,
+            "commercial.finance.verify",
+          ),
           canOverridePrice: await this.access.hasPermission(
             client,
             workspaceId,
             user.userId,
             "commercial.override_price",
           ),
+          canViewCosts,
+          canEditCosts,
           canRelease: await this.access.hasPermission(
             client,
             workspaceId,
@@ -459,6 +568,7 @@ export class CommercialService {
           "Client access updated",
           undefined,
           `${name}: ${active ? role : "access removed"}`,
+          user.userId,
         );
         return { ok: true };
       },
@@ -483,11 +593,12 @@ export class CommercialService {
     const connection = await this.access.withPermissions(
       actor,
       w,
-      ["pre_projects.view", "commercial.approve"],
+      ["pre_projects.view", "commercial.finance.verify"],
       async (client) => {
         await this.caseRecord(client, w, caseId);
         const d = await this.load(client, w, caseId);
-        if (!d.payments.some((p) => p.id === paymentId))
+        const payment = d.payments.find((p) => p.id === paymentId);
+        if (!payment)
           throw new NotFoundException("Payment milestone not found.");
         const c = (
           await client.query(
@@ -503,6 +614,14 @@ export class CommercialService {
         )
           throw new ConflictException(
             "Connect the accounting company in Workspace settings first.",
+          );
+        if (
+          !d.financeContext ||
+          payment.legalEntityId !== d.financeContext.legalEntityId ||
+          c.legal_entity_id !== d.financeContext.legalEntityId
+        )
+          throw new ConflictException(
+            "Use the accounting connection for the legal entity that owns this agreement.",
           );
         return c;
       },
@@ -523,7 +642,7 @@ export class CommercialService {
     return this.access.withPermissions(
       actor,
       w,
-      ["pre_projects.view", "commercial.approve"],
+      ["pre_projects.view", "commercial.finance.verify"],
       async (client, user) => {
         // One provider invoice can settle only one milestone across the workspace.
         await client.query(
@@ -554,6 +673,15 @@ export class CommercialService {
           );
         const p = d.payments.find((p) => p.id === paymentId);
         if (!p) throw new NotFoundException("Payment milestone not found.");
+        if (
+          !d.financeContext ||
+          !p.legalEntityId ||
+          p.legalEntityId !== d.financeContext.legalEntityId ||
+          connection.legal_entity_id !== d.financeContext.legalEntityId
+        )
+          throw new ConflictException(
+            "Use the accounting connection for the legal entity that owns this agreement.",
+          );
         if (
           d.payments.some(
             (x) =>
@@ -611,19 +739,48 @@ export class CommercialService {
           paymentUrl,
           refreshedAt: new Date().toISOString(),
         };
+        const reconciledAt = p.invoice.refreshedAt;
+        upsertProviderInvoiceDocument(
+          d,
+          p,
+          {
+            provider: connection.provider,
+            connectionId,
+            providerDocumentId: invoiceId,
+            number: p.invoice.number,
+            total,
+            status,
+          },
+          reconciledAt,
+        );
         p.reference = p.invoice.number || invoiceId;
         if (settled) {
-          p.status = "verified";
-          p.verifiedBy = user.displayName;
-          p.verifiedAt = new Date().toISOString();
-        } else if (p.status === "verified") {
-          p.status = "pending";
-          delete p.verifiedBy;
-          delete p.verifiedAt;
+          recordProviderSettlement(
+            d,
+            p,
+            {
+              provider: connection.provider,
+              connectionId,
+              providerDocumentId: invoiceId,
+              reference: p.reference,
+            },
+            "Accounting provider",
+            reconciledAt,
+          );
+        } else {
+          const wasVerified = p.status === "verified";
+          const reversed = reverseProviderSettlement(
+            d,
+            p,
+            "The accounting provider no longer reports this invoice as settled.",
+            reconciledAt,
+          );
+          if (wasVerified || reversed) {
           await client.query(
             `UPDATE project_execution SET content=jsonb_set(jsonb_set(jsonb_set(content,'{financeClosed}','false'::jsonb),'{financeEvidence}',to_jsonb('Accounting balance reopened; review settlement.'::text)),'{revision}',to_jsonb(revision+1)),revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND project_id IN(SELECT id FROM delivery_projects WHERE workspace_id=$1 AND case_id=$2)`,
             [w, caseId],
           );
+          }
         }
         await this.persist(
           client,
@@ -634,6 +791,7 @@ export class CommercialService {
           "invoice_refreshed",
           undefined,
           `${connection.provider} · ${invoiceId}`,
+          user.userId,
         );
         return { data: d };
       },
@@ -647,7 +805,7 @@ export class CommercialService {
       async (c) => ({
         items: (
           await c.query(
-            "SELECT id,name,version,milestones FROM commercial_payment_templates WHERE workspace_id=$1 ORDER BY name",
+            'SELECT id,name,version,milestones,status,updated_at AS "updatedAt" FROM commercial_payment_templates WHERE workspace_id=$1 AND status=\'active\' ORDER BY name',
             [w],
           )
         ).rows,
@@ -662,7 +820,7 @@ export class CommercialService {
       async (c) => ({
         items: (
           await c.query(
-            'SELECT id,name,version,content,updated_at AS "updatedAt" FROM commercial_quotation_templates WHERE workspace_id=$1 ORDER BY updated_at DESC LIMIT 100',
+            'SELECT id,name,version,content,status,updated_at AS "updatedAt" FROM commercial_quotation_templates WHERE workspace_id=$1 AND status=\'active\' ORDER BY updated_at DESC LIMIT 100',
             [w],
           )
         ).rows,
@@ -674,7 +832,7 @@ export class CommercialService {
       actor,
       w,
       "pre_projects.edit",
-      async (c) => {
+      async (c, actorUser) => {
         const b = object(input),
           caseId = text(b.caseId, 80, true),
           name = text(b.name, 160, true);
@@ -689,19 +847,46 @@ export class CommercialService {
           throw new BadRequestException(
             "Use a quotation with at least one item as your template.",
           );
-        const result = await c.query(
-          'INSERT INTO commercial_quotation_templates(id,workspace_id,name,content) VALUES($1,$2,$3,$4) ON CONFLICT(workspace_id,name) DO NOTHING RETURNING id,name,version,content,updated_at AS "updatedAt"',
-          [
-            randomUUID(),
-            w,
-            name,
-            JSON.stringify(quotationTemplateContent(quote)),
-          ],
-        );
+        const templateId = b.id ? text(b.id, 80, true) : randomUUID();
+        const current = b.id ? await c.query(
+          'SELECT id,name,version,content,status,updated_at AS "updatedAt" FROM commercial_quotation_templates WHERE workspace_id=$1 AND id=$2 FOR UPDATE',
+          [w, templateId],
+        ) : { rowCount: 0, rows: [] };
+        if (b.id && !current.rowCount) throw new NotFoundException("Quotation template not found.");
+        if (current.rowCount && current.rows[0].status !== "active") throw new ConflictException("Archived quotation templates cannot be changed.");
+        const version = number(b.version ?? 0);
+        if ((current.rows[0]?.version ?? 0) !== version) throw new ConflictException("Template changed. Reload before saving.");
+        if (current.rowCount) await this.revisions.ensureBaseline(c, {
+          workspaceId: w, resourceType: "quotation_template", resourceId: templateId,
+          sourceVersion: current.rows[0].version, snapshot: current.rows[0], actorUserId: actorUser.userId,
+        });
+        let result;
+        try {
+          result = current.rowCount
+            ? await c.query(
+              `UPDATE commercial_quotation_templates
+               SET name=$1,content=$2,version=version+1,updated_at=now()
+               WHERE workspace_id=$3 AND id=$4 AND version=$5 AND status='active'
+               RETURNING id,name,version,content,status,updated_at AS "updatedAt"`,
+              [name, JSON.stringify(quotationTemplateContent(quote)), w, templateId, version],
+            )
+            : await c.query(
+              'INSERT INTO commercial_quotation_templates(id,workspace_id,name,content) VALUES($1,$2,$3,$4) RETURNING id,name,version,content,status,updated_at AS "updatedAt"',
+              [templateId, w, name, JSON.stringify(quotationTemplateContent(quote))],
+            );
+        } catch (error) {
+          if ((error as { code?: string }).code === "23505") throw new ConflictException("A template with this name already exists. Choose another name.");
+          throw error;
+        }
         if (!result.rowCount)
           throw new ConflictException(
-            "A template with this name already exists. Choose another name.",
+            "Template changed. Reload before saving.",
           );
+        await this.revisions.record(c, {
+          workspaceId: w, resourceType: "quotation_template", resourceId: templateId,
+          sourceVersion: result.rows[0].version, action: current.rowCount ? "saved" : "created",
+          snapshot: result.rows[0], actorUserId: actorUser.userId,
+        });
         return result.rows[0];
       },
     );
@@ -714,7 +899,7 @@ export class CommercialService {
       async (c) => {
         const template: QuotationTemplate | undefined = (
           await c.query(
-            'SELECT id,name,version,content,updated_at AS "updatedAt" FROM commercial_quotation_templates WHERE workspace_id=$1 AND id=$2',
+            'SELECT id,name,version,content,status,updated_at AS "updatedAt" FROM commercial_quotation_templates WHERE workspace_id=$1 AND id=$2 AND status=\'active\'',
             [w, id],
           )
         ).rows[0];
@@ -838,24 +1023,139 @@ export class CommercialService {
       actor,
       w,
       "pre_projects.edit",
-      async (c) => {
+      async (c, actorUser) => {
         const b = object(input),
           name = text(b.name, 160, true),
           milestones = parsePaymentTerms(b.milestones, true),
           id = b.id ? text(b.id, 80, true) : randomUUID();
         const version = number(b.version ?? 0);
+        const before = version > 0 ? await c.query(
+          'SELECT id,name,version,milestones,status,updated_at AS "updatedAt" FROM commercial_payment_templates WHERE workspace_id=$1 AND id=$2 FOR UPDATE',
+          [w, id],
+        ) : { rowCount: 0, rows: [] };
+        if (version > 0 && (!before.rowCount || before.rows[0].version !== version || before.rows[0].status !== "active")) {
+          throw new ConflictException("Template changed. Reload before saving.");
+        }
+        if (before.rowCount) await this.revisions.ensureBaseline(c, {
+          workspaceId: w, resourceType: "payment_template", resourceId: id,
+          sourceVersion: version, snapshot: before.rows[0], actorUserId: actorUser.userId,
+        });
         const result = await c.query(
-          `INSERT INTO commercial_payment_templates(id,workspace_id,name,version,milestones) VALUES($1,$2,$3,1,$4) ON CONFLICT(id) DO UPDATE SET name=$3,milestones=$4,version=commercial_payment_templates.version+1 WHERE commercial_payment_templates.workspace_id=$2 AND commercial_payment_templates.version=$5 RETURNING id,name,version,milestones`,
+          `INSERT INTO commercial_payment_templates(id,workspace_id,name,version,milestones) VALUES($1,$2,$3,1,$4)
+           ON CONFLICT(id) DO UPDATE SET name=$3,milestones=$4,version=commercial_payment_templates.version+1,updated_at=now()
+           WHERE commercial_payment_templates.workspace_id=$2 AND commercial_payment_templates.version=$5 AND commercial_payment_templates.status='active'
+           RETURNING id,name,version,milestones,status,updated_at AS "updatedAt"`,
           [id, w, name, JSON.stringify(milestones), version],
         );
         if (!result.rowCount)
           throw new ConflictException(
             "Template changed. Reload before saving.",
           );
-        return result.rows[0];
+        const saved = result.rows[0];
+        await this.revisions.record(c, {
+          workspaceId: w, resourceType: "payment_template", resourceId: id,
+          sourceVersion: saved.version, action: version ? "saved" : "created", snapshot: saved,
+          actorUserId: actorUser.userId,
+        });
+        return saved;
       },
     );
   }
+
+  templateHistory(actor: RequestActor, workspaceId: string, kind: "quotation" | "payment", templateId: string) {
+    const resourceType = kind === "quotation" ? "quotation_template" : "payment_template";
+    return this.access.withPermission(actor, workspaceId, "pre_projects.view", (client) =>
+      this.revisions.history(client, workspaceId, resourceType, templateId));
+  }
+
+  archiveTemplate(
+    actor: RequestActor,
+    workspaceId: string,
+    kind: "quotation" | "payment",
+    templateId: string,
+    input: unknown,
+  ) {
+    const version = number(object(input).version);
+    const table = kind === "quotation" ? "commercial_quotation_templates" : "commercial_payment_templates";
+    const resourceType = kind === "quotation" ? "quotation_template" : "payment_template";
+    return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client, actorUser) => {
+      const before = await client.query(
+        `SELECT id,name,version,${kind === "quotation" ? "content" : "milestones"},status,updated_at AS "updatedAt"
+         FROM ${table} WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
+        [workspaceId, templateId],
+      );
+      if (!before.rowCount || before.rows[0].status !== "active") throw new NotFoundException("Active template not found.");
+      if (before.rows[0].version !== version) throw new ConflictException("Template changed. Reload before archiving.");
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType, resourceId: templateId, sourceVersion: version,
+        snapshot: before.rows[0], actorUserId: actorUser.userId,
+      });
+      const result = await client.query(
+        `UPDATE ${table} SET status='archived',version=version+1,updated_at=now()
+         WHERE workspace_id=$1 AND id=$2 AND version=$3 AND status='active'
+         RETURNING id,name,version,${kind === "quotation" ? "content" : "milestones"},status,updated_at AS "updatedAt"`,
+        [workspaceId, templateId, version],
+      );
+      if (!result.rowCount) throw new ConflictException("Template changed. Reload before archiving.");
+      await this.revisions.record(client, {
+        workspaceId, resourceType, resourceId: templateId, sourceVersion: result.rows[0].version,
+        action: "archived", snapshot: result.rows[0], actorUserId: actorUser.userId,
+      });
+      return result.rows[0];
+    });
+  }
+
+  rollbackTemplate(
+    actor: RequestActor,
+    workspaceId: string,
+    kind: "quotation" | "payment",
+    templateId: string,
+    input: RestoreConfigurationRevisionDto,
+  ) {
+    const table = kind === "quotation" ? "commercial_quotation_templates" : "commercial_payment_templates";
+    const resourceType = kind === "quotation" ? "quotation_template" : "payment_template";
+    const contentColumn = kind === "quotation" ? "content" : "milestones";
+    return this.access.withPermission(actor, workspaceId, "pre_projects.edit", async (client, actorUser) => {
+      const before = await client.query(
+        `SELECT id,name,version,${contentColumn},status,updated_at AS "updatedAt"
+         FROM ${table} WHERE workspace_id=$1 AND id=$2 FOR UPDATE`,
+        [workspaceId, templateId],
+      );
+      if (!before.rowCount) throw new NotFoundException("Template not found.");
+      if (before.rows[0].version !== input.version) throw new ConflictException("Template changed. Reload before restoring.");
+      const revision = await this.revisions.requireRevision(client, workspaceId, resourceType, templateId, input.revisionId);
+      const target = revision.snapshot;
+      const name = text(target.name, 160, true);
+      const status = target.status === "archived" ? "archived" : "active";
+      const content = kind === "quotation"
+        ? object(target.content)
+        : parsePaymentTerms(target.milestones, true);
+      await this.revisions.ensureBaseline(client, {
+        workspaceId, resourceType, resourceId: templateId, sourceVersion: before.rows[0].version,
+        snapshot: before.rows[0], actorUserId: actorUser.userId,
+      });
+      let result;
+      try {
+        result = await client.query(
+          `UPDATE ${table} SET name=$1,${contentColumn}=$2,status=$3,version=version+1,updated_at=now()
+           WHERE workspace_id=$4 AND id=$5 AND version=$6
+           RETURNING id,name,version,${contentColumn},status,updated_at AS "updatedAt"`,
+          [name, JSON.stringify(content), status, workspaceId, templateId, input.version],
+        );
+      } catch (error) {
+        if ((error as { code?: string }).code === "23505") throw new ConflictException("Another template already uses this name.");
+        throw error;
+      }
+      if (!result.rowCount) throw new ConflictException("Template changed. Reload before restoring.");
+      await this.revisions.record(client, {
+        workspaceId, resourceType, resourceId: templateId, sourceVersion: result.rows[0].version,
+        action: "rolled_back", snapshot: result.rows[0], actorUserId: actorUser.userId,
+        sourceRevisionId: revision.id,
+      });
+      return result.rows[0];
+    });
+  }
+
   private async importIncludedScope(
     client: import("pg").PoolClient,
     workspaceId: string,
@@ -958,7 +1258,8 @@ export class CommercialService {
         return {
           items: (
             await client.query(
-              `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration,r.content->'commerce' AS commerce,r.content->>'description' AS description,
+              `SELECT r.id,r.name,r.code,r.kind,r.version,r.catalog_id AS "catalogId",c.name AS "catalogName",r.content->'attributes' AS attributes,CASE WHEN r.kind='unit' THEN coalesce(r.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(r.content->'configuration'->>'symbol',r.content->'aliases'->>0,r.code)) ELSE r.content->'configuration' END AS configuration,r.content->'commerce' AS commerce,r.content->>'description' AS description,
+      (SELECT jsonb_build_object('id',asset.id,'recordId',asset.catalog_record_id,'name',asset.original_name,'mimeType',asset.mime_type,'hasPreview',asset.preview_key IS NOT NULL) FROM workspace_catalog_assets asset WHERE asset.workspace_id=r.workspace_id AND asset.catalog_record_id=r.id AND asset.status='active' AND asset.role='primary_image' ORDER BY asset.sort_order,asset.created_at,asset.id LIMIT 1) AS "primaryAsset",
       coalesce((SELECT jsonb_agg(jsonb_build_object('role',l.relation,'recordId',t.id,'snapshot',jsonb_build_object('id',t.id,'name',t.name,'code',t.code,'kind',t.kind,'version',t.version,'catalogId',t.catalog_id,'catalogName',tc.name,'configuration',CASE WHEN t.kind='unit' THEN coalesce(t.content->'configuration','{}'::jsonb)||jsonb_build_object('symbol',coalesce(t.content->'configuration'->>'symbol',t.content->'aliases'->>0,t.code)) ELSE t.content->'configuration' END))) FROM workspace_catalog_links l JOIN workspace_catalog_records t ON t.workspace_id=l.workspace_id AND t.id=l.target_id JOIN workspace_catalog_records tc ON tc.workspace_id=t.workspace_id AND tc.id=t.catalog_id WHERE l.workspace_id=r.workspace_id AND l.record_id=r.id AND l.relation IN ('unit','work','variant','material','finish','brand','construction') AND NOT t.archived AND NOT tc.archived),'[]'::jsonb) AS links
       FROM workspace_catalog_records r JOIN workspace_catalog_records c ON c.workspace_id=r.workspace_id AND c.id=r.catalog_id WHERE r.workspace_id=$1 AND (r.kind=$2 OR ($2='material' AND r.kind IN ('sku','hardware','consumable'))) AND NOT r.archived AND NOT c.archived AND ($3='' OR strpos(lower(r.name||' '||r.code||' '||c.name),lower($3))>0) AND ($4='' OR r.catalog_id::text=$4) AND ($5='' OR EXISTS(SELECT 1 FROM workspace_catalog_links l WHERE l.workspace_id=r.workspace_id AND ((l.record_id=r.id AND l.target_id::text=$5) OR (l.target_id=r.id AND l.record_id::text=$5)))) ORDER BY r.name,r.id LIMIT 100`,
               [w, kind, search, catalog, linked],
@@ -1043,7 +1344,9 @@ export class CommercialService {
         const record = await this.caseRecord(c, w, caseId);
         const data = await this.load(c, w, caseId);
         const catalogs = await c.query(
-          `SELECT r.id,r.name,r.code,r.kind,r.version,r.updated_at AS "updatedAt",r.catalog_id AS "catalogId",parent.name AS "catalogName",r.content FROM workspace_catalog_records r LEFT JOIN workspace_catalog_records parent ON parent.workspace_id=r.workspace_id AND parent.id=r.catalog_id WHERE r.workspace_id=$1 AND NOT r.archived AND (r.kind='catalog_group' OR (parent.id IS NOT NULL AND NOT parent.archived)) ORDER BY r.kind,r.name`,
+          `SELECT r.id,r.name,r.code,r.kind,r.version,r.updated_at AS "updatedAt",r.catalog_id AS "catalogId",parent.name AS "catalogName",r.content,
+            (SELECT jsonb_build_object('id',asset.id,'recordId',asset.catalog_record_id,'name',asset.original_name,'mimeType',asset.mime_type,'hasPreview',asset.preview_key IS NOT NULL) FROM workspace_catalog_assets asset WHERE asset.workspace_id=r.workspace_id AND asset.catalog_record_id=r.id AND asset.status='active' AND asset.role='primary_image' ORDER BY asset.sort_order,asset.created_at,asset.id LIMIT 1) AS "primaryAsset"
+           FROM workspace_catalog_records r LEFT JOIN workspace_catalog_records parent ON parent.workspace_id=r.workspace_id AND parent.id=r.catalog_id WHERE r.workspace_id=$1 AND NOT r.archived AND (r.kind='catalog_group' OR (parent.id IS NOT NULL AND NOT parent.archived)) ORDER BY r.kind,r.name`,
           [w],
         );
         const links = (
@@ -1142,17 +1445,7 @@ export class CommercialService {
   ) {
     const b = object(input),
       action = text(b.action, 50, true);
-    const permission = [
-      "approve",
-      "decide_owner_review",
-      "execute_agreement",
-      "verify_payment",
-      "verify_credit",
-    ].includes(action)
-      ? "commercial.approve"
-      : action === "release"
-        ? "commercial.release"
-        : "pre_projects.edit";
+    const permission = commercialCommandPermission(action);
     return this.access.withPermissions(
       actor,
       workspaceId,
@@ -1456,6 +1749,9 @@ export class CommercialService {
             status: "draft",
             title,
             cover: structuredClone(base.cover),
+            presentation: base.presentation
+              ? structuredClone(base.presentation)
+              : undefined,
             inclusions: base.inclusions,
             currency: base.currency,
             validUntil: new Date(Date.now() + 30 * 86400000)
@@ -1555,6 +1851,9 @@ export class CommercialService {
               location: "",
               subtitle: "Interior design & fit-out proposal",
             },
+            presentation: q?.presentation
+              ? structuredClone(q.presentation)
+              : undefined,
             inclusions: q?.inclusions ?? "",
             currency: q?.currency ?? record.currency ?? "AED",
             validUntil: new Date(Date.now() + 30 * 86400000)
@@ -1712,6 +2011,13 @@ export class CommercialService {
               );
           }
           const known = new Map(q.lines.map((l) => [l.id, l]));
+          const canEditCosts = await this.access.hasPermission(
+            client,
+            workspaceId,
+            user.userId,
+            "commercial.costs.manage",
+          );
+          preserveUnauthorizedCosts(lines, known, canEditCosts);
           for (const l of lines) {
             const old = known.get(l.id);
             delete l.scopeId;
@@ -1724,9 +2030,38 @@ export class CommercialService {
                 specificationVersion: old.specificationVersion,
               });
           }
+          let canOverridePrice: boolean | undefined;
+          const manualAuthorizations = manualLineAuthorizations(lines, known);
+          if (manualAuthorizations.length) {
+            canOverridePrice = await this.access.hasPermission(
+              client,
+              workspaceId,
+              user.userId,
+              "commercial.override_price",
+            );
+            if (!canOverridePrice)
+              throw new ForbiddenException(
+                "Commercial price override permission is required to add a manual quotation item.",
+              );
+            const missingReason = manualAuthorizations.find(
+              (line) => !line.manualReason?.trim(),
+            );
+            if (missingReason)
+              throw new BadRequestException(
+                `Explain why ${missingReason.title} is being added without confirmed scope or a catalogue source.`,
+              );
+            for (const line of manualAuthorizations)
+              data.audit.push({
+                id: randomUUID(),
+                at: now,
+                actor: user.displayName,
+                action: "manual_quotation_line_authorized",
+                quoteId: q.id,
+                note: `${line.title} — ${line.manualReason}`,
+              });
+          }
           const quoteCurrency = currency(v.currency),
             quoteTaxRate = number(v.taxRate, 100);
-          let canOverridePrice: boolean | undefined;
           let defaultPricingDate: string | undefined;
           for (const line of lines) {
             const old = known.get(line.id),
@@ -1764,23 +2099,12 @@ export class CommercialService {
               ? sameCatalogPriceSelection(old.catalogPrice, line)
               : false;
             if (!priceRequest && old?.catalogPrice && sameSelection) {
-              const unchangedBasis =
-                old.catalogPrice.quantity === line.quantity &&
-                old.catalogPrice.currency === quoteCurrency &&
-                old.catalogPrice.taxRate === quoteTaxRate &&
-                (old.catalogPrice.unitLabel === undefined ||
-                  old.catalogPrice.unitLabel === line.unit);
-              line.catalogPrice = unchangedBasis
-                ? structuredClone(old.catalogPrice)
-                : {
-                    ...structuredClone(old.catalogPrice),
-                    status: "stale",
-                    issue: {
-                      code: "stale",
-                      message:
-                        "Refresh this price after changing quantity, currency or tax.",
-                    },
-                  };
+              line.catalogPrice = retainedCatalogPrice(
+                old.catalogPrice,
+                line,
+                quoteCurrency,
+                quoteTaxRate,
+              );
               line.rate = catalogSnapshotRate(line.catalogPrice);
               continue;
             }
@@ -1914,6 +2238,10 @@ export class CommercialService {
           Object.assign(q, {
             title: text(v.title, 240, true),
             ...(v.cover ? { cover: parseCover(v.cover) } : {}),
+            presentation:
+              v.presentation === undefined
+                ? q.presentation
+                : parseQuotePresentation(v.presentation),
             inclusions: text(v.inclusions ?? "", 6000),
             currency: quoteCurrency,
             validUntil: date(v.validUntil),
@@ -2029,7 +2357,24 @@ export class CommercialService {
                   number: baseline.number,
                   hash: baseline.snapshotHash,
                 };
-              } else delete q.definitionBaseline;
+                q.designEvidence = await captureApprovedDesignBaseline(
+                  client,
+                  workspaceId,
+                  caseId,
+                  q.lines.map((line) => ({
+                    scopeLineId: line.id,
+                    sourceScopeId: line.scopeId,
+                    sourceScopeVersion: line.scopeVersion,
+                    sourceSpecificationVersion: line.specificationVersion,
+                    title: line.title,
+                  })),
+                  now,
+                  q.definitionBaseline,
+                );
+              } else {
+                delete q.definitionBaseline;
+                delete q.designEvidence;
+              }
             }
             q.total = totals(q).total;
             q.status = "internal_review";
@@ -2145,9 +2490,11 @@ export class CommercialService {
             throw new ConflictException(
               "Client acceptance is required before owner review.",
             );
+          assertQuoteSnapshot(accepted);
           if (
             data.agreement?.status !== "executed" ||
-            data.agreement?.quoteId !== accepted.id
+            !agreementMatchesAcceptedQuote(data.agreement, accepted) ||
+            !agreementMatchesFinanceContext(data)
           )
             throw new ConflictException(
               "Verify the signed agreement before owner review.",
@@ -2202,7 +2549,7 @@ export class CommercialService {
           );
           if (
             !accepted ||
-            (accepted.hash ?? freezeHash(accepted)) !== review.quoteHash
+            assertQuoteSnapshot(accepted) !== review.quoteHash
           )
             throw new ConflictException(
               "The accepted quotation changed. Submit a new owner review.",
@@ -2214,18 +2561,12 @@ export class CommercialService {
                 "Complete every owner review check before approval.",
               );
             if (
-              !agreementIsOperational(agreement) ||
-              agreement?.quoteId !== accepted.id ||
-              data.payments.some(
-                (payment) =>
-                  payment.requiredForRelease &&
-                  !releasePaymentIsOperational(payment),
-              )
+              !ownerReviewInputsReady(data, accepted)
             )
               throw new ConflictException(
-                "Verify the agreement and release payments before owner approval.",
+                "Verify the agreement and exact client material approvals before owner approval.",
               );
-            const snapshot = totals(accepted);
+            const snapshot = acceptedQuoteTotals(accepted);
             review.status = "approved";
             review.decisionNote = decisionNote;
             review.decidedAt = now;
@@ -2240,11 +2581,16 @@ export class CommercialService {
               quoteNumber: accepted.number,
               quoteHash: review.quoteHash,
               definitionBaseline: accepted.definitionBaseline,
+              designEvidence: accepted.designEvidence,
+              materialEvidence: approvedMaterialEvidence(
+                accepted,
+                data.materialApprovals,
+              ),
               agreementReference: agreement!.reference,
               paymentIds: data.payments
                 .filter((payment) => payment.requiredForRelease)
                 .map((payment) => payment.id),
-              value: accepted.total,
+              value: acceptedQuoteValue(accepted),
               cost: snapshot.cost,
               margin: snapshot.margin,
               commission: review.commission,
@@ -2360,28 +2706,89 @@ export class CommercialService {
               client,
               workspaceId,
               user.userId,
-              "commercial.approve",
+              "commercial.finance.verify",
             ))
           )
-            throw new ForbiddenException("Commercial approval is required.");
+            throw new ForbiddenException("Finance verification is required.");
           const credit = data.credits?.find((c) => c.id === b.creditId);
           if (!credit) throw new NotFoundException("Client credit not found.");
           if (credit.status === "verified")
             throw new ConflictException(
               "This client credit was already verified.",
             );
-          credit.reference = text(b.reference, 500, true);
-          credit.evidence = text(b.evidence, 3000, true);
-          credit.verifiedBy = user.displayName;
-          credit.verifiedAt = now;
-          credit.status = "verified";
-        } else if (action === "request") {
-          newRequest(
+          recordCreditNote(
             data,
-            text(b.title, 240, true),
-            text(b.detail, 6000, true),
-            q?.id,
+            credit,
+            {
+              reference: text(b.reference, 500, true),
+              evidence: text(b.evidence, 3000, true),
+            },
+            user.displayName,
+            now,
           );
+        } else if (action === "request") {
+          if (b.decisionRequest === true) {
+            const targetType = text(b.targetType, 30, true);
+            if (!["quotation", "material"].includes(targetType))
+              throw new BadRequestException("Choose a supported exact revision.");
+            const targetId = text(b.targetId, 80, true);
+            const targetRevision = number(b.targetRevision, 1_000_000, 1);
+            let targetLabel = "";
+            let clientApproverGrantId = "";
+            if (targetType === "quotation") {
+              const target = data.quotes.find((item) => item.id === targetId && item.number === targetRevision && Boolean(item.issuedAt));
+              if (!target) throw new ConflictException("The selected quotation revision is no longer available.");
+              if (!target.approverId) throw new ConflictException("Assign a client approver to this quotation revision first.");
+              targetLabel = `Quotation V${target.number}`;
+              clientApproverGrantId = target.approverId;
+            } else {
+              const target = data.materialApprovals?.find((item) => item.id === targetId && item.revision === targetRevision && item.status === "client_review");
+              if (!target) throw new ConflictException("The selected material revision is no longer awaiting review.");
+              if (!target.approverId) throw new ConflictException("Assign a client approver to this material revision first.");
+              targetLabel = `${target.name} · Revision ${target.revision}`;
+              clientApproverGrantId = target.approverId;
+            }
+            if (!Array.isArray(b.allowedChoices) || b.allowedChoices.length < 2 || b.allowedChoices.length > 8)
+              throw new BadRequestException("Add between two and eight clear choices.");
+            const labels = b.allowedChoices.map((choice) => text(choice, 80, true));
+            if (new Set(labels.map((choice) => choice.toLocaleLowerCase())).size !== labels.length)
+              throw new BadRequestException("Decision choices must be unique.");
+            const dueDate = date(b.dueDate);
+            if (dueDate < now.slice(0, 10)) throw new BadRequestException("Choose today or a future due date.");
+            const escalationMinutes = b.escalationMinutes == null || b.escalationMinutes === ""
+              ? null : number(Number(b.escalationMinutes), 43_200, 0);
+            const requestedChannels = Array.isArray(b.reminderChannels) ? b.reminderChannels : ["in_app"];
+            const channels = [...new Set(requestedChannels.map((channel) => text(channel, 20, true)))];
+            if (channels.some((channel) => !["in_app", "email", "whatsapp"].includes(channel)))
+              throw new BadRequestException("Choose a supported reminder channel.");
+            const membership = await client.query<{ id: string }>(
+              `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active' LIMIT 1`,
+              [workspaceId, user.userId],
+            );
+            if (!membership.rows[0]) throw new ForbiddenException("An active workspace membership is required.");
+            const request = newRequest(data, text(b.title, 240, true), text(b.detail, 6000, true), q?.id, {
+              ownerMembershipId: membership.rows[0].id,
+              clientApproverGrantId,
+              target: { type: targetType as "quotation" | "material", id: targetId, revision: targetRevision, label: targetLabel },
+              allowedChoices: labels.map((label, index) => ({ id: `choice-${index + 1}`, label })),
+              escalationMinutes,
+              notificationPolicy: {
+                remindersEnabled: b.remindersEnabled !== false,
+                channels: channels as Array<"in_app" | "email" | "whatsapp">,
+              },
+              decision: null,
+            });
+            request.owner = user.displayName;
+            request.dueDate = dueDate;
+            request.status = "awaiting_decision";
+          } else {
+            newRequest(
+              data,
+              text(b.title, 240, true),
+              text(b.detail, 6000, true),
+              q?.id,
+            );
+          }
         } else if (action === "update_request") {
           const r = data.requests.find((r) => r.id === b.requestId);
           if (!r) throw new NotFoundException("Request not found.");
@@ -2454,35 +2861,78 @@ export class CommercialService {
           );
           if (!quote)
             throw new ConflictException("Select the accepted base quotation.");
+          const quoteHash = assertQuoteSnapshot(quote);
+          const acceptedTotal = quote.clientDecision?.acceptedTotal;
+          if (
+            quote.clientDecision?.decision !== "accept" ||
+            quote.clientDecision.quoteHash !== quoteHash ||
+            acceptedTotal === undefined
+          )
+            throw new ConflictException(
+              "This accepted quotation is missing revision-bound acceptance evidence. Ask the client to accept the current issued revision again.",
+            );
           if (data.agreement?.status === "executed")
             throw new ConflictException(
               "Executed agreement evidence is locked. A separate amendment is required.",
             );
+          const financeContext = bindFinanceContext(
+            data.financeContext,
+            record,
+            quote.currency,
+            now,
+          );
+          data.financeContext = financeContext;
+          const agreementReference = text(b.reference, 200, true);
           if (!data.payments.length) {
             let allocated = 0;
             data.payments = (quote.paymentTerms ?? []).map((term, index) => {
               const amount =
                 index === quote.paymentTerms.length - 1
-                  ? Math.round((quote.total - allocated) * 100) / 100
-                  : Math.round(quote.total * term.percent) / 100;
+                  ? Math.round((acceptedTotal - allocated) * 100) / 100
+                  : Math.round(acceptedTotal * term.percent) / 100;
               allocated += amount;
               return {
                 id: randomUUID(),
                 sourceQuoteId: quote.id,
+                legalEntityId: financeContext.legalEntityId,
+                currency: financeContext.currency,
+                agreementReference,
                 title: term.title,
                 amount,
                 dueDate: "",
                 trigger: term.trigger,
                 requiredForRelease: term.requiredForRelease,
+                requiredForProduction: term.requiredForProduction === true,
                 status: "pending" as const,
                 proof: "",
                 reference: "",
               };
             });
           }
+          for (const payment of data.payments) {
+            if (
+              payment.legalEntityId &&
+              payment.legalEntityId !== financeContext.legalEntityId
+            )
+              throw new ConflictException(
+                "An existing payment milestone belongs to another legal entity.",
+              );
+            if (payment.currency && payment.currency !== financeContext.currency)
+              throw new ConflictException(
+                "An existing payment milestone uses another contract currency.",
+              );
+            payment.legalEntityId = financeContext.legalEntityId;
+            payment.currency = financeContext.currency;
+            payment.agreementReference = agreementReference;
+          }
           data.agreement = {
             quoteId: quote.id,
-            reference: text(b.reference, 200, true),
+            quoteHash,
+            selectedOptionLineIds: [...quote.clientDecision.selectedOptionLineIds],
+            acceptedTotal,
+            legalEntityId: financeContext.legalEntityId,
+            currency: financeContext.currency,
+            reference: agreementReference,
             terms: text(b.terms, 10000, true),
             evidence: text(b.evidence, 3000),
             evidenceKind:
@@ -2498,6 +2948,21 @@ export class CommercialService {
           )
             throw new ConflictException(
               "Record operational signed-agreement evidence first. Demonstration evidence cannot execute a live agreement.",
+            );
+          const acceptedQuote = data.quotes.find(
+            (quote) => quote.id === data.agreement!.quoteId && quote.status === "accepted",
+          );
+          if (
+            !acceptedQuote ||
+            !agreementMatchesFinanceContext(data) ||
+            !data.agreement.quoteHash ||
+            assertQuoteSnapshot(acceptedQuote) !== data.agreement.quoteHash ||
+            acceptedQuote.clientDecision?.acceptedTotal !== data.agreement.acceptedTotal ||
+            JSON.stringify(acceptedQuote.clientDecision?.selectedOptionLineIds ?? []) !==
+              JSON.stringify(data.agreement.selectedOptionLineIds ?? [])
+          )
+            throw new ConflictException(
+              "The agreement no longer matches the accepted quotation evidence. Record a new agreement from the accepted revision.",
             );
           data.agreement.status = "executed";
           data.agreement.executedBy = user.displayName;
@@ -2522,17 +2987,23 @@ export class CommercialService {
             existing?.sourceQuoteId &&
             (roundAmount(b.amount) !== existing.amount ||
               text(b.title, 160, true) !== existing.title ||
-              b.requiredForRelease !== existing.requiredForRelease)
+              b.requiredForRelease !== existing.requiredForRelease ||
+              (b.requiredForProduction === true) !==
+                (existing.requiredForProduction === true))
           )
             throw new ConflictException(
               "The accepted milestone amount and conditions are fixed. Update only its due date and accounting reference.",
             );
           const value = {
             id: existing?.id ?? randomUUID(),
+            legalEntityId: data.financeContext?.legalEntityId,
+            currency: data.financeContext?.currency,
+            agreementReference: data.agreement.reference,
             title: text(b.title, 160, true),
             amount: roundAmount(b.amount),
             dueDate: date(b.dueDate),
             requiredForRelease: b.requiredForRelease === true,
+            requiredForProduction: b.requiredForProduction === true,
             status: "pending" as const,
             proof: "",
             reference: text(b.reference ?? "", 240),
@@ -2550,27 +3021,50 @@ export class CommercialService {
               trigger: existing.trigger,
             });
           else data.payments.push(value);
+        } else if (action === "report_payment_receipt") {
+          const payment = data.payments.find((p) => p.id === b.paymentId);
+          if (!payment) throw new NotFoundException("Payment not found.");
+          if (payment.status === "verified")
+            throw new ConflictException("Payment already verified.");
+          const receiptReference = text(b.reference, 240, true);
+          const receiptEvidence = text(b.evidence, 3000, true);
+          payment.evidenceKind =
+            b.evidenceKind === "demonstration"
+              ? "demonstration"
+              : "operational";
+          if (
+            !isOperationalEvidence({
+              evidenceKind: payment.evidenceKind,
+              proof: receiptEvidence,
+              reference: receiptReference,
+            })
+          )
+            throw new ConflictException(
+              "Demonstration evidence cannot create a live receipt.",
+            );
+          reportManualReceipt(
+            data,
+            payment,
+            {
+              reference: receiptReference,
+              evidence: receiptEvidence,
+            },
+            user.displayName,
+            now,
+          );
         } else if (action === "verify_payment") {
           const payment = data.payments.find((p) => p.id === b.paymentId);
           if (!payment) throw new NotFoundException("Payment not found.");
           if (payment.status === "verified")
             throw new ConflictException("Payment already verified.");
-          if (payment.invoice)
+          verifyReceipt(data, payment, user.displayName, now);
+          if (
+            !releasePaymentIsOperational(payment) ||
+            !paymentHasFinanceVerifiedReceipt(data, payment)
+          )
             throw new ConflictException(
-              "Refresh the linked accounting invoice to verify settlement. A manual reference cannot override its balance.",
+              "Only operational receipt evidence can verify a live milestone.",
             );
-          payment.reference = text(b.reference, 240, true);
-          payment.evidenceKind =
-            b.evidenceKind === "demonstration"
-              ? "demonstration"
-              : "operational";
-          if (!releasePaymentIsOperational({ ...payment, status: "verified" }))
-            throw new ConflictException(
-              "Demonstration payment evidence cannot verify a live milestone.",
-            );
-          payment.status = "verified";
-          payment.verifiedAt = now;
-          payment.verifiedBy = user.displayName;
         } else if (action === "release") {
           if (data.release)
             throw new ConflictException(
@@ -2597,6 +3091,8 @@ export class CommercialService {
           if (
             !accepted ||
             !agreementIsOperational(data.agreement) ||
+            !agreementMatchesAcceptedQuote(data.agreement, accepted) ||
+            !agreementMatchesFinanceContext(data) ||
             data.agreement?.quoteId !== accepted.id
           )
             throw new ConflictException(
@@ -2614,13 +3110,9 @@ export class CommercialService {
             throw new ConflictException(
               "Complete the client material approvals before release.",
             );
-          if (
-            data.payments.some(
-              (p) => p.requiredForRelease && !releasePaymentIsOperational(p),
-            )
-          )
+          if (!financeGatePaymentsReady(data, "release"))
             throw new ConflictException(
-              "Verify the payments required for release.",
+              "The contract needs at least one finance-verified release milestone before execution release.",
             );
           if (
             data.requests.some(
@@ -2655,6 +3147,8 @@ export class CommercialService {
           user.displayName,
           action,
           q?.id,
+          "",
+          user.userId,
         );
         return { data };
       },
@@ -2700,4 +3194,28 @@ function sameCatalogPriceSelection(
         (snapshot.unit?.id === unit.recordId &&
           snapshot.unit?.version === unit.version)),
   );
+}
+
+/** Preserve the exact resolved evidence unless a quote basis changed. */
+export function retainedCatalogPrice(
+  previous: CatalogPriceSnapshot,
+  line: QuoteLine,
+  currencyCode: string,
+  taxRate: number,
+) {
+  const snapshot = structuredClone(previous);
+  const unchangedBasis =
+    previous.quantity === line.quantity &&
+    previous.currency === currencyCode &&
+    previous.taxRate === taxRate &&
+    (previous.unitLabel === undefined || previous.unitLabel === line.unit);
+  if (unchangedBasis) return snapshot;
+  return {
+    ...snapshot,
+    status: "stale" as const,
+    issue: {
+      code: "stale",
+      message: "Refresh this price after changing quantity, currency or tax.",
+    },
+  };
 }

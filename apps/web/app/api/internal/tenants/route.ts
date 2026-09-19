@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     : randomUUID();
   const tenant = { ...input };
   delete tenant.idempotencyKey;
-  return internalJsonResponse("/internal/tenants", {
+  return internalJsonResponse("/internal/operator/tenants", {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
     body: JSON.stringify(tenant),

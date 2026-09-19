@@ -14,7 +14,8 @@ describe("brand identities", () => {
       const variant = identityVariant(name);
       expect(variant).toBeGreaterThanOrEqual(0);
       expect(variant).toBeLessThan(IDENTITY_VARIANT_COUNT);
-      expect(identityStyle(name).backgroundImage).toBe(`var(--wd-identity-gradient-${variant})`);
+      expect(identityStyle(name).backgroundImage).toBe("none");
+      expect(identityStyle(name).backgroundColor).toBe(`var(--wd-identity-color-${variant})`);
     }
   });
 
@@ -28,6 +29,13 @@ describe("brand identities", () => {
     expect(style.backgroundImage).toBe('url("/logo.png?version=2")');
     expect(style.color).toBeUndefined();
     expect(style.backgroundSize).toBe("cover");
+    expect(style.backgroundRepeat).toBe("no-repeat");
+  });
+
+  it("supports contained company marks on the tenant brand surface", () => {
+    const style = identityStyle("Palm Living", "/palm.png", { fit: "contain", surface: "brand" });
+    expect(style.backgroundSize).toBe("contain");
+    expect(style.backgroundColor).toContain("--wd-workspace-brand-light-100");
   });
 
   it("handles single names, whitespace, empty names and non-Latin initials", () => {

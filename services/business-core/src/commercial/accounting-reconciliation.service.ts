@@ -7,6 +7,11 @@ import { DatabaseService } from "../database/database.service";
 import { CommercialService } from "./commercial.service";
 import { object, text } from "./commercial.domain";
 import { verifiedInvoiceSnapshot } from "./accounting-invoice";
+import {
+  recordProviderSettlement,
+  reverseProviderSettlement,
+  upsertProviderInvoiceDocument,
+} from "./finance-ledger";
 const actor = "00000000-0000-4000-8000-000000000000";
 @Injectable()
 export class AccountingReconciliationService {
@@ -83,19 +88,47 @@ export class AccountingReconciliationService {
             lastError: "",
             checkedAt,
           });
+          upsertProviderInvoiceDocument(
+            d,
+            p,
+            {
+              provider: job.provider,
+              connectionId: job.connection_id,
+              providerDocumentId: job.invoice_id,
+              number: p.invoice.number,
+              total: verified.total,
+              status: verified.status,
+            },
+            checkedAt,
+          );
           if (settled) {
-            p.status = "verified";
-            p.verifiedAt = checkedAt;
-            p.verifiedBy = "Accounting reconciliation";
-          } else if (p.status === "verified") {
-            p.status = "pending";
-            delete p.verifiedAt;
-            delete p.verifiedBy;
+            recordProviderSettlement(
+              d,
+              p,
+              {
+                provider: job.provider,
+                connectionId: job.connection_id,
+                providerDocumentId: job.invoice_id,
+                reference: p.invoice.number || job.invoice_id,
+              },
+              "Accounting provider",
+              checkedAt,
+            );
+          } else {
+            const wasVerified = p.status === "verified";
+            const reversed = reverseProviderSettlement(
+              d,
+              p,
+              "The accounting provider no longer reports this invoice as settled.",
+              checkedAt,
+            );
+            if (wasVerified || reversed) {
             // Settlement reversal reopens the financial account, without changing accepted physical handovers.
             await client.query(
               `UPDATE project_execution SET content=jsonb_set(jsonb_set(jsonb_set(content,'{financeClosed}','false'::jsonb),'{financeEvidence}',to_jsonb('Accounting balance reopened; review settlement.'::text)),'{revision}',to_jsonb(revision+1)),revision=revision+1,updated_at=now() WHERE workspace_id=$1 AND project_id IN(SELECT id FROM delivery_projects WHERE workspace_id=$1 AND case_id=$2)`,
               [w, c],
             );
+            }
           }
         } catch {
           error =

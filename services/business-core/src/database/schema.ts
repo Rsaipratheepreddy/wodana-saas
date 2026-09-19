@@ -113,8 +113,74 @@ export const platformAdministrators = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    check("platform_administrators_role_check", sql`${table.role} IN ('administrator')`),
+    check("platform_administrators_role_check", sql`${table.role} IN ('administrator', 'platform_security_owner', 'provisioning_operator', 'account_billing_operator', 'domain_operator', 'support_observer')`),
     check("platform_administrators_status_check", sql`${table.status} IN ('active', 'suspended')`),
+  ],
+);
+
+export const platformOperatorChallenges = pgTable(
+  "platform_operator_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: char("token_hash", { length: 64 }).notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    purpose: varchar("purpose", { length: 20 }).notNull(),
+    credentialChangedAt: timestamp("credential_changed_at", { withTimezone: true }).notNull(),
+    mfaSessionVersion: integer("mfa_session_version").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    ipAddress: varchar("ip_address", { length: 64 }),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("platform_operator_challenges_token_uidx").on(table.tokenHash),
+    index("platform_operator_challenges_user_idx").on(table.userId, table.consumedAt, table.expiresAt),
+    check("platform_operator_challenges_purpose_check", sql`${table.purpose} IN ('login', 'enroll')`),
+    check("platform_operator_challenges_attempts_check", sql`${table.failedAttempts} >= 0 AND ${table.maxAttempts} BETWEEN 1 AND 20`),
+    check("platform_operator_challenges_mfa_version_check", sql`${table.mfaSessionVersion} >= 0`),
+  ],
+);
+
+export const platformOperatorSessions = pgTable(
+  "platform_operator_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: char("token_hash", { length: 64 }).notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    credentialChangedAt: timestamp("credential_changed_at", { withTimezone: true }).notNull(),
+    mfaSessionVersion: integer("mfa_session_version").notNull(),
+    mfaVerifiedAt: timestamp("mfa_verified_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ipAddress: varchar("ip_address", { length: 64 }),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("platform_operator_sessions_token_uidx").on(table.tokenHash),
+    index("platform_operator_sessions_user_idx").on(table.userId, table.revokedAt, table.expiresAt),
+    check("platform_operator_sessions_mfa_version_check", sql`${table.mfaSessionVersion} >= 0`),
+  ],
+);
+
+export const platformOperatorAudit = pgTable(
+  "platform_operator_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    action: varchar("action", { length: 100 }).notNull(),
+    targetType: varchar("target_type", { length: 60 }),
+    targetId: varchar("target_id", { length: 120 }),
+    correlationId: varchar("correlation_id", { length: 120 }),
+    details: jsonb("details").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("platform_operator_audit_actor_created_idx").on(table.actorUserId, table.createdAt),
+    check("platform_operator_audit_details_check", sql`jsonb_typeof(${table.details}) = 'object'`),
   ],
 );
 
@@ -349,6 +415,8 @@ export const customerAccounts = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     externalCustomerId: varchar("external_customer_id", { length: 160 }),
     displayName: varchar("display_name", { length: 160 }).notNull(),
+    contractContactName: varchar("contract_contact_name", { length: 160 }),
+    contractContactEmail: citext("contract_contact_email"),
     status: varchar("status", { length: 20 }).notNull().default("active"),
     organizationLimit: integer("organization_limit").notNull().default(1),
     securityPolicy: jsonb("security_policy").$type<Record<string, unknown>>().notNull().default({
@@ -378,6 +446,28 @@ export const customerAccounts = pgTable(
     check("customer_accounts_version_check", sql`${table.version} > 0`),
   ],
 );
+
+export const customerAccountContracts = pgTable("customer_account_contracts", {
+  accountId: uuid("account_id").primaryKey().references(() => customerAccounts.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 30 }).notNull().default("trial_uncontracted"),
+  planCode: varchar("plan_code", { length: 40 }).notNull(),
+  planVersion: integer("plan_version").notNull(),
+  currency: char("currency", { length: 3 }).notNull(),
+  billingCycle: varchar("billing_cycle", { length: 20 }).notNull(),
+  seatLimit: integer("seat_limit").notNull(),
+  projectLimit: integer("project_limit").notNull(),
+  contractReference: varchar("contract_reference", { length: 160 }),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
+  ...auditColumns,
+}, (table) => [
+  check("customer_account_contracts_status_check", sql`${table.status} IN ('trial_uncontracted', 'contracted', 'expired')`),
+  check("customer_account_contracts_cycle_check", sql`${table.billingCycle} IN ('monthly', 'yearly', 'custom')`),
+  check("customer_account_contracts_limits_check", sql`${table.seatLimit} > 0 AND ${table.projectLimit} > 0`),
+  check("customer_account_contracts_version_check", sql`${table.version} > 0`),
+  check("customer_account_contracts_signed_check", sql`(${table.status} = 'contracted') = (${table.signedAt} IS NOT NULL)`),
+]);
 
 export const customerAccountMemberships = pgTable(
   "customer_account_memberships",
@@ -472,6 +562,58 @@ export const workspaceTerminology = pgTable(
     ),
     check("workspace_terminology_version_check", sql`${table.version} > 0`),
     index("workspace_terminology_updated_idx").on(table.workspaceId, table.updatedAt),
+  ],
+);
+
+export const workspaceConfigurationRevisions = pgTable(
+  "workspace_configuration_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    resourceType: varchar("resource_type", { length: 64 }).notNull(),
+    resourceId: varchar("resource_id", { length: 160 }).notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    sourceVersion: integer("source_version").notNull(),
+    action: varchar("action", { length: 32 }).notNull(),
+    snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+    sourceRevisionId: uuid("source_revision_id").references(
+      (): AnyPgColumn => workspaceConfigurationRevisions.id,
+      { onDelete: "set null" },
+    ),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_configuration_revisions_unique").on(
+      table.workspaceId,
+      table.resourceType,
+      table.resourceId,
+      table.revisionNumber,
+    ),
+    index("workspace_configuration_revisions_history_idx").on(
+      table.workspaceId,
+      table.resourceType,
+      table.resourceId,
+      table.revisionNumber,
+    ),
+    check(
+      "workspace_configuration_revisions_resource_type_check",
+      sql`${table.resourceType} IN ('workspace_terminology','project_workflow_template','crm_taxonomy','crm_custom_field','crm_qualification_form','quotation_template','payment_template','workspace_team')`,
+    ),
+    check(
+      "workspace_configuration_revisions_action_check",
+      sql`${table.action} IN ('baseline','created','saved','archived','restored_default','rolled_back')`,
+    ),
+    check(
+      "workspace_configuration_revisions_numbers_check",
+      sql`${table.revisionNumber} > 0 AND ${table.sourceVersion} >= 0`,
+    ),
+    check(
+      "workspace_configuration_revisions_snapshot_check",
+      sql`jsonb_typeof(${table.snapshot}) = 'object'`,
+    ),
   ],
 );
 
@@ -570,6 +712,9 @@ export const tenantLoginBranding = pgTable(
     loginSlug: varchar("login_slug", { length: 80 }).notNull(),
     displayName: varchar("display_name", { length: 160 }).notNull(),
     primaryColor: varchar("primary_color", { length: 7 }),
+    secondaryColor: varchar("secondary_color", { length: 7 }),
+    headingFont: varchar("heading_font", { length: 40 }),
+    bodyFont: varchar("body_font", { length: 40 }),
     logoUrl: text("logo_url"),
     logoAssetId: uuid("logo_asset_id").references(() => workspaceBrandAssets.id, {
       onDelete: "set null",
@@ -582,6 +727,54 @@ export const tenantLoginBranding = pgTable(
       "tenant_login_branding_primary_color_check",
       sql`${table.primaryColor} IS NULL OR ${table.primaryColor} ~ '^#[0-9A-F]{6}$'`,
     ),
+    check(
+      "tenant_login_branding_secondary_color_check",
+      sql`${table.secondaryColor} IS NULL OR ${table.secondaryColor} ~ '^#[0-9A-F]{6}$'`,
+    ),
+    check(
+      "tenant_login_branding_heading_font_check",
+      sql`${table.headingFont} IS NULL OR ${table.headingFont} IN ('alta')`,
+    ),
+    check(
+      "tenant_login_branding_body_font_check",
+      sql`${table.bodyFont} IS NULL OR ${table.bodyFont} IN ('montserrat')`,
+    ),
+  ],
+);
+
+export const workspaceDomains = pgTable(
+  "workspace_domains",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    hostname: varchar("hostname", { length: 253 }).notNull(),
+    requestKey: varchar("request_key", { length: 160 }).notNull(),
+    challengeValue: varchar("challenge_value", { length: 96 }).notNull(),
+    challengeExpiresAt: timestamp("challenge_expires_at", { withTimezone: true }).notNull(),
+    dnsStatus: varchar("dns_status", { length: 20 }).notNull().default("pending"),
+    dnsVerifiedAt: timestamp("dns_verified_at", { withTimezone: true }),
+    certificateStatus: varchar("certificate_status", { length: 24 }).notNull().default("not_requested"),
+    certificateExpiresAt: timestamp("certificate_expires_at", { withTimezone: true }),
+    routingStatus: varchar("routing_status", { length: 20 }).notNull().default("not_requested"),
+    routingActivatedAt: timestamp("routing_activated_at", { withTimezone: true }),
+    rollbackStatus: varchar("rollback_status", { length: 20 }).notNull().default("none"),
+    lastErrorCode: varchar("last_error_code", { length: 80 }),
+    version: integer("version").notNull().default(1),
+    requestedBy: uuid("requested_by").notNull().references(() => users.id),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("workspace_domains_live_hostname_uidx").on(table.hostname).where(sql`${table.removedAt} IS NULL`),
+    uniqueIndex("workspace_domains_request_key_uidx").on(table.workspaceId, table.requestKey),
+    index("workspace_domains_workspace_idx").on(table.workspaceId, table.createdAt),
+    check("workspace_domains_dns_status_check", sql`${table.dnsStatus} IN ('pending', 'verified', 'expired', 'failed')`),
+    check("workspace_domains_certificate_status_check", sql`${table.certificateStatus} IN ('not_requested', 'manual_setup_required', 'pending', 'issued', 'expired', 'failed')`),
+    check("workspace_domains_routing_status_check", sql`${table.routingStatus} IN ('not_requested', 'pending', 'active', 'failed')`),
+    check("workspace_domains_rollback_status_check", sql`${table.rollbackStatus} IN ('none', 'pending', 'completed', 'failed')`),
+    check("workspace_domains_version_check", sql`${table.version} > 0`),
+    check("workspace_domains_activation_check", sql`${table.routingStatus} <> 'active' OR (${table.dnsStatus} = 'verified' AND ${table.certificateStatus} = 'issued' AND ${table.routingActivatedAt} IS NOT NULL AND ${table.removedAt} IS NULL)`),
+    check("workspace_domains_certificate_check", sql`${table.certificateStatus} NOT IN ('pending', 'issued') OR ${table.dnsVerifiedAt} IS NOT NULL`),
   ],
 );
 
@@ -662,6 +855,72 @@ export const tenantProvisioningRequests = pgTable(
     uniqueIndex("tenant_provisioning_workspace_uidx").on(table.workspaceId),
   ],
 );
+
+export const tenantSetupProfiles = pgTable(
+  "tenant_setup_profiles",
+  {
+    kind: varchar("kind", { length: 20 }).notNull(),
+    code: varchar("code", { length: 40 }).notNull(),
+    version: integer("version").notNull(),
+    configuration: jsonb("configuration").$type<Record<string, unknown>>().notNull(),
+    selectable: boolean("selectable").notNull().default(true),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ name: "tenant_setup_profiles_pk", columns: [table.kind, table.code, table.version] }),
+    check("tenant_setup_profiles_kind_check", sql`${table.kind} IN ('region', 'firm_kit', 'plan')`),
+    check("tenant_setup_profiles_version_check", sql`${table.version} > 0`),
+    check("tenant_setup_profiles_configuration_check", sql`jsonb_typeof(${table.configuration}) = 'object'`),
+  ],
+);
+
+export const tenantProvisioningDrafts = pgTable(
+  "tenant_provisioning_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalTenantId: varchar("external_tenant_id", { length: 160 }).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+    provisionIdempotencyKey: varchar("provision_idempotency_key", { length: 160 }),
+    requestHash: char("request_hash", { length: 64 }).notNull(),
+    account: jsonb("account").$type<Record<string, unknown>>().notNull(),
+    organization: jsonb("organization").$type<Record<string, unknown>>().notNull(),
+    owner: jsonb("owner").$type<Record<string, unknown>>().notNull(),
+    defaults: jsonb("defaults").$type<Record<string, unknown>>().notNull(),
+    slug: varchar("slug", { length: 80 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    reservationExpiresAt: timestamp("reservation_expires_at", { withTimezone: true }).notNull(),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    lastErrorCode: varchar("last_error_code", { length: 80 }),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    updatedBy: uuid("updated_by").notNull().references(() => users.id),
+    ...auditColumns,
+  },
+  (table) => [
+    uniqueIndex("tenant_provisioning_drafts_external_uidx").on(table.externalTenantId),
+    uniqueIndex("tenant_provisioning_drafts_key_uidx").on(table.idempotencyKey),
+    uniqueIndex("tenant_provisioning_drafts_provision_key_uidx").on(table.provisionIdempotencyKey)
+      .where(sql`${table.provisionIdempotencyKey} IS NOT NULL`),
+    uniqueIndex("tenant_provisioning_drafts_live_slug_uidx").on(table.slug)
+      .where(sql`${table.status} IN ('draft', 'provisioning', 'failed', 'provisioned')`),
+    index("tenant_provisioning_drafts_status_idx").on(table.status, table.createdAt),
+    check("tenant_provisioning_drafts_status_check", sql`${table.status} IN ('draft', 'provisioning', 'provisioned', 'failed', 'expired')`),
+    check("tenant_provisioning_drafts_version_check", sql`${table.version} > 0`),
+    check("tenant_provisioning_drafts_json_check", sql`jsonb_typeof(${table.account}) = 'object' AND jsonb_typeof(${table.organization}) = 'object' AND jsonb_typeof(${table.owner}) = 'object' AND jsonb_typeof(${table.defaults}) = 'object'`),
+  ],
+);
+
+export const workspaceSetupVersions = pgTable("workspace_setup_versions", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  regionCode: varchar("region_code", { length: 40 }).notNull(),
+  regionVersion: integer("region_version").notNull(),
+  firmKitCode: varchar("firm_kit_code", { length: 40 }).notNull(),
+  firmKitVersion: integer("firm_kit_version").notNull(),
+  planCode: varchar("plan_code", { length: 40 }).notNull(),
+  planVersion: integer("plan_version").notNull(),
+  configurationSnapshot: jsonb("configuration_snapshot").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [check("workspace_setup_versions_snapshot_check", sql`jsonb_typeof(${table.configurationSnapshot}) = 'object'`)]);
 
 export const workspaceMemberships = pgTable(
   "workspace_memberships",
@@ -773,6 +1032,33 @@ export const workspaceInvitations = pgTable(
   ],
 );
 
+export const workspaceInvitationDelivery = pgTable("workspace_invitation_delivery", {
+  invitationId: uuid("invitation_id").primaryKey().references(() => workspaceInvitations.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 20 }).notNull().default("not_requested"),
+  attempts: integer("attempts").notNull().default(0),
+  provider: varchar("provider", { length: 40 }),
+  providerMessageId: varchar("provider_message_id", { length: 255 }),
+  lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("workspace_invitation_delivery_status_check", sql`${table.status} IN ('not_requested', 'pending', 'sent', 'not_configured', 'failed')`),
+  check("workspace_invitation_delivery_attempts_check", sql`${table.attempts} >= 0`),
+]);
+
+export const workspaceInvitationDeliveryCommands = pgTable("workspace_invitation_delivery_commands", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  invitationId: uuid("invitation_id").notNull().references(() => workspaceInvitations.id, { onDelete: "cascade" }),
+  idempotencyKey: varchar("idempotency_key", { length: 160 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  providerMessageId: varchar("provider_message_id", { length: 255 }),
+  ...auditColumns,
+}, (table) => [
+  uniqueIndex("workspace_invitation_delivery_commands_key_uidx").on(table.invitationId, table.idempotencyKey),
+  check("workspace_invitation_delivery_commands_status_check", sql`${table.status} IN ('pending', 'sent', 'not_configured', 'failed', 'superseded')`),
+]);
+
 export const invitationRoles = pgTable(
   "invitation_roles",
   {
@@ -788,6 +1074,17 @@ export const invitationRoles = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.invitationId, table.roleId] })],
+);
+
+export const invitationTeams = pgTable(
+  "invitation_teams",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    invitationId: uuid("invitation_id").notNull().references(() => workspaceInvitations.id, { onDelete: "cascade" }),
+    teamId: uuid("team_id").notNull().references(() => workspaceTeams.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.invitationId, table.teamId] })],
 );
 
 export const legalEntities = pgTable(
@@ -890,6 +1187,17 @@ export const workspaceTeamMembers = pgTable(
     index("workspace_team_members_membership_idx").on(table.membershipId),
     uniqueIndex("workspace_team_single_lead_uidx").on(table.teamId).where(sql`${table.isLead} = true`),
   ],
+);
+
+export const workspaceTeamRoles = pgTable(
+  "workspace_team_roles",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    teamId: uuid("team_id").notNull().references(() => workspaceTeams.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.teamId, table.roleId] }), index("workspace_team_roles_role_idx").on(table.workspaceId, table.roleId)],
 );
 
 export const currencies = pgTable("currencies", {

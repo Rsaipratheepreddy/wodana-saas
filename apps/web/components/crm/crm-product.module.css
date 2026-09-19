@@ -29,6 +29,7 @@
 .explainer h3 { font-size: .8rem; margin: 0 0 .5rem; }
 .explainer p { font-size: .75rem; color: var(--wd-color-text-secondary); line-height: 1.7; margin: 0; }
 .empty { min-block-size: 13rem; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .6rem; padding: 2rem 1rem; text-align: center; color: var(--wd-color-text-secondary); }
+.notificationEmpty { margin: .75rem 0 1.25rem; color: var(--wd-color-text-secondary); font-size: .75rem; }
 .empty h2, .empty h3 { font-size: 1rem; margin: 0; color: var(--wd-color-text); }
 .empty p { font-size: .8rem; line-height: 1.7; max-inline-size: 28rem; margin: 0; }
 .empty small { font-size: .7rem; max-inline-size: 28rem; }

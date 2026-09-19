@@ -8,20 +8,23 @@ import { LocalAuthService } from "./local-auth.service";
 import { SecurityController } from "./security.controller";
 import { EmailModule } from "../email/email.module";
 import { MfaService } from "./mfa.service";
+import { PlatformAuthController } from "./platform-auth.controller";
+import { PlatformAuthService } from "./platform-auth.service";
 
 @Global()
 @Module({
   imports: [EmailModule],
-  controllers: [AuthController, MeController, SecurityController],
+  controllers: [AuthController, PlatformAuthController, MeController, SecurityController],
   providers: [
     IdentityService,
     MfaService,
     LocalAuthService,
+    PlatformAuthService,
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
     },
   ],
-  exports: [IdentityService, LocalAuthService],
+  exports: [IdentityService, LocalAuthService, PlatformAuthService],
 })
 export class AuthModule {}

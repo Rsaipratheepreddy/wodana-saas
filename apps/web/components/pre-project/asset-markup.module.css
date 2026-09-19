@@ -1,7 +1,8 @@
 .tools { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
 .pens { display:flex; gap:.4rem; margin-inline-end:auto; }
-.pens button { width:1.7rem; height:1.7rem; border:1px solid var(--wd-color-border-control); border-radius:50%; cursor:pointer; }
-.pens button[aria-pressed=true] { outline:2px solid var(--crm-accent); outline-offset:3px; }
+.pens :global(.wd-button) { min-inline-size:2rem; min-block-size:2rem; padding:.2rem; border-radius:50%; }
+.pens :global(.wd-button)[aria-pressed=true] { outline:2px solid var(--wd-color-action-primary); outline-offset:1px; }
+.pen { inline-size:1.35rem; block-size:1.35rem; display:block; border:1px solid var(--wd-color-border-control); border-radius:50%; }
 .canvas { position:relative; margin:auto; width:100%; background:white; }
 .canvas img { width:100%; display:block; }
 .canvas svg { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; }

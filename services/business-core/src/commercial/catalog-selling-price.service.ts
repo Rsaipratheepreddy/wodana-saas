@@ -21,6 +21,8 @@ export type SellingPriceRecord = {
   specificationStatus?: string;
   commerce?: { pricingMode: CatalogPricingMode };
   configuration?: Record<string, unknown>;
+  dimension?: string;
+  baseFactor?: number;
   links: SellingPriceLink[];
 };
 
@@ -67,6 +69,11 @@ function linked(record: SellingPriceRecord, relation: string) {
 
 function positive(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function compatibleUnits(target: SellingPriceRecord, source: SellingPriceRecord | undefined) {
+  return Boolean(source && target.kind === "unit" && source.kind === "unit" && target.dimension && target.dimension !== "pack" &&
+    target.dimension === source.dimension && positive(target.baseFactor) && positive(source.baseFactor));
 }
 
 function skeleton(
@@ -289,9 +296,14 @@ export function resolveSellingPrice(
   const currency = current.filter(
     (record) => record.configuration?.currency === request.currency,
   );
-  const matchingUnit = currency.filter((record) =>
+  const exactUnit = currency.filter((record) =>
     linked(record, "unit").some((link) => link.targetId === unit.id),
   );
+  const convertedUnit = exactUnit.length ? [] : currency.filter((record) => {
+    const sourceId = linked(record, "unit")[0]?.targetId;
+    return compatibleUnits(unit, records.find((candidate) => candidate.id === sourceId));
+  });
+  const matchingUnit = exactUnit.length ? exactUnit : convertedUnit;
   let zoned = matchingUnit.filter((record) => {
     const zones = linked(record, "rate_zone");
     return request.rateZoneId
@@ -357,6 +369,11 @@ export function resolveSellingPrice(
 
   const rateCard = candidates[0];
   const config = rateCard.configuration ?? {};
+  const sourceUnitId = linked(rateCard, "unit")[0]?.targetId;
+  const sourceUnit = records.find((record) => record.id === sourceUnitId && record.kind === "unit");
+  const conversionFactor = sourceUnit?.id === unit.id ? 1 : compatibleUnits(unit, sourceUnit)
+    ? Number(unit.baseFactor) / Number(sourceUnit!.baseFactor)
+    : 1;
   if (!positive(config.amount))
     return {
       status: "price_required",
@@ -373,7 +390,7 @@ export function resolveSellingPrice(
     };
   const taxIncluded = config.taxIncluded === "yes";
   const divisor = taxIncluded ? 1 + request.taxRate / 100 : 1;
-  const baseUnitRate = Number(config.amount) / divisor;
+  const baseUnitRate = (Number(config.amount) / divisor) * conversionFactor;
   const minimumCharge = positive(config.minimumCharge)
     ? Number(config.minimumCharge) / divisor
     : undefined;
@@ -402,6 +419,12 @@ export function resolveSellingPrice(
         ? { minimumQuantity: Number(config.minimumQuantity) }
         : {}),
       ...(config.reference ? { reference: String(config.reference) } : {}),
+      ...(sourceUnit && sourceUnit.id !== unit.id ? { sourceUnit: {
+        id: sourceUnit.id,
+        version: sourceUnit.version,
+        label: String(sourceUnit.configuration?.symbol ?? sourceUnit.code),
+        conversionFactor,
+      } } : {}),
     },
   };
   return {
@@ -428,7 +451,8 @@ export class CatalogSellingPriceService {
     const selected = await client.query(
       `SELECT r.id,r.catalog_id AS "catalogId",r.kind,r.code,r.name,r.version,r.archived,
         r.content->>'specificationStatus' AS "specificationStatus",r.content->'commerce' AS commerce,
-        r.content->'configuration' AS configuration,
+        r.content->'configuration' AS configuration,r.content->>'dimension' AS dimension,
+        NULLIF(r.content->>'baseFactor','')::float8 AS "baseFactor",
         coalesce((SELECT jsonb_agg(jsonb_build_object('relation',l.relation,'targetId',l.target_id))
           FROM workspace_catalog_links l WHERE l.workspace_id=r.workspace_id AND l.record_id=r.id),'[]'::jsonb) AS links
        FROM workspace_catalog_records r
@@ -450,7 +474,8 @@ export class CatalogSellingPriceService {
     const rates = await client.query(
       `SELECT DISTINCT r.id,r.catalog_id AS "catalogId",r.kind,r.code,r.name,r.version,r.archived,
         r.content->>'specificationStatus' AS "specificationStatus",r.content->'commerce' AS commerce,
-        r.content->'configuration' AS configuration,
+        r.content->'configuration' AS configuration,r.content->>'dimension' AS dimension,
+        NULLIF(r.content->>'baseFactor','')::float8 AS "baseFactor",
         coalesce((SELECT jsonb_agg(jsonb_build_object('relation',all_links.relation,'targetId',all_links.target_id))
           FROM workspace_catalog_links all_links WHERE all_links.workspace_id=r.workspace_id AND all_links.record_id=r.id),'[]'::jsonb) AS links
        FROM workspace_catalog_records r
@@ -461,8 +486,22 @@ export class CatalogSellingPriceService {
          AND target.target_id=ANY($3::uuid[])`,
       [workspaceId, request.catalogId, [request.workId, request.variantId].filter(Boolean)],
     );
+    const known = [...selected.rows, ...rates.rows] as SellingPriceRecord[];
+    const knownIds = new Set(known.map((record) => record.id));
+    const missingRateUnitIds = [...new Set((rates.rows as SellingPriceRecord[]).flatMap((record) => linked(record, "unit").map((item) => item.targetId)).filter((id) => !knownIds.has(id)))];
+    const rateUnits = missingRateUnitIds.length ? await client.query(
+      `SELECT r.id,r.catalog_id AS "catalogId",r.kind,r.code,r.name,r.version,r.archived,
+        r.content->>'specificationStatus' AS "specificationStatus",r.content->'commerce' AS commerce,
+        r.content->'configuration' AS configuration,r.content->>'dimension' AS dimension,
+        NULLIF(r.content->>'baseFactor','')::float8 AS "baseFactor",'[]'::jsonb AS links
+       FROM workspace_catalog_records r
+       JOIN workspace_catalog_records catalog ON catalog.workspace_id=r.workspace_id
+         AND catalog.id=r.catalog_id AND catalog.kind='catalog_group' AND NOT catalog.archived
+       WHERE r.workspace_id=$1 AND r.catalog_id=$2 AND r.kind='unit' AND NOT r.archived AND r.id=ANY($3::uuid[])`,
+      [workspaceId, request.catalogId, missingRateUnitIds],
+    ) : { rows: [] };
     return resolveSellingPrice(
-      [...selected.rows, ...rates.rows] as SellingPriceRecord[],
+      [...known, ...rateUnits.rows] as SellingPriceRecord[],
       request,
     );
   }

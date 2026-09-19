@@ -38,10 +38,12 @@ import { DatabaseService } from "../database/database.service";
 import { CommercialService } from "./commercial.service";
 import {
   actionable,
+  clientChangeRequest,
   clientQuote,
   newRequest,
   object,
   phone,
+  quoteDecisionEvidence,
   text,
 } from "./commercial.domain";
 import type { PortalSettings, Quote } from "./commercial.types";
@@ -343,7 +345,7 @@ export class ClientPortalService {
             grant.caseId,
           );
         const project=(await client.query(`SELECT p.id,p.name,e.content,workspace.default_timezone AS timezone FROM delivery_projects p JOIN workspaces workspace ON workspace.id=p.workspace_id JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.case_id=$2`,[s.workspaceId,grant.caseId])).rows[0];
-        const designs=(await client.query(`SELECT v.id,d.title,d.document_type AS type,v.number,v.status,a.original_name AS name,a.mime_type AS "mimeType" FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.case_id=$2 AND d.archived_at IS NULL AND v.status IN ('client_review','approved') AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id) ORDER BY d.title,v.number DESC`,[s.workspaceId,grant.caseId])).rows;
+        const designs=(await client.query(`SELECT v.id,d.title,d.document_type AS type,v.number,CASE WHEN v.status='client_review' AND v.client_review_expires_at<=now() THEN 'expired' ELSE v.status END AS status,v.client_review_expires_at AS "clientReviewExpiresAt",r.name AS "roomName",entry.title AS "itemName",a.original_name AS name,a.mime_type AS "mimeType" FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id LEFT JOIN pre_project_rooms r ON r.workspace_id=d.workspace_id AND r.case_id=d.case_id AND r.id=d.room_id LEFT JOIN pre_project_brief_entries entry ON entry.workspace_id=d.workspace_id AND entry.case_id=d.case_id AND entry.id=d.scope_entry_id WHERE v.workspace_id=$1 AND v.case_id=$2 AND d.archived_at IS NULL AND v.status IN ('client_review','approved','changes_requested','rejected') AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id) ORDER BY COALESCE(r.name,''),d.title,v.number DESC`,[s.workspaceId,grant.caseId])).rows;
         cases.push({
           definitionBaseline: await this.definitions.portalData(
             client,
@@ -399,14 +401,23 @@ export class ClientPortalService {
           quotes: data.quotes
             .filter((q) => q.issuedAt)
             .map((q) => clientQuote(q, grant.id)),
-          requests: data.requests.map((r) => ({
-            ...r,
-            comments: r.comments.filter((c) => c.visibility === "client"),
-          })),
+          requests: data.requests.map(clientChangeRequest),
           agreement:
             data.agreement?.status === "executed" ? data.agreement : null,
-          credits:data.credits?.map(c=>({...c,verifiedBy:undefined,evidence:""})),
-          payments: data.payments.map((p) => ({ ...p, verifiedBy: undefined })),
+          credits:data.credits?.map(({legalEntityId:_entity,verifiedBy:_verified,evidence:_evidence,...credit})=>credit),
+          payments: data.payments.map(({legalEntityId:_entity,agreementReference:_agreement,verifiedBy:_verified,invoice,...payment}) => ({
+            ...payment,
+            ...(invoice ? { invoice: {
+              provider: invoice.provider,
+              number: invoice.number,
+              balance: invoice.balance,
+              currency: invoice.currency,
+              status: invoice.status,
+              paymentUrl: invoice.paymentUrl,
+              refreshedAt: invoice.refreshedAt,
+              ...(invoice.lastError ? { lastError: invoice.lastError } : {}),
+            } } : {}),
+          })),
           released: Boolean(data.release),
         });
       }
@@ -414,7 +425,7 @@ export class ClientPortalService {
     });
   }
   async projectFile(slug:string,token:string,projectId:string,fileId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const row=(await client.query(`SELECT p.case_id,e.content FROM delivery_projects p JOIN project_execution e ON e.project_id=p.id AND e.workspace_id=p.workspace_id WHERE p.workspace_id=$1 AND p.id=$2`,[settings.workspaceId,projectId])).rows[0];if(!row||!session.grants.some(g=>g.caseId===row.case_id))throw new NotFoundException("Shared file not available.");const d=row.content as import('../projects/execution.types').ProjectData;const file=d.files?.find(f=>f.id===fileId);const report=d.reports.find(r=>r.status==="approved"&&r.publishedAt&&r.clientFileIds?.includes(fileId)&&r.id===file?.recordId&&!d.reports.some(n=>n.status==="approved"&&n.supersedes===r.id));if(!file||!report)throw new NotFoundException("Shared file not available.");const stored=await this.storage.read(`projects/${settings.workspaceId}/${projectId}/${fileId}`).catch(()=>null);if(!stored)throw new NotFoundException("The shared file is temporarily unavailable.");return {body:stored.body,mimeType:file.mimeType};});}
-  async designAsset(slug:string,token:string,versionId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const asset=(await client.query(`SELECT v.case_id,a.object_key,a.mime_type,a.original_name FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.id=$2 AND v.status IN ('client_review','approved') AND d.archived_at IS NULL`,[settings.workspaceId,versionId])).rows[0];if(!asset||!session.grants.some(g=>g.caseId===asset.case_id))throw new NotFoundException("Design not available.");const stored=await this.storage.read(asset.object_key).catch(()=>null);if(!stored)throw new NotFoundException("Design file is unavailable. Contact your project team.");return {body:stored.body,mimeType:asset.mime_type};});}
+  async designAsset(slug:string,token:string,versionId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const asset=(await client.query(`SELECT v.case_id,a.object_key,a.mime_type,a.original_name FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.id=$2 AND v.status IN ('client_review','approved','changes_requested','rejected') AND d.archived_at IS NULL`,[settings.workspaceId,versionId])).rows[0];if(!asset||!session.grants.some(g=>g.caseId===asset.case_id))throw new NotFoundException("Design not available.");const stored=await this.storage.read(asset.object_key).catch(()=>null);if(!stored)throw new NotFoundException("Design file is unavailable. Contact your project team.");return {body:stored.body,mimeType:asset.mime_type};});}
   async command(slug: string, token: string, input: unknown) {
     const s = await this.branding(slug),
       b = object(input),
@@ -432,7 +443,7 @@ export class ClientPortalService {
           );
         await this.commercial.caseRecord(client, s.workspaceId, caseId, true);
         if(action==='design-decision'){
-          const versionId=text(b.versionId,80,true),decision=text(b.decision,20,true),note=text(b.note??'',5000,decision==='changes'),challengeId=text(b.challengeId,80,true);
+          const versionId=text(b.versionId,80,true),decision=text(b.decision,20,true),note=text(b.note??'',5000,decision!=='accept'),challengeId=text(b.challengeId,80,true);
           return decidePortalDesign(client,s.workspaceId,caseId,grant,{versionId,decision,note,challengeId},()=>this.consume(client,s.workspaceId,challengeId,text(b.code,6,true),`design-decision:${caseId}:${versionId}:${decision}`,session.phone));
         }
         if(action==='definition-decision'){
@@ -667,16 +678,44 @@ export class ClientPortalService {
           const decision = text(b.decision, 20, true);
           if (!["accept", "changes", "decline"].includes(decision))
             throw new BadRequestException("Choose a valid decision.");
+          const typedDecision = decision as "accept" | "changes" | "decline";
+          const note = text(b.note ?? "", 6000, decision !== "accept");
+          const challengeId = text(b.challengeId, 80, true);
+          const requestedEvidence = quoteDecisionEvidence(
+            q,
+            typedDecision,
+            b.selectedOptionLineIds ?? [],
+            grant.name,
+            q.decidedAt ?? new Date().toISOString(),
+            note,
+          );
           if (
-            q.decisionChallengeId === b.challengeId &&
+            q.decisionChallengeId === challengeId &&
             q.status ===
               (decision === "accept"
                 ? "accepted"
                 : decision === "changes"
                   ? "changes_requested"
                   : "declined")
-          )
+          ) {
+            const stored = q.clientDecision;
+            if (
+              stored &&
+              (stored.decision !== requestedEvidence.decision ||
+                stored.quoteHash !== requestedEvidence.quoteHash ||
+                JSON.stringify(stored.selectedOptionLineIds) !==
+                  JSON.stringify(requestedEvidence.selectedOptionLineIds) ||
+                stored.note !== requestedEvidence.note)
+            )
+              throw new ConflictException(
+                "This verification was already used with a different decision. Request a new code.",
+              );
+            if (!stored && requestedEvidence.selectedOptionLineIds.length)
+              throw new ConflictException(
+                "This verification was already used. Request a new code for a different option selection.",
+              );
             return { ok: true, replayed: true };
+          }
           const controlledRequest = controlledChangeForQuote(data, q.id);
           if (
             controlledRequest &&
@@ -690,16 +729,26 @@ export class ClientPortalService {
               "The complete Change Case is still being prepared. Review it once every linked document has been issued.",
             );
           actionable(q);
-          const note = text(b.note ?? "", 6000, decision !== "accept");
           const mobile = await this.consume(
             client,
             s.workspaceId,
-            text(b.challengeId, 80, true),
+            challengeId,
             text(b.code, 6, true),
             `decision:${caseId}:${q.id}:${decision}`,
             session.phone,
           );
           if (!mobile) return { invalidCode: true };
+          q.decidedAt = new Date().toISOString();
+          q.decidedBy = grant.name;
+          q.decisionChallengeId = challengeId;
+          q.clientDecision = quoteDecisionEvidence(
+            q,
+            typedDecision,
+            b.selectedOptionLineIds ?? [],
+            grant.name,
+            q.decidedAt,
+            note,
+          );
           if(decision==="accept")validateDeduction(data,q);
           q.status =
             decision === "accept"
@@ -707,9 +756,6 @@ export class ClientPortalService {
               : decision === "changes"
                 ? "changes_requested"
                 : "declined";
-          q.decidedAt = new Date().toISOString();
-          q.decidedBy = grant.name;
-          q.decisionChallengeId = String(b.challengeId);
           const acceptedForEffects = new Map([[q.id, q]]);
           if (decision === "accept") {
             for (const id of q.requestIds) {
@@ -759,20 +805,26 @@ export class ClientPortalService {
                 )
               ) {
                 let allocated = 0;
+                const acceptedTotal =
+                  acceptedQuote.clientDecision?.acceptedTotal ?? acceptedQuote.total;
                 for (const [index, term] of acceptedQuote.paymentTerms.entries()) {
                   const amount =
                     index === acceptedQuote.paymentTerms.length - 1
-                      ? Math.round((acceptedQuote.total - allocated) * 100) / 100
-                      : Math.round(acceptedQuote.total * term.percent) / 100;
+                      ? Math.round((acceptedTotal - allocated) * 100) / 100
+                      : Math.round(acceptedTotal * term.percent) / 100;
                   allocated += amount;
                   data.payments.push({
                     id: randomUUID(),
                     sourceQuoteId: acceptedQuote.id,
+                    legalEntityId: data.financeContext?.legalEntityId,
+                    currency: data.financeContext?.currency,
+                    agreementReference: data.agreement.reference,
                     title: `Variation V${acceptedQuote.number} · ${term.title}`,
                     trigger: term.trigger,
                     amount,
                     dueDate: "",
                     requiredForRelease: term.requiredForRelease,
+                    requiredForProduction: term.requiredForProduction === true,
                     status: "pending",
                     proof: "",
                     reference: "",
@@ -788,7 +840,9 @@ export class ClientPortalService {
                 data.credits.push({
                   id: randomUUID(),
                   quoteId: acceptedQuote.id,
-                  amount: acceptedQuote.total,
+                  legalEntityId: data.financeContext?.legalEntityId,
+                  amount:
+                    acceptedQuote.clientDecision?.acceptedTotal ?? acceptedQuote.total,
                   currency: acceptedQuote.currency,
                   status: "pending",
                   reference: "",
@@ -807,6 +861,41 @@ export class ClientPortalService {
             note,
           );
           return { ok: true };
+        } else if (action === "decision_response") {
+          const request = data.requests.find((item) => item.id === b.requestId);
+          if (!request?.decisionRequest) throw new NotFoundException("Decision request not found.");
+          if (grant.role !== "approver" || request.decisionRequest.clientApproverGrantId !== grant.id)
+            throw new ForbiddenException("Only the designated approver can decide.");
+          const responseId = text(b.responseId, 80, true);
+          const choiceId = text(b.choiceId, 80, true);
+          const choice = request.decisionRequest.allowedChoices.find((item) => item.id === choiceId);
+          if (!choice) throw new BadRequestException("Choose one of the available responses.");
+          const note = text(b.note ?? "", 6000);
+          if (request.decisionRequest.decision) {
+            const previous = request.decisionRequest.decision;
+            if (previous.responseId === responseId && previous.choiceId === choiceId && previous.note === note)
+              return { ok: true, replayed: true };
+            throw new ConflictException("This decision request was already answered.");
+          }
+          if (request.status !== "awaiting_decision") throw new ConflictException("This request is no longer awaiting a decision.");
+          if (request.dueDate && request.dueDate < new Date().toISOString().slice(0, 10))
+            throw new ConflictException("This decision request has expired. Ask your project team to reopen it.");
+          const target = request.decisionRequest.target;
+          const targetAvailable = target.type === "quotation"
+            ? data.quotes.some((item) => item.id === target.id && item.number === target.revision && !["superseded", "withdrawn"].includes(item.status))
+            : data.materialApprovals?.some((item) => item.id === target.id && item.revision === target.revision && item.status === "client_review");
+          if (!targetAvailable) throw new ConflictException("The referenced revision changed. Ask your project team for a new decision request.");
+          request.decisionRequest.decision = {
+            responseId,
+            choiceId,
+            choiceLabel: choice.label,
+            note,
+            decidedAt: new Date().toISOString(),
+            decidedBy: grant.name,
+            clientGrantId: grant.id,
+          };
+          request.status = "resolved";
+          request.resolution = `${choice.label}${note ? ` · ${note}` : ""}`;
         } else if (action === "request") {
           newRequest(
             data,
@@ -830,7 +919,8 @@ export class ClientPortalService {
               "This payment cannot receive new evidence.",
             );
           p.proof = text(b.proof, 3000, true);
-          p.status = "proof_submitted";
+          // Client evidence is not a receipt and must not change accounting truth.
+          // Operations records a receipt separately; finance verifies that record.
         } else throw new BadRequestException("Unknown client action.");
         await this.commercial.persist(
           client,

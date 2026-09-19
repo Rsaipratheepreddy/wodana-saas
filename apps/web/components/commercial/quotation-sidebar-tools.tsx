@@ -21,6 +21,7 @@ import {
   paymentMilestoneAmounts,
 } from "@/lib/commercial/client";
 import { applyQuotationTemplate } from "@/lib/commercial/templates";
+import { Checkbox } from "@/design-system";
 import { QuotationNumberInput } from "./quotation-number-input";
 import s from "./commercial.module.css";
 import d from "./quotation-studio.module.css";
@@ -246,6 +247,21 @@ export function QuotationPaymentInspector({
                 />
                 Required before project release
               </label>
+              <Checkbox
+                isSelected={term.requiredForProduction === true}
+                onChange={(selected) =>
+                  onChange({
+                    ...quote,
+                    paymentTerms: terms.map((t) =>
+                      t.id === term.id
+                        ? { ...t, requiredForProduction: selected }
+                        : t,
+                    ),
+                  })
+                }
+              >
+                Required before manufacturing starts
+              </Checkbox>
             </section>
           ))}
           <button
@@ -262,6 +278,7 @@ export function QuotationPaymentInspector({
                     trigger: "",
                     percent: Math.max(0, 100 - sum),
                     requiredForRelease: false,
+                    requiredForProduction: false,
                   },
                 ],
               })

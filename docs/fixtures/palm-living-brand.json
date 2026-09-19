@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "tenant": "Palm Living",
+  "source": "Client-supplied brand values and logo vector folder",
+  "primaryColor": "#E4E3DE",
+  "secondaryColor": "#000000",
+  "headingFont": {
+    "family": "Alta",
+    "token": "alta",
+    "usage": "Headings",
+    "status": "fallback_until_font_file_supplied",
+    "fallback": "Montserrat"
+  },
+  "bodyFont": {
+    "family": "Montserrat",
+    "token": "montserrat",
+    "usage": "Body text",
+    "status": "bundled"
+  },
+  "logos": {
+    "wordmark": "Palm Living - Logo (Transparent)_1.png",
+    "monogram": "Palm Living - Monogram (Transparent).png"
+  }
+}
+

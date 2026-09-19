@@ -1,9 +1,10 @@
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BrandAssetStorageService } from './brand-asset-storage.service';
 const temporary: string[] = [];
 afterEach(async () => { await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
@@ -35,5 +36,54 @@ describe('release image and object storage compatibility', () => {
     expect(url.pathname).toBe('/workspace-assets/workspace/report/photo.png');
     expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
     expect(url.searchParams.get('X-Amz-Signature')).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('writes a checksum-bearing system artifact outside tenant upload quota', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wodana-system-artifact-')); temporary.push(root);
+    const service = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: root }));
+    const body = Buffer.from('{"scope":"tenant_records_and_object_manifest"}');
+
+    const result = await service.putSystemArtifact('tenant-exports/workspace/operation/export.json', body, 'application/json');
+
+    expect(result).toEqual({ byteSize: body.byteLength, sha256: createHash('sha256').update(body).digest('hex') });
+    expect((await service.read('tenant-exports/workspace/operation/export.json')).body).toEqual(body);
+  });
+
+  it('reserves quota, records the baseline scan and activates a managed object', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wodana-governed-asset-')); temporary.push(root);
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM workspace_data_policies')) return { rowCount: 1, rows: [{ quota: '100', retentionDays: 30 }] };
+      if (sql.includes('SELECT COALESCE(sum(byte_size)')) return { rowCount: 1, rows: [{ bytes: '10' }] };
+      return { rowCount: 1, rows: [] };
+    });
+    const database = { tenantTransaction: vi.fn(async (_workspaceId: string, _actorId: string,
+      work: (client: { query: typeof query }) => Promise<unknown>) => work({ query })) };
+    const service = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: root }), database as never);
+    const workspaceId = '00000000-0000-4000-8000-000000000001';
+
+    await service.put(`projects/${workspaceId}/project/file`, Buffer.from('safe evidence'), 'text/plain');
+
+    expect(database.tenantTransaction).toHaveBeenCalled();
+    const reservation = query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO workspace_stored_objects'));
+    expect(reservation?.[1]?.slice(0, 4)).toEqual([workspaceId, `projects/${workspaceId}/project/file`, 13, 'text/plain']);
+    expect(query.mock.calls.some(([sql]) => String(sql).includes("status='active'"))).toBe(true);
+  });
+
+  it('rejects a managed upload before storage when it exceeds tenant quota', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wodana-quota-asset-')); temporary.push(root);
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM workspace_data_policies')) return { rowCount: 1, rows: [{ quota: '100', retentionDays: 30 }] };
+      if (sql.includes('SELECT COALESCE(sum(byte_size)')) return { rowCount: 1, rows: [{ bytes: '95' }] };
+      return { rowCount: 1, rows: [] };
+    });
+    const database = { tenantTransaction: vi.fn(async (_workspaceId: string, _actorId: string,
+      work: (client: { query: typeof query }) => Promise<unknown>) => work({ query })) };
+    const service = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: root }), database as never);
+    const workspaceId = '00000000-0000-4000-8000-000000000001';
+    const key = `projects/${workspaceId}/project/file`;
+
+    await expect(service.put(key, Buffer.from('safe evidence'), 'text/plain')).rejects.toMatchObject({ status: 413 });
+    await expect(service.read(key)).rejects.toThrow();
+    expect(query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO workspace_stored_objects'))).toBe(false);
   });
 });

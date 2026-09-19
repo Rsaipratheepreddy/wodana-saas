@@ -34,6 +34,7 @@ import {
   UpdateRelationshipDto,
   UpsertConsentDto,
 } from "./dto/parties.dto";
+import { queryClientTimeline } from "../shared/client-timeline";
 
 interface RelocationRecord { id: string; version: number }
 interface StakeholderRelocation { opportunityId: string; role: string }
@@ -124,8 +125,35 @@ export class CrmPartiesService {
   }
 
   get(actor: RequestActor, workspaceId: string, partyId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.parties.view", async (client) =>
-      this.partyAggregate(client, workspaceId, partyId));
+    return this.access.withPermission(actor, workspaceId, "crm.parties.view", async (client, actorUser) => {
+      const party = await this.partyAggregate(client, workspaceId, partyId);
+      const communications = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.view");
+      const activities = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.activities.view");
+      const cases = await client.query<{ id: string }>(
+        `SELECT DISTINCT case_link.record_id AS id
+           FROM job_identity_links party_link
+           JOIN job_identity_links case_link
+             ON case_link.workspace_id=party_link.workspace_id AND case_link.job_id=party_link.job_id
+            AND case_link.record_type='case' AND case_link.status='active'
+          WHERE party_link.workspace_id=$1 AND party_link.status='active' AND (
+            (party_link.record_type='enquiry' AND EXISTS (SELECT 1 FROM crm_enquiries record WHERE record.workspace_id=$1 AND record.id::text=party_link.record_id AND record.party_id=$2)) OR
+            (party_link.record_type='lead' AND EXISTS (SELECT 1 FROM crm_leads record WHERE record.workspace_id=$1 AND record.id::text=party_link.record_id AND record.party_id=$2)) OR
+            (party_link.record_type='opportunity' AND EXISTS (SELECT 1 FROM crm_opportunities record WHERE record.workspace_id=$1 AND record.id::text=party_link.record_id AND record.party_id=$2))
+          )`,
+        [workspaceId, partyId],
+      );
+      return {
+        ...party,
+        clientTimeline: communications || activities ? await queryClientTimeline(client, {
+          workspaceId,
+          partyId,
+          caseIds: cases.rows.map((row) => row.id),
+          includeMessages: communications,
+          includeActivities: activities,
+        }) : [],
+        clientTimelineAccess: { communications, activities },
+      };
+    });
   }
 
   create(actor: RequestActor, workspaceId: string, input: CreatePartyDto) {

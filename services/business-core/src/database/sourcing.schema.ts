@@ -19,7 +19,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { workspaceCatalogRecords } from "./catalog.schema";
-import { users, workspaces } from "./schema";
+import { legalEntities, users, workspaces } from "./schema";
 
 export const workspaceVendors = pgTable(
   "workspace_vendors",
@@ -132,8 +132,10 @@ export const workspaceSupplierOffers = pgTable(
     id: uuid("id").notNull(),
     vendorId: uuid("vendor_id").notNull(),
     vendorSiteId: uuid("vendor_site_id"),
+    legalEntityId: uuid("legal_entity_id"),
     catalogRecordId: uuid("catalog_record_id").notNull(),
     unitRecordId: uuid("unit_record_id"),
+    replacesOfferId: uuid("replaces_offer_id"),
     supplierSku: varchar("supplier_sku", { length: 120 }),
     amount: numeric("amount", { precision: 20, scale: 6 }),
     currency: char("currency", { length: 3 }),
@@ -163,10 +165,14 @@ export const workspaceSupplierOffers = pgTable(
     primaryKey({ name: "workspace_supplier_offers_pk", columns: [table.workspaceId, table.id] }),
     foreignKey({ name: "workspace_supplier_offers_vendor_fk", columns: [table.workspaceId, table.vendorId], foreignColumns: [workspaceVendors.workspaceId, workspaceVendors.id] }),
     foreignKey({ name: "workspace_supplier_offers_site_fk", columns: [table.workspaceId, table.vendorId, table.vendorSiteId], foreignColumns: [workspaceVendorSites.workspaceId, workspaceVendorSites.vendorId, workspaceVendorSites.id] }),
+    foreignKey({ name: "workspace_supplier_offers_legal_entity_fk", columns: [table.workspaceId, table.legalEntityId], foreignColumns: [legalEntities.workspaceId, legalEntities.id] }),
     foreignKey({ name: "workspace_supplier_offers_catalog_fk", columns: [table.workspaceId, table.catalogRecordId], foreignColumns: [workspaceCatalogRecords.workspaceId, workspaceCatalogRecords.id] }),
     foreignKey({ name: "workspace_supplier_offers_unit_fk", columns: [table.workspaceId, table.unitRecordId], foreignColumns: [workspaceCatalogRecords.workspaceId, workspaceCatalogRecords.id] }),
+    foreignKey({ name: "workspace_supplier_offers_replacement_fk", columns: [table.workspaceId, table.replacesOfferId], foreignColumns: [table.workspaceId, table.id] }),
     index("workspace_supplier_offers_catalog_idx").on(table.workspaceId, table.catalogRecordId, table.status, table.effectiveFrom),
     index("workspace_supplier_offers_vendor_idx").on(table.workspaceId, table.vendorId, table.status, table.updatedAt),
+    index("workspace_supplier_offers_entity_idx").on(table.workspaceId, table.legalEntityId, table.status, table.effectiveFrom),
+    index("workspace_supplier_offers_replacement_idx").on(table.workspaceId, table.replacesOfferId),
     check("workspace_supplier_offers_status_check", sql`${table.status} IN ('draft','active','archived')`),
     check("workspace_supplier_offers_amount_check", sql`${table.amount} IS NULL OR ${table.amount} >= 0`),
     check("workspace_supplier_offers_currency_check", sql`${table.currency} IS NULL OR ${table.currency} ~ '^[A-Z]{3}$'`),
@@ -179,7 +185,8 @@ export const workspaceSupplierOffers = pgTable(
     check("workspace_supplier_offers_tax_check", sql`${table.taxTreatment} IN ('unconfirmed','exclusive','inclusive','not_applicable')`),
     check("workspace_supplier_offers_inclusions_check", sql`${table.inclusions} <@ ARRAY['delivery','unloading','installation','packaging','warranty','other']::varchar[]`),
     check("workspace_supplier_offers_zero_check", sql`${table.amount} IS NULL OR (${table.amount}=0 AND ${table.sourceType} IS NOT DISTINCT FROM 'included') OR (${table.amount}>0 AND ${table.sourceType} IS DISTINCT FROM 'included')`),
-    check("workspace_supplier_offers_active_check", sql`${table.status}<>'active' OR (${table.unitRecordId} IS NOT NULL AND ${table.amount} IS NOT NULL AND ${table.currency} IS NOT NULL AND ${table.effectiveFrom} IS NOT NULL AND ${table.sourceType} IS NOT NULL AND ${table.sourceReference} IS NOT NULL AND length(btrim(${table.sourceReference}))>0 AND ${table.taxTreatment}<>'unconfirmed')`),
+    check("workspace_supplier_offers_active_check", sql`${table.status}<>'active' OR (${table.legalEntityId} IS NOT NULL AND ${table.unitRecordId} IS NOT NULL AND ${table.amount} IS NOT NULL AND ${table.currency} IS NOT NULL AND ${table.effectiveFrom} IS NOT NULL AND ${table.sourceType} IS NOT NULL AND ${table.sourceReference} IS NOT NULL AND length(btrim(${table.sourceReference}))>0 AND ${table.taxTreatment}<>'unconfirmed')`),
+    check("workspace_supplier_offers_replacement_check", sql`${table.replacesOfferId} IS NULL OR ${table.replacesOfferId}<>${table.id}`),
     check("workspace_supplier_offers_archive_check", sql`(${table.status}='archived' AND ${table.archivedReason} IS NOT NULL AND length(btrim(${table.archivedReason}))>0 AND ${table.archivedAt} IS NOT NULL AND ${table.archivedBy} IS NOT NULL) OR (${table.status}<>'archived' AND ${table.archivedReason} IS NULL AND ${table.archivedAt} IS NULL AND ${table.archivedBy} IS NULL)`),
     check("workspace_supplier_offers_version_check", sql`${table.version}>0`),
   ],

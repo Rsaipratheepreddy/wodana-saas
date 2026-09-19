@@ -36,7 +36,7 @@ describe("pre-project table selector", () => {
     const table = screen.getByRole("table", { name: "Qualified leads" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["", "Client", "Pre-execution", "Lead manager", "Status", "Created", "Action"]);
     expect(within(table).getByRole("img", { name: "Khalid Rahman" })).toHaveTextContent("KR");
-    expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/requirements`);
+    expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/overview`);
     expect(screen.queryByRole("button", { name: "Cards" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export filtered rows" })).toBeInTheDocument();
     expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "card");

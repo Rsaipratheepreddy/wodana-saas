@@ -1,91 +1,89 @@
 "use client";
 
 import {
-  ArrowLeft,
-  Building2,
   Check,
-  ChevronRight,
   Copy,
-  ExternalLink,
-  Menu,
+  LogOut,
   Moon,
   Plus,
-  Search,
   Sun,
   Users,
-  X,
 } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AppShell, Avatar, Badge, Button, Callout, ConfirmationDialog, Container, DataGrid, DesignSystemProvider, Form, Heading, IconButton, InspectorSheet, SelectField, Skeleton, Surface, TextInput, type DataGridColumn } from "@/design-system";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
-import type { ManagedTenant } from "@/lib/internal/types";
+import type { OperatorPermission } from "@/lib/internal/auth";
+import type { ManagedDomain, ManagedTenant, ManagedTenantAccess, ManagedTenantStatus } from "@/lib/internal/types";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
-import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
 import styles from "./portal.module.css";
 
-type NewClient = {
-  countryCode: string;
-  defaultCurrency: string;
-  defaultLocale: string;
-  defaultTimezone: string;
+type PortalUser = {
+  email: string;
   name: string;
-  ownerName: string;
-  ownerEmail: string;
-  slug: string;
-};
-type BillingDraft = {
-  amount: string;
-  billingCycle: string;
-  note: string;
-  planCode: string;
-  projectLimit: string;
-  renewsAt: string;
-  seatLimit: string;
-  subscriptionStatus: string;
-  workspaceStatus: string;
+  role?: string;
+  permissions?: OperatorPermission[];
 };
 
-const blankClient: NewClient = { countryCode: "AE", defaultCurrency: "AED", defaultLocale: "en-AE", defaultTimezone: "Asia/Dubai", name: "", ownerName: "", ownerEmail: "", slug: "" };
-const regionalPresets: Record<string, Pick<NewClient, "defaultCurrency" | "defaultLocale" | "defaultTimezone">> = {
-  AE: { defaultCurrency: "AED", defaultLocale: "en-AE", defaultTimezone: "Asia/Dubai" },
-  GB: { defaultCurrency: "GBP", defaultLocale: "en-GB", defaultTimezone: "Europe/London" },
-  IN: { defaultCurrency: "INR", defaultLocale: "en-IN", defaultTimezone: "Asia/Kolkata" },
-  US: { defaultCurrency: "USD", defaultLocale: "en-US", defaultTimezone: "America/New_York" },
-};
+const compatibilityPermissions: OperatorPermission[] = [
+  "tenants.read", "tenants.provision", "invitations.send", "billing.manage",
+  "lifecycle.manage",
+  "domains.manage", "entitlements.manage", "support.request", "support.approve",
+  "data.manage", "operators.manage",
+];
+
 const planLabel: Record<string, string> = { starter: "Starter", pro: "Pro", enterprise: "Enterprise" };
-const statusLabel: Record<string, string> = { trial: "Trial", active: "Active", past_due: "Past due", cancelled: "Cancelled", suspended: "Suspended" };
+export const tenantColumns: DataGridColumn<ManagedTenant>[] = [
+  { accessorKey: "workspace.name", header: "Organization", size: 280, meta: { primary: true }, cell: ({ row }) => <span className={styles.tenantIdentity}><Avatar name={row.original.workspace.name} size="sm" /><span><strong>{row.original.workspace.name}</strong><small>{row.original.owner?.email ?? row.original.workspace.slug}</small></span></span> },
+  { id: "account", accessorFn: (tenant) => tenant.account?.displayName ?? "", header: "Account", size: 200, cell: ({ row }) => row.original.account?.displayName ?? "Not linked" },
+  { id: "plan", accessorFn: (tenant) => tenant.subscription.planCode, header: "Plan", size: 120, cell: ({ row }) => planLabel[row.original.subscription.planCode] ?? row.original.subscription.planCode },
+  { id: "seats", accessorFn: (tenant) => tenant.usage.reservedSeats, header: "Seats", size: 130, meta: { align: "end" }, cell: ({ row }) => <span>{row.original.usage.reservedSeats} / {row.original.subscription.seatLimit}</span> },
+  { id: "setup", accessorFn: (tenant) => tenant.onboarding.status, header: "Setup", size: 145, cell: ({ row }) => <Badge tone={row.original.onboarding.status === "completed" ? "success" : "warning"}>{row.original.onboarding.status === "completed" ? "Complete" : "In progress"}</Badge> },
+  { id: "status", accessorFn: (tenant) => tenant.workspace.status, header: "Access", size: 110, cell: ({ row }) => <Badge tone={row.original.workspace.status === "active" ? "success" : "warning"}>{row.original.workspace.status}</Badge> },
+];
 
-function slugify(value: string) {
-  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
-}
+const accessColumns: DataGridColumn<ManagedTenantAccess["members"][number]>[] = [
+  {
+    id: "member",
+    accessorFn: (member) => `${member.displayName} ${member.email}`,
+    header: "Member",
+    size: 210,
+    meta: { primary: true },
+    cell: ({ row }) => <span className={styles.accessIdentity}><Avatar name={row.original.displayName} size="sm"/><span><strong>{row.original.displayName}</strong><small>{row.original.email}</small></span></span>,
+  },
+  {
+    id: "source",
+    accessorFn: (member) => [
+      ...member.access.directRoles.map((role) => role.name),
+      ...member.access.inheritedRoles.map((role) => `${role.teamName} ${role.roleName}`),
+    ].join(" "),
+    header: "Why access",
+    size: 240,
+    cell: ({ row }) => <span className={styles.accessSource}>
+      {row.original.access.directRoles.length ? <span>Direct · {row.original.access.directRoles.map((role) => role.name).join(", ")}</span> : null}
+      {row.original.access.inheritedRoles.length ? <span>Team · {row.original.access.inheritedRoles.map((role) => `${role.teamName} → ${role.roleName}`).join(", ")}</span> : null}
+      {!row.original.access.directRoles.length && !row.original.access.inheritedRoles.length ? <span>No role source</span> : null}
+    </span>,
+  },
+  {
+    id: "modules",
+    accessorFn: (member) => member.access.effectiveModules.join(" "),
+    header: "Effective modules",
+    size: 170,
+    cell: ({ row }) => row.original.access.effectiveModules.length ? row.original.access.effectiveModules.join(" · ") : "None",
+  },
+  {
+    accessorKey: "status",
+    header: "Status",
+    size: 100,
+    cell: ({ row }) => <Badge tone={row.original.status === "active" ? "success" : "neutral"}>{row.original.status}</Badge>,
+  },
+];
 
-function legalCode(value: string) {
-  const initials = value.trim().split(/\s+/).map((part) => part[0]).join("").replace(/[^a-z0-9]/gi, "").toUpperCase();
-  return (initials.length >= 2 ? initials : `${initials}HQ`).slice(0, 24);
-}
-
-function dateInput(value: string | null) {
-  return value ? value.slice(0, 10) : "";
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
-}
-
-function draftFor(client: ManagedTenant): BillingDraft {
-  return {
-    amount: String(client.subscription.amount),
-    billingCycle: client.subscription.billingCycle,
-    note: client.subscription.note ?? "",
-    planCode: client.subscription.planCode,
-    projectLimit: String(client.subscription.projectLimit),
-    renewsAt: dateInput(client.subscription.renewsAt),
-    seatLimit: String(client.subscription.seatLimit),
-    subscriptionStatus: client.subscription.status,
-    workspaceStatus: client.workspace.status,
-  };
+function nextAction(status: ManagedTenantStatus) {
+  if (status.onboarding.status === "completed") return "Next: review team access before inviting staff.";
+  if (status.ownerInvitation?.status === "accepted") return "Next: complete owner onboarding.";
+  return "Next: create and share an owner activation link.";
 }
 
 async function payload(response: Response) {
@@ -94,119 +92,129 @@ async function payload(response: Response) {
   return data;
 }
 
-export function InternalPortal({ initialTenants, user }: { initialTenants: ManagedTenant[]; user: { email: string; name: string } }) {
+export function InternalPortal({ initialTenants, user }: { initialTenants: ManagedTenant[]; user: PortalUser }) {
+  const router = useRouter();
   const [tenants, setTenants] = useState(initialTenants);
   const [selectedId, setSelectedId] = useState("");
-  const [query, setQuery] = useState("");
-  const [draft, setDraft] = useState<BillingDraft | null>(null);
-  const [newClient, setNewClient] = useState(blankClient);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [mobileNav, setMobileNav] = useState(false);
+  const [tenantStatus, setTenantStatus] = useState<ManagedTenantStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState("");
+  const [statusRevision, setStatusRevision] = useState(0);
+  const [tenantAccess, setTenantAccess] = useState<ManagedTenantAccess | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessError, setAccessError] = useState("");
+  const [accessRevision, setAccessRevision] = useState(0);
+  const [domains, setDomains] = useState<ManagedDomain[]>([]);
+  const [domainLoading, setDomainLoading] = useState(false);
+  const [domainError, setDomainError] = useState("");
+  const [domainNotice, setDomainNotice] = useState("");
+  const [domainBusy, setDomainBusy] = useState(false);
+  const [domainInput, setDomainInput] = useState("");
+  const [domainRequestKey, setDomainRequestKey] = useState("");
+  const [selectedDomainId, setSelectedDomainId] = useState("");
+  const [showDomainForm, setShowDomainForm] = useState(false);
+  const [removeDomainTarget, setRemoveDomainTarget] = useState<ManagedDomain | null>(null);
+  const [domainRevision, setDomainRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [activationLink, setActivationLink] = useState("");
-  const [provisionKey, setProvisionKey] = useState(() => crypto.randomUUID());
-  const [newTenantId, setNewTenantId] = useState("");
   const { theme, toggleTheme } = useWorkspaceTheme();
   const selected = tenants.find((tenant) => tenant.externalTenantId === selectedId) ?? null;
-  const filtered = useMemo(() => {
-    const search = query.trim().toLowerCase();
-    return search ? tenants.filter((tenant) => [tenant.workspace.name, tenant.workspace.slug, tenant.owner?.email].some((value) => value?.toLowerCase().includes(search))) : tenants;
-  }, [query, tenants]);
+  const selectedDomain = domains.find((domain) => domain.id === selectedDomainId) ?? domains[0] ?? null;
   const activeCount = tenants.filter((tenant) => tenant.workspace.status === "active").length;
-  const connectedCount = tenants.reduce((total, tenant) => total + tenant.integrations.filter((item) => item.status === "connected").reduce((sum, item) => sum + item.count, 0), 0);
-  const countries = useMemo(() => countryOptions(newClient.defaultLocale), [newClient.defaultLocale]);
-  const currencies = useMemo(() => currencyOptions(newClient.defaultLocale), [newClient.defaultLocale]);
-  const timeZones = useMemo(() => timeZoneOptions(), []);
+  const setupCount = tenants.filter((tenant) => tenant.onboarding.status !== "completed").length;
+  const operatorPermissions = user.permissions ?? compatibilityPermissions;
+  const can = (permission: OperatorPermission) => operatorPermissions.includes(permission);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const abort = new AbortController();
+    void fetch(`/api/internal/tenants/${encodeURIComponent(selectedId)}/status`, { signal: abort.signal })
+      .then(async (response) => await payload(response) as ManagedTenantStatus)
+      .then((status) => setTenantStatus(status))
+      .catch((reason) => { if (!abort.signal.aborted) setStatusError(reason instanceof Error ? reason.message : "Status could not be loaded."); })
+      .finally(() => { if (!abort.signal.aborted) setStatusLoading(false); });
+    return () => abort.abort();
+  }, [selectedId, statusRevision]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const abort = new AbortController();
+    void fetch(`/api/internal/tenants/${encodeURIComponent(selectedId)}/access`, { signal: abort.signal })
+      .then(async (response) => await payload(response) as ManagedTenantAccess)
+      .then((access) => {
+        if (!Array.isArray(access.members) || !Array.isArray(access.invitations)) {
+          throw new Error("Access details were invalid.");
+        }
+        setTenantAccess(access);
+      })
+      .catch((reason) => { if (!abort.signal.aborted) setAccessError(reason instanceof Error ? reason.message : "Access details could not be loaded."); })
+      .finally(() => { if (!abort.signal.aborted) setAccessLoading(false); });
+    return () => abort.abort();
+  }, [selectedId, accessRevision]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const abort = new AbortController();
+    void fetch(`/api/internal/tenants/${encodeURIComponent(selectedId)}/domains`, { signal: abort.signal })
+      .then(async (response) => await payload(response) as { domains: ManagedDomain[] })
+      .then((result) => { if (!Array.isArray(result.domains)) throw new Error("Domain status was invalid."); setDomains(result.domains); })
+      .catch((reason) => { if (!abort.signal.aborted) setDomainError(reason instanceof Error ? reason.message : "Domains could not be loaded."); })
+      .finally(() => { if (!abort.signal.aborted) setDomainLoading(false); });
+    return () => abort.abort();
+  }, [selectedId, domainRevision]);
 
   function select(tenant: ManagedTenant) {
     setSelectedId(tenant.externalTenantId);
-    setDraft(draftFor(tenant));
+    setTenantStatus(null);
+    setStatusError("");
+    setStatusLoading(true);
+    setTenantAccess(null);
+    setAccessError("");
+    setAccessLoading(true);
+    setDomains([]);
+    setDomainLoading(true);
+    setDomainError("");
+    setDomainNotice("");
+    setDomainInput("");
+    setDomainRequestKey("");
+    setSelectedDomainId("");
+    setShowDomainForm(false);
+    setRemoveDomainTarget(null);
     setError("");
     setNotice("");
   }
 
+  function retryStatus() {
+    setTenantStatus(null);
+    setStatusError("");
+    setStatusLoading(true);
+    setStatusRevision((revision) => revision + 1);
+  }
+
+  function retryAccess() {
+    setTenantAccess(null);
+    setAccessError("");
+    setAccessLoading(true);
+    setAccessRevision((revision) => revision + 1);
+  }
+
   function closeDetails() {
     setSelectedId("");
-    setDraft(null);
+    setTenantStatus(null);
+    setStatusLoading(false);
+    setTenantAccess(null);
+    setAccessLoading(false);
+    setAccessError("");
+    setDomains([]);
+    setDomainLoading(false);
+    setDomainError("");
+    setDomainNotice("");
+    setSelectedDomainId("");
+    setShowDomainForm(false);
+    setRemoveDomainTarget(null);
     setError("");
-  }
-
-  async function save() {
-    if (!selected || !draft) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const response = await fetch(`/api/internal/tenants/${encodeURIComponent(selected.externalTenantId)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          amount: Number(draft.amount),
-          billingCycle: draft.billingCycle,
-          expectedSubscriptionVersion: selected.subscription.version,
-          expectedWorkspaceVersion: selected.workspace.version,
-          note: draft.note || null,
-          planCode: draft.planCode,
-          projectLimit: Number(draft.projectLimit),
-          renewsAt: draft.renewsAt ? new Date(`${draft.renewsAt}T12:00:00Z`).toISOString() : null,
-          seatLimit: Number(draft.seatLimit),
-          subscriptionStatus: draft.subscriptionStatus,
-          workspaceStatus: draft.workspaceStatus,
-        }),
-      });
-      const updated = await payload(response) as ManagedTenant;
-      setTenants((items) => items.map((item) => item.externalTenantId === updated.externalTenantId ? updated : item));
-      setDraft(draftFor(updated));
-      setNotice("Tenant saved.");
-    } catch (reason) { setError((reason as Error).message); }
-    finally { setBusy(false); }
-  }
-
-  async function createClient(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const slug = newClient.slug || slugify(newClient.name);
-    setBusy(true); setError(""); setActivationLink("");
-    try {
-      const response = await fetch("/api/internal/tenants", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          defaultCurrency: newClient.defaultCurrency,
-          defaultLocale: newClient.defaultLocale,
-          defaultTimezone: newClient.defaultTimezone,
-          externalTenantId: `tenant-${slug}-${provisionKey.slice(0, 8)}`,
-          firstLegalEntity: {
-            baseCurrency: newClient.defaultCurrency,
-            code: legalCode(newClient.name),
-            countryCode: newClient.countryCode,
-            displayName: newClient.name,
-            locale: newClient.defaultLocale,
-            registeredName: newClient.name,
-            timezone: newClient.defaultTimezone,
-          },
-          idempotencyKey: provisionKey,
-          name: newClient.name,
-          owner: { displayName: newClient.ownerName, email: newClient.ownerEmail },
-          slug,
-          unitSystem: "metric",
-          weekStartsOn: 1,
-        }),
-      });
-      const created = await payload(response) as { externalTenantId: string; ownerInvitation: { invitationToken: string | null }; workspace: { slug: string } };
-      const detailsResponse = await fetch(`/api/internal/tenants/${encodeURIComponent(created.externalTenantId)}`);
-      const details = await payload(detailsResponse) as ManagedTenant;
-      setTenants((items) => [details, ...items]);
-      setNewTenantId(details.externalTenantId);
-      select(details);
-      if (created.ownerInvitation.invitationToken) {
-        setActivationLink(`${location.origin}/login?tenant=${encodeURIComponent(created.workspace.slug)}&invitation=${encodeURIComponent(created.ownerInvitation.invitationToken)}`);
-      }
-      setNewClient(blankClient);
-      setProvisionKey(crypto.randomUUID());
-      setCreateOpen(false);
-      setNotice("Customer account and its default organization are ready. Share the activation link with the owner.");
-    } catch (reason) { setError((reason as Error).message); }
-    finally { setBusy(false); }
   }
 
   async function refreshInvitation() {
@@ -219,85 +227,168 @@ export function InternalPortal({ initialTenants, user }: { initialTenants: Manag
         setActivationLink(`${location.origin}/login?tenant=${encodeURIComponent(selected.workspace.slug)}&invitation=${encodeURIComponent(invitation.invitationToken)}`);
         setNotice("A fresh owner activation link is ready.");
       }
+      retryStatus();
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
 
-  return <div className={styles.shell}>
-    <aside className={styles.sidebar} data-open={mobileNav || undefined}>
-      <div className={styles.brand}><span>W</span><div><strong>Wodana</strong><small>Control</small></div></div>
-      <nav aria-label="Internal portal"><a aria-current="page" href="#tenants"><Building2 size={17}/>Tenants</a></nav>
-      <div className={styles.sidebarFooter}>
-        <Link href="/workspace"><ArrowLeft size={16}/>Back to workspace</Link>
-        <div className={styles.user}><span style={identityStyle(user.email)}>{identityInitials(user.name)}</span><div><strong>{user.name}</strong><small>{user.email}</small></div></div>
-      </div>
-    </aside>
-    {mobileNav ? <button aria-label="Close navigation" className={styles.scrim} onClick={() => setMobileNav(false)} /> : null}
-    <main className={styles.main} id="tenants">
-      <header className={styles.topbar}>
-        <button aria-label="Open navigation" className={styles.menuButton} onClick={() => setMobileNav(true)}><Menu size={19}/></button>
-        <div><strong>Tenant management</strong><small>Internal portal</small></div>
-        <button aria-label={theme === "light" ? "Use dark mode" : "Use light mode"} className={styles.iconButton} onClick={toggleTheme}>{theme === "light" ? <Moon size={16}/> : <Sun size={16}/>}</button>
-      </header>
-      <section className={styles.content}>
-        <div className={styles.pageHeader}><div><p className={styles.eyebrow}>Wodana control</p><h1>Tenants</h1><p>Provision workspaces and manage account access and billing.</p></div>
-          <Button className={styles.primaryButton} onPress={() => { setCreateOpen(true); setProvisionKey(crypto.randomUUID()); setError(""); setActivationLink(""); }}><Plus size={16}/>Add customer</Button>
+  function refreshDomains() {
+    setDomainLoading(true);
+    setDomainError("");
+    setDomainRevision((revision) => revision + 1);
+  }
+
+  async function requestDomain() {
+    if (!selected) return;
+    const hostname = domainInput.trim();
+    if (!hostname) { setDomainError("Enter the custom domain first."); return; }
+    const key = domainRequestKey || crypto.randomUUID();
+    setDomainRequestKey(key);
+    setDomainBusy(true); setDomainError(""); setDomainNotice("");
+    try {
+      const response = await fetch(`/api/internal/tenants/${encodeURIComponent(selected.externalTenantId)}/domains`, {
+        method: "POST", headers: { "content-type": "application/json", "idempotency-key": key },
+        body: JSON.stringify({ hostname }),
+      });
+      const created = await payload(response) as { id: string };
+      setSelectedDomainId(created.id);
+      setDomainNotice("Domain reserved. Add the TXT record, then verify ownership.");
+      setDomainInput(""); setDomainRequestKey("");
+      setShowDomainForm(false);
+      refreshDomains(); retryStatus();
+    } catch (reason) { setDomainError((reason as Error).message); }
+    finally { setDomainBusy(false); }
+  }
+
+  async function updateDomain(domain: ManagedDomain, action: "verify" | "recheck" | "rotate-challenge" | "remove") {
+    if (!selected) return;
+    setDomainBusy(true); setDomainError(""); setDomainNotice("");
+    try {
+      const response = await fetch(`/api/internal/tenants/${encodeURIComponent(selected.externalTenantId)}/domains/${domain.id}/${action}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedVersion: domain.version }),
+      });
+      await payload(response);
+      setDomainNotice(action === "verify" ? "DNS ownership verified. TLS setup is still required."
+        : action === "recheck" ? "DNS ownership check finished. Review the current domain state."
+        : action === "remove" ? "Domain request removed; the Wodana address remains available."
+          : "New TXT challenge created. The previous value no longer works.");
+      refreshDomains(); retryStatus();
+    } catch (reason) { setDomainError((reason as Error).message); }
+    finally { setDomainBusy(false); }
+  }
+
+  return <DesignSystemProvider theme={theme === "dark" ? "dark" : "light"} locale="en-AE" currency="AED" timeZone="Asia/Dubai">
+    <AppShell
+      title="Wodana Control"
+      topActions={<div className={styles.topActions}><div className={styles.user}><span style={identityStyle(user.email)}>{identityInitials(user.name)}</span><div><strong>{user.name}</strong><small>{user.email}</small></div></div><IconButton aria-label={theme === "light" ? "Use dark mode" : "Use light mode"} onPress={toggleTheme}>{theme === "light" ? <Moon size={16}/> : <Sun size={16}/>}</IconButton><IconButton aria-label="Sign out" onPress={() => { void fetch("/api/internal/auth/logout", { method: "POST" }).then((response) => { if (!response.ok) throw new Error("Sign out failed."); router.replace("/internal/sign-in"); }).catch(() => setError("Sign out failed. Try again.")); }}><LogOut size={16}/></IconButton></div>}
+    >
+      <Container as="main" className={styles.content} id="tenants" size="full">
+        <div className={styles.pageHeader}><div><Heading as="h1" size="lg">Tenants</Heading><p>Customer accounts and their organizations.</p></div>
+          {can("tenants.provision") ? <Button variant="primary" onPress={() => router.push("/internal/new")}><Plus size={16}/>Add customer</Button> : null}
         </div>
-        <div className={styles.metrics} aria-label="Tenant summary">
+        <Surface className={styles.metrics} aria-label="Tenant summary">
           <div><strong>{tenants.length}</strong><span>Total tenants</span></div>
           <div><strong>{activeCount}</strong><span>Active workspaces</span></div>
-          <div><strong>{connectedCount}</strong><span>Connected channels</span></div>
-        </div>
+          <div><strong>{setupCount}</strong><span>Setup in progress</span></div>
+        </Surface>
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
         {notice ? <p className={styles.notice} role="status"><Check size={15}/>{notice}</p> : null}
-        {activationLink ? <div className={styles.activation}><div><strong>Owner activation link</strong><small>This one-time link contains a secret. Share it only with the tenant owner.</small></div><button onClick={() => void navigator.clipboard.writeText(activationLink)}><Copy size={15}/>Copy link</button></div> : null}
-        <div className={styles.workspace}>
-          <section className={styles.clientList} aria-label="Tenants">
-            <label className={styles.search}><Search size={16}/><span className={styles.visuallyHidden}>Search tenants</span><input onChange={(event) => setQuery(event.target.value)} placeholder="Search tenants" type="search" value={query}/></label>
-            <div className={styles.tableWrap}><table><thead><tr><th>Tenant</th><th>Plan</th><th>Usage</th><th>Integrations</th><th>Status</th></tr></thead><tbody>
-              {filtered.map((tenant) => {
-                const connected = tenant.integrations.filter((item) => item.status === "connected").reduce((sum, item) => sum + item.count, 0);
-                return <tr data-new={tenant.externalTenantId === newTenantId || undefined} data-selected={tenant.externalTenantId === selectedId || undefined} key={tenant.externalTenantId}>
-                  <td><button aria-expanded={tenant.externalTenantId === selectedId} aria-label={`Manage ${tenant.workspace.name}`} className={styles.clientButton} onClick={() => select(tenant)}><span style={identityStyle(tenant.workspace.id)}>{identityInitials(tenant.workspace.name)}</span><span><strong>{tenant.workspace.name}</strong><small>{tenant.owner?.email ?? tenant.workspace.slug}</small></span><ChevronRight size={15}/></button></td>
-                  <td><strong>{planLabel[tenant.subscription.planCode]}</strong><small>{statusLabel[tenant.subscription.status]}</small></td>
-                  <td><strong>{tenant.usage.members}/{tenant.subscription.seatLimit} seats</strong><small>{tenant.usage.projects}/{tenant.subscription.projectLimit} projects</small></td>
-                  <td><strong>{connected}</strong><small>connected</small></td>
-                  <td><span className={styles.status} data-status={tenant.workspace.status}>{tenant.workspace.status}</span></td>
-                </tr>;
-              })}
-            </tbody></table></div>
-            {!filtered.length ? <p className={styles.empty}>No tenants match your search.</p> : null}
-          </section>
-        </div>
-        {selected && draft ? <><button aria-label="Close tenant details" className={styles.drawerScrim} onClick={closeDetails}/><aside className={styles.detail} aria-label={`${selected.workspace.name} tenant details`}>
-            <div className={styles.detailHeader}><div className={styles.clientTitle}><span style={identityStyle(selected.workspace.id)}>{identityInitials(selected.workspace.name)}</span><div><h2>{selected.workspace.name}</h2><p>{selected.workspace.slug}</p></div></div><div className={styles.detailActions}><a aria-label="Open tenant sign-in" href={`/login?tenant=${encodeURIComponent(selected.workspace.slug)}`} target="_blank"><ExternalLink size={16}/></a><button aria-label="Close tenant details" className={styles.iconButton} onClick={closeDetails}><X size={17}/></button></div></div>
+        {activationLink ? <div className={styles.activation}><div><strong>Owner activation link</strong><small>This one-time link contains a secret. Share it only with the tenant owner.</small></div><Button size="compact" onPress={() => void navigator.clipboard.writeText(activationLink)}><Copy size={15}/>Copy link</Button></div> : null}
+        <DataGrid
+          ariaLabel="Customer organizations"
+          columns={tenantColumns}
+          data={tenants}
+          emptyTitle="No organizations yet"
+          emptyDescription="Add the first customer account to provision its organization."
+          getRowId={(tenant) => tenant.externalTenantId}
+          onRowAction={select}
+          pageSize={25}
+          persistKey="internal-organizations"
+          rowNumbers={false}
+          searchLabel="Search tenants"
+          selectable={false}
+        />
+        {selected ? <InspectorSheet isOpen title={selected.workspace.name} size="md" onOpenChange={(open) => { if (!open) closeDetails(); }}><div className={styles.detailContent}>
+            <div className={styles.detailToolbar}><span>{selected.workspace.slug}</span><Button size="compact" onPress={() => router.push(`/internal/tenants/${encodeURIComponent(selected.externalTenantId)}/operations`)}>Tenant operations</Button></div>
             <div className={styles.owner}><span><Users size={16}/></span><div><small>Tenant owner</small><strong>{selected.owner?.name ?? "Owner invitation pending"}</strong><p>{selected.owner?.email ?? "No owner email"}</p></div></div>
             {selected.account ? <section className={styles.detailSection}><div className={styles.sectionHeading}><h3>Customer account</h3><span>{selected.account.status}</span></div>
               <div className={styles.accountFacts}><div><small>Account</small><strong>{selected.account.displayName}</strong></div><div><small>Organizations</small><strong>{selected.account.organizationCount} of {selected.account.organizationLimit}</strong></div><div><small>This workspace</small><strong>{selected.account.isDefaultOrganization ? "Default organization" : "Additional organization"}</strong></div></div>
             </section> : null}
+            <section className={styles.detailSection} aria-label="Current organization status">
+              <div className={styles.sectionHeading}><h3>Current status</h3><span>Live read</span></div>
+              {statusLoading ? <div role="status" aria-label="Loading organization status"><Skeleton lines={4} /></div> : statusError ? <Callout title="Status unavailable" tone="warning" actions={<Button size="compact" onPress={retryStatus}>Retry</Button>}>{statusError}</Callout> : tenantStatus && tenantStatus.organization.id === selected.workspace.id ? <>
+                <div className={styles.statusFacts}>
+                  <div><small>Seats reserved</small><strong>{tenantStatus.seats.reserved} / {tenantStatus.seats.limit ?? "Unknown"}</strong><span>{tenantStatus.seats.activeMembers} active · {tenantStatus.seats.invitedMembers ?? 0} invited · {tenantStatus.seats.pendingInvitations} pending · {tenantStatus.seats.available ?? "Unknown"} available</span></div>
+                  <div><small>Owner setup</small><strong>{tenantStatus.onboarding.status === "completed" ? "Complete" : "In progress"}</strong><span>{tenantStatus.ownerInvitation ? `Invitation ${tenantStatus.ownerInvitation.status} · delivery ${tenantStatus.ownerInvitation.deliveryStatus}` : "No invitation recorded"}</span></div>
+                  <div><small>Modules</small><strong>{tenantStatus.commercialEntitlements.status.replaceAll("_", " ")}</strong><span>{tenantStatus.commercialEntitlements.modules?.length ? tenantStatus.commercialEntitlements.modules.join(" · ") : "Commercial allocation has not been configured."}</span></div>
+                  <div><small>Login address</small><strong>{tenantStatus.domain.platformSlug}.wodana.ai</strong><span>{selectedDomain ? `${selectedDomain.hostname} · ${selectedDomain.routing.status === "active" ? selectedDomain.isUsable ? "active" : "needs attention" : selectedDomain.dns.status === "verified" ? "verified, not live" : "requested"}` : tenantStatus.domain.hostname ? `${tenantStatus.domain.hostname} · ${tenantStatus.domain.customDomainStatus.replaceAll("_", " ")}` : "Custom domain not configured"}</span></div>
+                </div>
+                <p className={styles.nextAction}>{nextAction(tenantStatus)}</p>
+              </> : <Callout title="Status mismatch" tone="danger">Refresh this organization before making changes.</Callout>}
+            </section>
+            <section className={styles.detailSection} aria-label="Team access and seats">
+              <div className={styles.sectionHeading}><h3>Team access &amp; seats</h3><span>Read-only explanation</span></div>
+              {accessLoading ? <div role="status" aria-label="Loading team access"><Skeleton lines={4}/></div>
+                : accessError ? <Callout title="Access explanation unavailable" tone="warning" actions={<Button size="compact" onPress={retryAccess}>Retry</Button>}>{accessError}</Callout>
+                  : tenantAccess && tenantAccess.organization.id === selected.workspace.id ? <>
+                    <div className={styles.seatFacts} aria-label="Seat capacity">
+                      <div><small>Used</small><strong>{tenantAccess.seats.used}</strong><span>Active + invited</span></div>
+                      <div><small>Reserved</small><strong>{tenantAccess.seats.reserved}</strong><span>Includes {tenantAccess.seats.pendingInvitations} pending</span></div>
+                      <div><small>Available</small><strong>{tenantAccess.seats.available ?? "Unknown"}</strong><span>Limit {tenantAccess.seats.limit ?? "not configured"}</span></div>
+                    </div>
+                    <DataGrid
+                      appearance="flush"
+                      ariaLabel="Tenant member access"
+                      columns={accessColumns}
+                      data={tenantAccess.members}
+                      emptyTitle="No members yet"
+                      emptyDescription="Accepted tenant members will appear here with their access source."
+                      getRowId={(member) => member.id}
+                      pageSize={10}
+                      rowNumbers={false}
+                      selectable={false}
+                      showFooter={false}
+                      showToolbar={false}
+                    />
+                    {tenantAccess.invitations.length ? <p className={styles.invitationSummary}>{tenantAccess.invitations.filter((invitation) => invitation.reservesSeat).length} live invitation reservation{tenantAccess.invitations.filter((invitation) => invitation.reservesSeat).length === 1 ? "" : "s"}. Roles and teams become effective only after acceptance.</p> : null}
+                    <Callout title="Tenant-owned access" tone="neutral">Wodana operators can inspect why access exists, but tenant administrators manage team membership, roles and member offboarding.</Callout>
+                  </> : <Callout title="Access mismatch" tone="danger">Refresh this organization before reviewing access.</Callout>}
+            </section>
+            <section className={styles.detailSection} aria-label="Custom domains">
+              <div className={styles.sectionHeading}><h3>Custom domain</h3><span>Wodana address remains the fallback</span></div>
+              {domainLoading ? <div role="status" aria-label="Loading custom domains"><Skeleton lines={2}/></div> : null}
+              {domainError ? <Callout title="Domain action unavailable" tone="warning" actions={<Button size="compact" onPress={refreshDomains}>Retry</Button>}>{domainError}</Callout> : null}
+              {domainNotice ? <p className={styles.domainNotice} role="status">{domainNotice}</p> : null}
+              {!domainLoading && !domainError && !selectedDomain ? <p className={styles.domainHint}>No custom domain requested.</p> : null}
+              {domains.length > 1 ? <SelectField label="Domain" accent="neutral" items={domains.map((domain) => ({ id: domain.id, label: domain.hostname }))} selectedKey={selectedDomain?.id} onSelectionChange={(key) => { if (key) setSelectedDomainId(String(key)); }} /> : null}
+              {selectedDomain ? <div className={styles.domainDetails}>
+                <div className={styles.domainTitle}><strong>{selectedDomain.hostname}</strong><Badge tone={selectedDomain.isUsable ? "success" : selectedDomain.dns.status === "failed" || selectedDomain.rollback.status === "pending" || selectedDomain.dns.status === "verified" ? "warning" : "neutral"}>{selectedDomain.isUsable ? "Active" : selectedDomain.dns.status === "failed" || selectedDomain.rollback.status === "pending" ? "Needs attention" : selectedDomain.dns.status === "verified" ? "TLS setup required" : "DNS pending"}</Badge></div>
+                <div className={styles.domainStates}><span>DNS: {selectedDomain.dns.status}</span><span>Certificate: {selectedDomain.certificate.status.replaceAll("_", " ")}</span><span>Routing: {selectedDomain.routing.status.replaceAll("_", " ")}</span></div>
+                {selectedDomain.issues?.length ? <Callout title="Custom sign-in is not ready" tone="warning">{selectedDomain.issues.join(" · ")}. Use the Wodana address in the meantime.</Callout> : null}
+                {selectedDomain.dns.status !== "verified" ? <>
+                  <p className={styles.domainHint}>{selectedDomain.dns.status === "failed" ? selectedDomain.rollback.status === "pending" || selectedDomain.rollback.status === "failed" ? "Ownership was lost. Routing and certificate rollback must finish before a new DNS code." : "Ownership was lost. Create a new DNS code to verify again." : "Add this TXT record at your DNS provider, then verify."}</p>
+                  <div className={styles.dnsRecord}><small>TXT name</small><code>{selectedDomain.dns.record.name}</code><small>TXT value</small><code>{selectedDomain.dns.record.value}</code></div>
+                  <div className={styles.domainActions}><Button size="compact" isDisabled={domainBusy} onPress={() => void navigator.clipboard.writeText(`${selectedDomain.dns.record.name}\n${selectedDomain.dns.record.value}`).catch(() => setDomainError("Could not copy the DNS record."))}><Copy size={14}/>Copy record</Button>{can("domains.manage") && selectedDomain.dns.status === "pending" ? <Button size="compact" variant="primary" isLoading={domainBusy} onPress={() => void updateDomain(selectedDomain, "verify")}>Verify DNS</Button> : null}{can("domains.manage") ? <Button size="compact" isDisabled={domainBusy || selectedDomain.rollback.status === "pending" || selectedDomain.rollback.status === "failed" || selectedDomain.certificate.status === "issued" || selectedDomain.certificate.status === "pending"} onPress={() => void updateDomain(selectedDomain, "rotate-challenge")}>New code</Button> : null}</div>
+                </> : selectedDomain.routing.status !== "active" ? <p className={styles.domainHint}>Ownership is verified. Certificate and routing are not connected yet; keep using the Wodana address.</p> : null}
+                {can("domains.manage") && selectedDomain.dns.status === "verified" ? <div className={styles.domainActions}><Button size="compact" isLoading={domainBusy} onPress={() => void updateDomain(selectedDomain, "recheck")}>Recheck DNS</Button></div> : null}
+                {can("domains.manage") && selectedDomain.routing.status !== "active" && selectedDomain.routing.status !== "pending" && selectedDomain.certificate.status !== "pending" && selectedDomain.certificate.status !== "issued" && selectedDomain.rollback.status !== "pending" && selectedDomain.rollback.status !== "failed" ? <div className={styles.domainActions}><Button size="compact" variant="quiet" isDisabled={domainBusy} onPress={() => setRemoveDomainTarget(selectedDomain)}>Remove request</Button></div> : null}
+              </div> : null}
+              {can("domains.manage") && selectedDomain && !showDomainForm ? <div className={styles.domainActions}><Button size="compact" onPress={() => setShowDomainForm(true)}>Add another domain</Button></div> : null}
+              {can("domains.manage") && (!selectedDomain || showDomainForm) ? <Form onSubmit={(event) => { event.preventDefault(); void requestDomain(); }}><div className={styles.domainForm}><TextInput label="Domain" description="For example, portal.yourcompany.com" value={domainInput} onChange={(value) => { setDomainInput(value); setDomainRequestKey(""); }} isRequired/><div className={styles.domainActions}><Button type="submit" size="compact" variant="primary" isLoading={domainBusy}>Request domain</Button>{selectedDomain ? <Button size="compact" onPress={() => setShowDomainForm(false)}>Cancel</Button> : null}</div></div></Form> : null}
+            </section>
             <section className={styles.detailSection}><div className={styles.sectionHeading}><h3>Access</h3><span>{selected.onboarding.status === "completed" ? "Onboarding complete" : "Setup in progress"}</span></div>
-              <label>Workspace access<select value={draft.workspaceStatus} onChange={(event) => setDraft({ ...draft, workspaceStatus: event.target.value })}><option value="active">Active</option><option value="suspended">Suspended</option></select></label>
-              {selected.ownerInvitation?.status !== "accepted" ? <button className={styles.secondaryButton} disabled={busy} onClick={() => void refreshInvitation()}>Create owner activation link</button> : null}
+              <p className={styles.readOnlyValue}>Workspace access · {selected.workspace.status}</p>
+              {can("lifecycle.manage") ? <Button size="compact" onPress={() => router.push(`/internal/tenants/${encodeURIComponent(selected.externalTenantId)}/operations`)}>Manage lifecycle</Button> : null}
+              {can("invitations.send") && selected.ownerInvitation?.status !== "accepted" ? <Button isDisabled={busy} onPress={() => void refreshInvitation()}>Create owner activation link</Button> : null}
             </section>
-            <section className={styles.detailSection}><div className={styles.sectionHeading}><h3>Billing</h3><span>Updated {formatDate(selected.subscription.updatedAt)}</span></div>
-              <div className={styles.fieldGrid}><label>Plan<select value={draft.planCode} onChange={(event) => setDraft({ ...draft, planCode: event.target.value })}><option value="starter">Starter</option><option value="pro">Pro</option><option value="enterprise">Enterprise</option></select></label><label>Subscription<select value={draft.subscriptionStatus} onChange={(event) => setDraft({ ...draft, subscriptionStatus: event.target.value })}><option value="trial">Trial</option><option value="active">Active</option><option value="past_due">Past due</option><option value="cancelled">Cancelled</option></select></label></div>
-              <div className={styles.fieldGrid}><label>Billing cycle<select value={draft.billingCycle} onChange={(event) => setDraft({ ...draft, billingCycle: event.target.value })}><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="custom">Custom</option></select></label><label>Price · {selected.subscription.currency}<input min="0" onChange={(event) => setDraft({ ...draft, amount: event.target.value })} step="0.01" type="number" value={draft.amount}/></label></div>
-              <label>Next renewal<input onChange={(event) => setDraft({ ...draft, renewsAt: event.target.value })} type="date" value={draft.renewsAt}/></label>
-              <div className={styles.fieldGrid}><label>Seat limit<input min="1" onChange={(event) => setDraft({ ...draft, seatLimit: event.target.value })} type="number" value={draft.seatLimit}/></label><label>Project limit<input min="1" onChange={(event) => setDraft({ ...draft, projectLimit: event.target.value })} type="number" value={draft.projectLimit}/></label></div>
-              <label>Internal note<textarea maxLength={500} onChange={(event) => setDraft({ ...draft, note: event.target.value })} placeholder="Contract or billing note" value={draft.note}/></label>
-              <button className={styles.primaryButton} disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save tenant"}</button>
+            <section className={styles.detailSection}><div className={styles.sectionHeading}><h3>Billing</h3><span>Account-controlled</span></div>
+              <Callout title="One billing authority" tone="neutral">Plan, seats, usage and collection state are managed in Billing and usage. This legacy workspace subscription is read-only.</Callout>
+              <Button size="compact" onPress={() => router.push(`/internal/tenants/${encodeURIComponent(selected.externalTenantId)}/operations`)}>Open Billing and usage</Button>
             </section>
-          </aside></> : null}
-      </section>
-    </main>
-    <ModalOverlay className={styles.modalOverlay} isDismissable={!busy} isOpen={createOpen} onOpenChange={setCreateOpen}><Modal className={styles.modal}><Dialog aria-label="Add customer account" className={styles.dialog}>
-      <div className={styles.dialogHeader}><div><p className={styles.eyebrow}>New customer</p><Heading slot="title">Add customer account</Heading></div><Button aria-label="Close" className={styles.iconButton} isDisabled={busy} onPress={() => setCreateOpen(false)}><X size={17}/></Button></div>
-      <form onSubmit={(event) => void createClient(event)}>
-        <fieldset><legend>Business</legend><label>Business name<input autoFocus required value={newClient.name} onChange={(event) => setNewClient({ ...newClient, name: event.target.value, slug: slugify(event.target.value) })}/></label><label>Workspace address<input pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={newClient.slug} onChange={(event) => setNewClient({ ...newClient, slug: slugify(event.target.value) })}/><small>{newClient.slug || "tenant"}.wodana.ai</small></label></fieldset>
-        <fieldset><legend>Owner</legend><div className={styles.fieldGrid}><label>Owner name<input required value={newClient.ownerName} onChange={(event) => setNewClient({ ...newClient, ownerName: event.target.value })}/></label><label>Owner email<input required type="email" value={newClient.ownerEmail} onChange={(event) => setNewClient({ ...newClient, ownerEmail: event.target.value })}/></label></div></fieldset>
-        <fieldset><legend>Regional defaults</legend><div className={styles.fieldGrid}><label>Country / region<select required value={newClient.countryCode} onChange={(event) => { const countryCode = event.target.value; setNewClient({ ...newClient, countryCode, ...(regionalPresets[countryCode] ?? {}) }); }}><option value="">Choose country</option>{countries.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Base currency<select required value={newClient.defaultCurrency} onChange={(event) => setNewClient({ ...newClient, defaultCurrency: event.target.value })}>{currencies.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Language &amp; format<select required value={newClient.defaultLocale} onChange={(event) => setNewClient({ ...newClient, defaultLocale: event.target.value })}>{localeOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Time zone<select required value={newClient.defaultTimezone} onChange={(event) => setNewClient({ ...newClient, defaultTimezone: event.target.value })}>{timeZones.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div></fieldset>
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}<div className={styles.dialogActions}><Button className={styles.secondaryButton} isDisabled={busy} onPress={() => setCreateOpen(false)}>Cancel</Button><button className={styles.primaryButton} disabled={busy} type="submit">{busy ? "Creating account…" : "Create account"}</button></div>
-      </form>
-    </Dialog></Modal></ModalOverlay>
-  </div>;
+            <ConfirmationDialog isOpen={Boolean(removeDomainTarget)} onOpenChange={(open) => { if (!open && !domainBusy) setRemoveDomainTarget(null); }} title="Remove domain request?" body={removeDomainTarget ? <>Release <strong>{removeDomainTarget.hostname}</strong>? The Wodana login address stays available, but this DNS code will stop working.</> : null} confirmLabel="Remove request" onConfirm={() => { const target = removeDomainTarget; setRemoveDomainTarget(null); if (target) void updateDomain(target, "remove"); }} />
+          </div></InspectorSheet> : null}
+      </Container>
+    </AppShell>
+  </DesignSystemProvider>;
 }

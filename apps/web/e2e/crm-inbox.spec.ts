@@ -41,7 +41,7 @@ test("compact WhatsApp inbox fits the viewport and distinguishes contact and tea
   page.on("pageerror", (error) => errors.push(error.message));
   const current = chat(firstChatId, "Noura Haddad", [
     { id: "client", direction: "inbound", status: "received", bodyText: "Could we review the living room concept tomorrow?", createdAt: "2026-09-06T10:00:00Z" },
-    { id: "reply", direction: "outbound", status: "delivered", bodyText: "Absolutely. I’ll check the schedule with your lead manager.", createdAt: "2026-09-06T10:02:00Z" },
+    { id: "reply", direction: "outbound", status: "delivered", bodyText: "Absolutely. I’ll check the schedule with your sales owner.", createdAt: "2026-09-06T10:02:00Z" },
     { id: "legacy-note", direction: "internal", status: "sent", bodyText: "This old internal note stays out of the client inbox.", createdAt: "2026-09-06T10:03:00Z" },
   ]);
   await routeInbox(page, current);
@@ -72,25 +72,26 @@ test("compact WhatsApp inbox fits the viewport and distinguishes contact and tea
   expect(errors).toEqual([]);
 });
 
-test("overview uses Workspace colors and keeps its dashboard useful on mobile", async ({ page }, testInfo) => {
+test("today uses Workspace colors and keeps the customer work view useful on mobile", async ({ page }, testInfo) => {
   await page.goto("/workspace/crm");
-  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Lead sources over six months" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Enquiry sources over six months" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "CRM key metrics" }).getByRole("link")).toHaveCount(2);
   await expect(page.getByRole("region", { name: "Upcoming reminders" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Lead pipeline" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Enquiry pipeline" })).toBeVisible();
   for (const theme of ["light", "dark"]) {
     const toggle = page.getByRole("button", { name: `Use ${theme} mode` });
     if (await toggle.count()) await toggle.click();
-    const overview = page.getByRole("region", { name: "Overview workspace" });
-    const appearance = await overview.evaluate((element) => ({ accent: getComputedStyle(element).getPropertyValue("--wd-color-action-primary").trim(), overflow: document.documentElement.scrollWidth - innerWidth }));
+    const today = page.getByRole("region", { name: "Today workspace" });
+    const appearance = await today.evaluate((element) => ({ accent: getComputedStyle(element).getPropertyValue("--wd-color-action-primary").trim(), overflow: document.documentElement.scrollWidth - innerWidth }));
     expect(appearance.accent).toBe(theme === "light" ? "#694f7a" : "#d6b9f3");
     expect(appearance.overflow).toBeLessThanOrEqual(1);
-    const actionGradient = await page.getByRole("link", { name: "Add lead", exact: true }).evaluate((element) => getComputedStyle(element).backgroundImage);
-    expect(actionGradient).toContain("214, 185, 243");
+    const actionAppearance = await page.getByRole("link", { name: "Add enquiry", exact: true }).evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, image: getComputedStyle(element).backgroundImage }));
+    expect(actionAppearance.image).toBe("none");
+    expect(actionAppearance.background).toBe(theme === "light" ? "rgb(105, 79, 122)" : "rgb(214, 185, 243)");
     await page.screenshot({ path: testInfo.outputPath(`overview-${theme}.png`), fullPage: true });
   }
-  const search = page.getByRole("searchbox", { name: "Search CRM overview" });
+  const search = page.getByRole("searchbox", { name: "Search today" });
   await search.fill("no matching customer in browser test");
   await expect(page.getByText("No reminders match your search.")).toBeVisible();
 });

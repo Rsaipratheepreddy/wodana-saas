@@ -3,12 +3,12 @@ import {Image,Modal,Pressable,View,useWindowDimensions} from 'react-native';
 import Svg,{Circle,Polyline} from 'react-native-svg';
 import {SafeAreaProvider,SafeAreaView} from 'react-native-safe-area-context';
 import {useAuth} from '../auth/provider';
-import {Text,useTheme} from '../design-system';
+import {Text,tokens,useTheme} from '../design-system';
 import {Button,Notice} from './ui';
 import {usePhoto} from './asset-preview';
 import {errorText,uuid,usePreProjectApi,type CaseAsset} from './api';
 export type Stroke={color:string;width:number;points:{x:number;y:number}[]};
-const pens=[['#694f7a','Plum'],['#c83737','Red'],['#2063b6','Blue'],['#1b1b1b','Black'],['#ffffff','White']];
+const pens=[[tokens.colors.light.actionPrimary,'Indigo'],['#c83737','Red'],['#2063b6','Blue'],['#1b1b1b','Black'],['#ffffff','White']];
 export function PhotoMarkup({workspaceId,caseId,asset,onClose,onSaved}:{workspaceId:string;caseId:string;asset:CaseAsset;onClose:()=>void;onSaved:(asset:CaseAsset)=>void}){
  const {client}=useAuth(),api=usePreProjectApi(workspaceId,caseId),{colors,reducedMotion}=useTheme(),window=useWindowDimensions();
  const [original,setOriginal]=useState<string>(),[strokes,setStrokes]=useState<Stroke[]>([]),[color,setColor]=useState(pens[0][0]),[width,setWidth]=useState(.004),[busy,setBusy]=useState(false),[error,setError]=useState(''),[discard,setDiscard]=useState(false),[ratio,setRatio]=useState(4/3),[imageReady,setImageReady]=useState(false);

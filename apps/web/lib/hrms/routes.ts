@@ -16,8 +16,13 @@ export function allowedHrmsRoute(method: string, path: string) {
 export function allowedProjectsRoute(method: string, path: string) {
   return (
     (method === "GET" &&
-      ["", "locations", "assignments", "attendance"].includes(path)) ||
-    (method === "PUT" && ["locations", "assignments"].includes(path)) ||
-    (method === "POST" && path === "from-pre-project")
+      (["", "locations", "assignments", "attendance", "workflow-templates"].includes(path) ||
+        new RegExp(`^workflow-templates/${id}/history$`).test(path))) ||
+    (method === "PUT" &&
+      (["locations", "assignments"].includes(path) ||
+        new RegExp(`^workflow-templates/${id}$`).test(path))) ||
+    (method === "POST" &&
+      (path === "from-pre-project" ||
+        new RegExp(`^workflow-templates/${id}/(archive|rollback)$`).test(path)))
   );
 }

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import pg from "pg";
 
 const api = process.env.BUSINESS_CORE_URL ?? "http://127.0.0.1:8000/api/v1";
+const databaseUrl = process.env.PLATFORM_TEST_DATABASE_URL;
+assert.ok(databaseUrl, "PLATFORM_TEST_DATABASE_URL is required");
+assert.ok(["localhost", "127.0.0.1", "::1"].includes(new URL(databaseUrl).hostname), "Use a local test database only");
+const database = new pg.Client({ connectionString: databaseUrl });
 const runId = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 const owner = {
   "x-wodana-user-subject": `seat-owner-${runId}`,
@@ -125,6 +130,31 @@ assert.deepEqual(
   { members: 2, pendingInvitations: 3, reservedSeats: 5, seatLimit: 5 },
 );
 
+const expiringInvitationId = acceptedInvitations[2].payload.id;
+await database.connect();
+try {
+  await database.query(`UPDATE workspace_invitations SET expires_at=now()-interval '1 minute' WHERE workspace_id=$1 AND id=$2`, [workspaceId, expiringInvitationId]);
+  const expiredReplacement = await request(`/workspaces/${workspaceId}/invitations`, {
+    body: { email: `seat-expiry-replacement-${runId}@example.com`, roleCodes: ["member"] },
+    expected: 201,
+  });
+  assert.equal(expiredReplacement.email, `seat-expiry-replacement-${runId}@example.com`);
+  const invitations = await request(`/workspaces/${workspaceId}/invitations`);
+  assert.equal(invitations.find((invitation) => invitation.id === expiringInvitationId)?.status, "expired");
+  const billingAfterExpiry = await request(`/workspaces/${workspaceId}/billing`);
+  assert.deepEqual(
+    {
+      members: billingAfterExpiry.usage.members,
+      pendingInvitations: billingAfterExpiry.usage.pendingInvitations,
+      reservedSeats: billingAfterExpiry.usage.reservedSeats,
+      seatLimit: billingAfterExpiry.subscription.seatLimit,
+    },
+    { members: 2, pendingInvitations: 3, reservedSeats: 5, seatLimit: 5 },
+  );
+} finally {
+  await database.end();
+}
+
 process.stdout.write(`${JSON.stringify({
   ok: true,
   workspaceId,
@@ -134,6 +164,7 @@ process.stdout.write(`${JSON.stringify({
     "suspension-releases-seat",
     "reactivation-enforces-capacity",
     "cancellation-releases-seat",
+    "expiry-releases-seat",
     "billing-reports-reserved-seats",
   ],
 }, null, 2)}\n`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type HTMLAttributes, type ReactNode } from "react";
+import { useRef, useState, type ChangeEvent, type FormHTMLAttributes, type ReactNode, type Ref } from "react";
 import {
   Button as AriaButton,
   Calendar,
@@ -63,7 +63,7 @@ function FieldMeta({ description, errorMessage }: { description?: ReactNode; err
   return <>{description ? <Text className="wd-field-help" slot="description">{description}</Text> : null}{errorMessage ? <FieldError className="wd-field-error">{errorMessage}</FieldError> : null}</>;
 }
 
-export type TextInputProps = TextFieldProps & FieldChromeProps & { prefix?: ReactNode; suffix?: ReactNode; inputType?: "text" | "email" | "password" | "url" | "tel"; placeholder?: string };
+export type TextInputProps = TextFieldProps & FieldChromeProps & { prefix?: ReactNode; suffix?: ReactNode; inputType?: "text" | "email" | "password" | "url" | "tel" | "date" | "datetime-local"; placeholder?: string };
 export function TextInput({ description, errorMessage, inputType = "text", isRequired, label, placeholder, prefix, suffix, ...props }: TextInputProps) {
   return <TextField {...props} className="wd-field" isRequired={isRequired}><FieldLabel label={label} required={isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start">{prefix}</span> : null}<Input className="wd-input" placeholder={placeholder} type={inputType} />{suffix ? <span className="wd-input-affix" data-side="end">{suffix}</span> : null}</Group><FieldMeta description={description} errorMessage={errorMessage} /></TextField>;
 }
@@ -72,8 +72,8 @@ export function TextAreaField({ description, errorMessage, isRequired, label, pl
   return <TextField {...props} className="wd-field" isRequired={isRequired}><FieldLabel label={label} required={isRequired} /><span className="wd-textarea-frame wd-focus-frame"><TextArea className="wd-textarea" placeholder={placeholder} /></span><FieldMeta description={description} errorMessage={errorMessage} /></TextField>;
 }
 
-export function SearchInput({ label = "Search", placeholder, ...props }: Omit<TextFieldProps, "children"> & { label?: string; placeholder?: string }) {
-  return <SearchField {...props} className="wd-search-field wd-focus-frame"><Label className="wd-visually-hidden">{label}</Label><Search aria-hidden="true" size={15} /><Input className="wd-input" placeholder={placeholder ?? label} /><AriaButton aria-label="Clear search"><X size={14} /></AriaButton></SearchField>;
+export function SearchInput({ inputRef, label = "Search", placeholder, ...props }: Omit<TextFieldProps, "children"> & { inputRef?: Ref<HTMLInputElement>; label?: string; placeholder?: string }) {
+  return <SearchField {...props} className="wd-search-field wd-focus-frame"><Label className="wd-visually-hidden">{label}</Label><Search aria-hidden="true" size={15} /><Input className="wd-input" placeholder={placeholder ?? label} ref={inputRef} /><AriaButton aria-label="Clear search"><X size={14} /></AriaButton></SearchField>;
 }
 
 export function NumericInput({ description, errorMessage, isRequired, label, prefix, suffix, ...props }: NumberFieldProps & FieldChromeProps & { prefix?: ReactNode; suffix?: ReactNode }) {
@@ -114,7 +114,7 @@ export function ComboboxField({ description, errorMessage, items, label, placeho
 
 export function MultiSelectField({ label, items, selectedKeys, onSelectionChange }: { label: string; items: SelectItem[]; selectedKeys: Set<Key>; onSelectionChange: (keys: Set<Key>) => void }) {
   const available = items.filter((item) => !selectedKeys.has(item.id));
-  return <div className="wd-field"><span className="wd-field-label">{label}</span><div className="wd-multi-select">{items.filter((item) => selectedKeys.has(item.id)).map((item) => <Tag key={item.id} onRemove={() => { const next = new Set(selectedKeys); next.delete(item.id); onSelectionChange(next); }}>{item.label}</Tag>)}<ComboboxField aria-label={`Add ${label}`} items={available} label={<span className="wd-visually-hidden">Add {label}</span>} onSelectionChange={(key) => { if (key) onSelectionChange(new Set([...selectedKeys, key])); }} placeholder="Add…" /></div></div>;
+  return <div aria-label={label} className="wd-field" role="group"><span className="wd-field-label">{label}</span><div className="wd-multi-select">{items.filter((item) => selectedKeys.has(item.id)).map((item) => <Tag key={item.id} onRemove={() => { const next = new Set(selectedKeys); next.delete(item.id); onSelectionChange(next); }}>{item.label}</Tag>)}<ComboboxField aria-label={`Add ${label}`} items={available} label={<span className="wd-visually-hidden">Add {label}</span>} onSelectionChange={(key) => { if (key) onSelectionChange(new Set([...selectedKeys, key])); }} placeholder="Add…" /></div></div>;
 }
 
 function CalendarHeader() { return <header className="wd-calendar-header"><AriaButton aria-label="Previous month" slot="previous"><ChevronLeft data-directional="true" size={15} /></AriaButton><Heading /><AriaButton aria-label="Next month" slot="next"><ChevronRight data-directional="true" size={15} /></AriaButton></header>; }
@@ -141,12 +141,16 @@ export function PropertyRow({ children, description, label }: { children: ReactN
 }
 
 export type UploadFile = { id: string; file: File; progress: number; status: "queued" | "uploading" | "complete" | "error" };
-export function FileUploader({ accept, label = "Upload files", multiple = true, onFiles }: { accept?: string; label?: string; multiple?: boolean; onFiles?: (files: File[]) => void }) {
+export function FileUploader({ accept, appearance = "dropzone", label = "Upload files", multiple = true, onFiles }: { accept?: string; appearance?: "dropzone" | "button"; label?: string; multiple?: boolean; onFiles?: (files: File[]) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const addFiles = (nextFiles: File[]) => { setFiles((current) => [...current, ...nextFiles.map((file) => ({ id: `${file.name}-${file.lastModified}`, file, progress: 100, status: "complete" as const }))]); onFiles?.(nextFiles); };
   const change = (event: ChangeEvent<HTMLInputElement>) => addFiles(Array.from(event.target.files ?? []));
-  return <div className="wd-uploader"><button className="wd-drop-zone" onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }} type="button"><Upload aria-hidden="true" size={18} /><strong>{label}</strong><span>Drop files here or choose from your device</span></button><input accept={accept} className="wd-visually-hidden" multiple={multiple} onChange={change} ref={input} type="file" /><div className="wd-upload-list">{files.map((item) => <div key={item.id}><Paperclip size={14} /><span>{item.file.name}</span><small>{Math.ceil(item.file.size / 1024)} KB</small><IconButton aria-label={`Remove ${item.file.name}`} onPress={() => setFiles((current) => current.filter((file) => file.id !== item.id))}><X size={13} /></IconButton></div>)}</div></div>;
+  return <div className="wd-uploader" data-appearance={appearance}>{appearance === "button"
+    ? <Button onPress={() => input.current?.click()} size="compact" variant="quiet"><Upload aria-hidden="true" size={14} />{label}</Button>
+    : <button className="wd-drop-zone" onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }} type="button"><Upload aria-hidden="true" size={18} /><strong>{label}</strong><span>Drop files here or choose from your device</span></button>}
+    <input accept={accept} aria-label={label} className="wd-visually-hidden" multiple={multiple} onChange={change} ref={input} type="file" />
+    {appearance === "dropzone" ? <div className="wd-upload-list">{files.map((item) => <div key={item.id}><Paperclip size={14} /><span>{item.file.name}</span><small>{Math.ceil(item.file.size / 1024)} KB</small><IconButton aria-label={`Remove ${item.file.name}`} onPress={() => setFiles((current) => current.filter((file) => file.id !== item.id))}><X size={13} /></IconButton></div>)}</div> : null}</div>;
 }
 
 export function LogoUploader(props: Omit<React.ComponentProps<typeof FileUploader>, "accept" | "multiple">) { return <FileUploader {...props} accept="image/png,image/jpeg,image/webp,image/svg+xml" label={props.label ?? "Upload organization logo"} multiple={false} />; }
@@ -157,6 +161,6 @@ export function SegmentedControl({ label, onChange, options, value }: { label: s
 
 export function RepeatableFields<T>({ addLabel = "Add item", items, onAdd, onRemove, renderItem }: { addLabel?: string; items: T[]; onAdd: () => void; onRemove: (index: number) => void; renderItem: (item: T, index: number) => ReactNode }) { return <div className="wd-repeatable"><div>{items.map((item, index) => <div className="wd-repeatable-row" key={index}><div>{renderItem(item, index)}</div><IconButton aria-label={`Remove item ${index + 1}`} onPress={() => onRemove(index)}><X size={14} /></IconButton></div>)}</div><Button onPress={onAdd}>{addLabel}</Button></div>; }
 
-export function Form({ children, className, onSubmit, ...props }: HTMLAttributes<HTMLFormElement>) { return <form {...props} className={["wd-form", className].filter(Boolean).join(" ")} onSubmit={onSubmit}>{children}</form>; }
+export function Form({ children, className, onSubmit, ...props }: FormHTMLAttributes<HTMLFormElement>) { return <form {...props} className={["wd-form", className].filter(Boolean).join(" ")} onSubmit={onSubmit}>{children}</form>; }
 export function Fieldset({ children, description, legend }: { children: ReactNode; description?: ReactNode; legend: ReactNode }) { return <fieldset className="wd-fieldset"><legend>{legend}</legend>{description ? <p>{description}</p> : null}{children}</fieldset>; }
 export function ValidationSummary({ errors }: { errors: string[] }) { if (!errors.length) return null; return <div className="wd-validation-summary" role="alert"><strong>Check the highlighted fields</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>; }

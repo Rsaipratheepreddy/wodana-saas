@@ -31,7 +31,11 @@ export class LeadFormsService {
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || Number.isNaN(Date.parse(cursor.value)) || !/^[0-9a-f-]{36}$/i.test(cursor.id))) throw new BadRequestException("Invalid page cursor");
       const result = await client.query(`SELECT intake.id, enquiry.reference, intake.original_payload->'party'->>'displayName' AS name,
-        intake.status, intake.received_at AS "receivedAt", intake.original_payload->'formAnswers' AS answers
+        intake.status, intake.received_at AS "receivedAt", intake.original_payload->'formAnswers' AS answers,
+        COALESCE((intake.original_payload->'consents'->0->>'status'), 'unknown') AS "consentStatus",
+        (SELECT count(*)::int FROM crm_identity_candidates candidate
+          WHERE candidate.workspace_id=intake.workspace_id AND candidate.intake_event_id=intake.id
+            AND candidate.status='pending') AS "candidateCount"
         FROM crm_intake_events intake LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id=intake.id AND enquiry.workspace_id=intake.workspace_id
         WHERE intake.workspace_id=$1 AND intake.original_payload->>'formId'=$2
           AND ($3::timestamptz IS NULL OR (intake.received_at,intake.id) < ($3::timestamptz,$4::uuid))
@@ -95,10 +99,38 @@ export class LeadFormsService {
   async publicForm(token: string) {
     const form = await this.resolve(token);
     const { title, description, questions } = form.published;
-    return { title, description, revision: stableHash(form.published), questions: questions.map(({ field, ...question }) => question) };
+    const branding = await this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
+      const result = await client.query<{
+        displayName: string; loginSlug: string; primaryColor: string | null; secondaryColor: string | null;
+        headingFont: string | null; bodyFont: string | null; hasLogo: boolean;
+      }>(
+        `SELECT display_name AS "displayName", login_slug AS "loginSlug",
+                primary_color AS "primaryColor", secondary_color AS "secondaryColor",
+                heading_font AS "headingFont", body_font AS "bodyFont",
+                logo_asset_id IS NOT NULL AS "hasLogo"
+         FROM tenant_login_branding WHERE workspace_id=$1`, [form.workspace_id],
+      );
+      const tenant = result.rows[0];
+      return tenant ? {
+        displayName: tenant.displayName,
+        primaryColor: tenant.primaryColor,
+        secondaryColor: tenant.secondaryColor,
+        headingFont: tenant.headingFont,
+        bodyFont: tenant.bodyFont,
+        logoUrl: tenant.hasLogo ? `/api/auth/tenant-logo/${tenant.loginSlug}` : null,
+      } : null;
+    });
+    return {
+      title,
+      description,
+      branding,
+      revision: stableHash(form.published),
+      consentLabel: "I agree to be contacted about this enquiry.",
+      questions: questions.map(({ field, ...question }) => question),
+    };
   }
 
-  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown> }) {
+  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; serviceConsent: boolean }) {
     const form = await this.resolve(token);
     return this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       // Serialize submissions to enforce per-form limits and check publication atomically.
@@ -106,6 +138,7 @@ export class LeadFormsService {
       if (!current.rowCount) throw new NotFoundException("This form is not accepting enquiries");
       const schema = current.rows[0].published as LeadFormSchema;
       if (stableHash(schema) !== input.revision) throw new ConflictException("The form has changed. Reload it before submitting");
+      if (input.serviceConsent !== true) throw new BadRequestException("Consent is required before submitting an enquiry");
       const { fields, responses } = validateFormAnswers(schema, input.answers);
       const key = `lead-form:${form.id}:${input.requestId}`;
       const existing = await client.query(`SELECT payload_hash, original_payload FROM crm_intake_events WHERE workspace_id=$1 AND idempotency_key=$2`, [form.workspace_id, key]);
@@ -120,12 +153,34 @@ export class LeadFormsService {
         )::int AS contact
         FROM crm_intake_events WHERE workspace_id=$1 AND original_payload->>'formId'=$2 AND received_at > now()-interval '10 minutes'`, [form.workspace_id, form.id, contactFingerprint]);
       if (rate.rows[0].total >= 200 || rate.rows[0].contact >= 5) throw new HttpException("Too many submissions. Please try again later", 429);
+      const capturedAt = new Date().toISOString();
+      const consent = {
+        purpose: "service",
+        channel: "all",
+        status: "granted" as const,
+        evidence: {
+          method: "public_enquiry_form",
+          formId: form.id,
+          formRevision: input.revision,
+          statement: "I agree to be contacted about this enquiry.",
+          capturedAt,
+        },
+      };
       await this.intake.createFormIntake(client, form.workspace_id, key, {
         source: schema.source, channel: schema.channel, intakeMethod: "form", title: "",
         party: { displayName: fields.displayName, email: fields.email, mobile: fields.mobile },
         serviceType: fields.serviceType || "not_sure", summary: fields.summary,
         details: { location: fields.location, budgetRange: fields.budgetRange }, assignment: { mode: "automatic" },
-        originalPayload: { origin: "customer_enquiry_form", formId: form.id, formTitle: schema.title, formRevision: input.revision, formAnswers: responses },
+        consents: [consent],
+        originalPayload: {
+          origin: "customer_enquiry_form",
+          formId: form.id,
+          formTitle: schema.title,
+          formRevision: input.revision,
+          formAnswers: responses,
+          formRawAnswers: structuredClone(input.answers),
+          consent: consent.evidence,
+        },
       });
       return { received: true };
     });

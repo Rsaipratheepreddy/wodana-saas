@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ScrollView, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { tokens } from "../design-system";
 import { randomUUID } from "expo-crypto";
 import { Text, useTheme } from "../design-system";
 import { useAuth } from "../auth/provider";
@@ -90,9 +89,9 @@ export function Leave({
         <ScrollView horizontal={fontScale <= 1.3} showsHorizontalScrollIndicator={false}
           style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 12 }}
           snapToInterval={fontScale <= 1.3 ? balanceWidth + 12 : undefined} decelerationRate="fast">
-          {balances.data.map((b, index) => (
+          {balances.data.map((b) => (
             <View key={`${b.membershipId}:${b.leaveTypeId}`} style={fontScale <= 1.3 ? { width: balanceWidth } : undefined}>
-              <LeaveBalanceCard balance={b} team={team} index={index} />
+              <LeaveBalanceCard balance={b} team={team} />
             </View>
           ))}
         </ScrollView>
@@ -193,9 +192,8 @@ export function Leave({
     </>
   );
 }
-function LeaveBalanceCard({ balance: b, team, index }: { balance: LeaveBalance; team: boolean; index: number }) {
+function LeaveBalanceCard({ balance: b, team }: { balance: LeaveBalance; team: boolean }) {
   const { colors } = useTheme();
-  const accent = [tokens.brand.lilac, tokens.brand.rose, tokens.brand.peach][index % 3];
   const circumference = 2 * Math.PI * 34;
   const used = Math.min(1, Math.max(0, b.allowance > 0 ? b.used / b.allowance : 0));
   const pending = Math.min(1 - used, Math.max(0, b.allowance > 0 ? b.pending / b.allowance : 0));
@@ -209,9 +207,9 @@ function LeaveBalanceCard({ balance: b, team, index }: { balance: LeaveBalance; 
         <View accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ position: 'absolute' }}>
           <Svg width={88} height={88} viewBox="0 0 88 88" aria-hidden focusable={false}>
             <Circle cx={44} cy={44} r={34} stroke={colors.surfaceMuted} strokeWidth={7} fill="none" />
-            {used > 0 && <Circle cx={44} cy={44} r={34} stroke={accent} strokeWidth={7} fill="none"
+            {used > 0 && <Circle cx={44} cy={44} r={34} stroke={colors.actionPrimary} strokeWidth={7} fill="none"
               strokeDasharray={`${used * circumference} ${circumference}`} rotation={-90} origin="44, 44" />}
-            {pending > 0 && <Circle cx={44} cy={44} r={34} stroke={colors.actionPrimary} strokeWidth={7} fill="none" opacity={0.55}
+            {pending > 0 && <Circle cx={44} cy={44} r={34} stroke={colors.textSecondary} strokeWidth={7} fill="none"
               strokeDasharray={`${pending * circumference} ${circumference}`} strokeDashoffset={-used * circumference} rotation={-90} origin="44, 44" />}
           </Svg>
         </View>
@@ -220,7 +218,7 @@ function LeaveBalanceCard({ balance: b, team, index }: { balance: LeaveBalance; 
       </View>
       <View style={{ gap: 7, flex: 1 }}>
         <Text size="sm" weight="medium">{b.allowance} days annually</Text>
-        {[{ label: 'Used', value: b.used, color: accent }, { label: 'Pending', value: b.pending, color: colors.actionPrimary }].map(item =>
+        {[{ label: 'Used', value: b.used, color: colors.actionPrimary }, { label: 'Pending', value: b.pending, color: colors.textSecondary }].map(item =>
           <View key={item.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
             <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: item.color }} />
             <Text size="xs" tone="textSecondary" style={{ flex: 1 }}>{item.label}</Text><Text size="sm" weight="medium">{item.value}</Text>

@@ -17,4 +17,20 @@ describe("UpdateWorkspaceAppearanceDto", () => {
       expect(errors.some((error) => error.property === "primaryColor")).toBe(true);
     }
   });
+
+  it("normalizes the Palm secondary colour and accepts only approved font tokens", async () => {
+    const palm = plainToInstance(UpdateWorkspaceAppearanceDto, {
+      workspaceVersion: 1,
+      primaryColor: "#E4E3DE",
+      secondaryColor: " #000000 ",
+      headingFont: "alta",
+      bodyFont: "montserrat",
+    });
+    await expect(validate(palm)).resolves.toEqual([]);
+    expect(palm.secondaryColor).toBe("#000000");
+    const invalid = await validate(plainToInstance(UpdateWorkspaceAppearanceDto, {
+      workspaceVersion: 1, primaryColor: "#E4E3DE", headingFont: "comic-sans", bodyFont: "arial",
+    }));
+    expect(invalid.map((error) => error.property)).toEqual(expect.arrayContaining(["headingFont", "bodyFont"]));
+  });
 });

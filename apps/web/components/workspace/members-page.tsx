@@ -1,17 +1,21 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Copy, Download, Sparkles, Upload } from "lucide-react";
+import { useMemo, useState, type FormEvent } from "react";
+import { Copy, Download } from "lucide-react";
 import {
   Avatar,
   Badge,
   Button,
   Callout,
   Checkbox,
+  ConfirmationDialog,
   ControlledModalDialog,
   DesignSystemProvider,
+  FileUploader,
+  Form,
   GroupedTable,
   IconMenuButton,
+  MultiSelectField,
   SelectField,
   TextInput,
   ValidationSummary,
@@ -68,6 +72,10 @@ function inviteeFallback(email: string) {
   return email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function sameRoles(roles: readonly string[], selected: ReadonlySet<string>) {
+  return roles.length === selected.size && roles.every((role) => selected.has(role));
+}
+
 export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [members, setMembers] = useState(initialData.members);
@@ -80,17 +88,15 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     ?? initialData.roles[0]?.code
     ?? "";
   const [quickEmail, setQuickEmail] = useState("");
-  const [quickRole, setQuickRole] = useState(defaultRole);
+  const [quickAccess, setQuickAccess] = useState(initialData.teams[0] ? `team:${initialData.teams[0].id}` : `role:${defaultRole}`);
   const [quickFailure, setQuickFailure] = useState("");
   const [isQuickInviting, setIsQuickInviting] = useState(false);
-  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRoles, setInviteRoles] = useState<Set<string>>(() => {
-    return new Set(defaultRole ? [defaultRole] : []);
-  });
+  const [inviteRoles, setInviteRoles] = useState<Set<string>>(new Set());
+  const [inviteTeamIds, setInviteTeamIds] = useState<Set<string>>(new Set());
   const [inviteErrors, setInviteErrors] = useState<string[]>([]);
   const [inviteFailure, setInviteFailure] = useState("");
   const [isInviting, setIsInviting] = useState(false);
@@ -103,6 +109,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const [editStatus, setEditStatus] = useState<"active" | "suspended">("active");
   const [editFailure, setEditFailure] = useState("");
   const [isSavingMember, setIsSavingMember] = useState(false);
+  const [memberReviewOpen, setMemberReviewOpen] = useState(false);
 
   const [cancellingInvitation, setCancellingInvitation] = useState<WorkspaceInvitation | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -112,12 +119,13 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const exportRows = (selectedRows: DirectoryRow[]) => {
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const csv = [
-      ["Name", "Email", "Access", "Status", "Added"].map(quote).join(","),
+      ["Name", "Email", "Access", "Team", "Status", "Added"].map(quote).join(","),
       ...selectedRows.map((row) => {
         const record = row.kind === "member" ? row.member : row.invitation;
-        const roleCodes = row.kind === "member" ? row.member.roles : row.invitation.roles;
+        const roleCodes = row.kind === "member" ? [...row.member.roles, ...(row.member.inheritedRoles ?? [])] : row.invitation.roles;
+        const teams = (record.teams ?? []).map((team) => team.name).join("; ");
         const added = row.kind === "member" ? row.member.joinedAt ?? "" : row.invitation.createdAt;
-        return [record.displayName || inviteeFallback(record.email), record.email, roleCodes.map((role) => readableRole(role, initialData.roles)).join("; "), record.status, added].map(quote).join(",");
+        return [record.displayName || inviteeFallback(record.email), record.email, [...new Set(roleCodes)].map((role) => readableRole(role, initialData.roles)).join("; "), teams, record.status, added].map(quote).join(",");
       }),
     ].join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -138,10 +146,10 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     invitation,
   })), [visibleInvitations]);
   const guestRows = useMemo<DirectoryRow[]>(() => members
-    .filter((member) => member.roles.length > 0 && member.roles.every((role) => role === "viewer"))
+    .filter((member) => [...member.roles, ...(member.inheritedRoles ?? [])].length > 0 && [...member.roles, ...(member.inheritedRoles ?? [])].every((role) => role === "viewer"))
     .map((member) => ({ id: `member-${member.id}`, kind: "member" as const, member })), [members]);
   const memberRows = useMemo<DirectoryRow[]>(() => members
-    .filter((member) => !member.roles.length || member.roles.some((role) => role !== "viewer"))
+    .filter((member) => ![...member.roles, ...(member.inheritedRoles ?? [])].length || [...member.roles, ...(member.inheritedRoles ?? [])].some((role) => role !== "viewer"))
     .map((member) => ({ id: `member-${member.id}`, kind: "member" as const, member })), [members]);
   const rows = useMemo(() => [...invitedRows, ...guestRows, ...memberRows], [guestRows, invitedRows, memberRows]);
   const quickInviteEmails = useMemo(() => parseEmailList(quickEmail), [quickEmail]);
@@ -154,15 +162,16 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     setInvitationResult(null);
     setBulkInvitationResult(null);
     setCopyStatus("");
-    setInviteRoles(new Set(defaultRole ? [defaultRole] : []));
+    setInviteRoles(new Set());
+    setInviteTeamIds(new Set());
     setInviteOpen(true);
   };
 
-  const requestInvitation = async ({ displayName, email, roleCodes }: { displayName: string; email: string; roleCodes: string[] }) => {
+  const requestInvitation = async ({ displayName, email, roleCodes, teamIds = [] }: { displayName: string; email: string; roleCodes: string[]; teamIds?: string[] }) => {
     const response = await fetch("/api/workspace/members/invitations", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workspaceId: initialData.workspaceId, displayName, email, roleCodes }),
+      body: JSON.stringify({ workspaceId: initialData.workspaceId, displayName, email, roleCodes, teamIds }),
     });
     if (!response.ok) throw new Error(await responseMessage(response, "The invitation could not be created."));
     const payload = await response.json() as {
@@ -170,6 +179,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       displayName: string;
       email: string;
       roleCodes: string[];
+      teamIds?: string[];
       expiresAt: string;
       invitationToken: string;
       emailDelivery?: { status?: "sent" | "not_configured" | "failed" };
@@ -185,6 +195,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       createdAt: new Date().toISOString(),
       invitedByName: initialData.currentUserName,
       roles: payload.roleCodes,
+      teams: initialData.teams.filter((team) => (payload.teamIds ?? teamIds).includes(team.id)),
     };
     setInvitations((current) => [invitation, ...current.filter((item) => item.id !== invitation.id)]);
     const activation = new URL("/login", window.location.origin);
@@ -212,8 +223,8 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       setQuickFailure(`Invite up to ${MAX_BULK_INVITATIONS} people at a time.`);
       return;
     }
-    if (!quickRole) {
-      setQuickFailure("Choose an access role.");
+    if (!quickAccess) {
+      setQuickFailure("Choose a team or role.");
       return;
     }
     setIsQuickInviting(true);
@@ -227,7 +238,8 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             const response = await requestInvitation({
               displayName: inviteeFallback(email),
               email,
-              roleCodes: [quickRole],
+              roleCodes: quickAccess.startsWith("role:") ? [quickAccess.slice(5)] : [],
+              teamIds: quickAccess.startsWith("team:") ? [quickAccess.slice(5)] : [],
             });
             created.push(response.result);
           } catch {
@@ -261,9 +273,8 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     }
   };
 
-  const loadInvitationCsv = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
+  const loadInvitationCsv = async (files: File[]) => {
+    const file = files[0];
     if (!file) return;
     setQuickFailure("");
     if (file.size > 1024 * 1024) {
@@ -289,7 +300,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     const errors = [
       inviteName.trim().length < 2 ? "Enter the member's full name." : "",
       /^\S+@\S+\.\S+$/.test(inviteEmail) ? "" : "Enter a valid work email address.",
-      inviteRoles.size ? "" : "Select at least one workspace role.",
+      inviteRoles.size || inviteTeamIds.size ? "" : "Choose a team or a direct role.",
     ].filter(Boolean);
     setInviteErrors(errors);
     setInviteFailure("");
@@ -301,6 +312,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         displayName: inviteName.trim(),
         email: inviteEmail.trim().toLowerCase(),
         roleCodes: Array.from(inviteRoles),
+        teamIds: Array.from(inviteTeamIds),
       });
       setInvitationResult(created.result);
       setBulkInvitationResult(null);
@@ -346,15 +358,30 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     setEditRoles(new Set(member.roles));
     setEditStatus(member.status);
     setEditFailure("");
+    setMemberReviewOpen(false);
   };
 
-  const saveMember = async (event: FormEvent<HTMLFormElement>) => {
+  const reviewMember = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editingMember) return;
-    if (!editRoles.size) {
-      setEditFailure("Select at least one workspace role.");
+    if (!editRoles.size && !(editingMember.inheritedRoles?.length)) {
+      setEditFailure("Select a direct role or assign an active team role first.");
       return;
     }
+    if (editingMember.userId === initialData.currentUserId && editStatus === "suspended") {
+      setEditFailure("You cannot suspend your own active session here.");
+      return;
+    }
+    if (sameRoles(editingMember.roles, editRoles) && editStatus === editingMember.status) {
+      setEditFailure("No access changes to review.");
+      return;
+    }
+    setEditFailure("");
+    setMemberReviewOpen(true);
+  };
+
+  const saveMember = async () => {
+    if (!editingMember) return;
     setIsSavingMember(true);
     setEditFailure("");
     try {
@@ -371,10 +398,12 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       if (!response.ok) throw new Error(await responseMessage(response, "The member could not be updated."));
       const updated = await response.json() as WorkspaceMember;
       setMembers((current) => current.map((member) => member.id === updated.id ? updated : member));
+      setMemberReviewOpen(false);
       setEditingMember(null);
       setStatus(`${updated.displayName}'s access was updated.`);
     } catch (error) {
       setEditFailure(error instanceof Error ? error.message : "The member could not be updated.");
+      setMemberReviewOpen(false);
     } finally {
       setIsSavingMember(false);
     }
@@ -448,13 +477,15 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     {
       id: "person",
       label: "Person",
+      mobileWidth: "14rem",
       width: "25%",
       render: (item) => {
         const name = item.kind === "member"
           ? item.member.displayName
           : item.invitation.displayName || inviteeFallback(item.invitation.email);
+        const email = item.kind === "member" ? item.member.email : item.invitation.email;
         const isCurrentUser = item.kind === "member" && item.member.userId === initialData.currentUserId;
-        return <span className={styles.identity}><Avatar name={name} /><strong>{name}</strong>{isCurrentUser ? <small>(You)</small> : null}</span>;
+        return <span className={styles.identity}><Avatar name={name} /><span className={styles.identityDetails}><strong>{name}{isCurrentUser ? " (You)" : ""}</strong><small>{email}</small></span></span>;
       },
     },
     {
@@ -467,6 +498,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     {
       id: "email",
       label: "Email",
+      mobileHidden: true,
       width: "25%",
       render: (item) => {
         const email = item.kind === "member" ? item.member.email : item.invitation.email;
@@ -475,16 +507,26 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     },
     {
       id: "role",
-      label: "Role",
+      label: "Access",
+      mobileWidth: "7rem",
       width: "15%",
       render: (item) => {
         const roleCodes = item.kind === "member" ? item.member.roles : item.invitation.roles;
-        return <span className={styles.roleText}>{roleCodes.map((role) => readableRole(role, initialData.roles)).join(", ") || "Member"}</span>;
+        const inherited = item.kind === "member" ? item.member.inheritedRoles ?? [] : [];
+        return <span className={styles.roleText}>{[...roleCodes, ...inherited].map((role) => readableRole(role, initialData.roles)).filter((role, index, all) => all.indexOf(role) === index).join(", ") || "Via team"}</span>;
       },
+    },
+    {
+      id: "team",
+      label: "Team",
+      mobileHidden: true,
+      width: "15%",
+      render: (item) => (item.kind === "member" ? item.member.teams : item.invitation.teams)?.map((team) => team.name).join(", ") || "—",
     },
     {
       id: "status",
       label: "Status",
+      mobileWidth: "6rem",
       width: "12%",
       render: (item) => {
         const value = item.kind === "member" ? item.member.status : item.invitation.status;
@@ -496,6 +538,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     {
       id: "actions",
       label: "",
+      mobileWidth: "3rem",
       width: "3rem",
       render: (item) => {
         if (!initialData.canManage) return null;
@@ -512,7 +555,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
   const sectionDefinitions: GroupedTableSection<DirectoryRow>[] = [
-    { id: "invited", label: "Invited", emptyMessage: "No pending invitations.", rows: invitedRows, headerLabels: { date: "Invited at", role: "Type", status: "Invitation" } },
+    { id: "invited", label: "Invited", emptyMessage: "No pending invitations.", rows: invitedRows, headerLabels: { date: "Invited at", role: "Access", status: "Invitation" } },
     { id: "guests", label: "Guest", emptyMessage: "No guests have access.", rows: guestRows, headerLabels: { date: "Created at", role: "Permission", status: "Status" } },
     { id: "members", label: "Member", emptyMessage: "No members have joined yet.", rows: memberRows, headerLabels: { date: "Created at", role: "Role", status: "Status" } },
   ];
@@ -525,33 +568,26 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-labelledby="members-heading" className={styles.page}>
-        <header className={styles.pageHeading}>
-          <h1 id="members-heading">Member settings</h1>
-          <p>Manage and view your coworkers and guests.</p>
-        </header>
+      <section aria-label="People" className={styles.page}>
 
         {initialData.canManage ? <section aria-label="Invite people" className={styles.inviteComposer}>
-          <form className={styles.quickInviteForm} onSubmit={createQuickInvitation}>
-            <label className={styles.visuallyHidden} htmlFor="quick-invite-email">Email addresses to invite</label>
-            <input autoComplete="off" id="quick-invite-email" inputMode="email" onChange={(event) => setQuickEmail(event.target.value)} placeholder="Add emails…" type="text" value={quickEmail} />
-            <div className={styles.quickRole}>
-              <SelectField
-                accent="neutral"
-                aria-label="Invitation role"
-                items={initialData.roles.map((role) => ({ id: role.code, label: role.name }))}
-                label={<span className={styles.visuallyHidden}>Invitation role</span>}
-                onSelectionChange={(key) => key && setQuickRole(String(key))}
-                selectedKey={quickRole}
-              />
-            </div>
-            <Button className={styles.inviteButton} variant="primary" isLoading={isQuickInviting} type="submit">Invite{quickInviteEmails.length ? ` (${quickInviteEmails.length})` : ""}</Button>
-          </form>
+          <Form className={styles.quickInviteForm} onSubmit={createQuickInvitation}>
+            <TextInput autoComplete="off" label="Work emails" onChange={setQuickEmail} placeholder="name@company.com" value={quickEmail} />
+            <SelectField
+              items={[
+                ...initialData.teams.map((team) => ({ id: `team:${team.id}`, label: `${team.name} team` })),
+                ...initialData.roles.map((role) => ({ id: `role:${role.code}`, label: `${role.name} role` })),
+              ]}
+              label="Access"
+              onSelectionChange={(key) => key && setQuickAccess(String(key))}
+              selectedKey={quickAccess}
+            />
+            <Button variant="primary" isLoading={isQuickInviting} type="submit">Invite{quickInviteEmails.length ? ` (${quickInviteEmails.length})` : ""}</Button>
+          </Form>
           <div className={styles.inviteComposerFooter}>
             <div className={styles.inviteComposerActions}>
-              <Button onPress={openInvite} size="compact" variant="quiet"><Sparkles aria-hidden="true" size={14} />Personalize invitation</Button>
-              <input accept=".csv,text/csv" aria-label="Upload invitation CSV" className={styles.visuallyHidden} onChange={loadInvitationCsv} ref={csvInputRef} type="file" />
-              <Button onPress={() => csvInputRef.current?.click()} size="compact" variant="quiet"><Upload aria-hidden="true" size={14} />Upload CSV</Button>
+              <Button onPress={openInvite} size="compact" variant="quiet">Invite with details</Button>
+              <FileUploader accept=".csv,text/csv" appearance="button" label="Upload CSV" multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />
             </div>
             <span>Activation links expire automatically after 7 days.</span>
           </div>
@@ -567,7 +603,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         </div> : null}
 
         <div className={styles.tableRegion}>
-          <GroupedTable appearance="enclosed"
+          <GroupedTable appearance="plain"
             ariaLabel="Workspace members"
             columns={columns}
             getRowId={(row) => row.id}
@@ -598,7 +634,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       >
         {invitationResult ? <div className={styles.invitationReady}>
           <Callout title={`${invitationResult.deliveryStatus === "sent" ? "Invitation emailed to" : "Invitation created for"} ${invitationResult.email}`} tone="success">The link expires {dateLabel(invitationResult.expiresAt)}.</Callout>
-          <label className={styles.linkField}><span>Activation link</span><span><input onFocus={(event) => event.currentTarget.select()} readOnly value={invitationResult.link} /><Button onPress={copyInvitation} size="compact"><Copy aria-hidden="true" size={14} />Copy</Button></span></label>
+          <div className={styles.linkField}><TextInput isReadOnly label="Activation link" onFocus={(event) => event.currentTarget.select()} value={invitationResult.link} /><Button onPress={copyInvitation} size="compact"><Copy aria-hidden="true" size={14} />Copy</Button></div>
           <p aria-live="polite">{copyStatus}</p>
         </div> : bulkInvitationResult ? <div className={styles.invitationReady}>
           <Callout title={`${bulkInvitationResult.created.length} invitation${bulkInvitationResult.created.length === 1 ? "" : "s"} created`} tone="success">
@@ -611,24 +647,25 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           {bulkInvitationResult.failedEmails.length ? <Callout title={`${bulkInvitationResult.failedEmails.length} invitation${bulkInvitationResult.failedEmails.length === 1 ? "" : "s"} failed`} tone="danger">
             {bulkInvitationResult.failedEmails.slice(0, 5).join(", ")}{bulkInvitationResult.failedEmails.length > 5 ? ` and ${bulkInvitationResult.failedEmails.length - 5} more` : ""}
           </Callout> : null}
-        </div> : <form className={styles.form} data-wd-density="compact" id="invite-member-form" noValidate onSubmit={createInvitation}>
+        </div> : <Form className={styles.form} data-wd-density="compact" id="invite-member-form" noValidate onSubmit={createInvitation}>
           <ValidationSummary errors={inviteErrors} />
           {inviteFailure ? <Callout title="Could not create invitation" tone="danger">{inviteFailure}</Callout> : null}
           <TextInput isRequired label="Full name" onChange={setInviteName} placeholder="e.g. Maya Thomas" value={inviteName} />
           <TextInput inputType="email" isRequired label="Work email" onChange={setInviteEmail} placeholder="maya@company.com" value={inviteEmail} />
+          <MultiSelectField items={initialData.teams.map((team) => ({ id: team.id, label: team.name }))} label="Teams" onSelectionChange={(keys) => setInviteTeamIds(new Set(Array.from(keys, String)))} selectedKeys={inviteTeamIds} />
           <RoleChoices onChange={setInviteRoles} roles={initialData.roles} selected={inviteRoles} />
-        </form>}
+        </Form>}
       </ControlledModalDialog>
 
       <ControlledModalDialog
         description={editingMember ? `Update workspace access for ${editingMember.email}.` : undefined}
-        footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingMember} onPress={() => setEditingMember(null)}>Cancel</Button><Button form="edit-member-form" isLoading={isSavingMember} type="submit" variant="primary">Save access</Button></div>}
+        footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingMember} onPress={() => { setMemberReviewOpen(false); setEditingMember(null); }}>Cancel</Button><Button form="edit-member-form" isLoading={isSavingMember} type="submit" variant="primary">Review changes</Button></div>}
         isDismissable={!isSavingMember}
         isOpen={Boolean(editingMember)}
-        onOpenChange={(open) => { if (!open && !isSavingMember) setEditingMember(null); }}
+        onOpenChange={(open) => { if (!open && !isSavingMember) { setMemberReviewOpen(false); setEditingMember(null); } }}
         title="Edit member access"
       >
-        {editingMember ? <form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={saveMember}>
+        {editingMember ? <Form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={reviewMember}>
           {editFailure ? <Callout title="Could not save member" tone="danger">{editFailure}</Callout> : null}
           <div className={styles.memberPreview}><Avatar name={editingMember.displayName} size="lg" /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
           <RoleChoices onChange={setEditRoles} roles={initialData.roles} selected={editRoles} />
@@ -641,8 +678,28 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             onSelectionChange={(key) => key && setEditStatus(String(key) as "active" | "suspended")}
             selectedKey={editStatus}
           />
-        </form> : null}
+        </Form> : null}
       </ControlledModalDialog>
+
+      <ConfirmationDialog
+        body={editingMember ? <div className={styles.accessReview}>
+          <p>Confirm the effective access change for <strong>{editingMember.displayName}</strong>.</p>
+          <dl>
+            {editStatus !== editingMember.status ? <div><dt>Status</dt><dd><span>{editingMember.status === "active" ? "Active" : "Suspended"}</span><span aria-hidden="true">→</span><strong>{editStatus === "active" ? "Active" : "Suspended"}</strong></dd></div> : null}
+            {!sameRoles(editingMember.roles, editRoles) ? <div><dt>Direct roles</dt><dd><span>{editingMember.roles.map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</span><span aria-hidden="true">→</span><strong>{Array.from(editRoles).map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</strong></dd></div> : null}
+            <div><dt>Team access</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || "No assigned teams"}</strong></dd></div>
+          </dl>
+          {editStatus === "suspended" && editingMember.status !== "suspended" ? <Callout title="This releases a licensed seat" tone="warning">The member will lose workspace access immediately. Their records remain available, and reactivation will require a free seat.</Callout> : null}
+          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>Team-inherited roles remain managed from Teams.</p> : null}
+        </div> : null}
+        confirmLabel="Apply access changes"
+        confirmVariant="primary"
+        isConfirming={isSavingMember}
+        isOpen={memberReviewOpen}
+        onConfirm={() => void saveMember()}
+        onOpenChange={(open) => { if (!isSavingMember) setMemberReviewOpen(open); }}
+        title="Apply member access changes?"
+      />
 
       <ControlledModalDialog
         footer={<div className="wd-dialog-actions"><Button isDisabled={isCancelling} onPress={() => setCancellingInvitation(null)}>Keep invitation</Button><Button isLoading={isCancelling} onPress={cancelInvitation} variant="danger">Cancel invitation</Button></div>}
@@ -666,5 +723,5 @@ function RoleChoices({
   roles: MembersPageData["roles"];
   selected: Set<string>;
 }) {
-  return <fieldset className={styles.roleChoices}><legend>Workspace roles <span aria-hidden="true">*</span></legend><p>Select one or more roles. Permissions are combined when multiple roles are assigned.</p><div>{roles.map((role) => <Checkbox isSelected={selected.has(role.code)} key={role.id} onChange={(checked) => { const next = new Set(selected); if (checked) next.add(role.code); else next.delete(role.code); onChange(next); }}><span><strong>{role.name}</strong><small>{role.description}</small></span></Checkbox>)}</div></fieldset>;
+  return <fieldset className={styles.roleChoices}><legend>Direct roles</legend><div>{roles.map((role) => <Checkbox isSelected={selected.has(role.code)} key={role.id} onChange={(checked) => { const next = new Set(selected); if (checked) next.add(role.code); else next.delete(role.code); onChange(next); }}><span><strong>{role.name}</strong><small>{role.description}</small></span></Checkbox>)}</div></fieldset>;
 }

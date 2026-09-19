@@ -49,6 +49,7 @@ export type CrmLeadListItem = {
   ownerMembershipId: string | null;
   queueId: string | null;
   nextActionAt: string | null;
+  ownershipDueAt?: string | null;
   version: number;
   isConverted?: boolean;
   createdAt: string;
@@ -96,6 +97,7 @@ export type CrmQueue = {
   status: string;
   businessUnitId: string | null;
   isFallback: boolean;
+  takeoverAfterMinutes?: number | null;
   roundRobinCursor: string | null;
   version: number;
   members: CrmQueueMember[];
@@ -126,6 +128,7 @@ export type CrmSlaPolicy = {
   eventType: string;
   warningAfterMinutes: number;
   breachAfterMinutes: number;
+  calculationMode?: "elapsed" | "business";
   schedule: Record<string, unknown>;
   status: string;
   version: number;

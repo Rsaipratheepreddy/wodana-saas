@@ -12,21 +12,34 @@ afterEach(() => {
 });
 
 describe("CompanyProfile", () => {
-  it("renders the company identity without section tabs and opens a focused editor", async () => {
+  it("shows company information cards and opens one complete profile editor", async () => {
     const interaction = userEvent.setup();
     render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
 
+    expect(screen.getByRole("heading", { name: "Company profile" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Iglo Architects" })).toBeInTheDocument();
-    expect(screen.getAllByText("Iglo Architects LLC")).toHaveLength(2);
-    expect(screen.getByText("United Arab Emirates · AE")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Legal & tax" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Registered office" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Regional defaults" })).toBeInTheDocument();
+    expect(screen.getByText("Company code")).toBeInTheDocument();
+    expect(screen.getByText("Tax registration number")).toBeInTheDocument();
+    expect(screen.getByText("Time zone")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Brand colour" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Primary colour")).not.toBeInTheDocument();
+    expect(screen.getByText(/Iglo Architects LLC/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Business records/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Company profile sections" })).not.toBeInTheDocument();
 
-    await interaction.click(screen.getByRole("button", { name: "Edit company information" }));
-    const dialog = await screen.findByRole("dialog", { name: "Edit company information" });
-    expect(within(dialog).getByRole("textbox", { name: /Company display name/ })).toHaveValue("Iglo Architects");
+    expect(screen.getByRole("button", { name: "Edit profile" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit legal and tax details" })).not.toBeInTheDocument();
+
+    await interaction.click(screen.getByRole("button", { name: "Edit profile" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit profile" });
+    expect(within(dialog).getByRole("textbox", { name: "Company name" })).toHaveValue("Iglo Architects");
     expect(within(dialog).queryByRole("textbox", { name: /Tenant login ID/ })).not.toBeInTheDocument();
-    expect(within(dialog).getByText("iglo-architects")).toBeInTheDocument();
-    expect(within(dialog).queryByRole("textbox", { name: /Registered company name/ })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("iglo-architects")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: "Registered company name" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("combobox", { name: "Time zone" })).toBeInTheDocument();
   });
 
   it("validates the editor and applies a successful versioned save", async () => {
@@ -48,22 +61,23 @@ describe("CompanyProfile", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
 
-    await interaction.click(screen.getByRole("button", { name: "Edit company information" }));
-    const dialog = await screen.findByRole("dialog", { name: "Edit company information" });
-    const name = within(dialog).getByRole("textbox", { name: /Company display name/ });
+    await interaction.click(screen.getByRole("button", { name: "Edit profile" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit profile" });
+    const name = within(dialog).getByRole("textbox", { name: "Company name" });
     await interaction.clear(name);
-    await interaction.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await interaction.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(within(dialog).getAllByText("Enter a company name.")).toHaveLength(2);
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/workspace/company-profile")).toBe(false);
 
     await interaction.type(name, "Iglo Architecture");
-    await interaction.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await interaction.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
-    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === "/api/workspace/company-profile")).toBe(true));
+    const saveCall = fetchMock.mock.calls.find(([url]) => url === "/api/workspace/company-profile");
+    const request = JSON.parse(String(saveCall?.[1]?.body)) as Record<string, unknown>;
     expect(request).toMatchObject({
       workspaceId: companyProfileFixture.workspace.id,
       workspaceVersion: 1,
@@ -71,15 +85,14 @@ describe("CompanyProfile", () => {
       name: "Iglo Architecture",
     });
     expect(request).not.toHaveProperty("slug");
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit company information" })).not.toBeInTheDocument());
-    expect(screen.getByText("Org profile saved.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit profile" })).not.toBeInTheDocument());
+    expect(screen.getByText("Company profile saved.")).toBeInTheDocument();
     expect(screen.getAllByText("Iglo Architecture").length).toBeGreaterThan(0);
   });
 
   it("keeps edit controls hidden from read-only members", () => {
     render(<CompanyProfile canManage={false} initialData={structuredClone(companyProfileFixture)} />);
-    expect(screen.queryByRole("button", { name: "Edit company information" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Edit company logo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit profile" })).not.toBeInTheDocument();
     expect(screen.getByText(/Only workspace owners and administrators/)).toBeInTheDocument();
   });
 
@@ -95,8 +108,8 @@ describe("CompanyProfile", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
 
-    await interaction.click(screen.getByRole("button", { name: "Edit registered office" }));
-    const dialog = await screen.findByRole("dialog", { name: "Edit registered office" });
+    await interaction.click(screen.getByRole("button", { name: "Edit profile" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit profile" });
     const emirate = within(dialog).getByRole("combobox", { name: "Emirate" });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/geo/locations?countryCode=AE", expect.objectContaining({ signal: expect.any(AbortSignal) })));
 
@@ -119,9 +132,10 @@ describe("CompanyProfile", () => {
     render(<CompanyProfile canManage initialData={profile} />);
 
     const office = screen.getByRole("region", { name: "Registered office" });
-    expect(within(office).getByText("Address")).toBeInTheDocument();
+    expect(within(office).getByText("Registered office")).toBeInTheDocument();
+    expect(within(office).getByText("Street address")).toBeInTheDocument();
     expect(within(office).getByText("City")).toBeInTheDocument();
-    expect(within(office).getByText("Emirate")).toBeInTheDocument();
+    expect(within(office).getAllByText("Ras Al Khaimah")).toHaveLength(2);
     expect(consoleError.mock.calls.flat().join(" ")).not.toContain("same key");
     consoleError.mockRestore();
   });

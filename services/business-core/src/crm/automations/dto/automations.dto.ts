@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from "class-validator";
 export class CreateAutomationDto {
   @IsString() @Matches(/^[a-z][a-z0-9_.-]{0,98}$/) code!: string;
   @IsString() @IsNotEmpty() @MaxLength(200) name!: string;
@@ -14,6 +14,11 @@ export class UpdateAutomationDto {
 }
 export class AutomationVersionDto { @IsInt() @Min(1) version!: number; }
 export class DryRunAutomationDto { @IsObject() context!: Record<string, unknown>; }
+export class UpdateAutomationPresetDto {
+  @IsBoolean() enabled!: boolean;
+  @IsOptional() @IsArray() @IsIn(["in_app", "email"], { each: true }) channels?: string[];
+  @IsOptional() @IsIn(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]) weekday?: string;
+}
 export class ListAutomationRunsQueryDto { @IsOptional() @IsUUID() definitionId?: string; }
 export class ApprovalDecisionDto {
   @IsInt() @Min(1) version!: number;

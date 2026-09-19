@@ -136,4 +136,12 @@ export class InternalCrmSlasController {
   ) {
     return this.leads.processDueSlasInternal(workspaceId, input.limit);
   }
+
+  @Post("workspaces/:workspaceId/process-takeovers")
+  processTakeovers(
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Body() input: ProcessSlaDto,
+  ) {
+    return this.leads.processDueTakeoversInternal(workspaceId, input.limit);
+  }
 }

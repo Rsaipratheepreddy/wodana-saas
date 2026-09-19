@@ -9,6 +9,7 @@ import type {
   QuoteLine,
 } from "./commercial.types";
 import type { ProjectData } from "../projects/execution.types";
+import { acceptedQuoteLines, freezeHash } from "./commercial.domain";
 
 export const controlledChangeKinds: readonly ControlledChangeKind[] = [
   "addition",
@@ -25,7 +26,7 @@ export function acceptedContractLines(data: CommercialData) {
       (quote) =>
         quote.status === "accepted" && quote.direction !== "deduction",
     )
-    .flatMap((quote) => quote.lines.map((line) => ({ quote, line })));
+    .flatMap((quote) => acceptedQuoteLines(quote).map((line) => ({ quote, line })));
 }
 
 export function remainingContractQuantity(
@@ -40,7 +41,7 @@ export function remainingContractQuantity(
     .filter(
       (quote) => quote.status === "accepted" && quote.direction === "deduction",
     )
-    .flatMap((quote) => quote.lines)
+    .flatMap((quote) => acceptedQuoteLines(quote))
     .filter((line) => line.deductsLineId === sourceLineId)
     .reduce((total, line) => total + line.quantity, 0);
   return Math.max(0, Math.round((source.quantity - deducted) * 10000) / 10000);
@@ -211,7 +212,10 @@ export function controlledChangeCanRelease(data: CommercialData, requestId: stri
   return (
     quotes.length === request.control.quoteIds.length &&
     request.control.quoteIds.every((quoteId) =>
-      quotes.some((quote) => quote.id === quoteId && quote.status === "accepted"),
+      quotes.some(
+        (quote) =>
+          quote.id === quoteId && acceptedVariationSnapshotIsCurrent(quote),
+      ),
     ) &&
     (request.control.kind === "addition" ||
       request.control.kind === "clarification" ||
@@ -221,9 +225,34 @@ export function controlledChangeCanRelease(data: CommercialData, requestId: stri
   );
 }
 
+export function acceptedVariationSnapshotIsCurrent(quote: Quote) {
+  return Boolean(
+    quote.kind === "variation" &&
+      quote.status === "accepted" &&
+      quote.hash &&
+      quote.clientDecision?.decision === "accept" &&
+      quote.clientDecision.quoteHash === quote.hash &&
+      freezeHash(quote) === quote.hash,
+  );
+}
+
 export function controlledChangeForQuote(data: CommercialData, quoteId: string) {
   return data.requests.find(
     (request) => request.control?.quoteIds.includes(quoteId),
+  );
+}
+
+/** Plans the immutable delta only; a previously released quote is never applied twice. */
+export function acceptedVariationsToRelease(
+  data: CommercialData,
+  releasedQuoteIds: Iterable<string>,
+) {
+  const released = new Set(releasedQuoteIds);
+  return data.quotes.filter(
+    (quote) =>
+      quote.kind === "variation" &&
+      quote.status === "accepted" &&
+      !released.has(quote.id),
   );
 }
 

@@ -193,8 +193,9 @@ export class CrmActivitiesService {
       const isGeneratedResponseTask = Boolean(before.sla_instance_id);
       const isOutboundHumanInteraction = ["call", "email", "whatsapp", "sms", "portal"].includes(String(before.type))
         && before.interaction_direction === "outbound";
+      let firstResponseEvidence: Awaited<ReturnType<CrmSlaLifecycleService["recordFirstResponse"]>> = null;
       if (before.lead_id && (isGeneratedResponseTask || isOutboundHumanInteraction)) {
-        await this.slas.recordFirstResponse(client, workspaceId, String(before.lead_id), {
+        firstResponseEvidence = await this.slas.recordFirstResponse(client, workspaceId, String(before.lead_id), {
           sourceType: "activity",
           sourceId: activityId,
           actorUserId: actorUser.userId,
@@ -210,7 +211,7 @@ export class CrmActivitiesService {
       if (before.is_next_action) await this.syncParentNextAction(client, workspaceId, response);
       await this.touchLead(client, workspaceId, activityId);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.activity.completed.v1", entityType: "crm_activity", entityId: activityId, before: this.mapActivity(before), after: response });
-      return response;
+      return { ...response, firstResponseEvidence };
     });
   }
 

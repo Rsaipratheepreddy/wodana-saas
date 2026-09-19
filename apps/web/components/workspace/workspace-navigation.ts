@@ -15,6 +15,7 @@ export type WorkspaceIconName =
   | "home"
   | "installation"
   | "integrations"
+  | "language"
   | "leads"
   | "materialPlan"
   | "measurements"
@@ -43,12 +44,19 @@ export type WorkspaceIconName =
 export type WorkspaceModuleId = "workspace" | "crm" | "pre-project" | "projects" | "hrms";
 
 export type WorkspaceNavigationItem = {
+  children?: WorkspaceNavigationSubItem[];
   description?: string;
   href: string;
   icon: WorkspaceIconName;
   id: string;
   label: string;
   showInSidebar?: boolean;
+};
+
+export type WorkspaceNavigationSubItem = {
+  href: string;
+  id: string;
+  label: string;
 };
 
 export type WorkspaceNavigationSection = {
@@ -67,61 +75,80 @@ export type WorkspaceModuleDefinition = {
 };
 
 export type WorkspaceIdentity = {
+  brandPalette?: "beige-black";
   description: string;
   id: string;
   imageUrl?: string;
   name: string;
   primaryColor?: string | null;
+  secondaryColor?: string | null;
+  headingFont?: string | null;
+  bodyFont?: string | null;
 };
 
 export type WorkspaceUser = {
   avatarUrl?: string;
   email: string;
   name: string;
-  platformRole?: "administrator" | null;
 };
 
 export const workspaceModules: WorkspaceModuleDefinition[] = [
   {
-    description: "Company setup and administration",
+    description: "Company, team and workspace settings",
     href: "/workspace",
     icon: "workspace",
     id: "workspace",
     label: "Workspace",
     navigation: [
       {
-        id: "workspace-organization",
-        label: "Organization",
+        id: "workspace-company",
+        label: "Company",
         items: [
           {
             href: "/workspace",
             icon: "company",
             id: "company",
-            label: "Org profile",
+            label: "Company profile",
           },
+          {
+            href: "/workspace/language",
+            icon: "language",
+            id: "workspace-language",
+            label: "Workspace language",
+          },
+        ],
+      },
+      {
+        id: "workspace-people",
+        label: "Team & access",
+        items: [
           {
             href: "/workspace/members",
             icon: "members",
             id: "members",
-            label: "Members",
+            label: "People",
           },
           {
             href: "/workspace/teams",
             icon: "teams",
             id: "teams",
-            label: "Teams and business units",
+            label: "Work groups",
+            // Groups are persisted, but do not yet drive project ownership, work
+            // assignment, capacity, or delivery. Keep the route available while
+            // withholding it from the primary workspace navigation until it does.
+            showInSidebar: false,
           },
           {
             href: "/workspace/roles",
             icon: "roles",
             id: "roles",
-            label: "Roles and permissions",
+            label: "Roles & permissions",
           },
         ],
       },
       {
-        id: "workspace-administration",
-        label: "Administration",
+        id: "workspace-connections",
+        label: "Connections",
         items: [
           {
             href: "/workspace/integrations",
@@ -130,18 +157,22 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             label: "Integrations",
           },
           {
-            href: "/workspace/settings/audit-logs",
-            icon: "audit",
-            id: "audit-log",
-            label: "Audit Logs",
-            showInSidebar: false,
+            href: "/workspace/settings/client-portal",
+            icon: "settings",
+            id: "client-portal-settings",
+            label: "Client portal",
           },
+        ],
+      },
+      {
+        id: "workspace-account",
+        label: "Account & billing",
+        items: [
           {
-            href: "/workspace/settings/security",
-            icon: "security",
-            id: "security",
-            label: "Security",
-            showInSidebar: false,
+            href: "/workspace/legal-entities",
+            icon: "company",
+            id: "business-records",
+            label: "Business records",
           },
           {
             href: "/workspace/billing",
@@ -150,34 +181,66 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             label: "Billing",
           },
           {
-            href: "/workspace/settings/client-portal",
-            icon: "settings",
-            id: "client-portal-settings",
-            label: "Client portal",
+            href: "/workspace/organizations",
+            icon: "companies",
+            id: "organizations-account",
+            label: "Manage workspaces",
             showInSidebar: false,
           },
           {
-            href: "/workspace/settings",
-            icon: "settings",
-            id: "settings",
-            label: "User Settings",
+            href: "/workspace/settings/security",
+            icon: "security",
+            id: "security",
+            label: "Sign-in security",
+          },
+          {
+            href: "/workspace/settings/audit-logs",
+            icon: "audit",
+            id: "audit-log",
+            label: "Audit history",
           },
         ],
       },
     ],
   },
   {
-    description: "Customers, leads and opportunities",
+    description: "Enquiries, customer decisions and follow-through",
     href: "/workspace/crm",
     icon: "leads",
     id: "crm",
     label: "CRM",
     navigation: [
       {
-        id: "crm-primary",
+        id: "crm-flow",
+        label: "Sales flow",
         items: [
-          { href: "/workspace/crm", icon: "home", id: "crm-overview", label: "Overview" },
-          { href: "/workspace/crm/leads", icon: "leads", id: "leads", label: "Leads" },
+          { href: "/workspace/crm", icon: "home", id: "crm-overview", label: "Today" },
+          { href: "/workspace/crm/jobs", icon: "projects", id: "jobs", label: "Jobs" },
+          {
+            href: "/workspace/crm/leads",
+            icon: "leads",
+            id: "leads",
+            label: "Enquiries",
+            description: "Capture, assign, respond to and review enquiries in one guided workspace.",
+          },
+          {
+            href: "/workspace/crm/opportunities",
+            icon: "opportunities",
+            id: "opportunities",
+            label: "Opportunities",
+          },
+          {
+            href: "/workspace/crm/customers",
+            icon: "customers",
+            id: "customers",
+            label: "Customers",
+          },
+        ],
+      },
+      {
+        id: "crm-work",
+        label: "Customer work",
+        items: [
           {
             href: "/workspace/crm/follow-ups",
             icon: "followUps",
@@ -196,31 +259,23 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             id: "conversations",
             label: "Inbox",
           },
+          {
+            href: "/workspace/crm/automations",
+            icon: "automations",
+            id: "automations",
+            label: "Smart rules",
+          },
         ],
       },
       {
-        id: "crm-sales-records",
-        label: "Customers & sales",
+        id: "crm-records",
+        label: "Customer records",
         items: [
-          {
-            href: "/workspace/crm/customers",
-            icon: "customers",
-            id: "customers",
-            label: "People",
-            showInSidebar: false,
-          },
           {
             href: "/workspace/crm/organizations",
             icon: "companies",
             id: "organizations",
             label: "Companies",
-            showInSidebar: false,
-          },
-          {
-            href: "/workspace/crm/opportunities",
-            icon: "opportunities",
-            id: "opportunities",
-            label: "Deals",
             showInSidebar: false,
           },
           {
@@ -233,26 +288,6 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         ],
       },
       {
-        id: "crm-automation",
-        label: "Automation",
-        items: [
-          {
-            href: "/workspace/crm/sequences",
-            icon: "sequences",
-            id: "sequences",
-            label: "Sequences",
-            showInSidebar: false,
-          },
-          {
-            href: "/workspace/crm/automations",
-            icon: "automations",
-            id: "automations",
-            label: "Automations",
-            showInSidebar: false,
-          },
-        ],
-      },
-      {
         id: "crm-insights",
         label: "Insights",
         items: [
@@ -260,8 +295,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             href: "/workspace/crm/reports",
             icon: "reports",
             id: "crm-reports",
-            label: "CRM reports",
-            showInSidebar: false,
+            label: "Reports",
           },
         ],
       },
@@ -281,10 +315,11 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             href: "/workspace/pre-projects",
             icon: "preProjects",
             id: "pre-projects",
-            label: "Qualified leads",
-            description: "CRM-linked cases, assignments, stages, and next actions.",
+            label: "Pre-execution cases",
+            description: "CRM-linked opportunities, assignments, stages, and next actions.",
           },
           {href:"/workspace/pre-projects/master-data",icon:"materialPlan",id:"pre-project-catalogs",label:"Master Data",description:"Rooms, items, variants, materials and prices."},
+          {href:"/workspace/pre-projects/supplier-offers",icon:"procurement",id:"pre-project-supplier-offers",label:"Supplier Offers",description:"Compare sourced costs, validity, lead time and evidence."},
           {href:"/workspace/pre-projects/quotation-templates",icon:"documents",id:"quotation-templates",label:"Quotation Templates",description:"Reusable quotation rooms, items, rates and terms."},
         ],
       },
@@ -292,6 +327,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         id: "pre-project-requirements",
         label: "Requirement gathering",
         items: [
+          {href:"/workspace/pre-projects/overview",icon:"home",id:"pre-project-case-overview",label:"Case overview",description:"Owner, target, priority, risk and current stage."},
           {href:"/workspace/pre-projects/requirements",icon:"requirements",id:"requirements",label:"Requirements",description:"Client brief, notes, room scope, measurements and site layouts in one workspace."},
         ],
       },
@@ -300,6 +336,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           {href:"/workspace/pre-projects/inspiration",icon:"designs",id:"pre-project-inspiration",label:"Client inspirations",description:"Client ideas, images and reference links."},
           {href:"/workspace/pre-projects/designs",icon:"designs",id:"pre-project-designs",label:"Design",description:"Design files, versions and client feedback."},
+          {href:"/workspace/pre-projects/definition",icon:"requirements",id:"pre-project-definition",label:"Scope confirmation",description:"Agree the current requirements and design definition with the client."},
           {href:"/workspace/pre-projects/quotations",icon:"commercial",id:"pre-project-quotations",label:"Quotations",description:"Client quotations, pricing and revisions."},
           {href:"/workspace/pre-projects/contracts",icon:"contracts",id:"pre-project-contracts",label:"Agreement & payments",description:"Signed agreement, milestones, accounting evidence and receipts."},
           {href:"/workspace/pre-projects/variations",icon:"variations",id:"pre-project-variations",label:"Change requests",description:"Client changes, commercial impact and resolution."},
@@ -315,19 +352,46 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     icon: "projects",
     id: "projects",
     label: "Projects",
-    navigation: [{
-      id: "projects-primary",
-      items: [
-        { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Dashboard", description: "Live delivery progress, milestones, blockers and decisions." },
-        { href: "/workspace/projects/documents", icon: "designs", id: "project-documents", label: "Scope & Design", description: "Drawings, revisions and approved project documents." },
-        { href: "/workspace/projects/boq", icon: "boq", id: "project-boq", label: "BOQ", description: "Released scope items, materials and quantities." },
-        { href: "/workspace/projects/procurement", icon: "procurement", id: "procurement", label: "Procurement", description: "Supplier enquiries, purchase orders and deliveries." },
-        { href: "/workspace/projects/plan-teams", icon: "calendar", id: "plan-teams", label: "Schedules", description: "Task dates, milestones, work calendars and team bookings." },
-        { href: "/workspace/projects/site-work", icon: "installation", id: "site-work", label: "Execution", description: "Tasks, readiness, site work and inspections." },
-        { href: "/workspace/projects/handover", icon: "handover", id: "handover", label: "Handover", description: "Client acceptance, completion records and warranties." },
-        { href: "/workspace/projects/commercial", icon: "commercial", id: "project-commercial", label: "Budget", description: "Approved budget, forecast, costs and payments." },
-      ],
-    }],
+    navigation: [
+      {
+        id: "projects-control",
+        label: "Project control",
+        items: [
+          { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Portfolio overview", description: "Live delivery progress, milestones, blockers and decisions." },
+          { href: "/workspace/projects/calendar", icon: "calendar", id: "projects-calendar", label: "Portfolio calendar", description: "Projects, resources, site visits and confirmed work in one schedule." },
+          { href: "/workspace/projects/commercial", icon: "commercial", id: "project-commercial", label: "Budget", description: "Approved budget, forecast, costs and payments." },
+        ],
+      },
+      {
+        id: "projects-plan",
+        label: "Plan",
+        items: [
+          { href: "/workspace/projects/documents", icon: "designs", id: "project-documents", label: "Scope & Design", description: "Drawings, revisions and approved project documents." },
+          { href: "/workspace/projects/boq", icon: "boq", id: "project-boq", label: "BOQ", description: "Released scope items, quoted sizes and delivery coverage." },
+          { href: "/workspace/projects/material-planning", icon: "materialPlan", id: "material-planning", label: "Material planning", description: "Requirements, stock, reservations and warehouse transfers." },
+          { href: "/workspace/projects/procurement", icon: "procurement", id: "procurement", label: "Procurement", description: "Supplier enquiries, purchase orders, receipts and returns." },
+          { href: "/workspace/projects/plan-teams", icon: "calendar", id: "plan-teams", label: "Schedules", description: "Task dates, milestones, dependencies, calendars and bookings." },
+        ],
+      },
+      {
+        id: "projects-deliver",
+        label: "Deliver",
+        items: [
+          { href: "/workspace/projects/production", icon: "production", id: "production", label: "Production", description: "Factory work, approvals, output and dispatch readiness." },
+          { href: "/workspace/projects/site-work", icon: "installation", id: "site-work", label: "Onsite execution", description: "Site readiness, installation, commissioning and technical queries." },
+          { href: "/workspace/projects/daily-progress", icon: "reports", id: "daily-progress", label: "Daily progress", description: "Field reports, evidence, workforce, blockers and review." },
+        ],
+      },
+      {
+        id: "projects-close",
+        label: "Quality & close",
+        items: [
+          { href: "/workspace/projects/snagging", icon: "snagging", id: "snagging", label: "Snagging & warranty", description: "Defects, verification, closure and aftercare." },
+          { href: "/workspace/projects/handover", icon: "handover", id: "handover", label: "Handover", description: "Client acceptance, completion records and warranties." },
+          { href: "/workspace/projects/workflow-templates", icon: "settings", id: "project-workflow-templates", label: "Workflow setup", description: "Reusable project stages, owners and release checks." },
+        ],
+      },
+    ],
   },
   {
     description: "Attendance, sites and leave",
@@ -376,8 +440,12 @@ export function findWorkspaceScreen(
   const screens = modules.flatMap((module) =>
     module.navigation.flatMap((section) => section.items),
   );
+  const prefixMatch = screens
+    .filter((item) => pathname.startsWith(`${item.href}/`))
+    .sort((left, right) => right.href.length - left.href.length)[0];
   return (
     screens.find((item) => item.href === pathname) ??
+    prefixMatch ??
     activeModule.navigation[0]?.items[0] ??
     screens[0]
   );

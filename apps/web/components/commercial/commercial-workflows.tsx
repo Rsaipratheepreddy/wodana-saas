@@ -3,16 +3,30 @@ import { ClientCredits } from "./client-credits";
 import { PaymentInvoice } from "./payment-invoice";
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Plus, MessageSquare } from "lucide-react";
-import { DataGrid, ControlledModalDialog } from "@/design-system";
-import { money, statusLabel, quoteTotals } from "@/lib/commercial/client";
+import {
+  Button,
+  Checkbox,
+  ControlledModalDialog,
+  DataGrid,
+  NumericInput,
+  SelectField,
+  TextAreaField,
+  TextInput,
+} from "@/design-system";
+import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
 import {
   agreementIsOperational,
+  agreementMatchesAcceptedQuote,
   commercialReleaseInputsReady,
   materialApprovalsComplete,
   releasePaymentIsOperational,
 } from "@/lib/commercial/release";
-import type { CommercialState, ChangeRequest, MaterialApproval } from "@/lib/commercial/types";
+import type { CommercialState, ChangeRequest, ControlledChangeKind, MaterialApproval } from "@/lib/commercial/types";
+import { availableContractLines, changeKinds } from "@/lib/commercial/change-cases";
+import { decisionPolicySummary } from "@/lib/commercial/decision-requests";
+import { ControlledChangeCase } from "./controlled-change-case";
 import s from "./commercial.module.css";
 type Props = {
   state: CommercialState;
@@ -23,11 +37,22 @@ type Props = {
 export function CommercialRequests({ state, run, busy, error }: Props) {
   const [selected, setSelected] = useState(""),
     [create, setCreate] = useState(false),
+    [createDecision, setCreateDecision] = useState(false),
     [draft, setDraft] = useState({ title: "", detail: "" }),
+    [decisionDraft, setDecisionDraft] = useState({ title: "", detail: "", targetKey: "", dueDate: "", firstChoice: "Approve", secondChoice: "Request changes", remindersEnabled: true, email: false, whatsapp: false, escalationMinutes: 1440 }),
+    [changeDraft, setChangeDraft] = useState<{ kind: ControlledChangeKind; sourceLineIds: string[]; title: string; detail: string; owner: string; dueDate: string }>({
+      kind: "addition", sourceLineIds: [], title: "", detail: "", owner: "", dueDate: "",
+    }),
     [comment, setComment] = useState(""),
     [internal, setInternal] = useState(false),
     [edit, setEdit] = useState<ChangeRequest | null>(null);
   const request = state.data.requests.find((r) => r.id === selected);
+  const accepted = state.data.quotes.some((quote) => quote.kind === "quotation" && quote.status === "accepted");
+  const contractLines = availableContractLines(state.data);
+  const decisionTargets = [
+    ...state.data.quotes.filter((quote) => Boolean(quote.issuedAt) && Boolean(quote.approverId) && !["superseded", "withdrawn"].includes(quote.status)).map((quote) => ({ id: `quotation:${quote.id}:${quote.number}`, label: `Quotation V${quote.number}` })),
+    ...(state.data.materialApprovals ?? []).filter((material) => material.status === "client_review" && Boolean(material.approverId)).map((material) => ({ id: `material:${material.id}:${material.revision}`, label: `${material.name} · Revision ${material.revision}` })),
+  ];
   return (
     <>
       <div className={s.toolbar}>
@@ -39,12 +64,7 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
           }{" "}
           open requests
         </span>
-        {state.canEdit && (
-          <button className={s.primary} onClick={() => setCreate(true)}>
-            <Plus size={15} />
-            New request
-          </button>
-        )}
+        {state.canEdit && <div className={s.actions}><Button size="compact" isDisabled={!decisionTargets.length} onPress={() => setCreateDecision(true)}>Request client decision</Button><Button size="compact" variant="primary" onPress={() => setCreate(true)}><Plus size={15} />{accepted ? "New change case" : "New request"}</Button></div>}
       </div>
       {!state.data.requests.length ? (
         <div className={s.empty}>
@@ -79,9 +99,48 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
                   </>;}}]}/>
       )}
       <ControlledModalDialog
+        isOpen={createDecision}
+        onOpenChange={setCreateDecision}
+        title="Request a client decision"
+        description="Pin the request to one exact revision and offer only clear, bounded choices."
+        size="lg"
+      >
+        <form className={s.form} onSubmit={async (event) => {
+          event.preventDefault();
+          const [targetType, targetId, revision] = decisionDraft.targetKey.split(":");
+          if (await run("request", {
+            decisionRequest: true,
+            title: decisionDraft.title,
+            detail: decisionDraft.detail,
+            targetType,
+            targetId,
+            targetRevision: Number(revision),
+            dueDate: decisionDraft.dueDate,
+            allowedChoices: [decisionDraft.firstChoice, decisionDraft.secondChoice],
+            remindersEnabled: decisionDraft.remindersEnabled,
+            reminderChannels: ["in_app", ...(decisionDraft.email ? ["email"] : []), ...(decisionDraft.whatsapp ? ["whatsapp"] : [])],
+            escalationMinutes: decisionDraft.escalationMinutes,
+          })) {
+            setCreateDecision(false);
+            setDecisionDraft({ title: "", detail: "", targetKey: "", dueDate: "", firstChoice: "Approve", secondChoice: "Request changes", remindersEnabled: true, email: false, whatsapp: false, escalationMinutes: 1440 });
+          }
+        }}>
+          {error ? <p className={s.error} role="alert">{error}</p> : null}
+          <TextInput label="Question" isRequired value={decisionDraft.title} onChange={(value) => setDecisionDraft({ ...decisionDraft, title: value })} />
+          <TextAreaField label="What does the client need to decide?" isRequired value={decisionDraft.detail} onChange={(value) => setDecisionDraft({ ...decisionDraft, detail: value })} />
+          <SelectField label="Exact revision" isRequired items={decisionTargets} selectedKey={decisionDraft.targetKey || null} onSelectionChange={(key) => setDecisionDraft({ ...decisionDraft, targetKey: String(key ?? "") })} />
+          <TextInput label="Due date" inputType="date" isRequired value={decisionDraft.dueDate} onChange={(value) => setDecisionDraft({ ...decisionDraft, dueDate: value })} />
+          <div className={s.grid}><TextInput label="First choice" isRequired value={decisionDraft.firstChoice} onChange={(value) => setDecisionDraft({ ...decisionDraft, firstChoice: value })} /><TextInput label="Second choice" isRequired value={decisionDraft.secondChoice} onChange={(value) => setDecisionDraft({ ...decisionDraft, secondChoice: value })} /></div>
+          <NumericInput label="Escalate after due (minutes)" minValue={0} maxValue={43200} value={decisionDraft.escalationMinutes} onChange={(value) => setDecisionDraft({ ...decisionDraft, escalationMinutes: value })} />
+          <Checkbox isSelected={decisionDraft.remindersEnabled} onChange={(value) => setDecisionDraft({ ...decisionDraft, remindersEnabled: value })}>Show reminders in Wodana</Checkbox>
+          <div className={s.grid}><Checkbox isSelected={decisionDraft.email} onChange={(value) => setDecisionDraft({ ...decisionDraft, email: value })}>Email when connected and opted in</Checkbox><Checkbox isSelected={decisionDraft.whatsapp} onChange={(value) => setDecisionDraft({ ...decisionDraft, whatsapp: value })}>WhatsApp when connected and opted in</Checkbox></div>
+          <Button type="submit" variant="primary" isLoading={busy} isDisabled={!decisionDraft.title.trim() || !decisionDraft.detail.trim() || !decisionDraft.targetKey || !decisionDraft.dueDate || !decisionDraft.firstChoice.trim() || !decisionDraft.secondChoice.trim()}>Send decision request</Button>
+        </form>
+      </ControlledModalDialog>
+      <ControlledModalDialog
         isOpen={create}
         onOpenChange={setCreate}
-        title="New request"
+        title={accepted ? "New change case" : "New request"}
       >
         {error && (
           <p className={s.error} role="alert">
@@ -92,30 +151,51 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
           className={s.form}
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await run("request", draft)) {
+            if (await run(accepted ? "create_change_case" : "request", accepted ? changeDraft : draft)) {
               setCreate(false);
               setDraft({ title: "", detail: "" });
+              setChangeDraft({ kind: "addition", sourceLineIds: [], title: "", detail: "", owner: "", dueDate: "" });
             }
           }}
         >
+          {accepted && <>
+            <label>Change type
+              <select value={changeDraft.kind} onChange={(event) => setChangeDraft({ ...changeDraft, kind: event.target.value as ControlledChangeKind, sourceLineIds: [] })}>
+                {changeKinds.map((kind) => <option value={kind.value} key={kind.value}>{kind.label}</option>)}
+              </select>
+            </label>
+            {contractLines.length > 0 && <fieldset className={s.form} style={{ border: 0, padding: 0 }}>
+              <legend>Affected accepted items{["removal", "replacement"].includes(changeDraft.kind) ? " *" : ""}</legend>
+              {contractLines.map((line) => <label key={line.id} style={{ display: "flex", alignItems: "center", gap: ".5rem" }}>
+                <input type="checkbox" checked={changeDraft.sourceLineIds.includes(line.id)} onChange={(event) => setChangeDraft({
+                  ...changeDraft,
+                  sourceLineIds: event.target.checked ? [...changeDraft.sourceLineIds, line.id] : changeDraft.sourceLineIds.filter((id) => id !== line.id),
+                })} />V{line.quoteNumber} · {line.room} · {line.title} · {line.remainingQuantity} {line.unit} remaining
+              </label>)}
+            </fieldset>}
+          </>}
           <label>
             Title
             <input
               required
-              value={draft.title}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+              value={accepted ? changeDraft.title : draft.title}
+              onChange={(e) => accepted ? setChangeDraft({ ...changeDraft, title: e.target.value }) : setDraft({ ...draft, title: e.target.value })}
             />
           </label>
           <label>
             What needs to change or be clarified?
             <textarea
               required
-              value={draft.detail}
-              onChange={(e) => setDraft({ ...draft, detail: e.target.value })}
+              value={accepted ? changeDraft.detail : draft.detail}
+              onChange={(e) => accepted ? setChangeDraft({ ...changeDraft, detail: e.target.value }) : setDraft({ ...draft, detail: e.target.value })}
             />
           </label>
-          <button className={s.primary} disabled={busy}>
-            Create request
+          {accepted && <div className={s.grid}>
+            <label>Owner<input value={changeDraft.owner} onChange={(event) => setChangeDraft({ ...changeDraft, owner: event.target.value })} /></label>
+            <label>Due date<input type="date" value={changeDraft.dueDate} onChange={(event) => setChangeDraft({ ...changeDraft, dueDate: event.target.value })} /></label>
+          </div>}
+          <button className={s.primary} disabled={busy || accepted && ["removal", "replacement"].includes(changeDraft.kind) && !changeDraft.sourceLineIds.length}>
+            {accepted ? "Create change case" : "Create request"}
           </button>
         </form>
       </ControlledModalDialog>
@@ -134,6 +214,8 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
             )}
             <p style={{ whiteSpace: "pre-wrap" }}>{request.detail}</p>
             <span className={s.status}>{statusLabel[request.status]}</span>
+            {request.decisionRequest ? <div className={s.notice}><strong>{request.decisionRequest.target.label}</strong><p>Due {request.dueDate} · Choices: {request.decisionRequest.allowedChoices.map((choice) => choice.label).join(" / ")}</p><p>{decisionPolicySummary(request.decisionRequest)}</p>{request.decisionRequest.decision ? <p>Client response: {request.decisionRequest.decision.choiceLabel}{request.decisionRequest.decision.note ? ` · ${request.decisionRequest.decision.note}` : ""}</p> : <p>Awaiting the designated client approver.</p>}</div> : null}
+            {request.control && <ControlledChangeCase request={request} state={state} run={run} busy={busy} />}
             <div className={s.grid}>
               <label>
                 Owner
@@ -291,16 +373,27 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
       amount: number;
       dueDate: string;
       requiredForRelease: boolean;
+      requiredForProduction: boolean;
       reference: string;
     }>({
       title: "Advance payment",
       amount: 0,
       dueDate: new Date().toISOString().slice(0, 10),
       requiredForRelease: true,
+      requiredForProduction: false,
       reference: "",
     }),
     [verify, setVerify] = useState(""),
-    [reference, setReference] = useState("");
+    [reference, setReference] = useState(""),
+    [receiptEvidence, setReceiptEvidence] = useState("");
+  const receiptPayment = state.data.payments.find((item) => item.id === verify),
+    activeReceipt = receiptPayment
+      ? state.data.receipts?.find(
+          (receipt) =>
+            receipt.paymentId === receiptPayment.id &&
+            receipt.status !== "rejected",
+        )
+      : undefined;
   return (
     <>
       <nav className={s.tabs} aria-label="Agreement and payment views">
@@ -329,7 +422,9 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
         <div className={s.form} style={{ maxWidth: "48rem" }}>
           <p className={s.notice}>
             Accepted quotation V{accepted.number} ·{" "}
-            {money(accepted.total, accepted.currency)} · {accepted.decidedBy}
+            {money(accepted.clientDecision?.acceptedTotal ?? accepted.total, accepted.currency)} · {accepted.decidedBy}
+            {accepted.clientDecision?.selectedOptionLineIds.length ? ` · ${accepted.clientDecision.selectedOptionLineIds.length} selected option${accepted.clientDecision.selectedOptionLineIds.length === 1 ? "" : "s"}` : ""}
+            {accepted.clientDecision?.quoteHash ? ` · Snapshot ${accepted.clientDecision.quoteHash.slice(0, 12)}` : ""}
           </p>
           <fieldset
             disabled={!state.canEdit || a?.status === "executed" || busy}
@@ -395,10 +490,20 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
       ) : (
         <>
           <div className={s.toolbar}>
-            <p className={s.muted}>
-              Link invoices and receipts from your accounting system. Payment
-              proof needs finance verification.
-            </p>
+            <div>
+              <p className={s.muted}>
+                Payment requests, provider settlement notifications and
+                finance-verified receipts are recorded separately.
+              </p>
+              {state.data.financeContext && (
+                <p className={s.detail}>
+                  {state.data.financeContext.displayName} · {state.data.financeContext.code} · {state.data.financeContext.currency}
+                  {state.data.financeContext.taxValidation === "unvalidated"
+                    ? " · Tax configuration not regionally validated"
+                    : ""}
+                </p>
+              )}
+            </div>
             {state.canEdit && (
               <button
                 className={s.primary}
@@ -411,6 +516,7 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
                     amount: 0,
                     dueDate: new Date().toISOString().slice(0, 10),
                     requiredForRelease: true,
+                    requiredForProduction: false,
                     reference: "",
                   });
                   setPaymentOpen(true);
@@ -428,6 +534,11 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
                           Required before release
                         </small>
                       )}
+                      {p.requiredForProduction && (
+                        <small className={s.detail}>
+                          Required before manufacturing
+                        </small>
+                      )}
                       {p.proof && (
                         <small className={s.detail} title={p.proof}>
                           Client evidence: {p.proof}
@@ -436,12 +547,13 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
                     </>;}},
 {id:"due",header:"Due",size:180,accessorFn:(p)=>p.dueDate || p.trigger || "To schedule",cell:({row:{original:p}})=>{return <>{p.dueDate || p.trigger || "To schedule"}</>;}},
 {id:"amount",header:"Amount",size:150,accessorFn:(p)=>p.amount,cell:({row:{original:p}})=>{return <>{money(p.amount, accepted.currency)}</>;}},
-{id:"status",header:"Status",size:140,accessorFn:(p)=>statusLabel[p.status],cell:({row:{original:p}})=>{return <>
+	{id:"status",header:"Status",size:140,accessorFn:(p)=>statusLabel[p.status],cell:({row:{original:p}})=>{return <>
                       <span className={s.status} data-status={p.status}>
                         {statusLabel[p.status]}
                       </span>
                     </>;}},
-{id:"reference",header:"Accounting reference",size:240,accessorFn:(p)=>p.reference,cell:({row:{original:p}})=>{return <>
+	{id:"receipt",header:"Receipt truth",size:190,accessorFn:(p)=>state.data.receipts?.find((receipt)=>receipt.paymentId===p.id&&receipt.status!=="rejected")?.status??"request_only",cell:({row:{original:p}})=>{const receipt=state.data.receipts?.find((item)=>item.paymentId===p.id&&item.status!=="rejected");return <>{receipt?.status === "finance_verified" ? "Finance verified" : receipt?.status === "provider_confirmed" ? "Provider confirmed" : receipt?.status === "reported" ? "Receipt reported" : "Payment request only"}</>; }},
+	{id:"reference",header:"Accounting reference",size:240,accessorFn:(p)=>p.reference,cell:({row:{original:p}})=>{return <>
                       {p.reference || "—"}
                       <PaymentInvoice
                         currency={
@@ -455,11 +567,11 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
                         workspaceId={state.workspaceId}
                         payment={p}
                         busy={busy}
-                        canApprove={state.canApprove}
+                        canVerifyFinance={state.canVerifyFinance}
                         run={run}
                       />
                     </>;}},
-{id:"action",header:"Action",size:240,enableSorting:false,enableColumnFilter:false,cell:({row:{original:p}})=>{return <>
+	{id:"action",header:"Action",size:240,enableSorting:false,enableColumnFilter:false,cell:({row:{original:p}})=>{const receipt=state.data.receipts?.find((item)=>item.paymentId===p.id&&item.status!=="rejected");return <>
                       <div className={s.actions}>
                         {state.canEdit && p.status === "pending" && (
                           <button
@@ -472,6 +584,8 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
                                 amount: p.amount,
                                 dueDate: p.dueDate,
                                 requiredForRelease: p.requiredForRelease,
+                                requiredForProduction:
+                                  p.requiredForProduction === true,
                                 reference: p.reference,
                               });
                               setPaymentOpen(true);
@@ -480,19 +594,26 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
                             Set due date
                           </button>
                         )}
-                        {state.canApprove &&
-                          p.status !== "verified" &&
-                          !p.invoice && (
-                            <button
-                              className={s.button}
-                              onClick={() => {
+                        {state.canEdit && p.status !== "verified" && !receipt && !p.invoice && (
+                            <Button
+                              size="compact"
+                              onPress={() => {
                                 setVerify(p.id);
                                 setReference(p.reference);
+                                setReceiptEvidence("");
                               }}
                             >
-                              Verify receipt
-                            </button>
+                              Record receipt
+                            </Button>
                           )}
+                        {state.canVerifyFinance && p.status === "proof_submitted" && Boolean(receipt) && (
+                          <Button
+                            size="compact"
+                            onPress={() => setVerify(p.id)}
+                          >
+                            Finance verify
+                          </Button>
+                        )}
                       </div>
                     </>;}}]}/>
 
@@ -576,6 +697,15 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
             />
             Required before execution release
           </label>
+          <Checkbox
+            isDisabled={Boolean(payment.sourceQuoteId)}
+            isSelected={payment.requiredForProduction}
+            onChange={(selected) =>
+              setPayment({ ...payment, requiredForProduction: selected })
+            }
+          >
+            Required before manufacturing starts
+          </Checkbox>
           <button className={s.primary} disabled={busy}>
             Save milestone
           </button>
@@ -584,7 +714,7 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
       <ControlledModalDialog
         isOpen={Boolean(verify)}
         onOpenChange={(open) => !open && setVerify("")}
-        title="Verify payment receipt"
+        title={receiptPayment?.status === "proof_submitted" ? "Finance verification" : "Record payment receipt"}
       >
         {error && (
           <p className={s.error} role="alert">
@@ -593,26 +723,52 @@ export function AgreementPayments({ state, run, busy, error }: Props) {
         )}
         <div className={s.form}>
           <p>
-            Confirm the receipt against the bank or accounting record.
-            Client-submitted proof alone is not a verified payment.
+            {receiptPayment?.status === "proof_submitted"
+              ? `Confirm ${activeReceipt?.source === "provider" ? "the provider settlement notification" : "the reported receipt"} against the finance record. This is the step that makes it verified.`
+              : "Record the bank or receipt evidence first. Another finance-authorized step verifies it."}
           </p>
-          <label>
-            Verified receipt / transaction reference
-            <input
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            />
-          </label>
-          <button
-            className={s.primary}
-            disabled={busy || !reference.trim()}
-            onClick={async () => {
-              if (await run("verify_payment", { paymentId: verify, reference }))
+          {receiptPayment?.status !== "proof_submitted" && (
+            <>
+              <TextInput
+                isRequired
+                label="Receipt / transaction reference"
+                value={reference}
+                onChange={setReference}
+              />
+              <TextAreaField
+                isRequired
+                label="Receipt evidence"
+                value={receiptEvidence}
+                onChange={setReceiptEvidence}
+              />
+            </>
+          )}
+          <Button
+            variant="primary"
+            isDisabled={
+              busy ||
+              (receiptPayment?.status !== "proof_submitted" &&
+                (!reference.trim() || !receiptEvidence.trim()))
+            }
+            onPress={async () => {
+              const action =
+                receiptPayment?.status === "proof_submitted"
+                  ? "verify_payment"
+                  : "report_payment_receipt";
+              if (
+                await run(action, {
+                  paymentId: verify,
+                  reference,
+                  evidence: receiptEvidence,
+                })
+              )
                 setVerify("");
             }}
           >
-            Record verified receipt
-          </button>
+            {receiptPayment?.status === "proof_submitted"
+              ? "Verify receipt"
+              : "Record receipt"}
+          </Button>
         </div>
       </ControlledModalDialog>
     </>
@@ -666,15 +822,17 @@ export function ApprovalRelease({
       done: Boolean(
         accepted &&
           agreementIsOperational(d.agreement) &&
-          d.agreement?.quoteId === accepted.id,
+          agreementMatchesAcceptedQuote(d.agreement, accepted),
       ),
       href: "contracts",
     },
     {
       label: "Required payments verified",
-      done: d.payments
-        .filter((p) => p.requiredForRelease)
-        .every(releasePaymentIsOperational),
+      done:
+        d.payments.some((payment) => payment.requiredForRelease) &&
+        d.payments
+          .filter((payment) => payment.requiredForRelease)
+          .every(releasePaymentIsOperational),
       href: "contracts",
     },
     {
@@ -728,16 +886,16 @@ export function ApprovalRelease({
             </div>
           ) : <>
             <div className={s.controlSummary}>
-              <div><small>Accepted quotation</small><strong>V{accepted.number} · {money(accepted.total, accepted.currency)}</strong></div>
-              <div><small>Internal cost</small><strong>{money(quoteTotals(accepted).cost, accepted.currency)}</strong></div>
-              <div><small>Gross margin</small><strong>{quoteTotals(accepted).margin.toFixed(1)}%</strong></div>
+              <div><small>Accepted quotation</small><strong>V{accepted.number} · {money(acceptedQuoteValue(accepted), accepted.currency)}</strong></div>
+              <div><small>Internal cost</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
+              <div><small>Gross margin</small><strong>{acceptedQuoteTotals(accepted).margin.toFixed(1)}%</strong></div>
               <div><small>Owner review</small><strong>{d.ownerReview ? statusLabel[d.ownerReview.status] ?? d.ownerReview.status : "Not submitted"}</strong></div>
             </div>
-            {d.dealFile && <div className={s.dealBanner}><div><small>ACTIVE DEAL FILE</small><strong>{d.dealFile.reference}</strong><span>Approved {d.dealFile.approvedAt.slice(0,10)} by {d.dealFile.approvedBy}</span></div><div><small>Deal value</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div><div><small>Commission</small><strong>{money(d.dealFile.commission, accepted.currency)}</strong></div></div>}
+            {d.dealFile && <div className={s.dealBanner}><div><small>ACTIVE DEAL FILE</small><strong>{d.dealFile.reference}</strong><span>Approved {d.dealFile.approvedAt.slice(0,10)} by {d.dealFile.approvedBy}</span></div><div><small>Production evidence</small><strong>{d.dealFile.designEvidence?.links.length??0} files · {d.dealFile.materialEvidence?.length??0} materials</strong></div><div><small>Deal value</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div><div><small>Commission</small><strong>{money(d.dealFile.commission, accepted.currency)}</strong></div></div>}
             {d.ownerReview?.status === "submitted" ? <div className={s.section}>
               <div className={s.header}><div><h2>Review submitted by {d.ownerReview.submittedBy}</h2><p className={s.muted}>{d.ownerReview.submissionNote}</p></div><span className={s.status} data-status="internal_review">Awaiting another owner</span></div>
               <div className={s.checkGrid}>{Object.entries(d.ownerReview.checklist).map(([key, done])=><span key={key} data-done={done}>{done?'✓':'○'} {key.replaceAll('_',' ')}</span>)}</div>
-              {state.canApprove&&<><label className={s.decisionField}>Decision remarks<textarea value={decisionNote} onChange={e=>setDecisionNote(e.target.value)} placeholder="Required when returning or rejecting."/></label><div className={s.actions}><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run('decide_owner_review',{decision:'reject',note:decisionNote})}>Reject</button><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run('decide_owner_review',{decision:'return',note:decisionNote})}>Return for correction</button><button className={s.primary} disabled={busy||Object.values(d.ownerReview.checklist).some(value=>!value)} onClick={()=>void run('decide_owner_review',{decision:'approve',note:decisionNote})}>Approve & create Deal File</button></div></>}
+              {state.canApprove&&<><label className={s.decisionField}>Decision remarks<textarea value={decisionNote} onChange={e=>setDecisionNote(e.target.value)} placeholder="Required when returning or rejecting."/></label>{!materialApprovalsComplete(accepted,d.materialApprovals)&&<p className={s.notice}>Complete every client material decision before creating the Deal File.</p>}<div className={s.actions}><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run('decide_owner_review',{decision:'reject',note:decisionNote})}>Reject</button><button className={s.button} disabled={busy||!decisionNote.trim()} onClick={()=>void run('decide_owner_review',{decision:'return',note:decisionNote})}>Return for correction</button><button className={s.primary} disabled={busy||Object.values(d.ownerReview.checklist).some(value=>!value)||!materialApprovalsComplete(accepted,d.materialApprovals)} onClick={()=>void run('decide_owner_review',{decision:'approve',note:decisionNote})}>Approve & create Deal File</button></div></>}
             </div> : !d.dealFile && <form className={s.ownerForm} onSubmit={async e=>{e.preventDefault();await run('submit_owner_review',{commission,checklist,note});}}>
               {d.ownerReview&&<p className={s.notice}>Previous decision: {statusLabel[d.ownerReview.status]??d.ownerReview.status}. {d.ownerReview.decisionNote}</p>}
               <div><h2>Submit for independent owner review</h2><p className={s.muted}>The owner checks the exact accepted quotation, agreement, payment, margin, materials and supporting documents.</p></div>
@@ -752,7 +910,7 @@ export function ApprovalRelease({
         <>
           <div className={s.header}><div><h2>Client material selections</h2><p className={s.muted}>Prepare from the accepted quotation, add the exact sample details, then send each selection to the assigned client approver.</p></div>{state.canEdit&&<button className={s.button} disabled={busy||!accepted} onClick={()=>void run('sync_material_approvals')}>Prepare from quotation</button>}</div>
           {(d.materialApprovals ?? []).filter(item=>item.quoteId===accepted?.id).map(item=><div className={s.materialRow} key={item.id}>
-            {item.photo?<img src={item.photo} alt=""/>:<span className={s.materialThumb}>No photo</span>}
+            {item.photo?<Image src={item.photo} alt="" width={64} height={64} unoptimized/>:<span className={s.materialThumb}>No photo</span>}
             <div><strong>{item.name}</strong><span>{item.room} · {item.item}</span><small>{[item.brand,item.code].filter(Boolean).join(' · ')||item.specification}</small>{item.decisionNote&&<small>Client remark: {item.decisionNote}</small>}</div>
             <span className={s.status} data-status={item.status}>{statusLabel[item.status]??item.status.replaceAll('_',' ')}</span>
             {state.canEdit&&['proposed','rejected'].includes(item.status)&&<button className={s.button} onClick={()=>{setSelectedMaterial(item.id);setMaterialDraft({...item});}}>Edit</button>}

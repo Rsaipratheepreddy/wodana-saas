@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { businessApiUrl } from "@/lib/auth/server";
 
-export async function GET(_request: Request, context: { params: Promise<{ loginSlug: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ loginSlug: string }> }) {
   const { loginSlug } = await context.params;
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(loginSlug)) return new NextResponse(null, { status: 404 });
-  const upstream = await fetch(businessApiUrl(`/public/tenant-branding/${loginSlug}/logo`), { cache: "no-store" }).catch(() => null);
+  const variant = new URL(request.url).searchParams.get("variant") === "square" ? "?variant=square" : "";
+  const upstream = await fetch(businessApiUrl(`/public/tenant-branding/${loginSlug}/logo${variant}`), { cache: "no-store" }).catch(() => null);
   if (!upstream?.ok || !upstream.body) return new NextResponse(null, { status: upstream?.status ?? 404 });
   return new NextResponse(upstream.body, {
     headers: {

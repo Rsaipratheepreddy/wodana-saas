@@ -4,7 +4,7 @@ import { type CaseAsset, type ItemDimension, type ScopeEntry } from './content';
 export type SiteKind='visit'|'measurement'|'observation';
 export type SiteRecord={id:string;version:number;kind:SiteKind;title:string;note:string;status:string;roomId:string|null;entryId:string|null;visitId:string|null;roomName?:string|null;entryTitle?:string|null;entryArchivedAt?:string|null;visitTitle?:string|null;assetIds:string[];assets:CaseAsset[];updatedAt?:string;recordedBy?:string;
  scheduledAt?:string;timezone?:string;durationMinutes?:number;assigneeId?:string|null;assigneeName?:string|null;location?:string;access?:string;outcome?:string;
- category?:string;resolution?:string;dimensions?:ItemDimension[];reviewNote?:string;verifiedBy?:string|null;verifiedAt?:string|null};
+ category?:string;resolution?:string;dimensions?:ItemDimension[];reviewNote?:string;verifiedBy?:string|null;verifiedAt?:string|null;evidenceConsent?:{confirmedAt:string;confirmedBy:string}};
 export type SiteData={items:SiteRecord[];members:{id:string;name:string}[];timezone:string;weekStartsOn?:number;canVerify:boolean};
 export const siteLabels:Record<string,string>={visit:'Visit',measurement:'Measurements',observation:'Observation',planned:'Planned',completed:'Completed',cancelled:'Cancelled',incomplete:'Incomplete',measured:'Awaiting verification',verified:'Verified',recheck:'Recheck needed',open:'Open',resolved:'Resolved',condition:'Existing condition',opening:'Doors & openings',electrical:'Electrical',plumbing:'Plumbing',access:'Access & delivery',constraint:'Site constraint',other:'Other'};
 export function newSiteRecord(kind:SiteKind,timezone:string,roomId:string|null=null,entry?:ScopeEntry):SiteRecord {

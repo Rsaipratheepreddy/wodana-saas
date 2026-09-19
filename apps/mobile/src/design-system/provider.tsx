@@ -48,12 +48,3 @@ export function useTheme() {
   if (!theme) throw new Error('Use native UI components inside DesignSystemProvider.');
   return theme;
 }
-
-/** Override workspace colors while retaining fonts, direction and accessibility preferences. */
-export function DesignSystemColorScope({ colors, children }: PropsWithChildren<{
-  colors: Partial<ThemeContextValue['colors']>;
-}>) {
-  const parent = useTheme();
-  const value = useMemo(() => ({ ...parent, colors: { ...parent.colors, ...colors } }), [parent, colors]);
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}

@@ -11,15 +11,25 @@ export async function POST(request: Request) {
   const roleCodes = Array.isArray(body?.roleCodes)
     ? body.roleCodes.filter((role): role is string => typeof role === "string")
     : [];
+  const teamIds = Array.isArray(body?.teamIds)
+    ? body.teamIds.filter((teamId): teamId is string => typeof teamId === "string")
+    : [];
 
   if (!UUID.test(workspaceId)) return invalidRequest("A valid workspace is required.");
   if (displayName.length < 2 || displayName.length > 160) {
     return invalidRequest("Enter the member's full name.");
   }
   if (!EMAIL.test(email) || email.length > 255) return invalidRequest("Enter a valid work email address.");
-  if (!roleCodes.length || roleCodes.length > 20 || new Set(roleCodes).size !== roleCodes.length
+  if (roleCodes.length > 20 || new Set(roleCodes).size !== roleCodes.length
     || roleCodes.some((role) => !ROLE_CODE.test(role))) {
-    return invalidRequest("Select at least one valid workspace role.");
+    return invalidRequest("Choose valid workspace roles.");
+  }
+  if (teamIds.length > 25 || new Set(teamIds).size !== teamIds.length
+    || teamIds.some((teamId) => !UUID.test(teamId))) {
+    return invalidRequest("Choose valid workspace teams.");
+  }
+  if (!roleCodes.length && !teamIds.length) {
+    return invalidRequest("Choose at least one workspace team or direct role.");
   }
 
   return workspaceJsonResponse(
@@ -27,7 +37,7 @@ export async function POST(request: Request) {
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ displayName, email, roleCodes }),
+      body: JSON.stringify({ displayName, email, roleCodes, teamIds }),
     },
     "The invitation could not be created.",
   );

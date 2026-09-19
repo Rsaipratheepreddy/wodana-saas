@@ -1,0 +1,36 @@
+.page {
+  margin: clamp(32px, 8vh, 88px) auto;
+  max-width: 620px;
+  padding: 0 24px;
+}
+
+.page h1 {
+  color: var(--wd-text-primary, #252b29);
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  margin: 10px 0 16px;
+}
+
+.page p {
+  color: var(--wd-text-secondary, #5b6663);
+  line-height: 1.5;
+  margin: 0 0 24px;
+}
+
+.page .eyebrow {
+  color: var(--wd-text-secondary, #5b6663);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.page a {
+  color: var(--wd-text-primary, #252b29);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}

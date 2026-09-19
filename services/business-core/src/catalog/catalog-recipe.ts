@@ -229,6 +229,14 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
     rateId?: string;
     purchaseUnits?: number;
     roundPack?: boolean;
+    norm: {
+      factor: number;
+      basis: string;
+      kind: "material" | "labour_or_process" | "charge";
+      sourceId: string;
+      sourceVersion: number;
+    };
+    wastePercent: number;
   }[] = [];
   const groups = new Map<
     string,
@@ -267,6 +275,7 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
       quantityInput = `qty_${source!.code.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
     }
     const measured = measure(c.quantityBasis, quantityInput);
+    const normFactor = Number(c.factor ?? 1);
     const optional = c.required === "optional" || c.required === "conditional";
     if (
       optional &&
@@ -274,7 +283,7 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
       (!measured || measured.value === 0 || !source)
     )
       continue;
-    const line = {
+    const line: (typeof lines)[number] = {
       id: slot.id,
       name: slot.name,
       location: String(
@@ -294,6 +303,19 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
       rateId: undefined as string | undefined,
       purchaseUnits: undefined as number | undefined,
       roundPack: false,
+      norm: {
+        factor: normFactor,
+        basis: String(c.quantityBasis ?? "manual"),
+        kind:
+          c.recordRole === "operation"
+            ? "labour_or_process"
+            : c.recordRole === "charge"
+              ? "charge"
+              : "material",
+        sourceId: slot.id,
+        sourceVersion: slot.version,
+      },
+      wastePercent: 0,
     };
     line.unit = outputUnit?.name ?? "Unconfigured";
     if (line.location === "unassigned")
@@ -301,24 +323,26 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
         "Set factory or site location for this hybrid component.",
       );
     if (!source) line.issues.push("Select one product or process.");
+    if (!Number.isFinite(normFactor) || normFactor <= 0)
+      line.issues.push("Set a positive quantity or labour norm for this row.");
     if (!measured)
       line.issues.push(
         `Enter ${quantityInput || "dimensions / quantity calculation"}.`,
       );
-    if (measured && outputUnit) {
+    if (measured && outputUnit && Number.isFinite(normFactor) && normFactor > 0) {
       if (
         measured.dimension === "explicit" ||
         (measured.dimension === "count" &&
           ["count", "pack"].includes(outputUnit.dimension ?? ""))
       )
-        line.quantity = measured.value * Number(c.factor ?? 1) * input.quantity;
+        line.quantity = measured.value * normFactor * input.quantity;
       else if (
         measured.dimension === outputUnit.dimension &&
         outputUnit.baseFactor
       )
         line.quantity =
           (measured.value / outputUnit.baseFactor) *
-          Number(c.factor ?? 1) *
+          normFactor *
           input.quantity;
       else
         line.issues.push(
@@ -342,6 +366,7 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
         line.issues.push(`Review workspace allowance: ${wasteRules[0].name}.`);
       else waste = Number(cfg(wasteRules[0]).approvedPercent) / 100;
     }
+    line.wastePercent = waste * 100;
     if (line.quantity != null)
       line.allowedQuantity = line.quantity * (1 + waste);
     if (
@@ -451,8 +476,8 @@ export function previewRecipe(records: Master[], input: RecipePreviewDto) {
         const group = groups.get(rate.id) ?? {
           rate,
           units: 0,
-          roundPack: line.roundPack,
-          lines: [],
+          roundPack: line.roundPack === true,
+          lines: [] as number[],
         };
         if (group.roundPack !== line.roundPack)
           line.issues.push(
