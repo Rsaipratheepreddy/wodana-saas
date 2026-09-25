@@ -22,11 +22,11 @@ integration("legal entity currency and country lock", () => {
     const workspaceId = randomUUID(), entityId = randomUUID(), caseId = randomUUID(), actor = randomUUID();
     try {
       await client.query("BEGIN");
-      for (const table of ["workspaces", "pre_project_cases"]) await client.query(`ALTER TABLE ${table} DISABLE TRIGGER ALL`);
+      await client.query("SET LOCAL session_replication_role = replica");
       await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by) VALUES($1,'Lock',$2,'AED',$3)", [workspaceId, `lock-${workspaceId.slice(0, 8)}`, actor]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, randomUUID(), actor]);
-      for (const table of ["workspaces", "pre_project_cases"]) await client.query(`ALTER TABLE ${table} ENABLE TRIGGER ALL`);
+      await client.query("SET LOCAL session_replication_role = origin");
       await client.query(
         `INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone)
          VALUES($1,$2,'MAIN','Main','Main LLC','AE','AED','en-AE','Asia/Dubai')`,

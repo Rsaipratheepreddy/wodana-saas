@@ -20,6 +20,8 @@ import { TenantProvisioningDraftsService } from "./tenant-provisioning-drafts.se
 import { TenantDomainsService } from "./tenant-domains.service";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
 import { TenantOperationsService } from "./tenant-operations.service";
+import { TaxNumberingController } from "./tax-numbering.controller";
+import { TaxNumberingService } from "./tax-numbering.service";
 
 @Module({
   imports: [EmailModule],
@@ -32,6 +34,7 @@ import { TenantOperationsService } from "./tenant-operations.service";
     OperatorTenantDraftsController,
     InternalOrganizationAccountsController,
     PublicBrandingController,
+    TaxNumberingController,
   ],
   providers: [
     WorkspaceAccessService,
@@ -46,6 +49,7 @@ import { TenantOperationsService } from "./tenant-operations.service";
     BrandAssetStorageService,
     ConfigurationRevisionsService,
     TenantOperationsService,
+    TaxNumberingService,
   ],
   exports: [WorkspaceAccessService, WorkspacesService, ConfigurationRevisionsService],
 })

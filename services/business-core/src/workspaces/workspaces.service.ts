@@ -4402,7 +4402,7 @@ export class WorkspacesService {
         `INSERT INTO document_sequences
           (workspace_id, legal_entity_id, document_type, prefix)
          VALUES ($1, $2, $3, $4)`,
-        [workspaceId, legalEntityId, documentType, `${entityCode}-${shortCode}-`],
+        [workspaceId, legalEntityId, documentType, `${entityCode}-${shortCode}-{YYYY}-`],
       );
     }
   }

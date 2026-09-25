@@ -34,13 +34,11 @@ integration("project repository with PostgreSQL", () => {
     const workspaceId = randomUUID(), projectId = randomUUID(), actor = randomUUID();
     try {
       await client.query("BEGIN");
-      await client.query("ALTER TABLE workspaces DISABLE TRIGGER ALL");
-      await client.query("ALTER TABLE delivery_projects DISABLE TRIGGER ALL");
+      await client.query("SET LOCAL session_replication_role = replica");
       await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by) VALUES($1,'Repo test',$2,'AED',$3)", [workspaceId, `repo-${workspaceId.slice(0, 8)}`, actor]);
       await client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,created_by) VALUES($1,$2,$3,'Villa',$4)", [projectId, workspaceId, randomUUID(), actor]);
-      await client.query("ALTER TABLE workspaces ENABLE TRIGGER ALL");
-      await client.query("ALTER TABLE delivery_projects ENABLE TRIGGER ALL");
+      await client.query("SET LOCAL session_replication_role = origin");
       await work(client, workspaceId, projectId);
     } finally {
       await client.query("ROLLBACK");

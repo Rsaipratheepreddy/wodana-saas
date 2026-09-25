@@ -32,9 +32,7 @@ integration("task board with PostgreSQL", () => {
     const workspaceId = randomUUID(), me = randomUUID(), other = randomUUID(), assigned = randomUUID(), hidden = randomUUID();
     try {
       await client.query("BEGIN");
-      for (const table of ["workspaces", "delivery_projects", "workspace_memberships", "project_assignments", "users"]) {
-        await client.query(`ALTER TABLE ${table} DISABLE TRIGGER ALL`);
-      }
+      await client.query("SET LOCAL session_replication_role = replica");
       await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by,default_timezone) VALUES($1,'Board',$2,'AED',$3,'Asia/Dubai')", [workspaceId, `board-${workspaceId.slice(0, 8)}`, me]);
       for (const [member, name] of [[me, "Sara"], [other, "Omar"]] as const) {
@@ -46,9 +44,7 @@ integration("task board with PostgreSQL", () => {
         await client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,created_by) VALUES($1,$2,$3,$4,$5)", [project, workspaceId, randomUUID(), name, me]);
       }
       await client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,active) VALUES($1,$2,$3,true)", [workspaceId, assigned, me]);
-      for (const table of ["workspaces", "delivery_projects", "workspace_memberships", "project_assignments", "users"]) {
-        await client.query(`ALTER TABLE ${table} ENABLE TRIGGER ALL`);
-      }
+      await client.query("SET LOCAL session_replication_role = origin");
       await projectRepository.save(client, workspaceId, assigned, {
         ...emptyProject(), revision: 1, tasks: [
           task("mine-late", { ownerId: me, end: "2026-01-02" }),

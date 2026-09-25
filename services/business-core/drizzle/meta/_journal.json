@@ -57,6 +57,13 @@
       "when": 1790571600000,
       "tag": "0007_legal_entity_money_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790575200000,
+      "tag": "0008_tax_and_numbering",
+      "breakpoints": true
     }
   ]
 }

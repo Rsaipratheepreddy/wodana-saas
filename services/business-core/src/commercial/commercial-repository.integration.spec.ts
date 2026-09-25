@@ -36,13 +36,11 @@ integration("commercial repository with PostgreSQL", () => {
     const workspaceId = randomUUID(), caseId = randomUUID(), actor = randomUUID();
     try {
       await client.query("BEGIN");
-      await client.query("ALTER TABLE workspaces DISABLE TRIGGER ALL");
-      await client.query("ALTER TABLE pre_project_cases DISABLE TRIGGER ALL");
+      await client.query("SET LOCAL session_replication_role = replica");
       await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceId]);
       await client.query("INSERT INTO workspaces(id,name,slug,default_currency,created_by) VALUES($1,'Quotes',$2,'AED',$3)", [workspaceId, `quotes-${workspaceId.slice(0, 8)}`, actor]);
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [caseId, workspaceId, randomUUID(), actor]);
-      await client.query("ALTER TABLE workspaces ENABLE TRIGGER ALL");
-      await client.query("ALTER TABLE pre_project_cases ENABLE TRIGGER ALL");
+      await client.query("SET LOCAL session_replication_role = origin");
       await work(client, workspaceId, caseId);
     } finally {
       await client.query("ROLLBACK");
@@ -137,9 +135,9 @@ integration("commercial repository with PostgreSQL", () => {
 
       await commercialRepository.save(client, workspaceId, caseId, money(commercial([quote("a", 1)])));
       const otherCase = randomUUID();
-      await client.query("ALTER TABLE pre_project_cases DISABLE TRIGGER ALL");
+      await client.query("SET LOCAL session_replication_role = replica");
       await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [otherCase, workspaceId, randomUUID(), randomUUID()]);
-      await client.query("ALTER TABLE pre_project_cases ENABLE TRIGGER ALL");
+      await client.query("SET LOCAL session_replication_role = origin");
       const duplicate = money(commercial([quote("a", 1)]));
       duplicate.dealFile = { ...duplicate.dealFile!, id: "df-2" };
       await expect(commercialRepository.save(client, workspaceId, otherCase, duplicate)).rejects.toThrow(/unique|duplicate/i);
