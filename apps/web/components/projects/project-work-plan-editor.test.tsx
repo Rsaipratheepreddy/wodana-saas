@@ -133,3 +133,13 @@ it('does not invent task quantity and units for a grouped item',()=>{
   expect(screen.getByLabelText('Quantity')).toHaveValue(null);
   expect(screen.getByLabelText('Unit')).toHaveValue('');
 });
+it('offers a standard plan only for a package without tasks and applies it through the project command',()=>{
+  const run=vi.fn().mockResolvedValue(true);
+  const {unmount}=render(<ProjectWorkPlanEditor state={state} work={work} busy={false} error="" run={run} onClose={()=>{}} onOpenTask={()=>{}} initialTab="steps"/>);
+  fireEvent.click(screen.getByRole('button',{name:'Made in factory'}));
+  expect(run).toHaveBeenCalledWith('package_tasks',{id:'w',template:'manufactured'});
+  unmount();
+  const planned={...state,data:{...state.data,tasks:[{id:'t',packageId:'w',title:'Install',location:'site',status:'planned',quantity:1,approved:0,unit:'nos',predecessors:[],start:'2026-10-01',end:'2026-10-02'}]}} as unknown as ProjectState;
+  render(<ProjectWorkPlanEditor state={planned} work={work} busy={false} error="" run={run} onClose={()=>{}} onOpenTask={()=>{}} initialTab="steps"/>);
+  expect(screen.queryByRole('group',{name:'Standard plan'})).not.toBeInTheDocument();
+});

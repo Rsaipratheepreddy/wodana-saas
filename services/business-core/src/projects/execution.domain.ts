@@ -1,3 +1,4 @@
+import { applyPackageTaskTemplate, PACKAGE_TASK_TEMPLATES } from "./project-package-templates";
 import { applyRfa } from "./project-rfa.command";
 import { applyClientPublication, projectClientSections, publicProjectUpdates } from "./project-client-publication";
 import { acceptedServiceQuantity, assertServiceAcceptance } from "./project-service-acceptance";
@@ -977,6 +978,13 @@ export function applyExecution(
   } else if (action === "delivery_quantities" || action === "revise_delivery_quantities") {
     recordId = applyDeliveryQuantities(d, b, a, action === "revise_delivery_quantities");
     note = action === "revise_delivery_quantities" ? str(b.reason, 3000, true) : b.status === "confirmed" ? "Confirmed delivery quantities." : "Saved delivery quantity draft.";
+  } else if (action === "package_tasks") {
+    manage();
+    recordId = str(b.id, 80, true);
+    const template = choice(b.template, PACKAGE_TASK_TEMPLATES);
+    const created = applyPackageTaskTemplate(d, recordId, template, a.today ?? a.now.slice(0, 10));
+    assertGraph(d.tasks);
+    note = `Planned ${created.length} tasks from the ${template.replace("_", "-")} template.`;
   } else if (action === "work_package") {
     manage();
     const value = obj(b.workPackage);
