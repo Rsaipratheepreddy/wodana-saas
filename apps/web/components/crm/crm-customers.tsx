@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Building2, Plus, RefreshCw, UserRound } from "lucide-react";
-import { Badge, Button, Callout, DataGrid, IconButton, ControlledModalDialog, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Callout, DataGrid, IconButton, ControlledModalDialog, ListTabs, type DataGridColumn } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
@@ -37,6 +38,7 @@ const columns: DataGridColumn<CrmRecord>[] = [
 ];
 
 export function CrmCustomers({ initialData, initialRecordId, initialView = "all" }: { initialData: CrmScreenPageData; initialRecordId?: string; initialView?: CustomerView }) {
+  const t = useT();
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
   const [view, setView] = useState<CustomerView>(initialView);
@@ -51,12 +53,6 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
     return view === "all" || record.type === view;
   }), [items, view]);
   const counts = useMemo(() => ({ all: items.filter((record) => record.status !== "archived").length, person: items.filter((record) => record.status !== "archived" && record.type === "person").length, organization: items.filter((record) => record.status !== "archived" && record.type === "organization").length, archived: items.filter((record) => record.status === "archived").length }), [items]);
-  const views = useMemo(() => ([
-    { id: "all", label: `All (${counts.all})` },
-    { id: "person", label: `People (${counts.person})` },
-    { id: "organization", label: `Companies (${counts.organization})` },
-    { id: "archived", label: `Archived (${counts.archived})` },
-  ]), [counts]);
 
   const reload = async (more = false) => {
     if (busy || more && !nextCursor) return;
@@ -72,12 +68,9 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
     finally { setBusy(false); }
   };
 
-  return <CrmProductShell title="Customers" description="" canView={initialData.canView} useWorkspaceColors actions={<div className={styles.actions}>
-    <IconButton aria-label="Refresh customers" isDisabled={busy} isLoading={busy} size="compact" onPress={() => void reload()}><RefreshCw size={15} /></IconButton>
-    <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />Add customer</Button>
-  </div>}>
+  return <CrmProductShell title="Customers" description="" canView={initialData.canView} useWorkspaceColors>
     {failure ? <Callout title="Could not refresh customers" tone="warning">{failure}</Callout> : null}
-    <DataGrid
+    <div data-sales-grid className={styles.clientsGrid}><DataGrid
       ariaLabel="Customer records"
       columns={columns}
       data={visible}
@@ -91,12 +84,16 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
       pageSize={25}
       persistKey="crm-customers"
       rowNumbers={false}
-      savedViews={views}
+      toolbarLeading={<ListTabs label={t("Client lists")} value={view} onChange={setView} items={[
+        { id: "all", label: t("All"), count: counts.all },
+        { id: "person", label: t("People"), count: counts.person },
+        { id: "organization", label: t("Companies"), count: counts.organization },
+        { id: "archived", label: t("Archived"), count: counts.archived },
+      ]} />}
+      toolbarActions={<><IconButton aria-label={t("Refresh")} isDisabled={busy} isLoading={busy} size="compact" onPress={() => void reload()}><RefreshCw size={15} /></IconButton><Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("Add client")}</Button></>}
       searchLabel="Search customers"
       selectable={false}
-      selectedView={view}
-      onViewChange={(id) => setView(id as CustomerView)}
-    />
+    /></div>
     {creating ? <CrmCreateDialog id="customers" workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); await reload(); }} /> : null}
     {selected ? <ControlledModalDialog isOpen title="Customer details" hideTitle size="xl" className={styles.customerModal} onOpenChange={(open) => { if (!open) setSelected(undefined); }}><LinkedRecordWorkbench id="customers" workspaceId={initialData.workspaceId} recordId={selected} onChanged={reload} /></ControlledModalDialog> : null}
   </CrmProductShell>;

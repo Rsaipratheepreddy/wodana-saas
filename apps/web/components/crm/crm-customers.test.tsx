@@ -19,8 +19,7 @@ describe("CrmCustomers", () => {
     expect(screen.getByText("Amira Al Mansoori")).toBeInTheDocument();
     expect(screen.getByText("Al Noor Developments LLC")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Table view/ }));
-    await user.click(screen.getByRole("option", { name: "Companies (2)" }));
+    await user.click(screen.getByRole("button", { name: /^Companies\s*2$/ }));
     expect(screen.getByText("Al Noor Developments LLC")).toBeInTheDocument();
     expect(screen.queryByText("Amira Al Mansoori")).not.toBeInTheDocument();
   });
@@ -46,8 +45,7 @@ describe("CrmCustomers", () => {
     render(<CrmCustomers initialData={data} />);
 
     expect(screen.queryByText("Former Customer")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Table view/ }));
-    await user.click(screen.getByRole("option", { name: "Archived (1)" }));
+    await user.click(screen.getByRole("button", { name: /^Archived\s*1$/ }));
     expect(screen.getByText("Former Customer")).toBeInTheDocument();
     expect(screen.queryByText("Amira Al Mansoori")).not.toBeInTheDocument();
   });
