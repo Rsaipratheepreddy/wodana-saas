@@ -1,13 +1,13 @@
-.page { background:#fff; color:var(--wd-color-text); min-width:0; padding:20px; }
-.header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:16px; }
-.page .header h1 { font-size:20px; line-height:1.4; margin:0; }
-.page a { color:var(--wd-color-text); font-size:13px; font-weight:500; text-decoration:none; }
+.page { background:var(--wd-color-surface); color:var(--wd-color-text); min-width:0; padding:var(--wd-space-5); }
+.header { display:flex; justify-content:space-between; align-items:center; gap:var(--wd-space-4); margin-bottom:var(--wd-space-4); }
+.page .header h1 { font-size:var(--wd-text-xl); line-height:1.4; margin:0; }
+.page a { color:var(--wd-color-text); font-size:var(--wd-text-sm); font-weight:500; text-decoration:none; }
 .page a:hover { text-decoration:underline; }
-.item { display:grid; gap:3px; min-width:0; }
+.item { display:grid; gap:var(--wd-space-0-5); min-width:0; }
 .item a { font-weight:600; }
-.item small { color:var(--wd-color-text-secondary); font-size:12px; }
-.status { display:inline-flex; border-radius:6px; padding:4px 8px; background:#f2f3f5; font-size:12px; line-height:1.4; }
-.status[data-complete="true"] { background:#edf6ef; color:#25633a; }
-.status[data-ready="true"] { background:#eaf2fc; color:#285b91; }
-.back { display:inline-block; margin-bottom:16px; }
-@media(max-width:640px) { .page {padding:16px 12px;} .header {align-items:flex-start; flex-wrap:wrap;} }
+.item small { color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }
+.status { display:inline-flex; border-radius:var(--wd-radius-xs); padding:var(--wd-space-1) var(--wd-space-2); background:var(--wd-color-surface-muted); font-size:var(--wd-text-xs); line-height:1.4; }
+.status[data-complete="true"] { background:var(--wd-color-success-subtle); color:var(--wd-color-success); }
+.status[data-ready="true"] { background:var(--wd-color-info-subtle); color:var(--wd-color-info); }
+.back { display:inline-block; margin-bottom:var(--wd-space-4); }
+@media(max-width:640px) { .page {padding:var(--wd-space-4) var(--wd-space-3);} .header {align-items:flex-start; flex-wrap:wrap;} }

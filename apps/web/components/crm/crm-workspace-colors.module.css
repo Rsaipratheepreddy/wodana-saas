@@ -13,9 +13,9 @@
   --crm-soft-gradient: var(--wd-color-surface-muted);
 }
 
-.theme :global(.wd-select-button) { min-block-size: 34px; border-radius: 6px; padding-inline: 10px 0; font-size: 12px; background: var(--wd-color-surface); color: var(--wd-color-text); border-color: var(--wd-color-border-strong); }
-.theme :global(.wd-picker-popover) { background: var(--wd-color-surface); color: var(--wd-color-text); border: 1px solid var(--wd-color-border-strong); border-radius: 7px; padding: 4px; }
-.theme :global(.wd-picker-item) { font-size: 12px; min-block-size: 32px; padding: 6px 9px; border-radius: 4px; }
+.theme :global(.wd-select-button) { min-block-size: 34px; border-radius: var(--wd-radius-xs); padding-inline: var(--wd-space-2) 0; font-size: var(--wd-text-xs); background: var(--wd-color-surface); color: var(--wd-color-text); border-color: var(--wd-color-border-strong); }
+.theme :global(.wd-picker-popover) { background: var(--wd-color-surface); color: var(--wd-color-text); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-xs); padding: var(--wd-space-1); }
+.theme :global(.wd-picker-item) { font-size: var(--wd-text-xs); min-block-size: 32px; padding: var(--wd-space-1-5) var(--wd-space-2); border-radius: var(--wd-radius-2xs); }
 .theme :global(.wd-picker-item[data-focused]) { background: var(--wd-color-surface-hover); }
 .theme :global(.wd-picker-item[data-selected]) { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-text); font-weight: 600; }
 .theme :global(.wd-select-indicator) { inline-size: 28px; block-size: 28px; border-inline-start: 0; }

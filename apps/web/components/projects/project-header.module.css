@@ -1,7 +1,7 @@
 .header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-phi-3); min-block-size: 3.25rem; margin-block-end: var(--wd-phi-2); }
 .identity { display: flex; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; }
 .mark { display: grid; flex: none; place-items: center; inline-size: 2.4rem; block-size: 2.4rem; border-radius: var(--wd-radius-md); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); letter-spacing: .04em; }
-.copy { display: grid; gap: .14rem; min-inline-size: 0; }
+.copy { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .titleRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 .titleRow h1 { margin: 0; overflow: hidden; color: var(--wd-color-text); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-overflow: ellipsis; white-space: nowrap; }
 .meta { display: flex; flex-wrap: wrap; margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

@@ -9,5 +9,5 @@
 .preview { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-5); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
 .preview h2 { margin: var(--wd-space-2) 0 0; font-size: var(--wd-text-lg); }
 .preview p { margin: 0; color: var(--wd-color-text-secondary); }
-.previewAction { justify-self: start; margin-block-start: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); color: #fff; font-size: var(--wd-text-sm); font-weight: 600; }
+.previewAction { justify-self: start; margin-block-start: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); color: var(--wd-color-text-inverse); font-size: var(--wd-text-sm); font-weight: 600; }
 @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }

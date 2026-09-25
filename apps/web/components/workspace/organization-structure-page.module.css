@@ -38,4 +38,4 @@
 .historyList > li > div { inline-size: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--wd-flow-3); }
 .historyList strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 .historyList small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-@media (max-width: 48rem) { .page { padding: 1.25rem 1rem 2.5rem; } .formColumns { grid-template-columns: 1fr; } .actions { inline-size: 100%; } .actions :global(.wd-button) { flex: 1; } }
+@media (max-width: 48rem) { .page { padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10); } .formColumns { grid-template-columns: 1fr; } .actions { inline-size: 100%; } .actions :global(.wd-button) { flex: 1; } }

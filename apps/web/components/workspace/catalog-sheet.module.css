@@ -1,20 +1,20 @@
 .sheet {
   min-inline-size: 0;
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
 }
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  padding: 0.5rem 0 0.75rem;
+  gap: var(--wd-space-3);
+  padding: var(--wd-space-2) 0 var(--wd-space-3);
   color: var(--wd-color-text-secondary);
 }
 .toolbar > div {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--wd-space-2);
 }
 .scroll {
   overflow: auto;
@@ -32,10 +32,10 @@
   inset-block-start: 0;
   z-index: 2;
   height: 2.25rem;
-  padding: 0.5rem 0.6rem;
+  padding: var(--wd-space-2) var(--wd-space-2);
   background: var(--wd-color-surface-muted);
   color: var(--wd-color-text-secondary);
-  font-size: 0.68rem;
+  font-size: var(--wd-text-2xs);
   font-weight: 500;
   white-space: nowrap;
   text-align: start;
@@ -54,7 +54,7 @@
   min-inline-size: 2.5rem;
   text-align: center;
   color: var(--wd-color-text-tertiary);
-  font-size: 0.65rem;
+  font-size: var(--wd-text-2xs);
 }
 .scroll td:last-child {
   min-inline-size: 4rem;
@@ -70,7 +70,7 @@
   background: transparent;
   color: var(--wd-color-text);
   font: inherit;
-  padding: 0.45rem 0.6rem;
+  padding: var(--wd-space-2) var(--wd-space-2);
   text-align: start;
   cursor: text;
   white-space: nowrap;
@@ -99,7 +99,7 @@
   min-block-size: 2.4rem;
   border: 1px solid var(--wd-color-text-secondary);
   border-radius: 0;
-  padding: 0.4rem 0.5rem;
+  padding: var(--wd-space-1-5) var(--wd-space-2);
   font: inherit;
   background: var(--wd-color-surface);
   color: var(--wd-color-text);
@@ -113,11 +113,11 @@
 }
 .columns {
   position: relative;
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
 }
 .columns summary {
   cursor: pointer;
-  padding: 0.5rem;
+  padding: var(--wd-space-2);
 }
 .columns fieldset {
   position: absolute;
@@ -127,31 +127,31 @@
   min-inline-size: 16rem;
   max-block-size: 22rem;
   overflow: auto;
-  padding: 0.75rem;
+  padding: var(--wd-space-3);
   border: 1px solid var(--wd-color-structural-divider);
-  border-radius: 0.4rem;
+  border-radius: var(--wd-radius-xs);
   background: var(--wd-color-surface);
   box-shadow: 0 6px 20px #0002;
 }
 .columns legend {
-  padding: 0.25rem;
+  padding: var(--wd-space-1);
   font-weight: 600;
 }
 .columns label {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem;
+  gap: var(--wd-space-2);
+  padding: var(--wd-space-1-5);
 }
 .error {
   display: block;
   color: var(--wd-color-danger);
-  padding: 0.4rem 0.6rem;
+  padding: var(--wd-space-1-5) var(--wd-space-2);
   white-space: normal;
 }
 .hint {
   color: var(--wd-color-text-tertiary);
-  font-size: 0.68rem;
+  font-size: var(--wd-text-2xs);
   line-height: 1.6;
 }
 @media (max-width: 48rem) {
@@ -163,7 +163,7 @@
   }
 }
 
-.empty { padding:1rem 0; font-size:.75rem; color:var(--wd-color-text-tertiary); }
+.empty { padding:var(--wd-space-4) 0; font-size:var(--wd-text-xs); color:var(--wd-color-text-tertiary); }
 .scroll input[type="checkbox"] { inline-size:.875rem; min-block-size:0; block-size:.875rem; margin:auto; accent-color:var(--wd-color-text); }
 .scroll td:first-child { inline-size:2.5rem; min-inline-size:2.5rem; }
 .scroll td:last-child { min-inline-size:4rem; inline-size:4rem; }
@@ -172,7 +172,7 @@
 .scroll tbody tr:has(input[type="checkbox"]:checked) td { background:var(--crm-accent-soft,var(--wd-color-surface-muted)); }
 .scroll :is(input,select,button):focus-visible { outline:2px solid var(--wd-color-text-secondary); outline-offset:-2px; }
 .scroll :is(input,select):disabled { opacity:.6; }
-.toolbar :global(.wd-button) { border-radius:.5rem; font-size:.75rem; min-block-size:2rem; }
+.toolbar :global(.wd-button) { border-radius:var(--wd-radius-sm); font-size:var(--wd-text-xs); min-block-size:2rem; }
 
 .scroll .mixedTable { table-layout:fixed; inline-size:100%; }
 .scroll .mixedTable td { min-inline-size:0; max-inline-size:none; }
@@ -182,12 +182,12 @@
 .mixedTable th[data-column="description"] { inline-size:25%; }
 .mixedTable th[data-column="kind"] { inline-size:13%; }
 @media(max-width:48rem) { .scroll .mixedTable { min-inline-size:48rem; } }
-.scroll th { block-size:2.75rem; background:color-mix(in srgb,var(--wd-color-surface-muted) 82%,var(--wd-color-surface)); text-transform:uppercase; font-size:.6875rem; font-weight:650; letter-spacing:.02em; }
+.scroll th { block-size:2.75rem; background:color-mix(in srgb,var(--wd-color-surface-muted) 82%,var(--wd-color-surface)); text-transform:uppercase; font-size:var(--wd-text-2xs); font-weight:650; letter-spacing:.02em; }
 .scroll td { block-size:3.45rem; }
-.scroll td > button { min-block-size:3.45rem; padding-inline:.75rem; }
-.scroll td .cellPicker { padding:.75rem; min-inline-size:17rem; }
-.cellPicker :global(.wd-field-label) { font-size:.6875rem; }
+.scroll td > button { min-block-size:3.45rem; padding-inline:var(--wd-space-3); }
+.scroll td .cellPicker { padding:var(--wd-space-3); min-inline-size:17rem; }
+.cellPicker :global(.wd-field-label) { font-size:var(--wd-text-2xs); }
 .cellPicker :global(.wd-input-group input) { border:0; padding:0; min-block-size:0; }
-.cellPicker :global(.wd-select-button) { font-size:.75rem; }
-.pickerActions { display:flex; justify-content:flex-end; gap:.4rem; padding-block-start:.6rem; }
-.pickerActions :global(.wd-button) { min-block-size:1.75rem; font-size:.75rem; }
+.cellPicker :global(.wd-select-button) { font-size:var(--wd-text-xs); }
+.pickerActions { display:flex; justify-content:flex-end; gap:var(--wd-space-1-5); padding-block-start:var(--wd-space-2); }
+.pickerActions :global(.wd-button) { min-block-size:1.75rem; font-size:var(--wd-text-xs); }

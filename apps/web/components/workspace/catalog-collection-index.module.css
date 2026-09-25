@@ -1,12 +1,12 @@
-.page { min-inline-size: 0; padding: 1.25rem 1.5rem 2rem; background: var(--wd-color-surface); color: var(--wd-color-text); }
-.toolbar { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-block: 0 .75rem; }
+.page { min-inline-size: 0; padding: var(--wd-space-5) var(--wd-space-6) var(--wd-space-8); background: var(--wd-color-surface); color: var(--wd-color-text); }
+.toolbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); margin-block: 0 var(--wd-space-3); }
 .toolbar :global(.wd-search-field) { inline-size: 19rem; max-inline-size: 100%; }
-.name { display: flex; align-items: center; gap: .6rem; min-inline-size: 0; }
+.name { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 .name strong { color: inherit; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .open:hover { color: var(--wd-color-action-primary); }
-.name small { flex: none; color: var(--wd-color-text-secondary); font-size: .6875rem; font-weight: 500; }
-.open { display: inline-flex; align-items: center; gap: .25rem; color: var(--wd-color-text-secondary); font-size: .75rem; text-decoration: none; }
-.form { display: grid; gap: .85rem; }
-.actions { display: flex; justify-content: flex-end; gap: .5rem; }
-.error { color: var(--wd-color-danger); font-size: .8rem; }
-@media (max-width: 48rem) { .page { padding: 1rem; }.toolbar :global(.wd-search-field) { inline-size: 100%; }.toolbar { flex-wrap: wrap; }.toolbar > :first-child { flex: 1 1 12rem; } }
+.name small { flex: none; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); font-weight: 500; }
+.open { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
+.form { display: grid; gap: var(--wd-space-3); }
+.actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+.error { color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+@media (max-width: 48rem) { .page { padding: var(--wd-space-4); }.toolbar :global(.wd-search-field) { inline-size: 100%; }.toolbar { flex-wrap: wrap; }.toolbar > :first-child { flex: 1 1 12rem; } }

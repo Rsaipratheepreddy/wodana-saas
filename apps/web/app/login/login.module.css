@@ -58,7 +58,7 @@
   overflow: auto;
   border-radius: var(--wd-radius-xl);
   padding: clamp(1.25rem, 3vw, 1.5rem);
-  background: #fff;
+  background: var(--wd-color-surface);
   box-shadow: 0 18px 54px rgb(0 0 0 / 18%);
   scrollbar-width: thin;
 }
@@ -83,7 +83,7 @@
   background: var(--wd-color-surface-muted);
 }
 .tenantLogo img { object-fit: contain; }
-.brandIdentity { display: grid; gap: 0.15rem; min-inline-size: 0; }
+.brandIdentity { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .tenantName { overflow: hidden; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-overflow: ellipsis; white-space: nowrap; }
 .brandIdentity > span { color: var(--login-muted); font-size: var(--wd-text-xs); }
 
@@ -91,7 +91,7 @@
 .formIntro { margin-block-end: var(--wd-space-5); }
 .formIntro h1 { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: -0.025em; line-height: 1.25; }
 .formIntro p { margin: var(--wd-space-1) 0 0; color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.5; }
-.loginRoot .backButton { margin: 0 0 var(--wd-space-3); border-color: var(--login-line); background: #fff; color: var(--login-ink); box-shadow: none; }
+.loginRoot .backButton { margin: 0 0 var(--wd-space-3); border-color: var(--login-line); background: var(--wd-color-surface); color: var(--login-ink); box-shadow: none; }
 .loginRoot .backButton:hover { background: var(--wd-color-surface-hover); color: var(--login-ink); }
 .loginForm { display: grid; gap: var(--wd-space-3); }
 .loginForm :global(.wd-field) { gap: var(--wd-space-1); }
@@ -115,7 +115,7 @@
   overflow: hidden;
   border: 1px solid var(--login-line);
   border-radius: var(--login-control-radius);
-  background: #fff;
+  background: var(--wd-color-surface);
   box-shadow: none;
 }
 .loginForm :global(.wd-input-group[data-hovered]) { border-color: var(--wd-color-border-strong); }
@@ -198,14 +198,14 @@
 .otpField > span { color: var(--login-ink); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
 .otpField > span i { color: var(--wd-color-danger); font-style: normal; }
 .otpField :global(.wd-otp) { justify-content: center; gap: var(--wd-space-2); }
-.otpField :global(.wd-otp input) { inline-size: 2rem; block-size: 2.25rem; border-color: var(--login-line); border-radius: var(--wd-radius-sm); background: #fff; color: var(--login-ink); }
+.otpField :global(.wd-otp input) { inline-size: 2rem; block-size: 2.25rem; border-color: var(--login-line); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--login-ink); }
 .mfaLinks { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--wd-space-2); }
 .mfaLinks .textButton { display: inline-flex; align-items: center; gap: var(--wd-space-1); }
 .deadlineNotice { margin: 0; color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.45; }
 .recoveryHeader { margin: 0; border-radius: var(--wd-radius-sm); padding: var(--wd-space-3); background: var(--wd-color-surface-muted); color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.45; }
 .recoveryHeader { display: flex; align-items: flex-start; gap: var(--wd-space-2); }
 .recoveryHeader svg { flex: none; }
-.qrPanel { display: grid; min-block-size: 8.5rem; place-items: center; background: #fff; }
+.qrPanel { display: grid; min-block-size: 8.5rem; place-items: center; background: var(--wd-color-surface); }
 .qrPanel img { inline-size: 8.5rem; block-size: 8.5rem; }
 .qrPanel span { padding: var(--wd-space-4); color: var(--login-muted); font-size: var(--wd-text-xs); }
 .manualKey { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); padding: var(--wd-space-1) var(--wd-space-2); color: var(--login-muted); font-size: var(--wd-text-xs); }
@@ -220,7 +220,7 @@
 .mfaForm :global(.wd-checkbox) { align-items: flex-start; font-size: var(--wd-text-xs); }
 .skipSetup { justify-self: center; }
 
-.loginRoot :global(.wd-modal) { inline-size: min(34rem, calc(100vw - 2rem)); border-radius: var(--wd-radius-lg); background: #fff; }
+.loginRoot :global(.wd-modal) { inline-size: min(34rem, calc(100vw - 2rem)); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
 .loginRoot :global(.wd-dialog > header) { padding: var(--wd-space-5); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .loginRoot :global(.wd-dialog > header h2) { font-size: var(--wd-text-lg); }
 .loginRoot :global(.wd-dialog > header p) { color: var(--login-muted); font-size: var(--wd-text-sm); }
@@ -240,7 +240,7 @@
 @media (max-width: 35rem) {
   .loginPanel { padding: 0; }
   .loginCard { inline-size: 100%; min-block-size: 100dvh; max-block-size: none; border-radius: 0; padding: var(--wd-space-6) var(--wd-space-5); box-shadow: none; }
-  .loginForm :global(.wd-input) { font-size: 1rem; }
+  .loginForm :global(.wd-input) { font-size: var(--wd-text-lg); }
   .recoveryCodes { grid-template-columns: 1fr; }
   .deviceLimit li { flex-wrap: wrap; }
   .deviceLimit li div { flex-basis: calc(100% - 4rem); }

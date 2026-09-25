@@ -6,16 +6,16 @@
   color: var(--wd-color-text);
 }
 
-.page > :global(.wd-callout) { margin-block-start: 1rem; }
+.page > :global(.wd-callout) { margin-block-start: var(--wd-space-4); }
 
 .summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-block-start: 1.25rem;
+  margin-block-start: var(--wd-space-5);
   border-block: 1px solid var(--wd-color-structural-divider);
 }
 
-.summary > div { display: grid; align-content: center; gap: .35rem; min-block-size: 7rem; padding: 1.15rem; }
+.summary > div { display: grid; align-content: center; gap: var(--wd-space-1-5); min-block-size: 7rem; padding: var(--wd-space-5); }
 .summary > div + div { border-inline-start: 1px solid var(--wd-color-structural-divider); }
 .summary small, .usage small, .accountUsage small, .muted { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .summary strong { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
@@ -24,28 +24,28 @@
 .section {
   display: grid;
   grid-template-columns: minmax(13rem, .42fr) minmax(24rem, 1fr);
-  gap: 2rem;
-  padding-block: 1.5rem;
+  gap: var(--wd-space-8);
+  padding-block: var(--wd-space-6);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 
 .sectionIntro h2 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
-.sectionIntro p { margin: .4rem 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.5; }
-.usageGrid { display: grid; gap: 1rem; }
-.usage { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .75rem; }
+.sectionIntro p { margin: var(--wd-space-1-5) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.5; }
+.usageGrid { display: grid; gap: var(--wd-space-4); }
+.usage { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--wd-space-3); }
 .usageIcon { display: grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: 50%; background: var(--wd-color-surface-muted); color: var(--wd-color-icon); }
-.usage > div { display: grid; gap: .5rem; }
-.usage > div > span { display: flex; justify-content: space-between; gap: .75rem; font-size: var(--wd-text-xs); }
+.usage > div { display: grid; gap: var(--wd-space-2); }
+.usage > div > span { display: flex; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-xs); }
 
 .accountUsage { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.accountUsage > div { display: flex; align-items: center; gap: .6rem; padding-inline: 1rem; }
+.accountUsage > div { display: flex; align-items: center; gap: var(--wd-space-2); padding-inline: var(--wd-space-4); }
 .accountUsage > div:first-child { padding-inline-start: 0; }
 .accountUsage > div + div { border-inline-start: 1px solid var(--wd-color-structural-divider); }
 .accountUsage span { display: grid; }
 .accountUsage strong { font-size: var(--wd-text-sm); }
 
-.documents { display: grid; gap: 1rem; padding-block: 1.5rem; }
-.truth { display: flex; align-items: center; gap: .5rem; margin-block-start: 1rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.documents { display: grid; gap: var(--wd-space-4); padding-block: var(--wd-space-6); }
+.truth { display: flex; align-items: center; gap: var(--wd-space-2); margin-block-start: var(--wd-space-4); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
 @media (max-width: 64rem) {
   .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -54,10 +54,10 @@
 }
 
 @media (max-width: 48rem) {
-  .page { padding: 1.25rem 1rem 2.5rem; }
-  .section { grid-template-columns: 1fr; gap: 1rem; }
-  .accountUsage { grid-template-columns: 1fr; gap: .8rem; }
-  .accountUsage > div { padding: .75rem 0; }
+  .page { padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10); }
+  .section { grid-template-columns: 1fr; gap: var(--wd-space-4); }
+  .accountUsage { grid-template-columns: 1fr; gap: var(--wd-space-3); }
+  .accountUsage > div { padding: var(--wd-space-3) 0; }
   .accountUsage > div + div { border-inline-start: 0; border-block-start: 1px solid var(--wd-color-structural-divider); }
 }
 

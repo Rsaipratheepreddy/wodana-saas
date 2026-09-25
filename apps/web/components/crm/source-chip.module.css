@@ -1,11 +1,11 @@
-.chip { display: inline-flex; align-items: center; gap: .375rem; flex-shrink: 0; padding: .3rem .5rem; border-radius: .375rem; background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); line-height: 1.25; }
+.chip { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); flex-shrink: 0; padding: var(--wd-space-1) var(--wd-space-2); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); line-height: 1.25; }
 .chip svg { inline-size: .875rem; block-size: .875rem; flex: none; }
 .chip span { white-space: nowrap; }
 
-.chip[data-source="self_generated"], .chip[data-source="website"] { background: #e3edff; color: #203e77; }
+.chip[data-source="self_generated"], .chip[data-source="website"] { background: var(--wd-color-surface-muted); color: #203e77; }
 .chip[data-source="company"], .chip[data-source="developer"] { background: #ede5fa; color: #573580; }
-.chip[data-source="third_party"] { background: #fff0d9; color: #785015; }
-.chip[data-source="digital_marketing"], .chip[data-source="instagram"] { background: #fce3ef; color: #853756; }
-.chip[data-source="referral"], .chip[data-source="repeat"] { background: #dcf2ec; color: #205b4b; }
-.chip[data-source="facebook"] { background: #e3edff; color: #203e77; }
-.chip[data-source="whatsapp"] { background: #dcf2ec; color: #205b4b; }
+.chip[data-source="third_party"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+.chip[data-source="digital_marketing"], .chip[data-source="instagram"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.chip[data-source="referral"], .chip[data-source="repeat"] { background: var(--wd-color-info-subtle); color: var(--wd-color-info); }
+.chip[data-source="facebook"] { background: var(--wd-color-surface-muted); color: #203e77; }
+.chip[data-source="whatsapp"] { background: var(--wd-color-info-subtle); color: var(--wd-color-info); }

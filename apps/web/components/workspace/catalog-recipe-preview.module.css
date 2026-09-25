@@ -1,22 +1,22 @@
 .page {
-  padding: 1rem 1.5rem 2rem;
+  padding: var(--wd-space-4) var(--wd-space-6) var(--wd-space-8);
   color: var(--wd-color-text);
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
 }
 .page header,
 .sectionHeading {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--wd-space-4);
   align-items: center;
 }
 .page h2 {
-  font-size: 1rem;
-  margin: 0 0 0.35rem;
+  font-size: var(--wd-text-lg);
+  margin: 0 0 var(--wd-space-1-5);
   font-weight: 600;
 }
 .page h3 {
-  font-size: 0.8rem;
+  font-size: var(--wd-text-sm);
   font-weight: 600;
   margin: 0;
 }
@@ -27,35 +27,35 @@
 .inputs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.75rem;
-  padding-block: 0.75rem;
+  gap: var(--wd-space-3);
+  padding-block: var(--wd-space-3);
 }
 .page label {
   display: grid;
-  gap: 0.35rem;
+  gap: var(--wd-space-1-5);
   color: var(--wd-color-text-secondary);
-  font-size: 0.7rem;
+  font-size: var(--wd-text-2xs);
 }
 .page :is(input, select) {
   inline-size: 100%;
   min-inline-size: 0;
   border: 1px solid var(--wd-color-border-control);
-  border-radius: 0.3rem;
+  border-radius: var(--wd-radius-2xs);
   background: var(--wd-color-surface);
   color: var(--wd-color-text);
-  padding: 0.5rem;
+  padding: var(--wd-space-2);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
 }
 .measurements {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.75rem;
-  padding-block: 0.5rem 1rem;
+  gap: var(--wd-space-3);
+  padding-block: var(--wd-space-2) var(--wd-space-4);
 }
 .options {
   border-block-start: 1px solid var(--wd-color-structural-divider);
-  padding-block: 0.6rem;
+  padding-block: var(--wd-space-2);
 }
 .options summary {
   cursor: pointer;
@@ -63,31 +63,31 @@
 }
 .calculation {
   display: flex;
-  gap: 1.5rem;
+  gap: var(--wd-space-6);
   align-items: center;
   justify-content: space-between;
-  padding: 0.9rem 0;
+  padding: var(--wd-space-4) 0;
   border-block-start: 1px solid var(--wd-color-structural-divider);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .calculation span {
   display: block;
   color: var(--wd-color-text-secondary);
-  font-size: 0.65rem;
-  margin-block-end: 0.25rem;
+  font-size: var(--wd-text-2xs);
+  margin-block-end: var(--wd-space-1);
 }
 .calculation strong {
-  font-size: 1.2rem;
+  font-size: var(--wd-text-xl);
   font-weight: 600;
   white-space: nowrap;
 }
 .calculation strong small {
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
   font-weight: 400;
 }
 .calculation p {
   flex: 1;
-  font-size: 0.7rem;
+  font-size: var(--wd-text-2xs);
 }
 .body {
   display: grid;
@@ -98,7 +98,7 @@
   min-inline-size: 0;
 }
 .sectionHeading {
-  padding: 1rem 0 0.75rem;
+  padding: var(--wd-space-4) 0 var(--wd-space-3);
 }
 .sectionHeading span {
   color: var(--wd-color-text-secondary);
@@ -110,19 +110,19 @@
   border-collapse: collapse;
   min-inline-size: 42rem;
   inline-size: 100%;
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
 }
 .scroll th {
   text-align: start;
   font-weight: 500;
-  font-size: 0.67rem;
+  font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-secondary);
   background: var(--wd-color-surface-subtle);
-  padding: 0.6rem;
+  padding: var(--wd-space-2);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .scroll td {
-  padding: 0.65rem 0.5rem;
+  padding: var(--wd-space-3) var(--wd-space-2);
   border-block-end: 1px solid var(--wd-color-structural-divider);
   vertical-align: top;
   min-inline-size: 7rem;
@@ -139,9 +139,9 @@
 .scroll small {
   display: block;
   line-height: 1.4;
-  font-size: 0.65rem;
+  font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-tertiary);
-  margin-block-start: 0.3rem;
+  margin-block-start: var(--wd-space-1);
 }
 .scroll select {
   max-inline-size: 22rem;
@@ -162,15 +162,15 @@
   text-decoration: underline;
 }
 .summary {
-  padding: 1rem 0 1rem 1.25rem;
-  margin-inline-start: 1.25rem;
+  padding: var(--wd-space-4) 0 var(--wd-space-4) var(--wd-space-5);
+  margin-inline-start: var(--wd-space-5);
   border-inline-start: 1px solid var(--wd-color-structural-divider);
 }
 .summary dl {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 0.85rem 0.5rem;
-  margin-block: 1rem;
+  gap: var(--wd-space-3) var(--wd-space-2);
+  margin-block: var(--wd-space-4);
 }
 .summary dt {
   color: var(--wd-color-text-secondary);
@@ -182,19 +182,19 @@
 .summary p,
 .summary li,
 .summary summary {
-  font-size: 0.68rem;
+  font-size: var(--wd-text-2xs);
   line-height: 1.6;
 }
 .summary ul {
-  padding-inline-start: 1rem;
+  padding-inline-start: var(--wd-space-4);
 }
 .summary li {
-  margin-block: 0.5rem;
+  margin-block: var(--wd-space-2);
 }
 .summary h4 {
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
   font-weight: 600;
-  margin-block: 1rem 0.4rem;
+  margin-block: var(--wd-space-4) var(--wd-space-1-5);
 }
 .summary summary {
   cursor: pointer;
@@ -212,8 +212,8 @@
   .summary {
     border-inline-start: 0;
     border-block-start: 1px solid var(--wd-color-structural-divider);
-    margin: 1rem 0 0;
-    padding: 1rem 0;
+    margin: var(--wd-space-4) 0 0;
+    padding: var(--wd-space-4) 0;
   }
   .summary dl {
     max-inline-size: 25rem;
@@ -221,7 +221,7 @@
 }
 @media (max-width: 48rem) {
   .page {
-    padding: 1rem;
+    padding: var(--wd-space-4);
   }
   .inputs,
   .measurements {
@@ -229,7 +229,7 @@
   }
   .calculation {
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--wd-space-3);
   }
   .calculation p {
     min-inline-size: 10rem;
@@ -243,8 +243,8 @@
 }
 
 .lineChecks {
-  margin-block-start: 0.35rem;
-  font-size: 0.65rem;
+  margin-block-start: var(--wd-space-1-5);
+  font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-secondary);
 }
 .lineChecks summary {

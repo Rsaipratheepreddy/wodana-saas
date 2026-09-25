@@ -6,7 +6,7 @@
 
 .name {
   display: grid;
-  gap: 2px;
+  gap: var(--wd-space-0-5);
   min-width: 0;
 }
 
@@ -21,7 +21,7 @@
 .muted,
 .stageHeading p,
 .history small {
-  color: var(--wd-color-text-muted);
+  color: var(--wd-color-text-tertiary);
 }
 
 .form {
@@ -60,11 +60,11 @@
 }
 
 .stageHeading h2 {
-  font-size: var(--wd-font-size-md);
+  font-size: var(--wd-text-md);
 }
 
 .stageHeading p {
-  font-size: var(--wd-font-size-sm);
+  font-size: var(--wd-text-sm);
   margin-top: var(--wd-space-1);
 }
 
@@ -79,13 +79,13 @@
 
 .stages > li,
 .history > li {
-  border-top: 1px solid var(--wd-color-border-subtle);
+  border-top: 1px solid var(--wd-color-structural-divider);
   padding-block: var(--wd-space-5);
 }
 
 .stages > li:last-child,
 .history > li:last-child {
-  border-bottom: 1px solid var(--wd-color-border-subtle);
+  border-bottom: 1px solid var(--wd-color-structural-divider);
 }
 
 .stageTop {
@@ -96,10 +96,10 @@
 .stageTop > span {
   align-items: center;
   background: var(--wd-color-surface-subtle);
-  border: 1px solid var(--wd-color-border-subtle);
+  border: 1px solid var(--wd-color-structural-divider);
   border-radius: 999px;
   display: inline-flex;
-  font-size: var(--wd-font-size-xs);
+  font-size: var(--wd-text-xs);
   height: 24px;
   justify-content: center;
   width: 24px;

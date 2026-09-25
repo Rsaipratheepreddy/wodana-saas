@@ -46,4 +46,4 @@
 .invitationReady { display: grid; gap: var(--wd-flow-4); }
 .linkField { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-flow-2); }
 .invitationReady > p { min-block-size: var(--wd-flow-4); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-@media (max-width: 48rem) { .page { padding: 1.25rem 1rem 2.5rem; } .quickInviteForm { grid-template-columns: 1fr; } .quickInviteForm :global(.wd-button) { inline-size: 100%; } .identity small { display: block; } .linkField { grid-template-columns: 1fr; } .accessReview dl > div { grid-template-columns: 1fr; gap: var(--wd-flow-1); } }
+@media (max-width: 48rem) { .page { padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10); } .quickInviteForm { grid-template-columns: 1fr; } .quickInviteForm :global(.wd-button) { inline-size: 100%; } .identity small { display: block; } .linkField { grid-template-columns: 1fr; } .accessReview dl > div { grid-template-columns: 1fr; gap: var(--wd-flow-1); } }

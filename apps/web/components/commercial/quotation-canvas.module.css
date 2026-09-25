@@ -128,7 +128,7 @@
   border: 1px solid var(--wd-color-structural-divider);
   border-radius: 8px;
   background: var(--wd-color-surface);
-  box-shadow: var(--wd-shadow-overlay);
+  box-shadow: var(--wd-shadow-md);
 }
 .pagePopover label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .7rem; color: var(--wd-color-text-secondary); }
 .pagePopover input[type="color"] { inline-size: 30px; block-size: 26px; border: 0; padding: 0; background: none; }

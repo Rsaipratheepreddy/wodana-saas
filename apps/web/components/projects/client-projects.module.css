@@ -1,5 +1,5 @@
-.page { padding:16px 20px; min-inline-size:0; background:var(--wd-color-surface,#fff); }
-.client { display:flex; align-items:center; gap:8px; }
-.action { font-weight:600; color:var(--wd-color-primary); text-decoration:none; }
+.page { padding:var(--wd-space-4) var(--wd-space-5); min-inline-size:0; background:var(--wd-color-surface); }
+.client { display:flex; align-items:center; gap:var(--wd-space-2); }
+.action { font-weight:600; color:var(--wd-color-action-primary); text-decoration:none; }
 .action:hover { text-decoration:underline; }
-@media(max-width:600px) { .page { padding:12px; } }
+@media(max-width:600px) { .page { padding:var(--wd-space-3); } }

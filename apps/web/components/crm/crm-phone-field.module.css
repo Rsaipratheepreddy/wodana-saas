@@ -2,19 +2,19 @@
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr);
   align-items: start;
-  gap: 8px;
+  gap: var(--wd-space-2);
   min-width: 0;
 }
 
-.codeControl { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.codeControl { display: grid; align-content: start; gap: var(--wd-space-1-5); min-width: 0; }
 .codeButton {
   width: 100%;
   min-height: var(--wd-control-lg);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding-inline: 9px;
+  gap: var(--wd-space-1);
+  padding-inline: var(--wd-space-2);
   white-space: nowrap;
 }
 :global(.wd-dialog) .codeButton {
@@ -23,23 +23,23 @@
 }
 .codeButton span { overflow: hidden; text-overflow: ellipsis; }
 .codeButton svg { flex: none; }
-.countryPopover { width: min(360px, calc(100vw - 24px)); padding: 8px; }
-.countryDialog { display: grid; gap: 8px; outline: 0; }
+.countryPopover { width: min(360px, calc(100vw - 24px)); padding: var(--wd-space-2); }
+.countryDialog { display: grid; gap: var(--wd-space-2); outline: 0; }
 .countryOptions { max-height: 280px; overflow-y: auto; outline: 0; }
 .countryOption {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--wd-space-3);
   min-height: 38px;
-  padding: 6px 10px;
+  padding: var(--wd-space-1-5) var(--wd-space-2);
   border-radius: var(--wd-radius-sm);
-  font-size: 13px;
+  font-size: var(--wd-text-sm);
   cursor: pointer;
 }
 .countryOption[data-focused], .countryOption[data-selected] { background: var(--wd-color-surface-muted); }
 .countryOption span:first-child { min-width: 80px; white-space: nowrap; }
 .countryOption span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.noCountries { margin: 8px; color: var(--wd-color-text-secondary); font-size: 12px; }
+.noCountries { margin: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
 @media (max-width: 400px) {
   .phoneField { grid-template-columns: 104px minmax(0, 1fr); }

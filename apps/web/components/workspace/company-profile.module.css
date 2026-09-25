@@ -1,81 +1,75 @@
 .provider { min-block-size: 100%; background: var(--wd-color-surface); }
-:global([data-workspace-theme="light"]) .provider {
-  --wd-color-surface: #fff;
-  --wd-color-surface-muted: #fff;
-  --wd-color-surface-subtle: #fff;
-  --wd-color-surface-hover: #f7f7f8;
-  background: #fff;
-}
+
 .page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); min-block-size: 100%; margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
-.liveStatus { display: flex; align-items: center; gap: .4rem; padding-block: .75rem; color: var(--wd-color-success); font-size: var(--wd-text-sm); }
+.liveStatus { display: flex; align-items: center; gap: var(--wd-space-1-5); padding-block: var(--wd-space-3); color: var(--wd-color-success); font-size: var(--wd-text-sm); }
 
 .settingList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--wd-phi-5) var(--wd-phi-5); }
 .settingCard { position: relative; display: grid; align-content: start; gap: var(--wd-phi-2); min-inline-size: 0; min-block-size: 0; }
 .profileHeader { grid-column: 1 / -1; min-block-size: 0; padding-block-end: var(--wd-phi-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.profileBody { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 1rem; }
+.profileBody { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--wd-space-4); }
 .logoControl { position: relative; }
-.cardHeader { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.cardHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); }
 .cardHeader h2 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
-.profileIdentity { display: grid; min-inline-size: 0; gap: .75rem; }
+.profileIdentity { display: grid; min-inline-size: 0; gap: var(--wd-space-3); }
 .profileIdentity .cardHeader h2 { overflow: hidden; font-size: var(--wd-text-xl); letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
-.profileIdentity .cardHeader p { margin: .2rem 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.profileMeta { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; margin: 0; }
+.profileIdentity .cardHeader p { margin: var(--wd-space-1) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.profileMeta { display: flex; flex-wrap: wrap; gap: var(--wd-space-3) var(--wd-space-6); margin: 0; }
 .profileMeta .profileField { min-inline-size: min(100%, 12rem); }
-.profileFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .875rem 1rem; margin: 0; }
-.profileField { display: grid; min-inline-size: 0; gap: .28rem; }
+.profileFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
+.profileField { display: grid; min-inline-size: 0; gap: var(--wd-space-1); }
 .profileField:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .profileField dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); }
 .profileField dd { min-inline-size: 0; margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); line-height: 1.45; overflow-wrap: anywhere; }
 .logoPreview { display: grid; inline-size: 4.5rem; block-size: 4.5rem; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); color: var(--wd-identity-ink); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-bold); letter-spacing: -.03em; }
 .logoPreview[data-has-logo] { background: var(--wd-color-surface); color: var(--wd-color-text); }
-.logoPreview img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: .45rem; }
+.logoPreview img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--wd-space-2); }
 .fileInput { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-.permissionNote { margin: 1.25rem 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.permissionNote { margin: var(--wd-space-5) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 
-.editor { display: grid; gap: .75rem; }
-.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1rem; }
+.editor { display: grid; gap: var(--wd-space-3); }
+.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); }
 .fullField { grid-column: 1 / -1; }
-.logoFormActions { display: flex; align-items: center; gap: .75rem; }
+.logoFormActions { display: flex; align-items: center; gap: var(--wd-space-3); }
 .logoFormPreview { display: grid; inline-size: 3rem; block-size: 3rem; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-identity-ink); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-bold); }
 .logoFormPreview[data-has-logo] { background: var(--wd-color-surface); color: var(--wd-color-text); }
-.logoFormPreview img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: .25rem; }
+.logoFormPreview img { inline-size: 100%; block-size: 100%; object-fit: contain; padding: var(--wd-space-1); }
 
 /* Compact, flat configuration lists used by the adjacent workspace routes. */
-.detailSection { display: grid; gap: .75rem; max-inline-size: 72rem; padding-block: var(--wd-workspace-row-padding, .875rem); }
+.detailSection { display: grid; gap: var(--wd-space-3); max-inline-size: 72rem; padding-block: var(--wd-workspace-row-padding, .875rem); }
 .legalEntitiesSection, .organizationAccountSection, .terminologySection { scroll-margin-block-start: 5rem; }
-.detailSection > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.detailSection > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); }
 .detailSection h2, .requestList h3 { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
 .sectionHint, .standaloneSectionHint { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.45; }
 .standaloneSectionHint { max-inline-size: 44rem; }
-.organizationNotice { display: inline-flex; align-items: center; gap: .4rem; margin: 0; color: var(--wd-color-success); font-size: var(--wd-text-xs); }
+.organizationNotice { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-success); font-size: var(--wd-text-xs); }
 .legalEntityList, .organizationList, .terminologyList { display: grid; padding: 0; margin: 0; border-block: 1px solid var(--wd-color-structural-divider); list-style: none; }
-.legalEntityList > li, .organizationList > li, .terminologyList > li { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: .75rem; padding-block: var(--wd-workspace-row-padding, .875rem); }
+.legalEntityList > li, .organizationList > li, .terminologyList > li { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-workspace-row-padding, .875rem); }
 .legalEntityList > li + li, .organizationList > li + li, .terminologyList > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
 .organizationIcon { display: grid; inline-size: 2rem; block-size: 2rem; place-items: center; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-icon); }
-.legalEntityDetails, .organizationList > li > span:nth-child(2), .terminologyList > li > div:first-child, .requestRow > div:first-child { min-inline-size: 0; display: grid; gap: .125rem; }
+.legalEntityDetails, .organizationList > li > span:nth-child(2), .terminologyList > li > div:first-child, .requestRow > div:first-child { min-inline-size: 0; display: grid; gap: var(--wd-space-0-5); }
 .legalEntityDetails strong, .organizationList strong, .terminologyList strong, .requestRow strong { overflow: hidden; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .legalEntityDetails small, .organizationList small, .terminologyList small, .requestRow small { overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.legalEntityActions, .terminologyActions, .requestActions { display: flex; align-items: center; justify-content: flex-end; gap: .25rem; }
-.organizationSummary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem; }
-.organizationSummary > div { display: grid; gap: .125rem; }
+.legalEntityActions, .terminologyActions, .requestActions { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-1); }
+.organizationSummary { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); padding-block: var(--wd-space-2); }
+.organizationSummary > div { display: grid; gap: var(--wd-space-0-5); }
 .organizationSummary strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
 .organizationSummary small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.requestList { display: grid; gap: .5rem; padding-block-start: .5rem; }
-.requestRow { min-inline-size: 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-block-start: 1px solid var(--wd-color-structural-divider); padding-block: var(--wd-workspace-row-padding, .875rem); }
-.legalEntityForm, .organizationRequestForm, .terminologyForm { display: grid; gap: .75rem; }
+.requestList { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-2); }
+.requestRow { min-inline-size: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); padding-block: var(--wd-workspace-row-padding, .875rem); }
+.legalEntityForm, .organizationRequestForm, .terminologyForm { display: grid; gap: var(--wd-space-3); }
 .historyStatus { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .revisionList { display: grid; padding: 0; margin: 0; border-block: 1px solid var(--wd-color-structural-divider); list-style: none; }
-.revisionList > li { display: grid; gap: .35rem; padding-block: var(--wd-workspace-row-padding, .875rem); }
+.revisionList > li { display: grid; gap: var(--wd-space-1-5); padding-block: var(--wd-workspace-row-padding, .875rem); }
 .revisionList > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
 .revisionList strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
 .revisionList small, .revisionList p { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.revisionHeading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.revisionHeading { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); }
 @media (max-width: 52rem) {
-  .page { padding-block-start: 1.5rem; }
+  .page { padding-block-start: var(--wd-space-6); }
 }
 @media (max-width: 48rem) {
-  .profileBody { grid-template-columns: auto minmax(0, 1fr); gap: .75rem; }
-  .profileMeta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  .profileBody { grid-template-columns: auto minmax(0, 1fr); gap: var(--wd-space-3); }
+  .profileMeta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
   .profileMeta .profileField { min-inline-size: 0; }
 }
 @media (max-width: 38rem) {
@@ -91,7 +85,7 @@
   .requestActions { justify-content: flex-start; }
 }
 
-.brandColour { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.brandColour { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
 .brandSwatch { position: relative; display: inline-block; flex: none; inline-size: 2rem; block-size: 2rem; border-radius: var(--wd-radius-sm, 6px); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent); cursor: pointer; }
 .brandSwatch:has(input:focus-visible) { outline: 2px solid var(--wd-color-focus-ring, currentColor); outline-offset: 2px; }
 .brandSwatch:has(input:disabled) { cursor: default; }

@@ -29,7 +29,11 @@ The parent directory's `CLAUDE.md` describes the legacy FastAPI "IntDesignERP" a
 8. **Direction:** every component must work both left-to-right and right-to-left. Use CSS logical properties (`inline-start`, `padding-inline`, `inset-inline-*`), never `left`/`right`. Left/right arrow and chevron icons mirror automatically; mark any other directional icon with `data-directional="true"`.
 9. **Notifications are part of every module.** Each module defines its events (who is told what, on which channel) in the same slice. Every email renders through `renderBrandedEmail` (`services/business-core/src/email/branded-email.ts`) with the tenant brand from `TransactionalEmailService.brand()`. The tenant branding record (logo, name, accent) is the only source; Wodana appears only as "Powered by".
 10. **International by default.** Currency, tax model and labels, locale, time zone, working week, phone format, address structure and units come from the workspace's region pack (country profile), never from constants. Don't hard-code AED, INR, Asia/Dubai, "Emirate", +971 or en-AE in product code; read the region.
-11. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
+11. **Design tokens only.** One palette lives in `apps/web/styles/tokens.css` (light and dark); tenant co-branding changes it through `workspacePrimaryColorStyle` (actions, focus and selection follow the brand colour).
+   - Spacing inside components uses the 4px grid (`--wd-space-*`); page and section rhythm uses the golden ratio (`--wd-phi-*`).
+   - Type uses `--wd-text-*`; radius uses `--wd-radius-*`; colour uses the semantic `--wd-color-*` tokens.
+   - No raw values, no local palette overrides and no theme-specific colour rules in components. `styles/token-discipline.test.ts` enforces this; `node scripts/snap-to-tokens.mjs` fixes spacing, type and radius.
+12. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
 
 ## Verify before claiming done
 - Backend: `npm test --workspace @wodana/business-core` and typecheck.

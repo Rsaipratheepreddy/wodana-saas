@@ -1,39 +1,32 @@
 .provider, .page { min-inline-size: 0; background: var(--wd-color-surface); }
-:global([data-workspace-theme="light"]) .provider {
-  --wd-color-surface: #fff;
-  --wd-color-surface-muted: #fff;
-  --wd-color-surface-subtle: #fff;
-  --wd-color-surface-hover: #f7f7f8;
-  background: #fff;
-}
+
 .page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); min-block-size: 100%; margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
 .visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; padding: 0; border: 0; margin: -1px; clip: rect(0 0 0 0); white-space: nowrap; }
-.filters { padding: .75rem 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
-.filterControls { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.filters { padding: var(--wd-space-3) 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.filterControls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-2); }
 .searchField { flex: 1 1 14rem; max-inline-size: 24rem; min-inline-size: 0; }
 .selectField { flex: 0 0 9rem; min-inline-size: 0; }
 .selectField :global(.wd-field-label), .selectField :global(.wd-field-help), .selectField :global(.wd-field-error) { display: none; }
-.actor { display: grid; gap: .1rem; }
-.actor small { overflow: hidden; color: var(--wd-color-text-secondary); font-size: .6875rem; text-overflow: ellipsis; white-space: nowrap; }
+.actor { display: grid; gap: var(--wd-space-0-5); }
+.actor small { overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); text-overflow: ellipsis; white-space: nowrap; }
 .page time { white-space: nowrap; }
 
-.eventDetails { display: grid; gap: 1rem; }
-.eventDetails dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 0; }
-.eventDetails dl > div { min-inline-size: 0; display: grid; gap: .2rem; }
-.eventDetails dt, .changedFields > strong, .changeGrid section > strong { color: var(--wd-color-text-tertiary); font-size: .6875rem; font-weight: var(--wd-weight-medium); text-transform: uppercase; letter-spacing: .04em; }
+.eventDetails { display: grid; gap: var(--wd-space-4); }
+.eventDetails dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); margin: 0; }
+.eventDetails dl > div { min-inline-size: 0; display: grid; gap: var(--wd-space-1); }
+.eventDetails dt, .changedFields > strong, .changeGrid section > strong { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); text-transform: uppercase; letter-spacing: .04em; }
 .eventDetails dd { min-inline-size: 0; margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-xs); }
 .eventDetails dd small { display: block; overflow: hidden; color: var(--wd-color-text-tertiary); text-overflow: ellipsis; white-space: nowrap; }
-.eventDetails code { overflow-wrap: anywhere; color: var(--wd-color-text-secondary); font-size: .6875rem; }
-.changedFields { display: grid; gap: .45rem; border-block: 1px solid var(--wd-color-structural-divider); padding-block: .85rem; }
-.changedFields > div { display: flex; flex-wrap: wrap; gap: .35rem; }
+.eventDetails code { overflow-wrap: anywhere; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.changedFields { display: grid; gap: var(--wd-space-2); border-block: 1px solid var(--wd-color-structural-divider); padding-block: var(--wd-space-3); }
+.changedFields > div { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); }
 .changedFields > div > span:not(:global(.wd-badge)) { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
-.changeGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.changeGrid section { min-inline-size: 0; display: grid; gap: .4rem; }
-.changeGrid pre { min-block-size: 8rem; max-block-size: 18rem; overflow: auto; margin: 0; padding: .75rem; background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font-size: .6875rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-
+.changeGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.changeGrid section { min-inline-size: 0; display: grid; gap: var(--wd-space-1-5); }
+.changeGrid pre { min-block-size: 8rem; max-block-size: 18rem; overflow: auto; margin: 0; padding: var(--wd-space-3); background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (max-width: 48rem) {
-  .page { padding: 1.25rem 1rem 2.5rem; }
+  .page { padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10); }
   .filters { padding-inline: 0; }
   .searchField { flex-basis: 100%; max-inline-size: none; }
   .selectField { flex: 1 1 7rem; }

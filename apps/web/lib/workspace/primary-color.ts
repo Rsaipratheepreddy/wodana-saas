@@ -191,6 +191,16 @@ export function workspacePrimaryColorStyle(value: string | null | undefined | Wo
     "--wd-workspace-brand-dark-900": darkStep(0.92, 0.48),
     "--wd-workspace-brand-dark-950": darkStep(0.96, 0.32),
     "--wd-workspace-brand-dark-on": toHex(readableForeground(darkPrimary)),
+    // Actions (buttons, links, focus, selection) follow the tenant brand; without one they stay neutral.
+    "--wd-workspace-action-light-primary": toHex(lightPrimary),
+    "--wd-workspace-action-light-hover": toHex(colorAt(Math.max(0, primaryLightness - 0.07), chroma * 0.9, source.hue)),
+    "--wd-workspace-action-light-pressed": toHex(colorAt(Math.max(0, primaryLightness - 0.13), chroma * 0.8, source.hue)),
+    "--wd-workspace-action-light-subtle": lightPalette[0],
+    "--wd-workspace-action-dark-primary": toHex(darkPrimary),
+    "--wd-workspace-action-dark-hover": darkStep(0.81, 0.78),
+    "--wd-workspace-action-dark-pressed": darkStep(0.68, 0.85),
+    "--wd-workspace-action-dark-subtle": darkPalette[1],
+    "--wd-workspace-action-dark-on": toHex(readableForeground(darkPrimary)),
   };
 }
 

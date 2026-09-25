@@ -1,5 +1,5 @@
 .strip { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); flex-wrap: wrap; min-inline-size: 0; padding-block: var(--wd-space-2); margin-block-end: var(--wd-phi-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.copy { display: grid; gap: .18rem; min-inline-size: 0; }
+.copy { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .eyebrow { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); letter-spacing: .04em; }
 .stages { display: flex; align-items: center; gap: var(--wd-space-2); flex-wrap: wrap; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .stages strong { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }

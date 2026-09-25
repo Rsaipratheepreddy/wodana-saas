@@ -9,14 +9,14 @@
   flex: none;
 }
 .tabCount {
-  font-size: 0.7rem;
+  font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-secondary);
-  margin-inline-start: 0.35rem;
+  margin-inline-start: var(--wd-space-1-5);
   font-variant-numeric: tabular-nums;
 }
 .libraryHint {
-  margin: 0.7rem 0;
-  font-size: 0.75rem;
+  margin: var(--wd-space-3) 0;
+  font-size: var(--wd-text-xs);
   line-height: 1.6;
   color: var(--wd-color-text-secondary);
 }
@@ -24,8 +24,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding-block: 0.5rem;
+  gap: var(--wd-space-4);
+  padding-block: var(--wd-space-2);
 }
 .libraryToolbar > :first-child {
   flex: 1;
@@ -36,15 +36,15 @@
 .revisionActions {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--wd-space-2);
   flex: none;
 }
 .location {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding-block: 0.5rem;
-  font-size: 0.8rem;
+  gap: var(--wd-space-1-5);
+  padding-block: var(--wd-space-2);
+  font-size: var(--wd-text-sm);
 }
 .location strong {
   font-weight: 550;
@@ -58,7 +58,7 @@
 .fileFilters {
   display: flex;
   align-items: end;
-  gap: 0.8rem;
+  gap: var(--wd-space-3);
   padding: 0;
   flex: 1;
   justify-content: flex-end;
@@ -69,9 +69,9 @@
 }
 .fileFilters > small {
   margin-inline-start: auto;
-  padding-block: 0.6rem;
+  padding-block: var(--wd-space-2);
   color: var(--wd-color-text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
   white-space: nowrap;
 }
 .fileFilters :global(.wd-field-label) {
@@ -88,22 +88,22 @@
 .fileGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 1rem;
-  padding-block: 0.8rem;
+  gap: var(--wd-space-4);
+  padding-block: var(--wd-space-3);
 }
 .folder {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: 0.5rem;
+  gap: var(--wd-space-2);
   min-block-size: 8rem;
-  padding: 1rem;
+  padding: var(--wd-space-4);
   text-align: start;
   background: var(--wd-color-surface);
   color: var(--wd-color-text);
   border: 1px solid var(--wd-color-structural-divider);
-  border-radius: 0.4rem;
+  border-radius: var(--wd-radius-xs);
   cursor: pointer;
   font: inherit;
 }
@@ -112,20 +112,20 @@
   align-items: center;
   justify-content: space-between;
   inline-size: 100%;
-  gap: 0.6rem;
+  gap: var(--wd-space-2);
 }
 .folderTop svg {
   color: var(--wd-color-text-secondary);
 }
 .folderTop span {
   color: var(--wd-color-text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
 }
 .folder strong {
-  font-size: 0.85rem;
+  font-size: var(--wd-text-md);
   font-weight: 550;
   overflow-wrap: anywhere;
-  padding-inline-end: 1rem;
+  padding-inline-end: var(--wd-space-4);
 }
 .folderArrow {
   position: absolute;
@@ -134,7 +134,7 @@
   color: var(--wd-color-text-secondary);
 }
 .needsChanges {
-  font-size: 0.7rem;
+  font-size: var(--wd-text-2xs);
   color: var(--crm-accent);
 }
 .folder:hover,
@@ -153,7 +153,7 @@
   text-align: start;
   color: var(--wd-color-text);
   border: 1px solid var(--wd-color-structural-divider);
-  border-radius: 0.4rem;
+  border-radius: var(--wd-radius-xs);
   background: var(--wd-color-surface);
   overflow: hidden;
   cursor: pointer;
@@ -167,7 +167,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: var(--wd-space-2);
   background: var(--wd-color-surface-muted);
   block-size: 10rem;
   inline-size: 100%;
@@ -180,8 +180,8 @@
   object-fit: contain;
 }
 .cover small {
-  font-size: 0.72rem;
-  padding: 0.3rem;
+  font-size: var(--wd-text-xs);
+  padding: var(--wd-space-1);
   text-align: center;
 }
 .cover small[role="status"] {
@@ -191,24 +191,24 @@
 }
 .cover a {
   color: var(--crm-accent);
-  font-size: 0.8rem;
+  font-size: var(--wd-text-sm);
 }
 .fileInfo {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.8rem 0.85rem 0.4rem;
+  gap: var(--wd-space-1-5);
+  padding: var(--wd-space-3) var(--wd-space-3) var(--wd-space-1-5);
   min-inline-size: 0;
 }
 .fileInfo strong {
-  font-size: 0.82rem;
+  font-size: var(--wd-text-sm);
   font-weight: 550;
   overflow-wrap: anywhere;
   line-height: 1.5;
 }
 .fileInfo small {
   color: var(--wd-color-text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -222,21 +222,21 @@
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: 0.3rem;
-  padding: 0.4rem 0.85rem 0.85rem;
+  gap: var(--wd-space-1);
+  padding: var(--wd-space-1-5) var(--wd-space-3) var(--wd-space-3);
   margin-block-start: auto;
 }
 .fileState > small {
   color: var(--wd-color-text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
 }
 .status {
   display: inline-flex;
   align-items: center;
-  font-size: 0.68rem;
+  font-size: var(--wd-text-2xs);
   line-height: 1.4;
-  padding: 0.2rem 0.45rem;
-  border-radius: 0.25rem;
+  padding: var(--wd-space-1) var(--wd-space-2);
+  border-radius: var(--wd-radius-2xs);
   color: var(--wd-color-text-secondary);
   background: var(--wd-color-surface-muted);
 }
@@ -257,14 +257,14 @@
 .queue {
   display: flex;
   flex-direction: column;
-  padding-block: 0.5rem;
+  padding-block: var(--wd-space-2);
 }
 .queueRow {
   display: grid;
   grid-template-columns: 4rem minmax(0, 1fr) minmax(9rem, 13rem) 1rem;
   align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 0.25rem;
+  gap: var(--wd-space-4);
+  padding: var(--wd-space-3) var(--wd-space-1);
   background: transparent;
   color: var(--wd-color-text);
   text-align: start;
@@ -278,7 +278,7 @@
 }
 .queueRow .cover {
   block-size: 3.7rem;
-  border-radius: 0.25rem;
+  border-radius: var(--wd-radius-2xs);
 }
 .queueRow .cover svg {
   inline-size: 1.5rem;
@@ -295,15 +295,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.8rem;
-  padding-block: 3.5rem;
+  gap: var(--wd-space-3);
+  padding-block: var(--wd-space-12);
   text-align: center;
   color: var(--wd-color-text-secondary);
-  font-size: 0.8rem;
+  font-size: var(--wd-text-sm);
 }
 .empty strong {
   color: var(--wd-color-text);
-  font-size: 0.9rem;
+  font-size: var(--wd-text-md);
   font-weight: 550;
 }
 .empty p {
@@ -317,8 +317,8 @@
 .compactFileHeader {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding-block: 0.5rem;
+  gap: var(--wd-space-3);
+  padding-block: var(--wd-space-2);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .compactFileHeader > button span {
@@ -333,34 +333,34 @@
 }
 .fileDetail .compactFileHeader h1 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--wd-text-lg);
   font-weight: 550;
   overflow-wrap: anywhere;
   line-height: 1.45;
 }
 .compactFileHeader small {
   color: var(--wd-color-text-secondary);
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
 }
 .compactFileActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--wd-space-1-5);
   align-items: center;
 }
 .revisionBar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--wd-space-2);
   min-block-size: 3rem;
-  padding-block: 0.4rem;
+  padding-block: var(--wd-space-1-5);
 }
 .revisionBar > div:first-child:not(.revisionActions) {
   inline-size: 20rem;
   max-inline-size: 55%;
 }
 .revisionBar > small {
-  font-size: 0.72rem;
+  font-size: var(--wd-text-xs);
   color: var(--wd-color-text-secondary);
 }
 .revisionActions {
@@ -369,11 +369,11 @@
 .originalFile {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--wd-space-1);
   text-decoration: none;
   color: var(--wd-color-text);
-  font-size: 0.75rem;
-  padding: 0.4rem;
+  font-size: var(--wd-text-xs);
+  padding: var(--wd-space-1-5);
 }
 .originalFile:hover {
   text-decoration: underline;
@@ -381,23 +381,23 @@
 .fileHint {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
+  gap: var(--wd-space-2);
+  font-size: var(--wd-text-xs);
   color: var(--wd-color-text-secondary);
   line-height: 1.6;
-  margin: 0.1rem 0 0.65rem;
+  margin: var(--wd-space-0-5) 0 var(--wd-space-3);
 }
 .simpleFileBody {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
-  gap: 1.5rem;
-  padding-block: 0.4rem 1rem;
+  gap: var(--wd-space-6);
+  padding-block: var(--wd-space-1-5) var(--wd-space-4);
 }
 .fileWorkspace {
   min-inline-size: 0;
 }
 .fileWorkspace > button {
-  margin-block-start: 0.6rem;
+  margin-block-start: var(--wd-space-2);
 }
 .canvas {
   block-size: clamp(22rem, calc(100dvh - 18rem), 55rem);
@@ -422,13 +422,13 @@
 .comparisonGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--wd-space-4);
   min-inline-size: 0;
 }
 .comparisonPanel {
   min-inline-size: 0;
   border: 1px solid var(--wd-color-structural-divider);
-  border-radius: 0.4rem;
+  border-radius: var(--wd-radius-xs);
   overflow: hidden;
   background: var(--wd-color-surface);
 }
@@ -436,29 +436,29 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.7rem 0.8rem;
+  gap: var(--wd-space-3);
+  padding: var(--wd-space-3) var(--wd-space-3);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .comparisonPanel > header > div {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: var(--wd-space-2);
   min-inline-size: 0;
 }
 .comparisonPanel > header strong {
-  font-size: 0.82rem;
+  font-size: var(--wd-text-sm);
   font-weight: 600;
 }
 .comparisonPanel > header small,
 .comparisonPanel > p {
   color: var(--wd-color-text-secondary);
-  font-size: 0.7rem;
+  font-size: var(--wd-text-2xs);
 }
 .comparisonPanel > p {
   min-block-size: 3rem;
   margin: 0;
-  padding: 0.7rem 0.8rem;
+  padding: var(--wd-space-3) var(--wd-space-3);
   border-block-start: 1px solid var(--wd-color-structural-divider);
   line-height: 1.55;
   white-space: pre-wrap;
@@ -478,49 +478,49 @@
 .fileSidebar {
   min-inline-size: 0;
   border-inline-start: 1px solid var(--wd-color-structural-divider);
-  padding-inline-start: 1.25rem;
+  padding-inline-start: var(--wd-space-5);
 }
 .metadataHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--wd-space-2);
 }
 .metadataHeading h2,
 .comments h2 {
-  font-size: 0.82rem;
+  font-size: var(--wd-text-sm);
   font-weight: 550;
   margin: 0;
 }
 .fileMetadata {
-  margin: 0.6rem 0 1rem;
+  margin: var(--wd-space-2) 0 var(--wd-space-4);
 }
 .fileMetadata dt {
-  font-size: 0.68rem;
+  font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-secondary);
-  margin-block: 0.7rem 0.3rem;
+  margin-block: var(--wd-space-3) var(--wd-space-1);
 }
 .fileMetadata dd {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--wd-text-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.65;
 }
 .comments {
   border-block-start: 1px solid var(--wd-color-structural-divider);
-  padding-block: 1rem;
+  padding-block: var(--wd-space-4);
 }
 .comments h2 small {
-  margin-inline-start: 0.35rem;
+  margin-inline-start: var(--wd-space-1-5);
   color: var(--wd-color-text-secondary);
   font-weight: 400;
 }
 .inlineComposer {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.75rem 0;
+  gap: var(--wd-space-2);
+  padding: var(--wd-space-3) 0;
 }
 .inlineComposer > div {
   display: flex;
@@ -531,15 +531,15 @@
   overflow-y: auto;
 }
 .plainComment {
-  padding-block: 0.8rem;
+  padding-block: var(--wd-space-3);
   border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 .messageMeta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  font-size: 0.68rem;
+  gap: var(--wd-space-1-5);
+  font-size: var(--wd-text-2xs);
   color: var(--wd-color-text-secondary);
 }
 .messageMeta strong {
@@ -547,31 +547,31 @@
 }
 .messageMeta time {
   margin-inline-start: auto;
-  font-size: 0.6rem;
+  font-size: var(--wd-text-2xs);
 }
 .plainComment p {
-  margin: 0.4rem 0 0;
-  font-size: 0.75rem;
+  margin: var(--wd-space-1-5) 0 0;
+  font-size: var(--wd-text-xs);
   line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .decisionLabel {
   display: block;
-  font-size: 0.68rem;
+  font-size: var(--wd-text-2xs);
   font-weight: 550;
-  margin-block-start: 0.5rem;
+  margin-block-start: var(--wd-space-2);
 }
 .pinnedRevision {
   display: block;
-  margin-block-start: 0.35rem;
+  margin-block-start: var(--wd-space-1-5);
   color: var(--wd-color-text-secondary);
-  font-size: 0.62rem;
+  font-size: var(--wd-text-2xs);
 }
 @media (max-width: 950px) {
   .simpleFileBody {
     grid-template-columns: minmax(0, 1fr) minmax(15rem, 19rem);
-    gap: 1rem;
+    gap: var(--wd-space-4);
   }
   .compactFileHeader {
     flex-wrap: wrap;
@@ -604,7 +604,7 @@
   }
   .libraryToolbar {
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--wd-space-2);
   }
   .libraryToolbar > :first-child {
     max-inline-size: none;
@@ -614,7 +614,7 @@
   }
   .queueRow {
     grid-template-columns: 3rem minmax(0, 1fr) 1rem;
-    gap: 0.7rem;
+    gap: var(--wd-space-3);
   }
   .queueRow .fileState {
     grid-column: 2;
@@ -660,7 +660,7 @@
 
 /* Design board */
 .board { display: grid; gap: var(--wd-phi-2); }
-.pulse { display: grid; gap: .5rem; padding-block: .25rem var(--wd-phi-2); }
+.pulse { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-1) var(--wd-phi-2); }
 .pulseCopy { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-phi-3); flex-wrap: wrap; }
 .pulseCopy strong { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
 .pulseCopy span { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
@@ -668,7 +668,7 @@
 .progress > span { display: block; block-size: 100%; border-radius: inherit; background: var(--wd-color-action-primary); transition: inline-size var(--wd-duration-slow) var(--wd-ease-out); }
 .roomCell { color: var(--wd-color-text-secondary); }
 .scopeCell { font-weight: var(--wd-weight-medium); }
-.designCell { display: flex; align-items: center; gap: .6rem; min-inline-size: 0; }
+.designCell { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 .designCell > :global(*):first-child { flex: none; inline-size: 2.25rem; block-size: 2.25rem; border-radius: var(--wd-radius-xs); overflow: hidden; }
 .designCell > span:last-child { display: grid; min-inline-size: 0; }
 .designCell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--wd-weight-medium); }
@@ -679,49 +679,49 @@
 .folderGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--wd-phi-2); }
 
 /* A quiet folder browser, with room/item identity below each folder. */
-.folderGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:28px 24px; padding:16px 0; }
-.folder { display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px; border:0; background:transparent; text-align:center; border-radius:10px; color:var(--wd-color-text); cursor:pointer; }
+.folderGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:var(--wd-space-6) var(--wd-space-6); padding:var(--wd-space-4) 0; }
+.folder { display:flex; flex-direction:column; align-items:center; gap:var(--wd-space-2); padding:var(--wd-space-3); border:0; background:transparent; text-align:center; border-radius:var(--wd-radius-sm); color:var(--wd-color-text); cursor:pointer; }
 .folder:hover { background:var(--wd-color-surface-hover); }
 .folder:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:3px; }
-.folder strong { font-size:14px; line-height:1.4; }
-.folder small { font-size:11px; color:var(--wd-color-text-secondary); }
-.folderArtwork { display:block; position:relative; width:150px; height:114px; margin:12px 0 8px; border-radius:9px 14px 12px 12px; background:linear-gradient(160deg,#308ec2,#247cb3); }
-.folderArtwork::before { content:''; position:absolute; top:-10px; left:0; width:66px; height:26px; border-radius:12px 18px 0 0; background:#3996c9; }
-.folderArtwork > span { position:absolute; inset:10px 0 0; border-radius:12px; background:linear-gradient(150deg,#8cd6f1 0%,#66bce5 65%,#51aad7 100%); border-top:1px solid #bdeafa; }
+.folder strong { font-size:var(--wd-text-md); line-height:1.4; }
+.folder small { font-size:var(--wd-text-2xs); color:var(--wd-color-text-secondary); }
+.folderArtwork { display:block; position:relative; width:150px; height:114px; margin:var(--wd-space-3) 0 var(--wd-space-2); border-radius:var(--wd-radius-sm) var(--wd-radius-md) var(--wd-radius-md) var(--wd-radius-md); background:linear-gradient(160deg,#308ec2,#247cb3); }
+.folderArtwork::before { content:''; position:absolute; top:-10px; left:0; width:66px; height:26px; border-radius:var(--wd-radius-md) var(--wd-radius-lg) 0 0; background:#3996c9; }
+.folderArtwork > span { position:absolute; inset:10px 0 0; border-radius:var(--wd-radius-md); background:linear-gradient(150deg,#8cd6f1 0%,#66bce5 65%,#51aad7 100%); border-top:1px solid #bdeafa; }
 
 .folderGrid { align-items:stretch; }
 .folder { justify-content:flex-start; }
 .folderArtwork { flex-shrink:0; }
 .folder > strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-block-size:40px; line-height:20px; }
 .folder > small { display:block; min-block-size:16px; line-height:16px; max-inline-size:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.folderOwner { display:flex; align-items:center; justify-content:center; gap:6px; min-block-size:28px; margin-block-start:4px; max-inline-size:100%; font-size:11px; color:var(--wd-color-text-secondary); }
+.folderOwner { display:flex; align-items:center; justify-content:center; gap:var(--wd-space-1-5); min-block-size:28px; margin-block-start:var(--wd-space-1); max-inline-size:100%; font-size:var(--wd-text-2xs); color:var(--wd-color-text-secondary); }
 .folderOwner > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .folderOwner :global(.wd-avatar) { flex-shrink:0; }
 
 /* Put folder identity on its face instead of stacking rows underneath. */
-.folder { position:relative; min-block-size:176px; padding:12px; gap:0; }
-.folderArtwork { inline-size:100%; max-inline-size:210px; block-size:148px; margin:10px 0 0; }
-.folder > strong { position:absolute; inset-block-start:52px; inset-inline:26px; min-block-size:0; max-block-size:40px; color:#123d55; text-align:start; font-size:13px; line-height:18px; }
-.folder > small { position:absolute; inset-block-start:94px; inset-inline:26px; color:#20516b; text-align:start; font-size:10px; }
-.folder > :global(.wd-badge) { position:absolute; inset-block-end:24px; inset-inline-start:26px; font-size:10px; }
+.folder { position:relative; min-block-size:176px; padding:var(--wd-space-3); gap:0; }
+.folderArtwork { inline-size:100%; max-inline-size:210px; block-size:148px; margin:var(--wd-space-2) 0 0; }
+.folder > strong { position:absolute; inset-block-start:52px; inset-inline:26px; min-block-size:0; max-block-size:40px; color:var(--wd-color-info); text-align:start; font-size:var(--wd-text-sm); line-height:18px; }
+.folder > small { position:absolute; inset-block-start:94px; inset-inline:26px; color:var(--wd-color-info); text-align:start; font-size:var(--wd-text-2xs); }
+.folder > :global(.wd-badge) { position:absolute; inset-block-end:24px; inset-inline-start:26px; font-size:var(--wd-text-2xs); }
 .folderOwner { position:absolute; inset-block-end:20px; inset-inline-end:24px; margin:0; }
 .folderOwner > span:last-child:not(:global(.wd-avatar)) { display:none; }
-.folderOwner :global(.wd-avatar) { inline-size:26px; block-size:26px; font-size:10px; }
-.folderGrid { grid-template-columns:repeat(auto-fill,210px); gap:18px; }
-.folderOwner { color:#123d55; }
-@media(max-width:480px) { .folderGrid { grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; } }
+.folderOwner :global(.wd-avatar) { inline-size:26px; block-size:26px; font-size:var(--wd-text-2xs); }
+.folderGrid { grid-template-columns:repeat(auto-fill,210px); gap:var(--wd-space-4); }
+.folderOwner { color:var(--wd-color-info); }
+@media(max-width:480px) { .folderGrid { grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:var(--wd-space-2); } }
 
-.folder > small { inset-inline-end:auto; inline-size:fit-content; max-inline-size:calc(100% - 52px); min-block-size:0; padding:3px 7px; border-radius:5px; background:#e5f5ff; color:#164761; font-size:10px; font-weight:600; line-height:14px; }
+.folder > small { inset-inline-end:auto; inline-size:fit-content; max-inline-size:calc(100% - 52px); min-block-size:0; padding:var(--wd-space-0-5) var(--wd-space-1-5); border-radius:var(--wd-radius-2xs); background:var(--wd-color-info-subtle); color:var(--wd-color-info); font-size:var(--wd-text-2xs); font-weight:600; line-height:14px; }
 
-.fileGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,190px)); gap:20px 16px; padding-block:16px; }
-.fileTile { display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px; border:0; border-radius:8px; background:transparent; color:var(--wd-color-text); cursor:pointer; text-align:center; font:inherit; min-inline-size:0; }
+.fileGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,190px)); gap:var(--wd-space-5) var(--wd-space-4); padding-block:var(--wd-space-4); }
+.fileTile { display:flex; flex-direction:column; align-items:center; gap:var(--wd-space-1-5); padding:var(--wd-space-2); border:0; border-radius:var(--wd-radius-sm); background:transparent; color:var(--wd-color-text); cursor:pointer; text-align:center; font:inherit; min-inline-size:0; }
 .fileTile:hover { background:var(--wd-color-surface-hover); }
 .fileTile:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
 .fileThumbnail { display:flex; align-items:center; justify-content:center; height:90px; width:100%; }
 .fileThumbnail .cover { width:100%; height:80px; min-height:0; background:transparent; border:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.fileThumbnail .cover img { max-height:80px; max-width:120px; width:auto; height:auto; object-fit:contain; border-radius:4px; }
-.fileTile > strong { font-size:12px; line-height:1.45; font-weight:600; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.fileType { color:var(--wd-color-text-secondary); font-size:10px; font-weight:600; }
-.fileTile p { margin:0; font-size:11px; line-height:1.5; color:var(--wd-color-text-secondary); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.fileThumbnail .cover img { max-height:80px; max-width:120px; width:auto; height:auto; object-fit:contain; border-radius:var(--wd-radius-2xs); }
+.fileTile > strong { font-size:var(--wd-text-xs); line-height:1.45; font-weight:600; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.fileType { color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-weight:600; }
+.fileTile p { margin:0; font-size:var(--wd-text-2xs); line-height:1.5; color:var(--wd-color-text-secondary); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
-.displaySwitch { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.displaySwitch { display:flex; align-items:center; flex-wrap:wrap; gap:var(--wd-space-1-5); }
