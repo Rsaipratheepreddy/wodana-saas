@@ -64,6 +64,13 @@
       "when": 1790575200000,
       "tag": "0008_tax_and_numbering",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790578800000,
+      "tag": "0009_catalog_v2",
+      "breakpoints": true
     }
   ]
 }
