@@ -299,7 +299,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
       {workspaceArea === "response" ? <nav className={styles.subnav} aria-label="Routing and response settings"><button type="button" data-active={activeSection === "assignment" || undefined} onClick={() => openSection("assignment")}>Routing & capacity</button><button type="button" data-active={activeSection === "sla" || undefined} onClick={() => openSection("sla")}>Response targets</button></nav> : null}
 
       {!initialData.canView ? <Callout title="Enquiry access is restricted" tone="warning">Ask a workspace owner or administrator for CRM enquiry access.</Callout> : <>
-        {linkedLead ? <InspectorSheet isOpen title="Enquiry details" size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
+        {linkedLead ? <InspectorSheet isOpen hideTitle title="Enquiry details" size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
         {failure ? <Callout title="Enquiries could not be updated" tone="danger">{failure}</Callout> : null}
         {statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{statusMessage}</p> : null}
 
@@ -347,7 +347,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
           {activeSection === "assignment" ? <LeadRouting initialData={initialData} /> : null}
         </div>
 
-        {cardLead ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setCardLead(null); }} size="md" title="Enquiry details"><LeadWorkbench initialData={initialData} key={cardLead.id} lead={items.find((item) => item.id === cardLead.id) ?? cardLead} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
+        {cardLead ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setCardLead(null); }} size="md" hideTitle title="Enquiry details"><LeadWorkbench initialData={initialData} key={cardLead.id} lead={items.find((item) => item.id === cardLead.id) ?? cardLead} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
         {importOpen ? <LeadImportDialog initialData={initialData} onClose={() => setImportOpen(false)} onImported={() => reloadLeads()} /> : null}
         {reviewOpen ? <InspectorSheet isOpen onOpenChange={setReviewOpen} size="lg" title="Intake review"><IntakeInbox workspaceId={initialData.workspaceId} onChanged={() => reloadLeads()} /></InspectorSheet> : null}
         {pendingMove && pendingLead ? <MoveLeadDialog lead={pendingLead} move={pendingMove} saving={Boolean(savingLeadId)} onClose={() => setPendingMove(null)} onSave={(details) => saveMove(pendingMove, details)} /> : null}

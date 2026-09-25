@@ -29,7 +29,7 @@ export const CRM_LEAD_TRANSITIONS: Record<CrmLeadStatus, CrmLeadStatus[]> = {
 // Keep persisted legacy values readable; the product exposes four stages.
 export const CRM_LEAD_STAGES = [
   { id: "new", label: "New" },
-  { id: "connected", label: "Initiated" },
+  { id: "connected", label: "Contacted" },
   { id: "qualified", label: "Qualified" },
   { id: "disqualified", label: "Disqualified" },
 ] as const;

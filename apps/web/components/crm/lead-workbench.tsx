@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, CalendarDays, ChevronDown, Mail, MessageCircle, Phone, UserRound } from "lucide-react";
+import { ArrowUpRight, CalendarDays, ChevronDown, CircleDot, Globe, Mail, MessageCircle, Phone, PhoneCall, UserRound } from "lucide-react";
 import { Button, Callout, Tabs, SelectField, TextInput } from "@/design-system";
 import { leadStageLabel, leadStageOptions, type CrmLeadListItem, type LeadsPageData } from "@/lib/crm/leads";
 import { crmRequest, dateText, label, type RecordData } from "@/lib/crm/client";
@@ -19,6 +19,8 @@ import { RecordAttachments } from "./record-attachments";
 import { RequirementNotes } from "./requirement-notes";
 import { useWoddyRecord } from "./woddy-chat";
 import styles from "./crm-workbench.module.css";
+import { LogContactDialog } from "./log-contact-dialog";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 
 export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
@@ -31,7 +33,9 @@ export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify 
 
 export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lead: CrmLeadListItem; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
   useWoddyRecord("lead", lead.id, lead.title);
+  const t = useT();
   const { workspaceId } = initialData;
+  const [contacting, setContacting] = useState(false);
   const resource = useCrmResource<RecordData>(workspaceId, `leads/${lead.id}`);
   const [editing, setEditing] = useState(false);
   const [stageEditing, setStageEditing] = useState(false);
@@ -69,18 +73,21 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
   const enquiryReference = String(enquiry?.reference ?? lead.reference ?? "").trim();
   const enquiryTitle = String(enquiry?.title ?? lead.title ?? "").trim();
   const showEnquiryTitle = Boolean(enquiryTitle && enquiryTitle !== enquiryReference && enquiryTitle.toLowerCase() !== "enquiry");
-  const stageTone = live.status === "qualified" ? "success" : live.status === "disqualified" ? "danger" : live.status === "paused" ? "warning" : "info";
   return <div className={`${styles.workbench} ${styles.enquiryDetail}`}>
     <ResourceState {...resource} retry={resource.refresh} />
-    <header className={styles.enquirySummary}>
+    <header className={styles.recordHeader}>
       <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<h2>{customerDisplayName(lead.partyName)}</h2>{showEnquiryTitle && <p>{enquiryTitle}</p>}</div>
-      <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setEditing(true)}>Edit details</Button>
+      <div className={styles.recordActions}>
+        {active && !live.isConverted ? <Button size="compact" variant="primary" isDisabled={!detail} onPress={() => setContacting(true)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null}
+        <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
+      </div>
     </header>
-    <div className={styles.enquiryProperties}>
-      <div className={styles.enquiryProperty} data-tone={stageTone}><small>Stage</small><SelectField label={null} aria-label="Enquiry stage" selectedKey={String(live.status)} items={[{ id: String(live.status), label: leadStageLabel(String(live.status)) }, ...stageOptions.filter(item => item.id !== String(live.status))]} isDisabled={!detail || Boolean(opportunities.length) || !stageOptions.length} onSelectionChange={key => { if (key) { const changed = String(key) !== String(live.status); setSelectedStage(changed ? String(key) : ""); setStageEditing(changed); } }} /></div>
-      <div className={styles.enquiryProperty} data-tone="brand"><small>Owner</small><Button size="compact" isDisabled={!detail || !active} onPress={() => setAssigning(true)}><UserRound size={14} aria-hidden="true" /><span>{owner ?? "Assign owner"}</span><ChevronDown size={14} aria-hidden="true" /></Button></div>
-      <div className={styles.enquiryProperty} data-tone={live.nextActionAt ? "success" : "neutral"}><small>Next follow-up</small>{live.nextActionAt ? <strong><CalendarDays size={14} aria-hidden="true" />{dateText(live.nextActionAt)}</strong> : active && !live.isConverted ? <Button size="compact" isDisabled={!detail} onPress={() => setScheduling(true)}><CalendarDays size={14} aria-hidden="true" />Schedule</Button> : <strong>Not scheduled</strong>}</div>
-    </div>
+    <dl className={styles.properties} aria-label={t("Enquiry properties")}>
+      <div><dt><CircleDot size={14} aria-hidden="true" />{t("Stage")}</dt><dd className={styles.quietSelect}><SelectField label={null} aria-label="Enquiry stage" selectedKey={String(live.status)} items={[{ id: String(live.status), label: leadStageLabel(String(live.status)) }, ...stageOptions.filter(item => item.id !== String(live.status))]} isDisabled={!detail || Boolean(opportunities.length) || !stageOptions.length} onSelectionChange={key => { if (key) { const changed = String(key) !== String(live.status); setSelectedStage(changed ? String(key) : ""); setStageEditing(changed); } }} /></dd></div>
+      <div><dt><UserRound size={14} aria-hidden="true" />{t("Owner")}</dt><dd><Button size="compact" variant="quiet" isDisabled={!detail || !active} onPress={() => setAssigning(true)}><span>{owner ?? t("Assign owner")}</span><ChevronDown size={14} aria-hidden="true" /></Button></dd></div>
+      <div><dt><CalendarDays size={14} aria-hidden="true" />{t("Next follow-up")}</dt><dd>{live.nextActionAt ? <span>{dateText(live.nextActionAt)}</span> : active && !live.isConverted ? <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setScheduling(true)}>{t("Schedule")}</Button> : <span>{t("Not scheduled")}</span>}</dd></div>
+      <div><dt><Globe size={14} aria-hidden="true" />{t("Source")}</dt><dd>{leadOptionLabel(initialData.leadOptions?.sources, String(enquiry?.source ?? lead.source))}</dd></div>
+    </dl>
     {stageEditing && <InlineStageEditor key={`${lead.id}-${version}-${selectedStage}`} initialStage={selectedStage} lead={live} workspaceId={workspaceId} onCancel={() => { setStageEditing(false); setSelectedStage(""); }} onSaved={async () => { await onChanged(); resource.refresh(); setActivityRevision(value => value + 1); setStageEditing(false); setSelectedStage(""); }} />}
     {enquiry?.summary ? <section className={styles.requestSummary}><small>Project description</small><p>{String(enquiry.summary)}</p></section> : null}
     <div className={styles.enquiryColumns}><main><Tabs defaultSelectedKey="details" items={[
@@ -91,7 +98,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           ...(live.ownershipDueAt ? [["Reassign if no call or note", dateText(live.ownershipDueAt)] as [string, string]] : []),
           ["Mobile", formatPhoneForDisplay(String(enquiry?.primaryMobile ?? contact.mobile ?? ""), phoneCountry(contact.mobileCountryCode ?? contact.phoneCountryCode, initialData.defaultLocale))],
           ["Phone", formatPhoneForDisplay(String(enquiry?.primaryPhone ?? contact.phone ?? ""), defaultCountry)], ["Email", String(enquiry?.primaryEmail ?? contact.email ?? "Not provided")],
-          ["Emirate", leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)],
+          [t("Region"), leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)],
           ["Area", initialData.leadOptions?.areas?.[enquiryDetails.emirate ?? ""]?.find(item => item.id === enquiryDetails.area)?.label ?? enquiryDetails.area ?? enquiryDetails.location ?? "Not provided"],
           ["Budget range", leadOptionLabel(initialData.leadOptions?.budgetRanges, enquiryDetails.budgetRange)],
           ...(enquiryDetails.customerType ? [["Customer type", leadOptionLabel(initialData.leadOptions?.customerTypes, enquiryDetails.customerType)] as [string,string]] : []),
@@ -152,6 +159,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
 
     {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") } }} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
     {scheduling && <NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...live }} onClose={() => setScheduling(false)} onCreated={async () => { await saved(); setScheduling(false); }} />}
+    {contacting && <LogContactDialog workspaceId={workspaceId} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
     {assigning && <LeadAssignmentDialog lead={live} members={initialData.members} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={saved} /> : null}
   </div>;

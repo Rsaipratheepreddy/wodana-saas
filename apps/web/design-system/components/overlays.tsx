@@ -153,7 +153,7 @@ export function Drawer(props: SideSheetProps) { return <SideSheet {...props} sid
 export function BottomSheet(props: SideSheetProps) { return <SideSheet {...props} side="bottom" />; }
 
 export type InspectorSheetProps = Pick<SideSheetProps, "children" | "description" | "footer" | "isDirty" | "size" | "title"> & { isOpen: boolean; onOpenChange: (open: boolean) => void };
-export function InspectorSheet({ children, description, footer, isDirty = false, isOpen, onOpenChange, size = "md", title }: InspectorSheetProps) {
+export function InspectorSheet({ children, description, footer, hideTitle = false, isDirty = false, isOpen, onOpenChange, size = "md", title }: InspectorSheetProps & { /** The record's own header names it; keep the title for screen readers only. */ hideTitle?: boolean }) {
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   const [discardOpen,setDiscardOpen]=useState(false);
@@ -161,5 +161,5 @@ export function InspectorSheet({ children, description, footer, isDirty = false,
     if (isDirty) {setDiscardOpen(true);return;}
     onOpenChange(false);
   };
-  return <><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header><div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Close inspector" onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title="Discard unsaved changes?" body="Your saved records will stay as they are. Unsaved changes will be discarded." confirmLabel="Discard changes" onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></>;
+  return <><ModalOverlay {...portalTheme} dir={direction} className="wd-sheet-overlay" isDismissable isOpen={isOpen} onOpenChange={(open) => open ? onOpenChange(true) : requestClose()} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className="wd-side-sheet" data-size={size}><Dialog className="wd-sheet-dialog">{() => <><header data-minimal={hideTitle || undefined}><div className={hideTitle ? "wd-visually-hidden" : undefined}><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div><IconButton aria-label="Close inspector" onPress={requestClose}><X size={17} /></IconButton></header><div className="wd-sheet-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay><ConfirmationDialog isOpen={discardOpen} onOpenChange={setDiscardOpen} title="Discard unsaved changes?" body="Your saved records will stay as they are. Unsaved changes will be discarded." confirmLabel="Discard changes" onConfirm={()=>{setDiscardOpen(false);onOpenChange(false);}}/></>;
 }

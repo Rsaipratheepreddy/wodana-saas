@@ -254,3 +254,22 @@
 .customerDetail :global(.wd-tab-panel) .stack > :global(.wd-button[data-variant="secondary"]) { border-color: transparent; background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-weight: 650; }
 .customerDetail :global(.wd-tab-panel) .stack > :global(.wd-button[data-variant="secondary"]):hover { background: var(--wd-color-navigation-selected); }
 .customerDetail :global(.wd-tab-panel) .stack > :global(.wd-button[data-variant="danger"]) { background: var(--wd-color-danger-subtle); border-color: transparent; color: var(--wd-color-danger); font-weight: 650; }
+
+/* Record properties, Notion style: grey label column, value in full ink, no borders. */
+.properties { display: grid; gap: var(--wd-space-0-5); margin: 0; }
+.properties > div { display: grid; grid-template-columns: minmax(8rem, 10rem) minmax(0, 1fr); align-items: start; gap: var(--wd-space-3); min-block-size: var(--wd-control-sm); padding-block: var(--wd-space-1-5); border-radius: var(--wd-radius-sm); }
+.properties > div:hover { background: var(--wd-color-surface-hover); }
+.properties dt { padding-inline-start: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.properties dd { margin: 0; min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.recordHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); }
+.recordHeader h2 { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); line-height: 1.3; }
+.recordHeader p { margin: var(--wd-space-0-5) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.recordActions { display: flex; flex: none; gap: var(--wd-space-2); }
+.properties dt { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+.properties dt svg { flex: none; color: var(--wd-color-text-tertiary); }
+.properties dd :global(.wd-button[data-variant="quiet"]) { min-block-size: 24px; block-size: 24px; margin-inline-start: calc(-1 * var(--wd-space-1-5)); padding-inline: var(--wd-space-1-5); color: var(--wd-color-text); font-weight: var(--wd-weight-regular); }
+.quietSelect :global(.wd-select-button) { min-block-size: 24px; block-size: 24px; border-color: transparent; background: transparent; box-shadow: none; padding-inline: var(--wd-space-1-5); margin-inline-start: calc(-1 * var(--wd-space-1-5)); }
+.quietSelect :global(.wd-select-button:hover) { background: var(--wd-color-surface-hover); }
+.properties > div:has(dd > span, dd > .quietSelect) { align-items: center; }
+.quietSelect :global(.wd-field) { inline-size: auto; display: inline-grid; }
+.quietSelect :global(.wd-select-button) { inline-size: auto; gap: var(--wd-space-1); }

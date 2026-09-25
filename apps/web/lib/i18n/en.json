@@ -773,5 +773,11 @@
   "Enquiry lists": "Enquiry lists",
   "Assigned to": "Assigned to",
   "Action": "Action",
-  "More actions": "More actions"
+  "More actions": "More actions",
+  "Edit details": "Edit details",
+  "Enquiry properties": "Enquiry properties",
+  "Stage": "Stage",
+  "Owner": "Owner",
+  "Assign owner": "Assign owner",
+  "Schedule": "Schedule"
 }

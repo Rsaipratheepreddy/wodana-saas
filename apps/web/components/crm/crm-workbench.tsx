@@ -85,7 +85,7 @@ export function ResourceState({ loading, failure, retry }: { loading: boolean; f
 }
 
 export function FactList({ facts }: { facts: Array<[string, ReactNode]> }) {
-  return <div className={styles.enquiryFactsScroll}><table className={styles.enquiryFacts} aria-label="Record details"><thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead><tbody>{facts.map(([name, value]) => <tr key={name}><th scope="row">{name}</th><td>{value}</td></tr>)}</tbody></table></div>;
+  return <dl aria-label="Record details" className={styles.properties}>{facts.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>;
 }
 
 export const choice = (values: string[]) => values.map((id) => ({ id, label: label(id) }));
