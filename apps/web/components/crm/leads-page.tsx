@@ -296,7 +296,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
 
 
       {workspaceArea === "capture" && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label="Capture settings"><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>Forms</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>Lead sources</button><button type="button" data-active={activeSection === "options" || undefined} onClick={() => openSection("options")}>Answer choices</button></nav> : null}
-      {workspaceArea === "response" ? <nav className={styles.subnav} aria-label="Routing and response settings"><button type="button" data-active={activeSection === "assignment" || undefined} onClick={() => openSection("assignment")}>Routing & capacity</button><button type="button" data-active={activeSection === "sla" || undefined} onClick={() => openSection("sla")}>Response targets</button></nav> : null}
+
 
       {!initialData.canView ? <Callout title="Enquiry access is restricted" tone="warning">Ask a workspace owner or administrator for CRM enquiry access.</Callout> : <>
         {linkedLead ? <InspectorSheet isOpen hideTitle title="Enquiry details" size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
