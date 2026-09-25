@@ -277,3 +277,4 @@
 .questionFooter { padding-block-start:var(--wd-space-2); }
 @container (max-width:43rem) { .questionTop { gap:var(--wd-space-0-5); padding-inline:var(--wd-space-2); } .deleteField { min-inline-size:32px; padding-inline:var(--wd-space-1-5); } .deleteField span { display:none; } .inlineQuestionEditor { margin-inline:var(--wd-space-3); } }
 .shareFields { display: grid; gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.settings.settings { max-inline-size: 40rem; margin-inline: 0; }

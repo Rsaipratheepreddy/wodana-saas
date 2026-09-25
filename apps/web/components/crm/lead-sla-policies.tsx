@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Badge, Button, Callout, DataGrid, type DataGridColumn } from "@/design-system";
+import { Badge, Button, DataGrid, type DataGridColumn } from "@/design-system";
 import type { CrmSlaPolicy, LeadsPageData } from "@/lib/crm/leads";
-import { rows, type RecordData } from "@/lib/crm/client";
+import type { RecordData } from "@/lib/crm/client";
 import { ActionDialog, ResourceState, choice, useCrmResource, type ActionSpec } from "./crm-workbench";
 import styles from "./lead-assignment.module.css";
 
@@ -95,7 +95,7 @@ function eventPolicy(policy?: CrmSlaPolicy): ActionSpec {
           : { version: 1, mode: "elapsed" as const };
       return { ...values, ...(policy ? {} : { eventType: RESPONSE_EVENT }), calculationMode, schedule };
     },
-    submit: policy ? "Save" : "Add SLA",
+    submit: policy ? "Save" : "Add response target",
   };
 }
 
@@ -122,17 +122,15 @@ export function LeadResponseSla({ initialData }: { initialData: LeadsPageData })
   ];
 
   return <section aria-label="Response SLA" className={styles.page}>
-    <header className={styles.toolbar}>
-      <h2>Response targets</h2>
+    <header className={styles.toolbar} data-actions-only>
       <div className={styles.actions}>
         <Button size="compact" onPress={refresh}>Refresh</Button>
-        <Button size="compact" variant="primary" onPress={() => setAction(eventPolicy())}>Add SLA</Button>
+        <Button size="compact" variant="primary" onPress={() => setAction(eventPolicy())}>Add response target</Button>
       </div>
     </header>
-    <DataGrid ariaLabel="Response SLA policies" appearance="flush" columns={columns} data={policies} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle="No response SLA configured" emptyDescription="Add one to track first responses to new enquiries." />
+    <DataGrid ariaLabel="Response SLA policies" appearance="flush" columns={columns} data={policies} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle="No response targets yet" emptyDescription="Set how fast a new enquiry must get its first contact." />
     <ResourceState loading={loading} failure={failure} retry={refresh} />
-    {!loading && !failure ? <dl className={styles.health} aria-label="Response SLA health"><div><dt>Within target</dt><dd>{reportCount(health.withinTarget)}</dd></div><div><dt>Breached</dt><dd>{reportCount(health.breached)}</dd></div><div><dt>Average first response</dt><dd>{average}</dd></div></dl> : null}
+    {!loading && !failure && policies.length ? <dl className={styles.health} aria-label="Response SLA health"><div><dt>Within target</dt><dd>{reportCount(health.withinTarget)}</dd></div><div><dt>Breached</dt><dd>{reportCount(health.breached)}</dd></div><div><dt>Average first response</dt><dd>{average}</dd></div></dl> : null}
     {action ? <ActionDialog workspaceId={initialData.workspaceId} action={action} onClose={() => setAction(null)} onSaved={refresh} /> : null}
-    {!failure && summary && !rows(summary).length && !policies.length ? <Callout title="No response activity yet" tone="neutral">Add a response SLA before new enquiries arrive.</Callout> : null}
   </section>;
 }

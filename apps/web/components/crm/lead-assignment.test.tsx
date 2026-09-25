@@ -14,7 +14,7 @@ describe("Auto-assignment settings", () => {
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
-    expect(await screen.findByText(/elapsed minutes, including outside business hours/i)).toBeInTheDocument();
+    expect(await screen.findByText(/working minutes/i)).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: "Lead handoff" }));
     const dialog = await screen.findByRole("dialog", { name: "Unanswered lead handoff" });
     const minutes = within(dialog).getByRole("textbox", { name: /Elapsed minutes before another sales owner/ });

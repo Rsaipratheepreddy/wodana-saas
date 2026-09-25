@@ -290,12 +290,12 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
       : <Button size="compact" className={styles.createDeal} isDisabled={busy} aria-label={`Convert ${customerDisplayName(lead.partyName)} to opportunity`} onPress={() => setQualificationLead(lead)}>Convert</Button> },
   ];
   const pendingLead = pendingMove ? items.find((lead) => lead.id === pendingMove.leadId) : undefined;
-  const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" || activeSection === "options" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
+  const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
   return <DesignSystemProvider className={`${styles.provider} ${theme.theme}`} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label="Enquiries workspace" className={styles.page}>
 
 
-      {workspaceArea === "capture" && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label="Capture settings"><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>Forms</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>Lead sources</button><button type="button" data-active={activeSection === "options" || undefined} onClick={() => openSection("options")}>Answer choices</button></nav> : null}
+      {workspaceArea === "capture" && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label="Capture settings"><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>Forms</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>Lead sources</button></nav> : null}
 
 
       {!initialData.canView ? <Callout title="Enquiry access is restricted" tone="warning">Ask a workspace owner or administrator for CRM enquiry access.</Callout> : <>

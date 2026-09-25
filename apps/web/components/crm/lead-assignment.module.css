@@ -51,3 +51,5 @@
 @media (max-width: 48rem) { .queue { max-inline-size: none; } .queue :global(.wd-field) { inline-size: 100%; } .queue :global(.wd-select-button) { min-block-size: 2.75rem; } }
 
 .queue :global(.wd-select-indicator) { block-size: 100%; inline-size: 1.75rem; border-inline-start: 0; }
+.hint { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.toolbar[data-actions-only] { justify-content: flex-end; }

@@ -111,7 +111,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
   return <section aria-label="Auto-assignment configuration" className={assignmentStyles.page}>
     <Tabs defaultSelectedKey="managers" items={[{ id: "managers", label: "Sales owners", panel: <section aria-label="Sales owners">
       <header className={assignmentStyles.toolbar}>
-        <h2>Sales owners{queue?.takeoverAfterMinutes ? <small>Unanswered leads move after {queue.takeoverAfterMinutes} elapsed minutes, including outside business hours.</small> : null}</h2>
+        <p className={assignmentStyles.hint}>{queue?.takeoverAfterMinutes ? `Unanswered enquiries move to the next person after ${queue.takeoverAfterMinutes} working minutes.` : null}</p>
         <div className={assignmentStyles.actions}>
           {queues.length ? <div className={assignmentStyles.queue}><SelectField label="Queue" selectedKey={queue?.id ?? null} onSelectionChange={(key) => setQueueId(String(key))} items={queueOptions} /></div> : null}
           <Button size="compact" isDisabled={!queue || addingDefaults} isLoading={addingDefaults} onPress={async () => { if (!queue || addingDefaults) return; setAddingDefaults(true); setFailure(''); setNotice(''); try { const result = await crmRequest<{added:number}>(workspaceId, `queues/${queue.id}/default-managers`, 'POST', {}); await refresh(); setNotice(result.added ? `${result.added} default sales owners added.` : 'Default sales owners are already included.'); } catch(error) { setFailure((error as Error).message); } finally { setAddingDefaults(false); } }}>Add default sales owners</Button>
@@ -129,7 +129,7 @@ export function LeadRouting({ initialData }: { initialData: LeadsPageData }) {
       {notice ? <p role="status">{notice}</p> : null}
       <DataGrid ariaLabel="Assignment sales owners" appearance="flush" columns={ownerColumns} data={queue?.members ?? []} getRowId={(member) => member.membershipId} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle="No sales owners in this queue" emptyDescription="Add a sales owner before enabling auto-assignment." />
     </section> }, { id: "order", label: "Routing order", panel: <section aria-label="Routing order">
-      <header className={assignmentStyles.toolbar}><h2>Routing order</h2><Button size="compact" isDisabled={!queues.length} onPress={() => editPolicy()}>Add auto-assignment</Button></header>
+      <header className={assignmentStyles.toolbar} data-actions-only><span /><Button size="compact" isDisabled={!queues.length} onPress={() => editPolicy()}>Add auto-assignment</Button></header>
       <DataGrid ariaLabel="Auto-assignment routing order" appearance="flush" columns={policyColumns} data={[...policies].sort((a, b) => a.priority - b.priority)} getRowId={(policy) => policy.id} selectable={false} rowNumbers={false} showToolbar={false} showFooter={false} emptyTitle="No auto-assignment configured" emptyDescription="Add one to route incoming enquiries." />
     </section> }, { id: "rules", label: "Routing rules", panel: <section aria-label="Routing rules">
       <div className={assignmentStyles.toolbar}><span>Match enquiries to a specific queue.</span><Button size="compact" isDisabled={!policies.some((policy) => policy.status === "active") || !queues.length} onPress={() => setAction({

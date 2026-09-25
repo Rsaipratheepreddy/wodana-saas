@@ -89,9 +89,8 @@ describe("LeadsPage", () => {
     const data = structuredClone(leadsPageFixture);
     render(<LeadsPage initialData={data} initialSection="options" />);
 
-    expect(await screen.findByRole("heading", { name: "Workspace enquiry options" })).toBeInTheDocument();
-    expect(screen.getByText(/choices belong only to this workspace/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enquiry types Manage" })).toHaveTextContent("Enquiry types");
+    expect(await screen.findByRole("region", { name: "Enquiry options" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enquiry types List" })).toHaveTextContent("Enquiry types");
   });
 
   it("puts each enquiry in the list for its status with counts", async () => {
