@@ -1,3 +1,4 @@
+import { readTaskBoard } from "./project-task-board";
 import { projectRepository } from "./project-repository";
 import { approvalQueueQuery, approvalQueuePage, type ApprovalQueueSource } from "./project-approval-queue";
 import {readWorkQueue} from './project-work-queue';
@@ -163,6 +164,12 @@ export class ExecutionService {
         ORDER BY "sortDue",p.id::text,request.value->>'id' LIMIT 101`,
         [w,ctx.membershipId,ctx.permissions.has("projects.manage"),query.view,query.q,...(query.after??[null,null,null])]);
       return approvalQueuePage(rows.rows,ctx.membershipId,ctx.permissions.has("projects.review"));
+    });
+  }
+  taskBoard(actor:RequestActor,w:string,input:Record<string,unknown>) {
+    return this.access.run(actor,w,async ctx=>{
+      this.access.require(ctx,'projects.view','projects.manage');
+      return readTaskBoard(ctx,input);
     });
   }
   workQueue(actor:RequestActor,w:string,input:Record<string,unknown>) {

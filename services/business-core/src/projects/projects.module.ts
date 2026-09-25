@@ -167,6 +167,9 @@ export class ProjectsController {
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Query() query: Record<string,unknown>,
   ) { return this.execution.approvalQueue(actor,workspaceId,query); }
+  @Get("task-board") taskBoard(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query() query:Record<string,unknown>){
+    return this.execution.taskBoard(actor,workspaceId,query);
+  }
   @Get("work-queue") workQueue(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query() query:Record<string,unknown>){
     return this.execution.workQueue(actor,workspaceId,query);
   }
