@@ -13,7 +13,7 @@ describe("SecurityPage", () => {
   it("shows active sessions directly with a current-device label", () => {
     render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
     expect(screen.getByRole("heading", { name: "Two-step verification" })).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent === "9 recovery codes remaining")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "9 left")).toBeInTheDocument();
     expect(screen.getByText("Required by account policy")).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Active sessions" })).toBeInTheDocument();
     expect(screen.getByText("This device")).toBeInTheDocument();
@@ -46,7 +46,7 @@ describe("SecurityPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
 
-    await interaction.click(screen.getByRole("button", { name: "Recovery codes" }));
+    await interaction.click(screen.getByRole("button", { name: "New codes" }));
     const dialog = await screen.findByRole("dialog", { name: "Get new recovery codes" });
     await interaction.type(within(dialog).getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
     await interaction.click(within(dialog).getByRole("button", { name: "Generate codes" }));
@@ -65,7 +65,7 @@ describe("SecurityPage", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ recoveryCodes: ["AAAA-BBBB-CCCC-DDDD"] }) }));
     render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
-    await interaction.click(screen.getByRole("button", { name: "Recovery codes" }));
+    await interaction.click(screen.getByRole("button", { name: "New codes" }));
     await interaction.type(screen.getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
     await interaction.click(screen.getByRole("button", { name: "Generate codes" }));
     const dialog = await screen.findByRole("dialog", { name: "Save your recovery codes" });

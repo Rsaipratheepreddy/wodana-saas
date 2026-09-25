@@ -24,9 +24,18 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "E2E_AUTH_BYPASS=true npm run dev --workspace @wodana/web -- -p 3100"
+        "E2E_AUTH_BYPASS=true WODANA_NEXT_DIST_DIR=.next-review npm run dev --workspace @wodana/web -- -p 3100"
       ],
       "port": 3100
+    },
+    {
+      "name": "business-core-seed",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "AUTH_MODE=development npm run dev:business"
+      ],
+      "port": 8000
     }
   ]
 }

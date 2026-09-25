@@ -103,104 +103,49 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     label: "Settings",
     navigation: [
       {
+        id: "workspace-me",
+        label: "Account",
+        items: [
+          { href: "/workspace/settings/profile", icon: "members", id: "profile", label: "Profile" },
+          { href: "/workspace/settings/security", icon: "security", id: "security", label: "Sign-in security" },
+        ],
+      },
+      {
         id: "workspace-company",
         label: "Company",
         items: [
-          {
-            href: "/workspace/company",
-            icon: "company",
-            id: "company",
-            label: "Company profile",
-          },
-          {
-            href: "/workspace/language",
-            icon: "language",
-            id: "workspace-language",
-            label: "Workspace language",
-          },
+          { href: "/workspace/company", icon: "company", id: "company", label: "Company profile" },
+          { href: "/workspace/language", icon: "language", id: "workspace-language", label: "Workspace language" },
         ],
       },
       {
         id: "workspace-people",
         label: "Team & access",
         items: [
-          {
-            href: "/workspace/members",
-            icon: "members",
-            id: "members",
-            label: "People",
-          },
-          {
-            href: "/workspace/teams",
-            icon: "teams",
-            id: "teams",
-            label: "Teams",
-            // Groups are persisted, but do not yet drive project ownership, work
-            // assignment, capacity, or delivery. Keep the route available while
-            // withholding it from the primary workspace navigation until it does.
-            showInSidebar: false,
-          },
-          {
-            href: "/workspace/roles",
-            icon: "roles",
-            id: "roles",
-            label: "Roles & permissions",
-          },
+          { href: "/workspace/members", icon: "members", id: "members", label: "People" },
+          // Groups are persisted, but do not yet drive project ownership, work
+          // assignment, capacity, or delivery. Keep the route available while
+          // withholding it from the primary workspace navigation until it does.
+          { href: "/workspace/teams", icon: "teams", id: "teams", label: "Teams", showInSidebar: false },
+          { href: "/workspace/roles", icon: "roles", id: "roles", label: "Roles & permissions" },
+        ],
+      },
+      {
+        id: "workspace-account",
+        label: "Records & billing",
+        items: [
+          { href: "/workspace/legal-entities", icon: "company", id: "business-records", label: "Business records" },
+          { href: "/workspace/billing", icon: "billing", id: "billing", label: "Billing" },
+          { href: "/workspace/organizations", icon: "companies", id: "organizations-account", label: "Manage workspaces", showInSidebar: false },
+          { href: "/workspace/settings/audit-logs", icon: "audit", id: "audit-log", label: "Audit history" },
         ],
       },
       {
         id: "workspace-connections",
         label: "Connections",
         items: [
-          {
-            href: "/workspace/integrations",
-            icon: "integrations",
-            id: "integrations",
-            label: "Integrations",
-          },
-          {
-            href: "/workspace/settings/client-portal",
-            icon: "settings",
-            id: "client-portal-settings",
-            label: "Client portal",
-          },
-        ],
-      },
-      {
-        id: "workspace-account",
-        label: "Account & billing",
-        items: [
-          {
-            href: "/workspace/legal-entities",
-            icon: "company",
-            id: "business-records",
-            label: "Business records",
-          },
-          {
-            href: "/workspace/billing",
-            icon: "billing",
-            id: "billing",
-            label: "Billing",
-          },
-          {
-            href: "/workspace/organizations",
-            icon: "companies",
-            id: "organizations-account",
-            label: "Manage workspaces",
-            showInSidebar: false,
-          },
-          {
-            href: "/workspace/settings/security",
-            icon: "security",
-            id: "security",
-            label: "Sign-in security",
-          },
-          {
-            href: "/workspace/settings/audit-logs",
-            icon: "audit",
-            id: "audit-log",
-            label: "Audit history",
-          },
+          { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: "Integrations" },
+          { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: "Client portal" },
         ],
       },
     ],
@@ -439,7 +384,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("hrms-overview") ? [{ id: "team", label: "People", description: "Team, attendance and leave", href: "/workspace/hrms", icon: "members" as const }] : []),
       ...(allowed.has("pre-project-catalogs") ? [{ id: "resources", label: "Catalog", description: "Shared items, materials and prices", href: "/workspace/catalogs", icon: "materialPlan" as const }] : []),
       ...(allowed.has("integrations") ? [{ id: "integrations", label: "Connections", href: "/workspace/integrations", icon: "integrations" as const }] : []),
-      ...(modules.find(module => module.id === "workspace")?.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false && item.id !== "integrations").slice(0, 1).map(item => ({ id: "settings", label: "Settings", href: item.href, icon: "settings" as const })) ?? []),
+      ...(modules.find(module => module.id === "workspace")?.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false && item.id !== "integrations").sort((a, b) => Number(b.id === "company") - Number(a.id === "company")).slice(0, 1).map(item => ({ id: "settings", label: "Settings", href: item.href, icon: "settings" as const })) ?? []),
     ] },
   ];
   return sections.filter(section => section.items.length);

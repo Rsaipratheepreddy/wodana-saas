@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import { CheckCircle2, Trash2 } from "lucide-react";
 import {
   Button, Callout, ComboboxField, ConfirmationDialog, ControlledModalDialog,
-  DesignSystemProvider, SelectField, TextInput, ValidationSummary,
+  DesignSystemProvider, SelectField, SettingsPage, SettingsRow, SettingsSection, TextInput, ValidationSummary,
 } from "@/design-system";
 import {
   type CompanyAddress, type CompanyProfileData, type CompanyProfileUpdate, type LegalEntityRecord,
@@ -78,13 +78,6 @@ function measurementLabel(value: string): string {
 
 function weekStartLabel(value: number): string {
   return ({ 0: "Sunday", 1: "Monday", 6: "Saturday" } as Record<number, string>)[value] ?? "Monday";
-}
-
-function ProfileField({ label, value }: { label: string; value: string }) {
-  return <div className={styles.profileField}>
-    <dt>{label}</dt>
-    <dd>{value}</dd>
-  </div>;
 }
 
 function validate(form: ProfileForm): FormErrors {
@@ -304,72 +297,60 @@ export function CompanyProfile({
 
   return (
     <DesignSystemProvider className={styles.provider} currency={data.workspace.defaultCurrency} locale={data.workspace.defaultLocale} portalContainer={portalContainer} ref={setPortalContainer} timeZone={data.workspace.defaultTimezone}>
-      <section aria-label={t("Company profile")} className={styles.page}>
-        <h1 className="wd-visually-hidden">{t("Company profile")}</h1>
+      <SettingsPage aria-label={t("Company profile")} actions={canManage && entity ? <Button onPress={openEditor} size="compact">{t("Edit profile")}</Button> : null} title={t("Company profile")}>
         {status ? <div aria-live="polite" className={styles.liveStatus}><CheckCircle2 aria-hidden="true" size={15} />{status}</div> : null}
         {logoError ? <Callout title={t("Could not update brand")} tone="danger">{logoError}</Callout> : null}
 
-        {!entity ? <Callout title={t("Business details required")} tone="warning">{t("Add business details before editing company settings.")}</Callout> : <div className={styles.settingList}>
-          <section aria-labelledby="identity-details-heading" className={`${styles.settingCard} ${styles.profileHeader}`} id="company-information">
-            <div className={styles.profileBody}>
-              <div className={styles.logoControl}>
-                <div className={styles.logoPreview} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>
-                  {data.branding.logoUrl ? <Image alt={`${data.workspace.name} logo`} height={112} src={data.branding.logoUrl} unoptimized width={112} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}
-                </div>
-              </div>
-              <div className={styles.profileIdentity}>
-                <div className={styles.cardHeader}><div><h2 id="identity-details-heading">{data.workspace.name}</h2><p>{entity.registeredName}</p></div>{canManage ? <Button onPress={openEditor} size="compact">{t("Edit profile")}</Button> : null}</div>
-                <dl className={styles.profileMeta}>
-                  <ProfileField label={t("Company code")} value={entity.code} />
-                  <ProfileField label={t("Registered country")} value={displayName(entity.countryCode, "region")} />
-                </dl>
-                <BrandColour
-                  canManage={canManage}
-                  onError={setLogoError}
-                  onSaved={({ primaryColor, workspaceVersion }) => { setData((current) => ({ ...current, workspace: { ...current.workspace, version: workspaceVersion }, branding: { ...current.branding, primaryColor } })); setStatus("Brand colour updated."); router.refresh(); }}
-                  primaryColor={data.branding.primaryColor}
-                  workspaceId={data.workspace.id}
-                  workspaceVersion={data.workspace.version}
-                />
-                <AiAssistanceSetting canManage={canManage} workspaceId={data.workspace.id} />
-              </div>
-            </div>
+        {!entity ? <Callout title={t("Business details required")} tone="warning">{t("Add business details before editing company settings.")}</Callout> : <>
+          <SettingsSection id="company-information" title={t("Brand")}>
+            <SettingsRow hint={t("PNG, JPG or WebP · 5 MB")} label={t("Logo")}>
+              <span className={styles.logoThumb} data-has-logo={data.branding.logoUrl ? true : undefined} style={data.branding.logoUrl ? undefined : identityStyle(data.workspace.id)}>
+                {data.branding.logoUrl ? <Image alt={`${data.workspace.name} logo`} height={32} src={data.branding.logoUrl} unoptimized width={32} /> : <span aria-hidden="true">{identityInitials(data.workspace.name)}</span>}
+              </span>
+              {canManage ? <Button isLoading={isUploadingLogo} onPress={() => fileInput.current?.click()} size="compact" variant="quiet">{data.branding.logoUrl ? t("Replace") : t("Upload logo")}</Button> : null}
+              {canManage && data.branding.logoUrl ? <Button isDisabled={isUploadingLogo} onPress={() => setRemoveLogoOpen(true)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
+            </SettingsRow>
+            <SettingsRow label={t("Company name")}>{data.workspace.name}</SettingsRow>
+            <SettingsRow hint={t("Buttons, links and highlights follow this colour.")} label={t("Brand colour")}>
+              <BrandColour
+                bare
+                canManage={canManage}
+                onError={setLogoError}
+                onSaved={({ primaryColor, workspaceVersion }) => { setData((current) => ({ ...current, workspace: { ...current.workspace, version: workspaceVersion }, branding: { ...current.branding, primaryColor } })); setStatus("Brand colour updated."); router.refresh(); }}
+                primaryColor={data.branding.primaryColor}
+                workspaceId={data.workspace.id}
+                workspaceVersion={data.workspace.version}
+              />
+            </SettingsRow>
+            <SettingsRow hint={t("AI suggests; nothing changes until someone accepts.")} label={t("AI assistance")}><AiAssistanceSetting bare canManage={canManage} workspaceId={data.workspace.id} /></SettingsRow>
             <input accept="image/png,image/jpeg,image/webp" aria-label={t("Choose company logo")} className={styles.fileInput} onChange={uploadLogo} ref={fileInput} type="file" />
-          </section>
+          </SettingsSection>
 
-          <section aria-labelledby="legal-details-heading" className={styles.settingCard}>
-            <header className={styles.cardHeader}><h2 id="legal-details-heading">Legal &amp; tax</h2></header>
-            <dl className={styles.profileFields}>
-              <ProfileField label={t("Registered country")} value={displayName(entity.countryCode, "region")} />
-              <ProfileField label={t("Registration number")} value={optionalValue(entity.registrationNumber)} />
-              <ProfileField label={t("Tax registration number")} value={optionalValue(entity.taxRegistrationNumber)} />
-            </dl>
-          </section>
+          <SettingsSection id="legal-details" title={t("Legal & tax")}>
+            <SettingsRow label={t("Registered name")}>{entity.registeredName}</SettingsRow>
+            <SettingsRow label={t("Company code")}>{entity.code}</SettingsRow>
+            <SettingsRow label={t("Registered country")}>{displayName(entity.countryCode, "region")}</SettingsRow>
+            <SettingsRow label={t("Registration number")}>{optionalValue(entity.registrationNumber)}</SettingsRow>
+            <SettingsRow label={t("Tax registration number")}>{optionalValue(entity.taxRegistrationNumber)}</SettingsRow>
+          </SettingsSection>
 
-          <section aria-labelledby="address-details-heading" className={styles.settingCard} id="registered-office">
-            <header className={styles.cardHeader}><h2 id="address-details-heading">{t("Registered office")}</h2></header>
-            <dl className={styles.profileFields}>
-              <ProfileField label={t("Street address")} value={hasAddress ? optionalValue(address) : "Not provided"} />
-              <ProfileField label={t("City")} value={optionalValue(entity.address.city)} />
-              <ProfileField label={t("State / region")} value={optionalValue(entity.address.region)} />
-              <ProfileField label={t("Postal code")} value={optionalValue(entity.address.postalCode)} />
-            </dl>
-          </section>
+          <SettingsSection id="registered-office" title={t("Registered office")}>
+            <SettingsRow label={t("Street address")}>{hasAddress ? optionalValue(address) : t("Not provided")}</SettingsRow>
+            <SettingsRow label={t("City")}>{optionalValue(entity.address.city)}</SettingsRow>
+            <SettingsRow label={t("State / region")}>{optionalValue(entity.address.region)}</SettingsRow>
+            <SettingsRow label={t("Postal code")}>{optionalValue(entity.address.postalCode)}</SettingsRow>
+          </SettingsSection>
 
-          <section aria-labelledby="defaults-heading" className={styles.settingCard} id="regional-settings">
-            <header className={styles.cardHeader}><h2 id="defaults-heading">{t("Regional defaults")}</h2></header>
-            <dl className={styles.profileFields}>
-              <ProfileField label={t("Base currency")} value={`${data.workspace.defaultCurrency} · ${displayName(data.workspace.defaultCurrency, "currency")}`} />
-              <ProfileField label={t("Language & format")} value={defaultLocaleLabel} />
-              <ProfileField label={t("Time zone")} value={data.workspace.defaultTimezone} />
-              <ProfileField label={t("Measurements")} value={measurementLabel(data.workspace.unitSystem)} />
-              <ProfileField label={t("Week starts on")} value={weekStartLabel(data.workspace.weekStartsOn)} />
-            </dl>
-          </section>
-
-        </div>}
+          <SettingsSection id="regional-settings" title={t("Regional defaults")}>
+            <SettingsRow label={t("Base currency")}>{`${data.workspace.defaultCurrency} · ${displayName(data.workspace.defaultCurrency, "currency")}`}</SettingsRow>
+            <SettingsRow label={t("Language & format")}>{defaultLocaleLabel}</SettingsRow>
+            <SettingsRow label={t("Time zone")}>{data.workspace.defaultTimezone}</SettingsRow>
+            <SettingsRow label={t("Measurements")}>{measurementLabel(data.workspace.unitSystem)}</SettingsRow>
+            <SettingsRow label={t("Week starts on")}>{weekStartLabel(data.workspace.weekStartsOn)}</SettingsRow>
+          </SettingsSection>
+        </>}
         {!canManage ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can edit this profile.")}</p> : null}
-      </section>
+      </SettingsPage>
 
       {entity ? <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={isSaving} onPress={() => requestEditorChange(false)}>{t("Cancel")}</Button><Button form="company-profile-form" isLoading={isSaving} type="submit" variant="primary">{t("Save")}</Button></div>} isOpen={isOpen} onOpenChange={requestEditorChange} size="lg" title={t("Edit profile")}>
         <form className={styles.editor} data-wd-density="compact" id="company-profile-form" noValidate onSubmit={submit}>

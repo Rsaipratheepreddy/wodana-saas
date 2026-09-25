@@ -8,7 +8,7 @@ import { loadAiSettings, type AiSettings } from "@/lib/workspace/ai-settings";
 import styles from "./company-profile.module.css";
 
 /** Workspace switch for AI assistance. AI only suggests; nothing changes until a person accepts. */
-export function AiAssistanceSetting({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
+export function AiAssistanceSetting({ workspaceId, canManage, bare = false }: { workspaceId: string; canManage: boolean; /** Inside a settings row: just the switch. */ bare?: boolean }) {
   const t = useT();
   const [settings, setSettings] = useState<AiSettings | null>(null);
   const [error, setError] = useState("");
@@ -21,6 +21,10 @@ export function AiAssistanceSetting({ workspaceId, canManage }: { workspaceId: s
     if (!response.ok || !payload) { setError(payload?.message ?? t("AI settings could not be saved.")); return; }
     setSettings(payload);
   };
+  if (bare) return <>
+    <Switch aria-label={t("AI assistance")} isDisabled={!canManage || !settings.available} isSelected={settings.enabled} onChange={(value) => void change(value)} />
+    {error ? <InlineNotice message={error} tone="error" /> : null}
+  </>;
   return <div className={styles.aiSetting}>
     <Sparkles aria-hidden="true" size={16} />
     <div>

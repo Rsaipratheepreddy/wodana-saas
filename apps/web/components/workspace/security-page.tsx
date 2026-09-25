@@ -4,20 +4,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
-import {
-  Badge,
-  Button,
-  Callout,
-  Checkbox,
-  ConfirmationDialog,
-  ControlledModalDialog,
-  DataGrid,
-  DesignSystemProvider,
-  formatDate,
-  OtpInput,
-  TextInput,
-  type DataGridColumn,
-} from "@/design-system";
+import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, TextInput, formatDate, type DataGridColumn } from "@/design-system";
 import type { MfaSecurityStatus, SecurityPageData, SecuritySession } from "@/lib/workspace/security";
 import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./security-page.module.css";
@@ -227,38 +214,26 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
   ];
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label={t("Account security")} className={styles.page}>
+    <SettingsPage aria-label={t("Account security")} title={t("Sign-in security")}>
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
       {failure && !mfaDialog ? <Callout title={t("Security action failed")} tone="danger">{failure}</Callout> : null}
-      <section aria-labelledby="mfa-heading" className={styles.mfaCard}>
-        <div className={styles.mfaIcon}><ShieldCheck aria-hidden="true" size={20} /></div>
-        <div className={styles.mfaSummary}>
-          <div className={styles.mfaTitleRow}>
-            <h2 id="mfa-heading">{t("Two-step verification")}</h2>
-            <Badge tone={mfa.enabled ? "success" : "warning"}>{mfa.enabled ? "On" : "Off"}</Badge>
-          </div>
-          <p>{mfa.enabled
-            ? "Your password and an authenticator-app code are required when you sign in."
-            : "Add an authenticator-app code after your password for stronger sign-in protection."}</p>
-          {mfa.enabled ? <div className={styles.mfaFacts}>
-            <span><strong>{mfa.recoveryCodesRemaining}</strong> {t("recovery codes remaining")}</span>
-            {mfa.confirmedAt ? <span>{t("Turned on")}{" "}{formatDate(mfa.confirmedAt, DUBAI_FORMAT, { dateStyle: "medium" })}</span> : null}
-            {mfa.required ? <span>{t("Required by account policy")}</span> : null}
-          </div> : mfa.required && mfa.enrollmentDeadline ? <p className={styles.deadline}>
-            {t("Turn this on by")}{" "}{formatDate(mfa.enrollmentDeadline, DUBAI_FORMAT, { dateStyle: "medium" })}.
-          </p> : null}
-        </div>
-        <div className={styles.mfaActions}>
-          {mfa.enabled ? <>
-            <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("regenerate"); }} size="compact" variant="quiet"><KeyRound size={14} />{t("Recovery codes")}</Button>
-            {!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">{t("Turn off")}</Button> : null}
-          </> : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">{t("Set up two-step verification")}</Button>}
-        </div>
-      </section>
+      <SettingsSection id="mfa" title={t("Two-step verification")}>
+        <SettingsRow hint={mfa.enabled ? t("A code from your authenticator app is asked after your password.") : mfa.required && mfa.enrollmentDeadline ? `${t("Turn this on by")} ${formatDate(mfa.enrollmentDeadline, DUBAI_FORMAT, { dateStyle: "medium" })}` : t("Add an authenticator-app code after your password.")} label={t("Authenticator app")}>
+          <Badge tone={mfa.enabled ? "success" : "warning"}>{mfa.enabled ? t("On") : t("Off")}</Badge>
+          {mfa.enabled ? (!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">{t("Turn off")}</Button> : null)
+            : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">{t("Set up")}</Button>}
+        </SettingsRow>
+        {mfa.enabled ? <SettingsRow hint={t("Each code works once if you lose your authenticator.")} label={t("Recovery codes")}>
+          <span>{t("{count} left", { count: mfa.recoveryCodesRemaining })}</span>
+          <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("regenerate"); }} size="compact" variant="quiet"><KeyRound aria-hidden="true" size={14} />{t("New codes")}</Button>
+        </SettingsRow> : null}
+        {mfa.enabled && mfa.required ? <SettingsRow label={t("Policy")}>{t("Required by account policy")}</SettingsRow> : null}
+      </SettingsSection>
 
-      <header className={styles.sessionsHeader}><h2>{t("Active sessions")}</h2><p>{t("Browsers and devices currently signed in to your account.")}</p></header>
-      <DataGrid ariaLabel="Active sessions" gridLines columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle="No active sessions" emptyDescription="Signed-in browsers and devices will appear here." />
-    </section>
+      <SettingsSection id="sessions" title={t("Active sessions")}>
+        <DataGrid ariaLabel="Active sessions" gridLines columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle="No active sessions" emptyDescription="Signed-in browsers and devices will appear here." />
+      </SettingsSection>
+    </SettingsPage>
 
     <ControlledModalDialog
       description={mfaDialog === "setup" ? "Scan the QR code with your authenticator app, then enter its current six-digit code."

@@ -19,6 +19,7 @@ import {
   type WorkspaceUser,
 } from "./workspace-navigation";
 import { WorkspaceFlowNavigation } from "./workspace-flow-navigation";
+import { SettingsLayout } from "./settings-layout";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceAccountMenu } from "./workspace-account-menu";
 import { WorkspaceNotifications } from "./workspace-notifications";
@@ -207,7 +208,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} canPreExecution={modules.some(module => module.navigation.some(group => group.items.some(item => item.id === "pre-projects" && item.showInSidebar !== false)))} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : children}</main>
+        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} canPreExecution={modules.some(module => module.navigation.some(group => group.items.some(item => item.id === "pre-projects" && item.showInSidebar !== false)))} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && pathname !== "/workspace" ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );

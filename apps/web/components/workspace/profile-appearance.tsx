@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Check, Trash2 } from "lucide-react";
-import { AVATAR_PRESETS, Avatar, Button, InlineNotice, PageHeader, PresetPortrait } from "@/design-system";
+import { AVATAR_PRESETS, Avatar, Button, InlineNotice, PresetPortrait, SettingsPage, SettingsRow, SettingsSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { removeMyPhoto, saveMyAvatar, uploadMyPhoto, type MyProfile } from "@/lib/workspace/profile";
 import styles from "./profile-appearance.module.css";
@@ -34,20 +34,17 @@ export function ProfileAppearance({ workspaceId, userId, name, email, initial }:
   };
   const selected = profile.avatarPreset;
 
-  return <div className={styles.page}>
-    <PageHeader title={t("Profile")} />
-    <section aria-label={t("Photo")} className={styles.identity}>
-      <Avatar name={name} preset={selected ?? "auto"} seed={userId} size="xl" src={profile.photoUrl} />
-      <div className={styles.who}><strong>{name}</strong><small dir="ltr">{email}</small></div>
-      <div className={styles.photoActions}>
+  return <SettingsPage title={t("Profile")}>
+    <SettingsSection id="profile-photo" title={t("Photo")}>
+      <SettingsRow hint={<span dir="ltr">{email}</span>} label={name}>
+        <Avatar name={name} preset={selected ?? "auto"} seed={userId} size="lg" src={profile.photoUrl} />
         <input accept={PHOTO_TYPES.join(",")} className={styles.fileInput} onChange={(event) => { choose(event.target.files?.[0]); event.target.value = ""; }} ref={input} tabIndex={-1} type="file" aria-hidden="true" />
-        <Button isLoading={busy === "photo"} onPress={() => input.current?.click()} size="compact"><Camera aria-hidden="true" size={14} />{profile.photoUrl ? t("Change photo") : t("Upload photo")}</Button>
+        <Button isLoading={busy === "photo"} onPress={() => input.current?.click()} size="compact" variant="quiet"><Camera aria-hidden="true" size={14} />{profile.photoUrl ? t("Change photo") : t("Upload photo")}</Button>
         {profile.photoUrl ? <Button isDisabled={busy !== null} onPress={() => void run("photo", () => removeMyPhoto(workspaceId), t("Photo removed."))} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
-      </div>
-    </section>
+      </SettingsRow>
+    </SettingsSection>
 
-    <section aria-labelledby="avatar-heading" className={styles.avatars}>
-      <h2 id="avatar-heading">{t("Avatar")}</h2>
+    <SettingsSection id="avatar" title={t("Avatar")}>
       {profile.photoUrl ? <p className={styles.muted}>{t("Your photo is shown. The avatar is used if you remove it.")}</p> : null}
       <div className={styles.grid} role="radiogroup" aria-label={t("Avatar")}>
         {AVATAR_PRESETS.map((preset) => {
@@ -59,7 +56,7 @@ export function ProfileAppearance({ workspaceId, userId, name, email, initial }:
           </button>;
         })}
       </div>
-    </section>
+    </SettingsSection>
     {message ? <InlineNotice message={message.text} tone={message.tone} /> : null}
-  </div>;
+  </SettingsPage>;
 }

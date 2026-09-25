@@ -9,7 +9,9 @@ import styles from "./company-profile.module.css";
 type Saved = { primaryColor: string | null; workspaceVersion: number };
 
 /** The tenant's one brand colour: used by the app, sign-in, email, client portal and documents. */
-export function BrandColour({ canManage, primaryColor, workspaceId, workspaceVersion, onSaved, onError }: {
+export function BrandColour({ canManage, primaryColor, workspaceId, workspaceVersion, onSaved, onError, bare = false }: {
+  /** Inside a settings row: the row carries the label. */
+  bare?: boolean;
   canManage: boolean;
   primaryColor: string | null;
   workspaceId: string;
@@ -46,7 +48,7 @@ export function BrandColour({ canManage, primaryColor, workspaceId, workspaceVer
   };
 
   return (
-    <div className={styles.brandColour}>
+    <div className={styles.brandColour} data-bare={bare || undefined}>
       <label className={styles.brandSwatch} htmlFor={inputId} style={{ backgroundColor: shown }}>
         <input
           aria-label={t("Brand colour")}
@@ -59,7 +61,7 @@ export function BrandColour({ canManage, primaryColor, workspaceId, workspaceVer
         />
       </label>
       <div className={styles.brandColourText}>
-        <strong>{t("Brand colour")}</strong>
+        {bare ? null : <strong>{t("Brand colour")}</strong>}
         <span dir="ltr">{shown}{saved ? "" : ` · ${t("Default")}`}</span>
       </div>
       {canManage && changed ? <Button isDisabled={isSaving} onPress={() => void save(shown)} size="compact" variant="primary">{t("Save colour")}</Button> : null}

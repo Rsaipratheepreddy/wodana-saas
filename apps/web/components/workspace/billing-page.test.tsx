@@ -54,6 +54,5 @@ describe("BillingPage", () => {
     expect(screen.getByRole("progressbar", { name: "Active projects: 2 of 25" })).toHaveAttribute("aria-valuenow", "2");
     expect(screen.getByText("INV-1001")).toBeVisible();
     expect(screen.getByText(/Workspace access remains unchanged/)).toBeVisible();
-    expect(screen.getByText(/does not claim regional tax compliance/)).toBeVisible();
   });
 });

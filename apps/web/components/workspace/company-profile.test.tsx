@@ -17,7 +17,8 @@ describe("CompanyProfile", () => {
     render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
 
     expect(screen.getByRole("heading", { name: "Company profile" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Iglo Architects" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    expect(screen.getByText("Iglo Architects")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Legal & tax" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Registered office" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Regional defaults" })).toBeInTheDocument();

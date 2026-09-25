@@ -1,11 +1,8 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { CalendarDays, CheckCircle2, CreditCard, FolderKanban, Users } from "lucide-react";
-import {
-  Badge, Callout, Container, DataGrid, EmptyState, PageHeader, Progress, Surface,
-  type DataGridColumn, type StatusTone,
-} from "@/design-system";
+import { CreditCard } from "lucide-react";
+import { Badge, Callout, DataGrid, EmptyState, Progress, SettingsPage, SettingsRow, SettingsSection, type DataGridColumn, type StatusTone } from "@/design-system";
 import type { WorkspaceBillingData } from "@/lib/internal/types";
 import styles from "./billing-page.module.css";
 
@@ -47,19 +44,11 @@ const documentColumns: DataGridColumn<BillingDocument>[] = [
   { accessorKey: "dueAt", header: "Due", size: 140, cell: ({ row }) => date(row.original.dueAt) },
 ];
 
-function Usage({ icon, label, limit, value }: {
-  icon: React.ReactNode;
-  label: string;
-  limit: number;
-  value: number;
-}) {
+function Usage({ label, limit, value }: { label: string; limit: number; value: number }) {
   const t = useT();
   return <div className={styles.usage}>
-    <span className={styles.usageIcon}>{icon}</span>
-    <div>
-      <span><strong>{label}</strong><small>{value} {t("of")}{" "}{limit}</small></span>
-      <Progress label={`${label}: ${value} of ${limit}`} max={limit} value={value} />
-    </div>
+    <small>{value} {t("of")}{" "}{limit}</small>
+    <Progress label={`${label}: ${value} of ${limit}`} max={limit} value={value} />
   </div>;
 }
 
@@ -70,55 +59,35 @@ export function BillingPage({ data }: { data: WorkspaceBillingData }) {
   const collection = "version" in data.collection ? data.collection : null;
   const planName = contract ? (planNames[contract.planCode] ?? contract.planCode) : null;
 
-  return <Container as="section" className={styles.page} size="full">
-    <PageHeader eyebrow="Account & billing" title={t("Billing")}
-      description={t("Contract, organization allocation, usage and finance-verified billing records.")}
-      actions={<Badge tone={tone(data.accessPolicy.state)}>{humanize(data.accessPolicy.state)}</Badge>} />
-
-    <Callout title={data.accessPolicy.warning ? "Billing needs attention" : "Access policy"}
-      tone={data.accessPolicy.warning ? "warning" : "neutral"}>
+  return <SettingsPage actions={<Badge tone={tone(data.accessPolicy.state)}>{humanize(data.accessPolicy.state)}</Badge>} title={t("Billing")}>
+    {data.accessPolicy.warning ? <Callout title={t("Billing needs attention")} tone="warning">
       {data.accessPolicy.message}{data.accessPolicy.actionDueAt ? ` Review by ${date(data.accessPolicy.actionDueAt)}.` : ""}
-    </Callout>
+    </Callout> : null}
 
     {!contract || !allocation ? <EmptyState icon={<CreditCard size={22}/>} title={t("Billing setup is incomplete")}
       description={t("Wodana needs to finish the account contract and this organization’s allocation. Existing workspace access is unchanged.")} /> : <>
-      <Surface as="section" className={styles.summary} aria-label={t("Billing summary")}>
-        <div><small>{t("Account plan")}</small><strong>{planName}</strong><span>{money(contract.recurringAmount, contract.currency)} · {humanize(contract.billingCycle)}</span></div>
-        <div><small>{t("Organization allocation")}</small><strong>{money(allocation.allocatedAmount, contract.currency)}</strong><span>{allocation.seatLimit} {t("seats ·")}{" "}{allocation.projectLimit} {t("projects")}</span></div>
-        <div><small>{t("Next renewal")}</small><strong>{date(contract.renewsAt)}</strong><span>{contract.renewsAt ? "Contract schedule" : "No date claimed"}</span></div>
-        <div><small>{t("Collection")}</small><strong>{collection ? humanize(collection.status) : "Not configured"}</strong><span>{collection ? `${money(collection.overdueAmount, collection.currency)} overdue` : "No collection state recorded"}</span></div>
-      </Surface>
+      <SettingsSection id="plan" title={t("Plan")}>
+        <SettingsRow label={t("Account plan")}><strong className={styles.value}>{planName}</strong><span>{money(contract.recurringAmount, contract.currency)} · {humanize(contract.billingCycle)}</span></SettingsRow>
+        <SettingsRow label={t("Organization allocation")}><strong className={styles.value}>{money(allocation.allocatedAmount, contract.currency)}</strong><span>{allocation.seatLimit} {t("seats ·")}{" "}{allocation.projectLimit} {t("projects")}</span></SettingsRow>
+        <SettingsRow label={t("Next renewal")}>{contract.renewsAt ? date(contract.renewsAt) : t("Not scheduled")}</SettingsRow>
+        <SettingsRow label={t("Collection")}>{collection ? `${humanize(collection.status)} · ${money(collection.overdueAmount, collection.currency)} ${t("overdue")}` : t("Not configured")}</SettingsRow>
+        {!data.accessPolicy.warning && data.accessPolicy.message ? <SettingsRow label={t("Access policy")}>{data.accessPolicy.message}</SettingsRow> : null}
+      </SettingsSection>
 
-      <section className={styles.section}>
-        <div className={styles.sectionIntro}><h2>{t("Organization usage")}</h2><p>{t("Live usage against this organization’s allocation. Pending invitations reserve seats.")}</p></div>
-        <div className={styles.usageGrid}>
-          <Usage icon={<Users size={16}/>} label={t("Reserved seats")} limit={allocation.seatLimit} value={data.usage.reservedSeats}/>
-          <Usage icon={<FolderKanban size={16}/>} label={t("Active projects")} limit={allocation.projectLimit} value={data.usage.projects}/>
-        </div>
-      </section>
+      <SettingsSection id="usage" title={t("Usage")}>
+        <SettingsRow hint={t("Pending invitations reserve seats.")} label={t("Reserved seats")}><Usage label={t("Reserved seats")} limit={allocation.seatLimit} value={data.usage.reservedSeats}/></SettingsRow>
+        <SettingsRow label={t("Active projects")}><Usage label={t("Active projects")} limit={allocation.projectLimit} value={data.usage.projects}/></SettingsRow>
+        {data.accountUsageSnapshot ? <SettingsRow hint={`${t("captured")} ${date(data.accountUsageSnapshot.capturedAt)}`} label={t("Account usage")}>
+          {data.accountUsageSnapshot.totals.members} {t("members")} · {data.accountUsageSnapshot.totals.projects} {t("projects")}
+        </SettingsRow> : null}
+      </SettingsSection>
 
-      <section className={styles.section}>
-        <div className={styles.sectionIntro}><h2>{t("Account usage")}</h2><p>{t("The latest immutable account snapshot, separate from editable plan terms.")}</p></div>
-        <div className={styles.accountUsage}>
-          {data.accountUsageSnapshot ? <>
-            <div><Users size={15}/><span><strong>{data.accountUsageSnapshot.totals.members}</strong><small>{t("members")}</small></span></div>
-            <div><FolderKanban size={15}/><span><strong>{data.accountUsageSnapshot.totals.projects}</strong><small>{t("projects")}</small></span></div>
-            <div><CalendarDays size={15}/><span><strong>{date(data.accountUsageSnapshot.capturedAt)}</strong><small>{t("captured")}</small></span></div>
-          </> : <span className={styles.muted}>{t("No account usage snapshot has been captured yet.")}</span>}
-        </div>
-      </section>
-
-      <section className={styles.documents}>
-        <div className={styles.sectionIntro}><h2>{t("Invoices, credits and receipts")}</h2><p>{t("Only recorded document state is shown. A receipt is not marked verified without finance verification.")}</p></div>
+      <SettingsSection id="documents" title={t("Invoices, credits and receipts")}>
         <DataGrid appearance="flush" ariaLabel="Billing documents" columns={documentColumns} data={data.documents}
           emptyTitle="No billing documents" emptyDescription="No invoice, credit note or receipt has been recorded for this account."
           getRowId={(row) => row.id} pageSize={10} pinFirstColumn={false} rowNumbers={false} selectable={false}
           showToolbar={false}/>
-      </section>
+      </SettingsSection>
     </>}
-
-    <Callout title={t("Tax treatment is not validated")} tone="neutral">
-      {t("Wodana records the billing facts above but does not claim regional tax compliance until a validated region pack is approved.")}</Callout>
-    <div className={styles.truth}><CheckCircle2 size={15}/><span>{t("Billing state never silently removes purchased modules. Suspension requires a separate audited lifecycle decision.")}</span></div>
-  </Container>;
+  </SettingsPage>;
 }

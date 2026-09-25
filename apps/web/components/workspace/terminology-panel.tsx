@@ -179,7 +179,7 @@ export function TerminologyPanel({
     <section aria-label={standalone ? "Workspace terminology" : undefined} aria-labelledby={standalone ? undefined : "terminology-heading"} className={`${styles.detailSection} ${styles.terminologySection}`}>
       <header>
         <div>
-          {standalone ? <p className={styles.standaloneSectionHint}>Use the words your team and clients already use. Existing records keep their data.</p> : <><h2 id="terminology-heading">Workspace language</h2><p className={styles.sectionHint}>Use the words your team and clients already use. Existing records keep their data.</p></>}
+          {standalone ? null : <><h2 id="terminology-heading">Workspace language</h2><p className={styles.sectionHint}>Use the words your team and clients already use. Existing records keep their data.</p></>}
         </div>
       </header>
       {unavailable ? <Callout title="Workspace language unavailable" tone="warning">Refresh this page to load terminology settings.</Callout> : null}

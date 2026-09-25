@@ -1,14 +1,6 @@
-.page { display: grid; gap: var(--wd-phi-4); max-inline-size: 42rem; padding: var(--wd-phi-3); }
-.identity { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-4); }
-.who { display: grid; gap: var(--wd-space-0-5); flex: 1; min-inline-size: 10rem; }
-.who strong { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
-.who small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.photoActions { display: flex; gap: var(--wd-space-2); }
 .fileInput { display: none; }
-.avatars { display: grid; gap: var(--wd-space-3); }
-.avatars h2 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
-.muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(3.5rem, 1fr)); gap: var(--wd-space-2); }
+.muted { margin: var(--wd-space-2) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr)); gap: var(--wd-space-2); padding-block: var(--wd-space-3); }
 .option { position: relative; display: grid; aspect-ratio: 1; place-items: center; border: 0; border-radius: var(--wd-radius-round); padding: 0; overflow: visible; background: var(--wd-color-surface-muted); color: var(--wd-color-text); cursor: pointer; transition: box-shadow 120ms ease; }
 .option svg { inline-size: 100%; block-size: 100%; border-radius: var(--wd-radius-round); }
 .option:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--wd-color-text) 12%, transparent); }
@@ -16,4 +8,3 @@
 .option[data-selected] { box-shadow: 0 0 0 2px var(--wd-color-action-primary); }
 .option:disabled { cursor: progress; opacity: 0.7; }
 .check { position: absolute; inset-block-end: 0; inset-inline-end: 0; display: grid; inline-size: 1.25rem; block-size: 1.25rem; place-items: center; border-radius: var(--wd-radius-round); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
-@media (max-width: 35rem) { .page { padding: var(--wd-space-4); } }

@@ -65,3 +65,6 @@
   .summary { grid-template-columns: 1fr; }
   .summary > div + div, .summary > div:nth-child(3) { border-inline-start: 0; border-block-start: 1px solid var(--wd-color-structural-divider); }
 }
+
+.value { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.page .usage, .usage { display: grid; grid-template-columns: auto 8rem; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; }

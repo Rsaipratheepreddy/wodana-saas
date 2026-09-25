@@ -96,3 +96,6 @@
 .aiSetting > svg { flex: none; margin-block-start: var(--wd-space-1); color: var(--wd-color-text-tertiary); }
 .aiSetting > div { display: grid; gap: var(--wd-space-0-5); }
 .aiSetting small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+.logoThumb { display: inline-grid; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); place-items: center; overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); }
+.logoThumb img { inline-size: 100%; block-size: 100%; object-fit: contain; }
