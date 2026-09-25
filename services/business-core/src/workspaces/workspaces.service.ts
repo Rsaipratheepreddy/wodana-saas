@@ -861,6 +861,7 @@ export class WorkspacesService {
       return publicReplay;
     }
     const delivery = await this.transactionalEmail.sendWorkspaceInvitation({
+      workspaceId,
       email: rotated.email,
       expiresAt: rotated.expiresAt,
       invitationToken: rotated.invitationToken,
@@ -2935,6 +2936,7 @@ export class WorkspacesService {
             recipientName: displayName,
             roleCodes: input.roleCodes,
             workspaceName: workspace.name,
+            workspaceId,
           },
         };
       },
@@ -3200,6 +3202,7 @@ export class WorkspacesService {
               ?? String(response.email).split("@")[0],
             roleCodes: recipient?.roleCodes ?? [],
             workspaceName: workspace.name,
+            workspaceId,
           },
         };
       },

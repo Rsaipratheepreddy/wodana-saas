@@ -881,7 +881,7 @@ Each is small, reusable and built once in the platform or design system.
 
 ## 9. Build order, migration and cutover
 
-**Module definition of done:** migration with forced RLS · typed API + OpenAPI · idempotent versioned commands · outbox events · projections · contracts · seed fixture · tests per §8.9 · backfill + reconciliation report (or approved reset) · feature flag · UI (after the backend is done) · Palm check · old path removed.
+**Module definition of done** (every module includes its notifications: events, recipients and channels, with tenant-branded email through the shared layout and the tenant logo as the only brand source; all labels go in `en.json`; every screen is checked left-to-right and right-to-left): migration with forced RLS · typed API + OpenAPI · idempotent versioned commands · outbox events · projections · contracts · seed fixture · tests per §8.9 · backfill + reconciliation report (or approved reset) · feature flag · UI (after the backend is done) · Palm check · old path removed.
 
 | # | Module | Depends on | Size |
 | --- | --- | --- | --- |

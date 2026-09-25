@@ -1,5 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DatabaseService } from "../database/database.service";
+import { renderBrandedEmail, WODANA_BRAND, type EmailBrand } from "./branded-email";
 
 export type EmailDeliveryStatus = "sent" | "not_configured" | "failed";
 
@@ -14,9 +16,13 @@ interface TransactionalMessage {
   subject: string;
   text: string;
   html: string;
+  /** Sender display name, normally the tenant; the address stays the configured sending domain. */
+  fromName?: string;
 }
 
 interface WorkspaceInvitationMessage {
+  /** Resolves the tenant brand; omitted only by callers without a workspace (Wodana brand). */
+  workspaceId?: string;
   email: string;
   expiresAt: Date;
   invitationToken: string;
@@ -28,15 +34,6 @@ interface WorkspaceInvitationMessage {
 
 const DEFAULT_MAILGUN_BASE_URL = "https://api.mailgun.net";
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function readableRole(code: string): string {
   return code
     .replaceAll("_", " ")
@@ -44,77 +41,85 @@ function readableRole(code: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+type BrandRow = { displayName: string; loginSlug: string; logoUrl: string | null; logoAssetId: string | null; primaryColor: string | null };
+
 @Injectable()
 export class TransactionalEmailService {
   private readonly logger = new Logger(TransactionalEmailService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() private readonly database?: DatabaseService,
+  ) {}
+
+  private origin() {
+    return this.config.get<string>("WEB_ORIGIN", "http://localhost:3000").split(",")[0].trim();
+  }
+
+  /**
+   * Tenant branding for email: the sign-in branding record is the source of truth for name, logo
+   * and accent. Falls back to Wodana when the tenant has not configured branding.
+   */
+  async brand(target: { workspaceId?: string; loginSlug?: string }): Promise<EmailBrand & { loginSlug: string | null }> {
+    if (!this.database || (!target.workspaceId && !target.loginSlug)) return { ...WODANA_BRAND, loginSlug: null };
+    const result = await this.database.query<BrandRow>(
+      `SELECT display_name AS "displayName", login_slug AS "loginSlug", logo_url AS "logoUrl",
+              logo_asset_id AS "logoAssetId", primary_color AS "primaryColor"
+       FROM tenant_login_branding
+       WHERE ($1::uuid IS NOT NULL AND workspace_id = $1::uuid) OR ($2::text IS NOT NULL AND login_slug = $2::text)
+       LIMIT 1`,
+      [target.workspaceId ?? null, target.loginSlug ?? null],
+    ).catch(() => ({ rows: [] as BrandRow[] }));
+    const row = result.rows[0];
+    if (!row) return { ...WODANA_BRAND, loginSlug: target.loginSlug ?? null };
+    const logoUrl = row.logoAssetId
+      ? new URL(`/api/auth/tenant-logo/${encodeURIComponent(row.loginSlug)}?v=${row.logoAssetId}`, this.origin()).toString()
+      : row.logoUrl && /^https:\/\//.test(row.logoUrl) ? row.logoUrl : null;
+    return {
+      name: row.displayName,
+      logoUrl,
+      accentColor: row.primaryColor && /^#[0-9a-f]{6}$/i.test(row.primaryColor) ? row.primaryColor : WODANA_BRAND.accentColor,
+      loginSlug: row.loginSlug,
+    };
+  }
 
   async sendPasswordReset(input: { email: string; resetToken: string; tenantSlug: string }): Promise<EmailDeliveryResult> {
-    const origin = this.config.get<string>("WEB_ORIGIN", "http://localhost:3000").split(",")[0].trim();
-    const url = new URL("/login", origin);
+    const brand = await this.brand({ loginSlug: input.tenantSlug || undefined });
+    const url = new URL("/login", this.origin());
     url.searchParams.set("reset", input.resetToken);
     url.searchParams.set("tenant", input.tenantSlug);
-    return this.send({
-      to: input.email,
-      subject: "Reset your Wodana password",
-      text: `Reset your password: ${url.toString()}\nThis link expires in 30 minutes. If you did not request a reset, you can ignore this email.`,
-      html: `<p>Use this secure link to reset your Wodana password.</p><p><a href="${escapeHtml(url.toString())}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request a reset, you can ignore this email.</p>`,
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: `Reset your ${brand.name} password.`,
+      heading: "Reset your password",
+      paragraphs: [`Use this secure link to choose a new password for ${brand.name}.`],
+      action: { label: "Reset password", url: url.toString() },
+      footnote: "This link expires in 30 minutes. If you did not request a reset, you can ignore this email.",
     });
+    return this.send({ to: input.email, subject: `Reset your ${brand.name} password`, text, html, fromName: brand.name });
   }
 
   async sendWorkspaceInvitation(
     invitation: WorkspaceInvitationMessage,
   ): Promise<EmailDeliveryResult> {
-    const webOrigin = this.config
-      .get<string>("WEB_ORIGIN", "http://localhost:3000")
-      .split(",")[0]
-      .trim();
-    const activationUrl = new URL("/login", webOrigin);
+    const brand = await this.brand({ workspaceId: invitation.workspaceId });
+    const activationUrl = new URL("/login", this.origin());
+    if (brand.loginSlug) activationUrl.searchParams.set("tenant", brand.loginSlug);
     activationUrl.searchParams.set("invitation", invitation.invitationToken);
-
-    const workspaceName = escapeHtml(invitation.workspaceName);
-    const recipientName = escapeHtml(invitation.recipientName);
-    const inviterName = escapeHtml(invitation.inviterName);
-    const roles = invitation.roleCodes.map(readableRole).join(", ");
-    const safeRoles = escapeHtml(roles || "Member");
-    const expiresOn = new Intl.DateTimeFormat("en", {
-      dateStyle: "long",
-      timeZone: "UTC",
-    }).format(invitation.expiresAt);
-    const safeUrl = escapeHtml(activationUrl.toString());
-
-    return this.send({
-      to: invitation.email,
-      subject: `You have been invited to ${invitation.workspaceName}`,
-      text: [
+    const roles = invitation.roleCodes.map(readableRole).join(", ") || "Member";
+    const expiresOn = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(invitation.expiresAt);
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: `Join ${invitation.workspaceName}.`,
+      heading: `Join ${invitation.workspaceName}`,
+      paragraphs: [
         `Hello ${invitation.recipientName},`,
-        "",
-        `${invitation.inviterName} invited you to join ${invitation.workspaceName} as ${roles || "Member"}.`,
-        `Accept your invitation: ${activationUrl.toString()}`,
-        `This secure link expires on ${expiresOn}.`,
-      ].join("\n"),
-      html: `<!doctype html>
-<html lang="en">
-  <body style="margin:0;background:#f7f7f5;color:#171a18;font-family:Arial,sans-serif;">
-    <div style="display:none;max-height:0;overflow:hidden;">Join ${workspaceName} on Wodana.</div>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f7f5;padding:32px 16px;">
-      <tr><td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e5e2;border-radius:16px;">
-          <tr><td style="padding:32px;">
-            <p style="margin:0 0 24px;font-size:15px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Wodana</p>
-            <h1 style="margin:0 0 16px;font-size:28px;line-height:1.2;">Join ${workspaceName}</h1>
-            <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hello ${recipientName},</p>
-            <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">${inviterName} invited you to join <strong>${workspaceName}</strong> as ${safeRoles}.</p>
-            <p style="margin:0 0 24px;"><a href="${safeUrl}" style="display:inline-block;border-radius:999px;background:#111111;color:#ffffff;padding:12px 20px;text-decoration:none;font-size:15px;font-weight:700;">Accept invitation</a></p>
-            <p style="margin:0;color:#606762;font-size:13px;line-height:1.6;">This secure link expires on ${expiresOn}. If you were not expecting this invitation, you can ignore this email.</p>
-          </td></tr>
-        </table>
-      </td></tr>
-    </table>
-  </body>
-</html>`,
+        `${invitation.inviterName} invited you to join ${invitation.workspaceName} as ${roles}.`,
+      ],
+      action: { label: "Accept invitation", url: activationUrl.toString() },
+      footnote: `This secure link expires on ${expiresOn}. If you were not expecting this invitation, you can ignore this email.`,
     });
+    return this.send({ to: invitation.email, subject: `You have been invited to ${invitation.workspaceName}`, text, html, fromName: brand.name });
   }
 
   async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
@@ -127,8 +132,11 @@ export class TransactionalEmailService {
     const baseUrl = this.config
       .get<string>("MAILGUN_BASE_URL", DEFAULT_MAILGUN_BASE_URL)
       .replace(/\/+$/, "");
-    const from = this.config.get<string>("MAILGUN_FROM", "").trim()
-      || `Wodana <postmaster@${domain}>`;
+    const configured = this.config.get<string>("MAILGUN_FROM", "").trim();
+    const address = configured.match(/<([^>]+)>/)?.[1] ?? (configured || `postmaster@${domain}`);
+    const displayName = (message.fromName ?? configured.replace(/\s*<[^>]+>\s*$/, "") ?? "").replace(/["<>\r\n]/g, "").trim() || "Wodana";
+    // Quote the display name only when it contains characters that need it (RFC 5322).
+    const from = /[(),.:;@[\]\\]/.test(displayName) ? `"${displayName}" <${address}>` : `${displayName} <${address}>`;
     const form = new FormData();
     form.set("from", from);
     form.set("to", message.to);
