@@ -256,3 +256,27 @@
 @media (prefers-reduced-motion: reduce) {
   .loginRoot *, .loginRoot *::before, .loginRoot *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+.workspaceList {
+  display: grid;
+  gap: var(--wd-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspaceChoice {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--wd-space-2-5);
+}
+
+.workspaceInitial {
+  display: inline-grid;
+  place-items: center;
+  width: var(--wd-space-6);
+  height: var(--wd-space-6);
+  border-radius: var(--wd-radius-sm);
+  background: var(--wd-surface-soft);
+  font-weight: 600;
+}

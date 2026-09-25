@@ -203,6 +203,33 @@ Every module lists: purpose · records (tables) · states · key rules · edge c
 - **Tests:** provision idempotency; suspended tenant cannot write; operator denied without a session; seat race (two invites for the last seat).
 
 ### 6.2 Identity and access
+
+**Sign-in is identifier-first.** One entry screen asks for **email or mobile number**; the server resolves who it is and starts the right flow. The response never reveals whether an account exists (same timing and wording for unknown identifiers).
+
+| Identifier resolves to | Flow |
+| --- | --- |
+| Staff with a password (one workspace) | password → MFA (required for Owner/Admin/Finance, else per policy) → workspace |
+| Staff in several workspaces | password → MFA → **workspace picker** (only authorized, active organizations) → workspace |
+| Staff invited, not yet activated | "Check your email": the invite link opens set-password → MFA setup (if required) → onboarding |
+| Workspace owner of an unfinished setup | password → MFA → **resume onboarding** at the saved step |
+| Client (portal contact) | **mobile number → WhatsApp OTP** (SMS/email fallback when WhatsApp fails) → their deals/projects |
+| Supplier (vendor contact) | **mobile number → WhatsApp OTP** → their RFQs/POs |
+| Wodana operator | redirected to the separate operator sign-in (password → mandatory MFA); never mixed with tenant sessions |
+| Tenant host (custom domain/subdomain) | the flow is limited to that tenant; branded sign-in |
+
+Rules:
+- Staff keep **email + password** (+ MFA).
+- OTPs are 6 digits, expire in 5 minutes, allow 5 attempts, have a resend cooldown of 30 s, are rate-limited per number and IP, and are single-use.
+- Sessions: staff use a refresh cookie + short access token; clients and vendors get scoped sessions that expire after 30 days of inactivity.
+- **Password reset** is by emailed link. **Lost MFA** uses recovery codes or an Owner reset with audit.
+- An account can be both staff and client (different sessions and scopes).
+
+**Onboarding by type:**
+- **New tenant owner** (from control-plane provisioning): set password → MFA → company → legal entity & region → firm kit (route templates) → invite team → done. It is resumable at every step, and each step is saved server-side.
+- **Invited staff:** set password → MFA if the role requires it → profile (name, phone, photo) → land on Home.
+- **Client first login:** confirm name → accept portal terms → land on their project.
+- **Supplier first login:** confirm company and contact → land on open RFQs/POs.
+
 - **Records:** users, identities, memberships, roles, permissions (versioned seed), member_roles, teams (roles inherited through team), MFA, sessions, devices, invitations.
 - **Rules:** effective access = sold entitlement ∩ role permission ∩ record scope (own / team / all). MFA is required for Owner, Finance and Admin. The last owner can't be removed or demoted.
 - **Edge cases:**
@@ -860,6 +887,7 @@ Each is small, reusable and built once in the platform or design system.
 | --- | --- | --- | --- |
 | M0 | Foundation: cleanup, rewrite `CLAUDE.md`, ADR-0001, decimal, `today()`, module template, RLS CI test, outbox consumer groups + DLQ, sequences service, lint rules | — | M |
 | M1 | Platform: approvals engine + policies, comments, attachments, activity, workflow templates (routes as data), permission seed, security fixes | M0 | M |
+| M1b | Sign-in & onboarding: identifier-first entry, staff email+password+MFA, workspace picker, client/vendor mobile + WhatsApp OTP, typed onboarding flows (§6.2) | M1 | M |
 | M2 | Control plane completion (domains, lifecycle, support sessions) | M1 | M |
 | M3 | Catalog, measurements & pricing: typed attributes, item types, variants, BoM with formulas, units/conversions, waste rules, price methods with breakdown, import review (§6.4) | M1 | L |
 | M4 | CRM hardening (PLM items, Won event, takeover/SLA verified) | M1 | S |

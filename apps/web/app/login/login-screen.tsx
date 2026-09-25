@@ -32,6 +32,8 @@ type TenantBranding = {
 };
 type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
 type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
+type WorkspaceChoice = { name: string; loginSlug: string; logoUrl: string | null };
+const MOBILE_NUMBER = /^\+?[\d\s()-]{8,20}$/;
 
 export function LoginScreen({
   invitationToken,
@@ -79,6 +81,9 @@ export function LoginScreen({
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [recoveryCodesSaved, setRecoveryCodesSaved] = useState(false);
   const [authenticatedDestination, setAuthenticatedDestination] = useState(nextPath);
+  const [workspaceChoices, setWorkspaceChoices] = useState<WorkspaceChoice[] | null>(null);
+  // Email-first sign-in keeps the chosen workspace for retries such as the device-limit prompt.
+  const chosenWorkspaceSlug = useRef<string | null>(null);
   const requestInFlight = useRef(false);
   const navigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (navigationTimer.current) clearTimeout(navigationTimer.current); }, []);
@@ -364,6 +369,11 @@ export function LoginScreen({
       }
       return;
     }
+    if (tenant.loginSlug && MOBILE_NUMBER.test(email.trim())) {
+      // Clients sign in to their portal with a mobile number and a WhatsApp code.
+      router.push(`/portal/${encodeURIComponent(tenant.loginSlug)}`);
+      return;
+    }
     const nextEmailError = /^\S+@\S+\.\S+$/.test(email)
       ? ""
       : email.trim() ? "This doesn’t look like a valid email address." : "Enter your email address.";
@@ -382,8 +392,10 @@ export function LoginScreen({
     await signIn();
   };
 
-  const signIn = async (revokeFamilyId?: string) => {
+  const signIn = async (revokeFamilyId?: string, workspaceSlug?: string) => {
     if (requestInFlight.current) return;
+    if (workspaceSlug) chosenWorkspaceSlug.current = workspaceSlug;
+    const tenantSlug = chosenWorkspaceSlug.current ?? tenant.loginSlug;
     requestInFlight.current = true;
     let navigating = false;
     setDeviceFailure("");
@@ -393,7 +405,7 @@ export function LoginScreen({
       const { ok, status: responseStatus, payload } = await authRequest("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password, tenantSlug: tenant.loginSlug, revokeFamilyId }),
+        body: JSON.stringify({ email, password, tenantSlug, revokeFamilyId }),
       });
       if (!ok) {
         const message = typeof payload.message === "string" ? payload.message : "Unable to sign in. Check your details and try again.";
@@ -406,6 +418,12 @@ export function LoginScreen({
         setStatus(message);
         return;
       }
+      if (payload.workspaceSelectionRequired === true && Array.isArray(payload.workspaces)) {
+        setWorkspaceChoices(payload.workspaces as WorkspaceChoice[]);
+        setStatus("");
+        return;
+      }
+      setWorkspaceChoices(null);
       if (payload.mfaRequired === true) {
         setMfaStage("challenge");
         setMfaCode("");
@@ -447,7 +465,8 @@ export function LoginScreen({
   };
 
   const canSkipEnrollment = canDeferMfaEnrollment;
-  const heading = mfaStage === "challenge"
+  const choosingWorkspace = mfaStage === "credentials" && Boolean(workspaceChoices);
+  const heading = choosingWorkspace ? "Choose a workspace" : mfaStage === "challenge"
     ? "Verify it’s you"
     : mfaStage === "enrollment"
       ? mfaSetup ? "Connect your authenticator" : "Protect your account"
@@ -458,7 +477,7 @@ export function LoginScreen({
           : invitationToken
             ? "Create your password"
             : "Welcome back";
-  const intro = mfaStage === "challenge"
+  const intro = choosingWorkspace ? "Your account has access to more than one workspace." : mfaStage === "challenge"
     ? "Use your authenticator app or one of your saved recovery codes."
     : mfaStage === "enrollment"
       ? mfaSetup
@@ -506,27 +525,37 @@ export function LoginScreen({
             </header>
             <div className={styles.formArea} data-security={mfaStage !== "credentials"}>
             <div className={styles.formIntro}>
+              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="secondary"><ArrowLeft aria-hidden="true" size={14} />Back</Button> : null}
               {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft aria-hidden="true" size={14} />{mfaSetup ? "Back" : "Back to sign in"}</Button> : null}
               <h1 id="login-heading">{heading}</h1>
               <p>{intro}</p>
             </div>
 
-            <form className={styles.loginForm} noValidate onSubmit={submit}>
+            {choosingWorkspace ? <ul aria-label="Workspaces" className={styles.workspaceList}>
+              {workspaceChoices!.map((workspace) => <li key={workspace.loginSlug}>
+                <Button className={styles.workspaceChoice} isDisabled={isSubmitting} onPress={() => void signIn(undefined, workspace.loginSlug)} type="button" variant="secondary">
+                  <span aria-hidden="true" className={styles.workspaceInitial}>{workspace.name.trim().charAt(0).toUpperCase()}</span>
+                  <span>{workspace.name}</span>
+                </Button>
+              </li>)}
+            </ul> : null}
+
+            <form className={styles.loginForm} hidden={choosingWorkspace} noValidate onSubmit={submit}>
               {mfaStage === "credentials" ? <>
                 {!settingPassword ? <TextInput
                   autoComplete="username"
                   errorMessage={emailError}
-                  inputType="email"
+                  inputType={tenant.loginSlug ? "text" : "email"}
                   isInvalid={Boolean(emailError)}
                   isRequired
-                  label="Email"
+                  label={tenant.loginSlug ? "Email or mobile" : "Email"}
                   name="email"
                   onChange={(value) => {
                     setEmail(value);
                     setLimitedSessions(null);
                     if (emailError) setEmailError("");
                   }}
-                  placeholder="Email"
+                  placeholder={tenant.loginSlug ? "you@company.com or +971…" : "you@company.com"}
                   value={email}
                 /> : null}
 

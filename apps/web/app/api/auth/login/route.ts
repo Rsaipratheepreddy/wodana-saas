@@ -76,6 +76,18 @@ export async function POST(request: Request) {
     );
   }
 
+  if (payload?.workspaceSelectionRequired === true && Array.isArray(payload.workspaces)) {
+    // Email-first sign-in: no session exists yet; the browser resubmits with the chosen slug.
+    return NextResponse.json({
+      workspaceSelectionRequired: true,
+      workspaces: payload.workspaces.map((workspace: Record<string, unknown>) => ({
+        name: String(workspace.name ?? ""),
+        loginSlug: String(workspace.loginSlug ?? ""),
+        logoUrl: typeof workspace.logoUrl === "string" ? workspace.logoUrl : null,
+      })),
+    });
+  }
+
   if (payload?.mfaRequired === true) {
     if (typeof payload.challengeToken !== "string" || !payload.challengeToken
       || !Number.isFinite(payload.challengeExpiresIn) || payload.challengeExpiresIn <= 0

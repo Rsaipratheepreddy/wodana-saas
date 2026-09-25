@@ -26,12 +26,16 @@ export class LocalLoginDto {
   @MaxLength(128)
   password!: string;
 
-  @ApiProperty({ example: "iglo-architects" })
-  @Transform(({ value }) => String(value).trim().toLowerCase())
+  @ApiPropertyOptional({
+    example: "iglo-architects",
+    description: "Omit to sign in by email alone; several active workspaces return a picker instead of a session",
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === null || value === "" ? undefined : String(value).trim().toLowerCase()))
   @IsString()
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   @MaxLength(80)
-  tenantSlug!: string;
+  tenantSlug?: string;
 
   @ApiPropertyOptional({ format: "uuid", description: "Log out one of this user's devices before retrying sign-in" })
   @IsOptional()
@@ -109,12 +113,16 @@ export class ForgotPasswordDto {
   @MaxLength(320)
   email!: string;
 
-  @ApiProperty({ example: "iglo-architects" })
-  @Transform(({ value }) => String(value).trim().toLowerCase())
+  @ApiPropertyOptional({
+    example: "iglo-architects",
+    description: "Omit to sign in by email alone; several active workspaces return a picker instead of a session",
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === null || value === "" ? undefined : String(value).trim().toLowerCase()))
   @IsString()
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   @MaxLength(80)
-  tenantSlug!: string;
+  tenantSlug?: string;
 }
 
 export class ResetPasswordDto {

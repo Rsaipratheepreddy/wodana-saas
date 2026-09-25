@@ -5,15 +5,15 @@ import { openAuthenticatedWorkspace } from "@/lib/auth/client";
 import { LoginScreen } from "./login-screen";
 import { securityPageFixture } from "@/lib/workspace/security";
 
-const replace = vi.fn(), refresh = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh }) }));
+const replace = vi.fn(), refresh = vi.fn(), push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh, push }) }));
 vi.mock("@/lib/auth/client", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/auth/client")>(), openAuthenticatedWorkspace: vi.fn(),
 }));
-afterEach(() => { vi.unstubAllGlobals(); replace.mockReset(); refresh.mockReset(); vi.mocked(openAuthenticatedWorkspace).mockClear(); });
+afterEach(() => { vi.unstubAllGlobals(); replace.mockReset(); push.mockReset(); refresh.mockReset(); vi.mocked(openAuthenticatedWorkspace).mockClear(); });
 
 async function fillCredentials(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByRole("textbox", { name: "Email" }), "owner@example.com");
+  await user.type(screen.getByRole("textbox", { name: /^Email/ }), "owner@example.com");
   await user.type(screen.getByLabelText(/^Password/, { selector: "input" }), "DemoPassword#2026");
 }
 
@@ -271,5 +271,56 @@ describe("login MFA flow", () => {
     await user.click(screen.getByRole("button", { name: "Back to sign in" }));
     expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/logout");
+  });
+});
+
+describe("email-first sign-in", () => {
+  const workspaces = [
+    { name: "Palm Living", loginSlug: "palm-living", logoUrl: null },
+    { name: "Studio B", loginSlug: "studio-b", logoUrl: null },
+  ];
+
+  it("lets a user in several workspaces choose one and resubmits with its slug", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ authenticated: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ workspaceSelectionRequired: true, workspaces }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Wodana", loginSlug: "", logoUrl: null }} />);
+
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("heading", { name: "Choose a workspace" })).toBeInTheDocument();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ tenantSlug: "" });
+    await user.click(screen.getByRole("button", { name: /Studio B/ }));
+    await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ tenantSlug: "studio-b", email: "owner@example.com" });
+  });
+
+  it("returns from the picker to the credentials form", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ workspaceSelectionRequired: true, workspaces }) }));
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Wodana", loginSlug: "", logoUrl: null }} />);
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByRole("heading", { name: "Choose a workspace" });
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Workspaces" })).not.toBeInTheDocument();
+  });
+
+  it("sends a client's mobile number to the tenant portal instead of the staff sign-in", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null }} />);
+
+    await user.type(screen.getByRole("textbox", { name: /^Email or mobile/ }), "+971 50 123 4567");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(push).toHaveBeenCalledWith("/portal/palm-living");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

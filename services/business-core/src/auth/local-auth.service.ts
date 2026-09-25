@@ -150,9 +150,20 @@ export class LocalAuthService {
     return result.rows[0];
   }
 
-  async login(email: string, password: string, tenantSlug: string, metadata: LoginMetadata = {}) {
+  async login(email: string, password: string, tenantSlug: string | undefined, metadata: LoginMetadata = {}) {
     this.assertLocalAuthAvailable();
     const user = await this.verifyLocalPassword(email, password);
+
+    if (!tenantSlug) {
+      // Email-first sign-in: the verified user's active workspaces decide the next step.
+      const workspaces = await this.activeLoginWorkspaces(user.id);
+      if (!workspaces.length) throw new UnauthorizedException("Email, password, or tenant is incorrect");
+      if (workspaces.length > 1) {
+        // No session yet: the client resubmits with the chosen workspace's slug.
+        return { workspaceSelectionRequired: true as const, workspaces };
+      }
+      tenantSlug = workspaces[0].loginSlug;
+    }
 
     const branding = await this.database.query<{ workspaceId: string }>(
       `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
@@ -182,6 +193,26 @@ export class LocalAuthService {
       user.passwordChangedAt,
       { ...metadata, verifiedPasswordHash: user.passwordHash },
     );
+  }
+
+  private async activeLoginWorkspaces(userId: string) {
+    const result = await this.database.actorTransaction(userId, (client) => client.query<{
+      workspaceId: string; name: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null;
+    }>(
+      `SELECT workspace.id AS "workspaceId", COALESCE(branding.display_name, workspace.name) AS name,
+              branding.login_slug AS "loginSlug",
+              CASE WHEN branding.logo_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-logo/' || branding.login_slug || '?v=' || branding.logo_asset_id::text
+                   ELSE branding.logo_url END AS "logoUrl",
+              branding.primary_color AS "primaryColor"
+       FROM workspace_memberships membership
+       JOIN workspaces workspace ON workspace.id = membership.workspace_id
+       JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
+       WHERE membership.user_id = $1 AND membership.status = 'active' AND workspace.status = 'active'
+       ORDER BY lower(COALESCE(branding.display_name, workspace.name))`,
+      [userId],
+    ));
+    return result.rows;
   }
 
   async verifyPlatformCredentials(email: string, password: string) {
@@ -659,7 +690,7 @@ export class LocalAuthService {
     return { revoked: count };
   }
 
-  async forgotPassword(email: string, tenantSlug: string) {
+  async forgotPassword(email: string, tenantSlug: string | undefined) {
     this.assertLocalAuthAvailable();
     const user = await this.database.query<{ id: string }>(
       `SELECT app_user.id FROM users app_user
@@ -668,6 +699,11 @@ export class LocalAuthService {
       [email.toLowerCase()],
     );
     let developmentResetToken: string | undefined;
+    if (!tenantSlug) {
+      // Email-first recovery: brand the link with the user's first active workspace.
+      const workspaces = user.rowCount ? await this.activeLoginWorkspaces(user.rows[0].id) : [];
+      tenantSlug = workspaces[0]?.loginSlug ?? "";
+    }
     const branding = await this.database.query<{ workspaceId: string }>(
       `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
       [tenantSlug.toLowerCase()],
