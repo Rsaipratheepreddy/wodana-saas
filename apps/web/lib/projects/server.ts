@@ -67,6 +67,7 @@ export async function projectRead<T>(path:string){
   const profile=await getAuthenticatedProfile(),w=profile.memberships[0]?.workspaceId;
   if(!w)throw Error('Workspace unavailable.');
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path.startsWith('approvals?')) return {workspaceId:w,data:{rows:[],nextCursor:null,memberId:'demo-manager',canReview:false} as T};
+  if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path.startsWith('task-board?')) return {workspaceId:w,data:{rows:[],nextCursor:null,counts:{},memberId:'demo-manager',canManage:true,projects:[],members:[]} as T};
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'portfolio') {
     return {workspaceId:w,data:e2ePortfolio as T};
   }

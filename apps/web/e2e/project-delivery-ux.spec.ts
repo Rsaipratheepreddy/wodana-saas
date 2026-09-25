@@ -1,19 +1,21 @@
 import { expect, test } from "@playwright/test";
 
-test('global tasks default to a clean Kanban with accessible scrolling and optional table',async({page},testInfo)=>{
- const rows=[['planned','Confirm measurements'],['in_progress','Build wardrobes'],['awaiting_inspection','Review installed wardrobe'],['blocked','Resolve site access'],['completed','Install bedroom unit']].map(([status,title],index)=>({id:`p:task:${index}`,recordId:String(index),projectId:'p',projectName:index%2?'Villa B':'Villa A',kind:'task',title,status,ownerId:'maker',ownerName:'Maya',dueDate:'2026-09-25',href:`/workspace/projects/p/production?record=${index}`}));
- await page.route('**/api/projects/work-queue?**',route=>route.fulfill({json:{rows,nextCursor:null,memberId:'maker'}}));
+test('global tasks show one task board with blocked work, waiting reasons and overdue dates',async({page},testInfo)=>{
+ const rows=[['planned','Confirm measurements','Approved drawing',true],['in_progress','Build wardrobes','',false],['blocked','Resolve site access','Lift not booked',false],['awaiting_inspection','Review installed wardrobe','',false],['completed','Install bedroom unit','',false]].map(([status,title,waitingFor,overdue],index)=>({id:String(index),projectId:'p',projectName:index%2?'Villa B':'Villa A',projectReference:'PRJ-0042',clientName:'',title,area:'Bedroom',packageName:'Wardrobes',location:index===1?'factory':'site',status,priority:'normal',ownerId:'maker',ownerName:'Maya',assigneeCount:1,start:'2026-09-20',end:'2026-09-25',quantity:4,approved:0,unit:'nos',waitingFor,overdue}));
+ await page.route('**/api/projects/task-board?**',route=>route.fulfill({json:{rows,nextCursor:null,counts:{},memberId:'maker',canManage:true,projects:[{id:'p',name:'Villa A'}],members:[{id:'maker',name:'Maya'}]}}));
  await page.goto('/workspace/tasks');
  const board=page.getByRole('region',{name:'Project work Kanban'});await expect(board).toBeVisible();
- await expect(board.getByRole('link',{name:'Build wardrobes · Villa B'})).toHaveAttribute('href','/workspace/projects/p/production?record=1');
- await expect(page.getByRole('button',{name:'Kanban',exact:true})).toHaveAttribute('aria-pressed','true');
+ for(const column of ['To do','In progress','Blocked','In review','Done'])await expect(board.getByRole('heading',{name:column})).toBeVisible();
+ await expect(board.getByRole('link',{name:'Build wardrobes · Villa B'})).toHaveAttribute('href','/workspace/tasks?projectId=p&taskId=1');
+ await expect(board.getByText('Waiting for: Approved drawing')).toBeVisible();
+ await expect(board.locator('section[data-state="blocked"]')).toContainText('Lift not booked');
+ await expect(board.getByText('Overdue')).toBeVisible();
  for(const direction of ['ltr','rtl']){await page.evaluate(dir=>{document.documentElement.dir=dir;},direction);expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);}
  await page.evaluate(()=>{document.documentElement.dir='ltr';});
- await page.screenshot({path:testInfo.outputPath('global-tasks-kanban.png'),animations:'disabled'});
- await page.getByRole('button',{name:'Table',exact:true}).click();
- const grid=page.getByRole('table',{name:'Global project work items'});await expect(grid).toBeVisible();
- const scroll=grid.locator('..');expect(await scroll.evaluate(node=>getComputedStyle(node).scrollbarWidth)).toBe('none');
- if(await scroll.evaluate(node=>node.scrollWidth>node.clientWidth)){await scroll.focus();await page.keyboard.press('ArrowRight');await expect.poll(()=>scroll.evaluate(node=>node.scrollLeft)).toBeGreaterThan(0);}
+ await page.screenshot({path:testInfo.outputPath('global-tasks-board.png'),animations:'disabled',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(1);
+ await page.screenshot({path:testInfo.outputPath('global-tasks-board-mobile.png'),animations:'disabled'});
 });
 
 test('sales tasks open in Kanban and keep follow-up editing',async({page},testInfo)=>{

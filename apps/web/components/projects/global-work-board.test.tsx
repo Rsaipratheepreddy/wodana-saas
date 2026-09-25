@@ -67,7 +67,7 @@ it('opens authoritative work and makes loaded-page limitations visible',()=>{
  expect(screen.queryByText('Primary bedroom')).not.toBeInTheDocument();
  expect(screen.queryByText('Factory')).not.toBeInTheDocument();
  expect(screen.getByText('Palm Living Joinery Factory')).toBeVisible();
- expect(screen.getByText('Assigned to')).toBeVisible();
+ expect(screen.queryByText('Assigned to')).not.toBeInTheDocument();
  expect(screen.getByText('Maya')).toBeVisible();
  expect(screen.queryByText('Client')).not.toBeInTheDocument();
  expect(screen.getByRole('heading',{name:'In review'})).toBeVisible();

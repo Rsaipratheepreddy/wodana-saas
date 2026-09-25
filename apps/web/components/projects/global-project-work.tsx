@@ -15,7 +15,7 @@ import type {WorkQueuePage,WorkQueueRow} from '../../../../services/business-cor
 import type {TaskBoardPage,TaskBoardRow} from '../../../../services/business-core/src/projects/project-task-board';
 const taskSection=(location:string)=>location==='factory'?'production':location==='site'?'site-work':'plan-teams';
 /** Board rows are project tasks only; other work lives in its own module or in Approvals. */
-function taskBoardRow(row:TaskBoardRow):WorkQueueRow{
+export function taskBoardRow(row:TaskBoardRow):WorkQueueRow{
  return {id:`${row.projectId}:task:${row.id}`,recordId:row.id,projectId:row.projectId,projectName:row.projectName,clientName:row.clientName,kind:'task',title:row.title,status:row.status,ownerId:row.ownerId,ownerName:row.ownerName||'Unassigned',dueDate:row.end,href:`/workspace/projects/${encodeURIComponent(row.projectId)}/${taskSection(row.location)}?record=${encodeURIComponent(row.id)}`,location:row.location,area:row.area,priority:row.priority,waitingFor:row.waitingFor,overdue:row.overdue};
 }
 export function GlobalProjectWork({workspaceId,initial,initialError='',showSales=false,fixedProjectId='',resources=[],embedded=false,onProjectStateChange}:{workspaceId:string;initial:WorkQueuePage;initialError?:string;showSales?:boolean;fixedProjectId?:string;resources?:ProjectResource[];embedded?:boolean;onProjectStateChange?:(state:ProjectState)=>void}){
