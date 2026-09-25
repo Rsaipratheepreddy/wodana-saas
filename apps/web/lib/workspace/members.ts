@@ -14,6 +14,8 @@ export type WorkspaceRole = {
 export type WorkspaceMember = {
   id: string;
   userId: string;
+  avatarPreset?: string | null;
+  photoUrl?: string | null;
   email: string;
   displayName: string;
   status: "active" | "suspended";

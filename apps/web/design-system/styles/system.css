@@ -143,7 +143,10 @@
 .wd-avatar { inline-size: 2rem; block-size: 2rem; border: 0; border-radius: 50%; display: inline-grid; flex: 0 0 auto; place-items: center; overflow: hidden; background: var(--wd-identity-base); color: var(--wd-identity-ink); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0; }
 .wd-avatar[data-size="sm"] { inline-size: 1.5rem; block-size: 1.5rem; font-size: var(--wd-text-2xs); }
 .wd-avatar[data-size="lg"] { inline-size: 2.5rem; block-size: 2.5rem; font-size: var(--wd-text-xs); }
+.wd-avatar[data-size="xl"] { inline-size: 4rem; block-size: 4rem; font-size: var(--wd-text-md); }
 .wd-avatar img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.wd-avatar[data-portrait] { background: var(--wd-color-surface-muted); color: var(--wd-color-text); }
+.wd-avatar-portrait { inline-size: 100%; block-size: 100%; }
 .wd-avatar-wrap { position: relative; display: inline-flex; }
 .wd-presence { position: absolute; inset-inline-end: -1px; inset-block-end: -1px; inline-size: 0.55rem; block-size: 0.55rem; border: 2px solid var(--wd-surface); border-radius: 50%; background: var(--wd-faint); }
 .wd-presence[data-presence="online"] { background: var(--wd-success); }

@@ -677,5 +677,22 @@
   "Suggest with AI": "Suggest with AI",
   "Add": "Add",
   "AI has no further suggestions.": "AI has no further suggestions.",
-  "Forgot password?": "Forgot password?"
+  "Forgot password?": "Forgot password?",
+  "Your profile could not be saved.": "Your profile could not be saved.",
+  "Use a PNG, JPG or WebP photo.": "Use a PNG, JPG or WebP photo.",
+  "Photo must be 5 MB or smaller.": "Photo must be 5 MB or smaller.",
+  "Photo updated.": "Photo updated.",
+  "Profile": "Profile",
+  "Photo": "Photo",
+  "Change photo": "Change photo",
+  "Upload photo": "Upload photo",
+  "Photo removed.": "Photo removed.",
+  "Avatar": "Avatar",
+  "Your photo is shown. The avatar is used if you remove it.": "Your photo is shown. The avatar is used if you remove it.",
+  "Avatar {number}": "Avatar {number}",
+  "Avatar cleared.": "Avatar cleared.",
+  "Avatar saved.": "Avatar saved.",
+  "Unable to sign out this device. Please try again.": "Unable to sign out this device. Please try again.",
+  "Sign-in security": "Sign-in security",
+  "Signing out…": "Signing out…"
 }

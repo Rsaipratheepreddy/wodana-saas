@@ -87,6 +87,9 @@ export type WorkspaceIdentity = {
 
 export type WorkspaceUser = {
   avatarUrl?: string;
+  /** A chosen default avatar id, or "auto" for the stable default. */
+  avatarPreset?: string;
+  id?: string;
   email: string;
   name: string;
 };

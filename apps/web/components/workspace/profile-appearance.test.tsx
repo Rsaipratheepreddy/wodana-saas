@@ -1,0 +1,44 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AVATAR_PRESETS, Avatar, defaultAvatarPreset } from "@/design-system";
+import { ProfileAppearance } from "./profile-appearance";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+afterEach(() => vi.unstubAllGlobals());
+
+const workspaceId = "6d0f2b67-6f6a-4a22-8cb0-3f2d5d77a33a";
+const userId = "00000000-0000-4000-8000-000000000001";
+
+describe("avatars", () => {
+  it("has ten portraits in each set and a stable default per person", () => {
+    expect(AVATAR_PRESETS.filter((preset) => preset.set === "a")).toHaveLength(10);
+    expect(AVATAR_PRESETS.filter((preset) => preset.set === "b")).toHaveLength(10);
+    expect(defaultAvatarPreset(userId).id).toBe(defaultAvatarPreset(userId).id);
+  });
+
+  it("prefers the photo, then the chosen portrait, and keeps initials for records", () => {
+    const { container, rerender } = render(<Avatar name="Sara Khan" preset="b03" src="/photo.webp" />);
+    expect(container.querySelector("img")).toHaveAttribute("src", "/photo.webp");
+    rerender(<Avatar name="Sara Khan" preset="b03" />);
+    expect(container.querySelector("svg.wd-avatar-portrait")).toBeInTheDocument();
+    rerender(<Avatar name="Sara Khan" />);
+    expect(screen.getByRole("img", { name: "Sara Khan" })).toHaveTextContent("SK");
+  });
+});
+
+describe("profile appearance", () => {
+  it("saves a chosen avatar and refuses a file that is not a photo", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ avatarPreset: "a02", photoUrl: null, version: 1 }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProfileAppearance email="sara@example.com" initial={{ avatarPreset: null, photoUrl: null, version: 0 }} name="Sara Khan" userId={userId} workspaceId={workspaceId} />);
+    await user.click(screen.getByRole("radio", { name: "Avatar 2" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Avatar 2" })).toHaveAttribute("aria-checked", "true"));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ workspaceId, avatarPreset: "a02", version: 0 });
+
+    await user.upload(document.querySelector('input[type="file"]') as HTMLInputElement, new File(["x"], "notes.pdf", { type: "application/pdf" }));
+    expect(await screen.findByText("Use a PNG, JPG or WebP photo.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

@@ -837,6 +837,9 @@
   margin-block-end: var(--wd-space-1-5);
 }
 
+.avatar { overflow: hidden; }
+.avatar > :global(.wd-avatar) { inline-size: 100%; block-size: 100%; font-size: inherit; }
+
 .accountSummary .avatar {
   block-size: 2.25rem;
   inline-size: 2.25rem;

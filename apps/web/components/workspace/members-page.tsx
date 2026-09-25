@@ -500,7 +500,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           : item.invitation.displayName || inviteeFallback(item.invitation.email);
         const email = item.kind === "member" ? item.member.email : item.invitation.email;
         const isCurrentUser = item.kind === "member" && item.member.userId === initialData.currentUserId;
-        return <span className={styles.identity}><Avatar name={name} /><span className={styles.identityDetails}><strong>{name}{isCurrentUser ? " (You)" : ""}</strong><small>{email}</small></span></span>;
+        return <span className={styles.identity}>{item.kind === "member" ? <Avatar name={name} preset={item.member.avatarPreset ?? "auto"} seed={item.member.userId} src={item.member.photoUrl} /> : <Avatar name={name} />}<span className={styles.identityDetails}><strong>{name}{isCurrentUser ? " (You)" : ""}</strong><small>{email}</small></span></span>;
       },
     },
     {
@@ -690,7 +690,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       >
         {editingMember ? <Form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={reviewMember}>
           {editFailure ? <Callout title={t("Could not save member")} tone="danger">{editFailure}</Callout> : null}
-          <div className={styles.memberPreview}><Avatar name={editingMember.displayName} size="lg" /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
+          <div className={styles.memberPreview}><Avatar name={editingMember.displayName} preset={editingMember.avatarPreset ?? "auto"} seed={editingMember.userId} size="lg" src={editingMember.photoUrl} /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
           <SelectField
             accent="neutral"

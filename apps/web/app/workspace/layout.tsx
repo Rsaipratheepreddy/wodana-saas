@@ -2,6 +2,7 @@ import { SessionMonitor } from "@/components/workspace/session-monitor";
 import { WorkspaceShell, workspaceModules } from "@/components/workspace";
 import { cookies } from "next/headers";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
+import { getMyProfile } from "@/lib/workspace/profile.server";
 import { I18nProvider } from "@/lib/i18n/i18n-provider";
 import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
 import { scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
@@ -27,7 +28,8 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       bodyFont: membership.workspaceBodyFont,
     };
   });
-  const user = { email: profile.primaryEmail, name: profile.displayName };
+  const appearance = await getMyProfile(activeMembership?.workspaceId);
+  const user = { email: profile.primaryEmail, name: profile.displayName, id: profile.id, avatarUrl: appearance?.photoUrl ?? undefined, avatarPreset: appearance?.avatarPreset ?? "auto" };
   const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
   return (
     <I18nProvider language={language}>

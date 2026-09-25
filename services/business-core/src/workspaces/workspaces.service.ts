@@ -1,3 +1,4 @@
+import { MemberProfileService } from "./member-profile.service";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { acceptPendingInvitation } from "./invitation-acceptance";
 import {
@@ -2963,6 +2964,7 @@ export class WorkspacesService {
                 membership.version,
                 app_user.id AS "userId", app_user.primary_email AS email,
                 app_user.display_name AS "displayName",
+                profile.avatar_preset AS "avatarPreset", profile.photo_updated_at AS "photoUpdatedAt",
                 COALESCE(json_agg(role.code ORDER BY role.code)
                   FILTER (WHERE role.code IS NOT NULL), '[]') AS roles,
                 (SELECT COALESCE(json_agg(DISTINCT inherited_role.code), '[]')
@@ -2975,14 +2977,15 @@ export class WorkspacesService {
                  WHERE team_member.membership_id=membership.id) AS teams
          FROM workspace_memberships membership
          JOIN users app_user ON app_user.id = membership.user_id
+         LEFT JOIN workspace_member_profiles profile ON profile.workspace_id = membership.workspace_id AND profile.user_id = membership.user_id
          LEFT JOIN member_roles assigned ON assigned.membership_id = membership.id
          LEFT JOIN roles role ON role.id = assigned.role_id
          WHERE membership.workspace_id = $1
-         GROUP BY membership.id, app_user.id
+         GROUP BY membership.id, app_user.id, profile.avatar_preset, profile.photo_updated_at
          ORDER BY app_user.display_name`,
         [workspaceId],
       );
-      return members.rows;
+      return members.rows.map(({ photoUpdatedAt, ...member }) => ({ ...member, photoUrl: MemberProfileService.photoUrl(workspaceId, String(member.userId), photoUpdatedAt as Date | null) }));
     });
   }
 

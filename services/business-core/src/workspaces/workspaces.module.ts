@@ -1,3 +1,5 @@
+import { MemberProfileController } from "./member-profile.controller";
+import { MemberProfileService } from "./member-profile.service";
 import { Module } from "@nestjs/common";
 import { WorkspacesController } from "./workspaces.controller";
 import { WorkspaceAccessService } from "./workspace-access.service";
@@ -26,6 +28,7 @@ import { TaxNumberingService } from "./tax-numbering.service";
 @Module({
   imports: [EmailModule],
   controllers: [
+    MemberProfileController,
     WorkspacesController,
     WorkspaceBillingController,
     CustomerAccountsController,
@@ -37,6 +40,7 @@ import { TaxNumberingService } from "./tax-numbering.service";
     TaxNumberingController,
   ],
   providers: [
+    MemberProfileService,
     WorkspaceAccessService,
     WorkspacesService,
     CustomerAccountsService,
