@@ -89,7 +89,9 @@
     ".next-roles-e2e/types/**/*.ts",
     ".next-roles-e2e/dev/types/**/*.ts",
     ".next-goal-bookmarks/types/**/*.ts",
-    ".next-goal-bookmarks/dev/types/**/*.ts"
+    ".next-goal-bookmarks/dev/types/**/*.ts",
+    ".next-review/types/**/*.ts",
+    ".next-review/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
