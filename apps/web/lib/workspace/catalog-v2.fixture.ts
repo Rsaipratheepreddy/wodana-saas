@@ -32,7 +32,7 @@ export function e2eCatalogResponse(method: string, path: string[], body: unknown
   }
   if (method === "GET" && section === "items" && itemId) {
     const item = items.find((row) => row.id === itemId) ?? items[0];
-    return { ...item, description: null, wastePercent: null, purchaseRoundTo: null, conversions: [], suppliers: [], canViewCosts: true,
+    return { ...item, categoryId: item.categoryId, description: null, wastePercent: null, purchaseRoundTo: null, conversions: [], suppliers: [], canViewCosts: true,
       components: item.itemType === "assembly" ? [{ componentItemId: items[0].id, name: items[0].name, quantityFormula: "width * height / 2973000 * 2", unitCode: "sheet" }, { componentItemId: items[1].id, name: items[1].name, quantityFormula: "ceil(height / 450) * 2", unitCode: "pcs" }] : [],
       prices: item.sellPrice ? [{ id: "p1", priceBookId: "7a1c0000-0000-4000-8000-0000000000b1", variantId: null, method: "fixed", status: "active", version: 2, price: item.sellPrice.price, currency: "AED" }] : [] };
   }
@@ -53,5 +53,6 @@ export function e2eCatalogResponse(method: string, path: string[], body: unknown
   }
   if (method === "POST" && path.length === 0) return { id: catalog.id };
   if (method === "POST" && section === "items") return items[0];
+  if (method === "PUT" && section === "items") return { ...items.find((row) => row.id === itemId), ...(body as object) };
   return { ok: true, first };
 }

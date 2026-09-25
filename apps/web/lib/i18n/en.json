@@ -662,5 +662,16 @@
   "AI settings could not be saved.": "AI settings could not be saved.",
   "AI assistance": "AI assistance",
   "AI suggests; nothing changes until someone accepts.": "AI suggests; nothing changes until someone accepts.",
-  "Not set up yet.": "Not set up yet."
+  "Not set up yet.": "Not set up yet.",
+  "Not set": "Not set",
+  "Added to quoted quantities.": "Added to quoted quantities.",
+  "Whole sheets, boxes or packs when buying.": "Whole sheets, boxes or packs when buying.",
+  "Save item": "Save item",
+  "Formulas use the measurements from the site, e.g. width, height, length, area.": "Formulas use the measurements from the site, e.g. width, height, length, area.",
+  "Component": "Component",
+  "Quantity formula": "Quantity formula",
+  "Add component": "Add component",
+  "Save components": "Save components",
+  "Edit components": "Edit components",
+  "No components yet": "No components yet"
 }

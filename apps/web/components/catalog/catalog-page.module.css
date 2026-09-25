@@ -67,3 +67,11 @@
 .before { color: var(--wd-color-text-tertiary); text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); font-size: var(--wd-text-sm); }
 .after { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); padding-inline-start: var(--wd-space-6); }
 .after small { inline-size: 100%; color: var(--wd-color-text-secondary); }
+.inspectorActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.componentRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 2.25rem; align-items: center; gap: var(--wd-space-2); }
+.componentHead { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+/* One header row instead of a label on every line; labels stay for screen readers. */
+.componentLine :global(.wd-field-label) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.componentRow :global(.wd-input) { font-family: inherit; }
+.form > :global(.wd-button) { justify-self: start; }
+@media (max-width: 48rem) { .componentRow { grid-template-columns: minmax(0, 1fr) 6rem 2.25rem; } .componentRow > :first-child { grid-column: 1 / -1; } .componentHead { display: none; } }

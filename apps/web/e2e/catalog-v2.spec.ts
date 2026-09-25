@@ -78,3 +78,20 @@ test("import with AI clean-up or manually, and AI can be switched per workspace"
   await expect(page.getByRole("switch", { name: "AI assistance" })).toBeChecked();
   await expect(page.getByText("AI suggests; nothing changes until someone accepts.")).toBeVisible();
 });
+
+test("edits an item and an assembly's components", async ({ page }, testInfo) => {
+  await page.goto("/workspace/catalogs");
+  const grid = page.getByRole("region", { name: "Items" });
+  await grid.getByText("Hinged wardrobe").click();
+  await page.getByRole("button", { name: "Edit components" }).click();
+  await expect(page.getByRole("textbox", { name: /^Quantity formula/ })).toHaveCount(2);
+  await page.getByRole("button", { name: "Add component" }).click();
+  await expect(page.getByRole("textbox", { name: /^Quantity formula/ })).toHaveCount(3);
+  await page.screenshot({ path: testInfo.outputPath("catalog-components.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("textbox", { name: /^Name/ }).fill("Hinged wardrobe 2 door");
+  await page.getByRole("textbox", { name: /^Waste/ }).fill("5");
+  await page.getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByRole("button", { name: "Edit components" })).toBeVisible();
+});

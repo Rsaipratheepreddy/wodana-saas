@@ -99,7 +99,7 @@ export function CatalogPage({ workspaceId, canManage, canReview = false, currenc
               getRowId={(row) => row.id}
               isLoading={loading && !items.length}
               onSearchChange={setSearch}
-              renderInspector={(row) => <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={row.id} locale={locale} onChanged={() => void loadItems()} workspaceId={workspaceId} />}
+              renderInspector={(row) => <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={row.id} locale={locale} onChanged={() => void loadItems()} structure={structure} workspaceId={workspaceId} />}
               searchLabel={t("Search items")}
               searchValue={search}
               rowNumbers={false}
