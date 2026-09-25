@@ -240,3 +240,34 @@ For each module, acceptance means more than a happy screenshot: genuine source d
 | [Dzylo end-to-end video supplied in chat](https://youtu.be/NYw__DcZEH8?si=UjdiHTtYKvAAsnS3) | Product/interaction inspiration for catalog, quote, purchasing, approval and execution; not Palm’s operating policy. |
 
 **Maintenance rule:** when Palm confirms a new decision, add its date/source and state exactly what it supersedes. Keep product proposals, local implementation results and client acceptance separate.
+
+## 13. PLM feedback tracker (Wodana_PLM_Feedback_Tracker, read 25 Sept 2026)
+
+The tracker is the client's source of truth: 95 items, of which 19 are Done, 73 Open and 3 Need clarification. It also has a Roles & Access tab (team-based access, PLM-038), a Leads Flow Handling matrix and the confirmed 18-stage flow. Items map onto the funnel modules as follows. Palm-specific values are **configuration** (firm kit, taxonomies, workflow template); the behaviour stays generic.
+
+| Module | Tracker items | Kind |
+|---|---|---|
+| 4 Sales – intake and enquiries | 025–037, 039, 042, 075, 076, 092–095 (024, 029, 031 are questions) | Mostly build. PLM-035 and PLM-075 values are config (`docs/fixtures/palm-crm-intake-profile.json`). |
+| 5 Discovery and design quote | 040, 041, 043, 044, 047–053, 077, 088, 090 | Build and workflow config |
+| 6 Quotation, QS and proposals | 045, 066, 082–087 | Build. The proposal templates go through the document builder. |
+| 7 Deal and payments | 008, 009, 067 (003–016 done) | Build and gates |
+| 8–9 Projects and operations | 046, 054–065, 068–074, 089, 091 | Workflow template (18 stages, skip by enquiry type) and build |
+| Access | 038, 087, Roles & Access tab | Teams carry the permissions; each person gets their own login |
+
+Rules taken from the tracker:
+- **Source and channel:** two required dropdowns, where the channel list depends on the source (PLM-035). Referral requires "Referred by": free text for External, a team member for Internal, a list entry for Broker or Partner.
+- **Self Generated:** only Account Managers, Sales, Sales Admins and Directors can create these leads (PLM-030).
+- **Returning Customer and duplicates:** a contact match switches the source to Returning Customer / Old Leads and keeps the original source in history (PLM-037). A duplicate within open leads gets its own closed status "Duplicate", goes to the original owner and skips round-robin (PLM-093).
+- **Response timer:** one working hour, with working hours Mon–Sun 09:00–18:00; after that the lead is reassigned by round-robin and the reason is recorded (PLM-039 and PLM-095). The maximum number of reassignments is still open.
+- **Nothing fails silently:** a save that can't go through shows a banner listing the problems, and each field is highlighted (PLM-092; shipped 25 Sept).
+- **Change history:** field, old value to new value, who and when, on every record; users can't edit or delete it (PLM-094).
+- **Gates:** without a verified payment and Owner approval there is no design work after stage 5, and no procurement or production after stage 10.
+
+Shared folder "Wodana x PLM – Shared", to load once the matching module is built:
+- Logo (light beige #E4E3DE) → brand
+- Enquiry template form → Sales intake form (PLM-036)
+- Estimate Sept 2026.xlsx and the Quotation & Estimate Sheet (test client) → Quotation
+- Core Collection (Showroom) → Catalog / Shopify (PLM-086). Access still to be granted.
+- Core Supplier List.xlsx → Suppliers
+- Material List.xlsx → materials stock list (PLM-073)
+- Designer Fee Proposal.pdf and Estimate Proposal.pdf → document builder templates (PLM-041 and PLM-085)

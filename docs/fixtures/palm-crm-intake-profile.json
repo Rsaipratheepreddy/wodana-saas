@@ -2,69 +2,246 @@
   "profile": "palm_crm_intake_uat",
   "sourceDocument": "Palm Living Lead Flow CRM Requirements Report.docx",
   "sources": [
-    { "code": "self_generated", "label": "Self Generated" },
-    { "code": "company", "label": "Company" },
-    { "code": "third_party", "label": "Third Party" },
-    { "code": "digital_marketing", "label": "Digital Marketing" },
-    { "code": "referral", "label": "Referral" }
+    {
+      "code": "palm_living_enquiry",
+      "label": "Palm Living Enquiry"
+    },
+    {
+      "code": "palm_living_socials",
+      "label": "Palm Living Socials"
+    },
+    {
+      "code": "referral",
+      "label": "Referral"
+    },
+    {
+      "code": "self_generated",
+      "label": "Self Generated"
+    },
+    {
+      "code": "returning_customer",
+      "label": "Returning Customer"
+    },
+    {
+      "code": "digital_marketing",
+      "label": "Digital Marketing"
+    }
   ],
   "channels": {
-    "self_generated": [
-      { "code": "whatsapp", "label": "WhatsApp" },
-      { "code": "email", "label": "Email" },
-      { "code": "call", "label": "Call" },
-      { "code": "community_drive", "label": "Community Drive" },
-      { "code": "event", "label": "Event" },
-      { "code": "instagram", "label": "Instagram" }
+    "palm_living_enquiry": [
+      {
+        "code": "showroom_walk_in",
+        "label": "Showroom Walk-in"
+      },
+      {
+        "code": "office_walk_in",
+        "label": "Office Walk-in"
+      },
+      {
+        "code": "call",
+        "label": "Call"
+      },
+      {
+        "code": "whatsapp",
+        "label": "WhatsApp"
+      },
+      {
+        "code": "email",
+        "label": "Email"
+      },
+      {
+        "code": "events",
+        "label": "Events"
+      },
+      {
+        "code": "qr_code",
+        "label": "QR Code"
+      }
     ],
-    "company": [
-      { "code": "whatsapp", "label": "WhatsApp" },
-      { "code": "instagram", "label": "Instagram" },
-      { "code": "email", "label": "Email" },
-      { "code": "call", "label": "Call" },
-      { "code": "walk_in", "label": "Walk-in" },
-      { "code": "linkedin", "label": "LinkedIn" },
-      { "code": "website", "label": "Website" },
-      { "code": "tiktok", "label": "TikTok" }
-    ],
-    "third_party": [
-      { "code": "plyleads", "label": "PlyLeads" }
-    ],
-    "digital_marketing": [
-      { "code": "palm_living", "label": "Palm Living" },
-      { "code": "tbd", "label": "TBD" }
+    "palm_living_socials": [
+      {
+        "code": "instagram",
+        "label": "Instagram"
+      },
+      {
+        "code": "facebook",
+        "label": "Facebook"
+      },
+      {
+        "code": "website",
+        "label": "Website"
+      },
+      {
+        "code": "linkedin",
+        "label": "LinkedIn"
+      },
+      {
+        "code": "tiktok",
+        "label": "TikTok"
+      },
+      {
+        "code": "telegram",
+        "label": "Telegram"
+      }
     ],
     "referral": [
-      { "code": "internal", "label": "Internal" },
-      { "code": "external", "label": "External" }
+      {
+        "code": "external",
+        "label": "External"
+      },
+      {
+        "code": "internal",
+        "label": "Internal"
+      },
+      {
+        "code": "broker",
+        "label": "Broker"
+      },
+      {
+        "code": "partner",
+        "label": "Partner"
+      }
+    ],
+    "self_generated": [
+      {
+        "code": "whatsapp",
+        "label": "WhatsApp"
+      },
+      {
+        "code": "instagram",
+        "label": "Instagram"
+      },
+      {
+        "code": "facebook",
+        "label": "Facebook"
+      },
+      {
+        "code": "website",
+        "label": "Website"
+      },
+      {
+        "code": "linkedin",
+        "label": "LinkedIn"
+      },
+      {
+        "code": "tiktok",
+        "label": "TikTok"
+      },
+      {
+        "code": "telegram",
+        "label": "Telegram"
+      },
+      {
+        "code": "networking",
+        "label": "Networking"
+      },
+      {
+        "code": "events",
+        "label": "Events"
+      }
+    ],
+    "returning_customer": [
+      {
+        "code": "old_leads",
+        "label": "Old Leads"
+      }
+    ],
+    "digital_marketing": [
+      {
+        "code": "meta_lead_ads",
+        "label": "Meta Lead Ads"
+      },
+      {
+        "code": "google_ads",
+        "label": "Google Ads"
+      },
+      {
+        "code": "plyleads",
+        "label": "PlyLeads"
+      }
     ]
   },
   "enquiryTypes": [
-    { "code": "renovation_fit_out", "label": "Renovation / Fit-Out" },
-    { "code": "full_fit_out", "label": "Full Fit-Out" },
-    { "code": "interior_design", "label": "Interior Design" },
-    { "code": "interior_design_furniture", "label": "Interior Design + Furniture" },
-    { "code": "furniture_only", "label": "Furniture Only" },
-    { "code": "concepts_early_ideas", "label": "Concepts / Early Ideas" },
-    { "code": "architecture_odg", "label": "Architecture / ODG" },
-    { "code": "not_sure", "label": "Not Sure Yet" }
+    {
+      "code": "renovation_fit_out",
+      "label": "Renovation / Fit-Out"
+    },
+    {
+      "code": "full_fit_out",
+      "label": "Full Fit-Out"
+    },
+    {
+      "code": "interior_design",
+      "label": "Interior Design"
+    },
+    {
+      "code": "interior_design_furniture",
+      "label": "Interior Design + Furniture"
+    },
+    {
+      "code": "furniture_only",
+      "label": "Furniture Only"
+    },
+    {
+      "code": "concepts_early_ideas",
+      "label": "Concepts / Early Ideas"
+    },
+    {
+      "code": "architecture_odg",
+      "label": "Architecture / ODG"
+    },
+    {
+      "code": "not_sure",
+      "label": "Not Sure Yet"
+    }
   ],
   "budgetRanges": [
-    { "code": "not_sure", "label": "Not sure yet" }
+    {
+      "code": "not_sure",
+      "label": "Not sure yet"
+    }
   ],
   "form": {
     "title": "Tell us about your project",
     "description": "Share a few details and the Palm Living team will get in touch.",
-    "source": "company",
+    "source": "palm_living_socials",
     "channel": "website",
     "fields": [
-      { "field": "displayName", "title": "Your name", "required": true },
-      { "field": "mobile", "title": "Mobile", "required": true },
-      { "field": "email", "title": "Email", "required": true },
-      { "field": "location", "title": "Property location", "required": true },
-      { "field": "serviceType", "title": "What can we help with?", "required": true },
-      { "field": "budgetRange", "title": "Approximate project budget", "required": false },
-      { "field": "summary", "title": "Tell us about your project", "required": false }
+      {
+        "field": "displayName",
+        "title": "Your name",
+        "required": true
+      },
+      {
+        "field": "mobile",
+        "title": "Mobile",
+        "required": true
+      },
+      {
+        "field": "email",
+        "title": "Email",
+        "required": true
+      },
+      {
+        "field": "location",
+        "title": "Property location",
+        "required": true
+      },
+      {
+        "field": "serviceType",
+        "title": "What can we help with?",
+        "required": true
+      },
+      {
+        "field": "budgetRange",
+        "title": "Approximate project budget",
+        "required": false
+      },
+      {
+        "field": "summary",
+        "title": "Tell us about your project",
+        "required": false
+      }
     ]
   },
   "operations": {
@@ -88,11 +265,36 @@
         "mode": "business",
         "timezone": "Asia/Dubai",
         "weeklyHours": {
-          "monday": [{ "start": "08:00", "end": "18:00" }],
-          "tuesday": [{ "start": "08:00", "end": "18:00" }],
-          "wednesday": [{ "start": "08:00", "end": "18:00" }],
-          "thursday": [{ "start": "08:00", "end": "18:00" }],
-          "friday": [{ "start": "08:00", "end": "18:00" }]
+          "monday": [
+            {
+              "start": "08:00",
+              "end": "18:00"
+            }
+          ],
+          "tuesday": [
+            {
+              "start": "08:00",
+              "end": "18:00"
+            }
+          ],
+          "wednesday": [
+            {
+              "start": "08:00",
+              "end": "18:00"
+            }
+          ],
+          "thursday": [
+            {
+              "start": "08:00",
+              "end": "18:00"
+            }
+          ],
+          "friday": [
+            {
+              "start": "08:00",
+              "end": "18:00"
+            }
+          ]
         },
         "holidays": [],
         "dateOverrides": {}
@@ -109,5 +311,39 @@
     "socialIntake": "shared_link_or_qr",
     "metaLeadAds": "not_connected",
     "plyleads": "not_connected"
-  }
+  },
+  "customerTypes": [
+    {
+      "code": "end_user",
+      "label": "End User"
+    },
+    {
+      "code": "interior_designers",
+      "label": "Interior Designers"
+    },
+    {
+      "code": "real_estate_agent",
+      "label": "Real Estate Agent"
+    },
+    {
+      "code": "hotels",
+      "label": "Hotels"
+    },
+    {
+      "code": "landlord",
+      "label": "Landlord"
+    },
+    {
+      "code": "tenant",
+      "label": "Tenant"
+    },
+    {
+      "code": "individuals",
+      "label": "Individuals"
+    },
+    {
+      "code": "director_of_rooms",
+      "label": "Director of Rooms"
+    }
+  ]
 }

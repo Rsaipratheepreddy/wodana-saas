@@ -75,6 +75,7 @@ const desiredTaxonomies = [
     options,
   })),
   { code: "enquiry_type", name: "Enquiry type", options: profile.enquiryTypes },
+  { code: "customer_type", name: "Client type", options: profile.customerTypes ?? [] },
   // The source document does not approve numeric budget bands. Keep only its safe fallback.
   { code: "budget_range", name: "Budget range", options: profile.budgetRanges },
 ];
