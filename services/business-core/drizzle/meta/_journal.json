@@ -43,6 +43,13 @@
       "when": 1790564400000,
       "tag": "0005_commercial_money",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790568000000,
+      "tag": "0006_international_region_packs",
+      "breakpoints": true
     }
   ]
 }
