@@ -918,6 +918,18 @@ UI integration follows each backend module in the same order (web first, then mo
 - explicit route files instead of the catch-all;
 - the sidebar: *Daily work* (Home, Inbox, Tasks, Calendar, Approvals) · *Business* (Sales, Clients, Projects) · *Operations* (Purchasing, Inventory, Factory, Logistics) · *Company* (People, Catalog, Connections, Settings).
 
+**Rebuilt surfaces (not patched).** The owner asked for these to be redesigned from their source, because the current ones are unproductive and buggy:
+
+| Surface | Rebuild |
+| --- | --- |
+| **Home** | One ranked **Next actions** list across modules: approvals waiting for me, overdue, due-today and blocked tasks, follow-ups, unanswered enquiries and client decisions. Each item has a reason, a date and a do-it button. No KPI tiles. |
+| **Inbox** | One place for in-app notifications, @mentions and client/vendor messages, each linked to its record. It is available to every staff member, not only CRM users. |
+| **Sidebar** | Follows §2: at most two levels, no duplicate destinations (one Clients, one Calendar, one Tasks), Settings as a hub, Logistics under Operations. Entries are hidden by permission and never lead to a blank page. |
+| **Quotation builder** | One page:<br>• space tree on the left, line grid in the centre, summary and issues on the right;<br>• catalog picker with search;<br>• quantity from measurement formulas (§6.4), with explained price breakdowns;<br>• option groups, revision diff;<br>• one primary action per state (Submit to QS → Issue → Record acceptance);<br>• AI draft and "check my quote".<br>It replaces the ~40 `quotation-*` components. |
+| **Planning (project)** | Packages linked to released scope → standard plan per package (done) → one Gantt, board and list over the same tasks, with dependencies, critical path, ripple preview and baselines. Readiness says what each task is waiting for. It replaces the 2.1k-line project workspace tab set. |
+
+**Known tenant content in code, to move into tenant templates:** Palm's proposal artwork and terms (`apps/web/lib/commercial/proposal-reference.json`, used by `quotation-reference-template.ts` and the item letterhead) move into Palm's own document template in M18. No other tenant-identity branching remains in core logic.
+
 **Migration per module:**
 1. Add the new tables next to the old data.
 2. Run an idempotent backfill from JSON with a reconciliation report (counts, money and quantity sums, orphans) on a production clone.
