@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
 import {
@@ -77,6 +78,7 @@ function sameRoles(roles: readonly string[], selected: ReadonlySet<string>) {
 }
 
 export function MembersPage({ initialData }: { initialData: MembersPageData }) {
+  const t = useT();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [members, setMembers] = useState(initialData.members);
   const [invitations, setInvitations] = useState(initialData.invitations);
@@ -583,46 +585,46 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
   if (initialData.canView === false) {
     return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-label="People" className={styles.page}>
-        <Callout title="People access unavailable" tone="warning">Your role does not include permission to view or manage people. Ask a workspace administrator for access.</Callout>
+      <section aria-label={t("People")} className={styles.page}>
+        <Callout title={t("People access unavailable")} tone="warning">{t("Your role does not include permission to view or manage people. Ask a workspace administrator for access.")}</Callout>
       </section>
     </DesignSystemProvider>;
   }
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-label="People" className={styles.page}>
+      <section aria-label={t("People")} className={styles.page}>
 
-        {canInvite && (assignableRoles.length > 0 || assignableTeams.length > 0) ? <section aria-label="Invite people" className={styles.inviteComposer}>
+        {canInvite && (assignableRoles.length > 0 || assignableTeams.length > 0) ? <section aria-label={t("Invite people")} className={styles.inviteComposer}>
           <Form className={styles.quickInviteForm} onSubmit={createQuickInvitation}>
-            <TextInput autoComplete="off" label="Work emails" onChange={setQuickEmail} placeholder="name@company.com" value={quickEmail} />
+            <TextInput autoComplete="off" label={t("Work emails")} onChange={setQuickEmail} placeholder={t("name@company.com")} value={quickEmail} />
             <SelectField
               items={[
                 ...assignableTeams.map((team) => ({ id: `team:${team.id}`, label: `${team.name} team` })),
                 ...assignableRoles.map((role) => ({ id: `role:${role.code}`, label: `${role.name} role` })),
               ]}
-              label="Access"
+              label={t("Access")}
               onSelectionChange={(key) => key && setQuickAccess(String(key))}
               selectedKey={quickAccess}
             />
-            <Button variant="primary" isLoading={isQuickInviting} type="submit">Invite{quickInviteEmails.length ? ` (${quickInviteEmails.length})` : ""}</Button>
+            <Button variant="primary" isLoading={isQuickInviting} type="submit">{t("Invite")}{quickInviteEmails.length ? ` (${quickInviteEmails.length})` : ""}</Button>
           </Form>
           <div className={styles.inviteComposerFooter}>
             <div className={styles.inviteComposerActions}>
-              <Button onPress={openInvite} size="compact" variant="quiet">Invite with details</Button>
-              <FileUploader accept=".csv,text/csv" appearance="button" label="Upload CSV" multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />
+              <Button onPress={openInvite} size="compact" variant="quiet">{t("Invite with details")}</Button>
+              <FileUploader accept=".csv,text/csv" appearance="button" label={t("Upload CSV")} multiple={false} onFiles={(files) => void loadInvitationCsv(files)} />
             </div>
-            <span>Activation links expire automatically after 7 days.</span>
+            <span>{t("Activation links expire automatically after 7 days.")}</span>
           </div>
           {quickFailure ? <p className={styles.composerError} role="alert">{quickFailure}</p> : null}
         </section> : null}
 
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
-        {actionFailure ? <Callout title="Member action failed" tone="danger">{actionFailure}</Callout> : null}
+        {actionFailure ? <Callout title={t("Member action failed")} tone="danger">{actionFailure}</Callout> : null}
 
         {selectedRows.length ? <div className={styles.selectionBar}>
-          <span><strong>{selectedRows.length}</strong> selected</span>
-          <Button onPress={() => exportRows(selectedRows)} size="compact"><Download aria-hidden="true" size={14} />Export selected</Button>
+          <span><strong>{selectedRows.length}</strong> {t("selected")}</span>
+          <Button onPress={() => exportRows(selectedRows)} size="compact"><Download aria-hidden="true" size={14} />{t("Export selected")}</Button>
         </div> : null}
 
         <div className={styles.tableRegion}>
@@ -636,7 +638,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             selectedIds={selectedIds}
           />
         </div>
-        {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>Your access is read-only. Ask a workspace administrator to change people or invitations.</p> : null}
+        {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>{t("Your access is read-only. Ask a workspace administrator to change people or invitations.")}</p> : null}
       </section>
 
       <ControlledModalDialog
@@ -648,48 +650,46 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             ? "Bulk invitation processing is complete."
             : "The member will receive access after activating the invitation."}
         footer={hasInvitationOutcome
-          ? <div className="wd-dialog-actions"><Button onPress={() => setInviteOpen(false)}>Done</Button></div>
-          : <div className="wd-dialog-actions"><Button isDisabled={isInviting} onPress={() => setInviteOpen(false)}>Cancel</Button><Button form="invite-member-form" isLoading={isInviting} type="submit" variant="primary">Create invitation</Button></div>}
+          ? <div className="wd-dialog-actions"><Button onPress={() => setInviteOpen(false)}>{t("Done")}</Button></div>
+          : <div className="wd-dialog-actions"><Button isDisabled={isInviting} onPress={() => setInviteOpen(false)}>{t("Cancel")}</Button><Button form="invite-member-form" isLoading={isInviting} type="submit" variant="primary">{t("Create invitation")}</Button></div>}
         isDismissable={!isInviting}
         isOpen={inviteOpen}
         onOpenChange={(open) => { if (!isInviting) setInviteOpen(open); }}
         title={invitationResult ? "Invitation ready" : bulkInvitationResult ? "Bulk invitations ready" : "Invite a member"}
       >
         {invitationResult ? <div className={styles.invitationReady}>
-          <Callout title={`${invitationResult.deliveryStatus === "sent" ? "Invitation emailed to" : "Invitation created for"} ${invitationResult.email}`} tone="success">The link expires {dateLabel(invitationResult.expiresAt)}.</Callout>
-          <div className={styles.linkField}><TextInput isReadOnly label="Activation link" onFocus={(event) => event.currentTarget.select()} value={invitationResult.link} /><Button onPress={copyInvitation} size="compact"><Copy aria-hidden="true" size={14} />Copy</Button></div>
+          <Callout title={`${invitationResult.deliveryStatus === "sent" ? "Invitation emailed to" : "Invitation created for"} ${invitationResult.email}`} tone="success">{t("The link expires")}{" "}{dateLabel(invitationResult.expiresAt)}.</Callout>
+          <div className={styles.linkField}><TextInput isReadOnly label={t("Activation link")} onFocus={(event) => event.currentTarget.select()} value={invitationResult.link} /><Button onPress={copyInvitation} size="compact"><Copy aria-hidden="true" size={14} />{t("Copy")}</Button></div>
           <p aria-live="polite">{copyStatus}</p>
         </div> : bulkInvitationResult ? <div className={styles.invitationReady}>
           <Callout title={`${bulkInvitationResult.created.length} invitation${bulkInvitationResult.created.length === 1 ? "" : "s"} created`} tone="success">
-            {bulkInvitationResult.created.length - bulkFallbackCount} email{bulkInvitationResult.created.length - bulkFallbackCount === 1 ? " was" : "s were"} accepted for delivery.
-          </Callout>
+            {bulkInvitationResult.created.length - bulkFallbackCount} {t("email")}{bulkInvitationResult.created.length - bulkFallbackCount === 1 ? " was" : "s were"} {t("accepted for delivery.")}</Callout>
           {bulkFallbackCount ? <Callout title={`${bulkFallbackCount} fallback link${bulkFallbackCount === 1 ? "" : "s"} need sharing`} tone="warning">
-            Email was not delivered for these invitations. Download their one-time activation links before closing.
-          </Callout> : null}
-          {bulkFallbackCount ? <Button onPress={downloadBulkFallbackLinks}><Download aria-hidden="true" size={14} />Download fallback links</Button> : null}
+            {t("Email was not delivered for these invitations. Download their one-time activation links before closing.")}</Callout> : null}
+          {bulkFallbackCount ? <Button onPress={downloadBulkFallbackLinks}><Download aria-hidden="true" size={14} />{t("Download fallback links")}</Button> : null}
           {bulkInvitationResult.failedEmails.length ? <Callout title={`${bulkInvitationResult.failedEmails.length} invitation${bulkInvitationResult.failedEmails.length === 1 ? "" : "s"} failed`} tone="danger">
             {bulkInvitationResult.failedEmails.slice(0, 5).join(", ")}{bulkInvitationResult.failedEmails.length > 5 ? ` and ${bulkInvitationResult.failedEmails.length - 5} more` : ""}
           </Callout> : null}
         </div> : <Form className={styles.form} data-wd-density="compact" id="invite-member-form" noValidate onSubmit={createInvitation}>
           <ValidationSummary errors={inviteErrors} />
-          {inviteFailure ? <Callout title="Could not create invitation" tone="danger">{inviteFailure}</Callout> : null}
-          <TextInput isRequired label="Full name" onChange={setInviteName} placeholder="e.g. Maya Thomas" value={inviteName} />
-          <TextInput inputType="email" isRequired label="Work email" onChange={setInviteEmail} placeholder="maya@company.com" value={inviteEmail} />
-          <MultiSelectField items={assignableTeams.map((team) => ({ id: team.id, label: team.name }))} label="Teams" onSelectionChange={(keys) => setInviteTeamIds(new Set(Array.from(keys, String)))} selectedKeys={inviteTeamIds} />
+          {inviteFailure ? <Callout title={t("Could not create invitation")} tone="danger">{inviteFailure}</Callout> : null}
+          <TextInput isRequired label={t("Full name")} onChange={setInviteName} placeholder={t("e.g. Maya Thomas")} value={inviteName} />
+          <TextInput inputType="email" isRequired label={t("Work email")} onChange={setInviteEmail} placeholder={t("maya@company.com")} value={inviteEmail} />
+          <MultiSelectField items={assignableTeams.map((team) => ({ id: team.id, label: team.name }))} label={t("Teams")} onSelectionChange={(keys) => setInviteTeamIds(new Set(Array.from(keys, String)))} selectedKeys={inviteTeamIds} />
           <RoleChoices onChange={setInviteRoles} roles={assignableRoles} selected={inviteRoles} />
         </Form>}
       </ControlledModalDialog>
 
       <ControlledModalDialog
         description={editingMember ? `Update workspace access for ${editingMember.email}.` : undefined}
-        footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingMember} onPress={() => { setMemberReviewOpen(false); setEditingMember(null); }}>Cancel</Button><Button form="edit-member-form" isLoading={isSavingMember} type="submit" variant="primary">Review changes</Button></div>}
+        footer={<div className="wd-dialog-actions"><Button isDisabled={isSavingMember} onPress={() => { setMemberReviewOpen(false); setEditingMember(null); }}>{t("Cancel")}</Button><Button form="edit-member-form" isLoading={isSavingMember} type="submit" variant="primary">{t("Review changes")}</Button></div>}
         isDismissable={!isSavingMember}
         isOpen={Boolean(editingMember)}
         onOpenChange={(open) => { if (!open && !isSavingMember) { setMemberReviewOpen(false); setEditingMember(null); } }}
-        title="Edit member access"
+        title={t("Edit member access")}
       >
         {editingMember ? <Form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={reviewMember}>
-          {editFailure ? <Callout title="Could not save member" tone="danger">{editFailure}</Callout> : null}
+          {editFailure ? <Callout title={t("Could not save member")} tone="danger">{editFailure}</Callout> : null}
           <div className={styles.memberPreview}><Avatar name={editingMember.displayName} size="lg" /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
           <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
           <SelectField
@@ -697,7 +697,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             description={editingMember.userId === initialData.currentUserId ? "You cannot suspend your own active session here." : "Suspended members cannot sign in to this workspace."}
             isDisabled={editingMember.userId === initialData.currentUserId}
             items={[{ id: "active", label: "Active" }, { id: "suspended", label: "Suspended" }]}
-            label="Member status"
+            label={t("Member status")}
             onSelectionChange={(key) => key && setEditStatus(String(key) as "active" | "suspended")}
             selectedKey={editStatus}
           />
@@ -706,14 +706,14 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
       <ConfirmationDialog
         body={editingMember ? <div className={styles.accessReview}>
-          <p>Confirm the effective access change for <strong>{editingMember.displayName}</strong>.</p>
+          <p>{t("Confirm the effective access change for")}{" "}<strong>{editingMember.displayName}</strong>.</p>
           <dl>
-            {editStatus !== editingMember.status ? <div><dt>Status</dt><dd><span>{editingMember.status === "active" ? "Active" : "Suspended"}</span><span aria-hidden="true">→</span><strong>{editStatus === "active" ? "Active" : "Suspended"}</strong></dd></div> : null}
-            {!sameRoles(editingMember.roles, editRoles) ? <div><dt>Direct roles</dt><dd><span>{editingMember.roles.map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</span><span aria-hidden="true">→</span><strong>{Array.from(editRoles).map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</strong></dd></div> : null}
-            <div><dt>Team access</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || "No assigned teams"}</strong></dd></div>
+            {editStatus !== editingMember.status ? <div><dt>{t("Status")}</dt><dd><span>{editingMember.status === "active" ? "Active" : "Suspended"}</span><span aria-hidden="true">→</span><strong>{editStatus === "active" ? "Active" : "Suspended"}</strong></dd></div> : null}
+            {!sameRoles(editingMember.roles, editRoles) ? <div><dt>{t("Direct roles")}</dt><dd><span>{editingMember.roles.map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</span><span aria-hidden="true">→</span><strong>{Array.from(editRoles).map((role) => readableRole(role, initialData.roles)).join(", ") || "None"}</strong></dd></div> : null}
+            <div><dt>{t("Team access")}</dt><dd><strong>{editingMember.teams?.map((team) => team.name).join(", ") || "No assigned teams"}</strong></dd></div>
           </dl>
-          {editStatus === "suspended" && editingMember.status !== "suspended" ? <Callout title="This releases a licensed seat" tone="warning">The member will lose workspace access immediately. Their records remain available, and reactivation will require a free seat.</Callout> : null}
-          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>Team-inherited roles remain managed from Teams.</p> : null}
+          {editStatus === "suspended" && editingMember.status !== "suspended" ? <Callout title={t("This releases a licensed seat")} tone="warning">{t("The member will lose workspace access immediately. Their records remain available, and reactivation will require a free seat.")}</Callout> : null}
+          {editingMember.inheritedRoles?.length ? <p className={styles.reviewNote}>{t("Team-inherited roles remain managed from Teams.")}</p> : null}
         </div> : null}
         confirmLabel="Apply access changes"
         confirmVariant="primary"
@@ -721,17 +721,17 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         isOpen={memberReviewOpen}
         onConfirm={() => void saveMember()}
         onOpenChange={(open) => { if (!isSavingMember) setMemberReviewOpen(open); }}
-        title="Apply member access changes?"
+        title={t("Apply member access changes?")}
       />
 
       <ControlledModalDialog
-        footer={<div className="wd-dialog-actions"><Button isDisabled={isCancelling} onPress={() => setCancellingInvitation(null)}>Keep invitation</Button><Button isLoading={isCancelling} onPress={cancelInvitation} variant="danger">Cancel invitation</Button></div>}
+        footer={<div className="wd-dialog-actions"><Button isDisabled={isCancelling} onPress={() => setCancellingInvitation(null)}>{t("Keep invitation")}</Button><Button isLoading={isCancelling} onPress={cancelInvitation} variant="danger">{t("Cancel invitation")}</Button></div>}
         isDismissable={!isCancelling}
         isOpen={Boolean(cancellingInvitation)}
         onOpenChange={(open) => { if (!open && !isCancelling) setCancellingInvitation(null); }}
-        title="Cancel invitation?"
+        title={t("Cancel invitation?")}
       >
-        {cancellingInvitation ? <>The activation link for <strong>{cancellingInvitation.email}</strong> will stop working immediately.</> : null}
+        {cancellingInvitation ? <>{t("The activation link for")}{" "}<strong>{cancellingInvitation.email}</strong> {t("will stop working immediately.")}</> : null}
       </ControlledModalDialog>
     </DesignSystemProvider>
   );
@@ -746,5 +746,6 @@ function RoleChoices({
   roles: MembersPageData["roles"];
   selected: Set<string>;
 }) {
-  return <fieldset className={styles.roleChoices}><legend>Direct roles</legend><div>{roles.map((role) => <Checkbox isSelected={selected.has(role.code)} key={role.id} onChange={(checked) => { const next = new Set(selected); if (checked) next.add(role.code); else next.delete(role.code); onChange(next); }}><span><strong>{role.name}</strong><small>{role.description}</small></span></Checkbox>)}</div></fieldset>;
+  const t = useT();
+  return <fieldset className={styles.roleChoices}><legend>{t("Direct roles")}</legend><div>{roles.map((role) => <Checkbox isSelected={selected.has(role.code)} key={role.id} onChange={(checked) => { const next = new Set(selected); if (checked) next.add(role.code); else next.delete(role.code); onChange(next); }}><span><strong>{role.name}</strong><small>{role.description}</small></span></Checkbox>)}</div></fieldset>;
 }

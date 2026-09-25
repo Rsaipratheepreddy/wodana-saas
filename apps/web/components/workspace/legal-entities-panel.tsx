@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { Building2, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, SelectField, TextInput } from "@/design-system";
@@ -100,6 +101,7 @@ export function LegalEntitiesPanel({
   workspace: WorkspaceRecord;
   onChange: (entities: LegalEntityRecord[]) => void;
 }) {
+  const t = useT();
   const [entities, setEntities] = useState(initialEntities);
   const [editing, setEditing] = useState<LegalEntityRecord | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<LegalEntityRecord | null>(null);
@@ -215,12 +217,12 @@ export function LegalEntitiesPanel({
   return <>
     <section aria-label={standalone ? "Business records" : undefined} aria-labelledby={standalone ? undefined : "legal-entities-heading"} className={`${styles.detailSection} ${styles.legalEntitiesSection}`}>
       <header>
-        <div>{standalone ? <p className={styles.standaloneSectionHint}>Official company, trade-license and tax details used on contracts and invoices.</p> : <><h2 id="legal-entities-heading">Business records</h2><p className={styles.sectionHint}>Official company, trade-license and tax details used on contracts and invoices.</p></>}</div>
-        {canManage ? <Button onPress={openCreate} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />Add business</Button> : null}
+        <div>{standalone ? <p className={styles.standaloneSectionHint}>{t("Official company, trade-license and tax details used on contracts and invoices.")}</p> : <><h2 id="legal-entities-heading">{t("Business records")}</h2><p className={styles.sectionHint}>{t("Official company, trade-license and tax details used on contracts and invoices.")}</p></>}</div>
+        {canManage ? <Button onPress={openCreate} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />{t("Add business")}</Button> : null}
       </header>
       {notice ? <p aria-live="polite" className={styles.organizationNotice}><CheckCircle2 aria-hidden="true" size={14} />{notice}</p> : null}
-      {error ? <Callout title="Business record action failed" tone="danger">{error}</Callout> : null}
-      <ul aria-label="Active legal entities" className={styles.legalEntityList}>
+      {error ? <Callout title={t("Business record action failed")} tone="danger">{error}</Callout> : null}
+      <ul aria-label={t("Active legal entities")} className={styles.legalEntityList}>
         {entities.map((entity) => <li key={entity.id}>
           <span aria-hidden="true" className={styles.organizationIcon}><Building2 size={15} /></span>
           <div className={styles.legalEntityDetails}>
@@ -231,17 +233,17 @@ export function LegalEntitiesPanel({
           <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
           <TaxNumberingSheet canManage={canManage} entityId={entity.id} entityName={entity.displayName} workspaceId={workspace.id} />
           {canManage ? <div className={styles.legalEntityActions}>
-            <Button aria-label={`Edit ${entity.displayName}`} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />Edit</Button>
-            {entities.length > 1 ? <Button aria-label={`Archive ${entity.displayName}`} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />Archive</Button> : null}
+            <Button aria-label={`Edit ${entity.displayName}`} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
+            {entities.length > 1 ? <Button aria-label={`Archive ${entity.displayName}`} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Archive")}</Button> : null}
           </div> : null}
         </li>)}
       </ul>
-      {entities.length === 1 && canManage ? <p className={styles.permissionNote}>At least one active business record is required for a workspace.</p> : null}
+      {entities.length === 1 && canManage ? <p className={styles.permissionNote}>{t("At least one active business record is required for a workspace.")}</p> : null}
     </section>
 
     <ControlledModalDialog
       description={existing ? "Update the official details and defaults for this business." : "Add official business details for documents, operating units and integrations."}
-      footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setEditing(null)}>Cancel</Button><Button form="legal-entity-form" isLoading={saving} type="submit" variant="primary">{existing ? "Save business" : "Add business"}</Button></div>}
+      footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setEditing(null)}>{t("Cancel")}</Button><Button form="legal-entity-form" isLoading={saving} type="submit" variant="primary">{existing ? "Save business" : "Add business"}</Button></div>}
       isDismissable={!saving}
       isOpen={Boolean(editing)}
       onOpenChange={(open) => { if (!open && !saving) setEditing(null); }}
@@ -249,33 +251,33 @@ export function LegalEntitiesPanel({
       title={existing ? `Edit ${existing.displayName}` : "Add business"}
     >
       <form className={styles.legalEntityForm} id="legal-entity-form" noValidate onSubmit={save}>
-        {error ? <Callout title="Could not save business record" tone="danger">{error}</Callout> : null}
+        {error ? <Callout title={t("Could not save business record")} tone="danger">{error}</Callout> : null}
         <div className={styles.formGrid}>
-          <TextInput isDisabled={Boolean(existing)} isRequired label="Entity code" onChange={(code) => { setDraft((current) => ({ ...current, code: code.toUpperCase() })); setError(""); }} placeholder="PALM_LIVING" value={draft.code} />
-          <TextInput isRequired label="Display name" onChange={updateDisplayName} placeholder="Palm Living" value={draft.displayName} />
-          <div className={styles.fullField}><TextInput isRequired label="Registered company name" onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} /></div>
-          <SelectField isRequired items={countries} label="Country / region" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, countryCode: String(key) }))} selectedKey={draft.countryCode} />
-          <SelectField isRequired items={currencies} label="Base currency" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, baseCurrency: String(key) }))} selectedKey={draft.baseCurrency} />
-          <SelectField isRequired items={locales} label="Language & format" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, locale: String(key) }))} selectedKey={draft.locale} />
-          <SelectField isRequired items={timezones} label="Time zone" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, timezone: String(key) }))} selectedKey={draft.timezone} />
-          <TextInput label="Registration number" onChange={(registrationNumber) => setDraft((current) => ({ ...current, registrationNumber }))} value={draft.registrationNumber} />
-          <TextInput label="Tax registration number" onChange={(taxRegistrationNumber) => setDraft((current) => ({ ...current, taxRegistrationNumber }))} value={draft.taxRegistrationNumber} />
-          <div className={styles.fullField}><TextInput label="Address line 1" onChange={(line1) => setDraft((current) => ({ ...current, line1 }))} value={draft.line1} /></div>
-          <div className={styles.fullField}><TextInput label="Address line 2" onChange={(line2) => setDraft((current) => ({ ...current, line2 }))} value={draft.line2} /></div>
-          <TextInput label="City" onChange={(city) => setDraft((current) => ({ ...current, city }))} value={draft.city} />
-          <TextInput label="State / region" onChange={(region) => setDraft((current) => ({ ...current, region }))} value={draft.region} />
-          <TextInput label="Postal code" onChange={(postalCode) => setDraft((current) => ({ ...current, postalCode }))} value={draft.postalCode} />
+          <TextInput isDisabled={Boolean(existing)} isRequired label={t("Entity code")} onChange={(code) => { setDraft((current) => ({ ...current, code: code.toUpperCase() })); setError(""); }} placeholder={t("PALM_LIVING")} value={draft.code} />
+          <TextInput isRequired label={t("Display name")} onChange={updateDisplayName} placeholder={t("Palm Living")} value={draft.displayName} />
+          <div className={styles.fullField}><TextInput isRequired label={t("Registered company name")} onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} /></div>
+          <SelectField isRequired items={countries} label={t("Country / region")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, countryCode: String(key) }))} selectedKey={draft.countryCode} />
+          <SelectField isRequired items={currencies} label={t("Base currency")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, baseCurrency: String(key) }))} selectedKey={draft.baseCurrency} />
+          <SelectField isRequired items={locales} label={t("Language & format")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, locale: String(key) }))} selectedKey={draft.locale} />
+          <SelectField isRequired items={timezones} label={t("Time zone")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, timezone: String(key) }))} selectedKey={draft.timezone} />
+          <TextInput label={t("Registration number")} onChange={(registrationNumber) => setDraft((current) => ({ ...current, registrationNumber }))} value={draft.registrationNumber} />
+          <TextInput label={t("Tax registration number")} onChange={(taxRegistrationNumber) => setDraft((current) => ({ ...current, taxRegistrationNumber }))} value={draft.taxRegistrationNumber} />
+          <div className={styles.fullField}><TextInput label={t("Address line 1")} onChange={(line1) => setDraft((current) => ({ ...current, line1 }))} value={draft.line1} /></div>
+          <div className={styles.fullField}><TextInput label={t("Address line 2")} onChange={(line2) => setDraft((current) => ({ ...current, line2 }))} value={draft.line2} /></div>
+          <TextInput label={t("City")} onChange={(city) => setDraft((current) => ({ ...current, city }))} value={draft.city} />
+          <TextInput label={t("State / region")} onChange={(region) => setDraft((current) => ({ ...current, region }))} value={draft.region} />
+          <TextInput label={t("Postal code")} onChange={(postalCode) => setDraft((current) => ({ ...current, postalCode }))} value={draft.postalCode} />
         </div>
       </form>
     </ControlledModalDialog>
 
     <ConfirmationDialog
-      body={archiveTarget ? <>Archive <strong>{archiveTarget.displayName}</strong>? Its operating units and integrations must already be reassigned or archived.</> : null}
+      body={archiveTarget ? <>{t("Archive")}{" "}<strong>{archiveTarget.displayName}</strong>{t("? Its operating units and integrations must already be reassigned or archived.")}</> : null}
       confirmLabel={archiving ? "Archiving…" : "Archive business"}
       isOpen={Boolean(archiveTarget)}
       onConfirm={() => void archive()}
       onOpenChange={(open) => { if (!open && !archiving) setArchiveTarget(null); }}
-      title="Archive business record?"
+      title={t("Archive business record?")}
     />
   </>;
 }

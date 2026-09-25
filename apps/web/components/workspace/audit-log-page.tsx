@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState } from "react";
 import {
   Badge,
@@ -55,6 +56,7 @@ function responseMessage(response: Response, fallback: string) {
 }
 
 export function AuditLogPage({ initialData }: { initialData: AuditLogPageData }) {
+  const t = useT();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
@@ -89,7 +91,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
     { id: "source", accessorFn: (item) => humanize(item.source), header: "Source", size: 115 },
     { id: "record", accessorFn: (item) => humanize(item.entityType), header: "Record", size: 165 },
     { id: "occurred", accessorFn: (item) => item.occurredAt, header: "Date & time", size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt)}</time> },
-    { id: "action", header: "Action", size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={`View ${actionLabel(row.original.action)} details`} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">View</Button> },
+    { id: "action", header: "Action", size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={`View ${actionLabel(row.original.action)} details`} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">{t("View")}</Button> },
   ];
 
   const exportAudit = () => {
@@ -134,24 +136,24 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
   };
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label="Audit logs" className={styles.page}>
-      {!initialData.canView ? <Callout title="Audit log access is restricted" tone="warning">Ask a workspace owner or administrator for audit viewing permission.</Callout> : <>
-        <section aria-label="Audit filters" className={styles.filters}>
+    <section aria-label={t("Audit logs")} className={styles.page}>
+      {!initialData.canView ? <Callout title={t("Audit log access is restricted")} tone="warning">{t("Ask a workspace owner or administrator for audit viewing permission.")}</Callout> : <>
+        <section aria-label={t("Audit filters")} className={styles.filters}>
           <div className={styles.filterControls}>
-            <div className={styles.searchField}><SearchInput label="Search audit log" onChange={setQuery} placeholder="Search actions, people, or records…" value={query} /></div>
+            <div className={styles.searchField}><SearchInput label={t("Search audit log")} onChange={setQuery} placeholder={t("Search actions, people, or records…")} value={query} /></div>
             <div className={styles.selectField}>
-              <SelectField accent="neutral" aria-label="Audit source" items={sourceItems} label={<span className={styles.visuallyHidden}>Source</span>} onSelectionChange={(key) => key && setSource(String(key))} selectedKey={source} />
+              <SelectField accent="neutral" aria-label={t("Audit source")} items={sourceItems} label={<span className={styles.visuallyHidden}>{t("Source")}</span>} onSelectionChange={(key) => key && setSource(String(key))} selectedKey={source} />
             </div>
             <div className={styles.selectField}>
-              <SelectField accent="neutral" aria-label="Audit period" items={[{ id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }]} label={<span className={styles.visuallyHidden}>Period</span>} onSelectionChange={(key) => key && setPeriod(String(key))} selectedKey={period} />
+              <SelectField accent="neutral" aria-label={t("Audit period")} items={[{ id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }]} label={<span className={styles.visuallyHidden}>{t("Period")}</span>} onSelectionChange={(key) => key && setPeriod(String(key))} selectedKey={period} />
             </div>
-            <Button isDisabled={!visibleItems.length} onPress={exportAudit}>Export</Button>
+            <Button isDisabled={!visibleItems.length} onPress={exportAudit}>{t("Export")}</Button>
           </div>
         </section>
 
-        {failure ? <Callout title="Audit log could not be updated" tone="danger">{failure}</Callout> : null}
+        {failure ? <Callout title={t("Audit log could not be updated")} tone="danger">{failure}</Callout> : null}
 
-        <DataGrid ariaLabel="Workspace audit log" appearance="flush" columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">Load more</Button> : undefined} emptyTitle="No audit events found" emptyDescription="Try a different source, period, or search." />
+        <DataGrid ariaLabel="Workspace audit log" appearance="flush" columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more")}</Button> : undefined} emptyTitle="No audit events found" emptyDescription="Try a different source, period, or search." />
       </>}
     </section>
 
@@ -160,25 +162,26 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
 }
 
 function AuditEventDialog({ event, onClose }: { event: AuditEvent | null; onClose: () => void }) {
+  const t = useT();
   const fields = event ? changedFields(event) : [];
   return <ControlledModalDialog
     description={event ? `${humanize(event.entityType)} · ${event.entityId?.slice(0, 8) ?? "No record ID"}` : undefined}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>Done</Button></div>}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Done")}</Button></div>}
     isOpen={Boolean(event)}
     onOpenChange={(open) => { if (!open) onClose(); }}
     title={event ? actionLabel(event.action) : "Audit event"}
   >
     {event ? <div className={styles.eventDetails}>
       <dl>
-        <div><dt>Actor</dt><dd>{event.actorName ?? "Wodana system"}<small>{event.actorEmail}</small></dd></div>
+        <div><dt>{t("Actor")}</dt><dd>{event.actorName ?? "Wodana system"}<small>{event.actorEmail}</small></dd></div>
         <div><dt>Date &amp; time</dt><dd>{timestamp(event.occurredAt)}</dd></div>
-        <div><dt>Source</dt><dd><Badge tone={sourceTone(event.source)}>{humanize(event.source)}</Badge></dd></div>
-        <div><dt>Correlation ID</dt><dd><code>{event.correlationId}</code></dd></div>
+        <div><dt>{t("Source")}</dt><dd><Badge tone={sourceTone(event.source)}>{humanize(event.source)}</Badge></dd></div>
+        <div><dt>{t("Correlation ID")}</dt><dd><code>{event.correlationId}</code></dd></div>
       </dl>
-      <section className={styles.changedFields}><strong>Changed fields</strong><div>{fields.length ? fields.map((field) => <Badge key={field}>{humanize(field)}</Badge>) : <span>No field-level changes recorded.</span>}</div></section>
+      <section className={styles.changedFields}><strong>{t("Changed fields")}</strong><div>{fields.length ? fields.map((field) => <Badge key={field}>{humanize(field)}</Badge>) : <span>{t("No field-level changes recorded.")}</span>}</div></section>
       <div className={styles.changeGrid}>
-        <section><strong>Before</strong><pre>{event.before ? JSON.stringify(event.before, null, 2) : "No previous value"}</pre></section>
-        <section><strong>After</strong><pre>{event.after ? JSON.stringify(event.after, null, 2) : "No resulting value"}</pre></section>
+        <section><strong>{t("Before")}</strong><pre>{event.before ? JSON.stringify(event.before, null, 2) : "No previous value"}</pre></section>
+        <section><strong>{t("After")}</strong><pre>{event.after ? JSON.stringify(event.after, null, 2) : "No resulting value"}</pre></section>
       </div>
     </div> : null}
   </ControlledModalDialog>;

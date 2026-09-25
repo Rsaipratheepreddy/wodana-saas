@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
 import { Building2, Network, Pencil, Plus, RotateCcw, Users } from "lucide-react";
 import {
@@ -46,6 +47,7 @@ function titleCase(value: string) {
 }
 
 export function OrganizationStructurePage({ initialData }: { initialData: OrganizationStructurePageData }) {
+  const t = useT();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [units, setUnits] = useState(initialData.businessUnits);
   const [teams, setTeams] = useState(initialData.teams);
@@ -137,7 +139,7 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
   };
 
   const businessUnitsPanel = !units.length
-    ? <EmptyState description="Create the first studio, branch, or department." icon={<Building2 size={20} />} title="No business units" />
+    ? <EmptyState description={t("Create the first studio, branch, or department.")} icon={<Building2 size={20} />} title={t("No business units")} />
     : <div className={styles.cardList}>
       {units.map((unit) => {
         const parent = unit.parentBusinessUnitId ? unitsById.get(unit.parentBusinessUnitId) : null;
@@ -151,15 +153,15 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
             </div>
             {initialData.canManage ? <IconMenuButton ariaLabel={`Actions for ${unit.name}`} items={[{ id: "edit", label: "Edit business unit" }, { id: "archive", label: "Archive", tone: "danger" }]} onAction={(action) => action === "edit" ? setEditingUnit(unit) : setArchiveTarget({ kind: "unit", item: unit })} /> : null}
           </div>
-          <div className={styles.cardFooter}><span>{parent ? `Under ${parent.name}` : "Top level"}</span><span>{unit.timezone}</span><span>{teamCount} team{teamCount === 1 ? "" : "s"}</span></div>
+          <div className={styles.cardFooter}><span>{parent ? `Under ${parent.name}` : "Top level"}</span><span>{unit.timezone}</span><span>{teamCount} {t("team")}{teamCount === 1 ? "" : "s"}</span></div>
         </Surface>;
       })}
     </div>;
 
   const teamsPanel = !units.length
-    ? <EmptyState description="Create a business unit before adding teams." icon={<Network size={20} />} title="Business unit required" />
+    ? <EmptyState description={t("Create a business unit before adding teams.")} icon={<Network size={20} />} title={t("Business unit required")} />
     : !teams.length
-      ? <EmptyState action={initialData.canManage ? <Button onPress={() => setEditingTeam("new")}><Plus size={14} />Create team</Button> : null} description="Group members under a business unit." icon={<Network size={20} />} title="No teams yet" />
+      ? <EmptyState action={initialData.canManage ? <Button onPress={() => setEditingTeam("new")}><Plus size={14} />{t("Create team")}</Button> : null} description={t("Group members under a business unit.")} icon={<Network size={20} />} title={t("No teams yet")} />
       : <div className={styles.cardList}>
         {teams.map((team) => {
           const lead = team.members.find((member) => member.isLead);
@@ -187,22 +189,22 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-label="Teams and departments" className={styles.page}>
+      <section aria-label={t("Teams and departments")} className={styles.page}>
 
-        <section aria-label="Organization structure summary" className={styles.actionStrip}>
+        <section aria-label={t("Organization structure summary")} className={styles.actionStrip}>
           <div className={styles.summary}>
-            <span><Network aria-hidden="true" size={16} /><strong>{teams.length}</strong> team{teams.length === 1 ? "" : "s"}</span>
-            <span><Building2 aria-hidden="true" size={16} /><strong>{units.length}</strong> department{units.length === 1 ? "" : "s"}</span>
-            <span><Users aria-hidden="true" size={16} /><strong>{initialData.members.length}</strong> member{initialData.members.length === 1 ? "" : "s"}</span>
+            <span><Network aria-hidden="true" size={16} /><strong>{teams.length}</strong> {t("team")}{teams.length === 1 ? "" : "s"}</span>
+            <span><Building2 aria-hidden="true" size={16} /><strong>{units.length}</strong> {t("department")}{units.length === 1 ? "" : "s"}</span>
+            <span><Users aria-hidden="true" size={16} /><strong>{initialData.members.length}</strong> {t("member")}{initialData.members.length === 1 ? "" : "s"}</span>
           </div>
           {initialData.canManage ? <div className={styles.actions}>
-            <Button isDisabled={!units.length} onPress={() => setEditingTeam("new")} variant="primary"><Plus aria-hidden="true" size={14} />Team</Button>
-            <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />Department</Button>
+            <Button isDisabled={!units.length} onPress={() => setEditingTeam("new")} variant="primary"><Plus aria-hidden="true" size={14} />{t("Team")}</Button>
+            <Button onPress={() => setEditingUnit("new")}><Plus aria-hidden="true" size={14} />{t("Department")}</Button>
           </div> : null}
         </section>
 
         {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
-        {failure ? <Callout title="Organization action failed" tone="danger">{failure}</Callout> : null}
+        {failure ? <Callout title={t("Organization action failed")} tone="danger">{failure}</Callout> : null}
 
         <div className={styles.organizationTabs}>
           <Tabs
@@ -214,23 +216,24 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
             selectedKey={activeView}
           />
         </div>
-        {!initialData.canManage ? <p className={styles.permissionNote}>Only workspace owners and administrators can change organization structure.</p> : null}
+        {!initialData.canManage ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can change organization structure.")}</p> : null}
       </section>
 
       <UnitDialog initialData={initialData} item={editingUnit} key={editingUnit === "new" ? "unit-new" : editingUnit?.id ?? "unit-closed"} onClose={() => setEditingUnit(null)} onSaved={(unit) => { setUnits((current) => [unit, ...current.filter((item) => item.id !== unit.id)]); setEditingUnit(null); setStatus(`${unit.name} was saved.`); }} units={units} />
       <TeamDialog initialData={initialData} item={editingTeam} key={editingTeam === "new" ? "team-new" : editingTeam?.id ?? "team-closed"} onClose={() => setEditingTeam(null)} onSaved={(team) => { setTeams((current) => [team, ...current.filter((item) => item.id !== team.id)]); setEditingTeam(null); setStatus(`${team.name} was saved.`); }} units={units} />
-      <InspectorSheet isOpen={Boolean(historyTeam)} onOpenChange={(open) => { if (!open && !isRollingBack) setHistoryTeam(null); }} size="sm" title={historyTeam ? `${historyTeam.name} history` : "Team history"} description="Member access, inherited roles, and enquiry queues are versioned together.">
-        {historyError ? <Callout title="Team history unavailable" tone="danger">{historyError}</Callout> : null}
-        {!historyError && !revisions.length ? <p className={styles.historyStatus}>No saved changes yet.</p> : null}
-        {revisions.length ? <ol className={styles.historyList}>{revisions.map((revision, index) => <li key={revision.id}><div><strong>Revision {revision.revisionNumber}</strong>{index === 0 ? <Badge tone="neutral">Current</Badge> : null}</div><small>{new Date(revision.createdAt).toLocaleString()} · {revision.changes.length} changed {revision.changes.length === 1 ? "field" : "fields"}</small>{index ? <Button isDisabled={isRollingBack} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet"><RotateCcw aria-hidden="true" size={14} />Restore</Button> : null}</li>)}</ol> : null}
+      <InspectorSheet isOpen={Boolean(historyTeam)} onOpenChange={(open) => { if (!open && !isRollingBack) setHistoryTeam(null); }} size="sm" title={historyTeam ? `${historyTeam.name} history` : "Team history"} description={t("Member access, inherited roles, and enquiry queues are versioned together.")}>
+        {historyError ? <Callout title={t("Team history unavailable")} tone="danger">{historyError}</Callout> : null}
+        {!historyError && !revisions.length ? <p className={styles.historyStatus}>{t("No saved changes yet.")}</p> : null}
+        {revisions.length ? <ol className={styles.historyList}>{revisions.map((revision, index) => <li key={revision.id}><div><strong>{t("Revision")}{" "}{revision.revisionNumber}</strong>{index === 0 ? <Badge tone="neutral">{t("Current")}</Badge> : null}</div><small>{new Date(revision.createdAt).toLocaleString()} · {revision.changes.length} {t("changed")}{" "}{revision.changes.length === 1 ? "field" : "fields"}</small>{index ? <Button isDisabled={isRollingBack} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore")}</Button> : null}</li>)}</ol> : null}
       </InspectorSheet>
-      <ConfirmationDialog body={archiveTarget ? <>Archive <strong>{archiveTarget.item.name}</strong>? It will disappear from active organization structure.</> : null} confirmLabel={isArchiving ? "Archiving…" : "Archive"} isOpen={Boolean(archiveTarget)} onConfirm={() => void archive()} onOpenChange={(open) => { if (!open && !isArchiving) setArchiveTarget(null); }} title={`Archive ${archiveTarget?.kind ?? "item"}?`} />
-      <ConfirmationDialog body="The selected team members, lead, inherited roles, and enquiry queues will become current. The existing configuration stays in history." confirmLabel={isRollingBack ? "Restoring…" : "Restore revision"} isOpen={Boolean(rollbackTarget)} onConfirm={() => void rollbackTeam()} onOpenChange={(open) => { if (!open && !isRollingBack) setRollbackTarget(null); }} title="Restore this team revision?" />
+      <ConfirmationDialog body={archiveTarget ? <>{t("Archive")}{" "}<strong>{archiveTarget.item.name}</strong>{t("? It will disappear from active organization structure.")}</> : null} confirmLabel={isArchiving ? "Archiving…" : "Archive"} isOpen={Boolean(archiveTarget)} onConfirm={() => void archive()} onOpenChange={(open) => { if (!open && !isArchiving) setArchiveTarget(null); }} title={`Archive ${archiveTarget?.kind ?? "item"}?`} />
+      <ConfirmationDialog body="The selected team members, lead, inherited roles, and enquiry queues will become current. The existing configuration stays in history." confirmLabel={isRollingBack ? "Restoring…" : "Restore revision"} isOpen={Boolean(rollbackTarget)} onConfirm={() => void rollbackTeam()} onOpenChange={(open) => { if (!open && !isRollingBack) setRollbackTarget(null); }} title={t("Restore this team revision?")} />
     </DesignSystemProvider>
   );
 }
 
 function UnitDialog({ initialData, item, onClose, onSaved, units }: { initialData: OrganizationStructurePageData; item: BusinessUnitRecord | "new" | null; onClose: () => void; onSaved: (unit: BusinessUnitRecord) => void; units: BusinessUnitRecord[] }) {
+  const t = useT();
   const existing = item && item !== "new" ? item : null;
   const defaultEntity = existing?.legalEntityId ?? initialData.legalEntities[0]?.id ?? "";
   const [name, setName] = useState(existing?.name ?? "");
@@ -243,10 +246,11 @@ function UnitDialog({ initialData, item, onClose, onSaved, units }: { initialDat
   const [saving, setSaving] = useState(false);
   const formId = `business-unit-${existing?.id ?? "new"}`;
   const save = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setFailure(""); try { const response = await fetch(existing ? `/api/workspace/business-units/${existing.id}` : "/api/workspace/business-units", { method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: initialData.workspaceId, ...(existing ? { version: existing.version } : { code }), legalEntityId, parentBusinessUnitId: parentId === "none" ? null : parentId, name, type, timezone }) }); if (!response.ok) throw new Error(await responseMessage(response, "The business unit could not be saved.")); onSaved(await response.json() as BusinessUnitRecord); } catch (error) { setFailure(error instanceof Error ? error.message : "The business unit could not be saved."); } finally { setSaving(false); } };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">Save business unit</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit business unit" : "Create business unit"}><Form className={styles.form} id={formId} onSubmit={save}>{failure ? <Callout title="Could not save business unit" tone="danger">{failure}</Callout> : null}<div className={styles.formColumns}><TextInput isRequired label="Name" onChange={setName} placeholder="Design Studio" value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label="Code" onChange={setCode} placeholder="DESIGN" value={code} /></div><div className={styles.formColumns}><SelectField items={initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))} label="Legal entity" onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} /><SelectField items={[{ id: "studio", label: "Studio" }, { id: "department", label: "Department" }, { id: "branch", label: "Branch" }, { id: "division", label: "Division" }]} label="Unit type" onSelectionChange={(key) => key && setType(String(key))} selectedKey={type} /></div><SelectField items={[{ id: "none", label: "Top level" }, ...units.filter((unit) => unit.id !== existing?.id && unit.legalEntityId === legalEntityId).map((unit) => ({ id: unit.id, label: unit.name }))]} label="Parent business unit" onSelectionChange={(key) => key && setParentId(String(key))} selectedKey={parentId} /><TextInput isRequired label="Time zone" onChange={setTimezone} value={timezone} /></Form></ControlledModalDialog>;
+  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save business unit")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit business unit" : "Create business unit"}><Form className={styles.form} id={formId} onSubmit={save}>{failure ? <Callout title={t("Could not save business unit")} tone="danger">{failure}</Callout> : null}<div className={styles.formColumns}><TextInput isRequired label={t("Name")} onChange={setName} placeholder={t("Design Studio")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("DESIGN")} value={code} /></div><div className={styles.formColumns}><SelectField items={initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))} label={t("Legal entity")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} /><SelectField items={[{ id: "studio", label: "Studio" }, { id: "department", label: "Department" }, { id: "branch", label: "Branch" }, { id: "division", label: "Division" }]} label={t("Unit type")} onSelectionChange={(key) => key && setType(String(key))} selectedKey={type} /></div><SelectField items={[{ id: "none", label: "Top level" }, ...units.filter((unit) => unit.id !== existing?.id && unit.legalEntityId === legalEntityId).map((unit) => ({ id: unit.id, label: unit.name }))]} label={t("Parent business unit")} onSelectionChange={(key) => key && setParentId(String(key))} selectedKey={parentId} /><TextInput isRequired label={t("Time zone")} onChange={setTimezone} value={timezone} /></Form></ControlledModalDialog>;
 }
 
 function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialData: OrganizationStructurePageData; item: WorkspaceTeamRecord | "new" | null; onClose: () => void; onSaved: (team: WorkspaceTeamRecord) => void; units: BusinessUnitRecord[] }) {
+  const t = useT();
   const existing = item && item !== "new" ? item : null;
   const [name, setName] = useState(existing?.name ?? "");
   const [code, setCode] = useState(existing?.code ?? "");
@@ -260,16 +264,16 @@ function TeamDialog({ initialData, item, onClose, onSaved, units }: { initialDat
   const [saving, setSaving] = useState(false);
   const formId = `team-${existing?.id ?? "new"}`;
   const save = async (event: FormEvent) => { event.preventDefault(); setSaving(true); setFailure(""); try { const response = await fetch(existing ? `/api/workspace/teams/${existing.id}` : "/api/workspace/teams", { method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: initialData.workspaceId, ...(existing ? { version: existing.version } : { code }), businessUnitId: unitId, name, description, memberIds: Array.from(memberIds), leadMembershipId: leadId === "none" ? null : leadId, roleIds: Array.from(roleIds), queueIds: Array.from(queueIds) }) }); if (!response.ok) throw new Error(await responseMessage(response, "The team could not be saved.")); onSaved(await response.json() as WorkspaceTeamRecord); } catch (error) { setFailure(error instanceof Error ? error.message : "The team could not be saved."); } finally { setSaving(false); } };
-  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">Save team</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit team" : "Create team"}>
+  return <ControlledModalDialog footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save team")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit team" : "Create team"}>
     <Form className={styles.form} id={formId} onSubmit={save}>
-      {failure ? <Callout title="Could not save team" tone="danger">{failure}</Callout> : null}
-      <div className={styles.formColumns}><TextInput isRequired label="Team name" onChange={setName} placeholder="Sales" value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label="Code" onChange={setCode} placeholder="SALES" value={code} /></div>
-      <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label="Department" onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
-      <MultiSelectField items={initialData.roles.filter((role) => !["owner", "administrator"].includes(role.code)).map((role) => ({ id: role.id, label: role.name }))} label="Access inherited by this team" onSelectionChange={(keys) => setRoleIds(new Set(Array.from(keys, String)))} selectedKeys={roleIds} />
-      <MultiSelectField items={initialData.queues.map((queue) => ({ id: queue.id, label: queue.name }))} label="Enquiry queues for this team" onSelectionChange={(keys) => setQueueIds(new Set(Array.from(keys, String)))} selectedKeys={queueIds} />
-      <fieldset className={styles.memberChoices}><legend>Members</legend><div>{initialData.members.map((member) => <Checkbox isSelected={memberIds.has(member.id)} key={member.id} onChange={(checked) => { const next = new Set(memberIds); if (checked) next.add(member.id); else { next.delete(member.id); if (leadId === member.id) setLeadId("none"); } setMemberIds(next); }}><span><strong>{member.displayName}</strong><small>{member.email}</small></span></Checkbox>)}</div></fieldset>
-      <SelectField items={[{ id: "none", label: "No team lead" }, ...initialData.members.filter((member) => memberIds.has(member.id)).map((member) => ({ id: member.id, label: member.displayName }))]} label="Team lead" onSelectionChange={(key) => key && setLeadId(String(key))} selectedKey={leadId} />
-      <TextAreaField label="Description" onChange={setDescription} placeholder="What this team owns" value={description} />
+      {failure ? <Callout title={t("Could not save team")} tone="danger">{failure}</Callout> : null}
+      <div className={styles.formColumns}><TextInput isRequired label={t("Team name")} onChange={setName} placeholder={t("Sales")} value={name} /><TextInput isDisabled={Boolean(existing)} isRequired label={t("Code")} onChange={setCode} placeholder={t("SALES")} value={code} /></div>
+      <SelectField items={units.map((unit) => ({ id: unit.id, label: unit.name }))} label={t("Department")} onSelectionChange={(key) => key && setUnitId(String(key))} selectedKey={unitId} />
+      <MultiSelectField items={initialData.roles.filter((role) => !["owner", "administrator"].includes(role.code)).map((role) => ({ id: role.id, label: role.name }))} label={t("Access inherited by this team")} onSelectionChange={(keys) => setRoleIds(new Set(Array.from(keys, String)))} selectedKeys={roleIds} />
+      <MultiSelectField items={initialData.queues.map((queue) => ({ id: queue.id, label: queue.name }))} label={t("Enquiry queues for this team")} onSelectionChange={(keys) => setQueueIds(new Set(Array.from(keys, String)))} selectedKeys={queueIds} />
+      <fieldset className={styles.memberChoices}><legend>{t("Members")}</legend><div>{initialData.members.map((member) => <Checkbox isSelected={memberIds.has(member.id)} key={member.id} onChange={(checked) => { const next = new Set(memberIds); if (checked) next.add(member.id); else { next.delete(member.id); if (leadId === member.id) setLeadId("none"); } setMemberIds(next); }}><span><strong>{member.displayName}</strong><small>{member.email}</small></span></Checkbox>)}</div></fieldset>
+      <SelectField items={[{ id: "none", label: "No team lead" }, ...initialData.members.filter((member) => memberIds.has(member.id)).map((member) => ({ id: member.id, label: member.displayName }))]} label={t("Team lead")} onSelectionChange={(key) => key && setLeadId(String(key))} selectedKey={leadId} />
+      <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What this team owns")} value={description} />
     </Form>
   </ControlledModalDialog>;
 }

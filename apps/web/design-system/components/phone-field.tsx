@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { ChevronDown } from "lucide-react";
 import { getExampleNumber, isSupportedCountry, type CountryCode } from "libphonenumber-js/max";
@@ -39,14 +39,13 @@ export function PhoneField({ label, value, onChange, countryCode, onCountryChang
   const matches = query ? countries.filter((country) => `${country.description} ${country.label} ${country.id}`.toLocaleLowerCase().includes(query)) : countries;
 
   // A stored "+971…" (or one set by another form) is shown as code + local number.
-  const latest = useRef({ onChange, onCountryChange });
-  latest.current = { onChange, onCountryChange };
+  // Only acts while the value still carries a code, so it settles after one pass.
   useEffect(() => {
     if (!/^\s*(\+|00)/.test(value)) return;
     const next = splitPhone(value, countryCode);
-    if (next.country !== countryCode) latest.current.onCountryChange(next.country);
-    if (next.national !== value) latest.current.onChange(next.national);
-  }, [value, countryCode]);
+    if (next.country !== countryCode) onCountryChange(next.country);
+    if (next.national !== value) onChange(next.national);
+  }, [value, countryCode, onChange, onCountryChange]);
 
   const type = (raw: string) => {
     const next = splitPhone(raw, countryCode);

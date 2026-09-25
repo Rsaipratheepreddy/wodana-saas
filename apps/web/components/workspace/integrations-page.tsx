@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useCallback, useMemo, useState, type FormEvent } from "react";
 import { ExternalLink, Building2, Mail, Globe2, Tag } from "lucide-react";
 import { ProviderMark } from "@/components/brand/provider-mark";
@@ -91,6 +92,7 @@ export function IntegrationsPage({
   connectProvider?: IntegrationProvider;
   onlyIds?: ProviderCapabilityState["id"][];
 }) {
+  const t = useT();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [connections, setConnections] = useState(initialData.connections);
   const [query, setQuery] = useState("");
@@ -236,7 +238,7 @@ export function IntegrationsPage({
         align: "end",
         renderCell: (connection) => <span className={styles.accountActions}>
           {connection.status === "connected" || connection.status === "degraded"
-            ? <Button onPress={() => setToolConnection(connection)} size="compact">Open tools</Button>
+            ? <Button onPress={() => setToolConnection(connection)} size="compact">{t("Open tools")}</Button>
             : <Button isDisabled={!initialData.canManage || connection.status === "pending"} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact">{connection.status === "pending" ? "Connecting" : "Connect"}</Button>}
           <IconMenuButton
             ariaLabel={`Actions for ${connection.displayName}`}
@@ -259,30 +261,30 @@ export function IntegrationsPage({
   return <DesignSystemProvider className={[styles.provider, embedded ? styles.embedded : ""].join(" ")} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label={embedded ? "Connect your tools" : undefined} aria-labelledby={embedded ? undefined : "integrations-heading"} className={[styles.page, embedded ? styles.embedded : ""].join(" ")}>
       {!embedded && <><header className={styles.pageHeading}>
-        <h1 id="integrations-heading">Connections</h1>
-        <p>Connect calendars, messaging and accounting to your workspace.</p>
+        <h1 id="integrations-heading">{t("Connections")}</h1>
+        <p>{t("Connect calendars, messaging and accounting to your workspace.")}</p>
       </header>
 
       <div className={styles.toolbar}>
         <div className={styles.summary}>
-          <span><strong>{initialData.loadError ? "—" : connectedCount}</strong> connected</span>
-          <span><strong>{initialData.loadError ? "—" : activeConnections.length}</strong> configured</span>
-          {attentionCount ? <span data-attention><strong>{attentionCount}</strong> need attention</span> : null}
+          <span><strong>{initialData.loadError ? "—" : connectedCount}</strong> {t("connected")}</span>
+          <span><strong>{initialData.loadError ? "—" : activeConnections.length}</strong> {t("configured")}</span>
+          {attentionCount ? <span data-attention><strong>{attentionCount}</strong> {t("need attention")}</span> : null}
         </div>
-        <div className={styles.searchField}><SearchInput label="Search integrations" onChange={setQuery} placeholder="Search apps" value={query} /></div>
+        <div className={styles.searchField}><SearchInput label={t("Search integrations")} onChange={setQuery} placeholder={t("Search apps")} value={query} /></div>
       </div>
 
-      <div className={styles.purposes} role="group" aria-label="Connection purpose">{[
+      <div className={styles.purposes} role="group" aria-label={t("Connection purpose")}>{[
         ['all', 'All apps'], ['communication', 'Talk to clients'], ['finance', 'Invoices & payments'], ['productivity', 'Calendar & files'],
       ].map(([id, label]) => <button key={id} aria-pressed={purpose === id} onClick={() => setPurpose(id)}>{label}</button>)}</div>
       </>}
-      {initialData.loadError && <Callout title="Connections unavailable" tone="warning">{initialData.loadError} <Button size="compact" onPress={() => window.location.reload()}>Reload connections</Button></Callout>}
+      {initialData.loadError && <Callout title={t("Connections unavailable")} tone="warning">{initialData.loadError} <Button size="compact" onPress={() => window.location.reload()}>{t("Reload connections")}</Button></Callout>}
 
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
-      {failure ? <Callout title="Integration action failed" tone="danger">{failure}</Callout> : null}
+      {failure ? <Callout title={t("Integration action failed")} tone="danger">{failure}</Callout> : null}
 
       {availableCatalog.length ? <section aria-labelledby="available-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><h2 id="available-apps-heading">Available</h2><span>{availableCatalog.length} app{availableCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.sectionHeading}><h2 id="available-apps-heading">{t("Available")}</h2><span>{availableCatalog.length} {t("app")}{availableCatalog.length === 1 ? "" : "s"}</span></div>
         <div className={styles.catalogGrid}>{availableCatalog.map((item) => {
           const connection = item.provider ? newestActiveConnection(connections, item.provider) : undefined;
           if (!item.provider) return null;
@@ -303,47 +305,47 @@ export function IntegrationsPage({
             </div>
             <div className={styles.cardFooter}>
               {!connection
-                ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">Connect</Button>
+                ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="primary">{t("Connect")}</Button>
                 : connection.status === "draft"
-                  ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">Connect</Button>
-                  : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">Manage</Button>}
-              {connection?.status === "draft" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">Settings</Button> : null}
-              {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">Add account</Button> : null}
+                  ? <Button isDisabled={!initialData.canManage} isLoading={connectingId === connection.id} onPress={() => void connect(connection)} size="compact" variant="primary">{t("Connect")}</Button>
+                  : <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact">{t("Manage")}</Button>}
+              {connection?.status === "draft" ? <Button onPress={() => setEditor({ provider: item.provider!, connection })} size="compact" variant="quiet">{t("Settings")}</Button> : null}
+              {connection && ["connected", "degraded"].includes(connection.status) ? <Button isDisabled={!initialData.canManage} onPress={() => setEditor({ provider: item.provider! })} size="compact" variant="quiet">{t("Add account")}</Button> : null}
             </div>
           </Surface>;
         })}</div>
       </section> : null}
 
       {!embedded && includedCatalog.length ? <section aria-labelledby="included-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><h2 id="included-apps-heading">Built into Wodana</h2><span>{includedCatalog.length} capability</span></div>
+        <div className={styles.sectionHeading}><h2 id="included-apps-heading">{t("Built into Wodana")}</h2><span>{includedCatalog.length} {t("capability")}</span></div>
         <div className={styles.plannedGrid}>{includedCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
           <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.description}</small></span>
-          <Badge tone="info">Included</Badge>
+          <Badge tone="info">{t("Included")}</Badge>
         </Surface>)}</div>
       </section> : null}
 
       {plannedCatalog.length ? <section aria-labelledby="planned-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><h2 id="planned-apps-heading">Planned</h2><span>{plannedCatalog.length} app{plannedCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.sectionHeading}><h2 id="planned-apps-heading">{t("Planned")}</h2><span>{plannedCatalog.length} {t("app")}{plannedCatalog.length === 1 ? "" : "s"}</span></div>
         <div className={styles.plannedGrid}>{plannedCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
           <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.source}</small></span>
-          <Badge>Planned</Badge>
+          <Badge>{t("Planned")}</Badge>
         </Surface>)}</div>
       </section> : null}
 
       {unavailableCatalog.length ? <section aria-labelledby="unavailable-apps-heading" className={styles.catalogSection}>
-        <div className={styles.sectionHeading}><div><h2 id="unavailable-apps-heading">External lead capture</h2><p>Shared enquiry links and QR codes work now. These native sources need provider access before they can be enabled.</p></div><span>{unavailableCatalog.length} source{unavailableCatalog.length === 1 ? "" : "s"}</span></div>
+        <div className={styles.sectionHeading}><div><h2 id="unavailable-apps-heading">{t("External lead capture")}</h2><p>{t("Shared enquiry links and QR codes work now. These native sources need provider access before they can be enabled.")}</p></div><span>{unavailableCatalog.length} {t("source")}{unavailableCatalog.length === 1 ? "" : "s"}</span></div>
         <div className={styles.plannedGrid}>{unavailableCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
           <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.description}</small></span>
-          <Badge tone="warning">Details required</Badge>
+          <Badge tone="warning">{t("Details required")}</Badge>
         </Surface>)}</div>
       </section> : null}
 
-      {!visibleCatalog.length ? <EmptyState title="No integrations found" description="Try another search term." /> : null}
-      {!embedded && filteredConnections.length ? <section aria-label="Configured accounts" className={styles.accounts}>
-        <div className={styles.sectionHeading}><h2>Configured accounts</h2><span>{filteredConnections.length} account{filteredConnections.length === 1 ? "" : "s"}</span></div>
+      {!visibleCatalog.length ? <EmptyState title={t("No integrations found")} description={t("Try another search term.")} /> : null}
+      {!embedded && filteredConnections.length ? <section aria-label={t("Configured accounts")} className={styles.accounts}>
+        <div className={styles.sectionHeading}><h2>{t("Configured accounts")}</h2><span>{filteredConnections.length} {t("account")}{filteredConnections.length === 1 ? "" : "s"}</span></div>
         <DataGrid appearance="flush" ariaLabel="Configured accounts" columns={accountColumns} data={filteredConnections} getRowId={(connection) => connection.id} pinFirstColumn={false} rowNumbers={false} selectable={false} showToolbar={false} />
       </section> : null}
     </section>
@@ -366,11 +368,12 @@ export function IntegrationsPage({
         );
       }}
     />
-    <ConfirmationDialog body={revoking ? <>Disconnect <strong>{revoking.displayName}</strong>? Syncing will stop and the connection must be configured again.</> : null} confirmLabel={revokingId ? "Disconnecting…" : "Disconnect"} isOpen={Boolean(revoking)} onConfirm={() => void revoke()} onOpenChange={(open) => { if (!open && !revokingId) setRevoking(null); }} title="Disconnect integration?" />
+    <ConfirmationDialog body={revoking ? <>{t("Disconnect")}{" "}<strong>{revoking.displayName}</strong>{t("? Syncing will stop and the connection must be configured again.")}</> : null} confirmLabel={revokingId ? "Disconnecting…" : "Disconnect"} isOpen={Boolean(revoking)} onConfirm={() => void revoke()} onOpenChange={(open) => { if (!open && !revokingId) setRevoking(null); }} title={t("Disconnect integration?")} />
   </DesignSystemProvider>;
 }
 
 export function IntegrationDialog({ initialData, item, onClose, onSaved }: { initialData: IntegrationsPageData; item: { provider: IntegrationProvider; connection?: IntegrationConnection } | null; onClose: () => void; onSaved: (connection: IntegrationConnection, shouldConnect: boolean) => void }) {
+  const t = useT();
   const connection = item?.connection;
   const provider = item?.provider ?? "google_workspace";
   const catalogItem = initialData.providerCapabilities.providers.find((entry) => entry.provider === provider) ?? { label: provider.replaceAll("_", " ") };
@@ -422,26 +425,26 @@ export function IntegrationDialog({ initialData, item, onClose, onSaved }: { ini
     }
   };
 
-  return <ControlledModalDialog description="Choose an organization and account. Credentials are never stored in this form." footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>Cancel</Button>{connection ? <Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} type="submit" variant="primary">Save changes</Button> : <><Button form={formId} isDisabled={!initialData.canManage || saving} name="intent" type="submit" value="draft">Save draft</Button><Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} name="intent" type="submit" value="connect" variant="primary">Save and connect</Button></>}</div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={connection ? `Manage ${catalogItem.label}` : `Connect ${catalogItem.label}`}>
+  return <ControlledModalDialog description={t("Choose an organization and account. Credentials are never stored in this form.")} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button>{connection ? <Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} type="submit" variant="primary">{t("Save changes")}</Button> : <><Button form={formId} isDisabled={!initialData.canManage || saving} name="intent" type="submit" value="draft">{t("Save draft")}</Button><Button form={formId} isDisabled={!initialData.canManage} isLoading={saving} name="intent" type="submit" value="connect" variant="primary">{t("Save and connect")}</Button></>}</div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={connection ? `Manage ${catalogItem.label}` : `Connect ${catalogItem.label}`}>
     <form className={styles.form} id={formId} onSubmit={save}>
-      <div className={styles.setupIdentity}><span className={styles.providerIcon}><ProviderMark provider={provider} /></span><div><strong>{catalogItem.label}</strong><small>Choose the account your team will use.</small></div></div>
-      {failure ? <Callout title="Could not save connection" tone="danger">{failure}</Callout> : null}
+      <div className={styles.setupIdentity}><span className={styles.providerIcon}><ProviderMark provider={provider} /></span><div><strong>{catalogItem.label}</strong><small>{t("Choose the account your team will use.")}</small></div></div>
+      {failure ? <Callout title={t("Could not save connection")} tone="danger">{failure}</Callout> : null}
       {connection ? <div className={styles.dialogStatus}><Badge tone={statusTone(connection.status)}>{STATUS_LABELS[connection.status]}</Badge><span>{connection.displayName}</span></div> : null}
-      <TextInput prefix={<Tag size={16} aria-hidden="true" />} isRequired label="Connection name" onChange={setDisplayName} value={displayName} />
-      <SelectField prefix={<Building2 size={16} aria-hidden="true" />} items={[{ id: "none", label: "Choose organization" }, ...initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))]} label="Organization" onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} />
-      {provider === "google_workspace" || provider === "custom" ? <TextInput prefix={<Globe2 size={16} aria-hidden="true" />} description={provider === "google_workspace" ? "Verified company domain, without https://" : "Optional external domain"} isRequired={provider === "google_workspace" && !accountEmail} label="Domain" onChange={setExternalDomain} placeholder="igloarchitects.com" value={externalDomain} /> : null}
+      <TextInput prefix={<Tag size={16} aria-hidden="true" />} isRequired label={t("Connection name")} onChange={setDisplayName} value={displayName} />
+      <SelectField prefix={<Building2 size={16} aria-hidden="true" />} items={[{ id: "none", label: "Choose organization" }, ...initialData.legalEntities.map((entity) => ({ id: entity.id, label: entity.displayName }))]} label={t("Organization")} onSelectionChange={(key) => key && setLegalEntityId(String(key))} selectedKey={legalEntityId} />
+      {provider === "google_workspace" || provider === "custom" ? <TextInput prefix={<Globe2 size={16} aria-hidden="true" />} description={provider === "google_workspace" ? "Verified company domain, without https://" : "Optional external domain"} isRequired={provider === "google_workspace" && !accountEmail} label={t("Domain")} onChange={setExternalDomain} placeholder={t("igloarchitects.com")} value={externalDomain} /> : null}
       {provider === "google_workspace" ? <>
-        <TextInput prefix={<Mail size={16} aria-hidden="true" />} label="Google account email" description="For a personal Gmail account, enter its exact address. Domain can be left empty." type="email" value={accountEmail} onChange={setAccountEmail} />
-        <Switch isSelected={gmailSend} onChange={setGmailSend}>Send email with Gmail</Switch>
-        <Switch isSelected={driveFiles} onChange={setDriveFiles}>Create project documents in Drive</Switch>
+        <TextInput prefix={<Mail size={16} aria-hidden="true" />} label={t("Google account email")} description={t("For a personal Gmail account, enter its exact address. Domain can be left empty.")} type="email" value={accountEmail} onChange={setAccountEmail} />
+        <Switch isSelected={gmailSend} onChange={setGmailSend}>{t("Send email with Gmail")}</Switch>
+        <Switch isSelected={driveFiles} onChange={setDriveFiles}>{t("Create project documents in Drive")}</Switch>
       </> : null}
       {provider === "zoho_books" ? <>
-        <SelectField label="Zoho data center" selectedKey={region} onSelectionChange={(key) => key && setRegion(String(key))} items={[{ id: "us", label: "United States / Global (.com)" }, { id: "in", label: "India (.in)" }, { id: "eu", label: "Europe (.eu)" }, { id: "au", label: "Australia" }, { id: "ca", label: "Canada" }, { id: "jp", label: "Japan" }, { id: "sa", label: "Saudi Arabia" }]} />
-        <TextInput label="Zoho organization ID" description="Required if your Zoho account has multiple organizations." value={organizationId} onChange={setOrganizationId} />
+        <SelectField label={t("Zoho data center")} selectedKey={region} onSelectionChange={(key) => key && setRegion(String(key))} items={[{ id: "us", label: "United States / Global (.com)" }, { id: "in", label: "India (.in)" }, { id: "eu", label: "Europe (.eu)" }, { id: "au", label: "Australia" }, { id: "ca", label: "Canada" }, { id: "jp", label: "Japan" }, { id: "sa", label: "Saudi Arabia" }]} />
+        <TextInput label={t("Zoho organization ID")} description={t("Required if your Zoho account has multiple organizations.")} value={organizationId} onChange={setOrganizationId} />
       </> : null}
-      {provider === "whatsapp" ? <p>Connect the organization’s own WhatsApp Business account and phone number through Meta. Wodana’s number is not shared between tenants.</p> : null}
-      {provider === "quickbooks" ? <p>Online payment links depend on the connected company’s QuickBooks Payments eligibility and activation.</p> : null}
-      {provider === "custom" ? <TextInput description="Public endpoint only. Credentials and secret tokens are never stored in this form." label="Endpoint URL" onChange={setEndpointUrl} placeholder="https://api.example.com/events" value={endpointUrl} /> : null}
+      {provider === "whatsapp" ? <p>{t("Connect the organization’s own WhatsApp Business account and phone number through Meta. Wodana’s number is not shared between tenants.")}</p> : null}
+      {provider === "quickbooks" ? <p>{t("Online payment links depend on the connected company’s QuickBooks Payments eligibility and activation.")}</p> : null}
+      {provider === "custom" ? <TextInput description={t("Public endpoint only. Credentials and secret tokens are never stored in this form.")} label={t("Endpoint URL")} onChange={setEndpointUrl} placeholder={t("https://api.example.com/events")} value={endpointUrl} /> : null}
     </form>
   </ControlledModalDialog>;
 }

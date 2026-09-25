@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Plus, Receipt, Trash2 } from "lucide-react";
 import { Button, Callout, IconButton, InlineNotice, SelectField, SideSheet, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -27,9 +27,9 @@ export function TaxNumberingSheet({ workspaceId, entityId, entityName, canManage
     try { setData(await send<TaxNumbering>(`/api/workspace/legal-entities/${entityId}/tax-numbering?workspaceId=${workspaceId}`)); }
     catch (error) { setLoadError(error instanceof Error ? error.message : ""); }
   }, [entityId, workspaceId]);
-  useEffect(() => { if (open && !data) void load(); }, [open, data, load]);
+  const toggle = (next: boolean) => { setOpen(next); if (next && !data) void load(); };
 
-  return <SideSheet isOpen={open} onOpenChange={setOpen} size="lg" title={t("Tax & numbering")} description={entityName}
+  return <SideSheet isOpen={open} onOpenChange={toggle} size="lg" title={t("Tax & numbering")} description={entityName}
     trigger={<Button aria-label={`${t("Tax & numbering")} · ${entityName}`} size="compact" variant="quiet"><Receipt aria-hidden="true" size={14} />{t("Tax & numbering")}</Button>}>
     {loadError ? <Callout title={t("Could not load")} tone="danger" actions={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>}>{loadError}</Callout>
       : !data ? <Skeleton lines={6} />
