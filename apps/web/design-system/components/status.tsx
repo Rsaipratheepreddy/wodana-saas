@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
+import { Illustration, type IllustrationName } from "./illustration";
 import { createContext, useCallback, useContext, useMemo, useState, type HTMLAttributes, type ReactNode } from "react";
 import { AlertCircle, CheckCircle2, Inbox, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { Button, IconButton } from "./actions";
@@ -30,8 +32,9 @@ export function InlineNotice({ className, message, title, tone = "info" }: { cla
   </div>;
 }
 
-export function EmptyState({ action, description, icon = <Inbox aria-hidden="true" size={22} />, title }: { action?: ReactNode; description: ReactNode; icon?: ReactNode; title: string }) {
-  return <div className="wd-empty-state">{icon ? <div className="wd-empty-icon">{icon}</div> : null}<strong>{title}</strong><p>{description}</p>{action}</div>;
+/** Empty, no-results, locked or done states: an illustration, a short title, one line and the next action. */
+export function EmptyState({ action, description, icon, illustration = "empty", title }: { action?: ReactNode; description?: ReactNode; icon?: ReactNode; illustration?: IllustrationName | null; title: string }) {
+  return <div className="wd-empty-state">{icon ? <div className="wd-empty-icon">{icon}</div> : illustration ? <Illustration name={illustration} /> : null}<strong>{title}</strong>{description ? <p>{description}</p> : null}{action}</div>;
 }
 
 export function Progress({ label, value, max = 100 }: { label: string; value: number; max?: number }) {
@@ -63,5 +66,19 @@ export function useToast() {
   return context;
 }
 
-export function ErrorState({ onRetry, title = "Something went wrong" }: { onRetry?: () => void; title?: string }) { return <EmptyState action={onRetry ? <Button onPress={onRetry}>Try again</Button> : null} description="The requested data could not be loaded." icon={<AlertCircle size={20} />} title={title} />; }
-export function OfflineState() { return <Callout title="You are offline" tone="warning">Changes will resume syncing when the connection returns.</Callout>; }
+export function ErrorState({ onRetry, title, description }: { onRetry?: () => void; title?: string; description?: ReactNode }) {
+  const t = useT();
+  return <EmptyState action={onRetry ? <Button onPress={onRetry}>{t("Try again")}</Button> : null} description={description ?? t("This could not be loaded. Check your connection and try again.")} illustration="error" title={title ?? t("Something went wrong")} />;
+}
+export function NoResultsState({ onClear }: { onClear?: () => void }) {
+  const t = useT();
+  return <EmptyState action={onClear ? <Button onPress={onClear} variant="quiet">{t("Clear filters")}</Button> : null} description={t("Try a different word or clear the filters.")} illustration="search" title={t("No matches")} />;
+}
+export function NoAccessState() {
+  const t = useT();
+  return <EmptyState description={t("Ask a workspace admin for access.")} illustration="locked" title={t("You don't have access to this")} />;
+}
+export function OfflineState() {
+  const t = useT();
+  return <Callout title={t("You are offline")} tone="warning">{t("Changes will resume syncing when the connection returns.")}</Callout>;
+}

@@ -1095,3 +1095,4 @@
 .wd-phone-option span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wd-color-text-secondary); }
 .wd-phone-empty { margin: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .wd-picker-empty { margin: 0; padding: var(--wd-space-2) var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.wd-illustration { display: block; flex: none; margin-block-end: var(--wd-space-2); }

@@ -185,6 +185,10 @@
 
   /* Shape, elevation and motion. */
   --wd-radius-2xs: 0.25rem;
+  --wd-illustration-ink: var(--wd-color-text-tertiary);
+  --wd-illustration-fill: var(--wd-color-surface-muted);
+  --wd-illustration-paper: var(--wd-color-surface);
+  --wd-illustration-accent: var(--wd-color-action-primary);
   --wd-radius-xs: 0.375rem;
   --wd-radius-sm: 0.5rem;
   --wd-radius-md: 0.75rem;
@@ -446,6 +450,10 @@
    a DesignSystemProvider can override the semantic tokens. */
 [data-theme],
 [data-wd-theme] {
+  --wd-illustration-ink: var(--wd-color-text-tertiary);
+  --wd-illustration-fill: var(--wd-color-surface-muted);
+  --wd-illustration-paper: var(--wd-color-surface);
+  --wd-illustration-accent: var(--wd-color-action-primary);
   --wd-ink: var(--wd-color-text);
   --wd-ink-soft: var(--wd-color-text-secondary);
   --wd-muted: var(--wd-color-text-secondary);

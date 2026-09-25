@@ -557,5 +557,14 @@
   "Authenticator or recovery code": "Authenticator or recovery code",
   "Six digits or a recovery code": "Six digits or a recovery code",
   "? That browser will need to sign in again.": "? That browser will need to sign in again.",
-  "Sign out this session?": "Sign out this session?"
+  "Sign out this session?": "Sign out this session?",
+  "Try again": "Try again",
+  "This could not be loaded. Check your connection and try again.": "This could not be loaded. Check your connection and try again.",
+  "Something went wrong": "Something went wrong",
+  "Clear filters": "Clear filters",
+  "Try a different word or clear the filters.": "Try a different word or clear the filters.",
+  "Ask a workspace admin for access.": "Ask a workspace admin for access.",
+  "You don't have access to this": "You don't have access to this",
+  "You are offline": "You are offline",
+  "Changes will resume syncing when the connection returns.": "Changes will resume syncing when the connection returns."
 }
