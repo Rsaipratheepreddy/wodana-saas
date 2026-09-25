@@ -76,7 +76,7 @@ export async function readSupplyQueue(ctx: HrmsContext): Promise<SupplyQueuePage
       'orders',coalesce(e.content->'orders','[]'::jsonb),
       'supplierReturns',coalesce(e.content->'supplierReturns','[]'::jsonb)
     ) AS content FROM delivery_projects p
-    JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
+    JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
     WHERE p.workspace_id=$1 AND p.status<>'archived'
       AND ($3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=p.workspace_id
         AND a.project_id=p.id AND a.membership_id=$2 AND a.active))

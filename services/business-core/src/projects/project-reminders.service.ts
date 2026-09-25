@@ -58,7 +58,7 @@ export class ProjectRemindersService {
     }>(
       `WITH active AS (
    SELECT e.workspace_id,e.project_id,e.content,p.name,(now() AT TIME ZONE w.default_timezone)::date::text AS today
-   FROM project_execution e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id JOIN workspaces w ON w.id=e.workspace_id
+   FROM project_execution_view e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id JOIN workspaces w ON w.id=e.workspace_id
    WHERE e.content->>'phase' IN ('planning','active','handover','completed') AND ($1::uuid IS NULL OR e.project_id=$1)
   ), records AS (
    SELECT a.*,r AS record,r->>'end' AS due,'plan-teams' AS section FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'tasks','[]')) r WHERE r->>'status' NOT IN ('completed','cancelled') AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(a.content->'tasks','[]')) child WHERE child->>'parentId'=r->>'id')
@@ -185,7 +185,7 @@ export class ProjectRemindersService {
           (now() AT TIME ZONE workspace.default_timezone)::date AS today,
           to_char((now() AT TIME ZONE workspace.default_timezone)::date,'IYYY-IW') AS week_key
         FROM delivery_projects project
-        JOIN project_execution execution
+        JOIN project_execution_view execution
           ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
         JOIN workspaces workspace ON workspace.id=project.workspace_id
         JOIN project_assignments assignment

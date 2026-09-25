@@ -28,7 +28,7 @@ export async function readWorkQueue(ctx:HrmsContext,input:Record<string,unknown>
  const result=await ctx.client.query<WorkQueueSource>(`
  WITH authorized AS (
    SELECT p.id,p.name,e.content,party.display_name AS client_name FROM delivery_projects p
-   JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
+   JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
    LEFT JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id
    LEFT JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id
    LEFT JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id
@@ -78,10 +78,10 @@ export async function readWorkQueue(ctx:HrmsContext,input:Record<string,unknown>
  SELECT DISTINCT m.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id
  WHERE m.workspace_id=$1 AND m.status='active' AND (m.id=$2 OR EXISTS(
  SELECT 1 FROM project_assignments a WHERE a.workspace_id=$1 AND a.project_id=ANY($3::uuid[]) AND a.membership_id=m.id AND a.active) OR EXISTS(
- SELECT 1 FROM project_execution e WHERE e.workspace_id=$1 AND e.project_id=ANY($3::uuid[]) AND (
+ SELECT 1 FROM project_execution_view e WHERE e.workspace_id=$1 AND e.project_id=ANY($3::uuid[]) AND (
  jsonb_path_query_array(e.content,'$.tasks[*].ownerId') ? m.id::text OR jsonb_path_query_array(e.content,'$.tasks[*].assigneeIds[*]') ? m.id::text OR
  jsonb_path_query_array(e.content,'$.reports[*].authorId') ? m.id::text OR jsonb_path_query_array(e.content,'$.snags[*].ownerId') ? m.id::text OR
  jsonb_path_query_array(e.content,'$.dispatches[*].preparedBy') ? m.id::text OR jsonb_path_query_array(e.content,'$.orders[*].rfqSnapshot.capturedBy') ? m.id::text))) ORDER BY name,m.id`,[ctx.workspaceId,ctx.membershipId,projects.map(project=>project.id)])).rows:[];
- const resources=projects.length?(await ctx.client.query<{id:string;name:string}>(`SELECT r.id,r.name FROM project_resources r WHERE r.workspace_id=$1 AND r.active AND EXISTS(SELECT 1 FROM project_execution e WHERE e.workspace_id=r.workspace_id AND e.project_id=ANY($2::uuid[]) AND jsonb_path_query_array(e.content,'$.tasks[*].resourceId') ? r.id::text) ORDER BY r.name,r.id`,[ctx.workspaceId,projects.map(project=>project.id)])).rows:[];
+ const resources=projects.length?(await ctx.client.query<{id:string;name:string}>(`SELECT r.id,r.name FROM project_resources r WHERE r.workspace_id=$1 AND r.active AND EXISTS(SELECT 1 FROM project_execution_view e WHERE e.workspace_id=r.workspace_id AND e.project_id=ANY($2::uuid[]) AND jsonb_path_query_array(e.content,'$.tasks[*].resourceId') ? r.id::text) ORDER BY r.name,r.id`,[ctx.workspaceId,projects.map(project=>project.id)])).rows:[];
  return {...workQueuePage(result.rows,ctx.membershipId),canManage:ctx.permissions.has('projects.manage'),projects,members,resources};
 }

@@ -1,3 +1,4 @@
+import { projectRepository } from "./project-repository";
 import {
   Injectable,
   NotFoundException,
@@ -92,12 +93,7 @@ export class VendorOrderService {
           "SELECT id FROM delivery_projects WHERE workspace_id=$1 AND id=$2 FOR UPDATE",
           [grant.workspace_id, grant.project_id],
         );
-        const row = (
-          await c.query(
-            "SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2 FOR UPDATE",
-            [grant.workspace_id, grant.project_id],
-          )
-        ).rows[0];
+        const row = await projectRepository.load(c, grant.workspace_id, grant.project_id, { forUpdate: true });
         if (!row) throw new NotFoundException("Order unavailable.");
         const d = row.content as ProjectData,
           o = get(d.orders, grant.order_id),
@@ -159,15 +155,7 @@ export class VendorOrderService {
               recordId: o.id,
               note: `${kind} submitted for review`,
             });
-            await c.query(
-              "UPDATE project_execution SET content=$3,revision=$4,updated_at=now() WHERE workspace_id=$1 AND project_id=$2",
-              [
-                grant.workspace_id,
-                grant.project_id,
-                JSON.stringify(d),
-                d.revision,
-              ],
-            );
+            await projectRepository.save(c, grant.workspace_id, grant.project_id, d);
           }
         } else if (b.action !== "read")
           throw new BadRequestException("Unknown vendor action.");

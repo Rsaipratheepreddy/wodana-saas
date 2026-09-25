@@ -1620,7 +1620,7 @@ export class CommercialService {
           }>(
             `SELECT project.id,execution.content
              FROM delivery_projects project
-             LEFT JOIN project_execution execution
+             LEFT JOIN project_execution_view execution
                ON execution.workspace_id=project.workspace_id
               AND execution.project_id=project.id
              WHERE project.workspace_id=$1 AND project.case_id=$2`,

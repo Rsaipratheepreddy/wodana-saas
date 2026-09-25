@@ -52,7 +52,7 @@ export async function readHomeOverview(client: Pick<PoolClient, "query">, worksp
     const projects = (await client.query<Row>(`SELECT project.id,project.name AS title,
         coalesce(execution.content->>'phase','planning') AS detail,project.created_at AS date,count(*) OVER()::int AS total
       FROM delivery_projects project
-      LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+      LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
       WHERE ${visible}
       ORDER BY project.created_at DESC,project.id LIMIT 5`, [workspaceId, membershipId, access.manageProjects])).rows;
     result.metrics.activeProjects = count(projects);
@@ -61,7 +61,7 @@ export async function readHomeOverview(client: Pick<PoolClient, "query">, worksp
         project.name AS detail,nullif(task.value->>'end','') AS date,project.id AS "projectId",
         task.value->>'location' AS location,count(*) OVER()::int AS total
       FROM delivery_projects project
-      JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+      JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
       CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(execution.content->'tasks')='array'
         THEN execution.content->'tasks' ELSE '[]'::jsonb END) task(value)
       WHERE ${visible} AND (task.value->>'ownerId'=$2::text OR coalesce(task.value->'assigneeIds','[]'::jsonb) ? $2::text)

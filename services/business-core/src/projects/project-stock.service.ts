@@ -50,7 +50,7 @@ export class ProjectStockService {
     ).rows.map((r) => r.content);
     const projects = (
       await ctx.client.query(
-        `SELECT e.project_id AS id,p.name,e.content FROM project_execution e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id WHERE e.workspace_id=$1 AND ( $3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=e.workspace_id AND a.project_id=e.project_id AND a.membership_id=$2 AND a.active)) AND p.status<>'archived'`,
+        `SELECT e.project_id AS id,p.name,e.content FROM project_execution_view e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id WHERE e.workspace_id=$1 AND ( $3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=e.workspace_id AND a.project_id=e.project_id AND a.membership_id=$2 AND a.active)) AND p.status<>'archived'`,
         [
           ctx.workspaceId,
           ctx.membershipId,

@@ -1,3 +1,4 @@
+import { projectRepository } from "./project-repository";
 import { approvalQueueQuery, approvalQueuePage, type ApprovalQueueSource } from "./project-approval-queue";
 import {readWorkQueue} from './project-work-queue';
 import {readSupplyQueue} from './project-supply-queue';
@@ -102,11 +103,7 @@ export class ExecutionService {
     return r.rows[0];
   }
   async load(ctx: HrmsContext, id: string): Promise<ProjectData> {
-    const r = await ctx.client.query(
-      "SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2",
-      [ctx.workspaceId, id],
-    );
-    const stored = r.rows[0]?.content as Partial<ProjectData> | undefined;
+    const stored = (await projectRepository.load(ctx.client, ctx.workspaceId, id))?.content;
     if (!stored) return emptyProject();
     const blank = emptyProject();
     const data = {
@@ -132,10 +129,7 @@ export class ExecutionService {
   }
   async store(ctx: HrmsContext, id: string, d: ProjectData) {
     d.revision++;
-    await ctx.client.query(
-      "INSERT INTO project_execution(project_id,workspace_id,revision,content) VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET revision=$3,content=$4,updated_at=now() WHERE project_execution.workspace_id=$2",
-      [id, ctx.workspaceId, d.revision, JSON.stringify(d)],
-    );
+    await projectRepository.save(ctx.client, ctx.workspaceId, id, d);
   }
   approvalQueue(actor: RequestActor, w: string, input: Record<string,unknown>) {
     const query=approvalQueueQuery(input);
@@ -146,7 +140,7 @@ export class ExecutionService {
           jsonb_build_object('title',coalesce(request.order_title,document.value->>'title'),'revision',CASE WHEN request.kind='order_amendment' THEN 'Amendment' ELSE document.value->>'revision' END) AS document,
           u.display_name AS "ownerName",coalesce(nullif(request.value->>'dueDate',''),'9999-12-31') AS "sortDue"
         FROM delivery_projects p
-        JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
+        JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
         CROSS JOIN LATERAL (
           SELECT r.value,'rfa'::text AS kind,NULL::text AS order_id,NULL::text AS order_title
           FROM jsonb_array_elements(coalesce(e.content->'rfas','[]'::jsonb)) r(value)
@@ -206,7 +200,7 @@ export class ExecutionService {
            JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id
            JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id
            JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id
-           LEFT JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
+           LEFT JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
            WHERE p.workspace_id=$1 AND p.status<>'archived'
              AND ($3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=p.workspace_id AND a.project_id=p.id AND a.membership_id=$2 AND a.active))
            ORDER BY p.created_at DESC`,
@@ -255,7 +249,7 @@ export class ExecutionService {
          JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
          JOIN project_resources resource ON resource.workspace_id=booking.workspace_id AND resource.id=booking.resource_id
          LEFT JOIN business_units unit ON unit.workspace_id=resource.workspace_id AND unit.id=resource.business_unit_id
-         LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+         LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
          WHERE booking.workspace_id=$1
            AND (($7::text='active' AND booking.status IN ('tentative','confirmed')) OR booking.status=$7::varchar)
            AND project.status<>'archived'
@@ -322,7 +316,7 @@ export class ExecutionService {
            JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
            JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
            JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
-           JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+           JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
            WHERE project.workspace_id=$1 AND project.status<>'archived'
              AND ($2 OR project.id=ANY($3::uuid[]) OR cardinality($4::uuid[])>0)`,
           [w, canSeeAll, managedProjects, ledDepartments],
@@ -347,7 +341,7 @@ export class ExecutionService {
              JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
              JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
              JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
-             LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+             LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
              WHERE visit.workspace_id=$1 AND visit.kind='visit' AND visit.status<>'cancelled'
                AND visit.content->>'scheduledAt' IS NOT NULL
                AND ((visit.content->>'scheduledAt')::timestamptz AT TIME ZONE workspace.default_timezone)::date BETWEEN $2::date AND $3::date
@@ -520,7 +514,7 @@ export class ExecutionService {
     ).rows;
     const bookings = (
       await ctx.client.query(
-        `SELECT b.id,b.project_id AS "projectId",p.name AS "projectName",b.task_id AS "taskId",coalesce((SELECT t->>'title' FROM project_execution e, jsonb_array_elements(e.content->'tasks') t WHERE e.project_id=b.project_id AND t->>'id'=b.task_id),'Booked work') AS "taskTitle",b.resource_id AS "resourceId",b.starts_on::text AS start,b.ends_on::text AS end,b.status,b.acknowledgement,b.slots,b.units::float8 AS units,b.timezone,b.version,b.cancellation_reason AS "cancellationReason",b.slots->0->>'startTime' AS "startTime",b.slots->0->>'endTime' AS "endTime" FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status IN ('draft','tentative','confirmed') ORDER BY b.starts_on`,
+        `SELECT b.id,b.project_id AS "projectId",p.name AS "projectName",b.task_id AS "taskId",coalesce((SELECT t->>'title' FROM project_execution_view e, jsonb_array_elements(e.content->'tasks') t WHERE e.project_id=b.project_id AND t->>'id'=b.task_id),'Booked work') AS "taskTitle",b.resource_id AS "resourceId",b.starts_on::text AS start,b.ends_on::text AS end,b.status,b.acknowledgement,b.slots,b.units::float8 AS units,b.timezone,b.version,b.cancellation_reason AS "cancellationReason",b.slots->0->>'startTime' AS "startTime",b.slots->0->>'endTime' AS "endTime" FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status IN ('draft','tentative','confirmed') ORDER BY b.starts_on`,
         [ctx.workspaceId],
       )
     ).rows;

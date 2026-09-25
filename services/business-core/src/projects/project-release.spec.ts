@@ -368,7 +368,7 @@ function database(options: {
           },
         ],
       };
-    if (sql.startsWith("SELECT content FROM project_execution"))
+    if (sql.startsWith("SELECT content, revision FROM project_execution_view"))
       return {
         rowCount: options.existing ? 1 : 0,
         rows: options.existing ? [{ content: options.existing }] : [],
@@ -386,7 +386,12 @@ function database(options: {
           }
         : { rowCount: 0, rows: [] };
     if (sql.startsWith("INSERT INTO project_execution")) {
-      stored = JSON.parse(String(values?.[3]));
+      stored = { ...JSON.parse(String(values?.[3])), tasks: [] };
+      return { rowCount: 1, rows: [] };
+    }
+    if (sql.startsWith("INSERT INTO project_tasks")) {
+      // ProjectRepository stores tasks as rows; reassemble the saved record for assertions.
+      stored = { ...(stored as object), tasks: JSON.parse(String(values?.[2])) } as typeof stored;
       return { rowCount: 1, rows: [] };
     }
     if (sql.includes("INSERT INTO crm_project_links"))

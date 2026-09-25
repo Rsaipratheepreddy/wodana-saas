@@ -1,3 +1,4 @@
+import { projectRepository } from "../projects/project-repository";
 import {validateDeduction} from "./variation-controls";
 import {
   controlledChangeCanRelease,
@@ -344,7 +345,7 @@ export class ClientPortalService {
             s.workspaceId,
             grant.caseId,
           );
-        const project=(await client.query(`SELECT p.id,p.name,e.content,workspace.default_timezone AS timezone FROM delivery_projects p JOIN workspaces workspace ON workspace.id=p.workspace_id JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.case_id=$2`,[s.workspaceId,grant.caseId])).rows[0];
+        const project=(await client.query(`SELECT p.id,p.name,e.content,workspace.default_timezone AS timezone FROM delivery_projects p JOIN workspaces workspace ON workspace.id=p.workspace_id JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.case_id=$2`,[s.workspaceId,grant.caseId])).rows[0];
         const designs=(await client.query(`SELECT v.id,d.title,d.document_type AS type,v.number,CASE WHEN v.status='client_review' AND v.client_review_expires_at<=now() THEN 'expired' ELSE v.status END AS status,v.client_review_expires_at AS "clientReviewExpiresAt",r.name AS "roomName",entry.title AS "itemName",a.original_name AS name,a.mime_type AS "mimeType" FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id LEFT JOIN pre_project_rooms r ON r.workspace_id=d.workspace_id AND r.case_id=d.case_id AND r.id=d.room_id LEFT JOIN pre_project_brief_entries entry ON entry.workspace_id=d.workspace_id AND entry.case_id=d.case_id AND entry.id=d.scope_entry_id WHERE v.workspace_id=$1 AND v.case_id=$2 AND d.archived_at IS NULL AND v.status IN ('client_review','approved','changes_requested','rejected') AND v.number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=d.workspace_id AND design_id=d.id) ORDER BY COALESCE(r.name,''),d.title,v.number DESC`,[s.workspaceId,grant.caseId])).rows;
         cases.push({
           definitionBaseline: await this.definitions.portalData(
@@ -424,7 +425,7 @@ export class ClientPortalService {
       return { name: session.grants[0].name, phone: session.phone, cases };
     });
   }
-  async projectFile(slug:string,token:string,projectId:string,fileId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const row=(await client.query(`SELECT p.case_id,e.content FROM delivery_projects p JOIN project_execution e ON e.project_id=p.id AND e.workspace_id=p.workspace_id WHERE p.workspace_id=$1 AND p.id=$2`,[settings.workspaceId,projectId])).rows[0];if(!row||!session.grants.some(g=>g.caseId===row.case_id))throw new NotFoundException("Shared file not available.");const d=row.content as import('../projects/execution.types').ProjectData;const file=d.files?.find(f=>f.id===fileId);const report=d.reports.find(r=>r.status==="approved"&&r.publishedAt&&r.clientFileIds?.includes(fileId)&&r.id===file?.recordId&&!d.reports.some(n=>n.status==="approved"&&n.publishedAt&&n.supersedes===r.id));if(d.clientSections?.progress===false||!file||!report)throw new NotFoundException("Shared file not available.");const stored=await this.storage.read(`projects/${settings.workspaceId}/${projectId}/${fileId}`).catch(()=>null);if(!stored)throw new NotFoundException("The shared file is temporarily unavailable.");return {body:stored.body,mimeType:file.mimeType};});}
+  async projectFile(slug:string,token:string,projectId:string,fileId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const row=(await client.query(`SELECT p.case_id,e.content FROM delivery_projects p JOIN project_execution_view e ON e.project_id=p.id AND e.workspace_id=p.workspace_id WHERE p.workspace_id=$1 AND p.id=$2`,[settings.workspaceId,projectId])).rows[0];if(!row||!session.grants.some(g=>g.caseId===row.case_id))throw new NotFoundException("Shared file not available.");const d=row.content as import('../projects/execution.types').ProjectData;const file=d.files?.find(f=>f.id===fileId);const report=d.reports.find(r=>r.status==="approved"&&r.publishedAt&&r.clientFileIds?.includes(fileId)&&r.id===file?.recordId&&!d.reports.some(n=>n.status==="approved"&&n.publishedAt&&n.supersedes===r.id));if(d.clientSections?.progress===false||!file||!report)throw new NotFoundException("Shared file not available.");const stored=await this.storage.read(`projects/${settings.workspaceId}/${projectId}/${fileId}`).catch(()=>null);if(!stored)throw new NotFoundException("The shared file is temporarily unavailable.");return {body:stored.body,mimeType:file.mimeType};});}
   async designAsset(slug:string,token:string,versionId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const asset=(await client.query(`SELECT v.case_id,a.object_key,a.mime_type,a.original_name FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.id=$2 AND v.status IN ('client_review','approved','changes_requested','rejected') AND d.archived_at IS NULL`,[settings.workspaceId,versionId])).rows[0];if(!asset||!session.grants.some(g=>g.caseId===asset.case_id))throw new NotFoundException("Design not available.");const stored=await this.storage.read(asset.object_key).catch(()=>null);if(!stored)throw new NotFoundException("Design file is unavailable. Contact your project team.");return {body:stored.body,mimeType:asset.mime_type};});}
   async command(slug: string, token: string, input: unknown) {
     const s = await this.branding(slug),
@@ -471,18 +472,18 @@ export class ClientPortalService {
             throw new BadRequestException("Choose accept or request changes.");
           const note = text(b.note ?? "", 5000, decision === "changes");
           const challengeId = text(b.challengeId, 80, true);
-          const project = await client.query<{ content: ProjectData }>(
-            `SELECT execution.content
-               FROM delivery_projects project
-               JOIN project_execution execution
-                 ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+          const project = await client.query(
+            `SELECT 1 FROM delivery_projects project
               WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
-              FOR UPDATE OF project,execution`,
+              FOR UPDATE OF project`,
             [s.workspaceId, caseId, projectId],
           );
-          if (!project.rowCount)
+          const stored = project.rowCount
+            ? await projectRepository.load(client, s.workspaceId, projectId, { forUpdate: true })
+            : undefined;
+          if (!stored)
             throw new NotFoundException("This project handover is not available.");
-          const execution = project.rows[0].content;
+          const execution = stored.content as ProjectData;
           if (execution.clientSections?.handover === false)
             throw new NotFoundException("This project handover is not available.");
           const existing = execution.handovers.find((handover) => handover.id === handoverId);
@@ -511,31 +512,27 @@ export class ClientPortalService {
             now: new Date().toISOString(),
           });
           execution.revision++;
-          await client.query(
-            `UPDATE project_execution
-                SET revision=$3,content=$4,updated_at=now()
-              WHERE workspace_id=$1 AND project_id=$2`,
-            [s.workspaceId, projectId, execution.revision, JSON.stringify(execution)],
-          );
+          await projectRepository.save(client, s.workspaceId, projectId, execution);
           return { ok: true };
         }
         if (action === "warranty-claim") {
           const projectId = text(b.projectId, 80, true);
           const handoverId = text(b.handoverId, 80, true);
           const challengeId = text(b.challengeId, 80, true);
-          const project = await client.query<{ content: ProjectData; name: string; timezone: string }>(
-            `SELECT execution.content,project.name,workspace.default_timezone AS timezone
+          const project = await client.query<{ name: string; timezone: string }>(
+            `SELECT project.name,workspace.default_timezone AS timezone
                FROM delivery_projects project
                JOIN workspaces workspace ON workspace.id=project.workspace_id
-               JOIN project_execution execution
-                 ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
               WHERE project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3
-              FOR UPDATE OF project,execution`,
+              FOR UPDATE OF project`,
             [s.workspaceId, caseId, projectId],
           );
-          if (!project.rowCount)
+          const stored = project.rowCount
+            ? await projectRepository.load(client, s.workspaceId, projectId, { forUpdate: true })
+            : undefined;
+          if (!stored)
             throw new NotFoundException("This warranty area is not available.");
-          const execution = project.rows[0].content;
+          const execution = stored.content as ProjectData;
           if (execution.clientSections?.handover === false)
             throw new NotFoundException("This warranty area is not available.");
           const existing = execution.snags.find(
@@ -594,12 +591,7 @@ export class ClientPortalService {
             note: "Client portal warranty report",
           });
           execution.revision++;
-          await client.query(
-            `UPDATE project_execution
-                SET revision=$3,content=$4,updated_at=now()
-              WHERE workspace_id=$1 AND project_id=$2`,
-            [s.workspaceId, projectId, execution.revision, JSON.stringify(execution)],
-          );
+          await projectRepository.save(client, s.workspaceId, projectId, execution);
           await this.projectNotifications.notifyClientWarrantyClaim(client, {
             workspaceId: s.workspaceId,
             projectId,

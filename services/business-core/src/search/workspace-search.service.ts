@@ -263,7 +263,7 @@ export class WorkspaceSearchService {
          JOIN pre_project_cases case_record ON case_record.workspace_id=project.workspace_id AND case_record.id=project.case_id
          JOIN crm_opportunities opportunity ON opportunity.workspace_id=case_record.workspace_id AND opportunity.id=case_record.opportunity_id
          JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
-         LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+         LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
         WHERE project.workspace_id=$1 AND project.status<>'archived'
           AND ($4::boolean OR EXISTS(SELECT 1 FROM project_assignments assignment
             WHERE assignment.workspace_id=project.workspace_id AND assignment.project_id=project.id

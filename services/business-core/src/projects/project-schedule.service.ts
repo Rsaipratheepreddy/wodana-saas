@@ -570,7 +570,7 @@ export class ProjectScheduleService {
               execution.content
        FROM delivery_projects project
        JOIN workspaces workspace ON workspace.id=project.workspace_id
-       JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+       JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
        WHERE project.workspace_id=$1 AND project.id=$2 ${lock ? "FOR UPDATE OF project" : ""}`,
       [ctx.workspaceId, projectId],
     );

@@ -45,7 +45,7 @@ export class ProjectFactoryBatchesService {
     if(!canManage||projectId)return {canManage:false,batches,candidates:[],resources:[],members:[]};
     const resources=(await ctx.client.query<{id:string;name:string}>(`SELECT id,name FROM project_resources WHERE workspace_id=$1 AND active AND kind='factory' ORDER BY name`,[ctx.workspaceId])).rows;
     const members=(await ctx.client.query<{id:string;name:string}>(`SELECT m.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active' ORDER BY u.display_name`,[ctx.workspaceId])).rows;
-    const available=(await ctx.client.query<{id:string;name:string;content:ProjectData}>(`SELECT p.id,p.name,e.content FROM delivery_projects p JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.status<>'archived' AND e.content->>'phase'<>'completed' ORDER BY p.name`,[ctx.workspaceId])).rows;
+    const available=(await ctx.client.query<{id:string;name:string;content:ProjectData}>(`SELECT p.id,p.name,e.content FROM delivery_projects p JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id WHERE p.workspace_id=$1 AND p.status<>'archived' AND e.content->>'phase'<>'completed' ORDER BY p.name`,[ctx.workspaceId])).rows;
     const allocated=new Set(rows.filter(row=>!row.content.cancelled).map(row=>`${row.project_id}:${row.snapshot.snapshot.taskId}`));
     const candidates:FactoryCandidate[]=[];
     for(const project of available)for(const task of project.content.tasks){

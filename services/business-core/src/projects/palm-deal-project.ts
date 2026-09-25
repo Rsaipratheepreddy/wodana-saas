@@ -1,3 +1,4 @@
+import { projectRepository } from "./project-repository";
 import { ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { CommercialData } from "../commercial/commercial.types";
@@ -30,10 +31,8 @@ export async function openPalmProjectAtDealFile(
     [workspaceId, caseId, userId],
   )).rows[0];
   if (!project) throw new ConflictException("The enquiry could not be linked to a project.");
-  const existing = (await client.query<{ content: ProjectData }>(
-    `SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2 FOR UPDATE`,
-    [workspaceId, project.id],
-  )).rows[0]?.content;
+  const existing = (await projectRepository.load(client, workspaceId, project.id, { forUpdate: true }))
+    ?.content as ProjectData | undefined;
   if (existing?.scope || (existing?.workflow && existing.workflow.template.code !== "palm_design_build_delivery"))
     throw new ConflictException("This enquiry already has a different project flow. Reconcile it before approving the Deal File.");
   if (!existing?.workflow) {
@@ -46,12 +45,7 @@ export async function openPalmProjectAtDealFile(
     execution.controls!.reference = deal.reference.replace(/^DF-/, "PRJ-");
     execution.phase = "active";
     execution.revision++;
-    await client.query(
-      `INSERT INTO project_execution(project_id,workspace_id,revision,content) VALUES($1,$2,$3,$4)
-       ON CONFLICT(project_id) DO UPDATE SET revision=$3,content=$4,updated_at=now()
-       WHERE project_execution.workspace_id=$2`,
-      [project.id, workspaceId, execution.revision, JSON.stringify(execution)],
-    );
+    await projectRepository.save(client, workspaceId, project.id, execution);
   }
   await ensureJobForSource(client, workspaceId, { type: "project", id: project.id }, userId);
   await client.query(

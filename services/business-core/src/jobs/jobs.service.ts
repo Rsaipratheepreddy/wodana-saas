@@ -362,7 +362,7 @@ export class JobsService {
          ) quote_data ON link.record_type='quote'
          LEFT JOIN delivery_projects project ON link.record_type='project'
            AND project.workspace_id=link.workspace_id AND project.id::text=link.record_id
-         LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id
+         LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id
            AND execution.project_id=project.id
          LEFT JOIN LATERAL (
            SELECT candidate.id,candidate.title,candidate.description,candidate.due_at,candidate.owner_membership_id

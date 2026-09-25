@@ -26,7 +26,8 @@ describe("hidden client handover mutations", () => {
       action, caseId: "case", projectId: "project", handoverId: "handover", decision: "accept", challengeId: "challenge", code: "123456",
     })).rejects.toThrow(/not available/);
     expect(consume).not.toHaveBeenCalled();
-    expect(query).toHaveBeenCalledTimes(1);
+    // Reads and locks only: nothing is written before visibility is confirmed.
+    expect(query.mock.calls.map(([sql]) => String(sql)).filter((sql) => /^\s*(INSERT|UPDATE|DELETE)\b/.test(sql))).toEqual([]);
     expect(query).toHaveBeenCalledWith(expect.stringContaining("project.workspace_id=$1 AND project.case_id=$2 AND project.id=$3"), ["workspace", "case", "project"]);
   });
 });

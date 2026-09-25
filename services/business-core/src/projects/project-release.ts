@@ -1,3 +1,4 @@
+import { projectRepository } from "./project-repository";
 import { acceptedQuoteLines, acceptedQuoteValue, freezeHash } from "../commercial/commercial.domain";
 import {
   approvedMaterialEvidence,
@@ -120,12 +121,8 @@ export async function releaseDeliveryProject(
     )
   ).rows[0];
   await ensureJobForSource(client, workspaceId, { type: "project", id: String(p.id) }, userId);
-  const existing = (
-    await client.query(
-      "SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2 FOR UPDATE",
-      [workspaceId, p.id],
-    )
-  ).rows[0]?.content as ProjectData | undefined;
+  const existing = (await projectRepository.load(client, workspaceId, String(p.id), { forUpdate: true }))
+    ?.content as ProjectData | undefined;
   const execution = existing ?? emptyProject();
   let executionChanged = false;
   if (!execution.scope) {
@@ -213,10 +210,7 @@ export async function releaseDeliveryProject(
   }
   if (executionChanged) {
     execution.revision++;
-    await client.query(
-      "INSERT INTO project_execution(project_id,workspace_id,revision,content) VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET revision=$3,content=$4,updated_at=now() WHERE project_execution.workspace_id=$2",
-      [p.id, workspaceId, execution.revision, JSON.stringify(execution)],
-    );
+    await projectRepository.save(client, workspaceId, String(p.id), execution);
   }
   await client.query(
     `INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active) SELECT workspace_id,$3,membership_id,is_manager,active FROM project_assignments WHERE workspace_id=$1 AND case_id=$2 ON CONFLICT(workspace_id,project_id,membership_id) WHERE project_id IS NOT NULL DO UPDATE SET active=EXCLUDED.active,is_manager=EXCLUDED.is_manager`,
