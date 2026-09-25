@@ -25,7 +25,8 @@ import {
   UpdateSlaPolicyDto,
   UpsertQualificationDto,
 } from "./dto/leads.dto";
-import { normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
+import { notifyUserInApp } from "../../notifications/default-templates";
+import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
 import { hasResolvedEnquiryType } from "./lead-options";
@@ -252,6 +253,17 @@ export class CrmLeadsService {
         );
         reassigned.push({ leadId: lead.id, ownerMembershipId: changed.assignment.ownerMembershipId,
           queueId: changed.assignment.queueId });
+        // Tell both people (PLM-039); the history row above records why.
+        const people = await client.query<{ id: string; userId: string; name: string }>(
+          `SELECT member.id, member.user_id AS "userId", person.display_name AS name FROM workspace_memberships member JOIN users person ON person.id = member.user_id
+           WHERE member.workspace_id = $1 AND member.id = ANY($2::uuid[])`, [workspaceId, [lead.owner_membership_id, changed.assignment.ownerMembershipId].filter(Boolean)]);
+        const byId = new Map(people.rows.map((row) => [row.id, row]));
+        const reference = (await client.query<{ reference: string }>(`SELECT enquiry.reference FROM crm_enquiries enquiry WHERE enquiry.workspace_id = $1 AND enquiry.id = $2`, [workspaceId, lead.enquiry_id])).rows[0]?.reference ?? "";
+        const previous = lead.owner_membership_id ? byId.get(lead.owner_membership_id) : undefined;
+        const next = changed.assignment.ownerMembershipId ? byId.get(String(changed.assignment.ownerMembershipId)) : undefined;
+        const stamp = String(lead.ownership_due_at ?? Date.now());
+        if (previous) await notifyUserInApp(client, { workspaceId, recipientUserId: previous.userId, code: "crm.lead_taken_over_from", eventType: "crm.lead_taken_over_from", variables: { reference, newOwner: next?.name ?? "the queue" }, deepLink: `/workspace/crm/leads?lead=${lead.id}`, idempotencyKey: `takeover-from:${lead.id}:${stamp}` });
+        if (next) await notifyUserInApp(client, { workspaceId, recipientUserId: next.userId, code: "crm.lead_taken_over_to", eventType: "crm.lead_taken_over_to", variables: { reference, previousOwner: previous?.name ?? "The previous owner" }, deepLink: `/workspace/crm/leads?lead=${lead.id}`, idempotencyKey: `takeover-to:${lead.id}:${stamp}` });
       }
       return { reassigned, engaged };
     });
@@ -432,12 +444,12 @@ export class CrmLeadsService {
         await client.query(`UPDATE crm_queues SET is_fallback = false, version = version + 1 WHERE workspace_id = $1 AND is_fallback`, [workspaceId]);
       }
       const result = await client.query(
-        `INSERT INTO crm_queues (workspace_id, business_unit_id, code, name, is_fallback, takeover_after_minutes)
-         VALUES ($1, $2, lower($3), $4, $5, $6)
+        `INSERT INTO crm_queues (workspace_id, business_unit_id, code, name, is_fallback, takeover_after_minutes, takeover_schedule)
+         VALUES ($1, $2, lower($3), $4, $5, $6, $7)
          RETURNING id, business_unit_id AS "businessUnitId", code, name, status,
-                   is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes",
+                   is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes", takeover_schedule AS "takeoverSchedule",
                    round_robin_cursor AS "roundRobinCursor", version`,
-        [workspaceId, input.businessUnitId ?? null, input.code, input.name, input.isFallback ?? false, input.takeoverAfterMinutes ?? null],
+        [workspaceId, input.businessUnitId ?? null, input.code, input.name, input.isFallback ?? false, input.takeoverAfterMinutes ?? null, this.takeoverSchedule(input.takeoverSchedule)],
       );
       const response = result.rows[0] as Record<string, unknown>;
       await this.events.record(client, {
@@ -453,7 +465,7 @@ export class CrmLeadsService {
       const result = await client.query(
         `SELECT queue.id, queue.code, queue.name, queue.status,
                 queue.business_unit_id AS "businessUnitId", queue.is_fallback AS "isFallback",
-                queue.takeover_after_minutes AS "takeoverAfterMinutes",
+                queue.takeover_after_minutes AS "takeoverAfterMinutes", queue.takeover_schedule AS "takeoverSchedule",
                 queue.round_robin_cursor AS "roundRobinCursor", queue.version,
                 COALESCE(jsonb_agg(jsonb_build_object(
                   'membershipId', member.membership_id, 'name', account.display_name,
@@ -494,12 +506,13 @@ export class CrmLeadsService {
            business_unit_id = CASE WHEN $2::boolean THEN $3::uuid ELSE business_unit_id END,
            is_fallback = COALESCE($4, is_fallback), status = COALESCE($5, status),
            takeover_after_minutes = CASE WHEN $9::boolean THEN $10::integer ELSE takeover_after_minutes END,
+           takeover_schedule = CASE WHEN $11::boolean THEN $12::jsonb ELSE takeover_schedule END,
            version = version + 1, updated_at = now()
          WHERE workspace_id = $6 AND id = $7 AND version = $8
          RETURNING id, business_unit_id AS "businessUnitId", code, name, status,
-                   is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes",
+                   is_fallback AS "isFallback", takeover_after_minutes AS "takeoverAfterMinutes", takeover_schedule AS "takeoverSchedule",
                    round_robin_cursor AS "roundRobinCursor", version`,
-        [input.name?.trim() ?? null, input.businessUnitId !== undefined, input.businessUnitId ?? null, input.isFallback ?? null, input.status ?? null, workspaceId, queueId, input.version, input.takeoverAfterMinutes !== undefined, input.takeoverAfterMinutes ?? null],
+        [input.name?.trim() ?? null, input.businessUnitId !== undefined, input.businessUnitId ?? null, input.isFallback ?? null, input.status ?? null, workspaceId, queueId, input.version, input.takeoverAfterMinutes !== undefined, input.takeoverAfterMinutes ?? null, input.takeoverSchedule !== undefined, this.takeoverSchedule(input.takeoverSchedule)],
       );
       if (!result.rowCount) throw new ConflictException("Queue changed; reload and try again");
       if (input.takeoverAfterMinutes !== undefined) {
@@ -1191,19 +1204,22 @@ export class CrmLeadsService {
   ) {
     if (["qualified", "disqualified"].includes(lead.status)) throw new UnprocessableEntityException("Closed leads cannot be routed. Continue in the opportunity or reopen the lead first.");
     const takeoverPolicy = selection.ownerMembershipId && selection.queueId
-      ? await client.query<{ takeover_after_minutes: number | null }>(
-        `SELECT takeover_after_minutes FROM crm_queues WHERE workspace_id=$1 AND id=$2 AND status='active'`,
+      ? await client.query<{ takeover_after_minutes: number | null; takeover_schedule: unknown }>(
+        `SELECT takeover_after_minutes, takeover_schedule FROM crm_queues WHERE workspace_id=$1 AND id=$2 AND status='active'`,
         [workspaceId, selection.queueId],
       ) : null;
     const takeoverMinutes = takeoverPolicy?.rows[0]?.takeover_after_minutes ?? null;
+    // The countdown runs on the queue's working hours when set (PLM-039), else on elapsed time.
+    const takeoverDueAt = takeoverMinutes === null ? null
+      : addSlaMinutes(new Date(), takeoverMinutes, takeoverPolicy?.rows[0]?.takeover_schedule ? normalizeSlaSchedule(takeoverPolicy.rows[0].takeover_schedule) : { version: 1, mode: "elapsed" });
     const result = await client.query(
       `UPDATE crm_leads SET owner_membership_id = $1, queue_id = $2,
          next_action_at = COALESCE(next_action_at, now()),
-         ownership_due_at = CASE WHEN $6::integer IS NULL THEN NULL ELSE now() + $6::integer * interval '1 minute' END,
+         ownership_due_at = $6::timestamptz,
          version = version + 1
        WHERE id = $3 AND workspace_id = $4 AND version = $5
        RETURNING *`,
-      [selection.ownerMembershipId, selection.queueId, lead.id, workspaceId, lead.version, takeoverMinutes],
+      [selection.ownerMembershipId, selection.queueId, lead.id, workspaceId, lead.version, takeoverDueAt],
     );
     if (!result.rowCount) throw new ConflictException("Lead changed; reload and try again");
     await client.query(
@@ -1459,6 +1475,13 @@ export class CrmLeadsService {
     );
     if (!result.rowCount) throw new NotFoundException("Lead not found");
     return { ...result.rows[0], version: Number(result.rows[0].version) };
+  }
+
+  /** Validates a takeover working-hours schedule (the SLA calendar shape); null keeps elapsed time. */
+  private takeoverSchedule(input: Record<string, unknown> | null | undefined) {
+    if (!input) return null;
+    try { return JSON.stringify(normalizeSlaSchedule(input)); }
+    catch (error) { if (error instanceof SlaScheduleValidationError) throw new UnprocessableEntityException(`Takeover hours: ${error.message}`); throw error; }
   }
 
   private mapLead(row: LeadContext): Record<string, unknown> {

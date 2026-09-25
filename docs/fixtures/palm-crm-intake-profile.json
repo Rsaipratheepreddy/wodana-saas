@@ -254,7 +254,57 @@
       "code": "sales",
       "name": "Sales and account managers",
       "takeoverAfterMinutes": 60,
-      "takeoverClock": "elapsed"
+      "takeoverSchedule": {
+        "version": 1,
+        "mode": "business",
+        "timezone": "Asia/Dubai",
+        "weeklyHours": {
+          "monday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "tuesday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "wednesday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "thursday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "friday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "saturday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "sunday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ]
+        },
+        "holidays": [],
+        "dateOverrides": {}
+      }
     },
     "team": {
       "code": "SALES_ACCOUNT_MANAGERS",
@@ -272,31 +322,43 @@
         "weeklyHours": {
           "monday": [
             {
-              "start": "08:00",
+              "start": "09:00",
               "end": "18:00"
             }
           ],
           "tuesday": [
             {
-              "start": "08:00",
+              "start": "09:00",
               "end": "18:00"
             }
           ],
           "wednesday": [
             {
-              "start": "08:00",
+              "start": "09:00",
               "end": "18:00"
             }
           ],
           "thursday": [
             {
-              "start": "08:00",
+              "start": "09:00",
               "end": "18:00"
             }
           ],
           "friday": [
             {
-              "start": "08:00",
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "saturday": [
+            {
+              "start": "09:00",
+              "end": "18:00"
+            }
+          ],
+          "sunday": [
+            {
+              "start": "09:00",
               "end": "18:00"
             }
           ]

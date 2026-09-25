@@ -37,6 +37,20 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{reference}} is from a returning customer you worked with before.",
     variables: ["clientName", "reference"],
   },
+  {
+    code: "crm.lead_taken_over_from",
+    channel: "in_app",
+    subject: "{{reference}} moved to {{newOwner}}",
+    body: "No call or note was logged within the response time, so {{reference}} was reassigned.",
+    variables: ["reference", "newOwner"],
+  },
+  {
+    code: "crm.lead_taken_over_to",
+    channel: "in_app",
+    subject: "{{reference}} is now yours",
+    body: "{{previousOwner}} did not log contact within the response time. Contact the client now.",
+    variables: ["reference", "previousOwner"],
+  },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {

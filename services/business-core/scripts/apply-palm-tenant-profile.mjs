@@ -96,14 +96,15 @@ for (const desired of desiredTaxonomies) {
 let queues = await request(`/workspaces/${workspaceId}/crm/queues`);
 let queue = queues.find((entry) => entry.code === profile.operations.queue.code);
 const queueMatches = queue && queue.status === "active" && queue.name === profile.operations.queue.name &&
-  queue.isFallback === true && queue.takeoverAfterMinutes === profile.operations.queue.takeoverAfterMinutes;
+  queue.isFallback === true && queue.takeoverAfterMinutes === profile.operations.queue.takeoverAfterMinutes && isDeepStrictEqual(queue.takeoverSchedule ?? null, profile.operations.queue.takeoverSchedule ?? null);
 if (queueMatches) unchanged.push("queue:sales");
 else if (queue) queue = await act("queue:sales", () => request(`/workspaces/${workspaceId}/crm/queues/${queue.id}`, {
-  method: "PATCH", body: { version: queue.version, name: profile.operations.queue.name, isFallback: true, takeoverAfterMinutes: profile.operations.queue.takeoverAfterMinutes, status: "active" },
+  method: "PATCH", body: { version: queue.version, name: profile.operations.queue.name, isFallback: true, takeoverAfterMinutes: profile.operations.queue.takeoverAfterMinutes, takeoverSchedule: profile.operations.queue.takeoverSchedule, status: "active" },
 })) ?? queue;
 else queue = await act("queue:sales", () => request(`/workspaces/${workspaceId}/crm/queues`, { body: {
   code: profile.operations.queue.code, name: profile.operations.queue.name, isFallback: true,
   takeoverAfterMinutes: profile.operations.queue.takeoverAfterMinutes,
+  takeoverSchedule: profile.operations.queue.takeoverSchedule,
 } }));
 
 let slas = await request(`/workspaces/${workspaceId}/crm/sla-policies`);

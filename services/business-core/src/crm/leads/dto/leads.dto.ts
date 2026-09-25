@@ -31,6 +31,8 @@ export class CreateQueueDto {
   @IsOptional() @IsUUID() businessUnitId?: string;
   @IsOptional() @IsBoolean() isFallback?: boolean;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number;
+  /** Working hours for the takeover countdown (same shape as an SLA schedule); omit for elapsed time. */
+  @IsOptional() @IsObject() takeoverSchedule?: Record<string, unknown>;
 }
 
 export class UpdateQueueDto {
@@ -39,6 +41,7 @@ export class UpdateQueueDto {
   @IsOptional() @IsUUID() businessUnitId?: string | null;
   @IsOptional() @IsBoolean() isFallback?: boolean;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number | null;
+  @IsOptional() @IsObject() takeoverSchedule?: Record<string, unknown> | null;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
 }
 
