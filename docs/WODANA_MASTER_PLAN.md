@@ -922,6 +922,30 @@ Each is small, reusable and built once in the platform or design system.
 | M17 | End-to-end acceptance per route + security/recovery tests | all | M |
 | M18 | Document builder: templates, blocks, formats, renderer, builder UI (§6.31) | M6–M12 contracts | M |
 
+**Progress (kept current):**
+- **Settings: done.**
+  - One brand source, and the brand colour drives actions.
+  - Currency and country fixed once money exists.
+  - Tax rates and document numbering per legal entity.
+  - Country-aware phone field; one dropdown rule; blocked saves always explained.
+  - Settings labels in `en.json`.
+  - Notification settings move to the notification-engine module.
+- **Design system: done.**
+  - Tokens (4px grid, φ rhythm, type and radius scales).
+  - One palette for light and dark.
+  - State illustrations.
+  - Page-anatomy rule in `CLAUDE.md`.
+- **AI gateway: done.** Gemini behind a per-workspace switch, usage log and validated JSON; AI always sits next to a manual path.
+- **M3 Catalog: core done.** Old catalog removal is still open.
+  - Typed schema (0009) and an exact core (decimal, units, formulas, waste, explainable pricing).
+  - API and screen: item edit, components, price lists with QS review.
+  - Import review, with AI clean-up and AI component suggestions.
+  - The v1 generic catalog stays until the quotation (M6) and planning (M5/M7) rebuilds read v2; then it is deleted.
+- **Open inputs:**
+  - The Core Supplier List file, for supplier links.
+  - Two code clashes in Palm's material list: CP 003 and PT2210.
+
+
 Small features (§6.32) are built into the platform and design system in M1/U0, then used by each module as it ships.
 
 UI integration follows each backend module in the same order (web first, then mobile), on the design-system foundation (**U0**, done once before M5's UI):
