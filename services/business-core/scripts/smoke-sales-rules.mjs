@@ -64,12 +64,13 @@ await check("A known client with no open enquiry comes back as a returning custo
   assert.equal(detail.enquiry.channel, "old_leads");
 });
 
+let created;
 await check("Logging contact moves the enquiry through the salesperson's lists (PLM-042, PLM-076)", async () => {
   const members = await req(`/workspaces/${ws.workspace.id}/members`);
   const me = members.find((member) => member.roles.includes("owner")).id;
   const queue = await req(`${base}/queues`, { body: { name: "Sales", code: `sales-${run.slice(0, 6)}`, isFallback: true } });
   await req(`${base}/queues/${queue.id}/members`, { method: "PUT", body: { membershipId: me, capacity: 100, weight: 1, isAvailable: true } });
-  const created = await add(payload({ displayName: "Funnel Client", mobile: mobile() }, { assignment: { mode: "manual", ownerMembershipId: me, queueId: queue.id } }));
+  created = await add(payload({ displayName: "Funnel Client", mobile: mobile() }, { assignment: { mode: "manual", ownerMembershipId: me, queueId: queue.id } }));
   const inList = async (funnel) => (await req(`${base}/leads?mine=true&funnel=${funnel}&limit=100`)).data.some((row) => row.id === created.leadId);
   assert.equal(await inList("new"), true);
   let lead = await req(`${base}/leads/${created.leadId}`);
@@ -85,6 +86,21 @@ await check("Logging contact moves the enquiry through the salesperson's lists (
   assert.equal(new Date(lead.nextActionAt).toISOString(), followUp);
   assert.equal(await inList("come_back"), true);
   await req(`${base}/leads/${created.leadId}/contacts`, { body: { version: lead.version, channel: "call", outcome: "not_interested", note: "Went with another firm" }, expected: 422 });
+});
+
+await check("The new owner is told with the reference, client and source (PLM-032)", async () => {
+  const inbox = await req(`${base}/notifications`);
+  const items = Array.isArray(inbox) ? inbox : inbox.data ?? inbox.items ?? [];
+  const notice = items.find((item) => String(item.subject ?? "").includes("Funnel Client"));
+  assert.ok(notice, `no assignment notice in ${JSON.stringify(items.map((item) => item.subject))}`);
+  assert.match(String(notice.subject), /is yours/);
+});
+
+await check("Every change is on the enquiry's history: field, from, to, who (PLM-094)", async () => {
+  const history = await req(`${base}/leads/${created.leadId}/history`);
+  const stage = history.flatMap((event) => event.changes.map((change) => ({ ...change, by: event.by }))).filter((change) => change.field === "status");
+  assert.ok(stage.some((change) => change.to === "paused"), JSON.stringify(stage));
+  assert.ok(stage.every((change) => change.by), "every change names who made it");
 });
 
 console.log(failed ? `${failed} failed` : "All sales rule checks passed");
