@@ -238,6 +238,8 @@ export type LeadsPageData = {
   defaultCurrency?: string;
   defaultLocale?: string;
   currentMembershipId?: string;
+  /** Role codes of the signed-in member; sources limited to roles are hidden from others. */
+  currentRoles?: string[];
   leadOptions?: LeadOptions;
   canView: boolean;
   items: CrmLeadListItem[];

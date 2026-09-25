@@ -49,6 +49,7 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     defaultCurrency: workspace?.workspace?.defaultCurrency,
     defaultLocale: workspace?.workspace?.defaultLocale,
     canView: true,
+    currentRoles: authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId)?.roles ?? [],
     currentMembershipId: (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     leadOptions: supporting[6],
     items: page.data ?? page.items ?? [],

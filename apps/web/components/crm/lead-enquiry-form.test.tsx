@@ -13,8 +13,9 @@ function setup(existing?: EditableEnquiry) {
     enquiryTypes: [{ id: "design", label: "Design consultation" }],
     budgetRanges: [{ id: "small", label: "Small budget" }], customerTypes: [],
     emirates: [{ id: "dubai", label: "Dubai" }, { id: "outside_uae", label: "Outside UAE" }], areas: { dubai: [{ id: "marina", label: "Dubai Marina" }] },
-    sources: [{ id: "company", label: "Company" }, { id: "referral", label: "Referral" }],
-    channels: { company: [{ id: "call", label: "Call" }], referral: [{ id: "external", label: "External" }] },
+    sources: [{ id: "company", label: "Company" }, { id: "referral", label: "Referral" }, { id: "self_generated", label: "Self Generated", allowedRoles: ["SALES"] }],
+    channels: { company: [{ id: "call", label: "Call" }], referral: [{ id: "external", label: "External" }, { id: "partner", label: "Partner" }], self_generated: [{ id: "whatsapp", label: "WhatsApp" }] },
+    referralPartners: [{ id: "odg", label: "ODG" }],
   };
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ leadId: "saved" }) });
   vi.stubGlobal("fetch", fetchMock);
@@ -38,6 +39,7 @@ it("uses configured enquiry types, resets dependent channels and saves selected 
   await completeRequired(user);
   await choose(user, /Source/, "Referral");
   expect(screen.getByRole("button", { name: /Channel/ })).toHaveTextContent("External");
+  await user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar");
   await choose(user, /Budget range/, "Small budget");
   await choose(user, /Assignment/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
@@ -72,7 +74,7 @@ it("shows retired values while editing and allows clearing an optional selection
   expect(screen.queryByRole("textbox", { name: /Enquiry title/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Enquiry type/ })).toHaveTextContent("legacy service");
   expect(screen.getByRole("button", { name: /Budget range/ })).toHaveTextContent("legacy budget");
-  expect(screen.getByRole("button", { name: /Customer type/ })).toHaveTextContent("legacy customer");
+  expect(screen.getByRole("button", { name: /Client type/ })).toHaveTextContent("legacy customer");
   await choose(user, /Budget range/, "Not provided");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith("old"));
@@ -120,7 +122,22 @@ it("lets an existing enquiry correct its source and channel, and keeps an older 
   const second = setup(legacy);
   await choose(second.user, /Source/, "Referral");
   expect(screen.getByRole("button", { name: /Channel/ })).toHaveTextContent("External");
+  await second.user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar");
   await second.user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(second.onSaved).toHaveBeenCalled());
-  expect(JSON.parse(second.fetchMock.mock.calls[0][1].body)).toMatchObject({ version: 3, source: "referral", channel: "external" });
+  expect(JSON.parse(second.fetchMock.mock.calls[0][1].body)).toMatchObject({ version: 3, source: "referral", channel: "external", referral: { name: "Omar" } });
+}, 15_000);
+
+it("asks who referred a referral enquiry and sends it, and hides role-limited sources", async () => {
+  const { user, fetchMock, onSaved } = setup();
+  await user.type(screen.getByLabelText(/Customer name/), "Referred client");
+  await completeRequired(user);
+  await user.click(screen.getByRole("button", { name: /Source/ }));
+  expect(screen.queryByRole("option", { name: "Self Generated" })).toBeNull();
+  await user.click(screen.getByRole("option", { name: "Referral" }));
+  await user.type(screen.getByRole("textbox", { name: /^Referred by/ }), "Omar Haddad");
+  await choose(user, /Assignment/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ source: "referral", channel: "external", referral: { name: "Omar Haddad" } });
 }, 15_000);

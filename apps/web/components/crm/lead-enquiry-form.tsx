@@ -11,6 +11,7 @@ import styles from "./leads-page.module.css";
 export type EditableEnquiry = {
   id: string; version: number; reference?: string; title?: string; summary?: string;
   serviceType?: string; details?: EnquiryDetails; party: LeadContact; source?: string; channel?: string;
+  referral?: { kind?: string; name?: string | null; contact?: string | null; membershipId?: string | null; option?: string | null } | null;
 };
 
 export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
@@ -38,6 +39,13 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   const [channel, setChannel] = useState(existing?.channel ?? options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
   // Only a real correction is sent, so an older source that is no longer offered stays as it was.
   const sourceChanged = Boolean(existing) && (source !== (existing?.source ?? "") || channel !== (existing?.channel ?? ""));
+  const [referral, setReferral] = useState({ name: existing?.referral?.name ?? "", contact: existing?.referral?.contact ?? "", membershipId: existing?.referral?.membershipId ?? "", option: existing?.referral?.option ?? "" });
+  const referralKind = source !== "referral" ? null : channel === "internal" || channel === "broker" || channel === "partner" ? channel : "external";
+  const referralBody = () => referralKind === "external" ? { name: referral.name, contact: referral.contact || undefined }
+    : referralKind === "internal" ? { membershipId: referral.membershipId } : referralKind ? { option: referral.option } : undefined;
+  const roles = initialData.currentRoles ?? [];
+  // A source limited to roles is offered only to people holding one (owners and admins always).
+  const sourceItems = (options?.sources ?? []).filter((item) => !item.allowedRoles?.length || item.id === existing?.source || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"));
   const [mode, setMode] = useState("manual");
   const [ownerMembershipId, setOwner] = useState("");
   const [queueId, setQueue] = useState("");
@@ -74,8 +82,10 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
       const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
       if (!source) throw new Error("Choose where this enquiry came from.");
       if (!channel) throw new Error("Choose the channel for this source.");
-      const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails, ...(sourceChanged ? { source, channel } : {}) }
-        : { workspaceId: initialData.workspaceId, requestId, ...contact, serviceType, summary, source, channel, details: enquiryDetails,
+      if (options?.customerTypes.length && !details.customerType) throw new Error("Choose the client type.");
+      const referralChanged = Boolean(existing) && JSON.stringify(referralBody()) !== JSON.stringify(existing?.referral ? { ...(existing.referral.name ? { name: existing.referral.name } : {}), ...(existing.referral.contact ? { contact: existing.referral.contact } : {}), ...(existing.referral.membershipId ? { membershipId: existing.referral.membershipId } : {}), ...(existing.referral.option ? { option: existing.referral.option } : {}) } : undefined);
+      const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails, ...(sourceChanged ? { source, channel } : {}), ...(referralKind && (sourceChanged || referralChanged) ? { referral: referralBody() } : {}) }
+        : { workspaceId: initialData.workspaceId, requestId, ...contact, serviceType, summary, source, channel, details: enquiryDetails, ...(referralKind ? { referral: referralBody() } : {}),
             assignment: { mode, ...(mode === "manual" ? { ownerMembershipId, ...(queueId ? { queueId } : {}) } : {}) } };
       const response = await fetch(existing ? `/api/workspace/crm/data/leads/${existing.id}/details?workspaceId=${initialData.workspaceId}` : "/api/workspace/crm/leads", {
         method: existing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
@@ -114,8 +124,13 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
           ? <TextInput label="City / country · optional" value={details.area ?? ""} onChange={setDetail("area")} />
           : <><SelectField label="Area · optional" items={[{ id: "", label: "Not specified" }, ...areaOptions, { id: "other", label: "Other area" }]} selectedKey={areaChoice} onSelectionChange={key => { setCustomAreaSelected(key === "other"); setDetail("area")(key === "other" ? "" : String(key ?? "")); }} />{customAreaSelected ? <TextInput isRequired label="Area name" value={details.area ?? ""} onChange={setDetail("area")} /> : null}</>}</div>
         <div className={styles.formColumns}><SelectField label="Enquiry type" isRequired items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType} onSelectionChange={key => key && setServiceType(String(key))} /><SelectField label="Budget range · optional" items={[{ id: "", label: "Not provided" }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} /></div>
+        {Boolean(options?.customerTypes.length || existing?.details?.customerType) && <SelectField label="Client type" isRequired={Boolean(options?.customerTypes.length)} items={withExisting(options?.customerTypes, existing?.details?.customerType ?? "")} selectedKey={details.customerType || null} onSelectionChange={key => setDetail("customerType")(String(key ?? ""))} />}
         <TextAreaField label="Project description · optional" value={summary} onChange={setSummary} placeholder="What would the customer like to do?" />
-        <div className={styles.formColumns}><SelectField label="Source" isRequired items={withExisting(options?.sources, existing?.source ?? "")} selectedKey={source} onSelectionChange={key => { const value = String(key); setSource(value); setChannel(options?.channels[value]?.[0]?.id ?? ""); }} /><SelectField label="Channel" isRequired items={withExisting(options?.channels[source], source === existing?.source ? existing?.channel ?? "" : "")} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} /></div>
+        <div className={styles.formColumns}><SelectField label="Source" isRequired items={withExisting(sourceItems, existing?.source ?? "")} selectedKey={source} onSelectionChange={key => { const value = String(key); setSource(value); setChannel(options?.channels[value]?.[0]?.id ?? ""); }} /><SelectField label="Channel" isRequired items={withExisting(options?.channels[source], source === existing?.source ? existing?.channel ?? "" : "")} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} /></div>
+        {referralKind === "external" ? <div className={styles.formColumns}><TextInput isRequired label="Referred by" value={referral.name} onChange={value => setReferral(current => ({ ...current, name: value }))} /><TextInput label="Referrer contact · optional" value={referral.contact} onChange={value => setReferral(current => ({ ...current, contact: value }))} /></div>
+          : referralKind === "internal" ? <SelectField isRequired label="Referred by" items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={referral.membershipId || null} onSelectionChange={key => setReferral(current => ({ ...current, membershipId: String(key ?? "") }))} />
+          : referralKind ? <SelectField isRequired label="Referred by" items={withExisting(referralKind === "broker" ? options?.referralBrokers : options?.referralPartners, existing?.referral?.option ?? "")} selectedKey={referral.option || null} onSelectionChange={key => setReferral(current => ({ ...current, option: String(key ?? "") }))} />
+          : null}
         {!existing && <>
           <div className={styles.formColumns}><SelectField label="Assignment" items={[{ id: "manual", label: "Choose sales owner" }, { id: "automatic", label: "Use routing rules" }, { id: "unassigned", label: "Leave unassigned" }]} selectedKey={mode} onSelectionChange={key => key && setMode(String(key))} />
             {mode === "manual" ? <SelectField isRequired label="Sales owner" items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? "Uses the matching rule or default team and available capacity." : "The enquiry stays visible in Unassigned."}</p>}
@@ -128,7 +143,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
             <div className={styles.formColumns}><TextInput label="Company" value={contact.company ?? ""} onChange={set("company")} /><TextInput label="Job position" value={contact.jobPosition ?? ""} onChange={set("jobPosition")} /></div>
             <div className={styles.formColumns}><CrmPhoneField label="Phone" value={contact.phone ?? ""} onChange={set("phone")} countryCode={contact.phoneCountryCode ?? ""} onCountryChange={set("phoneCountryCode")} locale={initialData.defaultLocale} /><TextInput label="Website" value={contact.website ?? ""} onChange={set("website")} /></div>
             <TextInput label="Address" value={contact.address ?? ""} onChange={set("address")} />
-            <div className={styles.formColumns}>{Boolean(options?.customerTypes.length || existing?.details?.customerType) && <SelectField label="Customer type" items={[{ id: "", label: "Not provided" }, ...withExisting(options?.customerTypes, existing?.details?.customerType ?? "")]} selectedKey={details.customerType ?? ""} onSelectionChange={key => setDetail("customerType")(String(key ?? ""))} />}<TextInput label="Campaign" value={details.campaign ?? ""} onChange={setDetail("campaign")} /></div>
+            <div className={styles.formColumns}><TextInput label="Campaign" value={details.campaign ?? ""} onChange={setDetail("campaign")} /></div>
             {!existing && mode === "manual" && <SelectField label="Sales team · optional" items={[{ id: "", label: "No team selected" }, ...initialData.queues.filter(q => q.status === "active").map(q => ({ id: q.id, label: q.name }))]} selectedKey={queueId} onSelectionChange={key => setQueue(String(key ?? ""))} />}
             <TextAreaField label="Internal notes" value={details.internalNotes ?? ""} onChange={setDetail("internalNotes")} />
           </div>

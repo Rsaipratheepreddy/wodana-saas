@@ -1,4 +1,4 @@
-export type LeadOption = { id: string; label: string };
+export type LeadOption = { id: string; label: string; allowedRoles?: string[] };
 export const UNRESOLVED_ENQUIRY_TYPE_ID = "not_sure";
 export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
   return Boolean(value?.trim() && value.trim() !== UNRESOLVED_ENQUIRY_TYPE_ID);
@@ -11,6 +11,8 @@ export type LeadOptions = {
   customerTypes: LeadOption[];
   emirates: LeadOption[];
   areas: Record<string, LeadOption[]>;
+  referralBrokers?: LeadOption[];
+  referralPartners?: LeadOption[];
 };
 export type LeadContact = {
   displayName: string; email?: string; phone?: string; mobile?: string;
