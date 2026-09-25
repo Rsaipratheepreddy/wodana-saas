@@ -1,11 +1,9 @@
-import { CatalogSettingsPage } from "@/components/workspace/catalog-settings-page";
-import { CatalogCollectionIndex } from "@/components/workspace/catalog-collection-index";
-import { getCatalogPageData } from "@/lib/workspace/catalog.server";
+import { CatalogPage } from "@/components/catalog/catalog-page";
+import { Callout } from "@/design-system";
+import { getCatalogsPageData } from "@/lib/workspace/catalog-v2.server";
 
-export default async function CatalogPage({ searchParams }: { searchParams: Promise<{ view?: string; catalogId?: string }> }) {
-  const { view, catalogId } = await searchParams;
-  const data = await getCatalogPageData();
-  if (!view && !catalogId) return <CatalogCollectionIndex initialData={data} />;
-  const initialView = view === "materials" ? "products" : view === "items" ? "work" : "room";
-  return <CatalogSettingsPage key={`${data.workspaceId}:${catalogId ?? ''}:${initialView}`} initialData={data} initialCatalogId={catalogId} initialView={initialView} />;
+export default async function CatalogsPage() {
+  const data = await getCatalogsPageData();
+  if (data.error) return <Callout title="Catalog unavailable" tone="danger">{data.error}</Callout>;
+  return <CatalogPage canManage={data.canManage} initialCatalogs={data.catalogs} locale={data.locale} workspaceId={data.workspaceId} />;
 }
