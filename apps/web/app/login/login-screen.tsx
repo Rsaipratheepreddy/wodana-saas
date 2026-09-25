@@ -76,6 +76,8 @@ export function LoginScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
   const [mfaStage, setMfaStage] = useState<MfaStage>("credentials");
+  // Email first: identify, then the flow for that person (staff password; mobile → WhatsApp code).
+  const [credentialStep, setCredentialStep] = useState<"identify" | "password">("identify");
   const [mfaCode, setMfaCode] = useState("");
   const [mfaRecoveryMode, setMfaRecoveryMode] = useState(false);
   const [mfaWorkspaceId, setMfaWorkspaceId] = useState("");
@@ -382,6 +384,13 @@ export function LoginScreen({
     const nextEmailError = /^\S+@\S+\.\S+$/.test(email)
       ? ""
       : email.trim() ? t("This doesn’t look like a valid email address.") : t("Enter your email address.");
+    if (credentialStep === "identify") {
+      setEmailError(nextEmailError);
+      if (nextEmailError) { (event.currentTarget.elements.namedItem("email") as HTMLInputElement | null)?.focus(); return; }
+      setStatus("");
+      setCredentialStep("password");
+      return;
+    }
     const nextPasswordError = password.length >= 8
       ? ""
       : password ? t("Use at least 8 characters.") : t("Enter your password.");
@@ -511,7 +520,7 @@ export function LoginScreen({
           ? mfaSetup ? t("Confirm authenticator") : t("Set up authenticator")
           : mfaStage === "recovery"
             ? t("Continue to workspace")
-            : passwordResetToken ? t("Save new password") : invitationToken ? t("Activate invitation") : t("Sign in");
+            : passwordResetToken ? t("Save new password") : invitationToken ? t("Activate invitation") : credentialStep === "identify" ? t("Continue") : t("Sign in");
 
   return (
     <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} direction={languageDirection(language)} locale={language === "en" ? "en-AE" : language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
@@ -526,12 +535,12 @@ export function LoginScreen({
                   <Image alt={tenant.displayName} fill preload sizes="88px" src={tenant.logoUrl} />
                 </span>
               ) : null}
-              <div className={styles.brandIdentity}><strong className={styles.tenantName}>{tenant.displayName}</strong><span>{t("Internal workspace")}</span></div>
+              <strong className={styles.tenantName}>{tenant.displayName}</strong>
             </header>
             <div className={styles.formArea} data-security={mfaStage !== "credentials"}>
             <div className={styles.formIntro}>
-              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{t("Back")}</Button> : null}
-              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{mfaSetup ? t("Back") : t("Back to sign in")}</Button> : null}
+              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="quiet"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{t("Back")}</Button> : null}
+              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="quiet"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{mfaSetup ? t("Back") : t("Back to sign in")}</Button> : null}
               <h1 id="login-heading">{heading}</h1>
               <p>{intro}</p>
             </div>
@@ -547,8 +556,13 @@ export function LoginScreen({
 
             <form className={styles.loginForm} hidden={choosingWorkspace} noValidate onSubmit={submit}>
               {mfaStage === "credentials" ? <>
-                {!settingPassword ? <TextInput
+                {!settingPassword && credentialStep === "password" ? <div className={styles.identityChip}>
+                  <span dir="ltr">{email}</span>
+                  <button className={styles.textButton} disabled={isSubmitting} onClick={() => { setCredentialStep("identify"); setPassword(""); setPasswordError(""); setStatus(""); }} type="button">{t("Change")}</button>
+                </div> : null}
+                {!settingPassword && credentialStep === "identify" ? <TextInput
                   autoComplete="username"
+                  autoFocus
                   errorMessage={emailError}
                   inputType={tenant.loginSlug ? "text" : "email"}
                   isInvalid={Boolean(emailError)}
@@ -560,12 +574,13 @@ export function LoginScreen({
                     setLimitedSessions(null);
                     if (emailError) setEmailError("");
                   }}
-                  placeholder={tenant.loginSlug ? "you@company.com or +971…" : "you@company.com"}
+                  placeholder="you@company.com"
                   value={email}
                 /> : null}
 
-                <div className={styles.passwordField}>
+                {settingPassword || credentialStep === "password" ? <div className={styles.passwordField}>
                 <TextInput
+                  autoFocus={!settingPassword}
                   autoComplete={settingPassword ? "new-password" : "current-password"}
                   errorMessage={passwordError}
                   inputType={showPassword ? "text" : "password"}
@@ -578,7 +593,7 @@ export function LoginScreen({
                     setLimitedSessions(null);
                     if (passwordError) setPasswordError("");
                   }}
-                  placeholder={settingPassword ? t("Create a password") : t("Password")}
+                  placeholder={settingPassword ? t("Create a password") : undefined}
                   suffix={
                     <InputAction
                       aria-label={showPassword ? t("Hide password") : t("Show password")}
@@ -591,17 +606,17 @@ export function LoginScreen({
                   value={password}
                 />
 
-                </div>
+                </div> : null}
 
-                {!settingPassword ? <div className={styles.formOptions}>
+                {!settingPassword && credentialStep === "password" ? <div className={styles.formOptions}>
                   <button
                     className={styles.textButton}
                     disabled={isSubmitting} onClick={startRecovery}
                     type="button"
                   >
-                    Forgot password?
+                    {t("Forgot password?")}
                   </button>
-                </div> : <p className={styles.passwordHint}>{t("Use 10 or more characters with uppercase, lowercase, a number and a symbol.")}</p>}
+                </div> : settingPassword ? <p className={styles.passwordHint}>{t("Use 10 or more characters with uppercase, lowercase, a number and a symbol.")}</p> : null}
 
                 {settingPassword ? <TextInput
                   errorMessage={confirmPasswordError}
@@ -684,7 +699,7 @@ export function LoginScreen({
                 {submitLabel}
 
               </Button>
-              {mfaStage === "enrollment" && !mfaSetup && canSkipEnrollment ? <Button className={styles.skipSetup} isDisabled={isSubmitting} onPress={() => void skipMfaEnrollment()} size="compact" type="button" variant="secondary">{t("Set up later")}</Button> : null}
+              {mfaStage === "enrollment" && !mfaSetup && canSkipEnrollment ? <Button className={styles.skipSetup} isDisabled={isSubmitting} onPress={() => void skipMfaEnrollment()} size="large" type="button" variant="secondary">{t("Set up later")}</Button> : null}
             </form>
 
             {status && !limitedSessions ? <InlineNotice className={styles.statusMessage} message={status} title={statusTone === "error" ? t("Sign-in needs attention") : undefined} tone={statusTone} /> : null}

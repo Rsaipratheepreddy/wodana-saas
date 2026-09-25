@@ -6,8 +6,8 @@
   --login-button: var(--wd-color-action-primary);
   --login-button-hover: var(--wd-color-action-primary-hover);
   --login-on-button: var(--wd-color-action-on-primary);
-  --login-control-height: var(--wd-auth-control-height);
-  --login-control-radius: var(--wd-auth-control-radius);
+  --login-control-height: 2.25rem;
+  --login-control-radius: var(--wd-radius-sm);
   --wd-ink: var(--login-ink);
   --wd-color-text: var(--login-ink);
   --wd-danger: var(--wd-color-danger);
@@ -53,30 +53,28 @@
 }
 
 .loginCard {
-  inline-size: min(100%, var(--wd-auth-panel-width));
-  max-block-size: calc(100dvh - 2 * var(--wd-space-4));
-  overflow: auto;
-  border-radius: var(--wd-radius-xl);
-  padding: clamp(1.25rem, 3vw, 1.5rem);
+  box-sizing: border-box;
+  inline-size: min(100%, 25rem);
+  border-radius: var(--wd-radius-lg);
+  padding: var(--wd-space-8);
   background: var(--wd-color-surface);
-  box-shadow: 0 18px 54px rgb(0 0 0 / 18%);
-  scrollbar-width: thin;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 16%);
 }
 
 .tenantBrand {
   display: flex;
   align-items: center;
-  gap: var(--wd-space-3);
-  min-block-size: 2.5rem;
-  margin-block-end: var(--wd-space-4);
+  gap: var(--wd-space-2);
+  min-block-size: 2rem;
+  margin-block-end: var(--wd-space-6);
 }
 
 .tenantLogo {
   position: relative;
   display: grid;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
-  flex: 0 0 2.5rem;
+  inline-size: 2rem;
+  block-size: 2rem;
+  flex: 0 0 2rem;
   place-items: center;
   overflow: hidden;
   border-radius: var(--wd-radius-md);
@@ -84,57 +82,47 @@
 }
 .tenantLogo img { object-fit: contain; }
 .brandIdentity { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
-.tenantName { overflow: hidden; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-overflow: ellipsis; white-space: nowrap; }
+.tenantName { overflow: hidden; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); text-overflow: ellipsis; white-space: nowrap; }
 .brandIdentity > span { color: var(--login-muted); font-size: var(--wd-text-xs); }
 
 .formArea { min-inline-size: 0; }
-.formIntro { margin-block-end: var(--wd-space-5); }
-.formIntro h1 { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: -0.025em; line-height: 1.25; }
-.formIntro p { margin: var(--wd-space-1) 0 0; color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.5; }
-.loginRoot .backButton { margin: 0 0 var(--wd-space-3); border-color: var(--login-line); background: var(--wd-color-surface); color: var(--login-ink); box-shadow: none; }
+.formIntro { margin-block-end: var(--wd-space-6); }
+.formIntro h1 { margin: 0; font-size: var(--wd-text-xl); text-transform: none; font-weight: var(--wd-weight-semibold); letter-spacing: -0.025em; line-height: 1.25; }
+.formIntro p { margin: var(--wd-space-1) 0 0; color: var(--login-muted); font-size: var(--wd-text-sm); line-height: 1.5; }
+.loginRoot .backButton { margin: 0 0 var(--wd-space-4); margin-inline-start: calc(-1 * var(--wd-space-2)); padding-inline: var(--wd-space-2); border: 0; background: transparent; color: var(--login-muted); font-size: var(--wd-text-xs); box-shadow: none; }
 .loginRoot .backButton:hover { background: var(--wd-color-surface-hover); color: var(--login-ink); }
 .loginForm { display: grid; gap: var(--wd-space-3); }
 .loginForm :global(.wd-field) { gap: var(--wd-space-1); }
 
-/* Keep semantic labels for screen readers while using the placeholder-led login layout. */
-.formArea[data-security="false"] .loginForm :global(.wd-field-label) {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-.loginForm :global(.wd-field-label) { color: var(--login-ink); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.loginForm :global(.wd-field-label) { color: var(--login-muted); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.loginForm :global(.wd-field-label) > span[aria-hidden="true"] { display: none; }
 .loginForm :global(.wd-input-group) {
   min-block-size: var(--login-control-height);
   block-size: var(--login-control-height);
   overflow: hidden;
-  border: 1px solid var(--login-line);
+  border: 0;
   border-radius: var(--login-control-radius);
   background: var(--wd-color-surface);
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--login-ink) 16%, transparent);
+  transition: box-shadow 120ms ease;
 }
-.loginForm :global(.wd-input-group[data-hovered]) { border-color: var(--wd-color-border-strong); }
-.loginForm :global(.wd-input-group:focus-within) { border-color: var(--login-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--login-focus) 18%, transparent); }
+.loginForm :global(.wd-input-group[data-hovered]) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--login-ink) 26%, transparent); }
+.loginForm :global(.wd-input-group:focus-within) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--login-focus) 55%, transparent), 0 0 0 3px color-mix(in srgb, var(--login-focus) 8%, transparent); }
 .loginForm :global(.wd-focus-frame)::after { display: none; }
 .loginForm :global(.wd-input) {
   block-size: 100%;
   min-inline-size: 0;
-  padding-inline: var(--wd-space-4);
+  padding-inline: var(--wd-space-2-5);
   color: var(--login-ink);
-  font-size: var(--wd-text-md);
+  font-size: var(--wd-text-sm);
   caret-color: var(--login-focus);
   color-scheme: light;
   -webkit-text-fill-color: var(--login-ink);
 }
 .loginForm :global(.wd-input)::placeholder { color: var(--login-muted); opacity: 1; -webkit-text-fill-color: var(--login-muted); }
 .loginForm :global(.wd-input-affix[data-side="end"]) { padding-inline-end: var(--wd-space-1); }
-.loginForm :global(.wd-field[data-invalid] .wd-input-group) { border-color: var(--wd-color-danger); box-shadow: none; }
-.loginForm :global(.wd-field[data-invalid] .wd-input-group:focus-within) { box-shadow: 0 0 0 2px color-mix(in srgb, var(--wd-color-danger) 18%, transparent); }
+.loginForm :global(.wd-field[data-invalid] .wd-input-group) { box-shadow: inset 0 0 0 1px var(--wd-color-danger); }
+.loginForm :global(.wd-field[data-invalid] .wd-input-group:focus-within) { box-shadow: inset 0 0 0 1px var(--wd-color-danger), 0 0 0 3px color-mix(in srgb, var(--wd-color-danger) 16%, transparent); }
 .loginForm :global(.wd-field-error) { color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
 .loginForm :global(.wd-input:-webkit-autofill),
 .loginForm :global(.wd-input:-webkit-autofill:hover),
@@ -146,22 +134,26 @@
 .passwordField { min-inline-size: 0; }
 .passwordToggle {
   display: grid;
-  inline-size: 2.5rem;
-  min-inline-size: 2.5rem;
-  block-size: 2.5rem;
-  min-block-size: 2.5rem;
+  inline-size: 1.75rem;
+  min-inline-size: 1.75rem;
+  block-size: 1.75rem;
+  min-block-size: 1.75rem;
   place-items: center;
   border: 0;
   border-radius: var(--wd-radius-sm);
   background: transparent;
-  color: var(--login-ink);
+  color: var(--login-muted);
   cursor: pointer;
 }
+.passwordToggle { padding: 0; }
+.passwordToggle svg { flex: none; inline-size: 1rem; block-size: 1rem; }
 .passwordToggle:hover { background: var(--wd-color-surface-hover); }
 .passwordToggle[data-focus-visible] { outline: 2px solid var(--login-focus); outline-offset: 1px; }
 .formOptions { display: flex; justify-content: flex-end; margin-block-start: calc(-1 * var(--wd-space-1)); }
-.passwordHint { margin: calc(-1 * var(--wd-space-2)) 0 0; color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.45; }
-.textButton, .supportCopy button { border: 0; padding: 0; background: transparent; color: var(--wd-color-link); font: inherit; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; cursor: pointer; }
+.identityChip { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-inline-size: 0; border-radius: var(--login-control-radius); padding: var(--wd-space-2) var(--wd-space-2-5); background: var(--wd-color-surface-muted); color: var(--login-ink); font-size: var(--wd-text-sm); }
+.identityChip > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.passwordHint { margin: calc(-1 * var(--wd-space-1)) 0 0; color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.45; }
+.textButton, .supportCopy button { border: 0; padding: 0; background: transparent; color: var(--wd-color-link); font: inherit; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); text-decoration: none; cursor: pointer; }
 .textButton:hover, .supportCopy button:hover { color: var(--wd-color-link-hover); }
 .textButton:focus-visible, .supportCopy button:focus-visible, .continueLink:focus-visible { outline: 2px solid var(--login-focus); outline-offset: 3px; }
 
@@ -169,13 +161,13 @@
   inline-size: 100%;
   min-block-size: var(--login-control-height);
   block-size: var(--login-control-height);
-  margin-block-start: var(--wd-space-2);
+  margin-block-start: var(--wd-space-1);
   border: 0;
   border-radius: var(--login-control-radius);
   background: var(--login-button);
   color: var(--login-on-button);
-  font-size: var(--wd-text-md);
-  font-weight: var(--wd-weight-semibold);
+  font-size: var(--wd-text-sm);
+  font-weight: var(--wd-weight-medium);
   box-shadow: none;
 }
 .loginRoot .submitButton:hover { background: var(--login-button-hover); color: var(--login-on-button); }
@@ -184,9 +176,9 @@
 .loginRoot .submitButton[data-disabled] { opacity: 0.6; }
 
 .statusMessage { margin-block-start: var(--wd-space-4); border-radius: var(--wd-radius-sm); }
-.supportCopy { min-block-size: 1rem; margin: var(--wd-space-5) 0 0; color: var(--login-muted); font-size: var(--wd-text-xs); text-align: center; }
+.supportCopy { min-block-size: 1rem; margin: var(--wd-space-6) 0 0; color: var(--login-muted); font-size: var(--wd-text-xs); text-align: center; }
 .continueLink { display: block; margin-block-start: var(--wd-space-3); color: var(--wd-color-link); font-size: var(--wd-text-sm); text-align: center; }
-.poweredBy { display: flex; align-items: center; justify-content: center; gap: var(--wd-space-1); margin-block-start: var(--wd-space-5); padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--login-muted); }
+.poweredBy { display: flex; align-items: center; justify-content: center; gap: var(--wd-space-1); margin-block-start: var(--wd-space-6); color: var(--login-muted); }
 .poweredBy > span { font-size: var(--wd-text-2xs); }
 .poweredLogo { opacity: 0.72; }
 
@@ -195,30 +187,32 @@
 .mfaForm { display: grid; gap: var(--wd-space-3); }
 .securityMark { display: none; }
 .otpField { display: grid; gap: var(--wd-space-2); }
-.otpField > span { color: var(--login-ink); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
-.otpField > span i { color: var(--wd-color-danger); font-style: normal; }
+.otpField > span { color: var(--login-muted); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.otpField > span i { display: none; }
 .otpField :global(.wd-otp) { justify-content: center; gap: var(--wd-space-2); }
-.otpField :global(.wd-otp input) { inline-size: 2rem; block-size: 2.25rem; border-color: var(--login-line); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--login-ink); }
+.otpField :global(.wd-otp input) { inline-size: 2.5rem; block-size: 2.75rem; border: 0; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--login-ink) 16%, transparent); color: var(--login-ink); font-size: var(--wd-text-lg); font-variant-numeric: tabular-nums; }
+.otpField :global(.wd-otp input:focus) { outline: 0; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--login-focus) 55%, transparent), 0 0 0 3px color-mix(in srgb, var(--login-focus) 8%, transparent); }
 .mfaLinks { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--wd-space-2); }
 .mfaLinks .textButton { display: inline-flex; align-items: center; gap: var(--wd-space-1); }
 .deadlineNotice { margin: 0; color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.45; }
 .recoveryHeader { margin: 0; border-radius: var(--wd-radius-sm); padding: var(--wd-space-3); background: var(--wd-color-surface-muted); color: var(--login-muted); font-size: var(--wd-text-xs); line-height: 1.45; }
 .recoveryHeader { display: flex; align-items: flex-start; gap: var(--wd-space-2); }
 .recoveryHeader svg { flex: none; }
-.qrPanel { display: grid; min-block-size: 8.5rem; place-items: center; background: var(--wd-color-surface); }
+.qrPanel { display: grid; min-block-size: 10rem; place-items: center; border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); }
 .qrPanel img { inline-size: 8.5rem; block-size: 8.5rem; }
 .qrPanel span { padding: var(--wd-space-4); color: var(--login-muted); font-size: var(--wd-text-xs); }
-.manualKey { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); padding: var(--wd-space-1) var(--wd-space-2); color: var(--login-muted); font-size: var(--wd-text-xs); }
+.manualKey { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; background: var(--wd-color-surface-muted); border-radius: var(--wd-radius-sm); padding: var(--wd-space-1) var(--wd-space-2); color: var(--login-muted); font-size: var(--wd-text-xs); }
 .manualKey > span { white-space: nowrap; }
 .manualKey code { min-inline-size: 0; overflow-x: auto; color: var(--login-ink); font-size: var(--wd-text-xs); scrollbar-width: thin; user-select: all; white-space: nowrap; }
 .copySetupKey { display: grid; inline-size: var(--wd-control-xs); block-size: var(--wd-control-xs); place-items: center; border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-link); cursor: pointer; }
 .copySetupKey:hover { background: var(--wd-color-surface-hover); }
 .copySetupKey:focus-visible { outline: 2px solid var(--login-focus); outline-offset: 2px; }
-.recoveryCodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-2); margin: 0; border: 1px solid var(--login-line); border-radius: var(--wd-radius-sm); padding: var(--wd-space-3) var(--wd-space-3) var(--wd-space-3) var(--wd-space-6); font-size: var(--wd-text-xs); }
+.recoveryCodes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-2); margin: 0; border-radius: var(--wd-radius-sm); padding: var(--wd-space-3); padding-inline-start: var(--wd-space-6); background: var(--wd-color-surface-muted); font-size: var(--wd-text-xs); }
 .recoveryCodes code { color: var(--login-ink); user-select: all; }
 .copyCodes { justify-self: start; }
 .mfaForm :global(.wd-checkbox) { align-items: flex-start; font-size: var(--wd-text-xs); }
-.skipSetup { justify-self: center; }
+.loginRoot .skipSetup { inline-size: 100%; min-block-size: var(--login-control-height); block-size: var(--login-control-height); border: 0; border-radius: var(--login-control-radius); background: var(--wd-color-surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--login-ink) 16%, transparent); color: var(--login-ink); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.loginRoot .skipSetup:hover { background: var(--wd-color-surface-hover); }
 
 .loginRoot :global(.wd-modal) { inline-size: min(34rem, calc(100vw - 2rem)); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); }
 .loginRoot :global(.wd-dialog > header) { padding: var(--wd-space-5); border-block-end: 1px solid var(--wd-color-structural-divider); }
@@ -239,8 +233,9 @@
 
 @media (max-width: 35rem) {
   .loginPanel { padding: 0; }
-  .loginCard { inline-size: 100%; min-block-size: 100dvh; max-block-size: none; border-radius: 0; padding: var(--wd-space-6) var(--wd-space-5); box-shadow: none; }
-  .loginForm :global(.wd-input) { font-size: var(--wd-text-lg); }
+  .loginCard { inline-size: 100%; min-block-size: 100dvh; border-radius: 0; padding: var(--wd-space-10) var(--wd-space-5) var(--wd-space-6); box-shadow: none; }
+  .loginRoot { --login-control-height: 2.75rem; }
+  .loginForm :global(.wd-input) { font-size: var(--wd-text-md); }
   .recoveryCodes { grid-template-columns: 1fr; }
   .deviceLimit li { flex-wrap: wrap; }
   .deviceLimit li div { flex-basis: calc(100% - 4rem); }

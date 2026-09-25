@@ -28,13 +28,18 @@ test("authenticator setup is compact, uses one-line key and has a working back p
 
   await page.goto("/login?tenant=missing-default-brand");
   await page.getByRole("textbox", { name: "Email" }).fill("owner@example.com");
+  await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("textbox", { name: "Password" }).fill("DemoPassword#2026");
   await page.getByRole("button", { name: "Sign in" }).click();
 
   await expect(page.getByRole("heading", { name: "Protect your account" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Back to sign in" })).toHaveAttribute("data-variant", "secondary");
+  await expect(page.getByRole("button", { name: "Back to sign in" })).toHaveAttribute("data-variant", "quiet");
   await expect(page.getByRole("button", { name: "Set up authenticator" })).toHaveAttribute("data-variant", "primary");
   await expect(page.getByRole("button", { name: "Back to sign in" })).toHaveCSS("text-decoration-line", "none");
+  const primaryBox = await page.getByRole("button", { name: "Set up authenticator" }).boundingBox();
+  const laterBox = await page.getByRole("button", { name: "Set up later" }).boundingBox();
+  expect(laterBox?.width).toBe(primaryBox?.width);
+  expect(laterBox?.height).toBe(primaryBox?.height);
   await page.getByRole("button", { name: "Set up authenticator" }).click();
 
   const key = page.getByLabel("Authenticator setup key");
@@ -46,6 +51,8 @@ test("authenticator setup is compact, uses one-line key and has a working back p
   expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(12);
   await page.screenshot({ path: testInfo.outputPath("compact-authenticator.png"), fullPage: true });
 
+  await page.getByRole("group", { name: "One-time password" }).locator("input").first().click();
+  await page.screenshot({ path: testInfo.outputPath("authenticator-focused.png") });
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Protect your account" })).toBeVisible();
   await page.getByRole("button", { name: "Back to sign in" }).click();

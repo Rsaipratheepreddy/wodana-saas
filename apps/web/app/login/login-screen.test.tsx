@@ -14,6 +14,7 @@ afterEach(() => { vi.unstubAllGlobals(); replace.mockReset(); push.mockReset(); 
 
 async function fillCredentials(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole("textbox", { name: /^Email/ }), "owner@example.com");
+  await user.click(screen.getByRole("button", { name: "Continue" }));
   await user.type(screen.getByLabelText(/^Password/, { selector: "input" }), "DemoPassword#2026");
 }
 
@@ -311,6 +312,21 @@ describe("email-first sign-in", () => {
     expect(screen.queryByRole("list", { name: "Workspaces" })).not.toBeInTheDocument();
   });
 
+  it("asks for the email first, then the password, and lets the person change the email", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn());
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    expect(screen.queryByLabelText(/^Password/, { selector: "input" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Enter your email address.")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: /^Email/ }), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Password/, { selector: "input" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByRole("textbox", { name: /^Email/ })).toHaveValue("owner@example.com");
+  });
+
   it("sends a client's mobile number to the tenant portal instead of the staff sign-in", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn();
@@ -318,7 +334,7 @@ describe("email-first sign-in", () => {
     render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null }} />);
 
     await user.type(screen.getByRole("textbox", { name: /^Email or mobile/ }), "+971 50 123 4567");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(push).toHaveBeenCalledWith("/portal/palm-living");
     expect(fetchMock).not.toHaveBeenCalled();
