@@ -8,31 +8,31 @@
 .srOnly { position:absolute; inline-size:1px; block-size:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 
 .boardPage.boardPage { min-block-size:calc(100dvh - 3.5rem); }
-.boardSurface { display:flex; flex:1; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-4); }
-.boardToolbar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wd-space-2); flex:none; min-inline-size:0; margin-block-end:var(--wd-space-3); }
+.boardSurface { display:flex; flex:1; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-3) var(--wd-space-6) var(--wd-space-6); }
+.boardToolbar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wd-space-2); flex:none; min-inline-size:0; min-block-size:var(--wd-control-md); margin-block-end:var(--wd-space-2); }
 .boardToolbar :global(.wd-field) { min-inline-size:7rem; gap:0; }
 .boardToolbar :global(.wd-field-label) { display:none; }
 .boardToolbar :global(.wd-select-button), .boardToolbar :global(.wd-button) { min-block-size:2rem; block-size:2rem; border-radius:var(--wd-radius-xs); padding-inline:var(--wd-space-2); font-size:var(--wd-text-xs); }
-.boardToolbar :global(.wd-select-button) { min-inline-size:7rem; border-radius:999px; border-color:var(--wd-color-structural-divider); background:var(--wd-color-surface); color:var(--wd-color-text); }
-.search { display:flex; align-items:center; gap:var(--wd-space-1-5); min-inline-size:0; border:1px solid var(--wd-color-structural-divider); border-radius:999px; padding-inline:var(--wd-space-3); background:var(--wd-color-surface); color:var(--wd-color-text); }
+.boardToolbar :global(.wd-select-button) { min-inline-size:7rem; border-radius:var(--wd-radius-sm); border-color:var(--wd-color-structural-divider); background:var(--wd-color-surface); color:var(--wd-color-text); }
+.search { display:flex; align-items:center; gap:var(--wd-space-1-5); min-inline-size:0; border:1px solid var(--wd-color-structural-divider); border-radius:var(--wd-radius-sm); padding-inline:var(--wd-space-3); background:var(--wd-color-surface); color:var(--wd-color-text); }
 .search input { inline-size:9rem; min-inline-size:0; min-block-size:2rem; border:0; outline:0; padding:0; background:transparent; color:var(--wd-color-text); font:inherit; font-size:var(--wd-text-xs); }
 .search:focus-within { outline:2px solid var(--wd-color-focus); outline-offset:1px; }
 .viewSwitch, .toolbarActions { display:flex; align-items:center; gap:var(--wd-space-1); }
-.viewSwitch :global(.wd-button[aria-pressed="true"]) { background:var(--wd-color-action-primary-subtle); border-color:var(--wd-color-action-primary); color:var(--wd-color-text); }
+.viewSwitch :global(.wd-button[aria-pressed="true"]) { background:var(--wd-color-surface-muted); border-color:var(--wd-color-text); color:var(--wd-color-text); font-weight:var(--wd-weight-medium); }
 .toolbarActions { margin-inline-start:auto; }
 
 .salesBoard { display:grid; grid-template-columns:repeat(var(--stage-count),minmax(0,1fr)); gap:var(--wd-space-2); flex:1; min-inline-size:0; min-block-size:20rem; overflow-x:auto; padding-block:var(--wd-space-0-5) var(--wd-space-2); scrollbar-width:none; }
 .salesBoard::-webkit-scrollbar { display:none; }
 .salesBoard:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:-2px; }
-.boardColumn { --column-accent:#d268a4; display:flex; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-1); border-radius:var(--wd-radius-md); background:var(--wd-color-surface-muted); }
-.boardColumn[data-tone="1"] { --column-accent:#d88725; background:var(--wd-color-warning-subtle); }
-.boardColumn[data-tone="2"] { --column-accent:#188d93; background:var(--wd-color-info-subtle); }
-.boardColumn[data-tone="3"] { --column-accent:#7963a4; background:#eee7f7; }
-.boardColumn[data-tone="4"], .boardColumn[data-tone="won"] { --column-accent:#27835c; background:var(--wd-color-success-subtle); }
-.boardColumn[data-tone="lost"] { --column-accent:#b34949; background:var(--wd-color-danger-subtle); }
-.boardColumn[data-drop-target] { box-shadow:inset 0 0 0 2px #426f59; }
+.boardColumn { --column-accent:var(--wd-color-text-tertiary); display:flex; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-1); border-radius:var(--wd-radius-md); background:var(--wd-color-surface-muted); }
+.boardColumn[data-tone="1"] { --column-accent:var(--wd-color-warning); }
+.boardColumn[data-tone="2"] { --column-accent:var(--wd-color-info); }
+.boardColumn[data-tone="3"] { --column-accent:var(--wd-color-action-primary); }
+.boardColumn[data-tone="4"], .boardColumn[data-tone="won"] { --column-accent:var(--wd-color-success); }
+.boardColumn[data-tone="lost"] { --column-accent:var(--wd-color-danger); }
+.boardColumn[data-drop-target] { box-shadow:inset 0 0 0 2px var(--wd-color-focus); }
 .boardColumn > header { display:flex; align-items:center; justify-content:space-between; gap:var(--wd-space-1-5); min-block-size:2.8rem; padding:var(--wd-space-2) var(--wd-space-2); color:var(--wd-color-text); }
-.boardColumn > header h2 { display:flex; align-items:center; gap:var(--wd-space-2); min-inline-size:0; margin:0; overflow-wrap:anywhere; font-size:var(--wd-text-md); font-weight:700; text-transform:none; }
+.boardColumn > header h2 { display:flex; align-items:center; gap:var(--wd-space-2); min-inline-size:0; margin:0; overflow-wrap:anywhere; font-family:var(--wd-font-sans); font-size:var(--wd-text-sm); font-weight:var(--wd-weight-semibold); letter-spacing:0; text-transform:none; }
 .boardColumn > header i { flex:none; inline-size:7px; block-size:7px; border-radius:50%; background:var(--column-accent); }
 .count { display:grid; place-items:center; flex:none; min-inline-size:1.5rem; block-size:1.5rem; padding-inline:var(--wd-space-1-5); border-radius:var(--wd-radius-xs); background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-variant-numeric:tabular-nums; }
 .pipelineName { display:block; padding:var(--wd-space-1-5) var(--wd-space-3) 0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }

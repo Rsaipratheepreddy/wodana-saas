@@ -203,6 +203,7 @@
 /* Qualified leads use the shared spreadsheet table from CRM. */
 .qualifiedProvider { min-block-size: 100%; background: var(--wd-color-surface); }
 .qualifiedPage { inline-size: 100%; min-inline-size: 0; }
+.qualifiedPage.qualifiedPage.qualifiedPage { padding: var(--wd-space-3) var(--wd-space-6) var(--wd-space-6); }
 .qualifiedIdentity { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
 .qualifiedIdentity > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qualifiedIdentity :global(.wd-avatar) { display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; flex: 0 0 28px; font-size: var(--wd-text-2xs); line-height: 1; }

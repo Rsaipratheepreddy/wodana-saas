@@ -779,5 +779,9 @@
   "Stage": "Stage",
   "Owner": "Owner",
   "Assign owner": "Assign owner",
-  "Schedule": "Schedule"
+  "Schedule": "Schedule",
+  "Case lists": "Case lists",
+  "Ready to start": "Ready to start",
+  "On hold": "On hold",
+  "Released": "Released"
 }
