@@ -1,16 +1,54 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import { ProjectNotificationsService } from "./project-notifications";
-/** Daily in-app reminders use workspace dates and a stable key per recipient/record/day. */
+
+const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
+type Tenant = Pick<PoolClient, "query">;
+
+/**
+ * Daily in-app reminders use workspace dates and a stable key per recipient/record/day.
+ * Reminder tables use forced RLS, so each workspace runs in its own tenant transaction;
+ * emails are queued only after that transaction commits.
+ */
 @Injectable()
 export class ProjectRemindersService {
+  private readonly logger = new Logger(ProjectRemindersService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly notifications: ProjectNotificationsService,
   ) {}
+
   async send(projectId?: string) {
-    const result = await this.db.query<{
+    const workspaces = await this.db.query<{ workspace_id: string }>(
+      "SELECT workspace_id FROM list_reminder_workspaces()",
+    );
+    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, failedWorkspaces: 0 };
+    for (const { workspace_id: workspaceId } of workspaces.rows) {
+      try {
+        const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
+          due: await this.createDueReminders(client, projectId),
+          decisions: await this.createDecisionReminders(client),
+          weekly: projectId ? null : await this.createWeeklyProgress(client),
+        }));
+        await this.queueDueEmails(run.due);
+        if (run.weekly) await this.queueWeeklyEmails(run.weekly.rows, run.weekly.emailWorkspaces);
+        totals.dueReminders += run.due.length;
+        totals.decisionReminders += run.decisions;
+        totals.weeklySummaries += run.weekly?.rows.length ?? 0;
+      } catch (error) {
+        totals.failedWorkspaces += 1;
+        this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);
+      }
+    }
+    totals.created = totals.dueReminders + totals.decisionReminders + totals.weeklySummaries;
+    return totals;
+  }
+
+  private async createDueReminders(client: Tenant, projectId?: string) {
+    const result = await client.query<{
       workspace_id: string;
       recipient_id: string;
       subject: string;
@@ -45,7 +83,11 @@ export class ProjectRemindersService {
   ON CONFLICT(workspace_id,idempotency_key) DO NOTHING RETURNING workspace_id,recipient_id,subject,body,deep_link,idempotency_key`,
       [projectId ?? null],
     );
-    for (const reminder of result.rows) {
+    return result.rows;
+  }
+
+  private async queueDueEmails(reminders: { workspace_id: string; recipient_id: string; subject: string; body: string; deep_link: string; idempotency_key: string }[]) {
+    for (const reminder of reminders) {
       const projectIdMatch = /\/workspace\/projects\/([^/]+)/.exec(reminder.deep_link);
       const dueDate = /\b\d{4}-\d{2}-\d{2}\b/.exec(reminder.body)?.[0] ?? "";
       const projectName = reminder.body.split(" · Planned for ")[0] || "Project";
@@ -65,18 +107,10 @@ export class ProjectRemindersService {
         correlationId: randomUUID(),
       }).catch(() => undefined);
     }
-    const decisionReminders = await this.sendDecisionReminders();
-    const weeklySummaries = projectId ? 0 : await this.sendWeeklyProgress();
-    return {
-      created: (result.rowCount ?? 0) + decisionReminders + weeklySummaries,
-      dueReminders: result.rowCount ?? 0,
-      decisionReminders,
-      weeklySummaries,
-    };
   }
 
-  private async sendDecisionReminders() {
-    const result = await this.db.query(
+  private async createDecisionReminders(client: Tenant) {
+    const result = await client.query(
       `WITH due AS (
         SELECT commercial.workspace_id, commercial.case_id, request,
           membership.user_id,
@@ -130,13 +164,13 @@ export class ProjectRemindersService {
     return result.rowCount ?? 0;
   }
 
-  private async sendWeeklyProgress() {
-    const emailPolicies = await this.db.query<{ workspace_id: string }>(
+  private async createWeeklyProgress(client: Tenant) {
+    const emailPolicies = await client.query<{ workspace_id: string }>(
       `SELECT DISTINCT workspace_id FROM notification_policies
        WHERE event_type='project.weekly_progress' AND status='active' AND channels ? 'email'`,
     );
     const emailWorkspaces = new Set(emailPolicies.rows.map((row) => row.workspace_id));
-    const summaries = await this.db.query<{
+    const summaries = await client.query<{
       workspace_id: string;
       project_id: string;
       recipient_id: string;
@@ -206,7 +240,14 @@ export class ProjectRemindersService {
       RETURNING workspace_id,split_part(deep_link,'/',4)::uuid AS project_id,
         recipient_id,split_part(subject,' · ',2) AS project_name,body,deep_link,idempotency_key`,
     );
-    for (const summary of summaries.rows) {
+    return { rows: summaries.rows, emailWorkspaces };
+  }
+
+  private async queueWeeklyEmails(
+    summaries: { workspace_id: string; project_id: string; recipient_id: string; project_name: string; body: string; deep_link: string; idempotency_key: string }[],
+    emailWorkspaces: Set<string>,
+  ) {
+    for (const summary of summaries) {
       if (!emailWorkspaces.has(summary.workspace_id)) continue;
       await this.notifications.queueScheduledEmail({
         workspaceId: summary.workspace_id,
@@ -223,6 +264,5 @@ export class ProjectRemindersService {
         correlationId: randomUUID(),
       }).catch(() => undefined);
     }
-    return summaries.rowCount ?? 0;
   }
 }
