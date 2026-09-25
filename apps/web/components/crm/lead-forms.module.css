@@ -62,7 +62,7 @@
 .settings { max-inline-size: 44rem; display: grid; gap: var(--wd-space-4); padding-block: var(--wd-space-4); }
 .settings h3 { margin: 0; font-size: var(--wd-text-md); }
 .share { display: grid; justify-items: center; gap: var(--wd-space-4); }
-.share > :first-child { inline-size: 100%; }
+.share > :not(img):not(a) { inline-size: 100%; }
 .download { color: var(--wd-color-focus); text-underline-offset: 3px; font-size: var(--wd-text-sm); }
 .publicPage { min-block-size: 100dvh; padding: var(--wd-space-8) var(--wd-space-4); background: var(--wd-color-surface-subtle); }
 .publicBrand { max-inline-size: 42rem; margin: 0 auto var(--wd-space-4); min-block-size: 3rem; display: flex; align-items: center; color: var(--wd-color-text); }
@@ -276,3 +276,4 @@
 .inlineQuestionEditor { gap:var(--wd-space-2); margin:0 var(--wd-space-4) var(--wd-space-4); padding-block-start:var(--wd-space-3); }
 .questionFooter { padding-block-start:var(--wd-space-2); }
 @container (max-width:43rem) { .questionTop { gap:var(--wd-space-0-5); padding-inline:var(--wd-space-2); } .deleteField { min-inline-size:32px; padding-inline:var(--wd-space-1-5); } .deleteField span { display:none; } .inlineQuestionEditor { margin-inline:var(--wd-space-3); } }
+.shareFields { display: grid; gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }

@@ -11,6 +11,7 @@ import { ListIntakeQueryDto } from "./dto/intake.dto";
 import { CrmIntakeService } from "./crm-intake.service";
 import { completeLeadForm, defaultLeadForm, parseLeadForm, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
 import { countryFromLocale, normalizeIntakePartyPhones } from "./intake-phone";
+import { resolveFormLink } from "./form-link";
 
 @Injectable()
 export class LeadFormsService {
@@ -140,7 +141,7 @@ export class LeadFormsService {
     };
   }
 
-  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean }) {
+  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean; link?: { source?: string; channel?: string; placement?: string } }) {
     const form = await this.resolve(token);
     return this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       // Serialize submissions to enforce per-form limits and check publication atomically.
@@ -148,7 +149,9 @@ export class LeadFormsService {
       if (!current.rowCount) throw new NotFoundException("This form is not accepting enquiries");
       const published = current.rows[0].published as LeadFormSchema;
       if (stableHash(published) !== input.revision) throw new ConflictException("The form has changed. Reload it before submitting");
-      const schema = completeLeadForm(published, await loadLeadOptions(client, form.workspace_id));
+      const choices = await loadLeadOptions(client, form.workspace_id);
+      const schema = completeLeadForm(published, choices);
+      const link = resolveFormLink(choices, input.link);
       if (input.serviceConsent !== true) throw new BadRequestException("Consent is required before submitting an enquiry");
       const { fields, responses } = validateFormAnswers(schema, input.answers);
       const mobileQuestion = schema.questions.find(question => question.field === "mobile");
@@ -183,10 +186,10 @@ export class LeadFormsService {
         },
       };
       await this.intake.createFormIntake(client, form.workspace_id, key, {
-        source: schema.source, channel: schema.channel, intakeMethod: "form", title: "",
+        source: link?.source ?? schema.source, channel: link?.channel ?? schema.channel, intakeMethod: "form", title: "",
         party,
         serviceType: fields.serviceType, summary: fields.summary,
-        details: { emirate: fields.emirate, area: fields.area, budgetRange: fields.budgetRange }, assignment: { mode: "automatic" },
+        details: { emirate: fields.emirate, area: fields.area, budgetRange: fields.budgetRange, ...(link?.placement ? { campaign: link.placement } : {}) }, assignment: { mode: "automatic" },
         consents: [consent],
         originalPayload: {
           origin: "customer_enquiry_form",
@@ -195,6 +198,7 @@ export class LeadFormsService {
           formRevision: input.revision,
           formAnswers: responses,
           formRawAnswers: structuredClone(input.answers),
+          ...(link ? { link } : {}),
           consent: consent.evidence,
         },
       });

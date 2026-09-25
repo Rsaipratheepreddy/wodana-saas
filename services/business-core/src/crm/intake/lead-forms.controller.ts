@@ -18,6 +18,8 @@ class SubmitFormDto {
   @IsOptional() @IsObject() phoneCountryCodes?: Record<string, string>;
   @IsBoolean() @Equals(true, { message: "Consent is required before submitting an enquiry" })
   serviceConsent!: boolean;
+  /** Preset from the shared link or QR code; validated against the workspace options. */
+  @IsOptional() @IsObject() link?: { source?: string; channel?: string; placement?: string };
 }
 @Controller("workspaces/:workspaceId/crm/lead-forms")
 export class LeadFormsController {

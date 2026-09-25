@@ -7,7 +7,7 @@ import type { PublicEnquiryForm } from "@/lib/crm/lead-forms";
 import { CrmPhoneField } from "./crm-phone-field";
 import styles from "./lead-forms.module.css";
 
-export function PublicEnquiryFormView({ form, token, preview = false }: { form: PublicEnquiryForm; token?: string; preview?: boolean }) {
+export function PublicEnquiryFormView({ form, token, preview = false, link }: { form: PublicEnquiryForm; token?: string; preview?: boolean; link?: { source?: string; channel?: string; placement?: string } }) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [phoneCountries, setPhoneCountries] = useState<Record<string, string>>({});
   const [customAreas, setCustomAreas] = useState<Record<string, boolean>>({});
@@ -28,7 +28,7 @@ export function PublicEnquiryFormView({ form, token, preview = false }: { form: 
     setSaving(true); setError("");
     try {
       const phoneCountryCodes = Object.fromEntries(form.questions.filter(question => question.type === "tel").map(question => [question.id, phoneCountries[question.id] ?? form.defaultCountryCode ?? ""]));
-      const response = await fetch(`/api/enquiry-forms/${token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, revision: form.revision, answers, phoneCountryCodes, serviceConsent }) });
+      const response = await fetch(`/api/enquiry-forms/${token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, revision: form.revision, answers, phoneCountryCodes, serviceConsent, ...(link ? { link } : {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? "Your enquiry could not be submitted. Please try again.");
       setReceived(true);

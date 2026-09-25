@@ -40,7 +40,13 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
   const responseRequest = useRef<AbortController | null>(null);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const dirty = Boolean(record && draft && JSON.stringify(record.draft) !== JSON.stringify(draft));
-  const url = record && typeof window !== "undefined" ? `${window.location.origin}/enquiry/${record.token}` : "";
+  // PLM-036 / PLM-028: one link (and QR code) per channel and placement; the server re-checks the pair.
+  const [shareSource, setShareSource] = useState("");
+  const [shareChannel, setShareChannel] = useState("");
+  const [placement, setPlacement] = useState("");
+  const placementSlug = placement.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  const linkParams = new URLSearchParams({ ...(shareSource && shareChannel ? { source: shareSource, channel: shareChannel } : {}), ...(placementSlug ? { placement: placementSlug } : {}) }).toString();
+  const url = record && typeof window !== "undefined" ? `${window.location.origin}/enquiry/${record.token}${linkParams ? `?${linkParams}` : ""}` : "";
   const options = initialData.leadOptions;
   useEffect(() => {
     const controller = new AbortController();
@@ -161,7 +167,16 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
         { id: "settings", label: "Settings", panel: <div className={styles.settings}><h3>Enquiry destination</h3><p>Every submission creates an intake record and an enquiry. Routing rules assign it to the sales team; possible duplicates wait for review.</p><div className={styles.questionFields}><SelectField label="Source" items={options?.sources ?? []} selectedKey={draft.source} onSelectionChange={key => { const source = String(key); setDraft({ ...draft, source, channel: options?.channels[source]?.[0]?.id ?? "" }); }} /><SelectField label="Channel" items={options?.channels[draft.source] ?? []} selectedKey={draft.channel} onSelectionChange={key => setDraft({ ...draft, channel: String(key) })} /></div><p>These attribution settings are internal. Choosing a social channel records where you shared the link; it does not import social lead ads.</p>{record.status === "published" && <Button isDisabled={busy} onPress={() => void save("pause")}>Pause submissions</Button>}</div> },
       ]} /></fieldset>
       {preview && <ControlledModalDialog isOpen onOpenChange={setPreview} title="Form preview" size="lg"><PublicEnquiryFormView key={JSON.stringify(draft)} preview form={{ ...draft, areas: options?.areas, revision: "preview", consentLabel: "I agree to be contacted about this enquiry.", branding: branding ? { displayName: branding.workspaceName, logoUrl: branding.logoUrl, primaryColor: branding.primaryColor, secondaryColor: branding.secondaryColor, headingFont: null, bodyFont: null } : null }} /></ControlledModalDialog>}
-      {sharing && <ControlledModalDialog isOpen onOpenChange={setSharing} title="Share enquiry form" size="md"><div className={styles.share}><TextInput label="Form link" value={url} isReadOnly /><Button onPress={() => { void navigator.clipboard.writeText(url).then(() => setNotice("Form link copied.")).catch(() => setError("Select and copy the form link manually.")); }}>Copy link</Button>{qr && <><Image unoptimized src={qr} alt="QR code for this enquiry form" width={240} height={240} /><a className={styles.download} href={qr} download="enquiry-form-qr.png">Download QR code</a></>}</div></ControlledModalDialog>}
+      {sharing && <ControlledModalDialog isOpen onOpenChange={setSharing} title="Share enquiry form" size="md"><div className={styles.share}>
+        <div className={styles.shareFields}>
+          <SelectField label="Source" selectedKey={shareSource || "form"} items={[{ id: "form", label: "Form default" }, ...(options?.sources ?? []).filter(source => !source.allowedRoles?.length && !["returning_customer", "referral"].includes(source.id)).map(source => ({ id: source.id, label: source.label }))]} onSelectionChange={key => { setShareSource(key === "form" ? "" : String(key)); setShareChannel(""); }} />
+          {shareSource ? <SelectField label="Channel" isRequired selectedKey={shareChannel || null} items={(options?.channels[shareSource] ?? []).map(channel => ({ id: channel.id, label: channel.label }))} onSelectionChange={key => setShareChannel(String(key ?? ""))} /> : null}
+          <TextInput label="Placement" description="For example: showroom door, magazine, event stand." value={placement} onChange={setPlacement} maxLength={60} />
+        </div>
+        <TextInput label="Form link" value={url} isReadOnly />
+        <Button onPress={() => { void navigator.clipboard.writeText(url).then(() => setNotice("Form link copied.")).catch(() => setError("Select and copy the form link manually.")); }}>Copy link</Button>
+        {qr && <><Image unoptimized src={qr} alt="QR code for this enquiry form" width={240} height={240} /><a className={styles.download} href={qr} download={`enquiry-form-qr${placementSlug ? `-${placementSlug}` : shareChannel ? `-${shareChannel}` : ""}.png`}>Download QR code</a></>}
+      </div></ControlledModalDialog>}
       {response && <ControlledModalDialog isOpen onOpenChange={open => { if (!open) setResponse(undefined); }} title={response.reference || "Enquiry response"} size="md">{response.status === "duplicate_candidate" && <Callout title="Duplicate review required" tone="warning">This response is preserved with {response.candidateCount} possible customer match{response.candidateCount === 1 ? "" : "es"}. Review it in Incoming enquiries.</Callout>}<div className={styles.responseAnswers}>{response.answers.map((answer, index) => <div key={index}><h4>{answer.title}</h4><p>{Array.isArray(answer.value) ? answer.value.join(", ") : String(answer.value ?? "Not provided")}</p></div>)}</div>{response.leadId && <a className={styles.enquiryLink} href={`/workspace/crm/leads?lead=${response.leadId}`}>Open {response.reference ?? "enquiry"} in Enquiries</a>}</ControlledModalDialog>}
     </>}
     {confirmationDialog}
