@@ -31,9 +31,10 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value ?? profile.workspace.defaultLocale);
   const billing = await getBillingPageData().catch((error: unknown) => { unstable_rethrow(error); return null; });
   const people = await getMembersPageData().catch((error: unknown) => { unstable_rethrow(error); return null; });
-  const allocation = billing?.organizationAllocation;
-  const seatCapacity = billing && allocation && 'seatLimit' in allocation
-    ? { allocated: allocation.seatLimit, reserved: billing.usage.reservedSeats, pending: billing.usage.pendingInvitations }
+  // Show the enforced limit; a workspace without any seat limit shows no seat summary.
+  const seatLimit = billing?.usage.seatLimit;
+  const seatCapacity = billing && typeof seatLimit === "number" && seatLimit > 0
+    ? { allocated: seatLimit, reserved: billing.usage.reservedSeats, pending: billing.usage.pendingInvitations }
     : null;
   return (
     <OnboardingFlow

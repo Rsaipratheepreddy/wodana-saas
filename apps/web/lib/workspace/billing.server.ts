@@ -18,7 +18,7 @@ const fixture: WorkspaceBillingData = {
     effectiveAt: new Date().toISOString(), nextReviewAt: null },
   accessPolicy: { state: "trial", effect: "unchanged", warning: false, actionDueAt: null,
     affectedModules: [], message: "Trial access follows the current organization allocation." },
-  usage: { members: 1, invitedMembers: 0, pendingInvitations: 0, reservedSeats: 1, projects: 0 },
+  usage: { seatLimit: 5, members: 1, invitedMembers: 0, pendingInvitations: 0, reservedSeats: 1, projects: 0 },
   accountUsageSnapshot: null,
   documents: [],
   authority: "account_contract",

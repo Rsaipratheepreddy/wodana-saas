@@ -62,7 +62,7 @@ export type ManagedTenant = {
   owner: { email: string; name: string } | null;
   ownerInvitation: { acceptedAt: string | null; expiresAt: string; status: string } | null;
   subscription: WorkspaceSubscription;
-  usage: { members: number; invitedMembers?: number; pendingInvitations: number; reservedSeats: number; projects: number };
+  usage: { seatLimit?: number; members: number; invitedMembers?: number; pendingInvitations: number; reservedSeats: number; projects: number };
   workspace: {
     createdAt: string;
     defaultCurrency: string;
@@ -268,6 +268,8 @@ export type WorkspaceBillingData = {
     message: string;
   };
   usage: {
+    /** Enforced seat limit (account allocation or workspace plan). */
+    seatLimit: number;
     members: number;
     invitedMembers: number;
     pendingInvitations: number;

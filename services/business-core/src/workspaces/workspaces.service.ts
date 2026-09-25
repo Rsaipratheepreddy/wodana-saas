@@ -3144,6 +3144,13 @@ export class WorkspacesService {
         const workspace = await this.requireWorkspace(client, workspaceId);
         const before = await this.requirePendingInvitation(client, workspaceId, invitationId);
         await this.assertInvitationDelegation(client, workspaceId, actorUser.userId, invitationId);
+        // An invitation past its expiry no longer holds a seat. Reviving it must take a free seat,
+        // otherwise a resend could push the workspace over its limit after the seat was reused.
+        const expired = await client.query(
+          `SELECT 1 FROM workspace_invitations WHERE id = $1 AND workspace_id = $2 AND expires_at <= now()`,
+          [invitationId, workspaceId],
+        );
+        if (expired.rowCount) await this.assertSeatAvailable(client, workspaceId);
         const details = await client.query<{ displayName: string; roleCodes: string[] }>(
           `SELECT invitee.display_name AS "displayName",
                   COALESCE(array_agg(role.code ORDER BY role.code)
