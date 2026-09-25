@@ -5,10 +5,10 @@ import {GlobalProjectWork} from './global-project-work';
 import type {WorkQueueRow} from '../../../../services/business-core/src/projects/project-work-queue';
 const row:WorkQueueRow={id:'p:task:t',recordId:'t',projectId:'p',projectName:'Villa',kind:'task',title:'Build wardrobes',status:'in_progress',ownerId:'maker',ownerName:'Maya',dueDate:'2026-09-22',href:'/workspace/projects/p/production?record=t'};
 afterEach(()=>vi.unstubAllGlobals());
-it('uses the same server queue with a locked project filter',async()=>{
+it('reads the task board with a locked project filter',async()=>{
  const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({rows:[row],memberId:'maker',nextCursor:null})});vi.stubGlobal('fetch',fetcher);
  render(<GlobalProjectWork workspaceId="w" initial={{rows:[],memberId:'maker',nextCursor:null}} fixedProjectId="p" embedded/>);
- await waitFor(()=>expect(fetcher.mock.calls.some(([url])=>String(url).includes('projectId=p'))).toBe(true));expect(fetcher.mock.calls.some(([url])=>String(url).includes('view=open'))).toBe(true);expect(screen.getByRole('button',{name:'This project Project'})).toBeDisabled();expect(screen.queryByRole('navigation',{name:'Task sources'})).not.toBeInTheDocument();
+ await waitFor(()=>expect(fetcher.mock.calls.some(([url])=>String(url).includes('projectId=p'))).toBe(true));expect(fetcher.mock.calls.some(([url])=>String(url).includes('/api/projects/task-board?')&&String(url).includes('view=all'))).toBe(true);expect(screen.getByRole('button',{name:'This project Project'})).toBeDisabled();expect(screen.queryByRole('navigation',{name:'Task sources'})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'All locations Location'}));fireEvent.click(screen.getByRole('option',{name:'Factory'}));await waitFor(()=>expect(fetcher.mock.calls.at(-1)?.[0]).toContain('location=factory'));
 });
 it('offers keyboard movement only for execution tasks and never bypasses review',()=>{
@@ -19,13 +19,13 @@ it('keeps approved purchase orders active while completed daily reviews are done
  expect(workLane({kind:'order',status:'approved'})).toBe('active');
  expect(workLane({kind:'report',status:'approved'})).toBe('done');
  expect(workLane({kind:'task',status:'awaiting_inspection'})).toBe('review');
- expect(workLane({kind:'task',status:'on_hold'})).toBe('active');
+ expect(workLane({kind:'task',status:'on_hold'})).toBe('blocked');
 });
-it('keeps blocked work in progress with its blocked status and a resume action',()=>{
- const blocked={...row,status:'blocked'};
+it('shows blocked work in its own column with the reason and a resume action',()=>{
+ const blocked={...row,status:'blocked',waitingFor:'Lift not booked'};
  const move=vi.fn();render(<GlobalWorkBoard rows={[blocked]} busy={false} error="" hasMore={false} onMoveTask={move}/>);
- expect(screen.queryByRole('heading',{name:'Blocked'})).not.toBeInTheDocument();
- expect(screen.getByRole('region',{name:'Project work Kanban'}).querySelector('[data-state="active"]')).toHaveTextContent('Blocked');
+ expect(screen.getByRole('heading',{name:'Blocked'})).toBeVisible();
+ expect(screen.getByRole('region',{name:'Project work Kanban'}).querySelector('[data-state="blocked"]')).toHaveTextContent('Lift not booked');
  fireEvent.click(screen.getByRole('button',{name:'Actions for Build wardrobes'}));fireEvent.click(screen.getByRole('menuitem',{name:'Resume in progress'}));
  expect(move).toHaveBeenCalledWith(blocked,'in_progress');
 });
@@ -36,7 +36,7 @@ it('uses drag and drop for valid moves and routes review through progress report
  const planned=screen.getByRole('heading',{name:'To do'}).closest('section')!;
  fireEvent.dragStart(card,{dataTransfer:transfer});fireEvent.dragOver(planned,{dataTransfer:transfer});fireEvent.drop(planned,{dataTransfer:transfer});
  expect(move).toHaveBeenCalledWith(row,'planned');
- const review=screen.getByRole('heading',{name:'Review'}).closest('section')!;
+ const review=screen.getByRole('heading',{name:'In review'}).closest('section')!;
  fireEvent.dragStart(card,{dataTransfer:transfer});fireEvent.dragOver(review,{dataTransfer:transfer});expect(screen.getByText('Drop to report progress')).toBeVisible();fireEvent.drop(review,{dataTransfer:transfer});
  expect(open).toHaveBeenCalledWith(row,'updates');
  expect(move).toHaveBeenCalledTimes(1);
@@ -70,7 +70,7 @@ it('opens authoritative work and makes loaded-page limitations visible',()=>{
  expect(screen.getByText('Assigned to')).toBeVisible();
  expect(screen.getByText('Maya')).toBeVisible();
  expect(screen.queryByText('Client')).not.toBeInTheDocument();
- expect(screen.getByRole('heading',{name:'Review'})).toBeVisible();
+ expect(screen.getByRole('heading',{name:'In review'})).toBeVisible();
  expect(screen.getByText(/Showing loaded work/)).toBeVisible();
  expect(screen.getByRole('region',{name:'Project work Kanban'})).toHaveAttribute('tabindex','0');
 });
@@ -122,4 +122,9 @@ it('filters by the first five assignees and finds more people in the searchable 
  fireEvent.click(screen.getByRole('button',{name:'Zara'}));
  await waitFor(()=>expect(String(fetcher.mock.calls.at(-1)?.[0])).toContain('ownerId=member-6'));
  expect(screen.queryByRole('link',{name:'Approvals'})).not.toBeInTheDocument();
+});
+it('says what a planned task is waiting for and flags overdue dates',()=>{
+ render(<GlobalWorkBoard rows={[{...row,status:'planned',waitingFor:'Approved drawing',overdue:true}]} busy={false} error="" hasMore={false}/>);
+ expect(screen.getByText('Waiting for: Approved drawing')).toBeVisible();
+ expect(screen.getByText('Overdue')).toBeVisible();
 });

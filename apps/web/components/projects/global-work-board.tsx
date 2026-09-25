@@ -7,7 +7,7 @@ import type {BoardTaskStatus} from './global-task-transition';
 import type {WorkQueueRow} from '../../../../services/business-core/src/projects/project-work-queue';
 import {StateBadge} from './project-stage';
 import s from './global-work-board.module.css';
-const columns=[['planned','To do'],['active','In progress'],['review','Review'],['done','Done']] as const;
+const columns=[['planned','To do'],['active','In progress'],['blocked','Blocked'],['review','In review'],['done','Done']] as const;
 const sourceNames={task:'Task',report:'Progress',order:'Order',dispatch:'Delivery',snag:'Snag',handover:'Handover'};
 const shortDate=(date:string)=>/^\d{4}-\d{2}-\d{2}$/.test(date)?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`)):date;
 const projectDisplayName=(name:string)=>name.replace(/^DEMO FLOW\s*·\s*/i,'').replace(/\s+—\s+Design to Delivery$/i,'').trim();
@@ -25,7 +25,8 @@ const visibleTaskTitle=(row:Pick<WorkQueueRow,'kind'|'title'|'location'>)=>{
  return title.replace(/\s+·\s+/g,': ');
 };
 export function workLane(row:Pick<WorkQueueRow,'kind'|'status'>){
- if(['blocked','on_hold','returned','rejected','rework'].includes(row.status))return 'active';
+ if(['blocked','on_hold'].includes(row.status))return 'blocked';
+ if(['returned','rejected','rework'].includes(row.status))return 'active';
  if(['completed','closed','cancelled','withdrawn'].includes(row.status)||(row.kind==='report'&&row.status==='approved')||(row.kind==='dispatch'&&row.status==='received')||(row.kind==='handover'&&row.status==='accepted'))return 'done';
  if(['submitted','in_review','awaiting_inspection','pending_qc','resolved','ready'].includes(row.status))return 'review';
  if(['in_progress','approved','acknowledged','dispatched'].includes(row.status))return 'active';
@@ -34,7 +35,7 @@ export function workLane(row:Pick<WorkQueueRow,'kind'|'status'>){
 export function GlobalWorkBoard({rows,busy,error,hasMore,onOpenTask,onMoveTask}:{rows:WorkQueueRow[];busy:boolean;error:string;hasMore:boolean;onOpenTask?:(row:WorkQueueRow,tab?:string)=>void;onMoveTask?:(row:WorkQueueRow,status:BoardTaskStatus)=>void}){
  const [dragging,setDragging]=useState('');
  const [dropTarget,setDropTarget]=useState('');
- const moves:Record<string,BoardTaskStatus>={planned:'planned',active:'in_progress'};
+ const moves:Record<string,BoardTaskStatus>={planned:'planned',active:'in_progress',blocked:'blocked'};
  const movable=(row:WorkQueueRow)=>!!onMoveTask&&row.kind==='task'&&!['completed','cancelled','awaiting_inspection'].includes(row.status);
  const canDrag=(row:WorkQueueRow)=>!busy&&row.kind==='task'&&(movable(row)||!!onOpenTask&&['in_progress','awaiting_inspection'].includes(row.status));
  const canDrop=(row:WorkQueueRow,lane:string)=>{
@@ -53,10 +54,11 @@ export function GlobalWorkBoard({rows,busy,error,hasMore,onOpenTask,onMoveTask}:
      <Link href={cardHref(row)} className={s.cardBody} aria-label={`${cardTitle} · ${projectName}`} onClick={event=>{if(onOpenTask&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){event.preventDefault();onOpenTask(row);}}}>
       <span className={s.chipRow}><span className={s.typeChip}>{reference||sourceNames[row.kind]}</span><StateBadge state={row.status}/><span className={s.priority} data-priority={row.priority??'normal'}>{row.priority??'normal'}</span></span>
       <strong>{cardTitle}</strong>
+      {row.waitingFor?<span className={s.waitingFor} data-blocked={['blocked','on_hold'].includes(row.status)||undefined}>{['blocked','on_hold'].includes(row.status)?row.waitingFor:`Waiting for: ${row.waitingFor}`}</span>:null}
       {(row.location||row.resourceName)?<span className={s.contextChips}>{row.location&&!resourceIncludesLocation?<span className={s.locationChip}>{row.location.toLowerCase()==='factory'?<Factory size={12} aria-hidden="true"/>:<MapPin size={12} aria-hidden="true"/>}<span>{row.location.replace(/_/g,' ').replace(/^\w/,letter=>letter.toUpperCase())}</span></span>:null}{row.resourceName?<span className={resourceIncludesLocation?s.locationChip:s.resourceChip}>{resourceIncludesLocation&&row.location?.toLowerCase()==='factory'?<Factory size={12} aria-hidden="true"/>:<UsersRound size={12} aria-hidden="true"/>}<span>{row.resourceName}</span></span>:null}</span>:null}
       <span className={s.projectIdentity}><FolderKanban size={12} aria-hidden="true"/><b>{projectName}</b></span>
      </Link>
-     <footer className={`${s.cardFooter} ${s.projectFooter}`}><span className={s.assignedLabel}>Assigned to</span><span className={s.owner}><Avatar name={row.ownerName||'Unassigned'} size="sm"/><span className={s.ownerName}>{row.ownerName||'Unassigned'}</span></span>{row.dueDate?<span className={s.due}><CalendarDays size={13} aria-hidden="true"/><span>Due</span><time dateTime={row.dueDate}>{shortDate(row.dueDate)}</time></span>:null}{menuItems.length?<span className={s.cardActions}><IconMenuButton ariaLabel={`Actions for ${cardTitle}`} items={menuItems} onAction={key=>{const action=String(key);if(action.startsWith('move:'))onMoveTask?.(row,action.slice(5) as BoardTaskStatus);else onOpenTask?.(row,action);}}/></span>:null}</footer>
+     <footer className={`${s.cardFooter} ${s.projectFooter}`}><span className={s.assignedLabel}>Assigned to</span><span className={s.owner}><Avatar name={row.ownerName||'Unassigned'} size="sm"/><span className={s.ownerName}>{row.ownerName||'Unassigned'}</span></span>{row.dueDate?<span className={s.due} data-overdue={row.overdue||undefined}><CalendarDays size={13} aria-hidden="true"/><span>{row.overdue?'Overdue':'Due'}</span><time dateTime={row.dueDate}>{shortDate(row.dueDate)}</time></span>:null}{menuItems.length?<span className={s.cardActions}><IconMenuButton ariaLabel={`Actions for ${cardTitle}`} items={menuItems} onAction={key=>{const action=String(key);if(action.startsWith('move:'))onMoveTask?.(row,action.slice(5) as BoardTaskStatus);else onOpenTask?.(row,action);}}/></span>:null}</footer>
     </article>;})}</div>:null}
    </section>;})}
   </div>

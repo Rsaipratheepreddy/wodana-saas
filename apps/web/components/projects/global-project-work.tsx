@@ -12,7 +12,12 @@ import {GlobalTaskTransition,type BoardTaskStatus} from './global-task-transitio
 import {GlobalWorkDetail} from './global-work-detail';
 import boardStyles from './global-work-board.module.css';
 import type {WorkQueuePage,WorkQueueRow} from '../../../../services/business-core/src/projects/project-work-queue';
-const names={task:'Execution',report:'Daily progress',order:'Procurement',dispatch:'Delivery',snag:'Snag / warranty',handover:'Handover'};
+import type {TaskBoardPage,TaskBoardRow} from '../../../../services/business-core/src/projects/project-task-board';
+const taskSection=(location:string)=>location==='factory'?'production':location==='site'?'site-work':'plan-teams';
+/** Board rows are project tasks only; other work lives in its own module or in Approvals. */
+function taskBoardRow(row:TaskBoardRow):WorkQueueRow{
+ return {id:`${row.projectId}:task:${row.id}`,recordId:row.id,projectId:row.projectId,projectName:row.projectName,clientName:row.clientName,kind:'task',title:row.title,status:row.status,ownerId:row.ownerId,ownerName:row.ownerName||'Unassigned',dueDate:row.end,href:`/workspace/projects/${encodeURIComponent(row.projectId)}/${taskSection(row.location)}?record=${encodeURIComponent(row.id)}`,location:row.location,area:row.area,priority:row.priority,waitingFor:row.waitingFor,overdue:row.overdue};
+}
 export function GlobalProjectWork({workspaceId,initial,initialError='',showSales=false,fixedProjectId='',resources=[],embedded=false,onProjectStateChange}:{workspaceId:string;initial:WorkQueuePage;initialError?:string;showSales?:boolean;fixedProjectId?:string;resources?:ProjectResource[];embedded?:boolean;onProjectStateChange?:(state:ProjectState)=>void}){
  const route=useSearchParams();
  const directProjectId=route?.get('projectId')??'';
@@ -22,7 +27,7 @@ export function GlobalProjectWork({workspaceId,initial,initialError='',showSales
  const [projectId,setProjectId]=useState(fixedProjectId),[ownerId,setOwnerId]=useState('');
  const [peopleSearch,setPeopleSearch]=useState('');
  const peopleMenu=useRef<HTMLDetailsElement|null>(null);
- const [location,setLocation]=useState(''),[priority,setPriority]=useState(''),[kind,setKind]=useState(''),[resourceId,setResourceId]=useState(''),[area,setArea]=useState('');
+ const [location,setLocation]=useState(''),[priority,setPriority]=useState('');
  const [opened,setOpened]=useState<{row:WorkQueueRow;tab:string;state?:ProjectState;error?:string}|null>(null);
  const [editing,setEditing]=useState(false);
  const recordRequest=useRef(0);
@@ -55,21 +60,21 @@ export function GlobalProjectWork({workspaceId,initial,initialError='',showSales
   current.current?.abort();const controller=new AbortController();current.current=controller;const version=++sequence.current;
   setBusy(true);setError('');
   try{
-   const query=new URLSearchParams({workspaceId,view,q:search,kind,location,priority,resourceId,area,...(projectId?{projectId}:{}),...(ownerId?{ownerId}:{})});if(cursor)query.set('cursor',cursor);
-   const response=await fetch(`/api/projects/work-queue?${query}`,{signal:controller.signal,cache:'no-store'});
-   if(!response.ok)throw Error('Project work could not be loaded. Retry or check your access.');
-   const next=await response.json() as WorkQueuePage;
-   if(!Array.isArray(next.rows))throw Error('Project work response was incomplete.');
+   const query=new URLSearchParams({workspaceId,view:view==='mine'?'mine':'all',q:search,location,priority,...(projectId?{projectId}:{}),...(ownerId?{ownerId}:{})});if(cursor)query.set('cursor',cursor);
+   const response=await fetch(`/api/projects/task-board?${query}`,{signal:controller.signal,cache:'no-store'});
+   if(!response.ok)throw Error('Tasks could not be loaded. Retry or check your access.');
+   const board=await response.json() as TaskBoardPage;
+   if(!Array.isArray(board.rows))throw Error('The task response was incomplete.');
+   const next:WorkQueuePage={...board,rows:board.rows.map(taskBoardRow)};
    if(sequence.current===version)setPage(previous=>({...next,rows:cursor?[...previous.rows.filter(row=>!next.rows.some(item=>item.id===row.id)),...next.rows]:next.rows}));
   }catch(failure){if(sequence.current===version&&!controller.signal.aborted)setError((failure as Error).message);}
   finally{if(sequence.current===version)setBusy(false);}
- },[workspaceId,view,search,projectId,ownerId,kind,location,priority,resourceId,area]);
+ },[workspaceId,view,search,projectId,ownerId,location,priority]);
  useEffect(()=>{const request=current,version=sequence;const timer=setTimeout(()=>void load(),250);return()=>{clearTimeout(timer);request.current?.abort();version.current++;};},[load]);
  useEffect(()=>{const refresh=()=>{if(document.visibilityState==='visible')void load();};window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);return()=>{window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};},[load]);
  const reset=()=>{current.current?.abort();sequence.current++;setBusy(true);setPage(previous=>({...previous,rows:[],nextCursor:null}));};
  const selectOwner=(id:string)=>{reset();setOwnerId(id);setView('all');setPeopleSearch('');if(peopleMenu.current)peopleMenu.current.open=false;};
  const closeTask=()=>{recordRequest.current++;setOpened(null);setEditing(false);if(directProjectId&&directTaskId){const url=new URL(window.location.href);url.searchParams.delete('projectId');url.searchParams.delete('taskId');window.history.replaceState(null,'',url);}void load();};
- const resourceOptions=resources.length?resources.filter(resource=>resource.active):(page.resources??[]);
  const members=page.members??[];
  const matchingMembers=members.filter(member=>member.name.toLocaleLowerCase().includes(peopleSearch.trim().toLocaleLowerCase()));
  const selectedMember=members.find(member=>member.id===ownerId);
@@ -86,11 +91,8 @@ export function GlobalProjectWork({workspaceId,initial,initialError='',showSales
    <SelectField label="Sort by" selectedKey={sort} items={[{id:'due',label:'Due date'},{id:'priority',label:'Priority'},{id:'project',label:'Project'}]} onSelectionChange={key=>setSort(String(key))}/>
    <details className={boardStyles.filterMenu}><summary><Filter size={15} aria-hidden="true"/>Filter</summary><div className={boardStyles.filterPanel}>
     <SelectField label="Project" isDisabled={!!fixedProjectId} selectedKey={projectId||'all'} items={[{id:'all',label:'All projects'},...(page.projects??[]).map(project=>({id:project.id,label:project.name})),...(fixedProjectId&&!page.projects?.some(project=>project.id===fixedProjectId)?[{id:fixedProjectId,label:'This project'}]:[])]} onSelectionChange={key=>{reset();setProjectId(key==='all'?'':String(key));}}/>
-    <SelectField label="Work type" selectedKey={kind||"all"} items={[{id:"all",label:"All work types"},...Object.entries(names).map(([id,label])=>({id,label}))]} onSelectionChange={key=>{reset();setKind(key==="all"?"":String(key));}}/>
     <SelectField label="Location" selectedKey={location||"all"} items={[{id:"all",label:"All locations"},{id:"factory",label:"Factory"},{id:"site",label:"Site"},{id:"office",label:"Office"}]} onSelectionChange={key=>{reset();setLocation(key==="all"?"":String(key));}}/>
     <SelectField label="Priority" selectedKey={priority||"all"} items={[{id:"all",label:"All priorities"},{id:"normal",label:"Normal"},{id:"high",label:"High"},{id:"urgent",label:"Urgent"}]} onSelectionChange={key=>{reset();setPriority(key==="all"?"":String(key));}}/>
-    {!!resourceOptions.length&&<SelectField label="Team / resource" selectedKey={resourceId||"all"} items={[{id:"all",label:"All resources"},...resourceOptions.map(resource=>({id:resource.id,label:resource.name}))]} onSelectionChange={key=>{reset();setResourceId(key==="all"?"":String(key));}}/>}
-    <SearchInput label="Room / area" placeholder="Filter area…" value={area} onChange={value=>{reset();setArea(value);}}/>
     <div className={boardStyles.group} role="group" aria-label="Work filter">{[['mine','My work'],['open','Everyone'],['all','All work']].map(([id,title])=><Button key={id} size="compact" variant={view===id?"primary":"secondary"} aria-pressed={view===id} onPress={()=>{reset();setOwnerId('');setView(id);}}>{title}</Button>)}</div>
    </div></details>
    <div className={boardStyles.toolbarTrailing}>

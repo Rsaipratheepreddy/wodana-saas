@@ -3,7 +3,7 @@ import {approvalQueueQuery} from './project-approval-queue';
 import {BadRequestException} from '@nestjs/common';
 
 export type WorkQueueKind='task'|'report'|'order'|'dispatch'|'snag'|'handover';
-export type WorkQueueRow={id:string;recordId:string;projectId:string;projectName:string;clientName?:string;kind:WorkQueueKind;title:string;status:string;ownerId:string;ownerName:string;dueDate:string;href:string;location?:string;area?:string;priority?:string;resourceId?:string;resourceName?:string;packageId?:string;predecessorCount?:number};
+export type WorkQueueRow={id:string;recordId:string;projectId:string;projectName:string;clientName?:string;kind:WorkQueueKind;title:string;status:string;ownerId:string;ownerName:string;dueDate:string;href:string;location?:string;area?:string;priority?:string;resourceId?:string;resourceName?:string;packageId?:string;predecessorCount?:number;waitingFor?:string;overdue?:boolean};
 export type WorkQueuePage={canManage?:boolean;rows:WorkQueueRow[];nextCursor:string|null;memberId:string;projects?:{id:string;name:string}[];members?:{id:string;name:string}[];resources?:{id:string;name:string}[]};
 export type WorkQueueSource=Omit<WorkQueueRow,'id'|'href'> & {sortDue:string;location:string};
 export const workQueueLabels:Record<WorkQueueKind,string>={task:'Execution',report:'Daily progress',order:'Procurement',dispatch:'Delivery',snag:'Snag / warranty',handover:'Handover'};
