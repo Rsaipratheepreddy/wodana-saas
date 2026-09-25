@@ -15,7 +15,7 @@ function walk(dir) {
     }
   }
 }
-for (const dir of ['app', 'components', 'lib']) walk(join(root, dir));
+for (const dir of ['app', 'components', 'lib', 'design-system']) walk(join(root, dir));
 const added = [...found].filter((key) => !(key in catalog));
 for (const key of added) catalog[key] = key;
 writeFileSync(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);

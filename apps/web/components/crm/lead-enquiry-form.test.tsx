@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
@@ -106,3 +106,21 @@ it.each([['Test customer', 'attach'], ['Different person — create a new client
   expect(body).toMatchObject({ decision, version: 2 });
   expect(body.partyId).toBe(decision === 'attach' ? 'party-1' : undefined);
 });
+it("lets an existing enquiry correct its source and channel, and keeps an older source untouched", async () => {
+  const legacy = { id: "lead-1", version: 3, serviceType: "design", party: { displayName: "Amira" }, source: "instagram", channel: "dm" };
+  const first = setup(legacy);
+  expect(screen.getByRole("button", { name: /Source/ })).toHaveTextContent("instagram");
+  await first.user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(first.onSaved).toHaveBeenCalled());
+  const untouched = JSON.parse(first.fetchMock.mock.calls[0][1].body);
+  expect(untouched).not.toHaveProperty("source");
+  expect(untouched).not.toHaveProperty("channel");
+  cleanup();
+
+  const second = setup(legacy);
+  await choose(second.user, /Source/, "Referral");
+  expect(screen.getByRole("button", { name: /Channel/ })).toHaveTextContent("External");
+  await second.user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(second.onSaved).toHaveBeenCalled());
+  expect(JSON.parse(second.fetchMock.mock.calls[0][1].body)).toMatchObject({ version: 3, source: "referral", channel: "external" });
+}, 15_000);

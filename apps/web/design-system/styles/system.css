@@ -1070,3 +1070,12 @@
 .wd-date-group:not(.wd-time-input) { display:flex; gap:var(--wd-space-2); padding-inline-end:var(--wd-space-1); }
 .wd-date-group > .wd-date-input { flex:1 1 auto; overflow:hidden; white-space:nowrap; }
 .wd-date-group > button { flex:0 0 30px; inline-size:30px; min-inline-size:30px; }
+
+/* Blocked save: visible above dialogs, names the missing fields. */
+.wd-blocked-save { position: fixed; inset-block-start: var(--wd-space-4); inset-inline: 0; z-index: 10000; display: flex; align-items: flex-start; gap: var(--wd-space-2); inline-size: min(32rem, calc(100vw - var(--wd-space-8))); margin-inline: auto; padding: var(--wd-space-3) var(--wd-space-3) var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-sm); background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); box-shadow: var(--wd-shadow-md); font-size: var(--wd-text-sm); }
+.wd-blocked-save > div { display: grid; flex: 1; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.wd-blocked-save span { color: var(--wd-color-text); overflow-wrap: anywhere; }
+.wd-blocked-save > svg { flex: none; margin-block-start: var(--wd-space-0-5); }
+.wd-blocked-save-close { display: inline-grid; place-items: center; flex: none; inline-size: var(--wd-control-xs); block-size: var(--wd-control-xs); border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: inherit; cursor: pointer; }
+.wd-blocked-save-close:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.wd-blocked-save-close:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }

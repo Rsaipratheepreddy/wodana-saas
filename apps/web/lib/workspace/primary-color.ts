@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
-export const DEFAULT_WORKSPACE_PRIMARY_COLOR = "#46705A";
+// The neutral default every workspace starts with (matches --wd-color-action-primary in tokens.css).
+export const DEFAULT_WORKSPACE_PRIMARY_COLOR = "#292D32";
 export const WORKSPACE_PRIMARY_COLOR_EVENT = "wodana:workspace-primary-color";
 
 type Rgb = { red: number; green: number; blue: number };

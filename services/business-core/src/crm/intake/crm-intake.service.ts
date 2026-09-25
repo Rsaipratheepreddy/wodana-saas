@@ -62,7 +62,7 @@ export class CrmIntakeService {
       const party = normalizeIntakePartyPhones(input.party, workspaceCountry);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
       const found = await client.query(`SELECT lead.version, lead.party_id, lead.enquiry_id, enquiry.title,
-        enquiry.reference, enquiry.summary, enquiry.service_type, enquiry.details FROM crm_leads lead
+        enquiry.reference, enquiry.summary, enquiry.service_type, enquiry.source, enquiry.channel, enquiry.details FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
         WHERE lead.workspace_id=$1 AND lead.id=$2 FOR UPDATE OF lead, enquiry`, [workspaceId, leadId]);
       if (!found.rowCount) throw new NotFoundException("Lead not found");
@@ -70,9 +70,10 @@ export class CrmIntakeService {
       if (Number(before.version) !== input.version) throw new ConflictException("Lead changed; reload before saving");
       await validateLeadOptions(client, workspaceId, input, { serviceType: before.service_type, details: before.details });
       const details = { ...before.details, ...input.details, contact: party };
-      await client.query(`UPDATE crm_enquiries SET summary=$3, service_type=$4, details=$5,
+      const source = input.source ?? before.source, channel = input.source ? input.channel : before.channel;
+      await client.query(`UPDATE crm_enquiries SET summary=$3, service_type=$4, details=$5, source=$6, channel=$7,
         version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`,
-        [workspaceId, before.enquiry_id, input.summary ?? null, input.serviceType, details]);
+        [workspaceId, before.enquiry_id, input.summary ?? null, input.serviceType, details, source, channel]);
       await client.query(`UPDATE crm_parties SET display_name=$3, normalized_name=$4, version=version+1,
         updated_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, before.party_id, party.displayName.trim(), normalizeName(party.displayName)]);
       await refreshEnquiryTitlesForParty(client, workspaceId, before.party_id, party.displayName);
@@ -98,7 +99,7 @@ export class CrmIntakeService {
       const result = await client.query(`UPDATE crm_leads SET version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING version`, [workspaceId, leadId]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user",
         action: "crm.lead.details_updated.v1", entityType: "crm_lead", entityId: leadId,
-        before, after: { serviceType: input.serviceType, summary: input.summary, details } });
+        before, after: { serviceType: input.serviceType, summary: input.summary, source, channel, details } });
       return { id: leadId, version: result.rows[0].version };
     });
   }

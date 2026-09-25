@@ -237,5 +237,11 @@
   "Default": "Default",
   "Save colour": "Save colour",
   "Cancel": "Cancel",
-  "Use default": "Use default"
+  "Use default": "Use default",
+  "Required": "Required",
+  "Check this field": "Check this field",
+  "Not saved yet": "Not saved yet",
+  "Complete the required fields:": "Complete the required fields:",
+  "Check the highlighted fields.": "Check the highlighted fields.",
+  "Dismiss": "Dismiss"
 }

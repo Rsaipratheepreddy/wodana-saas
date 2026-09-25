@@ -10,7 +10,7 @@ import styles from "./leads-page.module.css";
 
 export type EditableEnquiry = {
   id: string; version: number; reference?: string; title?: string; summary?: string;
-  serviceType?: string; details?: EnquiryDetails; party: LeadContact;
+  serviceType?: string; details?: EnquiryDetails; party: LeadContact; source?: string; channel?: string;
 };
 
 export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
@@ -34,8 +34,10 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   const areaOptions = options?.areas?.[details.emirate ?? ""] ?? [];
   const [customAreaSelected, setCustomAreaSelected] = useState(() => Boolean(existing?.details?.area && !(options?.areas?.[existing.details.emirate ?? ""] ?? []).some(item => item.id === existing.details?.area)));
   const areaChoice = customAreaSelected ? "other" : details.area ?? "";
-  const [source, setSource] = useState(options?.sources.find(s => s.id === "company")?.id ?? options?.sources[0]?.id ?? "");
-  const [channel, setChannel] = useState(options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
+  const [source, setSource] = useState(existing?.source ?? options?.sources.find(s => s.id === "company")?.id ?? options?.sources[0]?.id ?? "");
+  const [channel, setChannel] = useState(existing?.channel ?? options?.channels[source]?.find(c => c.id === "call")?.id ?? options?.channels[source]?.[0]?.id ?? "");
+  // Only a real correction is sent, so an older source that is no longer offered stays as it was.
+  const sourceChanged = Boolean(existing) && (source !== (existing?.source ?? "") || channel !== (existing?.channel ?? ""));
   const [mode, setMode] = useState("manual");
   const [ownerMembershipId, setOwner] = useState("");
   const [queueId, setQueue] = useState("");
@@ -70,7 +72,9 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
       if (details.emirate !== "outside_uae" && customAreaSelected && !details.area?.trim()) throw new Error("Enter the area name.");
       if (!existing && mode === "manual" && !ownerMembershipId) throw new Error("Choose a salesperson, automatic routing, or leave unassigned.");
       const enquiryDetails = Object.fromEntries(["emirate", "area", "location", "customerType", "budgetRange", "campaign", "internalNotes"].map(key => [key, details[key as keyof EnquiryDetails] ?? ""]));
-      const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails }
+      if (!source) throw new Error("Choose where this enquiry came from.");
+      if (!channel) throw new Error("Choose the channel for this source.");
+      const body = existing ? { version: existing.version, serviceType, summary, party: contact, details: enquiryDetails, ...(sourceChanged ? { source, channel } : {}) }
         : { workspaceId: initialData.workspaceId, requestId, ...contact, serviceType, summary, source, channel, details: enquiryDetails,
             assignment: { mode, ...(mode === "manual" ? { ownerMembershipId, ...(queueId ? { queueId } : {}) } : {}) } };
       const response = await fetch(existing ? `/api/workspace/crm/data/leads/${existing.id}/details?workspaceId=${initialData.workspaceId}` : "/api/workspace/crm/leads", {
@@ -111,8 +115,8 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
           : <><SelectField label="Area · optional" items={[{ id: "", label: "Not specified" }, ...areaOptions, { id: "other", label: "Other area" }]} selectedKey={areaChoice} onSelectionChange={key => { setCustomAreaSelected(key === "other"); setDetail("area")(key === "other" ? "" : String(key ?? "")); }} />{customAreaSelected ? <TextInput isRequired label="Area name" value={details.area ?? ""} onChange={setDetail("area")} /> : null}</>}</div>
         <div className={styles.formColumns}><SelectField label="Enquiry type" isRequired items={withExisting(options?.enquiryTypes, existing?.serviceType ?? "")} selectedKey={serviceType} onSelectionChange={key => key && setServiceType(String(key))} /><SelectField label="Budget range · optional" items={[{ id: "", label: "Not provided" }, ...withExisting(options?.budgetRanges, existing?.details?.budgetRange ?? "")]} selectedKey={details.budgetRange ?? ""} onSelectionChange={key => setDetail("budgetRange")(String(key ?? ""))} /></div>
         <TextAreaField label="Project description · optional" value={summary} onChange={setSummary} placeholder="What would the customer like to do?" />
+        <div className={styles.formColumns}><SelectField label="Source" isRequired items={withExisting(options?.sources, existing?.source ?? "")} selectedKey={source} onSelectionChange={key => { const value = String(key); setSource(value); setChannel(options?.channels[value]?.[0]?.id ?? ""); }} /><SelectField label="Channel" isRequired items={withExisting(options?.channels[source], source === existing?.source ? existing?.channel ?? "" : "")} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} /></div>
         {!existing && <>
-          <div className={styles.formColumns}><SelectField label="Source" isRequired items={options?.sources ?? []} selectedKey={source} onSelectionChange={key => { const value = String(key); setSource(value); setChannel(options?.channels[value]?.[0]?.id ?? ""); }} /><SelectField label="Channel" isRequired items={options?.channels[source] ?? []} selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} /></div>
           <div className={styles.formColumns}><SelectField label="Assignment" items={[{ id: "manual", label: "Choose sales owner" }, { id: "automatic", label: "Use routing rules" }, { id: "unassigned", label: "Leave unassigned" }]} selectedKey={mode} onSelectionChange={key => key && setMode(String(key))} />
             {mode === "manual" ? <SelectField isRequired label="Sales owner" items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? "Uses the matching rule or default team and available capacity." : "The enquiry stays visible in Unassigned."}</p>}
           </div>

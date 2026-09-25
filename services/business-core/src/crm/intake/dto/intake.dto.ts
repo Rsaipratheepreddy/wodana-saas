@@ -6,7 +6,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsObject,
-  IsOptional,
+  IsOptional, ValidateIf,
   IsString,
   IsUUID,
   Max,
@@ -72,6 +72,9 @@ export class UpdateLeadDetailsDto {
   @IsString() @IsNotEmpty() @MaxLength(100) serviceType!: string;
   @IsDefined() @ValidateNested() @Type(() => IntakePartyDto) party!: IntakePartyDto;
   @IsDefined() @ValidateNested() @Type(() => EnquiryDetailsDto) details!: EnquiryDetailsDto;
+  /** Correct where the enquiry came from; source and channel change together. */
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(100) source?: string;
+  @ValidateIf((dto: UpdateLeadDetailsDto) => dto.source !== undefined) @IsString() @IsNotEmpty() @MaxLength(60) channel?: string;
 }
 
 export class CreateIntakeEventDto {

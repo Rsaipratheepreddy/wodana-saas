@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { RouteFade } from "@/components/route-fade";
+import { BlockedSaveBoundary } from "@/design-system/foundations/blocked-save-alert";
+import { I18nProvider } from "@/lib/i18n/i18n-provider";
 import { LANGUAGE_COOKIE, languageDirection, resolveLanguage } from "@/lib/i18n/languages";
 import { fontVariables } from "./fonts";
 import "flag-icons/css/flag-icons.min.css";
@@ -23,7 +25,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       lang={language}
     >
       <body data-app-root>
-        {children}
+        <I18nProvider language={language}><BlockedSaveBoundary>{children}</BlockedSaveBoundary></I18nProvider>
         <RouteFade />
       </body>
     </html>

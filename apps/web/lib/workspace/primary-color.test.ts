@@ -31,7 +31,7 @@ describe("workspace primary colour", () => {
 
   it("preserves an already-readable brand fill and gives light and dark modes distinct ramps", () => {
     const style = workspacePrimaryColorStyle(DEFAULT_WORKSPACE_PRIMARY_COLOR)!;
-    expect(style["--wd-workspace-brand-light-600"]).toBe("#46705A");
+    expect(style["--wd-workspace-brand-light-600"]).toBe(DEFAULT_WORKSPACE_PRIMARY_COLOR);
     expect(style["--wd-workspace-brand-dark-600"]).not.toBe(style["--wd-workspace-brand-light-600"]);
     expect(contrast(style["--wd-workspace-brand-dark-700"], "#181818")).toBeGreaterThanOrEqual(4.5);
   });

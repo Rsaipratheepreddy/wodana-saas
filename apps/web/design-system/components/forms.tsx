@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useRef, useState, type ChangeEvent, type FormHTMLAttributes, type ReactNode, type Ref } from "react";
 import {
   Button as AriaButton,
@@ -62,8 +63,11 @@ function FieldLabel({ label, required }: { label: ReactNode; required?: boolean 
   return <Label className="wd-field-label">{label}{required ? <span aria-hidden="true"> *</span> : null}</Label>;
 }
 
+// The error slot is always present: React Aria shows it only while the field is invalid, so a
+// blocked save (for example an empty required dropdown) is never silent.
 function FieldMeta({ description, errorMessage }: { description?: ReactNode; errorMessage?: ReactNode }) {
-  return <>{description ? <Text className="wd-field-help" slot="description">{description}</Text> : null}{errorMessage ? <FieldError className="wd-field-error"><CircleAlert aria-hidden="true" size={14} />{errorMessage}</FieldError> : null}</>;
+  const t = useT();
+  return <>{description ? <Text className="wd-field-help" slot="description">{description}</Text> : null}<FieldError className="wd-field-error">{({ validationDetails, validationErrors }) => <><CircleAlert aria-hidden="true" size={14} />{errorMessage ?? (validationDetails?.valueMissing ? t("Required") : validationErrors.join(" ") || t("Check this field"))}</>}</FieldError></>;
 }
 
 export type TextInputProps = TextFieldProps & FieldChromeProps & { prefix?: ReactNode; suffix?: ReactNode; inputType?: "text" | "email" | "password" | "url" | "tel" | "date" | "datetime-local"; placeholder?: string };
