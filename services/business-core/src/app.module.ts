@@ -30,6 +30,7 @@ import { SourcingModule } from "./sourcing/sourcing.module";
 import { JobsModule } from "./jobs/jobs.module";
 import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
+import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
 
 @Module({
   imports: [
@@ -71,6 +72,7 @@ import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
     JobsModule,
     WorkspaceSearchModule,
     AiSuggestionsModule,
+    AiGatewayModule,
     HrmsModule,
   ],
   controllers: [AppController],

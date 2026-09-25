@@ -112,3 +112,7 @@ export class ImportItemsDto {
   @ApiProperty({ enum: ["preview", "commit"] }) @IsIn(["preview", "commit"]) mode!: "preview" | "commit";
   @ApiProperty({ type: [ImportRowDto] }) @IsArray() @ArrayMaxSize(5000) @ValidateNested({ each: true }) @Type(() => ImportRowDto) rows!: ImportRowDto[];
 }
+
+export class AiCleanDto {
+  @ApiProperty({ type: [ImportRowDto] }) @IsArray() @ArrayMaxSize(1000) @ValidateNested({ each: true }) @Type(() => ImportRowDto) rows!: ImportRowDto[];
+}

@@ -3,6 +3,8 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { AiGatewayService } from "../ai-gateway/ai-gateway.service";
+import { CLEAN_SYSTEM, cleanPrompt, validateClean, type CleanSuggestion } from "./catalog-ai";
 import { PACK_UNITS, planCatalogImport, type ImportRow } from "./catalog-import";
 import { AttributeValueError, normalizeAttributeValues, type AttributeDefinition, type AttributeType } from "./attributes";
 import { assertNoCycle, BomError, checkFormulas, explode, type BomComponent } from "./bom";
@@ -33,7 +35,7 @@ export type PriceEntryInput = {
 /** Catalog v2: typed catalogs, items, BoM and explainable prices (plan §6.4). */
 @Injectable()
 export class CatalogV2Service {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  constructor(private readonly access: WorkspaceAccessService, private readonly ai: AiGatewayService) {}
 
   // ---------- catalogs, categories, attributes ----------
   listCatalogs(actor: RequestActor, workspaceId: string) {
@@ -358,6 +360,27 @@ export class CatalogV2Service {
       }
       return { quantity: quantity.toString(), unitCode: detail.unitCode, currency: book.rows[0].currency, status: entry?.status ?? null, result, components };
     });
+  }
+
+  /** AI clean-up for an import: suggestions per row (name, size, colour, brand, unit, category), never applied by itself. */
+  async aiCleanImport(actor: RequestActor, workspaceId: string, catalogId: string, input: { rows: ImportRow[] }) {
+    if (!input.rows?.length) throw new UnprocessableEntityException("The file has no rows to tidy");
+    if (input.rows.length > 1000) throw new UnprocessableEntityException("Tidy at most 1,000 rows at a time");
+    const context = await this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
+      await this.catalog(client, workspaceId, catalogId);
+      const categories = await client.query<{ name: string }>(`SELECT name FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND status = 'active'`, [workspaceId, catalogId]);
+      return { categories: [...new Set([...categories.rows.map((row) => row.name), ...input.rows.map((row) => row.category ?? "").filter(Boolean)])], units: (await this.units(client, workspaceId)).map((unit) => unit.code) };
+    });
+    const units = [...new Set([...context.units, ...Object.keys(PACK_UNITS)])];
+    const suggestions: CleanSuggestion[] = [];
+    for (let start = 0; start < input.rows.length; start += 50) {
+      const batch = input.rows.slice(start, start + 50);
+      suggestions.push(...await this.ai.run(actor, workspaceId, {
+        feature: "catalog.import_clean", system: CLEAN_SYSTEM, prompt: cleanPrompt(batch, context.categories, units), maxTokens: 6000,
+        validate: (value) => validateClean(value, batch, context.categories),
+      }));
+    }
+    return { suggestions };
   }
 
   /** Spreadsheet import: preview explains every row; commit applies the same plan in one transaction. */

@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { CatalogV2Service } from "./catalog-v2.service";
-import { ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
+import { AiCleanDto, ImportItemsDto, ArchiveItemDto, CreateAttributeDto, CreateCatalogDto, CreateCategoryDto, CreatePriceBookDto, ItemDto, PriceBookStatusDto, PriceEntryDto, PricePreviewDto, ReviewPriceDto, SetComponentsDto } from "./catalog-v2.dto";
 
 @ApiTags("catalogs")
 @ApiBearerAuth()
@@ -30,6 +30,7 @@ export class CatalogV2Controller {
   @Patch("price-books/:bookId/status") bookStatus(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("bookId", ParseUUIDPipe) b: string, @Body() body: PriceBookStatusDto) { return this.catalogs.setPriceBookStatus(a, w, b, body); }
   @Put("price-books/:bookId/items/:itemId") savePrice(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("bookId", ParseUUIDPipe) b: string, @Param("itemId", ParseUUIDPipe) i: string, @Body() body: PriceEntryDto) { return this.catalogs.savePrice(a, w, b, i, body); }
   @Post("prices/:entryId/review") review(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("entryId", ParseUUIDPipe) e: string, @Body() body: ReviewPriceDto) { return this.catalogs.reviewPrice(a, w, e, body); }
+  @Post(":catalogId/import/ai-clean") aiClean(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: AiCleanDto) { return this.catalogs.aiCleanImport(a, w, c, body); }
   @Post(":catalogId/import") importItems(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: ImportItemsDto) { return this.catalogs.importItems(a, w, c, body); }
   @Post(":catalogId/price-preview") preview(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Param("catalogId", ParseUUIDPipe) c: string, @Body() body: PricePreviewDto) { return this.catalogs.pricePreview(a, w, c, body); }
 }

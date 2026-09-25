@@ -31,7 +31,7 @@ integration("catalog v2 on PostgreSQL", () => {
           withPermission: (_a: unknown, _w: string, _p: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId }),
           withAnyPermission: async (_a: unknown, _w: string, _p: string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => { if (!costs) throw new Error("forbidden"); return fn(client, { userId }); },
         };
-        return new CatalogV2Service(access as never);
+        return new CatalogV2Service(access as never, {} as never);
       };
       // Each request is its own transaction in production; here an expected failure rolls back to a savepoint.
       const refused = async (fn: () => Promise<unknown>, message: RegExp | string) => {
