@@ -85,6 +85,35 @@ unrelated containers and checks API readiness plus landing/login. It refuses imp
 legacy takeover. If the host continues to use native Nginx, retain that proxy and use a host-specific
 verified update procedure instead.
 
+## Start a fresh v2 database (R1, September 2026)
+
+v1 migrations were squashed into `services/business-core/drizzle/0000_v2_baseline.sql`, so an existing
+`wodana_release` history no longer matches the journal. The current `wodana_release` holds dummy UAT
+data only, and the owner approved replacing it. Run these steps only with that approval, in a
+maintenance window:
+
+1. Take and restore-test a final backup (`backup.native-host.sh`) and keep the previous release
+   directory for rollback.
+2. Stop Business Core and the intelligence worker so nothing writes during the swap.
+3. Recreate the database and the app-role grants, which are per database:
+
+   ```bash
+   sudo -u postgres dropdb --if-exists wodana_release
+   sudo -u postgres createdb wodana_release   # owned by postgres, which applies migrations
+   sudo -u postgres env POSTGRES_USER=postgres POSTGRES_DB=wodana_release \
+     POSTGRES_APP_USER=wodana_app POSTGRES_APP_PASSWORD='<existing app password>' \
+     sh infra/postgres/001-create-app-role.sh
+   sudo -u postgres psql -d wodana_release -v ON_ERROR_STOP=1 -c \
+     'CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint);'
+   ```
+
+4. Deploy with `APPLY_PENDING_MIGRATIONS=1`. The deploy script rehearses the baseline and every later
+   migration in a rolled-back transaction, then applies them and compares the history with the journal.
+5. Provision the Palm Living tenant through the operator portal and send the owner invitation.
+   Do not restore UAT rows into the new database.
+
+Rollback: restore the step 1 backup into `wodana_release` and restart the previous release.
+
 ## Operations
 
 Install the systemd units only on the server. The backup timer captures PostgreSQL, Redis provider
