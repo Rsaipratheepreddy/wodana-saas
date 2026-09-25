@@ -39,6 +39,10 @@ export function e2eCatalogResponse(method: string, path: string[], body: unknown
   if (method === "GET" && section === "price-books") return [{ id: "7a1c0000-0000-4000-8000-0000000000b1", name: "Standard prices", currency: "AED", status: "active", version: 1 }];
   if (method === "PUT" && first === "price-books") return { id: "p-new", status: "draft" };
   if (method === "POST" && first === "prices") return { id: section, status: (body as { decision: string }).decision };
+  if (method === "POST" && section === "import" && itemId === "ai-clean") {
+    const rows = (body as { rows: ImportRow[] }).rows;
+    return { suggestions: rows.filter((row) => /[A-Z]{4,}/.test(row.name ?? "")).map((row) => ({ line: row.line, name: (row.name ?? "").toLowerCase().replace(/^./, (c) => c.toUpperCase()).replace(/\s*\[.*$/, ""), unit: row.unit ? undefined : "roll", note: /\d+\s*%/.test(row.name ?? "") ? "Mix ratio in the name" : undefined })) };
+  }
   if (method === "POST" && section === "import") {
     const rows = (body as { rows: ImportRow[] }).rows;
     const plan: ImportPlan = {

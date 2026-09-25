@@ -15,6 +15,7 @@ import {
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions, type RegionalOption } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
 import { BrandColour } from "./brand-colour";
+import { AiAssistanceSetting } from "./ai-assistance-setting";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
 
 type ProfileForm = {
@@ -330,6 +331,7 @@ export function CompanyProfile({
                   workspaceId={data.workspace.id}
                   workspaceVersion={data.workspace.version}
                 />
+                <AiAssistanceSetting canManage={canManage} workspaceId={data.workspace.id} />
               </div>
             </div>
             <input accept="image/png,image/jpeg,image/webp" aria-label={t("Choose company logo")} className={styles.fileInput} onChange={uploadLogo} ref={fileInput} type="file" />

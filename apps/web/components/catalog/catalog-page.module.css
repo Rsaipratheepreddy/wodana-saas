@@ -62,3 +62,8 @@
 .tiers .formRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; }
 .actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
 .tiers > :global(.wd-button) { justify-self: start; }
+.suggestions { display: grid; max-block-size: 26rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.suggestions li { display: grid; gap: var(--wd-space-1); padding: var(--wd-space-3) 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.before { color: var(--wd-color-text-tertiary); text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); font-size: var(--wd-text-sm); }
+.after { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); padding-inline-start: var(--wd-space-6); }
+.after small { inline-size: 100%; color: var(--wd-color-text-secondary); }

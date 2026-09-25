@@ -651,5 +651,16 @@
   "The price is live.": "The price is live.",
   "Go live": "Go live",
   "Change": "Change",
-  "Set price": "Set price"
+  "Set price": "Set price",
+  "Use": "Use",
+  "suggestions": "suggestions",
+  "Clean up with AI": "Clean up with AI",
+  "AI changes": "AI changes",
+  "AI suggestions": "AI suggestions",
+  "Brand": "Brand",
+  "AI found nothing to change.": "AI found nothing to change.",
+  "AI settings could not be saved.": "AI settings could not be saved.",
+  "AI assistance": "AI assistance",
+  "AI suggests; nothing changes until someone accepts.": "AI suggests; nothing changes until someone accepts.",
+  "Not set up yet.": "Not set up yet."
 }

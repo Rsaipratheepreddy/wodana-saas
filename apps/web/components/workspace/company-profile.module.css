@@ -92,3 +92,7 @@
 .brandColourText { display: grid; min-inline-size: 0; margin-inline-end: auto; }
 .brandColourText strong { font-size: var(--wd-text-sm); font-weight: 600; }
 .brandColourText span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.aiSetting { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--wd-space-2) var(--wd-space-3); }
+.aiSetting > svg { flex: none; margin-block-start: var(--wd-space-1); color: var(--wd-color-text-tertiary); }
+.aiSetting > div { display: grid; gap: var(--wd-space-0-5); }
+.aiSetting small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }

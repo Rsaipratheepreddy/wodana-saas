@@ -56,3 +56,25 @@ test("sets a price, then QS reviews and it goes live", async ({ page }, testInfo
   await expect(page.getByRole("button", { name: "Add tier" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("catalog-prices.png"), animations: "disabled" });
 });
+
+test("import with AI clean-up or manually, and AI can be switched per workspace", async ({ page }, testInfo) => {
+  await page.goto("/workspace/catalogs");
+  await page.getByRole("button", { name: "Import" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Import items" });
+  await dialog.getByLabel("Choose a spreadsheet").setInputFiles({ name: "stock.csv", mimeType: "text/csv", buffer: Buffer.from("UNIT,MORAL CODE,COLOR,ITEM NAME\n,W00004,,WHITE WOOD 2\"X2\"X13' [AED 15.50/PCS] - 522 PCS/BDL\nLITER,CP 004,,CP 004 CATALYST @ 50% FOR PU FULL GLOSSY\n,,WHITE,Teflon Tape\n") });
+  await expect(dialog.getByRole("button", { name: "Review" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Clean up with AI" }).click();
+  const list = dialog.getByRole("list", { name: "AI suggestions" });
+  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(list.getByText("White wood 2\"x2\"x13'", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("catalog-ai-suggestions.png"), animations: "disabled" });
+  await list.getByRole("listitem").nth(1).locator("label").first().click();
+  await dialog.getByRole("button", { name: "Use 1 suggestions" }).click();
+  await expect(dialog.getByRole("button", { name: "Review · 1 AI changes" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Review · 1 AI changes" }).click();
+  await expect(dialog.getByRole("status")).toContainText("new");
+
+  await page.goto("/workspace/company");
+  await expect(page.getByRole("switch", { name: "AI assistance" })).toBeChecked();
+  await expect(page.getByText("AI suggests; nothing changes until someone accepts.")).toBeVisible();
+});
