@@ -1124,3 +1124,12 @@
   .wd-settings-row { grid-template-columns: minmax(0, 1fr); }
   .wd-settings-value { justify-content: flex-start; text-align: start; }
 }
+
+/* List tabs: quiet text tabs with counts, active one underlined. */
+.wd-list-tabs { display: flex; flex-wrap: nowrap; gap: var(--wd-space-1); overflow-x: auto; border-block-end: 1px solid var(--wd-color-structural-divider); scrollbar-width: none; }
+.wd-list-tab { position: relative; display: inline-flex; flex: none; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-md); border: 0; border-radius: var(--wd-radius-sm) var(--wd-radius-sm) 0 0; padding-inline: var(--wd-space-2-5); background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-sm); cursor: pointer; }
+.wd-list-tab:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.wd-list-tab[aria-pressed="true"] { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.wd-list-tab[aria-pressed="true"]::after { position: absolute; inset-inline: var(--wd-space-2); inset-block-end: -1px; block-size: 2px; border-radius: var(--wd-radius-pill); background: var(--wd-color-text); content: ""; }
+.wd-list-tab-count { min-inline-size: var(--wd-space-5); border-radius: var(--wd-radius-pill); padding-inline: var(--wd-space-1-5); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); font-variant-numeric: tabular-nums; text-align: center; }
+.wd-list-tab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }

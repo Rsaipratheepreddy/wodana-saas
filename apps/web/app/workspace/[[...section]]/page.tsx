@@ -158,9 +158,8 @@ export default async function WorkspaceScreen({
     return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} />;
   }
 
-  if (screen.id === "crm-overview") {
-    return <LeadsPage initialData={await getLeadsPageData()} />;
-  }
+  // Sales opens on Enquiries; one address per view keeps the breadcrumb and tabs truthful.
+  if (screen.id === "crm-overview") redirect("/workspace/crm/leads");
 
   if (screen.id === "opportunities") {
     const query = await searchParams;

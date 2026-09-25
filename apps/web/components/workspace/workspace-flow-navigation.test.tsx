@@ -37,8 +37,9 @@ it("uses the same compact tab treatment for Sales",()=>{
   expect(screen.getByRole("link",{name:"Pipeline"})).toHaveAttribute("href","/workspace/crm/opportunities");
   const nav = screen.getByRole("navigation", {name:"Sales sections"});
   expect(nav.parentElement).toHaveAttribute("data-navigation", "chips");
-  for (const [label, icon] of [["Enquiries", "enquiries"], ["Pipeline", "deals"], ["Campaigns", "campaigns"], ["Reports", "reports"], ["Settings", "settings"]]) {
-    expect(within(nav).getByRole("link", {name:label}).querySelector("img")).toHaveAttribute("src", `/icons/sales/${icon}.svg`);
+  // Quiet text tabs: no decorative icons.
+  for (const label of ["Enquiries", "Pipeline", "Campaigns", "Reports", "Settings"]) {
+    expect(within(nav).getByRole("link", {name:label}).querySelector("img")).toBeNull();
   }
 });
 

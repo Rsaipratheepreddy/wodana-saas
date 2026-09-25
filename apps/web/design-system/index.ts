@@ -16,6 +16,7 @@ export * from "./patterns/data-grid";
 export * from "./organisms/record-table";
 export * from "./patterns/page-header";
 export * from "./patterns/settings";
+export * from "./patterns/list-tabs";
 export * from "./patterns/stage-header";
 export * from "./patterns/month-calendar";
 export * from "./patterns/grouped-table";

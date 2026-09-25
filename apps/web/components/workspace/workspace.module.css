@@ -1600,31 +1600,31 @@
   .shell .crmContentPanel { margin: var(--wd-space-4); }
 }
 
-/* Spreadsheet-style CRM lists with visible row and column separation. */
+/* CRM lists, Notion style: row dividers only, no outer box or column lines. */
 .recordTablePanel :global(.wd-data-grid) { padding-block-start: var(--wd-space-3); }
-.recordTablePanel :global(.wd-table-scroll) { border:1px solid var(--wd-color-structural-divider); border-radius:var(--wd-radius-sm) var(--wd-radius-sm) 0 0; }
-.recordTablePanel :global(.wd-table th), .recordTablePanel :global(.wd-table td) { border-inline-end:1px solid var(--wd-color-structural-divider); border-block-end:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-2) var(--wd-space-3); block-size:44px; font-size:var(--wd-text-sm); }
-.recordTablePanel :global(.wd-table th) { background:var(--wd-color-surface-muted); font-weight:600; }
+.recordTablePanel :global(.wd-table-scroll) { border:0; border-block-start:1px solid var(--wd-color-structural-divider); border-radius:0; }
+.recordTablePanel :global(.wd-table th), .recordTablePanel :global(.wd-table td) { border-inline-end:0; border-block-end:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-2) var(--wd-space-3); block-size:44px; font-size:var(--wd-text-sm); }
+.recordTablePanel :global(.wd-table th) { background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-weight:var(--wd-weight-medium); }
 .recordTablePanel :global(.wd-table td) { background:var(--wd-color-surface); }
 .recordTablePanel :global(.wd-table tr:hover td) { background:var(--wd-color-surface-hover); }
-.recordTablePanel :global(.wd-table-scroll + .wd-grid-footer) { border:1px solid var(--wd-color-structural-divider); border-block-start:0; border-radius:0 0 var(--wd-radius-sm) var(--wd-radius-sm); min-block-size:44px; padding-inline:var(--wd-space-3); }
+.recordTablePanel :global(.wd-table-scroll + .wd-grid-footer) { border:0; border-radius:0; min-block-size:44px; padding-inline:var(--wd-space-3); }
 
-/* Override the shared borderless record-table skin only within CRM. */
 .shell .recordTablePanel :global(.wd-data-grid .wd-table-scroll) {
-  border: 1px solid var(--wd-color-structural-divider);
-  border-radius: var(--wd-radius-sm) var(--wd-radius-sm) 0 0;
+  border: 0;
+  border-block-start: 1px solid var(--wd-color-structural-divider);
+  border-radius: 0;
 }
 .shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
   border: 0;
-  border-inline-end: 1px solid var(--wd-color-structural-divider);
   border-block-end: 1px solid var(--wd-color-structural-divider);
   padding: var(--wd-space-2) var(--wd-space-3);
   height: 44px;
   font-size: var(--wd-text-sm);
 }
 .shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > thead > tr > th {
-  background: var(--wd-color-surface-muted);
-  font-weight: 600;
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text-secondary);
+  font-weight: var(--wd-weight-medium);
 }
 .shell .recordTablePanel :global(.wd-row-index[data-selectable] > .wd-checkbox) { opacity: 1; }
 .shell .recordTablePanel :global(.wd-row-index[data-selectable] > span) { display: none; }
@@ -1668,12 +1668,12 @@
 
 /* Preserve primary-action contrast after the neutral toolbar button styling. */
 .shell .recordTablePanel :global(.wd-record-toolbar .wd-button[data-variant="primary"]) {
-  background: #a0bcab;
-  color: var(--wd-color-text);
-  border-color: #8eaa99;
+  border-color: transparent;
+  background: var(--wd-color-action-primary);
+  color: var(--wd-color-action-on-primary);
 }
 .shell .recordTablePanel :global(.wd-record-toolbar .wd-button[data-variant="primary"]):hover {
-  background: #91af9c;
+  background: var(--wd-color-action-primary-hover);
 }
 
 /* A compact, evenly spaced toolbar, with neutral secondary actions. */
@@ -1949,15 +1949,14 @@
 .shell .recordTablePanel :global([data-sales-grid] .wd-empty-state) { min-block-size: 72px; padding: var(--wd-space-4) var(--wd-space-2); align-items: flex-start; text-align: start; gap: var(--wd-space-1); }
 .shell .recordTablePanel :global([data-sales-grid] .wd-empty-state > strong) { font-size: var(--wd-text-xs); font-weight: 400; color: var(--wd-color-text-secondary); }
 .shell .recordTablePanel :global([data-sales-grid] .wd-empty-state p) { font-size: var(--wd-text-2xs); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="quiet"]),
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls .wd-select-button) { background: transparent; border: 0; border-radius: var(--wd-radius-2xs); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="quiet"]:hover) { background: var(--wd-color-surface-hover); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls) { flex: 1; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search) { order: 0; max-inline-size: 190px; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar.wd-record-toolbar) { padding-block-end: var(--wd-space-2); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group) { border-color: transparent; background: transparent; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group:focus-within) { border-color: var(--wd-color-focus); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="primary"]) { background: var(--wd-color-action-primary); color: var(--wd-color-text-inverse); border-color: transparent; }
+
+
+
+
+
+
+
+
 
 /* Crisp enquiry grid matched to the portal's neutral navigation. */
 .shell .recordTablePanel :global([data-sales-grid]) { --sales-grid-line: var(--wd-color-table-border); --sales-header-bg: var(--wd-color-table-header); --sales-header-ink: var(--wd-color-table-header-ink); }
@@ -1969,37 +1968,31 @@
 .shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border-block-start: 1px solid var(--sales-grid-line); color: var(--wd-color-text-secondary); }
 .shell .recordTablePanel :global([data-sales-grid] .wd-empty-state > strong) { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: 500; }
 .shell .recordTablePanel :global([data-sales-grid] .wd-empty-state p) { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="quiet"]) { color: var(--wd-color-text); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group) { border: 1px solid var(--sales-grid-line); border-radius: var(--wd-radius-2xs); }
+
+
 /* Complete the enquiry grid edges without adding a rounded card frame. */
 .shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-table-scroll) { border-inline: 1px solid var(--sales-grid-line); border-radius: 0; box-sizing: border-box; }
 .shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) { box-sizing: border-box; padding: var(--wd-space-1) var(--wd-table-cell-padding); block-size: var(--wd-table-row-compact); height: var(--wd-table-row-compact); }
 .shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { font-size: var(--wd-text-xs); font-weight: 500; }
 .shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border-inline: 1px solid var(--sales-grid-line); border-block-end: 1px solid var(--sales-grid-line); padding: var(--wd-space-2) var(--wd-space-3); border-radius: 0; }
 .shell .recordTablePanel :global([data-sales-grid] .wd-empty-state) { padding: var(--wd-space-5) 0; min-block-size: 80px; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar.wd-record-toolbar) { padding-block-end: var(--wd-space-3); }
+
 /* One outer edge and one divider per boundary, including the footer join. */
 .shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-table-scroll) { border: 1px solid var(--sales-grid-line); border-block-end: 0; border-radius: var(--wd-radius-sm) var(--wd-radius-sm) 0 0; overflow: auto; }
 .shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) { border-collapse: collapse; border-spacing: 0; }
 .shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { border-block-start: 0; }
 .shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > tbody > tr:last-child > td { border-block-end: 0; }
 .shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border: 1px solid var(--sales-grid-line); border-radius: 0 0 var(--wd-radius-sm) var(--wd-radius-sm); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls .wd-select-button) { border: 1px solid var(--sales-grid-line); border-radius: var(--wd-radius-2xs); background: var(--wd-color-surface); padding-inline: var(--wd-space-2); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls > .wd-field .wd-select-button.wd-focus-frame) { border: 1px solid var(--sales-grid-line) !important; border-radius: var(--wd-radius-2xs); padding-inline: var(--wd-space-2); }
-/* A consistent control scale throughout the enquiry toolbar. */
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button),
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls > .wd-field .wd-select-button),
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group),
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-search-field) { box-sizing: border-box; min-block-size: var(--wd-control-md); block-size: var(--wd-control-md); font-size: var(--wd-text-sm); border-radius: var(--wd-radius-xs); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar svg) { inline-size: 16px; block-size: 16px; flex-shrink: 0; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar[data-compact] .wd-record-controls > button),
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar[data-compact] .wd-record-actions > button[aria-label^="Export"]) { inline-size: 36px; min-inline-size: 36px; padding: var(--wd-space-2); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="primary"]) { padding-inline: var(--wd-space-3); gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls .wd-select-button) { min-inline-size: 142px; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search) { inline-size: 220px; max-inline-size: 220px; }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-search input) { font-size: var(--wd-text-sm); }
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls),
-.shell .recordTablePanel :global([data-sales-grid] .wd-record-actions) { gap: var(--wd-space-2); align-items: center; }
+
+
+
+
+
+
+
+
+
+
 /* Keep client identity and request on distinct lines within the pinned cell. */
 .shell .recordTablePanel :global([data-sales-grid] td[data-column="partyName"] button > span:last-child) { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
 .shell .recordTablePanel :global([data-sales-grid] td[data-column="partyName"] button > span:last-child > strong),
@@ -2026,11 +2019,12 @@
 .shell .flowHeader[data-navigation="chips"] { padding:0 var(--wd-space-4); }
 .flowHeader[data-navigation="chips"] .flowTabScroll { align-items:center; gap:var(--wd-space-1-5); min-block-size:44px; padding-block:var(--wd-space-1-5); box-sizing:border-box; scrollbar-width:none; }
 .flowHeader[data-navigation="chips"] .flowTabScroll::-webkit-scrollbar { display:none; }
-.flowHeader[data-navigation="chips"] .salesTab { box-sizing:border-box; min-block-size:30px; block-size:30px; padding:0 var(--wd-space-2); gap:var(--wd-space-1); border:0; border-radius:var(--wd-radius-xs); background:var(--wd-color-surface-muted); color:var(--wd-color-text); font-size:var(--wd-text-2xs); font-weight:600; line-height:18px; }
-.flowHeader[data-navigation="chips"] .salesTab img { display:block; flex:none; inline-size:20px; block-size:20px; object-fit:contain; }
-.flowHeader[data-navigation="chips"] .salesTab:hover { background:color-mix(in srgb,var(--wd-color-action-primary) 7%,var(--wd-color-surface)); color:var(--wd-color-text); }
-.flowHeader[data-navigation="chips"] .salesTab[aria-current="page"] { background:color-mix(in srgb,var(--wd-color-action-primary) 14%,var(--wd-color-surface)); color:var(--wd-color-text); font-weight:700; }
-.flowHeader[data-navigation="chips"] .salesTab::after,.flowHeader[data-navigation="chips"] .salesTab::before { display:none; }
+.flowHeader[data-navigation="chips"] { border-block-end:1px solid var(--wd-color-structural-divider); }
+.flowHeader[data-navigation="chips"] .salesTab { position:relative; box-sizing:border-box; min-block-size:var(--wd-control-md); block-size:var(--wd-control-md); padding:0 var(--wd-space-2-5); gap:var(--wd-space-1-5); border:0; border-radius:var(--wd-radius-sm); background:transparent; color:var(--wd-color-text-secondary); font-size:var(--wd-text-sm); font-weight:var(--wd-weight-medium); }
+.flowHeader[data-navigation="chips"] .salesTab:hover { background:var(--wd-color-surface-hover); color:var(--wd-color-text); }
+.flowHeader[data-navigation="chips"] .salesTab[aria-current="page"] { background:transparent; color:var(--wd-color-text); font-weight:var(--wd-weight-semibold); }
+.flowHeader[data-navigation="chips"] .salesTab::before { display:none; }
+.flowHeader[data-navigation="chips"] .salesTab[aria-current="page"]::after { position:absolute; display:block; inset-inline:var(--wd-space-2); inset-block-end:calc(-1 * var(--wd-space-1-5) - 1px); block-size:2px; border-radius:var(--wd-radius-pill); background:var(--wd-color-text); content:""; }
 .flowHeader[data-navigation="chips"] .salesTab:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
 
 @media(max-width:600px) { .shell .flowHeader[data-navigation="chips"] { padding-inline:var(--wd-space-3); } }
@@ -2045,3 +2039,12 @@
   border-radius:999px !important;
   background:var(--wd-color-surface);
 }
+
+/* Sales tables, final look (reference: minimal grid). Open sides, top and bottom rules,
+   thin column lines, plain header with icons, quiet hover. Keep this block last. */
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-table-scroll) { border: 0; border-block: 1px solid var(--sales-grid-line); border-radius: 0; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border: 0; border-radius: 0; padding-inline: 0; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > tbody > tr:hover > td { background: var(--wd-color-surface-hover); }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) { block-size: 44px; height: 44px; }
+.shell .recordTablePanel :global(.wd-grid-toolbar.wd-record-toolbar[data-leading]) { min-block-size: var(--wd-control-md); padding: 0; margin-block-end: var(--wd-space-2); }

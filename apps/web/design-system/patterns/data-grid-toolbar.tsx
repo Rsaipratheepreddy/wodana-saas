@@ -9,8 +9,8 @@ import { Checkbox, SearchInput, SelectField, TextInput } from "../components/for
 import type { DataGridColumnMeta, SavedView } from "./data-grid";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 
-export function DataGridToolbar<T>({ compact = false, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows }: {
-  compact?: boolean; title?: string; table: Table<T>; views: SavedView[]; activeView?: string; onViewChange: (id: string) => void;
+export function DataGridToolbar<T>({ compact = false, leading, title, table, views, activeView, onViewChange, searchLabel, searchValue, onSearchChange, actions, onExport, hasMoreRows }: {
+  compact?: boolean; /** Replaces the title/view switch at the start, e.g. list tabs. */ leading?: ReactNode; title?: string; table: Table<T>; views: SavedView[]; activeView?: string; onViewChange: (id: string) => void;
   searchLabel: string; actions?: ReactNode; onExport: () => void; hasMoreRows?: boolean; totalRowCount?: number;
   searchValue?: string; onSearchChange?: (value: string) => void;
 }) {
@@ -25,11 +25,11 @@ export function DataGridToolbar<T>({ compact = false, title, table, views, activ
   const filters = table.getState().columnFilters;
   const sort = table.getState().sorting[0];
   const columnItems = (items: typeof columns) => items.map(column => ({ id: column.id, label: String(column.columnDef.header) }));
-  return <header className="wd-grid-toolbar wd-record-toolbar" data-compact={compact || undefined}>
-    {title ? <strong className="wd-grid-title">{title}</strong> : null}
+  return <header className="wd-grid-toolbar wd-record-toolbar" data-compact={compact || undefined} data-leading={leading ? true : undefined}>
+    {leading ? <div className="wd-grid-leading">{leading}</div> : title ? <strong className="wd-grid-title">{title}</strong> : null}
     <div className="wd-record-tools">
       <div className="wd-record-controls">
-      {views.length ? <SelectField label="Table view" selectedKey={activeView} onSelectionChange={key => key && onViewChange(String(key))} items={views} /> : !compact ? <span className="wd-record-view"><Table2 size={14} />Table view</span> : null}
+      {leading ? null : views.length ? <SelectField label="Table view" selectedKey={activeView} onSelectionChange={key => key && onViewChange(String(key))} items={views} /> : !compact ? <span className="wd-record-view"><Table2 size={14} />Table view</span> : null}
       <DialogTrigger>
         <Button variant="quiet" size="compact" aria-label="Manage columns"><Columns3 size={14} /><span>Configure columns</span></Button>
         <Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-column-popover" dir={direction} placement="bottom start"><Dialog aria-label="Visible columns" className="wd-column-menu">

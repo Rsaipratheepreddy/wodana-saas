@@ -18,7 +18,7 @@ export const messages: Record<AppLanguage, Dictionary> & { en: Record<MessageKey
 
 export function translator(language: AppLanguage) {
   return (key: MessageKey, values: Record<string, string | number> = {}) => {
-    const message = messages[language][key] ?? en[key];
+    const message = messages[language][key] ?? en[key] ?? String(key);
     return message.replace(/\{(\w+)\}/g, (token: string, name: string) => String(values[name] ?? token));
   };
 }

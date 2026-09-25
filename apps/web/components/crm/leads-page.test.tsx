@@ -27,8 +27,7 @@ describe("LeadsPage", () => {
     render(<LeadsPage initialData={{ ...leadsPageFixture, items: [], nextCursor: null }} />);
     const table = screen.getByRole("table", { name: "CRM enquiries" });
     expect(within(table).getByRole("columnheader", { name: /Customer/ })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: /Enquiry ID/ })).toBeInTheDocument();
-    expect(within(table).getAllByRole("columnheader").slice(0, 2).map(header => header.textContent?.trim())).toEqual(["Enquiry ID", "Customer"]);
+    expect(within(table).getAllByRole("columnheader")[0].textContent?.trim()).toBe("Customer");
     expect(within(table).getByRole("img", { name: "Your enquiries will appear here" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New enquiry" })).toBeEnabled();
   });
@@ -55,10 +54,10 @@ describe("LeadsPage", () => {
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     const table = screen.getByRole("table", { name: "CRM enquiries" });
     expect(within(table).getAllByRole("row")).toHaveLength(6);
-    expect(within(table).getByRole("columnheader", { name: /Stage/i })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /Status/i })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: /Source/i })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: /Source/i })).toHaveStyle({ inlineSize: "220px" });
-    expect(within(table).getByRole("columnheader", { name: /Assigned to/i })).toHaveStyle({ inlineSize: "230px" });
+    expect(within(table).getByRole("columnheader", { name: /Source/i })).toHaveStyle({ inlineSize: "150px" });
+    expect(within(table).getByRole("columnheader", { name: /Assigned to/i })).toHaveStyle({ inlineSize: "190px" });
     expect(within(table).queryByRole("columnheader", { name: /Channel/i })).not.toBeInTheDocument();
     expect(within(table).queryByRole("columnheader", { name: /Captured via/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Kanban" })).not.toBeInTheDocument();
@@ -82,7 +81,7 @@ describe("LeadsPage", () => {
     const table = screen.getByRole("table", { name: "CRM enquiries" });
     expect(within(table).getByRole("button", { name: "Open Sara Al Nuaimi" })).toHaveTextContent("Sara Al Nuaimi");
     expect(within(table).queryByText(/DEMO CLIENT/)).not.toBeInTheDocument();
-    expect(within(table).getByRole("button", { name: "E-0042" })).toBeInTheDocument();
+    expect(within(table).getByText("E-0042")).toBeInTheDocument();
   });
 
   it("opens workspace enquiry-type configuration from the enquiry submenu", async () => {
@@ -95,19 +94,34 @@ describe("LeadsPage", () => {
     expect(screen.getByRole("button", { name: "Enquiry types Manage" })).toHaveTextContent("Enquiry types");
   });
 
-  it("shows exactly four stages and groups older active statuses under Initiated", async () => {
+  it("puts each enquiry in the list for its status with counts", async () => {
     const user = userEvent.setup();
     const data = structuredClone(leadsPageFixture);
-    data.items = ["attempting_contact", "connected", "nurturing", "paused"].map((status, i) => ({ ...data.items[0], id: `legacy-${i}`, partyName: `Legacy ${i}`, status: status as CrmLeadListItem["status"] }));
+    data.items = (["new", "attempting_contact", "connected", "nurturing", "paused", "disqualified"] as const).map((status, i) => ({ ...data.items[0], id: `lead-${i}`, partyName: `Client ${i}`, status, isConverted: false }));
     render(<LeadsPage initialData={data} />);
-    await user.click(screen.getByRole("button", { name: /Stage for Legacy 0/ }));
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["New", "Initiated", "Qualified", "Disqualified"]);
-    await user.keyboard("{Escape}");
-    await filterLeads(user, "Stage", "Initiated");
-    expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row")).toHaveLength(5);
+    const rows = () => within(screen.getByRole("table", { name: "CRM enquiries" })).getAllByRole("row").length - 1;
+    expect(rows()).toBe(6);
+    await user.click(screen.getByRole("button", { name: /^Contacted\s*3$/ }));
+    expect(rows()).toBe(3);
+    await user.click(screen.getByRole("button", { name: /^Come back to\s*1$/ }));
+    expect(screen.getByRole("button", { name: "Open Client 4" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "CRM enquiries" })).getByText("Come back later")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^New\s*1$/ }));
+    expect(screen.getByRole("button", { name: "Open Client 0" })).toBeInTheDocument();
   }, 20_000);
 
-  it.each(["stage", "table action"])("qualifies a lead through %s and keeps the pre-execution handoff", async (entry) => {
+  it("starts a salesperson on their own new enquiries", () => {
+    const data = structuredClone(leadsPageFixture);
+    data.currentMembershipId = data.items[0].ownerMembershipId ?? "member-1";
+    data.currentRoles = ["sales_account_manager"];
+    data.items = [{ ...data.items[0], id: "mine", partyName: "My Client", status: "new", ownerMembershipId: data.currentMembershipId, isConverted: false }, { ...data.items[0], id: "theirs", partyName: "Their Client", status: "new", ownerMembershipId: "someone-else", isConverted: false }];
+    render(<LeadsPage initialData={data} />);
+    expect(screen.getByRole("button", { name: "Open My Client" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Their Client" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Unassigned/ })).not.toBeInTheDocument();
+  });
+
+  it.each(["table action"])("qualifies a lead through %s and keeps the pre-execution handoff", async (entry) => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture), lead = data.items[0];
     const converted = { ...lead, status: "qualified" as const, isConverted: true, version: lead.version + 1, nextActionAt: null };
     const fetchMock = vi.fn(async (url: string) => {
@@ -118,8 +132,8 @@ describe("LeadsPage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={data} />);
 
-    if (entry === "stage") await chooseOption(user, /Stage for Dr Maya Nair/, "Qualified");
-    else await user.click(screen.getByRole("button", { name: `Convert ${lead.partyName} to opportunity` }));
+    expect(entry).toBe("table action");
+    await user.click(screen.getByRole("button", { name: `Convert ${lead.partyName} to opportunity` }));
     const dialog = await screen.findByRole("dialog", { name: "Convert to opportunity" });
     expect(within(dialog).getByDisplayValue(lead.title)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Convert to opportunity" }));
@@ -133,7 +147,7 @@ describe("LeadsPage", () => {
       ownerMembershipId: lead.ownerMembershipId,
       title: lead.title,
     });
-    const row = screen.getByRole("button", { name: /Stage for Dr Maya Nair/ }).closest("tr")!;
+    const row = screen.getByRole("button", { name: /Open Dr Maya Nair/ }).closest("tr")!;
     expect(screen.queryByRole("dialog", { name: "Convert to opportunity" })).not.toBeInTheDocument();
     expect(within(row).queryByRole("link", { name: /Design & Planning/ })).not.toBeInTheDocument();
   }, 10_000);
@@ -161,15 +175,15 @@ describe("LeadsPage", () => {
     expect(convertAction).toBeVisible();
   });
 
-  it.each(["stage", "table action"])("routes a Not Sure Yet enquiry from %s to editing instead of deal creation", async entry => {
+  it.each(["table action"])("routes a Not Sure Yet enquiry from %s to editing instead of deal creation", async entry => {
     const data = structuredClone(leadsPageFixture);
     const lead = { ...data.items[0], serviceType: "not_sure" };
     data.items = [lead];
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, enquiry: { serviceType: "not_sure", partyName: lead.partyName, title: lead.title } }) }));
     render(<LeadsPage initialData={data} />);
     const user = userEvent.setup();
-    if (entry === "stage") await chooseOption(user, /Stage for Dr Maya Nair/, "Qualified");
-    else await user.click(screen.getByRole("button", { name: `Choose enquiry type for ${lead.partyName}` }));
+    expect(entry).toBe("table action");
+    await user.click(screen.getByRole("button", { name: `Choose enquiry type for ${lead.partyName}` }));
     const inspector = await screen.findByRole("dialog", { name: "Enquiry details" });
     expect(within(inspector).getByRole("button", { name: "Edit enquiry type" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Convert to opportunity" })).not.toBeInTheDocument();
@@ -284,13 +298,13 @@ describe("LeadsPage", () => {
     expect(screen.getByText("6 records")).toBeInTheDocument();
   });
 
-  it("filters independently by source and status and resets to all leads", async () => {
+  it("filters by source and resets to all leads", async () => {
     const interaction = userEvent.setup();
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
     await filterLeads(interaction, "Source", "Instagram");
-    await filterLeads(interaction, "Stage", "Qualified");
     expect(screen.getByRole("button", { name: "Open Amira Al Mansoori" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open Leena Mathew" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Leena Mathew" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Dr Maya Nair" })).not.toBeInTheDocument();
     await interaction.click(screen.getByRole("button", { name: "Filter" }));
     await interaction.click(screen.getByRole("button", { name: "Clear filters" }));
     await interaction.click(screen.getByRole("button", { name: "Done" }));
@@ -298,81 +312,56 @@ describe("LeadsPage", () => {
     expect(screen.getByRole("button", { name: "Open Dr Maya Nair" })).toBeInTheDocument();
   }, 15000);
 
-  it("saves status with the current version and uses the returned version for the next change", async () => {
-    const interaction = userEvent.setup();
+  it("logs a contact, keeps the version and moves the enquiry to Come back to", async () => {
+    const user = userEvent.setup();
     const lead = structuredClone(leadsPageFixture.items[0]);
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, status: "new", version: lead.version + 1 }) });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, status: "paused", version: lead.version + 1, nextActionAt: "2030-01-02T06:00:00.000Z" }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
-    await chooseOption(interaction, /Stage for Dr Maya Nair/, "New");
-    expect(await screen.findByText("Dr Maya Nair moved to New.")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(`/api/workspace/crm/leads/${lead.id}/status`, expect.objectContaining({ method: "POST", body: JSON.stringify({ workspaceId: leadsPageFixture.workspaceId, version: lead.version, status: "new" }) }));
-    expect(screen.getByRole("button", { name: /Stage for Dr Maya Nair/ })).toHaveTextContent("New");
-  });
-
-  it("keeps a lead in its original status when the API rejects a move", async () => {
-    const interaction = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ message: "Lead changed; reload and try again" }) }));
-    render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
-    await chooseOption(interaction, /Stage for Dr Maya Nair/, "New");
-    expect(await screen.findByText("Lead changed; reload and try again")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Stage for Dr Maya Nair/ })).toHaveTextContent("Initiated");
-  });
-
-  it("keeps converted deals visible but disables lead status changes", () => {
-    const fixture = structuredClone(leadsPageFixture);
-    fixture.items[4].isConverted = true;
-    render(<LeadsPage initialData={fixture} />);
-    expect(screen.getByRole("button", { name: /Stage for Amira Al Mansoori/ })).toBeDisabled();
-    expect(screen.getByRole("button", {name: "View linked records"})).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Open Amira Al Mansoori/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Move Amira Al Mansoori" })).not.toBeInTheDocument();
-  });
-
-  it("requires a follow-up when reopening an unassigned lead", async () => {
-    const interaction = userEvent.setup();
-    const fixture = structuredClone(leadsPageFixture);
-    fixture.items[3].status = "qualified";
-    fixture.items[3].ownerMembershipId = null;
-    fixture.items[3].ownerName = null;
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...fixture.items[3], status: "connected", version: 4, nextActionAt: "2026-09-20T09:30:00.000Z" }) });
-    vi.stubGlobal("fetch", fetchMock);
-    render(<LeadsPage initialData={fixture} />);
-    await chooseOption(interaction, /Stage for Noura Haddad/, "Initiated");
-    const dialog = await screen.findByRole("dialog", { name: "Move to Initiated" });
-    expect(within(dialog).getByRole("button", { name: /Open calendar Next follow-up date/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: `Log contact · ${lead.partyName}` }));
+    const dialog = await screen.findByRole("dialog", { name: "Log contact" });
+    await user.click(within(dialog).getByRole("radio", { name: "WhatsApp" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Come back later" }));
+    await user.click(within(dialog).getByRole("button", { name: "Log contact" }));
+    expect(await within(dialog).findByText("Add a note about this contact.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
-    for (const [segment, value] of [["year", "2026"], ["month", "9"], ["day", "20"]]) {
-      await interaction.click(within(dialog).getByRole("spinbutton", { name: new RegExp(`${segment},.*Next follow-up date`, "i") }));
-      await interaction.keyboard(value);
-    }
-    await interaction.click(screen.getByRole("spinbutton", { name: "hour, Next follow-up time" })); await interaction.keyboard("09");
-    await interaction.click(screen.getByRole("spinbutton", { name: "minute, Next follow-up time" })); await interaction.keyboard("30");
-    await interaction.click(screen.getByRole("spinbutton", { name: /am\/pm, Next follow-up time/i })); await interaction.keyboard("a");
-    await interaction.click(within(dialog).getByRole("button", { name: "Save stage" }));
-    expect(await screen.findByText("Noura Haddad moved to Initiated.")).toBeInTheDocument();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).nextActionAt).toBe(new Date("2026-09-20T09:30").toISOString());
-  });
+    await user.type(within(dialog).getByRole("textbox", { name: /Note/ }), "Travelling, call after the 15th");
+    await user.click(within(dialog).getByRole("button", { name: "Log contact" }));
+    expect(await screen.findByText(`${lead.partyName} · Contact logged.`)).toBeInTheDocument();
+    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(url).toBe(`/api/workspace/crm/leads/${lead.id}/contacts`);
+    expect(JSON.parse(init.body)).toMatchObject({ workspaceId: leadsPageFixture.workspaceId, version: lead.version, channel: "whatsapp", outcome: "come_back_later", note: "Travelling, call after the 15th" });
+    expect(JSON.parse(init.body).nextActionAt).toEqual(expect.any(String));
+    const row = screen.getByRole("button", { name: `Open ${lead.partyName}` }).closest("tr")!;
+    expect(within(row).getByText("Come back later")).toBeInTheDocument();
+  }, 20_000);
 
-  it("requires a reason to disqualify a lead and leaves cancellation unchanged", async () => {
-    const interaction = userEvent.setup();
-    const lead = leadsPageFixture.items[0];
+  it("asks for a reason before logging Not interested", async () => {
+    const user = userEvent.setup();
+    const lead = structuredClone(leadsPageFixture.items[0]);
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, status: "disqualified", version: lead.version + 1, nextActionAt: null }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);
-    await chooseOption(interaction, /Stage for Dr Maya Nair/, "Disqualified");
-    let dialog = await screen.findByRole("dialog", { name: "Move to Disqualified" });
-    await interaction.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Stage for Dr Maya Nair/ })).toHaveTextContent("Initiated");
-    await chooseOption(interaction, /Stage for Dr Maya Nair/, "Disqualified");
-    dialog = await screen.findByRole("dialog", { name: "Move to Disqualified" });
-    await interaction.type(within(dialog).getByLabelText(/Reason/), "Client asked to wait until next month");
-    await interaction.click(within(dialog).getByRole("button", { name: "Save stage" }));
-    expect(await screen.findByText("Dr Maya Nair moved to Disqualified.")).toBeInTheDocument();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).reason).toBe("Client asked to wait until next month");
-    expect(screen.getByRole("button", { name: /Stage for Dr Maya Nair/ })).toHaveTextContent("Disqualified");
+    await user.click(screen.getByRole("button", { name: `Log contact · ${lead.partyName}` }));
+    const dialog = await screen.findByRole("dialog", { name: "Log contact" });
+    await user.click(within(dialog).getByRole("radio", { name: "Not interested" }));
+    expect(within(dialog).queryByText("Next follow-up")).not.toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: /Note/ }), "Chose another firm");
+    await user.click(within(dialog).getByRole("button", { name: "Log contact" }));
+    expect(await within(dialog).findByText("Add the reason the client is not interested.")).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: /Reason/ }), "Budget");
+    await user.click(within(dialog).getByRole("button", { name: "Log contact" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse((fetchMock.mock.calls[0] as [string, { body: string }])[1].body)).toMatchObject({ outcome: "not_interested", reason: "Budget" });
   }, 20_000);
+
+  it("keeps converted enquiries visible without contact logging", () => {
+    const fixture = structuredClone(leadsPageFixture);
+    fixture.items[4].isConverted = true;
+    render(<LeadsPage initialData={fixture} />);
+    expect(screen.queryByRole("button", { name: /Log contact · Amira Al Mansoori/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Open Amira Al Mansoori/ })).toBeInTheDocument();
+  });
 
   it("shows a permission state instead of an empty data grid", () => {
     render(<LeadsPage initialData={{ ...structuredClone(leadsPageFixture), canView: false, items: [] }} />);
