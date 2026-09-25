@@ -28,7 +28,8 @@ The parent directory's `CLAUDE.md` describes the legacy FastAPI "IntDesignERP" a
 7. **Labels:** every user-facing string goes through `t()` with its key in `apps/web/lib/i18n/en.json` (the English text is the key). Other languages are translated in one pass at the end; `npm run i18n:missing --workspace @wodana/web` lists what is left.
 8. **Direction:** every component must work both left-to-right and right-to-left. Use CSS logical properties (`inline-start`, `padding-inline`, `inset-inline-*`), never `left`/`right`. Left/right arrow and chevron icons mirror automatically; mark any other directional icon with `data-directional="true"`.
 9. **Notifications are part of every module.** Each module defines its events (who is told what, on which channel) in the same slice. Every email renders through `renderBrandedEmail` (`services/business-core/src/email/branded-email.ts`) with the tenant brand from `TransactionalEmailService.brand()`. The tenant branding record (logo, name, accent) is the only source; Wodana appears only as "Powered by".
-10. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
+10. **International by default.** Currency, tax model and labels, locale, time zone, working week, phone format, address structure and units come from the workspace's region pack (country profile), never from constants. Don't hard-code AED, INR, Asia/Dubai, "Emirate", +971 or en-AE in product code; read the region.
+11. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
 
 ## Verify before claiming done
 - Backend: `npm test --workspace @wodana/business-core` and typecheck.
