@@ -720,7 +720,7 @@ export class CommercialService {
         );
         await this.caseRecord(client, w, caseId, true);
         const duplicate = await client.query(
-          `SELECT cc.case_id FROM commercial_cases cc CROSS JOIN LATERAL jsonb_array_elements(COALESCE(cc.content->'payments','[]'::jsonb)) AS p WHERE cc.workspace_id=$1 AND p->'invoice'->>'id'=$2 AND p->'invoice'->>'provider'=$3 AND (p->'invoice'->>'accountId'=$4 OR p->'invoice'->>'connectionId'=$5) AND NOT(cc.case_id=$6 AND p->>'id'=$7) LIMIT 1`,
+          `SELECT payment.case_id FROM commercial_payments payment WHERE payment.workspace_id=$1 AND payment.detail->'invoice'->>'id'=$2 AND payment.detail->'invoice'->>'provider'=$3 AND (payment.detail->'invoice'->>'accountId'=$4 OR payment.detail->'invoice'->>'connectionId'=$5) AND NOT(payment.case_id=$6 AND payment.id=$7) LIMIT 1`,
           [
             w,
             invoiceId,

@@ -93,6 +93,59 @@ integration("commercial repository with PostgreSQL", () => {
     });
   });
 
+  const money = (data: CommercialData) => {
+    data.payments = [
+      { id: "pay-1", title: "Design advance", amount: 15000, dueDate: "2026-10-01", requiredForRelease: true, status: "verified", proof: "receipt.pdf", reference: "TT-1", sourceQuoteId: "a", legalEntityId: "le-1", currency: "AED", verifiedBy: "Finance", verifiedAt: "2026-09-26T09:00:00.000Z" },
+      { id: "pay-2", title: "Balance", amount: 75000.5, dueDate: "", requiredForRelease: false, status: "pending", proof: "", reference: "" },
+    ];
+    data.receipts = [{ id: "rc-1", paymentId: "pay-1", legalEntityId: "le-1", currency: "AED", amount: 15000, source: "manual", status: "finance_verified", reference: "TT-1", evidence: "bank", reportedAt: "2026-09-26T08:00:00.000Z", reportedBy: "Sales", verifiedAt: "2026-09-26T09:00:00.000Z", verifiedBy: "Finance" }];
+    data.allocations = [{ id: "al-1", receiptId: "rc-1", paymentId: "pay-1", legalEntityId: "le-1", currency: "AED", amount: 15000, createdAt: "2026-09-26T09:00:00.000Z", createdBy: "Finance" }];
+    data.dealFile = { id: "df-1", reference: "DF-0001", revision: 1, ownerReviewId: "or-1", quoteId: "a", quoteNumber: 1, quoteHash: "hash-a", agreementReference: "AG-1", paymentIds: ["pay-1"], value: 15000, cost: 9000, margin: 6000, commission: 150, status: "active", approvedAt: "2026-09-26T10:00:00.000Z", approvedBy: "Owner" };
+    return data;
+  };
+
+  it("round-trips payments, receipts, allocations and the Deal File with numeric money", async () => {
+    await withCase(async (client, workspaceId, caseId) => {
+      const saved = money(commercial([quote("a", 1)]));
+      await commercialRepository.save(client, workspaceId, caseId, saved);
+      await client.query("SET CONSTRAINTS ALL IMMEDIATE");
+      const loaded = await commercialRepository.load(client, workspaceId, caseId);
+      expect(loaded?.content).toEqual(saved);
+      const stored = await client.query("SELECT content ?| ARRAY['payments','receipts','allocations','dealFile'] AS embedded FROM commercial_cases WHERE case_id=$1", [caseId]);
+      expect(stored.rows[0].embedded).toBe(false);
+      const verified = await client.query("SELECT sum(amount)::text AS total FROM commercial_receipts WHERE case_id=$1 AND status='finance_verified'", [caseId]);
+      expect(verified.rows[0].total).toBe("15000");
+    });
+  });
+
+  it("rejects a receipt for a payment that does not exist", async () => {
+    await withCase(async (client, workspaceId, caseId) => {
+      const data = money(commercial([quote("a", 1)]));
+      data.receipts![0].paymentId = "ghost";
+      await commercialRepository.save(client, workspaceId, caseId, data);
+      await expect(client.query("SET CONSTRAINTS ALL IMMEDIATE")).rejects.toThrow(/foreign key/);
+    });
+  });
+
+  it("rejects a zero receipt and a Deal File reference reused by another case", async () => {
+    await withCase(async (client, workspaceId, caseId) => {
+      const zero = money(commercial([quote("a", 1)]));
+      zero.receipts![0].amount = 0;
+      await client.query("SAVEPOINT zero");
+      await expect(commercialRepository.save(client, workspaceId, caseId, zero)).rejects.toThrow(/check constraint/);
+      await client.query("ROLLBACK TO SAVEPOINT zero");
+
+      await commercialRepository.save(client, workspaceId, caseId, money(commercial([quote("a", 1)])));
+      const otherCase = randomUUID();
+      await client.query("ALTER TABLE pre_project_cases DISABLE TRIGGER ALL");
+      await client.query("INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)", [otherCase, workspaceId, randomUUID(), randomUUID()]);
+      await client.query("ALTER TABLE pre_project_cases ENABLE TRIGGER ALL");
+      const duplicate = money(commercial([quote("a", 1)]));
+      duplicate.dealFile = { ...duplicate.dealFile!, id: "df-2" };
+      await expect(commercialRepository.save(client, workspaceId, otherCase, duplicate)).rejects.toThrow(/unique|duplicate/i);
+    });
+  });
+
   it("hides another workspace's quotes", async () => {
     await withCase(async (client, workspaceId, caseId) => {
       await commercialRepository.save(client, workspaceId, caseId, commercial([quote("a", 1)]));
