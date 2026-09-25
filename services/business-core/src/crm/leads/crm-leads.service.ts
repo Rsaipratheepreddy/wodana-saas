@@ -20,12 +20,14 @@ import {
   CreateSlaPolicyDto,
   ListLeadsQueryDto,
   TransitionLeadDto,
+  LogContactDto,
   UpdateAssignmentPolicyDto,
   UpdateQueueDto,
   UpdateSlaPolicyDto,
   UpsertQualificationDto,
 } from "./dto/leads.dto";
 import { notifyUserInApp } from "../../notifications/default-templates";
+import { checkContact, statusForOutcome } from "./contact-outcomes";
 import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
@@ -277,7 +279,7 @@ export class CrmLeadsService {
   }
 
   list(actor: RequestActor, workspaceId: string, query: ListLeadsQueryDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client, user) => {
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && !cursor) throw new BadRequestException("Invalid page cursor");
       const values: unknown[] = [workspaceId];
@@ -289,6 +291,13 @@ export class CrmLeadsService {
       if (query.ownerMembershipId) {
         values.push(query.ownerMembershipId);
         clauses.push(`lead.owner_membership_id = $${values.length}`);
+      }
+      if (query.funnel) {
+        clauses.push(query.funnel === "new" ? `lead.status = 'new'` : query.funnel === "contacted" ? `lead.status IN ('attempting_contact', 'connected', 'nurturing')` : `lead.status = 'paused'`);
+      }
+      if (query.mine === "true") {
+        values.push(user.userId);
+        clauses.push(`lead.owner_membership_id IN (SELECT id FROM workspace_memberships WHERE workspace_id = lead.workspace_id AND user_id = $${values.length})`);
       }
       if (query.queueId) {
         values.push(query.queueId);
@@ -855,6 +864,39 @@ export class CrmLeadsService {
         ruleId: null,
         explanation: { mode: "manual", reason: input.reason },
       }, actorUser.userId, "manual", input.reason);
+    });
+  }
+
+  /** PLM-042: log a contact attempt with its outcome; moves the enquiry and stops the response takeover. */
+  logContact(actor: RequestActor, workspaceId: string, leadId: string, input: LogContactDto) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
+      const before = await this.requireLead(client, workspaceId, leadId, true);
+      if (before.version !== input.version) throw new ConflictException("Lead changed; reload and try again");
+      if (["qualified", "disqualified", "duplicate"].includes(before.status)) throw new UnprocessableEntityException("This enquiry is closed. Reopen it to log contact.");
+      const { note, next } = checkContact(input);
+      const status = statusForOutcome(input.outcome);
+      const member = await client.query<{ id: string }>(`SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2 AND status = 'active'`, [workspaceId, actorUser.userId]);
+      const activity = await client.query<{ id: string }>(
+        `INSERT INTO crm_activities (workspace_id, party_id, lead_id, type, status, title, description, owner_membership_id, completed_at, completion_outcome, interaction_direction, created_by)
+         VALUES ($1, $2, $3, $4::crm_activity_type, 'completed', $5, $6, $7, now(), $8, 'outbound', $9) RETURNING id`,
+        [workspaceId, before.party_id, leadId, input.channel, `${input.channel} · ${input.outcome.replace(/_/g, " ")}`, note,
+          before.owner_membership_id ?? member.rows[0]?.id ?? null, input.outcome, actorUser.userId]);
+      const updated = await client.query(
+        `UPDATE crm_leads SET status = $3::crm_lead_status,
+           disqualification_reason = CASE WHEN $3 = 'disqualified' THEN $4 ELSE NULL END,
+           paused_reason = CASE WHEN $3 = 'paused' THEN $5 ELSE NULL END,
+           next_action_at = CASE WHEN $3 = 'disqualified' THEN NULL ELSE COALESCE($6::timestamptz, next_action_at) END,
+           closed_at = CASE WHEN $3 = 'disqualified' THEN now() ELSE NULL END,
+           ownership_due_at = NULL, version = version + 1
+         WHERE workspace_id = $1 AND id = $2 AND version = $7 RETURNING *`,
+        [workspaceId, leadId, status, input.reason?.trim() || null, note, next, input.version]);
+      if (!updated.rowCount) throw new ConflictException("Lead changed; reload and try again");
+      await this.slas.recordFirstResponse(client, workspaceId, leadId, { sourceType: "activity", sourceId: activity.rows[0].id, actorUserId: actorUser.userId, respondedAt: new Date() });
+      await this.events.record(client, {
+        workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.lead.contact_logged.v1", entityType: "crm_lead", entityId: leadId,
+        before: { status: before.status }, after: { status, channel: input.channel, outcome: input.outcome, nextActionAt: next?.toISOString() ?? null, activityId: activity.rows[0].id },
+      });
+      return { ...this.mapLead(updated.rows[0] as LeadContext), activityId: activity.rows[0].id };
     });
   }
 

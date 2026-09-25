@@ -16,10 +16,14 @@ import {
 } from "class-validator";
 
 export class ListLeadsQueryDto {
-  @IsOptional() @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused"])
+  @IsOptional() @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused", "duplicate"])
   status?: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string;
   @IsOptional() @IsUUID() queueId?: string;
+  /** A salesperson's lists (PLM-042): new, contacted (being worked) or come back to (booked follow-up). */
+  @IsOptional() @IsIn(["new", "contacted", "come_back"]) funnel?: "new" | "contacted" | "come_back";
+  /** Only enquiries owned by the signed-in member. */
+  @IsOptional() @IsIn(["true", "false"]) mine?: string;
   @IsOptional() @IsString() @MaxLength(240) search?: string;
   @IsOptional() @IsString() cursor?: string;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit = 25;
@@ -125,4 +129,14 @@ export class UpsertQualificationDto {
 
 export class ProcessSlaDto {
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit?: number;
+}
+
+export class LogContactDto {
+  @IsInt() @Min(1) version!: number;
+  @IsIn(["call", "whatsapp", "email", "meeting", "sms"]) channel!: "call" | "whatsapp" | "email" | "meeting" | "sms";
+  @IsIn(["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested"])
+  outcome!: "no_answer" | "message_sent_no_reply" | "willing_to_talk" | "come_back_later" | "not_interested";
+  @IsString() @MaxLength(4000) note!: string;
+  @IsOptional() @IsString() @MaxLength(160) reason?: string;
+  @IsOptional() @IsString() nextActionAt?: string;
 }

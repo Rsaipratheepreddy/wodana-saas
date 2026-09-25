@@ -14,6 +14,7 @@ import {
   ListLeadsQueryDto,
   ProcessSlaDto,
   TransitionLeadDto,
+  LogContactDto,
   UpdateAssignmentPolicyDto,
   UpdateQueueDto,
   UpdateSlaPolicyDto,
@@ -109,6 +110,11 @@ export class CrmLeadsController {
   @Post("leads/:leadId/assign")
   assign(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: AssignLeadDto) {
     return this.leads.manualAssign(actor, workspaceId, leadId, input);
+  }
+
+  @Post("leads/:leadId/contacts")
+  logContact(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: LogContactDto) {
+    return this.leads.logContact(actor, workspaceId, leadId, input);
   }
 
   @Post("leads/:leadId/status")
