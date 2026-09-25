@@ -35,6 +35,8 @@ import {
 import { CrmLeadsService } from "../leads/crm-leads.service";
 import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
 import { assertCustomerType, assertSourceAllowed, resolveReferral } from "../leads/intake-rules";
+import { classifyRepeat } from "../leads/repeat-rules";
+import { notifyUserInApp } from "../../notifications/default-templates";
 import { enquiryTitle, refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
 import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones } from "./intake-phone";
 
@@ -501,6 +503,7 @@ export class CrmIntakeService {
       consents: input.consents ?? [],
       details: input.details ?? {},
       assignment: input.assignment,
+      referral: input.referral,
     };
     // A provider may retry concurrently or use a new request key for the same event.
     // Avoid a uniqueness exception: PostgreSQL would abort the transaction before
@@ -740,17 +743,22 @@ export class CrmIntakeService {
     const details = { ...(original.details ?? {}), contact: original.party ?? {}, ...(original.formAnswers ? { formAnswers: original.formAnswers } : {}) };
     const choices = await loadLeadOptions(client, workspaceId);
     const title = enquiryTitle(String(original.party?.displayName ?? ""), details, choices);
+    // Same contact with an open enquiry → duplicate; known contact otherwise → returning customer.
+    const repeat = await classifyRepeat(client, workspaceId, input.partyId);
+    const source = repeat?.kind === "returning" ? repeat.source : input.source;
+    const channel = repeat?.kind === "returning" ? repeat.channel : input.channel;
     const enquiry = await client.query(
       `INSERT INTO crm_enquiries
         (id, workspace_id, intake_event_id, party_id, title, summary,
          service_type, source, channel, received_at, details,
-         referral_kind, referral_name, referral_contact, referral_membership_id, referral_option)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING reference`,
+         referral_kind, referral_name, referral_contact, referral_membership_id, referral_option, original_source, original_channel)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING reference`,
       [
         enquiryId, workspaceId, input.intakeEventId, input.partyId, title,
-        input.summary, input.serviceType, input.source, input.channel, input.receivedAt, details,
+        input.summary, input.serviceType, source, channel, input.receivedAt, details,
         original.referral?.kind ?? null, original.referral?.name ?? null, original.referral?.contact ?? null,
         original.referral?.membershipId ?? null, original.referral?.option ?? null,
+        repeat?.kind === "returning" ? input.source : null, repeat?.kind === "returning" ? input.channel : null,
       ],
     );
     await client.query(
@@ -759,8 +767,29 @@ export class CrmIntakeService {
       [leadId, workspaceId, enquiryId, input.partyId],
     );
     await ensureJobForSource(client, workspaceId, { type: "lead", id: leadId }, actorUserId);
-    if (original.assignment) await this.leads.assignOnIntake(client, workspaceId, leadId, actorUserId, original.assignment);
-    await this.leads.startSlaOnIntake(client, workspaceId, leadId, actorUserId);
+    const reference = String(enquiry.rows[0]?.reference ?? "");
+    const clientName = String(original.party?.displayName ?? "");
+    const notifyOwner = async (membershipId: string | null, code: string, variables: Record<string, string>) => {
+      if (!membershipId) return;
+      const member = await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, membershipId]);
+      if (member.rowCount) await notifyUserInApp(client, { workspaceId, recipientUserId: member.rows[0].userId, code, eventType: code, variables, deepLink: `/workspace/crm/leads?lead=${leadId}`, idempotencyKey: `${code}:${leadId}` });
+    };
+    if (repeat?.kind === "duplicate") {
+      // Kept for the record and marketing reports, owned by the original's owner, never routed or timed.
+      await client.query(`UPDATE crm_leads SET status = 'duplicate', duplicate_of_lead_id = $3, owner_membership_id = $4, closed_at = now()
+        WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId, repeat.originalLeadId, repeat.ownerMembershipId]);
+      await client.query(`INSERT INTO crm_assignment_history (workspace_id, lead_id, owner_membership_id, assignment_method, explanation, reason, assigned_by)
+        VALUES ($1, $2, $3, 'manual', $4, $5, $6)`, [workspaceId, leadId, repeat.ownerMembershipId, { mode: "duplicate", originalLeadId: repeat.originalLeadId }, `Duplicate of ${repeat.originalReference ?? "an open enquiry"}`, actorUserId]);
+      await this.events.record(client, { workspaceId, actorUserId, source: actorUserId ? "user" : "system", action: "crm.lead.duplicate_detected.v1", entityType: "crm_lead", entityId: leadId, after: { originalLeadId: repeat.originalLeadId, source: input.source, channel: input.channel } });
+      await notifyOwner(repeat.ownerMembershipId, "crm.enquiry_duplicate", { clientName, reference, channel: input.channel, originalReference: repeat.originalReference ?? "" });
+    } else {
+      if (original.assignment) await this.leads.assignOnIntake(client, workspaceId, leadId, actorUserId, original.assignment);
+      await this.leads.startSlaOnIntake(client, workspaceId, leadId, actorUserId);
+      if (repeat?.kind === "returning") {
+        await this.events.record(client, { workspaceId, actorUserId, source: actorUserId ? "user" : "system", action: "crm.lead.returning_customer.v1", entityType: "crm_lead", entityId: leadId, after: { originalSource: input.source, originalChannel: input.channel } });
+        await notifyOwner(repeat.previousOwnerMembershipId, "crm.returning_customer", { clientName, reference });
+      }
+    }
     for (const touch of input.attribution) {
       await client.query(
         `INSERT INTO crm_attribution_touches

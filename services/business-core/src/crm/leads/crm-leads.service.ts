@@ -1467,6 +1467,7 @@ export class CrmLeadsService {
       id: row.id,
       partyId: row.party_id,
       status: row.status,
+      duplicateOfLeadId: source.duplicate_of_lead_id ?? null,
       ownerMembershipId: row.owner_membership_id,
       queueId: row.queue_id,
       priority: source.priority,

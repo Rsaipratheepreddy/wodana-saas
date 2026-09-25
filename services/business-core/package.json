@@ -35,7 +35,8 @@
     "seed:palm:review-demo": "node scripts/seed-palm-review-demo.mjs",
     "seed:palm:review-hrms": "node scripts/seed-palm-review-hrms.mjs",
     "seed:palm:review-catalog": "../../node_modules/.bin/tsx scripts/seed-palm-review-catalog.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:smoke:sales-rules": "node scripts/smoke-sales-rules.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.883.0",

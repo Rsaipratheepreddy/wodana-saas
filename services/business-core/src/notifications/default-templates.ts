@@ -23,6 +23,20 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{memberName}} accepted your invitation.",
     variables: ["memberName", "workspaceName"],
   },
+  {
+    code: "crm.enquiry_duplicate",
+    channel: "in_app",
+    subject: "{{clientName}} enquired again",
+    body: "{{reference}} came in through {{channel}} and is linked to {{originalReference}}, which you own.",
+    variables: ["clientName", "reference", "channel", "originalReference"],
+  },
+  {
+    code: "crm.returning_customer",
+    channel: "in_app",
+    subject: "{{clientName}} is back",
+    body: "{{reference}} is from a returning customer you worked with before.",
+    variables: ["clientName", "reference"],
+  },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {

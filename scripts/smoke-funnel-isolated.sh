@@ -20,7 +20,7 @@ if ! [[ "$test_port" =~ ^[0-9]+$ ]] || (( test_port < 1024 || test_port > 65535 
   exit 1
 fi
 case "$smoke_command" in
-  test:smoke|test:smoke:funnel|test:smoke:palm-clone|test:smoke:palm-flow|test:smoke:auth|test:smoke:operator|test:smoke:crm|test:smoke:seats|test:smoke:app-effects|test:smoke:auth-web|test:smoke:operator-web|test:smoke:roles-web) ;;
+  test:smoke|test:smoke:funnel|test:smoke:sales-rules|test:smoke:palm-clone|test:smoke:palm-flow|test:smoke:auth|test:smoke:operator|test:smoke:crm|test:smoke:seats|test:smoke:app-effects|test:smoke:auth-web|test:smoke:operator-web|test:smoke:roles-web) ;;
   *)
     echo "SMOKE_COMMAND must name a supported isolated business-core or web smoke (including test:smoke:roles-web)." >&2
     exit 1
