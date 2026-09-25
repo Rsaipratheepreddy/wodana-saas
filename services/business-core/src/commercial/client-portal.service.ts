@@ -1,3 +1,4 @@
+import { effectivePortalBrand } from "./effective-brand";
 import { projectRepository } from "../projects/project-repository";
 import {validateDeduction} from "./variation-controls";
 import {
@@ -86,6 +87,7 @@ export class ClientPortalService {
       throw new NotFoundException("This client portal is not available.");
     return {
       ...r.rows[0],
+      brand: await effectivePortalBrand(this.db, r.rows[0].workspaceId, r.rows[0].brand),
       testMode: this.commercial.testMode,
     } as PortalSettings;
   }

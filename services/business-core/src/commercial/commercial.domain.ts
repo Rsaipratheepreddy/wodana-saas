@@ -35,8 +35,8 @@ export const emptyCommercial = (): CommercialData => ({
 export const defaultBrand = (name: string): PortalBrand => ({
   name,
   logo: "",
-  primaryColor: "#76538f",
-  accentColor: "#e99a72",
+  primaryColor: "#292d32",
+  accentColor: "#292d32",
   welcomeTitle: "Your space, coming together.",
   welcomeText:
     "Review your designs, quotations and next steps. Everything in one place.",

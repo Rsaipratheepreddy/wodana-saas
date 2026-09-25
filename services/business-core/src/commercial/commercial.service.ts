@@ -1,3 +1,4 @@
+import { effectivePortalBrand, portalOwnedBrand } from "./effective-brand";
 import { commercialRepository } from "./commercial-repository";
 import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
 import {
@@ -376,14 +377,16 @@ export class CommercialService {
           "SELECT name,slug FROM workspaces WHERE id=$1",
           [workspaceId],
         );
+        const current = saved.rows[0] ?? {
+          workspaceId,
+          slug: workspace.rows[0].slug,
+          enabled: false,
+          version: 0,
+          brand: defaultBrand(workspace.rows[0].name),
+        };
         return {
-          ...(saved.rows[0] ?? {
-            workspaceId,
-            slug: workspace.rows[0].slug,
-            enabled: false,
-            version: 0,
-            brand: defaultBrand(workspace.rows[0].name),
-          }),
+          ...current,
+          brand: await effectivePortalBrand(client, workspaceId, current.brand),
           testMode: this.testMode,
           canManage: await this.access.hasPermission(
             client,
@@ -424,7 +427,7 @@ export class CommercialService {
             workspace.rows[0].slug,
             enabled,
             version + 1,
-            JSON.stringify(brand),
+            JSON.stringify(portalOwnedBrand(brand)),
           ],
         );
         if (!enabled)
@@ -506,7 +509,7 @@ export class CommercialService {
           data: commercialDataForCostAccess(data, canViewCosts),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
-          portalBrand: settings.rows[0]?.brand,
+          portalBrand: await effectivePortalBrand(client, workspaceId, settings.rows[0]?.brand),
           portalEnabled: settings.rows[0]?.enabled ?? false,
           testMode: this.testMode,
           releaseReadiness,
@@ -2595,7 +2598,7 @@ export class CommercialService {
             q.status = "issued";
             q.issuedAt = now;
             q.approverId = grant.id;
-            q.brand = settings.brand;
+            q.brand = await effectivePortalBrand(client, workspaceId, settings.brand);
             // Brand is frozen only on issue. It changes the public snapshot,
             // not the QS-reviewed quantities, costs or selling prices.
             if (data.palmFlow && q.kind === "quotation" && q.qsEstimate)

@@ -1,7 +1,11 @@
 "use client";
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
-import { ArrowUpRight, Upload } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
+import { Button, InlineNotice, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
+import p from "./portal-settings.module.css";
 import type { PortalBrand, PortalSettings } from "@/lib/commercial/types";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
 import s from "./commercial.module.css";
@@ -40,248 +44,55 @@ export function BrandLogo({ brand }: { brand: PortalBrand }) {
   );
 }
 export function PortalSettingsPage({ initial }: { initial: PortalSettings }) {
-  const [data, setData] = useState(initial),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
-  const patch = (v: Partial<PortalBrand>) =>
-    setData({ ...data, brand: { ...data.brand, ...v } });
+  const t = useT();
+  const [data, setData] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const editable = Boolean(data.canManage) && !busy;
+  const dirty = JSON.stringify({ enabled: data.enabled, brand: data.brand }) !== JSON.stringify({ enabled: saved.enabled, brand: saved.brand });
+  const patch = (value: Partial<PortalBrand>) => { setNotice(""); setData((current) => ({ ...current, brand: { ...current.brand, ...value } })); };
   async function save() {
-    setBusy(true);
-    setError("");
+    setBusy(true); setError(""); setNotice("");
     try {
-      const next = await jsonRequest<PortalSettings>(
-        commercialPath(data.workspaceId, "portal-settings"),
-        "PUT",
-        { version: data.version, enabled: data.enabled, brand: data.brand },
-      );
-      setData(next);
-      setNotice("Portal settings saved.");
-    } catch (e) {
-      setError((e as Error).message);
+      // Brand identity (name, logo, colours) comes from the tenant brand; the portal stores only its own content.
+      const next = await jsonRequest<PortalSettings>(commercialPath(data.workspaceId, "portal-settings"), "PUT", { version: data.version, enabled: data.enabled, brand: data.brand });
+      setData(next); setSaved(next); setNotice(t("Portal settings saved."));
+    } catch (failure) {
+      setError((failure as Error).message);
     } finally {
       setBusy(false);
     }
   }
   return (
-    <section className={s.page}>
-      <header className={s.header}>
-        <div>
-          <h1>Client portal</h1>
-          <p>Your brand, one clear place for your clients.</p>
+    <section className={p.page} aria-labelledby="portal-settings-title">
+      <h1 id="portal-settings-title" className={p.visuallyHidden}>{t("Client portal")}</h1>
+      <div className={p.layout}>
+        <div className={p.form}>
+          <section className={p.section} aria-label={t("Access")}>
+            <Switch isDisabled={!editable} isSelected={data.enabled} onChange={(enabled) => { setNotice(""); setData((current) => ({ ...current, enabled })); }}>
+              {t("Clients can sign in to the portal")}
+            </Switch>
+            {data.enabled ? <a className={p.link} href={`/portal/${data.slug}`} target="_blank" rel="noreferrer">{t("Open portal")}<ArrowUpRight size={14} aria-hidden="true" /></a> : null}
+          </section>
+          <section className={p.section} aria-label={t("Welcome")}>
+            <TextInput isDisabled={!editable} label={t("Welcome title")} value={data.brand.welcomeTitle} onChange={(welcomeTitle) => patch({ welcomeTitle })} maxLength={120} />
+            <TextAreaField isDisabled={!editable} label={t("Welcome message")} value={data.brand.welcomeText} onChange={(welcomeText) => patch({ welcomeText })} maxLength={500} />
+            <TextInput isDisabled={!editable} inputType="tel" label={t("Support phone")} value={data.brand.supportPhone} onChange={(supportPhone) => patch({ supportPhone })} maxLength={40} />
+            <SelectField isDisabled={!editable} label={t("Layout")} selectedKey={data.brand.layout} items={[{ id: "minimal", label: t("Minimal") }, { id: "soft", label: t("Soft") }]} onSelectionChange={(key) => key && patch({ layout: key as PortalBrand["layout"] })} />
+          </section>
+          <p className={p.hint}>{t("Logo, name and colours come from your brand.")} <Link href="/workspace/company">{t("Edit brand")}</Link></p>
+          {error ? <InlineNotice tone="error" message={error} /> : null}
+          {notice ? <InlineNotice tone="success" message={notice} /> : null}
+          {data.canManage ? <div className={p.actions}><Button variant="primary" isDisabled={!dirty} isLoading={busy} onPress={() => void save()}>{t("Save")}</Button></div> : null}
         </div>
-        <div className={s.actions}>
-          {data.enabled && (
-            <a
-              className={s.button}
-              href={`/portal/${data.slug}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open portal
-              <ArrowUpRight size={15} />
-            </a>
-          )}
-          {data.canManage && (
-            <button
-              className={s.primary}
-              disabled={busy}
-              onClick={() => void save()}
-            >
-              {busy ? "Saving…" : "Save settings"}
-            </button>
-          )}
-        </div>
-      </header>
-      {error && (
-        <p role="alert" className={s.error}>
-          {error}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className={s.muted}>
-          {notice}
-        </p>
-      )}
-      <div className={s.settingsGrid}>
-        <fieldset
-          disabled={!data.canManage || busy}
-          className={s.form}
-          style={{ border: 0, padding: 0, margin: 0 }}
-        >
-          <div className={s.section}>
-            <h2>Portal access</h2>
-            <label className={s.check}>
-              <input
-                type="checkbox"
-                checked={data.enabled}
-                onChange={(e) =>
-                  setData({ ...data, enabled: e.target.checked })
-                }
-              />
-              Enable client portal
-            </label>
-            <p className={s.muted}>
-              /portal/{data.slug} · Contacts are added from each Pre-execution’s
-              Client access.
-            </p>
-            {data.testMode && (
-              <p className={s.notice}>
-                WhatsApp OTP · Demo mode
-                <br />
-                Test contacts use <strong>123456</strong>. No WhatsApp message
-                is sent.
-              </p>
-            )}
-          </div>
-          <h2 style={{ fontSize: ".95rem", margin: 0 }}>Brand identity</h2>
-          <label>
-            Display name
-            <input
-              value={data.brand.name}
-              maxLength={100}
-              onChange={(e) => patch({ name: e.target.value })}
-            />
-          </label>
-          <label>
-            <span>
-              <Upload size={14} style={{ display: "inline" }} /> Logo · PNG,
-              JPEG or WebP, up to 300 KB
-            </span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                if (
-                  file.size > 300000 ||
-                  !["image/png", "image/jpeg", "image/webp"].includes(file.type)
-                ) {
-                  setError("Choose a PNG, JPEG or WebP logo up to 300 KB.");
-                  return;
-                }
-                const reader = new FileReader();
-                reader.onload = () => patch({ logo: String(reader.result) });
-                reader.readAsDataURL(file);
-              }}
-            />
-          </label>
-          {data.brand.logo && (
-            <button className={s.button} onClick={() => patch({ logo: "" })}>
-              Use name & initials instead
-            </button>
-          )}
-          <div className={s.grid}>
-            <label>
-              Primary colour
-              <input
-                type="color"
-                value={data.brand.primaryColor}
-                onChange={(e) => patch({ primaryColor: e.target.value })}
-              />
-            </label>
-            <label>
-              Accent colour
-              <input
-                type="color"
-                value={data.brand.accentColor}
-                onChange={(e) => patch({ accentColor: e.target.value })}
-              />
-            </label>
-          </div>
-          <label>
-            Appearance
-            <select
-              value={data.brand.layout}
-              onChange={(e) =>
-                patch({ layout: e.target.value as PortalBrand["layout"] })
-              }
-            >
-              <option value="soft">Soft tint</option>
-              <option value="minimal">Minimal white</option>
-            </select>
-          </label>
-          <label>
-            Welcome title
-            <input
-              value={data.brand.welcomeTitle}
-              maxLength={120}
-              onChange={(e) => patch({ welcomeTitle: e.target.value })}
-            />
-          </label>
-          <label>
-            Welcome message
-            <textarea
-              value={data.brand.welcomeText}
-              maxLength={500}
-              onChange={(e) => patch({ welcomeText: e.target.value })}
-            />
-          </label>
-          <label>
-            Support WhatsApp number · optional
-            <input
-              type="tel"
-              placeholder="+971501234567"
-              value={data.brand.supportPhone}
-              onChange={(e) => patch({ supportPhone: e.target.value })}
-            />
-          </label>
-        </fieldset>
-        <aside
-          className={s.preview}
-          style={{
-            background:
-              data.brand.layout === "soft"
-                ? `color-mix(in srgb,${data.brand.primaryColor} 7%,white)`
-                : "#fff",
-            color: "#202522",
-          }}
-        >
-          <p className={s.previewLabel}>Live preview · mobile login</p>
+        <aside className={p.preview} aria-label={t("Preview")} data-layout={data.brand.layout}>
           <BrandLogo brand={data.brand} />
-          <div style={{ marginTop: "3rem" }}>
-            <h2
-              style={{
-                fontSize: "1.7rem",
-                lineHeight: 1.25,
-                letterSpacing: "-.04em",
-              }}
-            >
-              {data.brand.welcomeTitle}
-            </h2>
-            <p
-              style={{ fontSize: ".85rem", lineHeight: 1.7, color: "#58615c" }}
-            >
-              {data.brand.welcomeText}
-            </p>
-            <div
-              style={{
-                marginTop: "2rem",
-                padding: "1rem",
-                background: "white",
-                borderRadius: ".6rem",
-              }}
-            >
-              <small style={{ color: "#58615c" }}>WhatsApp mobile number</small>
-              <p>+971 50 123 4567</p>
-            </div>
-            <div
-              className={s.primary}
-              style={{ display: "flex", marginTop: ".8rem" }}
-            >
-              Continue with WhatsApp
-            </div>
-            <p
-              style={{
-                textAlign: "center",
-                fontSize: ".7rem",
-                color: "#58615c",
-              }}
-            >
-              A private space, shared with you.
-            </p>
-          </div>
+          <h2>{data.brand.welcomeTitle}</h2>
+          <p>{data.brand.welcomeText}</p>
+          {data.brand.supportPhone ? <p className={p.hint}>{data.brand.supportPhone}</p> : null}
+          <span className={p.previewAction} style={{ background: data.brand.primaryColor }}>{t("View project")}</span>
         </aside>
       </div>
     </section>

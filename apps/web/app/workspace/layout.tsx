@@ -1,6 +1,9 @@
 import { SessionMonitor } from "@/components/workspace/session-monitor";
 import { WorkspaceShell, workspaceModules } from "@/components/workspace";
+import { cookies } from "next/headers";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
+import { I18nProvider } from "@/lib/i18n/i18n-provider";
+import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
 import { scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
 
 export default async function WorkspaceLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -25,7 +28,9 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     };
   });
   const user = { email: profile.primaryEmail, name: profile.displayName };
+  const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
   return (
+    <I18nProvider language={language}>
     <WorkspaceShell
       modules={scopeSupplyNavigation(scopePeopleNavigation(
         visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
@@ -38,5 +43,6 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       {!(process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") ? <SessionMonitor /> : null}
       {children}
     </WorkspaceShell>
+    </I18nProvider>
   );
 }

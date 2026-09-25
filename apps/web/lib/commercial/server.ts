@@ -61,7 +61,7 @@ export async function commercialRead<T>(path: string): Promise<T> {
   if (!w) throw new Error("Workspace unavailable.");
   if (process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") {
     if (path.startsWith("cases/")) return e2eCommercial(path.slice("cases/".length)) as T;
-    if (path === "portal-settings") return {workspaceId:w,slug:"e2e-client",version:1,enabled:true,testMode:true,canManage:true,brand:{name:"Iglo Architects",logo:"",primaryColor:"#76538f",accentColor:"#e99a72",welcomeTitle:"Welcome",welcomeText:"Review your project",supportPhone:"",layout:"minimal"}} as T;
+    if (path === "portal-settings") return {workspaceId:w,slug:"e2e-client",version:1,enabled:true,testMode:true,canManage:true,brand:{name:"Iglo Architects",logo:"",primaryColor:"#0f5c4a",accentColor:"#e99a72",welcomeTitle:"Welcome",welcomeText:"Review your project",supportPhone:"",layout:"minimal"}} as T;
   }
   const r = await authenticatedBackendFetch(
     `/workspaces/${w}/commercial/${path}`,
