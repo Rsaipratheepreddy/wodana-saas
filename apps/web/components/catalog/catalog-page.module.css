@@ -50,3 +50,15 @@
   .issues li { grid-template-columns: minmax(0, 1fr); }
   .issues li small { grid-row: auto; }
 }
+.prices { display: grid; gap: var(--wd-space-3); }
+.priceBook { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-2) var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.priceBook > header { display: flex; align-items: baseline; gap: var(--wd-space-2); }
+.priceBook > header small { color: var(--wd-color-text-tertiary); }
+.priceLine { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.priceValue { font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+.priceLine small { color: var(--wd-color-text-tertiary); }
+.priceActions { display: flex; gap: var(--wd-space-1); margin-inline-start: auto; }
+.tiers { display: grid; gap: var(--wd-space-2); }
+.tiers .formRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; }
+.actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+.tiers > :global(.wd-button) { justify-self: start; }

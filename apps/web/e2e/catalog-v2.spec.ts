@@ -36,3 +36,23 @@ for (const [language, direction] of [["en", "ltr"], ["ar", "rtl"]] as const) {
     await page.screenshot({ path: testInfo.outputPath(`catalog-mobile-${direction}.png`), animations: "disabled" });
   });
 }
+
+test("sets a price, then QS reviews and it goes live", async ({ page }, testInfo) => {
+  await page.goto("/workspace/catalogs");
+  const grid = page.getByRole("region", { name: "Items" });
+  await grid.getByText("Birch plywood (Sveza) 12mm").click();
+  await page.getByRole("tab", { name: "Prices" }).click();
+  await page.getByRole("button", { name: "Set price" }).click();
+  await page.getByRole("textbox", { name: /^Price/ }).fill("185.50");
+  await page.getByRole("button", { name: "Save price" }).click();
+  await expect(page.getByText("Saved as a draft. It needs a review before it goes live.")).toBeVisible();
+  await page.getByRole("button", { name: /^Close/ }).last().click();
+  await grid.getByText("Salice soft-close hinge").click();
+  await page.getByRole("tab", { name: "Prices" }).click();
+  await expect(page.getByText("Live")).toBeVisible();
+  await page.getByRole("button", { name: "Change" }).click();
+  await page.getByRole("button", { name: /How it is priced/ }).click();
+  await page.getByRole("option", { name: "Quantity tiers" }).click();
+  await expect(page.getByRole("button", { name: "Add tier" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("catalog-prices.png"), animations: "disabled" });
+});

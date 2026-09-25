@@ -34,8 +34,11 @@ export function e2eCatalogResponse(method: string, path: string[], body: unknown
     const item = items.find((row) => row.id === itemId) ?? items[0];
     return { ...item, description: null, wastePercent: null, purchaseRoundTo: null, conversions: [], suppliers: [], canViewCosts: true,
       components: item.itemType === "assembly" ? [{ componentItemId: items[0].id, name: items[0].name, quantityFormula: "width * height / 2973000 * 2", unitCode: "sheet" }, { componentItemId: items[1].id, name: items[1].name, quantityFormula: "ceil(height / 450) * 2", unitCode: "pcs" }] : [],
-      prices: item.sellPrice ? [{ id: "p1", priceBookId: "b1", variantId: null, method: "fixed", status: "active", version: 2, price: item.sellPrice.price, currency: "AED" }] : [] };
+      prices: item.sellPrice ? [{ id: "p1", priceBookId: "7a1c0000-0000-4000-8000-0000000000b1", variantId: null, method: "fixed", status: "active", version: 2, price: item.sellPrice.price, currency: "AED" }] : [] };
   }
+  if (method === "GET" && section === "price-books") return [{ id: "7a1c0000-0000-4000-8000-0000000000b1", name: "Standard prices", currency: "AED", status: "active", version: 1 }];
+  if (method === "PUT" && first === "price-books") return { id: "p-new", status: "draft" };
+  if (method === "POST" && first === "prices") return { id: section, status: (body as { decision: string }).decision };
   if (method === "POST" && section === "import") {
     const rows = (body as { rows: ImportRow[] }).rows;
     const plan: ImportPlan = {

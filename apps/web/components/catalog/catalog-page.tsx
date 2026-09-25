@@ -15,7 +15,7 @@ import styles from "./catalog-page.module.css";
 type T = ReturnType<typeof useT>;
 const typeLabels = (t: T): Record<string, string> => ({ product: t("Product"), material: t("Material"), assembly: t("Assembly"), service: t("Service"), package: t("Package"), ready_made: t("Ready-made") });
 
-export function CatalogPage({ workspaceId, canManage, initialCatalogs, locale }: { workspaceId: string; canManage: boolean; initialCatalogs: CatalogSummary[]; locale?: string }) {
+export function CatalogPage({ workspaceId, canManage, canReview = false, currency, initialCatalogs, locale }: { workspaceId: string; canManage: boolean; canReview?: boolean; currency: string; initialCatalogs: CatalogSummary[]; locale?: string }) {
   const t = useT();
   const [catalogs, setCatalogs] = useState(initialCatalogs);
   const [catalogId, setCatalogId] = useState(initialCatalogs[0]?.id ?? "");
@@ -99,7 +99,7 @@ export function CatalogPage({ workspaceId, canManage, initialCatalogs, locale }:
               getRowId={(row) => row.id}
               isLoading={loading && !items.length}
               onSearchChange={setSearch}
-              renderInspector={(row) => <CatalogItemInspector catalogId={catalogId} itemId={row.id} locale={locale} workspaceId={workspaceId} />}
+              renderInspector={(row) => <CatalogItemInspector canManage={canManage} canReview={canReview} catalogId={catalogId} currency={currency} itemId={row.id} locale={locale} onChanged={() => void loadItems()} workspaceId={workspaceId} />}
               searchLabel={t("Search items")}
               searchValue={search}
               rowNumbers={false}
