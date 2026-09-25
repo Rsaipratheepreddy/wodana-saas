@@ -146,7 +146,7 @@ describe("WorkspaceSidebar", () => {
     expect(screen.getByRole('link',{name:'Settings'})).toHaveAttribute('href','/workspace/company');
     for (const section of ['Daily work','Business','Operations','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
     expect(screen.queryByRole("link", { name: "Manage workspaces" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Work groups" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Teams" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "User Settings" })).not.toBeInTheDocument();
   });
 

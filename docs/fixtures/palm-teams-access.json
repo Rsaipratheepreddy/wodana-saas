@@ -1,0 +1,43 @@
+{
+  "source": "PLM tracker, Roles & Access tab (25 Sept 2026) and PLM-038 / PLM-087",
+  "rule": "Access is granted per team. Each person has their own login and inherits exactly their team's role; changing a team's role updates everyone in it. Only CRM Owner / Admin changes teams or team access (workspace.roles.manage + module.teams.edit); every change is audited.",
+  "teams": [
+    { "code": "SALES", "name": "Account Managers / Sales", "scope": "own",
+      "permissions": ["crm.leads.view", "crm.leads.manage", "crm.activities.view", "crm.activities.manage", "crm.communications.view", "crm.communications.send", "crm.parties.view", "crm.parties.manage", "crm.opportunities.view", "crm.opportunities.manage", "crm.opportunities.transition", "pre_projects.view", "pre_projects.create", "projects.view", "catalog.view", "crm.reports.view"] },
+    { "code": "SALES_ADMIN", "name": "Sales Admin", "scope": "all",
+      "permissions": ["crm.leads.view", "crm.leads.manage", "crm.leads.assign", "crm.activities.view", "crm.activities.manage", "crm.communications.view", "crm.communications.send", "crm.parties.view", "crm.parties.manage", "crm.opportunities.view", "crm.opportunities.manage", "pre_projects.view", "pre_projects.edit", "catalog.view"] },
+    { "code": "FINANCE", "name": "Finance", "scope": "all",
+      "permissions": ["crm.opportunities.view", "crm.opportunities.sensitive_values", "pre_projects.view", "commercial.finance.verify", "commercial.costs.view", "projects.view"] },
+    { "code": "OPS_ADMIN", "name": "CRM Owner / Admin (Ops)", "scope": "all",
+      "permissions": ["*"] },
+    { "code": "CREATIVE_DIRECTOR", "name": "Creative Director", "scope": "all",
+      "permissions": ["pre_projects.view", "pre_projects.review_designs", "projects.view", "catalog.view"] },
+    { "code": "INTERIOR_DESIGN", "name": "Interior Designers", "scope": "assigned",
+      "permissions": ["pre_projects.view", "pre_projects.edit", "pre_projects.verify_measurements", "pre_projects.record_client_design_decisions", "crm.activities.view", "crm.activities.manage", "projects.view", "projects.report", "catalog.view"] },
+    { "code": "VISUALISER", "name": "Visualisers", "scope": "assigned",
+      "permissions": ["pre_projects.view", "projects.view", "projects.report", "catalog.view"] },
+    { "code": "TECHNICAL", "name": "Technical Team", "scope": "assigned",
+      "permissions": ["pre_projects.view", "projects.view", "projects.report", "catalog.view"] },
+    { "code": "PROCUREMENT", "name": "Procurement", "scope": "all",
+      "permissions": ["projects.view", "projects.buy", "vendors.view", "vendors.manage", "supplier_offers.view", "supplier_offers.manage", "catalog.view"] },
+    { "code": "PROJECT_MANAGERS", "name": "Project Managers", "scope": "assigned",
+      "permissions": ["projects.view", "projects.manage", "projects.report", "projects.review", "projects.schedule.view", "projects.schedule.manage", "catalog.view"] },
+    { "code": "PRODUCTION", "name": "Production / Factory (and Installation)", "scope": "assigned",
+      "permissions": ["projects.view", "projects.report", "projects.schedule.view", "catalog.view"] },
+    { "code": "QS", "name": "QS Team", "scope": "all",
+      "permissions": ["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate", "catalog.view"] },
+    { "code": "SHOWROOM", "name": "Sales / Showroom Executives", "scope": "own",
+      "permissions": ["crm.leads.view", "crm.leads.manage", "crm.parties.view", "catalog.view", "catalog.manage"] },
+    { "code": "INVENTORY", "name": "Inventory Clerk", "scope": "all",
+      "permissions": ["catalog.view", "catalog.manage", "projects.view"] },
+    { "code": "MARKETING", "name": "Marketing", "scope": "all",
+      "permissions": ["catalog.view", "crm.reports.view"] }
+  ],
+  "gapsToBuild": [
+    "Record scope own / assigned / all per team (PLM-038 'write on own leads only'): Module 4 Sales and Module 8 Projects.",
+    "Self Generated source restricted to Sales, Sales Admin and Directors (PLM-030): Module 4.",
+    "Finance-only edit of final commission amounts and Deal finance fields hidden from Sales: Module 7.",
+    "Proposal page-level locking (pages 1–3 locked, page 4 editable by Account Manager or Sales Admin): document builder.",
+    "Stock-list write for Showroom and Inventory is catalog.manage today; split when the stock list lands (Module 3)."
+  ]
+}

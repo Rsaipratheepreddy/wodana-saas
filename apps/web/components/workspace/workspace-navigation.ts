@@ -131,7 +131,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             href: "/workspace/teams",
             icon: "teams",
             id: "teams",
-            label: "Work groups",
+            label: "Teams",
             // Groups are persisted, but do not yet drive project ownership, work
             // assignment, capacity, or delivery. Keep the route available while
             // withholding it from the primary workspace navigation until it does.
