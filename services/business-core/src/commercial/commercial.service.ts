@@ -1,3 +1,4 @@
+import { commercialRepository } from "./commercial-repository";
 import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
 import {
   importedScopeDetails,
@@ -263,11 +264,7 @@ export class CommercialService {
     workspaceId: string,
     caseId: string,
   ): Promise<CommercialData> {
-    const r = await client.query(
-      "SELECT content FROM commercial_cases WHERE workspace_id=$1 AND case_id=$2",
-      [workspaceId, caseId],
-    );
-    const stored = r.rows[0]?.content as Partial<CommercialData> | undefined;
+    const stored = (await commercialRepository.load(client, workspaceId, caseId))?.content;
     if (!stored) return emptyCommercial();
     return {
       ...emptyCommercial(),
@@ -302,10 +299,7 @@ export class CommercialService {
       quoteId,
       note,
     });
-    await client.query(
-      `INSERT INTO commercial_cases(workspace_id,case_id,revision,content) VALUES($1,$2,$3,$4) ON CONFLICT(case_id) DO UPDATE SET revision=$3,content=$4,updated_at=now() WHERE commercial_cases.workspace_id=$1`,
-      [workspaceId, caseId, data.revision, JSON.stringify(data)],
-    );
+    await commercialRepository.save(client, workspaceId, caseId, data);
     for (const quote of data.quotes)
       await ensureJobForSource(client, workspaceId, { type: "quote", id: quote.id, caseId }, actorUserId);
     for (const payment of data.payments) {

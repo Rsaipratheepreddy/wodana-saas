@@ -111,7 +111,7 @@ export class ProjectsService {
       this.access.require(ctx,"commercial.release");
       const row=await ctx.client.query("SELECT id FROM pre_project_cases WHERE workspace_id=$1 AND id=$2 FOR UPDATE",[workspaceId,caseId]);
       if(!row.rowCount)throw new NotFoundException("Pre-execution not found.");
-      const data=(await ctx.client.query("SELECT content FROM commercial_cases WHERE workspace_id=$1 AND case_id=$2",[workspaceId,caseId])).rows[0]?.content;
+      const data=(await ctx.client.query("SELECT content FROM commercial_cases_view WHERE workspace_id=$1 AND case_id=$2",[workspaceId,caseId])).rows[0]?.content;
       if(!data)throw new ConflictException("Complete the commercial release checklist first.");
       return releaseDeliveryProject(ctx.client,workspaceId,caseId,ctx.userId,data);
     });

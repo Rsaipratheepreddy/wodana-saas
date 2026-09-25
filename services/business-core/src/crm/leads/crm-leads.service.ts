@@ -391,7 +391,7 @@ export class CrmLeadsService {
           source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference"
         FROM crm_opportunities opportunity
         LEFT JOIN pre_project_cases source_case ON source_case.workspace_id=opportunity.workspace_id AND source_case.opportunity_id=opportunity.id
-        LEFT JOIN commercial_cases commercial_case ON commercial_case.workspace_id=source_case.workspace_id AND commercial_case.case_id=source_case.id
+        LEFT JOIN commercial_cases_view commercial_case ON commercial_case.workspace_id=source_case.workspace_id AND commercial_case.case_id=source_case.id
         WHERE opportunity.workspace_id = $1 AND opportunity.lead_id = $2`, [workspaceId, leadId]) : { rows: [] };
       const frozenQualification = lead.status === "qualified" && lead.qualification_evidence
         ? lead.qualification_evidence as Record<string, unknown>

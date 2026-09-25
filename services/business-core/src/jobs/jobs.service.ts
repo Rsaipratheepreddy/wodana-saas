@@ -238,7 +238,7 @@ export class JobsService {
                 WHEN 'opportunity' THEN opportunity.title
                 WHEN 'case' THEN case_opportunity.title
                 WHEN 'quote' THEN CASE WHEN (
-                  SELECT count(*) FROM commercial_cases commercial
+                  SELECT count(*) FROM commercial_cases_view commercial
                   CROSS JOIN LATERAL jsonb_array_elements(
                     CASE WHEN jsonb_typeof(commercial.content->'quotes')='array'
                       THEN commercial.content->'quotes' ELSE '[]'::jsonb END
@@ -352,7 +352,7 @@ export class JobsService {
            AND case_record.workspace_id=link.workspace_id
            AND ((link.record_type='case' AND case_record.id::text=link.record_id)
              OR (link.record_type='quote' AND case_record.id=link.case_id))
-         LEFT JOIN commercial_cases commercial ON commercial.workspace_id=link.workspace_id
+         LEFT JOIN commercial_cases_view commercial ON commercial.workspace_id=link.workspace_id
            AND commercial.case_id=case_record.id
          LEFT JOIN LATERAL (
            SELECT quote.value AS data

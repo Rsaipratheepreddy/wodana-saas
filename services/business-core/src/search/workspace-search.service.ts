@@ -222,20 +222,17 @@ export class WorkspaceSearchService {
 
   private async quotations(client: PoolClient, workspaceId: string, query: string, limit: number): Promise<SearchResult[]> {
     const rows = (await client.query<{ id: string; title: string; number: string; status: string; caseId: string; customer: string }>(
-      `SELECT quote.data->>'id' AS id,COALESCE(NULLIF(quote.data->>'title',''),opportunity.title) AS title,
-              COALESCE(quote.data->>'number','—') AS number,COALESCE(quote.data->>'status','draft') AS status,
-              commercial.case_id::text AS "caseId",party.display_name AS customer
-         FROM commercial_cases commercial
-         JOIN pre_project_cases case_record ON case_record.workspace_id=commercial.workspace_id AND case_record.id=commercial.case_id
+      `SELECT quote.id,COALESCE(NULLIF(quote.title,''),opportunity.title) AS title,
+              quote.number::text AS number,quote.status,
+              quote.case_id::text AS "caseId",party.display_name AS customer
+         FROM commercial_quotes quote
+         JOIN pre_project_cases case_record ON case_record.workspace_id=quote.workspace_id AND case_record.id=quote.case_id
          JOIN crm_opportunities opportunity ON opportunity.workspace_id=case_record.workspace_id AND opportunity.id=case_record.opportunity_id
          JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
-         CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(commercial.content->'quotes')='array'
-           THEN commercial.content->'quotes' ELSE '[]'::jsonb END) quote(data)
-        WHERE commercial.workspace_id=$1
-          AND quote.data->>'kind'='quotation'
-          AND NULLIF(quote.data->>'id','') IS NOT NULL
-          AND concat_ws(' ',quote.data->>'title',quote.data->>'number',opportunity.title,party.display_name) ILIKE $2
-        ORDER BY CASE WHEN lower(quote.data->>'number')=lower($3) THEN 0 ELSE 1 END,commercial.updated_at DESC
+        WHERE quote.workspace_id=$1
+          AND quote.kind='quotation'
+          AND concat_ws(' ',quote.title,quote.number::text,opportunity.title,party.display_name) ILIKE $2
+        ORDER BY CASE WHEN quote.number::text=lower($3) THEN 0 ELSE 1 END,quote.updated_at DESC
         LIMIT $4`,
       [workspaceId, `%${query}%`, query, limit],
     )).rows;

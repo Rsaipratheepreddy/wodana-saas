@@ -115,7 +115,7 @@ export class ProjectRemindersService {
         SELECT commercial.workspace_id, commercial.case_id, request,
           membership.user_id,
           (now() AT TIME ZONE workspace.default_timezone)::date::text AS today
-        FROM commercial_cases commercial
+        FROM commercial_cases_view commercial
         JOIN workspaces workspace ON workspace.id=commercial.workspace_id
         CROSS JOIN LATERAL jsonb_array_elements(coalesce(commercial.content->'requests','[]'::jsonb)) request
         JOIN workspace_memberships membership

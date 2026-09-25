@@ -695,7 +695,7 @@ export class CrmOpportunitiesService {
             LEFT JOIN crm_leads source_lead ON source_lead.id = opportunity.lead_id AND source_lead.workspace_id = opportunity.workspace_id
             LEFT JOIN crm_enquiries enquiry ON enquiry.id = source_lead.enquiry_id AND enquiry.workspace_id = opportunity.workspace_id
             LEFT JOIN pre_project_cases source_case ON source_case.workspace_id = opportunity.workspace_id AND source_case.opportunity_id = opportunity.id
-            LEFT JOIN commercial_cases commercial_case ON commercial_case.workspace_id = source_case.workspace_id AND commercial_case.case_id = source_case.id
+            LEFT JOIN commercial_cases_view commercial_case ON commercial_case.workspace_id = source_case.workspace_id AND commercial_case.case_id = source_case.id
             JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id AND pipeline.workspace_id = opportunity.workspace_id
             JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id AND stage.workspace_id = opportunity.workspace_id
             LEFT JOIN workspace_memberships membership ON membership.id = opportunity.owner_membership_id

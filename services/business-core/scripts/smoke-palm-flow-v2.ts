@@ -354,7 +354,7 @@ async function injectAcceptedRound(caseId: string, quoteId: string, round: "desi
     paymentProofUrl: "https://example.invalid/receipt", financeReviewedById: randomUUID(),
     submittedById: randomUUID(), checklist: { agreement: true, boq: true, documents: true, margin: true, materials: false, payment: true },
   } as CommercialData["ownerReview"];
-  await tenantQuery(`UPDATE commercial_cases SET content=$3,revision=$4 WHERE workspace_id=$1 AND case_id=$2`, [workspaceId, caseId, JSON.stringify(data), data.revision]);
+  await tenantQuery(`SELECT commercial_case_save($1,$2,$4,$3::jsonb)`, [workspaceId, caseId, JSON.stringify(data), data.revision]);
   // The real issue command hashes JSONB-canonical line keys. This fixture
   // mirrors that by hashing only after the first database round-trip.
   const canonical = (await state(caseId)).data as CommercialData;
@@ -363,7 +363,7 @@ async function injectAcceptedRound(caseId: string, quoteId: string, round: "desi
   canonicalQuote.clientDecision!.quoteHash = canonicalQuote.hash;
   canonical.agreement!.quoteHash = canonicalQuote.hash;
   canonical.ownerReview!.quoteHash = canonicalQuote.hash;
-  await tenantQuery(`UPDATE commercial_cases SET content=$3,revision=$4 WHERE workspace_id=$1 AND case_id=$2`, [workspaceId, caseId, JSON.stringify(canonical), canonical.revision]);
+  await tenantQuery(`SELECT commercial_case_save($1,$2,$4,$3::jsonb)`, [workspaceId, caseId, JSON.stringify(canonical), canonical.revision]);
 }
 
 try {
@@ -416,13 +416,13 @@ try {
   const approvedCommercial = (await state(designCase)).data as CommercialData;
   const firstDealFileId = approvedCommercial.dealFile?.id;
   assert(firstDealFileId, "First paid round must create the Deal File");
-  await tenantQuery(`UPDATE commercial_cases SET content=$3 WHERE workspace_id=$1 AND case_id=$2`,
-    [workspaceId, designCase, JSON.stringify({ ...approvedCommercial, dealFile: null })]);
+  await tenantQuery(`SELECT commercial_case_save($1,$2,$4,$3::jsonb)`,
+    [workspaceId, designCase, JSON.stringify({ ...approvedCommercial, dealFile: null }), approvedCommercial.revision]);
   const blockedProject = await projectState(firstProject.id);
   assert.match(blockedProject.workflowSummary.nextBlocker, /first paid, Owner-approved Deal File/);
   await projectCommand(firstProject.id, "workflow_transition", { toStageKey: "site_visit", note: "Missing Deal File" }, 409);
-  await tenantQuery(`UPDATE commercial_cases SET content=$3 WHERE workspace_id=$1 AND case_id=$2`,
-    [workspaceId, designCase, JSON.stringify(approvedCommercial)]);
+  await tenantQuery(`SELECT commercial_case_save($1,$2,$4,$3::jsonb)`,
+    [workspaceId, designCase, JSON.stringify(approvedCommercial), approvedCommercial.revision]);
   await projectCommand(firstProject.id, "workflow_transition", { toStageKey: "site_visit", note: "Paid design proposal" });
   await projectCommand(firstProject.id, "workflow_transition", { toStageKey: "design_specifications", note: "Missing visit" }, 409);
   await projectCommand(firstProject.id, "record_site_visit", {

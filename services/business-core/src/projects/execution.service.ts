@@ -90,7 +90,7 @@ export class ExecutionService {
   ) {}
   async row(ctx: HrmsContext, id: string, lock = false) {
     const r = await ctx.client.query(
-      `SELECT p.id,p.case_id AS "caseId",p.name,p.status,party.display_name AS customer,cc.content AS commercial,(SELECT default_timezone FROM workspaces WHERE id=p.workspace_id) AS timezone FROM delivery_projects p JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id LEFT JOIN commercial_cases cc ON cc.workspace_id=p.workspace_id AND cc.case_id=p.case_id WHERE p.workspace_id=$1 AND p.id=$2 ${lock ? "FOR UPDATE OF p" : ""}`,
+      `SELECT p.id,p.case_id AS "caseId",p.name,p.status,party.display_name AS customer,cc.content AS commercial,(SELECT default_timezone FROM workspaces WHERE id=p.workspace_id) AS timezone FROM delivery_projects p JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id LEFT JOIN commercial_cases_view cc ON cc.workspace_id=p.workspace_id AND cc.case_id=p.case_id WHERE p.workspace_id=$1 AND p.id=$2 ${lock ? "FOR UPDATE OF p" : ""}`,
       [ctx.workspaceId, id],
     );
     if (!r.rowCount) throw new NotFoundException("Project not found.");

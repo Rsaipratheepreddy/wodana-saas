@@ -385,13 +385,9 @@ function database(options: {
             }],
           }
         : { rowCount: 0, rows: [] };
-    if (sql.startsWith("INSERT INTO project_execution")) {
-      stored = { ...JSON.parse(String(values?.[3])), tasks: [] };
-      return { rowCount: 1, rows: [] };
-    }
-    if (sql.startsWith("INSERT INTO project_tasks")) {
-      // ProjectRepository stores tasks as rows; reassemble the saved record for assertions.
-      stored = { ...(stored as object), tasks: JSON.parse(String(values?.[2])) } as typeof stored;
+    if (sql.startsWith("SELECT project_execution_save")) {
+      // ProjectRepository writes through project_execution_save(workspace, project, revision, record).
+      stored = JSON.parse(String(values?.[3]));
       return { rowCount: 1, rows: [] };
     }
     if (sql.includes("INSERT INTO crm_project_links"))
