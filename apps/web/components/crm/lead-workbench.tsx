@@ -113,9 +113,12 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
         <ActivityPanel key={activityRevision} workspaceId={workspaceId} leadId={lead.id} partyId={lead.partyId} ownerMembershipId={live.ownerMembershipId as string | null} onChanged={saved} />
       </div> },
       { id: "history", label: "Source & history", panel: <div className={styles.stack}>
+        {live.duplicateOfLeadId ? <Callout title="Duplicate enquiry" tone="info">This contact already had an open enquiry. <a href={`/workspace/crm/leads?lead=${String(live.duplicateOfLeadId)}`}>Open the original</a></Callout> : null}
         <FactList facts={[
           ["Source", leadOptionLabel(initialData.leadOptions?.sources, String(enquiry?.source ?? lead.source))],
           ["Channel", leadOptionLabel(initialData.leadOptions?.channels[String(enquiry?.source ?? lead.source)], String(enquiry?.channel ?? lead.channel))],
+          ...(enquiry?.originalSource ? [["Chosen at intake", `${leadOptionLabel(initialData.leadOptions?.sources, String(enquiry.originalSource))} · ${leadOptionLabel(initialData.leadOptions?.channels[String(enquiry.originalSource)], String(enquiry.originalChannel ?? ""))}`] as [string, string]] : []),
+          ...(enquiry?.referral ? [["Referred by", referralText(enquiry.referral as Referral, initialData.leadOptions)] as [string, string]] : []),
           ["Intake method", label(String(enquiry?.intakeMethod ?? lead.intakeMethod ?? "manual"))],
           ["Received", dateText(enquiry?.receivedAt)],
           ["Processed", dateText(enquiry?.processedAt)],
@@ -180,4 +183,14 @@ function InlineStageEditor({ initialStage = "", lead, workspaceId, onCancel, onS
     {stage === "disqualified" && <TextInput label="Reason" value={reason} onChange={setReason} isRequired isDisabled={busy} />}
     <div className={styles.actions}><Button size="compact" isDisabled={busy} onPress={onCancel}>Cancel</Button><Button size="compact" type="submit" variant="primary" isDisabled={!stage || persisted} isLoading={busy}>Save stage</Button></div>
   </form>;
+}
+
+type Referral = { kind?: string; name?: string | null; contact?: string | null; memberName?: string | null; option?: string | null };
+function referralText(referral: Referral, options?: { referralBrokers?: { id: string; label: string }[]; referralPartners?: { id: string; label: string }[] }) {
+  if (referral.kind === "internal") return referral.memberName ?? "Team member";
+  if (referral.kind === "broker" || referral.kind === "partner") {
+    const list = referral.kind === "broker" ? options?.referralBrokers : options?.referralPartners;
+    return list?.find((entry) => entry.id === referral.option)?.label ?? referral.option ?? "";
+  }
+  return [referral.name, referral.contact].filter(Boolean).join(" · ");
 }

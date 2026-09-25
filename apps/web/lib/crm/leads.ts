@@ -8,6 +8,7 @@ export const CRM_LEAD_STATUSES = [
   "qualified",
   "disqualified",
   "paused",
+  "duplicate",
 ] as const;
 
 export type CrmLeadStatus = (typeof CRM_LEAD_STATUSES)[number];
@@ -21,6 +22,8 @@ export const CRM_LEAD_TRANSITIONS: Record<CrmLeadStatus, CrmLeadStatus[]> = {
   qualified: ["new", "attempting_contact", "connected", "nurturing", "paused", "disqualified"],
   paused: ["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified"],
   disqualified: ["new", "attempting_contact", "connected", "nurturing", "qualified", "paused"],
+  // A duplicate is closed and linked to the original enquiry; it does not move (PLM-093).
+  duplicate: [],
 };
 
 // Keep persisted legacy values readable; the product exposes four stages.
@@ -34,9 +37,11 @@ export function leadStage(status: string): "new" | "connected" | "qualified" | "
   return status === "new" || status === "qualified" || status === "disqualified" ? status : "connected";
 }
 export function leadStageLabel(status: string) {
+  if (status === "duplicate") return "Duplicate";
   return CRM_LEAD_STAGES.find((stage) => stage.id === leadStage(status))!.label;
 }
 export function leadStageOptions(status: string) {
+  if (status === "duplicate") return [];
   return CRM_LEAD_STAGES.filter((stage) => stage.id !== leadStage(status));
 }
 
