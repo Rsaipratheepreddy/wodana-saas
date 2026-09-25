@@ -59,6 +59,13 @@ export class EnquiryDetailsDto {
   @IsOptional() @IsString() @MaxLength(10000) internalNotes?: string;
 }
 
+export class ReferralDto {
+  @IsOptional() @IsString() @MaxLength(160) name?: string;
+  @IsOptional() @IsString() @MaxLength(160) contact?: string;
+  @IsOptional() @IsUUID() membershipId?: string;
+  @IsOptional() @IsString() @MaxLength(100) option?: string;
+}
+
 export class InitialAssignmentDto {
   @IsIn(["automatic", "manual", "unassigned"]) mode!: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string;
@@ -75,6 +82,7 @@ export class UpdateLeadDetailsDto {
   /** Correct where the enquiry came from; source and channel change together. */
   @IsOptional() @IsString() @IsNotEmpty() @MaxLength(100) source?: string;
   @ValidateIf((dto: UpdateLeadDetailsDto) => dto.source !== undefined) @IsString() @IsNotEmpty() @MaxLength(60) channel?: string;
+  @IsOptional() @ValidateNested() @Type(() => ReferralDto) referral?: ReferralDto;
 }
 
 export class CreateIntakeEventDto {
@@ -92,6 +100,7 @@ export class CreateIntakeEventDto {
   @IsOptional() @IsString() @MaxLength(240) title?: string;
   @IsDefined() @ValidateNested() @Type(() => EnquiryDetailsDto) details!: EnquiryDetailsDto;
   @IsOptional() @ValidateNested() @Type(() => InitialAssignmentDto) assignment?: InitialAssignmentDto;
+  @IsOptional() @ValidateNested() @Type(() => ReferralDto) referral?: ReferralDto;
   @IsOptional() @IsString() @MaxLength(10_000) summary?: string;
   @IsString() @IsNotEmpty() @MaxLength(100) serviceType!: string;
   @IsObject() originalPayload!: Record<string, unknown>;

@@ -26,7 +26,7 @@ export const DEFAULT_LEAD_OPTIONS = {
 
 export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
   const result = await client.query<{ code: string; options: Option[] }>(`SELECT taxonomy.code,
-    COALESCE(jsonb_agg(jsonb_build_object('id', choice.code, 'label', choice.label)
+    COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', choice.code, 'label', choice.label, 'allowedRoles', choice.allowed_role_codes))
       ORDER BY choice.position, choice.label) FILTER (WHERE choice.id IS NOT NULL), '[]'::jsonb) AS options
     FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options choice ON choice.taxonomy_id=taxonomy.id
       AND choice.workspace_id=taxonomy.workspace_id AND choice.status='active'
@@ -46,6 +46,8 @@ export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
     customerTypes: pick("customer_type", []),
     emirates: locationChoices,
     areas: Object.fromEntries(locationChoices.map(emirate => [emirate.id, pick(`lead_area_${emirate.id}`, [])])),
+    referralBrokers: pick("referral_broker", []),
+    referralPartners: pick("referral_partner", []),
   };
 }
 

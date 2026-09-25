@@ -16,7 +16,12 @@
     },
     {
       "code": "self_generated",
-      "label": "Self Generated"
+      "label": "Self Generated",
+      "allowedRoles": [
+        "SALES",
+        "SALES_ADMIN",
+        "OPS_ADMIN"
+      ]
     },
     {
       "code": "returning_customer",
@@ -345,5 +350,12 @@
       "code": "director_of_rooms",
       "label": "Director of Rooms"
     }
-  ]
+  ],
+  "referralPartners": [
+    {
+      "code": "odg",
+      "label": "ODG"
+    }
+  ],
+  "referralBrokers": []
 }

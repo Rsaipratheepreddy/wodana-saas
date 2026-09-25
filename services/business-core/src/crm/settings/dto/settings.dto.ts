@@ -1,10 +1,12 @@
 import { Type } from "class-transformer";
-import { Allow, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from "class-validator";
+import { Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class TaxonomyOptionDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
   @IsString() @IsNotEmpty() @MaxLength(160) label!: string;
   @IsOptional() @IsInt() @Min(0) position?: number;
+  /** Role codes allowed to choose this option by hand (e.g. Self Generated); empty clears the limit, absent keeps it. */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @Matches(/^[A-Za-z0-9_-]{1,60}$/, { each: true }) allowedRoles?: string[];
 }
 export class CreateTaxonomyDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;

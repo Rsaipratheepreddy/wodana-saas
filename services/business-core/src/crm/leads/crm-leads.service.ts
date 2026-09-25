@@ -366,6 +366,9 @@ export class CrmLeadsService {
         );
       const enquiry = await client.query(`SELECT enquiry.id, enquiry.reference, enquiry.details, enquiry.title,
         enquiry.summary, enquiry.service_type AS "serviceType", enquiry.source, enquiry.channel,
+        CASE WHEN enquiry.referral_kind IS NULL THEN NULL ELSE jsonb_build_object('kind', enquiry.referral_kind, 'name', enquiry.referral_name,
+          'contact', enquiry.referral_contact, 'membershipId', enquiry.referral_membership_id, 'option', enquiry.referral_option,
+          'memberName', (SELECT person.display_name FROM workspace_memberships member JOIN users person ON person.id = member.user_id WHERE member.id = enquiry.referral_membership_id)) END AS referral,
         intake.intake_method AS "intakeMethod", intake.received_at AS "receivedAt",
         intake.processed_at AS "processedAt", intake.original_payload AS "originalSubmission",
         intake.external_event_id AS "externalEventId", intake.correlation_id AS "correlationId",

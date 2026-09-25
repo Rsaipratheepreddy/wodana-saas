@@ -24,9 +24,16 @@ const enquiryUpdate = (query: ReturnType<typeof vi.fn>) => query.mock.calls.find
 describe("editing an enquiry's source and channel", () => {
   it("corrects the source and channel together and audits the change", async () => {
     const { intake, query, record } = service({ source: "company", channel: "call" });
-    await intake.updateDetails(actor, workspaceId, leadId, { ...base, source: "referral", channel: "external" } as never);
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, source: "referral", channel: "external", referral: { name: " Sara  Ali ", contact: "+971 50 111 2222" } } as never);
     expect(enquiryUpdate(query)?.slice(5)).toEqual(["referral", "external"]);
+    const referral = query.mock.calls.find(([sql]) => String(sql).includes("SET referral_kind"))?.[1];
+    expect(referral?.slice(2)).toEqual(["external", "Sara Ali", "+971 50 111 2222", null, null]);
     expect(record.mock.calls[0][1]).toMatchObject({ before: { source: "company", channel: "call" }, after: { source: "referral", channel: "external" } });
+  });
+
+  it("requires who referred a referral enquiry", async () => {
+    const { intake } = service({ source: "company", channel: "call" });
+    await expect(intake.updateDetails(actor, workspaceId, leadId, { ...base, source: "referral", channel: "external" } as never)).rejects.toThrow(/Referred by is required/);
   });
 
   it("rejects a channel that does not belong to the chosen source", async () => {

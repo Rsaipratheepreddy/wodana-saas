@@ -34,6 +34,7 @@ import {
 
 import { CrmLeadsService } from "../leads/crm-leads.service";
 import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
+import { assertCustomerType, assertSourceAllowed, resolveReferral } from "../leads/intake-rules";
 import { enquiryTitle, refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
 import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones } from "./intake-phone";
 
@@ -62,18 +63,29 @@ export class CrmIntakeService {
       const party = normalizeIntakePartyPhones(input.party, workspaceCountry);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
       const found = await client.query(`SELECT lead.version, lead.party_id, lead.enquiry_id, enquiry.title,
-        enquiry.reference, enquiry.summary, enquiry.service_type, enquiry.source, enquiry.channel, enquiry.details FROM crm_leads lead
+        enquiry.reference, enquiry.summary, enquiry.service_type, enquiry.source, enquiry.channel, enquiry.details,
+        CASE WHEN enquiry.referral_kind IS NULL THEN NULL ELSE jsonb_build_object('name', enquiry.referral_name, 'contact', enquiry.referral_contact,
+          'membershipId', enquiry.referral_membership_id, 'option', enquiry.referral_option) END AS referral FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id=lead.enquiry_id AND enquiry.workspace_id=lead.workspace_id
         WHERE lead.workspace_id=$1 AND lead.id=$2 FOR UPDATE OF lead, enquiry`, [workspaceId, leadId]);
       if (!found.rowCount) throw new NotFoundException("Lead not found");
       const before = found.rows[0];
       if (Number(before.version) !== input.version) throw new ConflictException("Lead changed; reload before saving");
       await validateLeadOptions(client, workspaceId, input, { serviceType: before.service_type, details: before.details });
+      if (input.source && input.source !== before.source) await assertSourceAllowed(client, workspaceId, actorUser.userId, input.source);
+      await assertCustomerType(client, workspaceId, input.details?.customerType ?? before.details?.customerType);
+      const nextSource = input.source ?? before.source, nextChannel = input.source ? input.channel! : before.channel;
+      // Keep the stored referrer when the edit does not touch it; re-check it when the source or referrer changes.
+      const referral = input.referral || input.source ? await resolveReferral(client, workspaceId, nextSource, nextChannel, input.referral ?? before.referral) : undefined;
       const details = { ...before.details, ...input.details, contact: party };
       const source = input.source ?? before.source, channel = input.source ? input.channel : before.channel;
       await client.query(`UPDATE crm_enquiries SET summary=$3, service_type=$4, details=$5, source=$6, channel=$7,
         version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`,
         [workspaceId, before.enquiry_id, input.summary ?? null, input.serviceType, details, source, channel]);
+      if (referral !== undefined) {
+        await client.query(`UPDATE crm_enquiries SET referral_kind=$3, referral_name=$4, referral_contact=$5, referral_membership_id=$6, referral_option=$7
+          WHERE workspace_id=$1 AND id=$2`, [workspaceId, before.enquiry_id, referral?.kind ?? null, referral?.name ?? null, referral?.contact ?? null, referral?.membershipId ?? null, referral?.option ?? null]);
+      }
       await client.query(`UPDATE crm_parties SET display_name=$3, normalized_name=$4, version=version+1,
         updated_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, before.party_id, party.displayName.trim(), normalizeName(party.displayName)]);
       await refreshEnquiryTitlesForParty(client, workspaceId, before.party_id, party.displayName);
@@ -99,7 +111,7 @@ export class CrmIntakeService {
       const result = await client.query(`UPDATE crm_leads SET version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING version`, [workspaceId, leadId]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user",
         action: "crm.lead.details_updated.v1", entityType: "crm_lead", entityId: leadId,
-        before, after: { serviceType: input.serviceType, summary: input.summary, source, channel, details } });
+        before, after: { serviceType: input.serviceType, summary: input.summary, source, channel, details, referral } });
       return { id: leadId, version: result.rows[0].version };
     });
   }
@@ -268,7 +280,10 @@ export class CrmIntakeService {
         throw new ForbiddenException("Lead assignment permission is required");
       }
       await validateLeadOptions(client, workspaceId, input);
-      return this.ingest(client, workspaceId, actorUser.userId, "user", idempotencyKey, requestedCorrelationId, input);
+      await assertSourceAllowed(client, workspaceId, actorUser.userId, input.source);
+      await assertCustomerType(client, workspaceId, input.details?.customerType);
+      const referral = await resolveReferral(client, workspaceId, input.source, input.channel, input.referral);
+      return this.ingest(client, workspaceId, actorUser.userId, "user", idempotencyKey, requestedCorrelationId, { ...input, referral: referral ?? undefined } as CreateIntakeEventDto);
     });
   }
 
@@ -728,11 +743,14 @@ export class CrmIntakeService {
     const enquiry = await client.query(
       `INSERT INTO crm_enquiries
         (id, workspace_id, intake_event_id, party_id, title, summary,
-         service_type, source, channel, received_at, details)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING reference`,
+         service_type, source, channel, received_at, details,
+         referral_kind, referral_name, referral_contact, referral_membership_id, referral_option)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING reference`,
       [
         enquiryId, workspaceId, input.intakeEventId, input.partyId, title,
         input.summary, input.serviceType, input.source, input.channel, input.receivedAt, details,
+        original.referral?.kind ?? null, original.referral?.name ?? null, original.referral?.contact ?? null,
+        original.referral?.membershipId ?? null, original.referral?.option ?? null,
       ],
     );
     await client.query(
