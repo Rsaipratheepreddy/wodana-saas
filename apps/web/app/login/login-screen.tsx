@@ -18,6 +18,8 @@ import {
 import type { SecuritySession } from "@/lib/workspace/security";
 import { authRequest, confirmBrowserSession, openAuthenticatedWorkspace } from "@/lib/auth/client";
 import { deviceDetails } from "@/lib/auth/device-details";
+import { languageDirection, type AppLanguage } from "@/lib/i18n/languages";
+import { translator } from "@/lib/i18n/messages";
 import styles from "./login.module.css";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 
@@ -42,6 +44,7 @@ export function LoginScreen({
   initialStatus,
   initialStatusTone = "error",
   tenant,
+  language = "en",
 }: {
   invitationToken?: string;
   passwordResetToken?: string;
@@ -49,7 +52,9 @@ export function LoginScreen({
   initialStatus?: string;
   initialStatusTone?: "error" | "info";
   tenant: TenantBranding;
+  language?: AppLanguage;
 }) {
+  const t = translator(language);
   const router = useRouter();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const settingPassword = Boolean(invitationToken || passwordResetToken);
@@ -93,7 +98,7 @@ export function LoginScreen({
     import("qrcode")
       .then((module) => module.toDataURL(mfaSetup.otpauthUri, { width: 240, margin: 2, errorCorrectionLevel: "M" }))
       .then((value) => { if (mounted) setMfaQrCode(value); })
-      .catch(() => { if (mounted) setStatus("The QR code could not be displayed. Enter the setup key manually."); });
+      .catch(() => { if (mounted) setStatus(t("The QR code could not be displayed. Enter the setup key manually.")); });
     return () => { mounted = false; };
   }, [mfaSetup]);
 
@@ -101,12 +106,12 @@ export function LoginScreen({
     setIsOpening(true);
     setIsSubmitting(true);
     setLimitedSessions(null);
-    setStatus("Signed in. Opening your workspace…", "info");
+    setStatus(t("Signed in. Opening your workspace…"), "info");
     if (navigationTimer.current) clearTimeout(navigationTimer.current);
     navigationTimer.current = setTimeout(() => {
       requestInFlight.current = false;
       setIsSubmitting(false);
-      setStatus("You are signed in. Select Open workspace to continue.", "info");
+      setStatus(t("You are signed in. Select Open workspace to continue."), "info");
     }, 12_000);
     openAuthenticatedWorkspace(path);
   };
@@ -131,7 +136,7 @@ export function LoginScreen({
       setStatus("");
       return false;
     }
-    setStatus("Confirming your browser session…", "info");
+    setStatus(t("Confirming your browser session…"), "info");
     await confirmBrowserSession();
     setPassword("");
     openWorkspace(destination);
@@ -165,12 +170,12 @@ export function LoginScreen({
     try {
       const { ok, payload } = await authRequest("/api/auth/logout", { method: "POST" });
       if (!ok) {
-        setStatus(typeof payload.message === "string" ? payload.message : "Could not return to sign in. Please try again.");
+        setStatus(typeof payload.message === "string" ? payload.message : t("Could not return to sign in. Please try again."));
         return;
       }
       resetMfaFlow();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not return to sign in. Please try again.");
+      setStatus(error instanceof Error ? error.message : t("Could not return to sign in. Please try again."));
     } finally {
       setIsSubmitting(false);
     }
@@ -178,12 +183,12 @@ export function LoginScreen({
 
   const verifyMfaChallenge = async () => {
     if (mfaCode.trim().length < 6) {
-      setStatus(mfaRecoveryMode ? "Enter one of your recovery codes." : "Enter the six-digit code from your authenticator app.");
+      setStatus(mfaRecoveryMode ? t("Enter one of your recovery codes.") : t("Enter the six-digit code from your authenticator app."));
       return;
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
-    setStatus("Verifying your code…", "info");
+    setStatus(t("Verifying your code…"), "info");
     let navigating = false;
     try {
       const { ok, payload } = await authRequest("/api/auth/mfa/verify", {
@@ -197,13 +202,13 @@ export function LoginScreen({
           setMfaCode("");
           setLimitedSessions(payload.sessions as SecuritySession[]);
         }
-        setStatus(typeof payload.message === "string" ? payload.message : "The verification code could not be accepted.");
+        setStatus(typeof payload.message === "string" ? payload.message : t("The verification code could not be accepted."));
         return;
       }
-      if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
+      if (payload.authenticated !== true) throw new Error(t("Sign-in could not be completed. Please try again."));
       navigating = await finishAuthenticatedSignIn(payload, nextPath);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The verification code could not be accepted.");
+      setStatus(error instanceof Error ? error.message : t("The verification code could not be accepted."));
     } finally {
       if (!navigating) {
         requestInFlight.current = false;
@@ -214,12 +219,12 @@ export function LoginScreen({
 
   const startMfaEnrollment = async () => {
     if (!mfaWorkspaceId) {
-      setStatus("Your workspace could not be identified. Sign in again.");
+      setStatus(t("Your workspace could not be identified. Sign in again."));
       return;
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
-    setStatus("Creating your authenticator setup…", "info");
+    setStatus(t("Creating your authenticator setup…"), "info");
     try {
       const { ok, payload } = await authRequest("/api/auth/mfa/setup", {
         method: "POST",
@@ -227,7 +232,7 @@ export function LoginScreen({
         body: JSON.stringify({ workspaceId: mfaWorkspaceId }),
       });
       if (!ok || typeof payload.secret !== "string" || typeof payload.otpauthUri !== "string") {
-        setStatus(typeof payload.message === "string" ? payload.message : "Authenticator setup could not be started.");
+        setStatus(typeof payload.message === "string" ? payload.message : t("Authenticator setup could not be started."));
         return;
       }
       setMfaSetup({
@@ -239,7 +244,7 @@ export function LoginScreen({
       setMfaCode("");
       setStatus("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Authenticator setup could not be started.");
+      setStatus(error instanceof Error ? error.message : t("Authenticator setup could not be started."));
     } finally {
       requestInFlight.current = false;
       setIsSubmitting(false);
@@ -248,12 +253,12 @@ export function LoginScreen({
 
   const confirmMfaEnrollment = async () => {
     if (!/^\d{6}$/.test(mfaCode)) {
-      setStatus("Enter the six-digit code from your authenticator app.");
+      setStatus(t("Enter the six-digit code from your authenticator app."));
       return;
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
-    setStatus("Confirming your authenticator…", "info");
+    setStatus(t("Confirming your authenticator…"), "info");
     try {
       const { ok, payload } = await authRequest("/api/auth/mfa/confirm", {
         method: "POST",
@@ -262,7 +267,7 @@ export function LoginScreen({
       });
       if (!ok || !Array.isArray(payload.recoveryCodes)
         || !payload.recoveryCodes.every((code) => typeof code === "string")) {
-        setStatus(typeof payload.message === "string" ? payload.message : "Authenticator setup could not be confirmed.");
+        setStatus(typeof payload.message === "string" ? payload.message : t("Authenticator setup could not be confirmed."));
         return;
       }
       setRecoveryCodes(payload.recoveryCodes as string[]);
@@ -270,9 +275,9 @@ export function LoginScreen({
       setMfaStage("recovery");
       setMfaQrCode("");
       setMfaCode("");
-      setStatus("Your authenticator is active. Save these recovery codes now.", "info");
+      setStatus(t("Your authenticator is active. Save these recovery codes now."), "info");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Authenticator setup could not be confirmed.");
+      setStatus(error instanceof Error ? error.message : t("Authenticator setup could not be confirmed."));
     } finally {
       requestInFlight.current = false;
       setIsSubmitting(false);
@@ -284,11 +289,11 @@ export function LoginScreen({
     requestInFlight.current = true;
     setIsSubmitting(true);
     try {
-      setStatus("Confirming your browser session…", "info");
+      setStatus(t("Confirming your browser session…"), "info");
       await confirmBrowserSession();
       openWorkspace(authenticatedDestination);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Your session could not be confirmed.");
+      setStatus(error instanceof Error ? error.message : t("Your session could not be confirmed."));
       requestInFlight.current = false;
       setIsSubmitting(false);
     }
@@ -296,17 +301,17 @@ export function LoginScreen({
 
   const continueAfterRecovery = async () => {
     if (!recoveryCodesSaved) {
-      setStatus("Confirm that you saved the recovery codes before continuing.");
+      setStatus(t("Confirm that you saved the recovery codes before continuing."));
       return;
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
     try {
-      setStatus("Confirming your secure session…", "info");
+      setStatus(t("Confirming your secure session…"), "info");
       await confirmBrowserSession();
       openWorkspace(authenticatedDestination);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Your session could not be confirmed.");
+      setStatus(error instanceof Error ? error.message : t("Your session could not be confirmed."));
       requestInFlight.current = false;
       setIsSubmitting(false);
     }
@@ -330,8 +335,8 @@ export function LoginScreen({
         && /[0-9]/.test(password)
         && /[^A-Za-z0-9]/.test(password)
         ? ""
-        : "Use 10+ characters with uppercase, lowercase, a number, and a symbol.";
-      const nextConfirmError = password === confirmPassword ? "" : "Passwords do not match.";
+        : t("Use 10+ characters with uppercase, lowercase, a number, and a symbol.");
+      const nextConfirmError = password === confirmPassword ? "" : t("Passwords do not match.");
       setPasswordError(nextPasswordError);
       setConfirmPasswordError(nextConfirmError);
       if (nextPasswordError || nextConfirmError) {
@@ -342,7 +347,7 @@ export function LoginScreen({
       requestInFlight.current = true;
       let navigating = false;
       setIsSubmitting(true);
-      setStatus(passwordResetToken ? "Saving your new password…" : "Activating your account…", "info");
+      setStatus(passwordResetToken ? t("Saving your new password…") : t("Activating your account…"), "info");
       try {
         const { ok, payload } = await authRequest(passwordResetToken ? "/api/auth/reset-password" : "/api/auth/invitations/activate", {
           method: "POST",
@@ -350,20 +355,20 @@ export function LoginScreen({
           body: JSON.stringify(passwordResetToken ? { resetToken: passwordResetToken, password } : { invitationToken, password, tenantSlug: tenant.loginSlug }),
         });
         if (!ok) {
-          setStatus(typeof payload.message === "string" ? payload.message : (passwordResetToken ? "Unable to reset this password." : "Unable to activate this invitation."));
+          setStatus(typeof payload.message === "string" ? payload.message : (passwordResetToken ? t("Unable to reset this password.") : t("Unable to activate this invitation.")));
           return;
         }
         if (passwordResetToken) {
           setPassword("");
           setConfirmPassword("");
-          setStatus("Password updated. Sign in with your new password.", "info");
+          setStatus(t("Password updated. Sign in with your new password."), "info");
           router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}&reason=password-reset`);
         } else {
-          if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
+          if (payload.authenticated !== true) throw new Error(t("Sign-in could not be completed. Please try again."));
           navigating = await finishAuthenticatedSignIn(payload, "/workspace");
         }
       } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Unable to sign in. Please try again.");
+        setStatus(error instanceof Error ? error.message : t("Unable to sign in. Please try again."));
       } finally {
         if (!navigating) { requestInFlight.current = false; setIsSubmitting(false); }
       }
@@ -376,10 +381,10 @@ export function LoginScreen({
     }
     const nextEmailError = /^\S+@\S+\.\S+$/.test(email)
       ? ""
-      : email.trim() ? "This doesn’t look like a valid email address." : "Enter your email address.";
+      : email.trim() ? t("This doesn’t look like a valid email address.") : t("Enter your email address.");
     const nextPasswordError = password.length >= 8
       ? ""
-      : password ? "Use at least 8 characters." : "Enter your password.";
+      : password ? t("Use at least 8 characters.") : t("Enter your password.");
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
@@ -400,7 +405,7 @@ export function LoginScreen({
     let navigating = false;
     setDeviceFailure("");
     setIsSubmitting(true);
-    setStatus(revokeFamilyId ? "Logging out the selected device…" : "Signing you in…", "info");
+    setStatus(revokeFamilyId ? t("Logging out the selected device…") : t("Signing you in…"), "info");
     try {
       const { ok, status: responseStatus, payload } = await authRequest("/api/auth/login", {
         method: "POST",
@@ -408,7 +413,7 @@ export function LoginScreen({
         body: JSON.stringify({ email, password, tenantSlug, revokeFamilyId }),
       });
       if (!ok) {
-        const message = typeof payload.message === "string" ? payload.message : "Unable to sign in. Check your details and try again.";
+        const message = typeof payload.message === "string" ? payload.message : t("Unable to sign in. Check your details and try again.");
         if (payload.code === "DEVICE_LIMIT_REACHED" && Array.isArray(payload.sessions) && payload.sessions.length) {
           setLimitedSessions(payload.sessions as SecuritySession[]);
         } else if (limitedSessions && responseStatus !== 401) {
@@ -429,10 +434,10 @@ export function LoginScreen({
         setMfaCode("");
         setMfaRecoveryMode(false);
         setLimitedSessions(null);
-        setStatus("Enter the code from your authenticator app.", "info");
+        setStatus(t("Enter the code from your authenticator app."), "info");
         return;
       }
-      if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
+      if (payload.authenticated !== true) throw new Error(t("Sign-in could not be completed. Please try again."));
       // A reclaimed device slot can continue into onboarding or MFA enrollment
       // without navigating away. Clear the old limit dialog before that state
       // transition so it cannot retry with the password we intentionally erase.
@@ -440,7 +445,7 @@ export function LoginScreen({
       setDeviceFailure("");
       navigating = await finishAuthenticatedSignIn(payload, nextPath);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to sign in. Please try again.";
+      const message = error instanceof Error ? error.message : t("Unable to sign in. Please try again.");
       if (limitedSessions) setDeviceFailure(message);
       else setStatus(message);
     } finally {
@@ -450,88 +455,88 @@ export function LoginScreen({
 
   const startRecovery = async () => {
     if (!/^\S+@\S+\.\S+$/.test(email)) {
-      setEmailError("Enter your work email to reset the password.");
+      setEmailError(t("Enter your work email to reset the password."));
       return;
     }
-    setStatus("Sending password recovery instructions…", "info");
+    setStatus(t("Sending password recovery instructions…"), "info");
     const response = await fetch("/api/auth/forgot-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email, tenantSlug: tenant.loginSlug }),
     }).catch(() => null);
     setStatus(response?.ok
-      ? "If this account exists, password recovery instructions are ready."
-      : "Password recovery is unavailable. Please try again.", response?.ok ? "info" : "error");
+      ? t("If this account exists, password recovery instructions are ready.")
+      : t("Password recovery is unavailable. Please try again."), response?.ok ? "info" : "error");
   };
 
   const canSkipEnrollment = canDeferMfaEnrollment;
   const choosingWorkspace = mfaStage === "credentials" && Boolean(workspaceChoices);
-  const heading = choosingWorkspace ? "Choose a workspace" : mfaStage === "challenge"
-    ? "Verify it’s you"
+  const heading = choosingWorkspace ? t("Choose a workspace") : mfaStage === "challenge"
+    ? t("Verify it’s you")
     : mfaStage === "enrollment"
-      ? mfaSetup ? "Connect your authenticator" : "Protect your account"
+      ? mfaSetup ? t("Connect your authenticator") : t("Protect your account")
       : mfaStage === "recovery"
-        ? "Save your recovery codes"
+        ? t("Save your recovery codes")
         : passwordResetToken
-          ? "Reset your password"
+          ? t("Reset your password")
           : invitationToken
-            ? "Create your password"
-            : "Welcome back";
-  const intro = choosingWorkspace ? "Your account has access to more than one workspace." : mfaStage === "challenge"
-    ? "Use your authenticator app or one of your saved recovery codes."
+            ? t("Create your password")
+            : t("Welcome back");
+  const intro = choosingWorkspace ? t("Your account has access to more than one workspace.") : mfaStage === "challenge"
+    ? t("Use your authenticator app or one of your saved recovery codes.")
     : mfaStage === "enrollment"
       ? mfaSetup
-        ? "Scan this code with your authenticator app, then confirm the six-digit code."
-        : "Use an authenticator app for an extra sign-in check."
+        ? t("Scan this code with your authenticator app, then confirm the six-digit code.")
+        : t("Use an authenticator app for an extra sign-in check.")
       : mfaStage === "recovery"
-        ? "Each code works once if you lose access to your authenticator app."
+        ? t("Each code works once if you lose access to your authenticator app.")
         : passwordResetToken
-          ? "Choose a new password to secure your account."
+          ? t("Choose a new password to secure your account.")
           : invitationToken
-            ? `Activate your invitation to ${tenant.displayName}.`
-            : `Sign in to continue to your ${tenant.displayName} workspace.`;
+            ? t("Activate your invitation to {name}.", { name: tenant.displayName })
+            : t("Sign in to continue to your {name} workspace.", { name: tenant.displayName });
   const submitLabel = isOpening
-    ? "Open workspace"
+    ? t("Open workspace")
     : isSubmitting
       ? mfaStage === "challenge"
-        ? "Verifying"
+        ? t("Verifying")
         : mfaStage === "enrollment"
-          ? mfaSetup ? "Confirming" : "Preparing"
+          ? mfaSetup ? t("Confirming") : t("Preparing")
           : mfaStage === "recovery"
-            ? "Opening workspace"
-            : passwordResetToken ? "Saving password" : invitationToken ? "Activating" : "Signing in"
+            ? t("Opening workspace")
+            : passwordResetToken ? t("Saving password") : invitationToken ? t("Activating") : t("Signing in")
       : mfaStage === "challenge"
-        ? "Verify and sign in"
+        ? t("Verify and sign in")
         : mfaStage === "enrollment"
-          ? mfaSetup ? "Confirm authenticator" : "Set up authenticator"
+          ? mfaSetup ? t("Confirm authenticator") : t("Set up authenticator")
           : mfaStage === "recovery"
-            ? "Continue to workspace"
-            : passwordResetToken ? "Save new password" : invitationToken ? "Activate invitation" : "Sign in";
+            ? t("Continue to workspace")
+            : passwordResetToken ? t("Save new password") : invitationToken ? t("Activate invitation") : t("Sign in");
 
   return (
-    <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
+    <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} direction={languageDirection(language)} locale={language === "en" ? "en-AE" : language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
       <main className={styles.loginLayout}>
         <div aria-hidden="true" className={styles.brandPanel} />
 
         <section aria-labelledby="login-heading" className={styles.loginPanel}>
           <div className={styles.loginCard}>
-            <header className={styles.tenantBrand} aria-label={`${tenant.displayName} workspace`}>
+            <header className={styles.tenantBrand} aria-label={t("{name} workspace", { name: tenant.displayName })}>
               {tenant.logoUrl ? (
                 <span className={styles.tenantLogo}>
                   <Image alt={tenant.displayName} fill preload sizes="88px" src={tenant.logoUrl} />
                 </span>
               ) : null}
-              <div className={styles.brandIdentity}><strong className={styles.tenantName}>{tenant.displayName}</strong><span>Internal workspace</span></div>
+              <div className={styles.brandIdentity}><strong className={styles.tenantName}>{tenant.displayName}</strong><span>{t("Internal workspace")}</span></div>
             </header>
             <div className={styles.formArea} data-security={mfaStage !== "credentials"}>
             <div className={styles.formIntro}>
-              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />Back</Button> : null}
-              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{mfaSetup ? "Back" : "Back to sign in"}</Button> : null}
+              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{t("Back")}</Button> : null}
+              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{mfaSetup ? t("Back") : t("Back to sign in")}</Button> : null}
               <h1 id="login-heading">{heading}</h1>
               <p>{intro}</p>
             </div>
 
-            {choosingWorkspace ? <ul aria-label="Workspaces" className={styles.workspaceList}>
+            {choosingWorkspace ? <ul aria-label={t("Workspaces")} className={styles.workspaceList}>
               {workspaceChoices!.map((workspace) => <li key={workspace.loginSlug}>
                 <Button className={styles.workspaceChoice} isDisabled={isSubmitting} onPress={() => void signIn(undefined, workspace.loginSlug)} type="button" variant="secondary">
                   <span aria-hidden="true" className={styles.workspaceInitial}>{workspace.name.trim().charAt(0).toUpperCase()}</span>
@@ -548,7 +553,7 @@ export function LoginScreen({
                   inputType={tenant.loginSlug ? "text" : "email"}
                   isInvalid={Boolean(emailError)}
                   isRequired
-                  label={tenant.loginSlug ? "Email or mobile" : "Email"}
+                  label={tenant.loginSlug ? t("Email or mobile") : t("Email")}
                   name="email"
                   onChange={(value) => {
                     setEmail(value);
@@ -566,17 +571,17 @@ export function LoginScreen({
                   inputType={showPassword ? "text" : "password"}
                   isInvalid={Boolean(passwordError)}
                   isRequired
-                  label={settingPassword ? "New password" : "Password"}
+                  label={settingPassword ? t("New password") : t("Password")}
                   name="password"
                   onChange={(value) => {
                     setPassword(value);
                     setLimitedSessions(null);
                     if (passwordError) setPasswordError("");
                   }}
-                  placeholder={settingPassword ? "Create a password" : "Password"}
+                  placeholder={settingPassword ? t("Create a password") : t("Password")}
                   suffix={
                     <InputAction
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? t("Hide password") : t("Show password")}
                       className={styles.passwordToggle}
                       onPress={() => setShowPassword((current) => !current)}
                     >
@@ -596,20 +601,20 @@ export function LoginScreen({
                   >
                     Forgot password?
                   </button>
-                </div> : <p className={styles.passwordHint}>Use 10 or more characters with uppercase, lowercase, a number and a symbol.</p>}
+                </div> : <p className={styles.passwordHint}>{t("Use 10 or more characters with uppercase, lowercase, a number and a symbol.")}</p>}
 
                 {settingPassword ? <TextInput
                   errorMessage={confirmPasswordError}
                   inputType={showPassword ? "text" : "password"}
                   isInvalid={Boolean(confirmPasswordError)}
                   isRequired
-                  label="Confirm password"
+                  label={t("Confirm password")}
                   name="confirm-password"
                   onChange={(value) => {
                     setConfirmPassword(value);
                     if (confirmPasswordError) setConfirmPasswordError("");
                   }}
-                  placeholder="Enter the password again"
+                  placeholder={t("Enter the password again")}
                   value={confirmPassword}
                 /> : null}
 
@@ -621,17 +626,17 @@ export function LoginScreen({
                 {mfaRecoveryMode ? <TextInput
                   autoComplete="one-time-code"
                   isRequired
-                  label="Recovery code"
+                  label={t("Recovery code")}
                   onChange={(value) => { setMfaCode(value.toUpperCase()); setStatus(""); }}
                   placeholder="XXXX-XXXX-XXXX-XXXX"
                   value={mfaCode}
                 /> : <div className={styles.otpField}>
-                  <span>Authenticator code <i aria-hidden="true">*</i></span>
+                  <span>{t("Authenticator code")} <i aria-hidden="true">*</i></span>
                   <OtpInput onChange={(value) => { setMfaCode(value); setStatus(""); }} value={mfaCode} />
                 </div>}
                 <div className={styles.mfaLinks}>
                   <button className={styles.textButton} disabled={isSubmitting} onClick={() => { setMfaRecoveryMode((value) => !value); setMfaCode(""); setStatus(""); }} type="button">
-                    {mfaRecoveryMode ? "Use authenticator code" : "Use a recovery code"}
+                    {mfaRecoveryMode ? t("Use authenticator code") : t("Use a recovery code")}
                   </button>
                 </div>
               </div> : null}
@@ -640,28 +645,28 @@ export function LoginScreen({
                 {!mfaSetup ? <>
                   {mfaEnrollmentDeadline ? <p className={styles.deadlineNotice}>
                     {canSkipEnrollment
-                      ? `Set up by ${new Date(mfaEnrollmentDeadline).toLocaleDateString()}.`
-                      : "Required before entering the workspace."}
+                      ? t("Set up by {date}.", { date: new Date(mfaEnrollmentDeadline).toLocaleDateString(language) })
+                      : t("Required before entering the workspace.")}
                   </p> : null}
                 </> : <>
                   <div className={styles.qrPanel}>
-                    {mfaQrCode ? <Image alt="Authenticator setup QR code" height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">Preparing QR code…</span>}
+                    {mfaQrCode ? <Image alt={t("Authenticator setup QR code")} height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">{t("Preparing QR code…")}</span>}
                   </div>
-                  <div aria-label="Authenticator setup key" className={styles.manualKey}>
-                    <span>Setup key</span>
+                  <div aria-label={t("Authenticator setup key")} className={styles.manualKey}>
+                    <span>{t("Setup key")}</span>
                     <code title={mfaSetup.secret}>{mfaSetup.secret}</code>
-                    <button aria-label="Copy setup key" className={styles.copySetupKey} onClick={() => {
+                    <button aria-label={t("Copy setup key")} className={styles.copySetupKey} onClick={() => {
                       if (!navigator.clipboard?.writeText) {
-                        setStatus("Select and copy the setup key manually.");
+                        setStatus(t("Select and copy the setup key manually."));
                         return;
                       }
                       void navigator.clipboard.writeText(mfaSetup.secret)
-                        .then(() => setStatus("Setup key copied.", "info"))
-                        .catch(() => setStatus("Select and copy the setup key manually."));
-                    }} title="Copy setup key" type="button"><Copy aria-hidden="true" size={14} /></button>
+                        .then(() => setStatus(t("Setup key copied."), "info"))
+                        .catch(() => setStatus(t("Select and copy the setup key manually.")));
+                    }} title={t("Copy setup key")} type="button"><Copy aria-hidden="true" size={14} /></button>
                   </div>
                   <div className={styles.otpField}>
-                    <span>Six-digit code <i aria-hidden="true">*</i></span>
+                    <span>{t("Six-digit code")} <i aria-hidden="true">*</i></span>
                     <OtpInput onChange={(value) => { setMfaCode(value); setStatus(""); }} value={mfaCode} />
                   </div>
                 </>}
@@ -669,62 +674,62 @@ export function LoginScreen({
               </div> : null}
 
               {mfaStage === "recovery" ? <div className={styles.mfaForm}>
-                <div className={styles.recoveryHeader}><ShieldCheck aria-hidden="true" size={18} /><span>Store these somewhere safe. They will not be shown again.</span></div>
-                <ol aria-label="Recovery codes" className={styles.recoveryCodes}>{recoveryCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ol>
-                <Button className={styles.copyCodes} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.", "info")).catch(() => setStatus("Select and copy the recovery codes manually."))} size="compact" variant="quiet"><Copy size={14} />Copy all codes</Button>
-                <Checkbox isSelected={recoveryCodesSaved} onChange={setRecoveryCodesSaved}>I saved these recovery codes</Checkbox>
+                <div className={styles.recoveryHeader}><ShieldCheck aria-hidden="true" size={18} /><span>{t("Store these somewhere safe. They will not be shown again.")}</span></div>
+                <ol aria-label={t("Recovery codes")} className={styles.recoveryCodes}>{recoveryCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ol>
+                <Button className={styles.copyCodes} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus(t("Recovery codes copied."), "info")).catch(() => setStatus(t("Select and copy the recovery codes manually.")))} size="compact" variant="quiet"><Copy size={14} />{t("Copy all codes")}</Button>
+                <Checkbox isSelected={recoveryCodesSaved} onChange={setRecoveryCodesSaved}>{t("I saved these recovery codes")}</Checkbox>
               </div> : null}
 
               <Button className={styles.submitButton} isLoading={isSubmitting} size="large" type="submit" variant="primary">
                 {submitLabel}
 
               </Button>
-              {mfaStage === "enrollment" && !mfaSetup && canSkipEnrollment ? <Button className={styles.skipSetup} isDisabled={isSubmitting} onPress={() => void skipMfaEnrollment()} size="compact" type="button" variant="secondary">Set up later</Button> : null}
+              {mfaStage === "enrollment" && !mfaSetup && canSkipEnrollment ? <Button className={styles.skipSetup} isDisabled={isSubmitting} onPress={() => void skipMfaEnrollment()} size="compact" type="button" variant="secondary">{t("Set up later")}</Button> : null}
             </form>
 
-            {status && !limitedSessions ? <InlineNotice className={styles.statusMessage} message={status} title={statusTone === "error" ? "Sign-in needs attention" : undefined} tone={statusTone} /> : null}
+            {status && !limitedSessions ? <InlineNotice className={styles.statusMessage} message={status} title={statusTone === "error" ? t("Sign-in needs attention") : undefined} tone={statusTone} /> : null}
 
-            {isOpening ? <a className={styles.continueLink} href={authenticatedDestination}>{authenticatedDestination === "/onboarding" ? "Continue setup" : "Open workspace"}</a> : null}
+            {isOpening ? <a className={styles.continueLink} href={authenticatedDestination}>{authenticatedDestination === "/onboarding" ? t("Continue setup") : t("Open workspace")}</a> : null}
 
             {mfaStage === "credentials" ? <p className={styles.supportCopy}>
               {settingPassword ? (
-                <button onClick={() => router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}`)} type="button">Back to sign in</button>
+                <button onClick={() => router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}`)} type="button">{t("Back to sign in")}</button>
               ) : (
-                <>Need access? Ask your administrator for an invitation.</>
+                <>{t("Need access? Ask your administrator for an invitation.")}</>
               )}
             </p> : null}
             </div>
-            <footer aria-label="Powered by Wodana" className={styles.poweredBy}>
-              <span>Powered by</span>
+            <footer aria-label={t("Powered by Wodana")} className={styles.poweredBy}>
+              <span>{t("Powered by")}</span>
               <WodanaLogo size="small" className={styles.poweredLogo} />
             </footer>
           </div>
         </section>
       </main>
       <ControlledModalDialog
-        title="Device limit reached"
-        description="Log out a device to continue signing in."
+        title={t("Device limit reached")}
+        description={t("Log out a device to continue signing in.")}
         isOpen={Boolean(limitedSessions)}
         isDismissable={!isSubmitting}
         onOpenChange={(open) => { if (!open && !isSubmitting) { setLimitedSessions(null); setStatus(""); } }}
-        footer={<Button className={styles.deviceCancelButton} isDisabled={isSubmitting} onPress={() => { setLimitedSessions(null); setStatus(""); }}>Back to sign in</Button>}
+        footer={<Button className={styles.deviceCancelButton} isDisabled={isSubmitting} onPress={() => { setLimitedSessions(null); setStatus(""); }}>{t("Back to sign in")}</Button>}
       >
-        <section className={styles.deviceLimit} aria-label="Logged-in devices">
-          <p aria-live="polite">{limitedSessions?.length ?? 0} of 2 devices in use. Choose a session to log out.</p>
+        <section className={styles.deviceLimit} aria-label={t("Logged-in devices")}>
+          <p aria-live="polite">{t("{count} of {limit} devices in use. Choose a session to log out.", { count: limitedSessions?.length ?? 0, limit: 2 })}</p>
           {deviceFailure ? <p role="alert" className={styles.deviceFailure}>{deviceFailure}</p> : null}
           <ul>{limitedSessions?.map((session) => {
             const device = deviceDetails(session.userAgent);
             return <li key={session.familyId}>
               <span className={styles.deviceIcon}><Monitor aria-hidden="true" size={21} strokeWidth={1.5} /></span>
-              <div><strong>{device.browser === "Unknown browser" && device.device === "Unknown device" ? "Unrecognized device" : `${device.browser} on ${device.device}`}</strong>
-                <small>{session.ipAddress ?? "IP not recorded"}</small>
-                <small>Last active {new Date(session.lastActiveAt).toLocaleString()}</small>
+              <div><strong>{device.browser === "Unknown browser" && device.device === "Unknown device" ? t("Unrecognized device") : t("{browser} on {device}", { browser: device.browser, device: device.device })}</strong>
+                <small>{session.ipAddress ?? t("IP not recorded")}</small>
+                <small>{t("Last active {time}", { time: new Date(session.lastActiveAt).toLocaleString(language) })}</small>
               </div>
-              <Button isDisabled={isSubmitting} onPress={() => void signIn(session.familyId)} className={styles.deviceLogoutButton}>Log out device</Button>
+              <Button isDisabled={isSubmitting} onPress={() => void signIn(session.familyId)} className={styles.deviceLogoutButton}>{t("Log out device")}</Button>
             </li>;
           })}</ul>
-          <p>The selected device will be signed out immediately. You’ll continue signing in here.</p>
-          {isSubmitting ? <p role="status">Logging out device…</p> : null}
+          <p>{t("The selected device will be signed out immediately. You’ll continue signing in here.")}</p>
+          {isSubmitting ? <p role="status">{t("Logging out device…")}</p> : null}
         </section>
       </ControlledModalDialog>
     </DesignSystemProvider>

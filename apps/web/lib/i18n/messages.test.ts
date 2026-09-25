@@ -1,16 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { languages, languageDirection, resolveLanguage } from './languages';
-import { messages, translator, type MessageKey } from './messages';
+import { messages, missingTranslations, translator, type MessageKey } from './messages';
 describe('language foundation', () => {
-  it('keeps every supported dictionary complete with matching placeholders', () => {
-    const keys = Object.keys(messages.en).sort() as MessageKey[];
+  it('keeps every dictionary a subset of English with matching placeholders', () => {
+    const keys = new Set(Object.keys(messages.en));
     for (const { id } of languages) {
-      expect(Object.keys(messages[id]).sort()).toEqual(keys);
-      for (const key of keys) {
-        expect(messages[id][key].trim()).not.toBe('');
-        expect((messages[id][key].match(/\{\w+\}/g) ?? []).sort()).toEqual((messages.en[key].match(/\{\w+\}/g) ?? []).sort());
+      const dictionary = messages[id];
+      for (const [key, value] of Object.entries(dictionary) as [MessageKey, string][]) {
+        expect(keys.has(key), `${id} has an entry that is not in en.json: ${key}`).toBe(true);
+        expect(value.trim()).not.toBe('');
+        expect((value.match(/\{\w+\}/g) ?? []).sort()).toEqual((messages.en[key].match(/\{\w+\}/g) ?? []).sort());
       }
     }
+  });
+  it('falls back to English for labels that are not translated yet', () => {
+    const untranslated = missingTranslations().ar[0];
+    if (untranslated) expect(translator('ar')(untranslated)).toBe(messages.en[untranslated]);
   });
   it('resolves region variants and uses RTL for both Arabic and Urdu', () => {
     expect(resolveLanguage('ur-PK')).toBe('ur');

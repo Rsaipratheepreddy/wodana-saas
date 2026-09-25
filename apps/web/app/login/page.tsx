@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
+import { translator } from "@/lib/i18n/messages";
 import { notFound } from "next/navigation";
 import { businessApiUrl } from "@/lib/auth/server";
 import { resolveTenantHost, type TenantBranding } from "@/lib/auth/resolve-tenant-host";
@@ -42,18 +44,21 @@ export default async function LoginPage({
   searchParams: Promise<{ invitation?: string; reset?: string; next?: string; tenant?: string; reason?: string }>;
 }) {
   const query = await searchParams;
+  const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
+  const t = translator(language);
   const tenant = await getTenantBranding(query.tenant);
   const nextPath = query.next?.startsWith("/workspace") || query.next?.startsWith("/internal") ? query.next : "/workspace";
   return (
     <LoginScreen
       invitationToken={query.invitation && query.invitation.length <= 256 ? query.invitation : undefined}
       passwordResetToken={!query.invitation && query.reset && /^[A-Za-z0-9_-]{32,256}$/.test(query.reset) ? query.reset : undefined}
-      initialStatus={query.reason === "session-unavailable" ? "The sign-in service is temporarily unavailable. Please try again."
-        : query.reason === "session-ended" ? "Your session has ended. Please sign in again."
-          : query.reason === "password-reset" ? "Password updated. Sign in with your new password." : undefined}
+      initialStatus={query.reason === "session-unavailable" ? t("The sign-in service is temporarily unavailable. Please try again.")
+        : query.reason === "session-ended" ? t("Your session has ended. Please sign in again.")
+          : query.reason === "password-reset" ? t("Password updated. Sign in with your new password.") : undefined}
       nextPath={nextPath}
       initialStatusTone={query.reason === "password-reset" ? "info" : "error"}
       tenant={tenant}
+      language={language}
     />
   );
 }

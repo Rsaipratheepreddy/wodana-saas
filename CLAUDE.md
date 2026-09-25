@@ -25,7 +25,9 @@ The parent directory's `CLAUDE.md` describes the legacy FastAPI "IntDesignERP" a
 6. **UI** follows the minimal content rules in the plan (§2):
    - one title per view, no repeated information, no explanatory paragraphs;
    - shared components and tokens only.
-7. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
+7. **Labels:** every user-facing string goes through `t()` with its key in `apps/web/lib/i18n/en.json` (the English text is the key). Other languages are translated in one pass at the end; `npm run i18n:missing --workspace @wodana/web` lists what is left.
+8. **Direction:** every component must work both left-to-right and right-to-left. Use CSS logical properties (`inline-start`, `padding-inline`, `inset-inline-*`), never `left`/`right`. Left/right arrow and chevron icons mirror automatically; mark any other directional icon with `data-directional="true"`.
+9. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
 
 ## Verify before claiming done
 - Backend: `npm test --workspace @wodana/business-core` and typecheck.
