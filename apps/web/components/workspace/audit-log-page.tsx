@@ -2,18 +2,7 @@
 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState } from "react";
-import {
-  Badge,
-  Button,
-  Callout,
-  ControlledModalDialog,
-  DataGrid,
-  DesignSystemProvider,
-  SearchInput,
-  SelectField,
-  formatDate,
-  type DataGridColumn,
-} from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, SearchInput, SelectField, SettingsPage, formatDate, type DataGridColumn } from "@/design-system";
 import type { AuditEvent, AuditLogPageData } from "@/lib/workspace/audit-log";
 import styles from "./audit-log-page.module.css";
 
@@ -136,7 +125,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
   };
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label={t("Audit logs")} className={styles.page}>
+    <SettingsPage aria-label={t("Audit logs")} title={t("Audit history")} width="wide">
       {!initialData.canView ? <Callout title={t("Audit log access is restricted")} tone="warning">{t("Ask a workspace owner or administrator for audit viewing permission.")}</Callout> : <>
         <section aria-label={t("Audit filters")} className={styles.filters}>
           <div className={styles.filterControls}>
@@ -155,7 +144,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
 
         <DataGrid ariaLabel="Workspace audit log" appearance="flush" columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more")}</Button> : undefined} emptyTitle="No audit events found" emptyDescription="Try a different source, period, or search." />
       </>}
-    </section>
+    </SettingsPage>
 
     <AuditEventDialog event={selectedEvent} onClose={() => setSelectedEvent(null)} />
   </DesignSystemProvider>;

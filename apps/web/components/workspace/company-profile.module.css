@@ -43,7 +43,10 @@
 .standaloneSectionHint { max-inline-size: 44rem; }
 .organizationNotice { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-success); font-size: var(--wd-text-xs); }
 .legalEntityList, .organizationList, .terminologyList { display: grid; padding: 0; margin: 0; border-block: 1px solid var(--wd-color-structural-divider); list-style: none; }
-.legalEntityList > li, .organizationList > li, .terminologyList > li { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-workspace-row-padding, .875rem); }
+.legalEntityList > li, .organizationList > li, .terminologyList > li { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-2-5); }
+.legalEntityList > li { grid-template-columns: auto minmax(0, 1fr) auto auto auto; }
+.terminologyList > li { grid-template-columns: minmax(0, 1fr) auto; }
+.detailSection:has(> header:empty) > header, .detailSection > header:has(> div:only-child:empty) { display: none; }
 .legalEntityList > li + li, .organizationList > li + li, .terminologyList > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
 .organizationIcon { display: grid; inline-size: 2rem; block-size: 2rem; place-items: center; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-icon); }
 .legalEntityDetails, .organizationList > li > span:nth-child(2), .terminologyList > li > div:first-child, .requestRow > div:first-child { min-inline-size: 0; display: grid; gap: var(--wd-space-0-5); }
@@ -99,3 +102,7 @@
 
 .logoThumb { display: inline-grid; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); place-items: center; overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); }
 .logoThumb img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+
+.standaloneHeading { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.detailSection > header:has(.standaloneHeading) { padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.detailSection > header:has(.standaloneHeading) + * + .legalEntityList, .detailSection > header:has(.standaloneHeading) ~ .legalEntityList { border-block-start: 0; }

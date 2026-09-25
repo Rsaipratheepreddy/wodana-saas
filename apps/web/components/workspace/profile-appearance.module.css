@@ -5,6 +5,6 @@
 .option svg { inline-size: 100%; block-size: 100%; border-radius: var(--wd-radius-round); }
 .option:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--wd-color-text) 12%, transparent); }
 .option:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-.option[data-selected] { box-shadow: 0 0 0 2px var(--wd-color-action-primary); }
+.option[data-selected] { box-shadow: 0 0 0 2px var(--wd-color-success); }
 .option:disabled { cursor: progress; opacity: 0.7; }
-.check { position: absolute; inset-block-end: 0; inset-inline-end: 0; display: grid; inline-size: 1.25rem; block-size: 1.25rem; place-items: center; border-radius: var(--wd-radius-round); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
+.check { position: absolute; inset-block-end: 0; inset-inline-end: 0; display: grid; inline-size: 1.25rem; block-size: 1.25rem; place-items: center; border-radius: var(--wd-radius-round); background: var(--wd-color-success); color: var(--wd-color-surface); box-shadow: 0 0 0 2px var(--wd-color-surface); }

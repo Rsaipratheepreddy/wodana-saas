@@ -2,23 +2,8 @@
 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
-import { Building2, ClipboardCheck, FolderKanban, Handshake, KeyRound, Package, Plus, ShieldCheck, Sparkles, Users, Wallet } from "lucide-react";
-import {
-  Badge,
-  Button,
-  Callout,
-  ConfirmationDialog,
-  ControlledModalDialog,
-  DataGrid,
-  DesignSystemProvider,
-  IconMenuButton,
-  SearchInput,
-  SelectField,
-  Switch,
-  TextAreaField,
-  TextInput,
-  type DataGridColumn,
-} from "@/design-system";
+import { Building2, ClipboardCheck, FolderKanban, Handshake, Package, Plus, Sparkles, Users, Wallet } from "lucide-react";
+import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, IconMenuButton, SearchInput, SelectField, SettingsPage, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
   PERMISSION_AREAS,
@@ -91,7 +76,6 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const [permissionAreaFilter, setPermissionAreaFilter] = useState<PermissionAreaId>("all");
   const [permissionSearch, setPermissionSearch] = useState("");
   const selectedRole = roles.find((role) => role.id === selectedRoleId) ?? roles[0];
-  const customRoleCount = roles.filter((role) => !role.isSystem).length;
   const changed = Boolean(selectedRole && !selectedRole.isSystem
     && !samePermissions(drafts[selectedRole.id], selectedRole.permissions));
 
@@ -244,19 +228,9 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-labelledby="roles-heading" className={styles.page}>
-        <header className={styles.pageHeading}>
-          <h1 id="roles-heading">Roles &amp; permissions</h1>
-          <p>{t("Set who can see and act in each part of the workspace.")}</p>
-        </header>
+      <SettingsPage aria-label={t("Roles & permissions")} title={t("Roles & permissions")} width="wide">
 
         <div aria-label={t("Role actions")} className={styles.toolbar}>
-          <div className={styles.summary}>
-            <span><ShieldCheck aria-hidden="true" size={15} /><strong>{roles.length}</strong> {t("roles")}</span>
-            <span><KeyRound aria-hidden="true" size={15} /><strong>{customRoleCount}</strong> {t("custom")}</span>
-            {initialData.memberCount === null ? null : <span><Users aria-hidden="true" size={15} /><strong>{initialData.memberCount}</strong> {t("member")}{initialData.memberCount === 1 ? "" : "s"}</span>}
-            <span><ClipboardCheck aria-hidden="true" size={15} /><strong>{initialData.permissions.length}</strong> {t("capabilities")}</span>
-          </div>
           <div className={styles.actions}>
             <SelectField
               accent="neutral"
@@ -332,7 +306,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
                 ? "You can review this role. Permission changes require role editing access."
                 : "This role contains permissions outside your access and is read-only for you."}
         </p>
-      </section>
+      </SettingsPage>
 
       <RoleDialog initialData={initialData} item={editingRole} key={editingRole === "new" ? "role-new" : editingRole?.id ?? "role-closed"} onClose={() => setEditingRole(null)} onSaved={(role) => { mergeRole(role, editingRole !== "new"); setSelectedRoleId(role.id); setEditingRole(null); setStatus(editingRole === "new" ? `${role.name} was saved.` : `${role.name} details saved. Any unsaved permission changes remain ready to apply.`); }} />
       <ConfirmationDialog body={deletingRole ? <>{t("Delete")}{" "}<strong>{deletingRole.name}</strong>{t("? This cannot be undone.")}</> : null} confirmLabel={deleting ? "Deleting…" : "Delete role"} isOpen={Boolean(deletingRole)} onConfirm={() => void deleteRole()} onOpenChange={(open) => { if (!open && !deleting) setDeletingRole(null); }} title={t("Delete custom role?")} />

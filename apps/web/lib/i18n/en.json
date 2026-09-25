@@ -727,5 +727,9 @@
   "Access policy": "Access policy",
   "Usage": "Usage",
   "Pending invitations reserve seats.": "Pending invitations reserve seats.",
-  "Manage workspaces": "Manage workspaces"
+  "Manage workspaces": "Manage workspaces",
+  "Businesses": "Businesses",
+  "Active": "Active",
+  "Archived": "Archived",
+  "Logo, name and colours": "Logo, name and colours"
 }

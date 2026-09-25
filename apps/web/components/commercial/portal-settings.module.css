@@ -11,3 +11,5 @@
 .preview p { margin: 0; color: var(--wd-color-text-secondary); }
 .previewAction { justify-self: start; margin-block-start: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); color: var(--wd-color-text-inverse); font-size: var(--wd-text-sm); font-weight: 600; }
 @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.fields { display: grid; gap: var(--wd-space-3); padding-block: var(--wd-space-3); }

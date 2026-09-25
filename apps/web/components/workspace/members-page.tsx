@@ -3,27 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState, type FormEvent } from "react";
 import { Copy, Download } from "lucide-react";
-import {
-  Avatar,
-  Badge,
-  Button,
-  Callout,
-  Checkbox,
-  ConfirmationDialog,
-  ControlledModalDialog,
-  DesignSystemProvider,
-  FileUploader,
-  Form,
-  GroupedTable,
-  IconMenuButton,
-  MultiSelectField,
-  SelectField,
-  TextInput,
-  ValidationSummary,
-  formatDate,
-  type GroupedTableColumn,
-  type GroupedTableSection,
-} from "@/design-system";
+import { Avatar, Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, FileUploader, Form, GroupedTable, IconMenuButton, MultiSelectField, SelectField, SettingsPage, TextInput, ValidationSummary, formatDate, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import {
   readableRole,
   type MembersPageData,
@@ -585,15 +565,15 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
 
   if (initialData.canView === false) {
     return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-label={t("People")} className={styles.page}>
+      <SettingsPage aria-label={t("People")} title={t("People")} width="wide">
         <Callout title={t("People access unavailable")} tone="warning">{t("Your role does not include permission to view or manage people. Ask a workspace administrator for access.")}</Callout>
-      </section>
+      </SettingsPage>
     </DesignSystemProvider>;
   }
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <section aria-label={t("People")} className={styles.page}>
+      <SettingsPage aria-label={t("People")} title={t("People")} width="wide">
 
         {canInvite && (assignableRoles.length > 0 || assignableTeams.length > 0) ? <section aria-label={t("Invite people")} className={styles.inviteComposer}>
           <Form className={styles.quickInviteForm} onSubmit={createQuickInvitation}>
@@ -639,7 +619,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           />
         </div>
         {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>{t("Your access is read-only. Ask a workspace administrator to change people or invitations.")}</p> : null}
-      </section>
+      </SettingsPage>
 
       <ControlledModalDialog
         description={invitationResult

@@ -217,7 +217,7 @@ export function LegalEntitiesPanel({
   return <>
     <section aria-label={standalone ? "Business records" : undefined} aria-labelledby={standalone ? undefined : "legal-entities-heading"} className={`${styles.detailSection} ${styles.legalEntitiesSection}`}>
       <header>
-        <div>{standalone ? null : <><h2 id="legal-entities-heading">{t("Business records")}</h2><p className={styles.sectionHint}>{t("Official company, trade-license and tax details used on contracts and invoices.")}</p></>}</div>
+        <div>{standalone ? <h2 className={styles.standaloneHeading}>{t("Businesses")}</h2> : <><h2 id="legal-entities-heading">{t("Business records")}</h2><p className={styles.sectionHint}>{t("Official company, trade-license and tax details used on contracts and invoices.")}</p></>}</div>
         {canManage ? <Button onPress={openCreate} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />{t("Add business")}</Button> : null}
       </header>
       {notice ? <p aria-live="polite" className={styles.organizationNotice}><CheckCircle2 aria-hidden="true" size={14} />{notice}</p> : null}
@@ -230,7 +230,7 @@ export function LegalEntitiesPanel({
             <small>{entity.code} · {entity.registeredName}</small>
             <small>{displayRegion(entity.countryCode)} · {entity.baseCurrency} · {entity.timezone}</small>
           </div>
-          <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
+          <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status === "active" ? t("Active") : t("Archived")}</Badge>
           <TaxNumberingSheet canManage={canManage} entityId={entity.id} entityName={entity.displayName} workspaceId={workspace.id} />
           {canManage ? <div className={styles.legalEntityActions}>
             <Button aria-label={`Edit ${entity.displayName}`} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
