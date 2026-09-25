@@ -3,6 +3,7 @@
 import { Building2, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, SelectField, TextInput } from "@/design-system";
+import { TaxNumberingSheet } from "./tax-numbering-sheet";
 import type { CompanyAddress, LegalEntityRecord, WorkspaceRecord } from "@/lib/workspace/company-profile";
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
@@ -228,6 +229,7 @@ export function LegalEntitiesPanel({
             <small>{displayRegion(entity.countryCode)} · {entity.baseCurrency} · {entity.timezone}</small>
           </div>
           <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
+          <TaxNumberingSheet canManage={canManage} entityId={entity.id} entityName={entity.displayName} workspaceId={workspace.id} />
           {canManage ? <div className={styles.legalEntityActions}>
             <Button aria-label={`Edit ${entity.displayName}`} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />Edit</Button>
             {entities.length > 1 ? <Button aria-label={`Archive ${entity.displayName}`} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />Archive</Button> : null}
