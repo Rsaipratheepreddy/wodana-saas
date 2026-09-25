@@ -33,7 +33,14 @@ The parent directory's `CLAUDE.md` describes the legacy FastAPI "IntDesignERP" a
    - Spacing inside components uses the 4px grid (`--wd-space-*`); page and section rhythm uses the golden ratio (`--wd-phi-*`).
    - Type uses `--wd-text-*`; radius uses `--wd-radius-*`; colour uses the semantic `--wd-color-*` tokens.
    - No raw values, no local palette overrides and no theme-specific colour rules in components. `styles/token-discipline.test.ts` enforces this; `node scripts/snap-to-tokens.mjs` fixes spacing, type and radius.
-12. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
+12. **Same page anatomy everywhere, so nothing surprises the user.** Every workspace page is built from the shared patterns:
+   - `PageHeader`: one title and at most one primary action.
+   - A toolbar: search, filters, view switch.
+   - The content: `DataGrid`/`RecordTable` for lists, `Kanban` for boards, a record detail with `Tabs`.
+   - The standard states: `Skeleton`, `EmptyState` (with the next action), `ErrorState` (with retry), and the blocked-save banner.
+   - Dropdowns, phone, money and date use the shared fields.
+   - The same action gets the same label and position on every page (e.g. Save bottom-end in dialogs, primary action top-end on pages). Custom page headers or one-off tables are replaced when their module is rebuilt.
+13. **Migrations** live in `services/business-core/drizzle` (`0000_v2_baseline` onward). v1 history is in `drizzle/archive-v1`; don't edit it.
 
 ## Verify before claiming done
 - Backend: `npm test --workspace @wodana/business-core` and typecheck.
