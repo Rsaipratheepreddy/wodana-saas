@@ -918,7 +918,7 @@ UI integration follows each backend module in the same order (web first, then mo
 - explicit route files instead of the catch-all;
 - the sidebar: *Daily work* (Home, Inbox, Tasks, Calendar, Approvals) · *Business* (Sales, Clients, Projects) · *Operations* (Purchasing, Inventory, Factory, Logistics) · *Company* (People, Catalog, Connections, Settings).
 
-**Rebuilt surfaces (not patched).** The owner asked for these to be redesigned from their source, because the current ones are unproductive and buggy:
+**Rebuilt surfaces (not patched).** The owner asked for these to be redesigned from their source, because the current ones are unproductive and buggy. **Order:** quotation builder and planning with their modules; Home and Inbox **last**, after all modules exist, so they aggregate real sources:
 
 | Surface | Rebuild |
 | --- | --- |
