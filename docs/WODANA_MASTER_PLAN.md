@@ -245,6 +245,21 @@ Rules:
 - **Rules:** configuration is versioned. Records freeze the version they used, and old records keep their meaning when configuration changes. Values are archived, never deleted if in use.
 - **Screens:** Settings hub with sections: Company · People & roles · Workflow · Approvals · Numbering & tax · Notifications · Templates · Catalogs · Connections · Security · Billing · Data export.
 
+### 6.3a Country, currency and region rules (international by default)
+Wodana is international. A country profile (region pack) supplies currency and decimals, locale, time zone, working week, units, phone and address structure, and tax model and labels. It is versioned data, extensible to any country.
+
+| # | Rule | Where it is enforced |
+| --- | --- | --- |
+| 1 | Base currency belongs to a legal entity and is fixed once that entity has financial records. A group can hold entities in different countries and currencies. | Settings (legal entities) |
+| 2 | A document in another currency stores an exchange-rate snapshot (rate, source, date). There is no silent conversion. | Quotation, payments, purchasing |
+| 3 | Rounding uses the currency's decimals (3 for KWD, BHD and OMR). | Quotation, payments, finance |
+| 4 | Tax follows the entity's country model. `none` hides tax fields. Rates are configured and validated per entity; "not configured" is never shown as 0%. | Settings (tax), quotation, invoices |
+| 5 | Address and phone follow the country of that address or person, not the workspace. A UAE firm can have an Indian client or a Saudi site. Required region levels are choice lists, never empty text boxes. | CRM, discovery, projects |
+| 6 | The time zone and working week drive SLAs, takeover timers, reminders and schedules. | CRM, projects, HRMS |
+| 7 | Units (metric or imperial) set the catalog and measurement defaults. | Catalog, discovery |
+| 8 | Language and region are independent (Arabic UI with UAE formats; English UI with Saudi formats). | Everywhere |
+| 9 | Region pack upgrades are opt-in. Existing records keep the version they were created with. | Settings |
+
 ### 6.4 Catalog, measurements and pricing (flexible core)
 The current catalog (generic `workspace_catalog_records` + links) is too weak for real quoting: no typed attributes, no measurement-driven quantities, no pricing rules. v2 makes the catalog the engine behind quotes, BoM, purchasing and factory.
 

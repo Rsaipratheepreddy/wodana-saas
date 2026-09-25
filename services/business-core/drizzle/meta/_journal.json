@@ -50,6 +50,13 @@
       "when": 1790568000000,
       "tag": "0006_international_region_packs",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790571600000,
+      "tag": "0007_legal_entity_money_lock",
+      "breakpoints": true
     }
   ]
 }

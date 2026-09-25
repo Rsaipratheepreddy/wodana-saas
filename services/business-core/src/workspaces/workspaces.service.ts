@@ -1543,6 +1543,9 @@ export class WorkspacesService {
           workspaceId,
           input.legalEntityId,
         );
+        await this.assertMoneyIdentityUnchanged(client, workspaceId, beforeEntity, {
+          baseCurrency: input.defaultCurrency, countryCode: input.countryCode,
+        });
 
         try {
           const workspace = await client.query<WorkspaceRow>(
@@ -2021,6 +2024,7 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const before = await this.requireLegalEntity(client, workspaceId, entityId);
+        await this.assertMoneyIdentityUnchanged(client, workspaceId, before, input);
         const values: unknown[] = [];
         const assignments: string[] = [];
         const add = (column: string, value: unknown) => {
@@ -4568,6 +4572,26 @@ export class WorkspacesService {
       .replace(/^-|-$/g, "")
       .slice(0, 70);
     return slug || `workspace-${randomUUID().slice(0, 8)}`;
+  }
+
+  /** Currency and country are fixed once a legal entity has quotes, payments or receipts. */
+  private async assertMoneyIdentityUnchanged(
+    client: PoolClient,
+    workspaceId: string,
+    entity: { id: string; base_currency: string; country_code: string },
+    next: { baseCurrency?: string; countryCode?: string },
+  ) {
+    const changing = (next.baseCurrency !== undefined && next.baseCurrency !== entity.base_currency)
+      || (next.countryCode !== undefined && next.countryCode !== entity.country_code);
+    if (!changing) return;
+    const used = await client.query<{ used: boolean }>(
+      "SELECT legal_entity_has_financial_records($1, $2) AS used", [workspaceId, entity.id],
+    );
+    if (used.rows[0]?.used) {
+      throw new ConflictException(
+        "This legal entity already has quotes or payments, so its currency and country can't change. Add a new legal entity for another country or currency.",
+      );
+    }
   }
 
   private rethrowConstraint(error: unknown, message: string): never {
