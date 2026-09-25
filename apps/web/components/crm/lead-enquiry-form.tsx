@@ -6,6 +6,7 @@ import type { LeadsPageData } from "@/lib/crm/leads";
 import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
 import { countryForPhone, phoneCountry } from "@/lib/crm/phone";
 import { CrmPhoneField } from "./crm-phone-field";
+import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import styles from "./leads-page.module.css";
 
 export type EditableEnquiry = {
@@ -18,6 +19,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   initialData: LeadsPageData; existing?: EditableEnquiry; onClose: () => void;
   onSaved: (leadId: string) => Promise<void>;
 }) {
+  const areaLabel = administrativeAreaLabel(countryFromLocale(initialData.defaultLocale));
   const options = initialData.leadOptions;
   const [requestId] = useState(() => crypto.randomUUID());
   const [contact, setContact] = useState<LeadContact>(() => {
@@ -107,7 +109,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
     finally { inFlight.current = false; setSaving(false); }
   };
   return <ControlledModalDialog isOpen isDismissable={!saving} onOpenChange={open => { if (!open && !saving) onClose(); }} size="lg"
-    title={existing ? "Edit enquiry" : "Add enquiry"} description={existing?.reference ?? "Customer details, enquiry and ownership in one place."}
+    title={existing ? "Edit enquiry" : "New enquiry"} description={existing?.reference ?? undefined}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>Cancel</Button><Button form={formId} type="submit" variant="primary" isDisabled={!options} isLoading={saving}>{savedId ? "Refresh enquiry" : existing ? "Save changes" : matches.length ? "Save enquiry" : "Create enquiry"}</Button></div>}>
     <form id={formId} className={styles.leadForm} onSubmit={save}>
       {failure && <Callout title="Enquiry not saved" tone="danger">{failure}</Callout>}
@@ -119,7 +121,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
       </section>}
       <fieldset className={styles.enquiryFields} disabled={saving || Boolean(savedId) || matches.length > 0}>
         <div className={styles.formColumns}><TextInput isRequired label="Customer name" value={contact.displayName} onChange={set("displayName")} /><CrmPhoneField label="Mobile" required value={contact.mobile ?? ""} onChange={set("mobile")} countryCode={contact.mobileCountryCode ?? ""} onCountryChange={set("mobileCountryCode")} locale={initialData.defaultLocale} /></div>
-        <div className={styles.formColumns}><TextInput label="Email" inputType="email" value={contact.email ?? ""} onChange={set("email")} /><SelectField label="Emirate" isRequired items={withExisting(options?.emirates, existing?.details?.emirate ?? "")} selectedKey={details.emirate || null} onSelectionChange={key => { setCustomAreaSelected(false); setDetails(previous => ({ ...previous, emirate: String(key ?? ""), area: "" })); }} /></div>
+        <div className={styles.formColumns}><TextInput label="Email" inputType="email" value={contact.email ?? ""} onChange={set("email")} /><SelectField label={areaLabel} isRequired items={withExisting(options?.emirates, existing?.details?.emirate ?? "")} selectedKey={details.emirate || null} onSelectionChange={key => { setCustomAreaSelected(false); setDetails(previous => ({ ...previous, emirate: String(key ?? ""), area: "" })); }} /></div>
         <div className={styles.formColumns}>{details.emirate === "outside_uae"
           ? <TextInput label="City / country · optional" value={details.area ?? ""} onChange={setDetail("area")} />
           : <><SelectField label="Area · optional" items={[{ id: "", label: "Not specified" }, ...areaOptions, { id: "other", label: "Other area" }]} selectedKey={areaChoice} onSelectionChange={key => { setCustomAreaSelected(key === "other"); setDetail("area")(key === "other" ? "" : String(key ?? "")); }} />{customAreaSelected ? <TextInput isRequired label="Area name" value={details.area ?? ""} onChange={setDetail("area")} /> : null}</>}</div>

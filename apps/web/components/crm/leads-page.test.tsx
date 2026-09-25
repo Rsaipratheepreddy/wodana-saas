@@ -256,7 +256,7 @@ describe("LeadsPage", () => {
     fixture.leadOptions = { sources: [{id:"company",label:"Company"}], channels: {company:[{id:"call",label:"Call"}]}, enquiryTypes: [{id:"not_sure",label:"Not Sure Yet"}], customerTypes: [], budgetRanges: [], emirates: [{id:"dubai",label:"Dubai"}], areas: {dubai:[]} };
     render(<LeadsPage initialData={fixture} />);
     await user.click(screen.getByRole("button", { name: "New enquiry" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add enquiry" });
+    const dialog = await screen.findByRole("dialog", { name: "New enquiry" });
     await user.type(within(dialog).getByLabelText(/Customer name/), "Layla Karim");
     await user.type(within(dialog).getByRole("textbox", { name: "Mobile" }), "050 123 4567");
     await user.click(within(dialog).getByRole("button", { name: /Emirate/ }));

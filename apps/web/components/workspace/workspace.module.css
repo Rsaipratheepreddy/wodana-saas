@@ -1854,8 +1854,9 @@
 .shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header p { font-size: var(--wd-text-xs); margin-block-start: var(--wd-space-1); }
 .shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > :global(.wd-dialog-body) { flex: 1 1 auto; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--wd-space-1) var(--wd-space-5) var(--wd-space-4); }
 .shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer { flex-shrink: 0; padding: var(--wd-space-3) var(--wd-space-5) var(--wd-space-4); border-block-start: 1px solid var(--wd-color-border); background: var(--wd-color-surface); }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer > div { display: flex; gap: var(--wd-space-3); }
-.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer :global(.wd-button) { flex: 1; min-block-size: 36px; font-size: var(--wd-text-xs); border-radius: var(--wd-radius-xs); }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer > div { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer :global(.wd-button) { flex: none; min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-3); font-size: var(--wd-text-sm); border-radius: var(--wd-radius-sm); }
+@media(max-width:600px) { .shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer :global(.wd-button) { flex: 1; min-block-size: 44px; } }
 .shell .recordTablePanel :global(.wd-dialog-body form .wd-field-label) { font-weight: 400; }
 .shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
 .shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),

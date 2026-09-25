@@ -15,6 +15,7 @@ import {
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions, type RegionalOption } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
 import { BrandColour } from "./brand-colour";
+import { administrativeAreaLabel } from "@/lib/workspace/region-labels";
 import { AiAssistanceSetting } from "./ai-assistance-setting";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
 
@@ -117,12 +118,6 @@ async function loadLocationOptions(countryCode: string, region: string | undefin
   return Array.isArray(payload?.items) ? payload.items : [];
 }
 
-function administrativeAreaLabel(countryCode: string): string {
-  if (countryCode === "AE") return "Emirate";
-  if (["AU", "BR", "IN", "MX", "US"].includes(countryCode)) return "State";
-  if (countryCode === "CA") return "Province / territory";
-  return "State / province / region";
-}
 
 export function CompanyProfile({
   canManage,

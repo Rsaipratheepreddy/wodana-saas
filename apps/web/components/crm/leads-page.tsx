@@ -44,6 +44,7 @@ import type { IntegrationsPageData } from "@/lib/workspace/integrations";
 import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import { LogContactDialog } from "./log-contact-dialog";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 
 const LOCAL_FORMAT = { locale: "en-GB", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
 const ACTIVE_STATUSES = new Set<CrmLeadStatus>(["new", "attempting_contact", "connected", "nurturing", "paused"]);
@@ -277,7 +278,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
     { id: "priority", header: "Priority", size: 120, accessorFn: lead => humanize(lead.priority), meta: { headerIcon: <ListFilter size={14}/> } },
     { id: "budgetRange", header: "Budget range", size: 180, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.budgetRanges, lead.details?.budgetRange) },
     { id: "customerType", header: "Customer type", size: 140, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.customerTypes, lead.details?.customerType) },
-    { id: "emirate", header: t("Region"), size: 160, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.emirates, lead.details?.emirate), filterFn: "equalsString", meta: { filterOptions: (initialData.leadOptions?.emirates ?? []).map(option => ({ id: option.label, label: option.label })) } },
+    { id: "emirate", header: administrativeAreaLabel(countryFromLocale(serverData.defaultLocale)), size: 160, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.emirates, lead.details?.emirate), filterFn: "equalsString", meta: { filterOptions: (initialData.leadOptions?.emirates ?? []).map(option => ({ id: option.label, label: option.label })) } },
     { id: "area", header: "Area / city", size: 190, accessorFn: lead => lead.details?.area ?? lead.details?.location ?? "" },
     { id: "campaign", header: "Campaign", size: 160, accessorFn: lead => lead.details?.campaign ?? "" },
     ...customFormColumns.map(column => ({ id: column.id, header: column.title, size: 190, accessorFn: (lead: CrmLeadListItem) => formAnswerValue(lead, column), cell: ({ getValue }: { getValue: () => unknown }) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> })),

@@ -22,6 +22,7 @@ import styles from "./crm-workbench.module.css";
 import { LogContactDialog } from "./log-contact-dialog";
 import { ChangeHistory } from "./change-history";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 
 
 export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
@@ -99,7 +100,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           ...(live.ownershipDueAt ? [["Reassign if no call or note", dateText(live.ownershipDueAt)] as [string, string]] : []),
           ["Mobile", formatPhoneForDisplay(String(enquiry?.primaryMobile ?? contact.mobile ?? ""), phoneCountry(contact.mobileCountryCode ?? contact.phoneCountryCode, initialData.defaultLocale))],
           ["Phone", formatPhoneForDisplay(String(enquiry?.primaryPhone ?? contact.phone ?? ""), defaultCountry)], ["Email", String(enquiry?.primaryEmail ?? contact.email ?? "Not provided")],
-          [t("Region"), leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)],
+          [administrativeAreaLabel(countryFromLocale(initialData.defaultLocale)), leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)],
           ["Area", initialData.leadOptions?.areas?.[enquiryDetails.emirate ?? ""]?.find(item => item.id === enquiryDetails.area)?.label ?? enquiryDetails.area ?? enquiryDetails.location ?? "Not provided"],
           ["Budget range", leadOptionLabel(initialData.leadOptions?.budgetRanges, enquiryDetails.budgetRange)],
           ...(enquiryDetails.customerType ? [["Customer type", leadOptionLabel(initialData.leadOptions?.customerTypes, enquiryDetails.customerType)] as [string,string]] : []),
