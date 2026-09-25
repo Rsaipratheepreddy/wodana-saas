@@ -4,12 +4,12 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { AiGatewayService } from "../ai-gateway/ai-gateway.service";
-import { CLEAN_SYSTEM, cleanPrompt, validateClean, type CleanSuggestion } from "./catalog-ai";
+import { CLEAN_SYSTEM, COMPONENTS_SYSTEM, cleanPrompt, componentsPrompt, validateClean, validateComponents, type CleanSuggestion } from "./catalog-ai";
 import { PACK_UNITS, planCatalogImport, type ImportRow } from "./catalog-import";
 import { AttributeValueError, normalizeAttributeValues, type AttributeDefinition, type AttributeType } from "./attributes";
 import { assertNoCycle, BomError, checkFormulas, explode, type BomComponent } from "./bom";
 import { Dec } from "./decimal";
-import { FormulaError } from "./formula";
+import { formulaInputs, FormulaError, parseFormula } from "./formula";
 import { price, type PriceMethod } from "./pricing";
 import { convert, STANDARD_UNITS, UnitError, type Unit } from "./units";
 
@@ -380,6 +380,25 @@ export class CatalogV2Service {
         validate: (value) => validateClean(value, batch, context.categories),
       }));
     }
+    return { suggestions };
+  }
+
+  /** AI: suggest components (with formulas) for an assembly from this catalog's own items. */
+  async aiSuggestComponents(actor: RequestActor, workspaceId: string, catalogId: string, itemId: string) {
+    const context = await this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
+      const item = await this.itemDetail(client, workspaceId, catalogId, itemId, false);
+      if (!["assembly", "package"].includes(item.itemType)) throw new UnprocessableEntityException("Only assemblies and packages have components");
+      const candidates = await client.query<{ id: string; name: string; code: string; unitCode: string; itemType: string }>(
+        `SELECT id, name, code, unit_code AS "unitCode", item_type AS "itemType" FROM catalog_items
+         WHERE workspace_id = $1 AND catalog_id = $2 AND status = 'active' AND id <> $3 AND item_type IN ('material', 'product', 'ready_made', 'service')
+         ORDER BY name LIMIT 400`, [workspaceId, catalogId, itemId]);
+      return { item, candidates: candidates.rows, units: (await this.units(client, workspaceId)).map((unit) => unit.code) };
+    });
+    if (!context.candidates.length) throw new UnprocessableEntityException("Add materials or products to this catalog first");
+    const suggestions = await this.ai.run(actor, workspaceId, {
+      feature: "catalog.suggest_components", system: COMPONENTS_SYSTEM, prompt: componentsPrompt(context.item, context.candidates), maxTokens: 3000,
+      validate: (value) => validateComponents(value, context.candidates, (formula) => formulaInputs(parseFormula(formula)), context.units),
+    });
     return { suggestions };
   }
 

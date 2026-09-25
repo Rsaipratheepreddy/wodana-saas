@@ -673,5 +673,8 @@
   "Add component": "Add component",
   "Save components": "Save components",
   "Edit components": "Edit components",
-  "No components yet": "No components yet"
+  "No components yet": "No components yet",
+  "Suggest with AI": "Suggest with AI",
+  "Add": "Add",
+  "AI has no further suggestions.": "AI has no further suggestions."
 }

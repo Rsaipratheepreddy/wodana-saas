@@ -23,3 +23,24 @@ describe("AI clean-up validation", () => {
     expect(() => validateClean([{ line: 3 }], rows, [])).toThrow(/did not fit/);
   });
 });
+
+import { formulaInputs, parseFormula } from "./formula";
+import { validateComponents } from "./catalog-ai";
+
+describe("AI component suggestions", () => {
+  const candidates = [{ id: "ply", name: "Ply 18mm", unitCode: "sqm" }, { id: "hinge", name: "Hinge", unitCode: "pcs" }];
+  const parse = (formula: string) => formulaInputs(parseFormula(formula));
+  it("keeps real items with safe formulas and drops invented items, unknown variables and code", () => {
+    const result = validateComponents({ components: [
+      { itemId: "ply", formula: "width * height / 1000000 * 2", unit: "sqm", reason: "Two side panels" },
+      { itemId: "hinge", formula: "ceil(height / 450) * doors", unit: "pcs" },
+      { itemId: "ghost", formula: "1" },
+      { itemId: "hinge", formula: "require('fs')" },
+      { itemId: "hinge", formula: "ceil(height / 450) * 2", unit: "boxes", reason: "Hinges by height" },
+    ] }, candidates, parse, ["sqm", "pcs"]);
+    expect(result).toEqual([
+      { componentItemId: "ply", name: "Ply 18mm", quantityFormula: "width * height / 1000000 * 2", unitCode: "sqm", reason: "Two side panels" },
+      { componentItemId: "hinge", name: "Hinge", quantityFormula: "ceil(height / 450) * 2", unitCode: "pcs", reason: "Hinges by height" },
+    ]);
+  });
+});

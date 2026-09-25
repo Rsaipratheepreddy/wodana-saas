@@ -75,3 +75,9 @@
 .componentRow :global(.wd-input) { font-family: inherit; }
 .form > :global(.wd-button) { justify-self: start; }
 @media (max-width: 48rem) { .componentRow { grid-template-columns: minmax(0, 1fr) 6rem 2.25rem; } .componentRow > :first-child { grid-column: 1 / -1; } .componentHead { display: none; } }
+.ideas { display: grid; gap: var(--wd-space-1); margin: 0; padding: var(--wd-space-2); list-style: none; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
+.ideas li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding: var(--wd-space-2); }
+.ideas li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-2); min-inline-size: 0; }
+.ideas code { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.ideas small { color: var(--wd-color-text-tertiary); }
+.ideas p { inline-size: 100%; margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }

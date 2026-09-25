@@ -52,6 +52,7 @@ export function e2eCatalogResponse(method: string, path: string[], body: unknown
     return plan;
   }
   if (method === "POST" && path.length === 0) return { id: catalog.id };
+  if (method === "POST" && section === "items" && path[3] === "ai-components") return { suggestions: [{ componentItemId: items[2].id, name: items[2].name, quantityFormula: "ceil(width / 600)", unitCode: "pcs", reason: "One light switch per 600 mm of wardrobe width" }] };
   if (method === "POST" && section === "items") return items[0];
   if (method === "PUT" && section === "items") return { ...items.find((row) => row.id === itemId), ...(body as object) };
   return { ok: true, first };

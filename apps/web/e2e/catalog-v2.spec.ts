@@ -87,6 +87,11 @@ test("edits an item and an assembly's components", async ({ page }, testInfo) =>
   await expect(page.getByRole("textbox", { name: /^Quantity formula/ })).toHaveCount(2);
   await page.getByRole("button", { name: "Add component" }).click();
   await expect(page.getByRole("textbox", { name: /^Quantity formula/ })).toHaveCount(3);
+  await page.getByRole("button", { name: "Suggest with AI" }).click();
+  const ideas = page.getByRole("list", { name: "AI suggestions" });
+  await expect(ideas.getByText("ceil(width / 600)")).toBeVisible();
+  await ideas.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByRole("textbox", { name: /^Quantity formula/ })).toHaveCount(4);
   await page.screenshot({ path: testInfo.outputPath("catalog-components.png"), animations: "disabled" });
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Edit", exact: true }).click();

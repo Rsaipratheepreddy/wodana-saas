@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button, ComboboxField, IconButton, InlineNotice, SelectField, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { loadAiSettings } from "@/lib/workspace/ai-settings";
 import { catalogApi, type CatalogItemRow, type CatalogStructure } from "@/lib/workspace/catalog-v2";
 import styles from "./catalog-page.module.css";
 
@@ -73,6 +74,20 @@ export function CatalogComponentsEditor({ workspaceId, catalogId, item, structur
   const [options, setOptions] = useState<Array<{ id: string; label: string; unit: string }>>(() => item.components.map((component) => ({ id: component.componentItemId, label: component.name, unit: component.unitCode })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [aiReady, setAiReady] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [ideas, setIdeas] = useState<Array<{ componentItemId: string; name: string; quantityFormula: string; unitCode: string; reason?: string }> | null>(null);
+  useEffect(() => { void loadAiSettings(workspaceId).then((settings) => setAiReady(Boolean(settings?.enabled && settings.available))); }, [workspaceId]);
+  const suggest = async () => {
+    setThinking(true); setError("");
+    try {
+      const result = await catalogApi<{ suggestions: NonNullable<typeof ideas> }>(workspaceId, `${catalogId}/items/${item.id}/ai-components`, { body: {} });
+      setOptions((current) => [...current, ...(result.suggestions ?? []).filter((idea) => !current.some((option) => option.id === idea.componentItemId)).map((idea) => ({ id: idea.componentItemId, label: idea.name, unit: idea.unitCode }))]);
+      setIdeas((result.suggestions ?? []).filter((idea) => !rows.some((row) => row.componentItemId === idea.componentItemId)));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : ""); }
+    finally { setThinking(false); }
+  };
+  const addIdea = (idea: NonNullable<typeof ideas>[number]) => { setRows((current) => [...current, { componentItemId: idea.componentItemId, name: idea.name, quantityFormula: idea.quantityFormula, unitCode: idea.unitCode }]); setIdeas((current) => current?.filter((entry) => entry !== idea) ?? null); };
   useEffect(() => {
     void catalogApi<{ items: CatalogItemRow[] }>(workspaceId, `${catalogId}/items?limit=200`).then((page) => setOptions((current) => { const loaded = page.items.filter((entry) => entry.id !== item.id).map((entry) => ({ id: entry.id, label: `${entry.name} · ${entry.code}`, unit: entry.unitCode })); return [...loaded, ...current.filter((option) => !loaded.some((entry) => entry.id === option.id))]; })).catch(() => undefined);
   }, [workspaceId, catalogId, item.id]);
@@ -95,7 +110,14 @@ export function CatalogComponentsEditor({ workspaceId, catalogId, item, structur
       <SelectField items={structure.units.map((unit) => ({ id: unit.code, label: unit.code }))} label={t("Unit")} onSelectionChange={(key) => update(index, { unitCode: String(key) })} selectedKey={row.unitCode} />
       <IconButton aria-label={`${t("Remove")} ${row.name}`} onPress={() => setRows((current) => current.filter((_, at) => at !== index))}><Trash2 aria-hidden="true" size={15} /></IconButton>
     </div>)}
-    <Button onPress={() => setRows((current) => [...current, { componentItemId: "", name: "", quantityFormula: "1", unitCode: "pcs" }])} size="compact" variant="quiet"><Plus aria-hidden="true" size={14} />{t("Add component")}</Button>
+    <div className={styles.inspectorActions}>
+      <Button onPress={() => setRows((current) => [...current, { componentItemId: "", name: "", quantityFormula: "1", unitCode: "pcs" }])} size="compact" variant="quiet"><Plus aria-hidden="true" size={14} />{t("Add component")}</Button>
+      {aiReady ? <Button isLoading={thinking} onPress={() => void suggest()} size="compact" variant="quiet"><Sparkles aria-hidden="true" size={14} />{t("Suggest with AI")}</Button> : null}
+    </div>
+    {ideas ? ideas.length ? <ul className={styles.ideas} aria-label={t("AI suggestions")}>{ideas.map((idea) => <li key={idea.componentItemId}>
+      <div><strong>{idea.name}</strong><code dir="ltr">{idea.quantityFormula}</code><small>{idea.unitCode}</small>{idea.reason ? <p>{idea.reason}</p> : null}</div>
+      <Button onPress={() => addIdea(idea)} size="compact">{t("Add")}</Button>
+    </li>)}</ul> : <p className={styles.muted}>{t("AI has no further suggestions.")}</p> : null}
     <div className={styles.actions}><Button onPress={onCancel}>{t("Cancel")}</Button><Button isLoading={saving} onPress={() => void save()} variant="primary">{t("Save components")}</Button></div>
   </div>;
 }
