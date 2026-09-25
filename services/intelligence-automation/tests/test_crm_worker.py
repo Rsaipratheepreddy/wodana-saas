@@ -118,6 +118,9 @@ class FakeCrmCore:
         self.results.append({"notificationId": notification_id, **payload})
         return {"status": "delivered"}
 
+    async def dispatch_staff_emails(self, _workspace: str) -> dict[str, Any]:
+        return {"claimed": 0, "delivered": 0}
+
 
 class FakeAutomationCore:
     def __init__(self) -> None:
@@ -159,6 +162,10 @@ class FakeDueWorkCore:
     async def claim_notification_jobs(self, _workspace: str) -> list[dict[str, Any]]:
         self.calls.append("notifications")
         return []
+
+    async def dispatch_staff_emails(self, _workspace: str) -> dict[str, Any]:
+        self.calls.append("staff-emails")
+        return {"claimed": 0, "delivered": 0}
 
     async def claim_automation_waits(self, _workspace: str) -> list[dict[str, Any]]:
         self.calls.append("waits")
@@ -231,7 +238,7 @@ async def test_due_work_polls_sequences_before_notification_delivery(
     with pytest.raises(asyncio.CancelledError):
         await worker.poll_due_work()
 
-    assert core.calls == ["slas", "takeovers", "sequences", "notifications", "waits"]
+    assert core.calls == ["slas", "takeovers", "sequences", "notifications", "staff-emails", "waits"]
 
 
 @pytest.mark.asyncio

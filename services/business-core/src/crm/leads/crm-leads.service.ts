@@ -26,7 +26,7 @@ import {
   UpdateSlaPolicyDto,
   UpsertQualificationDto,
 } from "./dto/leads.dto";
-import { notifyUserInApp } from "../../notifications/default-templates";
+import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
 import { checkContact, statusForOutcome } from "./contact-outcomes";
 import { addSlaMinutes, normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
@@ -252,6 +252,8 @@ export class CrmLeadsService {
         const changed = await this.applyAssignment(
           client, workspaceId, lead, selection, null, "automatic",
           "No call or note was logged before the ownership deadline",
+          // The new owner gets the takeover notice below; a lead back in the queue still alerts the queue.
+          Boolean(selection.ownerMembershipId),
         );
         reassigned.push({ leadId: lead.id, ownerMembershipId: changed.assignment.ownerMembershipId,
           queueId: changed.assignment.queueId });
@@ -1243,6 +1245,8 @@ export class CrmLeadsService {
     actorUserId: string | null,
     method: string,
     reason: string | null,
+    /** The caller sends its own notice (e.g. the response-timer takeover). */
+    quiet = false,
   ) {
     if (["qualified", "disqualified"].includes(lead.status)) throw new UnprocessableEntityException("Closed leads cannot be routed. Continue in the opportunity or reopen the lead first.");
     const takeoverPolicy = selection.ownerMembershipId && selection.queueId
@@ -1289,7 +1293,7 @@ export class CrmLeadsService {
       entityType: "crm_lead", entityId: lead.id,
       before: this.mapLead(lead), after: { ...response, assignment: selection },
     });
-    await this.notifyLeadAssignment(client, workspaceId, lead.id, Number(response.version), selection);
+    if (!quiet) await this.notifyLeadAssignment(client, workspaceId, lead.id, Number(response.version), selection);
     return { ...response, assignment: selection };
   }
 
@@ -1313,6 +1317,25 @@ export class CrmLeadsService {
          )))`,
       [workspaceId, selection.ownerMembershipId, selection.queueId],
     );
+    if (selection.ownerMembershipId) {
+      // PLM-032: the new owner hears about it in the app and by email, with the reference, client and source.
+      const facts = await client.query<{ reference: string | null; clientName: string | null; source: string | null; sourceLabel: string | null }>(
+        `SELECT enquiry.reference, party.display_name AS "clientName", enquiry.source,
+                (SELECT option.label FROM crm_taxonomy_options option JOIN crm_taxonomies taxonomy ON taxonomy.workspace_id = option.workspace_id AND taxonomy.id = option.taxonomy_id
+                  WHERE option.workspace_id = enquiry.workspace_id AND taxonomy.code = 'lead_source' AND option.code = enquiry.source LIMIT 1) AS "sourceLabel"
+         FROM crm_leads lead JOIN crm_enquiries enquiry ON enquiry.workspace_id = lead.workspace_id AND enquiry.id = lead.enquiry_id
+         LEFT JOIN crm_parties party ON party.workspace_id = lead.workspace_id AND party.id = lead.party_id
+         WHERE lead.workspace_id = $1 AND lead.id = $2`, [workspaceId, leadId]);
+      const fact = facts.rows[0];
+      const variables = { reference: fact?.reference ?? "", clientName: fact?.clientName ?? "", source: fact?.sourceLabel ?? fact?.source ?? "" };
+      const deepLink = `/workspace/crm/leads?lead=${leadId}`;
+      for (const recipient of recipients.rows) {
+        const key = `crm:assignment:${leadId}:${assignmentVersion}:${recipient.userId}`;
+        await notifyUserInApp(client, { workspaceId, recipientUserId: recipient.userId, code: "crm.lead_assigned", eventType: "crm.lead.assigned", variables, deepLink, idempotencyKey: key });
+        await queueUserEmail(client, { workspaceId, recipientUserId: recipient.userId, code: "crm.lead_assigned", eventType: "crm.lead.assigned", variables, deepLink, idempotencyKey: `${key}:email` });
+      }
+      return;
+    }
     const eventType = selection.ownerMembershipId ? "crm.lead.assigned" : "crm.lead.queue_waiting";
     const subject = selection.ownerMembershipId ? "New enquiry assigned" : "New enquiry in your queue";
     const correlationId = randomUUID();

@@ -1,3 +1,4 @@
+import { TransactionalEmailService } from "../../email/transactional-email.service";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { PoolClient } from "pg";
@@ -12,7 +13,7 @@ const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
 export class CrmNotificationsService {
-  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(), @Optional() private readonly deviceTokens?: DeviceTokenStoreService) {}
+  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(), @Optional() private readonly deviceTokens?: DeviceTokenStoreService, @Optional() private readonly mailer?: TransactionalEmailService) {}
   templates(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client) => (await client.query(`SELECT id,code,channel,locale,version_number AS "versionNumber",status,subject_template AS "subjectTemplate",body_template AS "bodyTemplate",variables,provider_template_id AS "providerTemplateId",approved_at AS "approvedAt" FROM notification_templates WHERE workspace_id=$1 ORDER BY code,channel,locale,version_number DESC`, [workspaceId])).rows);
   }
@@ -197,6 +198,43 @@ export class CrmNotificationsService {
       throw error;
     }
   }
+  /**
+   * Staff emails go out through the platform mailer in the tenant's brand, not a tenant connector,
+   * so they work before any integration is connected. Claim, send, record; one bad address never
+   * blocks the rest.
+   */
+  async dispatchStaffEmailsInternal(input: ClaimNotificationJobsDto) {
+    const claimed = await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
+      const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string }>(
+        `WITH due AS (
+           SELECT notification.id FROM notifications notification
+           WHERE notification.workspace_id=$1 AND notification.recipient_type='user' AND notification.channel='email'
+             AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
+               OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
+           ORDER BY notification.scheduled_for FOR UPDATE SKIP LOCKED LIMIT $2)
+         UPDATE notifications notification SET status='processing', processing_started_at=now(), version=version+1
+         FROM due, users person WHERE notification.id=due.id AND person.id=notification.recipient_id
+         RETURNING notification.id, notification.subject, notification.body, notification.deep_link AS "deepLink", person.primary_email AS email, notification.event_type AS "eventType"`,
+        [input.workspaceId, Math.min(input.limit ?? 50, 100)],
+      );
+      return result.rows;
+    });
+    let delivered = 0;
+    for (const row of claimed) {
+      const outcome = row.email
+        ? await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel: row.eventType === "crm.lead.assigned" ? "Open enquiry" : undefined }) : Promise.resolve({ status: "not_configured" as const, provider: null, messageId: null })).catch(() => ({ status: "failed" as const, provider: null, messageId: null }))
+        : { status: "failed" as const, provider: null, messageId: null };
+      const status = outcome.status === "sent" ? "delivered" : outcome.status === "not_configured" ? "suppressed" : "failed";
+      if (status === "delivered") delivered += 1;
+      await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) => client.query(
+        `UPDATE notifications SET status=$1::notification_status, delivered_at=CASE WHEN $1='delivered' THEN now() ELSE delivered_at END,
+           suppressed_reason=CASE WHEN $1='suppressed' THEN 'email_not_configured' WHEN $2::boolean THEN 'destination_missing' ELSE suppressed_reason END,
+           processing_started_at=NULL, version=version+1 WHERE workspace_id=$3 AND id=$4`,
+        [status, !row.email, input.workspaceId, row.id]));
+    }
+    return { claimed: claimed.length, delivered };
+  }
+
   claimInternal(input: ClaimNotificationJobsDto) {
     return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const result = await client.query(`WITH due AS (
@@ -205,6 +243,7 @@ export class CrmNotificationsService {
         FROM notifications notification
         WHERE notification.workspace_id=$1
           AND notification.channel<>'in_app'
+          AND NOT (notification.recipient_type='user' AND notification.channel='email')
           AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
             OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
         ORDER BY notification.scheduled_for

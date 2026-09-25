@@ -31,6 +31,7 @@ export class InternalCrmNotificationsController {
   constructor(private readonly notifications:CrmNotificationsService){}
   @Post("enqueue") enqueue(@Body() input:EnqueueNotificationDto){return this.notifications.enqueueInternal(input);}
   @Post("claim") claim(@Body() input:ClaimNotificationJobsDto){return this.notifications.claimInternal(input);}
+  @Post("staff-email/dispatch") dispatchStaffEmails(@Body() input:ClaimNotificationJobsDto){return this.notifications.dispatchStaffEmailsInternal(input);}
   @Post(":id/result") result(@Param("id",ParseUUIDPipe) id:string,@Body() input:NotificationResultDto){return this.notifications.resultInternal(id,input);}
   @Post("push-receipts/claim") claimPushReceipts(@Body() input:ClaimPushReceiptsDto){return this.notifications.claimPushReceipts(input);}
   @Post(":id/push-receipt") pushReceipt(@Param("id",ParseUUIDPipe) id:string,@Body() input:PushReceiptResultDto){return this.notifications.pushReceiptResult(id,input);}

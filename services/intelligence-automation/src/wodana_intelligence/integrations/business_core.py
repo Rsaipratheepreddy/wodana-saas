@@ -249,6 +249,14 @@ class BusinessCoreClient:
         items = payload.get("items", [])
         return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
 
+    async def dispatch_staff_emails(self, workspace_id: str) -> dict[str, Any]:
+        """Staff emails are sent by Business Core in the tenant's brand."""
+        return await self._internal_request(
+            "POST",
+            "/internal/crm/notifications/staff-email/dispatch",
+            json={"workspaceId": workspace_id, "limit": 50},
+        )
+
     async def record_notification_result(
         self, notification_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:

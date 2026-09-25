@@ -147,6 +147,21 @@ export class TransactionalEmailService {
     return this.send({ to: invitation.email, subject: `You have been invited to ${invitation.workspaceName}`, text, html, fromName: brand.name });
   }
 
+  /** A notification for a team member (e.g. a new enquiry assigned), in the tenant's brand. */
+  async sendStaffNotice(input: { workspaceId: string; to: string; subject: string; body: string; deepLink?: string | null; actionLabel?: string }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId });
+    const paragraphs = input.body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+    const url = input.deepLink ? new URL(input.deepLink, this.origin()).toString() : null;
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: input.subject,
+      heading: input.subject,
+      paragraphs,
+      ...(url ? { action: { label: input.actionLabel ?? "Open in workspace", url } } : {}),
+    });
+    return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name });
+  }
+
   async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
     const apiKey = this.config.get<string>("MAILGUN_API_KEY", "").trim();
     const domain = this.config.get<string>("MAILGUN_DOMAIN", "").trim();

@@ -73,6 +73,7 @@ class CrmWorker:
             workspace_id = str(event.workspace_id)
             if event_type == "notification.delivery_requested.v1":
                 await self.drain_notifications(workspace_id)
+                await self.business_core.dispatch_staff_emails(workspace_id)
             if event_type == "automation.approval.decided.v1":
                 run_id = event.data.get("runId")
                 step_key = event.data.get("stepKey")
@@ -370,6 +371,7 @@ class CrmWorker:
                 await self.business_core.process_due_takeovers(workspace_id)
                 await self.business_core.process_due_sequences(workspace_id)
                 await self.drain_notifications(workspace_id)
+                await self.business_core.dispatch_staff_emails(workspace_id)
                 waits = await self.business_core.claim_automation_waits(workspace_id)
                 for wait in waits:
                     run = await self.business_core.automation_run_context(

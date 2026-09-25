@@ -10,6 +10,13 @@ function setup(ownerMembershipId: string | null, queueId: string | null, optedOu
     if (sql.includes("FROM notification_preferences")) {
       return { rows: optedOut ? [{ enabled: false }] : [], rowCount: optedOut ? 1 : 0 };
     }
+    if (sql.includes("FROM crm_leads lead JOIN crm_enquiries")) return { rows: [{ reference: "E-0042", clientName: "Dr Maya Nair", source: "referral", sourceLabel: "Referral" }], rowCount: 1 };
+    if (sql.includes("FROM notification_templates")) {
+      return sql.includes("channel='email'")
+        ? { rows: [{ id: "tpl-email", subject: "New enquiry {{reference}}: {{clientName}}", body: "Source: {{source}}" }], rowCount: 1 }
+        : { rows: [{ id: "tpl-app", subject: "{{reference}} · {{clientName}} is yours", body: "New enquiry from {{source}}." }], rowCount: 1 };
+    }
+    if (sql.includes("INSERT INTO notifications") && sql.includes("RETURNING")) return { rows: [{ id: "n-email", correlationId: "c1" }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   });
   const service = new CrmLeadsService({} as never, {} as never, {} as never);
@@ -27,12 +34,16 @@ describe("lead assignment in-app alerts", () => {
     expect(recipients?.[1]).toEqual(["workspace", "owner", "sales-queue"]);
     expect(recipients?.[0]).toContain("membership.id=$2::uuid OR ($2::uuid IS NULL");
     const inserts = query.mock.calls.filter(([sql]) => sql.includes("INSERT INTO notifications"));
-    expect(inserts).toHaveLength(1);
+    // PLM-032: an in-app notice and an email, each with the reference, client and source.
+    expect(inserts).toHaveLength(2);
     expect(inserts[0][1]).toEqual(expect.arrayContaining([
-      "crm.lead.assigned", "New enquiry assigned", "/workspace/crm/leads?lead=lead",
+      "crm.lead.assigned", "E-0042 · Dr Maya Nair is yours", "New enquiry from Referral.", "/workspace/crm/leads?lead=lead",
       "crm:assignment:lead:4:user-one",
     ]));
-    expect(inserts[0][0]).toContain("ON CONFLICT (workspace_id,idempotency_key) DO NOTHING");
+    expect(inserts[1][0]).toContain("'email'");
+    expect(inserts[1][1]).toEqual(expect.arrayContaining(["New enquiry E-0042: Dr Maya Nair", "crm:assignment:lead:4:user-one:email"]));
+    expect(inserts[0][0]).toContain("ON CONFLICT (workspace_id, idempotency_key) DO NOTHING");
+    expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO outbox_events"))).toBe(true);
   });
 
   it("alerts available queue members if no owner can be selected", async () => {

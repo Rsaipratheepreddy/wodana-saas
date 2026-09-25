@@ -45,7 +45,7 @@ describe("unanswered lead ownership handoff", () => {
     expect(service["selectAssignment"]).toHaveBeenCalledWith(expect.anything(), "workspace", dueLead, true,
       { queueId: "queue", excludedOwnerId: "owner" });
     expect(service["applyAssignment"]).toHaveBeenCalledWith(expect.anything(), "workspace", dueLead,
-      expect.objectContaining({ ownerMembershipId: "alternate" }), null, "automatic", expect.stringContaining("No call or note"));
+      expect.objectContaining({ ownerMembershipId: "alternate" }), null, "automatic", expect.stringContaining("No call or note"), true);
     const evidence = query.mock.calls.find(([sql]) => sql.includes("FROM audit_events event"));
     expect(evidence?.[1]).toEqual(["workspace", "owner-user", assignedAt, "lead"]);
     expect(evidence?.[0]).toContain("crm.activity.completed.v1");
@@ -78,6 +78,6 @@ describe("unanswered lead ownership handoff", () => {
       reassigned: [{ leadId: "lead", ownerMembershipId: null, queueId: "queue" }], engaged: [],
     });
     expect(service["applyAssignment"]).toHaveBeenCalledWith(expect.anything(), "workspace", dueLead,
-      expect.objectContaining({ ownerMembershipId: null, queueId: "queue" }), null, "automatic", expect.any(String));
+      expect.objectContaining({ ownerMembershipId: null, queueId: "queue" }), null, "automatic", expect.any(String), false);
   });
 });

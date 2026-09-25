@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 
 type Db = Pick<PoolClient, "query">;
@@ -50,6 +51,20 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     subject: "{{reference}} is now yours",
     body: "{{previousOwner}} did not log contact within the response time. Contact the client now.",
     variables: ["reference", "previousOwner"],
+  },
+  {
+    code: "crm.lead_assigned",
+    channel: "in_app",
+    subject: "{{reference}} · {{clientName}} is yours",
+    body: "New enquiry from {{source}}. Log your first contact within the response time.",
+    variables: ["reference", "clientName", "source"],
+  },
+  {
+    code: "crm.lead_assigned",
+    channel: "email",
+    subject: "New enquiry {{reference}}: {{clientName}}",
+    body: "You have a new enquiry.\n\nReference: {{reference}}\nClient: {{clientName}}\nSource: {{source}}\n\nOpen it and log your first contact within the response time.",
+    variables: ["reference", "clientName", "source"],
   },
 ];
 
@@ -106,6 +121,57 @@ export async function notifyUserInApp(db: Db, input: {
     [input.workspaceId, row.id, input.recipientUserId, input.eventType,
       row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
       input.deepLink ?? null, input.idempotencyKey],
+  );
+  return { queued: true as const };
+}
+
+/**
+ * Queues an email for one user from the workspace's approved email template, inside the caller's
+ * tenant transaction; the notification worker renders it with the tenant brand and sends it.
+ * Sent unless the person switched this event off. Idempotent per key.
+ */
+export async function queueUserEmail(db: Db, input: {
+  workspaceId: string;
+  recipientUserId: string;
+  code: string;
+  eventType: string;
+  variables: Record<string, string>;
+  deepLink?: string;
+  idempotencyKey: string;
+}) {
+  const preference = await db.query<{ enabled: boolean }>(
+    `SELECT enabled FROM notification_preferences
+     WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='email'
+       AND event_type::text IN ($3::text, split_part($3::text, '.', 1) || '.*', '*')
+     ORDER BY CASE WHEN event_type::text=$3::text THEN 0 WHEN event_type::text='*' THEN 2 ELSE 1 END LIMIT 1`,
+    [input.workspaceId, input.recipientUserId, input.eventType],
+  );
+  if (preference.rows[0]?.enabled === false) return { queued: false as const, reason: "recipient_preference" };
+  const template = await db.query<{ id: string; subject: string | null; body: string }>(
+    `SELECT id, subject_template AS subject, body_template AS body FROM notification_templates
+     WHERE workspace_id=$1 AND code=$2 AND channel='email' AND status='approved' AND locale='en'
+     ORDER BY version_number DESC LIMIT 1`,
+    [input.workspaceId, input.code],
+  );
+  if (!template.rows[0]) return { queued: false as const, reason: "template_missing" };
+  const row = template.rows[0];
+  const inserted = await db.query<{ id: string; correlationId: string }>(
+    `INSERT INTO notifications (workspace_id, template_id, recipient_type, recipient_id, channel, event_type, status,
+       scheduled_for, subject, body, deep_link, idempotency_key, correlation_id)
+     VALUES ($1, $2, 'user', $3, 'email', $4, 'pending', now(), $5, $6, $7, $8, gen_random_uuid())
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING
+     RETURNING id, correlation_id AS "correlationId"`,
+    [input.workspaceId, row.id, input.recipientUserId, input.eventType,
+      row.subject ? render(row.subject, input.variables) : null, render(row.body, input.variables),
+      input.deepLink ?? null, input.idempotencyKey],
+  );
+  const notification = inserted.rows[0];
+  // Wake the worker now instead of waiting for its next poll.
+  const eventId = randomUUID();
+  if (notification) await db.query(
+    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload)
+     VALUES ($4, $1, 'notification', $2, 'notification.delivery_requested.v1', $3::jsonb)`,
+    [input.workspaceId, notification.id, JSON.stringify({ schemaVersion: 1, eventId, workspaceId: input.workspaceId, aggregateType: "notification", aggregateId: notification.id, actorUserId: null, occurredAt: new Date().toISOString(), correlationId: notification.correlationId, causationId: null, data: { channel: "email" } }), eventId],
   );
   return { queued: true as const };
 }
