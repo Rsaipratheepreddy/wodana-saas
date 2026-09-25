@@ -24,7 +24,7 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   project.id AS "projectId",
   EXISTS (SELECT 1 FROM project_workflow_templates workflow
     WHERE workflow.workspace_id = c.workspace_id AND workflow.status = 'active'
-      AND workflow.is_default AND workflow.code = 'palm_design_build_delivery') AS "palmFlowEnabled"
+      AND workflow.is_default AND workflow.code = 'design_build_deal_first') AS "palmFlowEnabled"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
@@ -65,7 +65,7 @@ export class PreProjectsService {
           NULL::uuid,
           EXISTS (SELECT 1 FROM project_workflow_templates workflow
             WHERE workflow.workspace_id = lead.workspace_id AND workflow.status = 'active'
-              AND workflow.is_default AND workflow.code = 'palm_design_build_delivery')
+              AND workflow.is_default AND workflow.code = 'design_build_deal_first')
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id

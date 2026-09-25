@@ -19,13 +19,6 @@
   -webkit-font-smoothing: antialiased;
 }
 
-.loginRoot:is([data-tenant-slug="plm"], [data-tenant-slug="palm-living"]) {
-  --login-button: var(--wd-workspace-auth-button, #d9d5cf);
-  --login-button-hover: var(--wd-workspace-auth-button-hover, #cbc6bf);
-  --login-on-button: #1b1d1c;
-  --login-focus: #292d32;
-}
-
 .loginLayout {
   position: relative;
   isolation: isolate;

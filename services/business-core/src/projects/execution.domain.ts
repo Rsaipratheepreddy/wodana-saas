@@ -1,3 +1,4 @@
+import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
 import { applyPackageTaskTemplate, PACKAGE_TASK_TEMPLATES } from "./project-package-templates";
 import { applyRfa } from "./project-rfa.command";
 import { applyClientPublication, projectClientSections, publicProjectUpdates } from "./project-client-publication";
@@ -600,7 +601,7 @@ export function applyExecution(
     recordId = "project-controls";
   } else if (action === "record_site_visit") {
     manage();
-    if (d.workflow?.template.code !== "palm_design_build_delivery" ||
+    if (d.workflow?.template.code !== DEAL_FIRST_WORKFLOW_CODE ||
         d.workflow.currentStageKey !== "site_visit")
       throw new ConflictException("Record the visit during the Palm site visit stage.");
     if (d.controls?.onHold)
@@ -810,7 +811,7 @@ export function applyExecution(
     const stages = d.workflow?.template.stages ?? [];
     const releaseIndex = stages.findIndex(stage => stage.releaseStart);
     const targetIndex = stages.findIndex(stage => stage.key === b.toStageKey);
-    const beforePalmRelease = d.workflow?.template.code === "palm_design_build_delivery" &&
+    const beforePalmRelease = d.workflow?.template.code === DEAL_FIRST_WORKFLOW_CODE &&
       targetIndex >= 0 && (releaseIndex < 0 || targetIndex < releaseIndex);
     if (!beforePalmRelease) active();
     recordId = transitionProjectWorkflow(d, b.toStageKey, b.note, {

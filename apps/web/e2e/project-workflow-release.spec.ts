@@ -21,7 +21,7 @@ test("manufacturing readiness is visible, gated, and advances to factory product
   const data = () => ({
     revision,
     phase: "active",
-    workflow: { currentStageKey: current, template: { code: "palm_design_build_delivery", stages } },
+    workflow: { currentStageKey: current, template: { code: "design_build_deal_first", stages } },
     controls: { onHold: false },
     tasks: [], reports: [], materials: [], orders: [], documents: [], snags: [], handovers: [],
     comments: [], audit: [], processed: [], budget: 0, forecast: 0, financeClosed: false, financeEvidence: "",

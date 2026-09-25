@@ -1,3 +1,4 @@
+import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
 import { projectRepository } from "./project-repository";
 import { ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -33,7 +34,7 @@ export async function openPalmProjectAtDealFile(
   if (!project) throw new ConflictException("The enquiry could not be linked to a project.");
   const existing = (await projectRepository.load(client, workspaceId, project.id, { forUpdate: true }))
     ?.content as ProjectData | undefined;
-  if (existing?.scope || (existing?.workflow && existing.workflow.template.code !== "palm_design_build_delivery"))
+  if (existing?.scope || (existing?.workflow && existing.workflow.template.code !== DEAL_FIRST_WORKFLOW_CODE))
     throw new ConflictException("This enquiry already has a different project flow. Reconcile it before approving the Deal File.");
   if (!existing?.workflow) {
     const execution = existing ?? emptyProject();

@@ -16,11 +16,11 @@ const data = (): CommercialData => ({
 });
 
 const advance = (to: string, value: CommercialData) =>
-  assertPalmCommercialStageReady("palm_design_build_delivery", to, value);
+  assertPalmCommercialStageReady("design_build_deal_first", to, value);
 
 describe("Palm project stage evidence", () => {
   it("blocks every stage when the first paid Deal File is missing or inconsistent", () => {
-    expect(() => assertPalmCommercialStageReady("palm_design_build_delivery", "site_visit", null))
+    expect(() => assertPalmCommercialStageReady("design_build_deal_first", "site_visit", null))
       .toThrow("first paid, Owner-approved Deal File");
     const missing = data();
     missing.dealFile = null;

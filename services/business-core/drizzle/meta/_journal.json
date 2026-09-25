@@ -15,6 +15,13 @@
       "when": 1790550000000,
       "tag": "0001_project_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790553600000,
+      "tag": "0002_deal_first_firm_kit",
+      "breakpoints": true
     }
   ]
 }

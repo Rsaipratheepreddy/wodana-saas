@@ -172,10 +172,10 @@ describe("execution commercial readiness", () => {
   it("blocks the Palm Manufacturing stage until the contracted production payment is verified", () => {
     const data = fixture();
     data.payments[0].requiredForProduction = true;
-    expect(() => assertPalmManufacturingPaymentReady("palm_design_build_delivery", "manufacturing", data)).not.toThrow();
+    expect(() => assertPalmManufacturingPaymentReady("design_build_deal_first", "manufacturing", data)).not.toThrow();
     data.receipts![0].status = "rejected";
-    expect(() => assertPalmManufacturingPaymentReady("palm_design_build_delivery", "manufacturing", data)).toThrow("production payment");
+    expect(() => assertPalmManufacturingPaymentReady("design_build_deal_first", "manufacturing", data)).toThrow("production payment");
     expect(() => assertPalmManufacturingPaymentReady("standard_delivery", "manufacturing", data)).not.toThrow();
-    expect(() => assertPalmManufacturingPaymentReady("palm_design_build_delivery", "site_works", data)).not.toThrow();
+    expect(() => assertPalmManufacturingPaymentReady("design_build_deal_first", "site_works", data)).not.toThrow();
   });
 });

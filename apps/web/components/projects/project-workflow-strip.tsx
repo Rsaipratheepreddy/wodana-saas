@@ -1,5 +1,6 @@
 "use client";
 
+import { DEAL_FIRST_WORKFLOW_CODE } from "../../../../services/business-core/src/projects/deal-first-workflow";
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
@@ -44,7 +45,7 @@ export function ProjectWorkflowStrip({
   const canAct = final ? state.canReview : state.canManage;
   const releaseIndex = workflow.template.stages.findIndex((stage) => stage.releaseStart);
   const currentIndex = workflow.template.stages.findIndex((stage) => stage.key === summary.currentStageKey);
-  const beforePalmRelease = workflow.template.code === "palm_design_build_delivery" &&
+  const beforePalmRelease = workflow.template.code === DEAL_FIRST_WORKFLOW_CODE &&
     (releaseIndex < 0 || currentIndex < releaseIndex);
   const commercialOkay = state.commercialReady || beforePalmRelease;
   const canAdvance = Boolean(next && canAct && commercialOkay && !summary.nextBlocker && !busy && !onHold && !ownerMissing && !unmet.length);
@@ -62,7 +63,7 @@ export function ProjectWorkflowStrip({
         {next ? <><ArrowRight size={14} aria-hidden="true" /><span>{next.name}</span></> : <span>Project complete</span>}
       </div>
       {reason ? <small className={styles.reason} dir="auto">{reason}{unmet.length > 1 ? ` · ${unmet.length - 1} more checks` : ""}</small>
-        : planningCarriedForward && workflow.template.code !== "palm_design_build_delivery" ? <small dir="auto">Approved planning and quotation are linked in the <Link href={`/workspace/pre-projects/cases/${state.caseId}/overview`}>source case</Link>.</small>
+        : planningCarriedForward && workflow.template.code !== DEAL_FIRST_WORKFLOW_CODE ? <small dir="auto">Approved planning and quotation are linked in the <Link href={`/workspace/pre-projects/cases/${state.caseId}/overview`}>source case</Link>.</small>
         : null}
     </div>
     {summary.currentStageKey === "site_visit" && state.canManage ? <Button size="compact" isDisabled={busy || onHold} onPress={() => {

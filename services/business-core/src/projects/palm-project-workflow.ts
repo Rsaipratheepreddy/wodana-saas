@@ -1,3 +1,4 @@
+import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
 import { palmFlowRoute, type PalmFlowScope, type PalmFlowStage } from "./palm-flow-route";
 import type { ProjectWorkflowStage, ProjectWorkflowTemplate } from "./project-workflow";
 
@@ -49,8 +50,8 @@ export function palmProjectWorkflowTemplate(
   ];
   return {
     ...template,
-    code: "palm_design_build_delivery",
-    name: "Palm Living project",
+    code: DEAL_FIRST_WORKFLOW_CODE,
+    name: "Design & build project",
     description: "The selected enquiry path, with one Deal and only applicable delivery stages.",
     stages,
   };

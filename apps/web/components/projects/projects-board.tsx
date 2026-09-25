@@ -1,4 +1,5 @@
 "use client";
+import { DEAL_FIRST_WORKFLOW_CODE } from "../../../../services/business-core/src/projects/deal-first-workflow";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -38,7 +39,7 @@ export function projectCards(projects:PortfolioRow[], planning:PreProjectListIte
   const cards:ProjectCard[] = [
     ...planning.filter(item => !linked.has(item.id) && item.status !== "cancelled" && !palmFlowEnabled).map(item => ({id:`case-${item.id}`,title:item.title,customer:item.customerName,stage:"planning" as const,step:item.status === "qualified" ? "Ready for planning" : ({discover:"Requirements",define:"Scope confirmation",design:"Design",price:"Quotation",agree:"Agreement",release:"Ready for production"}[item.phase ?? "discover"]),owner:item.leadManagerName ?? "Unassigned",team:[],onHold:item.status === "on_hold" || ["lost","abandoned"].includes(item.opportunityStatus),source:item,...(!item.qualifiedLead ? {href:`/workspace/pre-projects/cases/${item.id}/requirements`} : {})})),
     ...projects.map(item => {
-      const paidPalmPlanning = item.workflow?.templateCode === "palm_design_build_delivery" && !palmDeliveryStages.has(item.workflow.currentStageKey);
+      const paidPalmPlanning = item.workflow?.templateCode === DEAL_FIRST_WORKFLOW_CODE && !palmDeliveryStages.has(item.workflow.currentStageKey);
       return {id:`project-${item.id}`,projectId:item.id,caseId:item.caseId,title:item.name,reference:item.reference,customer:item.customer,stage:(item.phase === "completed" ? "delivered" : item.phase === "handover" ? "handover" : item.phase === "planning" || paidPalmPlanning ? "planning" : "production") as Stage,step:item.phase === "completed" ? "Complete" : item.phase === "handover" ? "Awaiting handover" : paidPalmPlanning ? item.workflow?.currentStageName ?? "Planning" : item.phase === "planning" ? "Execution planning" : "In progress",owner:item.manager ?? "Unassigned",team:item.team?.length ? item.team : item.manager ? item.manager.split(",").map(name=>name.trim()).filter(Boolean) : [],onHold:item.onHold,next:item.nextAction,href:`/workspace/projects/${item.id}/overview`};
     })
   ];

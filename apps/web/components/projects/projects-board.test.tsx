@@ -20,7 +20,7 @@ it("deduplicates linked cases and maps planning, production, handover and delive
 });
 it("keeps unpaid Palm preparation in Sales and the paid Deal project in Planning until procurement",()=>{
  const beforePayment={...planning,id:'unpaid-case',title:'Unpaid preparation',projectId:null};
- const paid={...project,reference:'PRJ-0007',workflow:{templateCode:'palm_design_build_delivery',currentStageKey:'site_visit',currentStageName:'Site visit & scope'}};
+ const paid={...project,reference:'PRJ-0007',workflow:{templateCode:'design_build_deal_first',currentStageKey:'site_visit',currentStageName:'Site visit & scope'}};
  expect(projectCards([], [beforePayment], true)).toEqual([]);
  expect(projectCards([paid], [planning,beforePayment], true)).toMatchObject([{stage:'planning',step:'Site visit & scope'}]);
  expect(projectCards([{...paid,workflow:{...paid.workflow,currentStageKey:'procurement',currentStageName:'Procurement'}}], [], true)[0].stage).toBe('production');

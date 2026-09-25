@@ -1,3 +1,4 @@
+import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
 import {
   importedScopeDetails,
   importedScopeCatalogLinks,
@@ -461,7 +462,7 @@ export class CommercialService {
       async (client, user) => {
         const record = await this.caseRecord(client, workspaceId, caseId);
         const data = await this.load(client, workspaceId, caseId);
-        const palmFlowEnabled = (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === "palm_design_build_delivery";
+        const palmFlowEnabled = (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE;
         const canEditCosts = await this.access.hasPermission(
           client,
           workspaceId,
@@ -1542,7 +1543,7 @@ export class CommercialService {
         const now = new Date().toISOString();
         if (action === "set_palm_flow") {
           const template = await resolvedProjectWorkflowTemplate(client, workspaceId);
-          if (template.code !== "palm_design_build_delivery")
+          if (template.code !== DEAL_FIRST_WORKFLOW_CODE)
             throw new BadRequestException("This project flow is not configured for this workspace.");
           if (data.quotes.length || data.dealFile)
             throw new ConflictException("Choose the service path before preparing a quotation.");
@@ -1933,7 +1934,7 @@ export class CommercialService {
             throw new ConflictException("Use Create revision for the existing quotation.");
           if (mainRound) beginPalmMainRound(data);
           if (action === "create" &&
-              (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === "palm_design_build_delivery" &&
+              (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE &&
               !data.palmFlow)
             throw new ConflictException("Choose the enquiry's service path before preparing its quotation.");
           q = {

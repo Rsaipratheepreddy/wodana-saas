@@ -1,3 +1,4 @@
+import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
 import type { CommercialData } from "../commercial/commercial.types";
 import { commercialReleaseReady, financeGatePaymentsReady } from "../commercial/release-integrity";
 import { palmMaterialListSignedOff } from "../commercial/release-integrity";
@@ -14,7 +15,7 @@ export function assertPalmManufacturingPaymentReady(
   toStageKey: unknown,
   commercial?: CommercialData | null,
 ) {
-  if (workflowCode !== "palm_design_build_delivery" || !["manufacturing", "factory_production"].includes(String(toStageKey))) return;
+  if (workflowCode !== DEAL_FIRST_WORKFLOW_CODE || !["manufacturing", "factory_production"].includes(String(toStageKey))) return;
   const main = commercial?.quotes.find(quote => quote.kind === "quotation" && quote.round === "main" && quote.status === "accepted");
   if (!commercial || !commercialExecutionReady(commercial) || !financeGatePaymentsReady(commercial, "production", main?.id))
     throw new ConflictException("Verify the contracted production payment before moving to Manufacturing.");
@@ -26,7 +27,7 @@ export function assertPalmCommercialStageReady(
   toStageKey: unknown,
   commercial?: CommercialData | null,
 ) {
-  if (workflowCode !== "palm_design_build_delivery" || typeof toStageKey !== "string") return;
+  if (workflowCode !== DEAL_FIRST_WORKFLOW_CODE || typeof toStageKey !== "string") return;
   const firstDeal = commercial?.designRound?.dealFile ?? commercial?.dealFile;
   const firstReview = commercial?.designRound?.ownerReview ?? commercial?.ownerReview;
   if (!commercial?.palmFlow || !firstDeal || !firstReview || firstReview.status !== "approved" ||

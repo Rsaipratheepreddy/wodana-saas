@@ -1,3 +1,4 @@
+import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
 import { readTaskBoard } from "./project-task-board";
 import { projectRepository } from "./project-repository";
 import { approvalQueueQuery, approvalQueuePage, type ApprovalQueueSource } from "./project-approval-queue";
@@ -543,7 +544,7 @@ export class ExecutionService {
       data,
       workflowSummary: (() => {
         const summary = projectWorkflowSummary(data);
-        if (summary?.nextStage && data.workflow?.template.code === "palm_design_build_delivery") {
+        if (summary?.nextStage && data.workflow?.template.code === DEAL_FIRST_WORKFLOW_CODE) {
           try {
             assertPalmCommercialStageReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
             assertPalmManufacturingPaymentReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
@@ -1784,7 +1785,7 @@ export class ExecutionService {
       );
       if (existing.rowCount) return existing.rows[0];
       const template = await resolvedProjectWorkflowTemplate(ctx.client, w);
-      if (template.code === "palm_design_build_delivery")
+      if (template.code === DEAL_FIRST_WORKFLOW_CODE)
         throw new ConflictException("This project opens automatically after the first paid, Owner-approved Deal File. Continue the enquiry in CRM.");
       if (r.rows[0].status !== "active")
         throw new ConflictException("Choose an active pre-execution.");

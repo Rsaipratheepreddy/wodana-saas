@@ -602,7 +602,7 @@ describe("commercial project release", () => {
       currentStageKey: "procurement",
       template: {
         id: "workflow-palm-1",
-        code: "palm_design_build_delivery",
+        code: "design_build_deal_first",
         version: 1,
         source: "workspace",
       },

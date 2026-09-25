@@ -84,7 +84,7 @@ describe("project workflow strip", () => {
       commercialReady: false,
       data: {
         controls: { onHold: false },
-        workflow: { currentStageKey: "deal_file", template: { code: "palm_design_build_delivery", stages: [
+        workflow: { currentStageKey: "deal_file", template: { code: "design_build_deal_first", stages: [
           { key: "deal_file", visibleName: "Deal File", phase: "planning" },
           { key: "design_specifications", visibleName: "Design & specifications", phase: "active" },
           { key: "procurement", visibleName: "Procurement", phase: "active", releaseStart: true },
@@ -102,7 +102,7 @@ describe("project workflow strip", () => {
       commercialReady: false,
       data: {
         controls: { onHold: false },
-        workflow: { currentStageKey: "site_visit", template: { code: "palm_design_build_delivery", stages: [
+        workflow: { currentStageKey: "site_visit", template: { code: "design_build_deal_first", stages: [
           { key: "deal_file", visibleName: "Deal File", phase: "planning" },
           { key: "site_visit", visibleName: "Site visit & scope", phase: "active" },
           { key: "design_specifications", visibleName: "Design & specifications", phase: "active" },

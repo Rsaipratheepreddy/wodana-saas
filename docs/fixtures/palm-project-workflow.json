@@ -1,6 +1,6 @@
 {
   "version": 0,
-  "code": "palm_design_build_delivery",
+  "code": "design_build_deal_first",
   "name": "Palm design and build delivery",
   "description": "Palm Living's planning-to-handover stage map. Approved planning evidence is carried into the delivery project at Procurement; On Hold remains a project condition.",
   "isDefault": true,

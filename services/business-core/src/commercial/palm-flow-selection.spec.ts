@@ -11,7 +11,7 @@ const scope = {
   manufacturing: true, siteWorks: true, installation: true,
 };
 
-function setup(code = "palm_design_build_delivery", quoteCount = 0) {
+function setup(code = "design_build_deal_first", quoteCount = 0) {
   const query = vi.fn(async (sql: string) => {
     if (sql.includes("FROM project_workflow_templates"))
       return { rowCount: 1, rows: [{
@@ -55,7 +55,7 @@ describe("Palm service-path selection", () => {
     const other = setup("standard_delivery");
     await expect(other.service.command({} as never, "workspace", "case", { action: "set_palm_flow", revision: 0, scope })).rejects.toThrow("not configured");
     expect(other.persist).not.toHaveBeenCalled();
-    const quoted = setup("palm_design_build_delivery", 1);
+    const quoted = setup("design_build_deal_first", 1);
     await expect(quoted.service.command({} as never, "workspace", "case", { action: "set_palm_flow", revision: 0, scope })).rejects.toThrow("before preparing");
     expect(quoted.persist).not.toHaveBeenCalled();
   });
