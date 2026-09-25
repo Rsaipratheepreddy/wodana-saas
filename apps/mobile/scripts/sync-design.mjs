@@ -28,7 +28,10 @@ function resolve(name, values, seen = new Set()) {
     // Native colors cannot evaluate CSS color-mix. Use the static brand fallback;
     // tenant-selected primary colors are applied separately at runtime.
     .replace(/color-mix\(in oklch,\s*(#[0-9a-f]{6})\s+(\d+)%,\s*(#[0-9a-f]{6})\)/gi,
-      (_, foreground, percent, background) => blendHex(foreground, background, percent));
+      (_, foreground, percent, background) => blendHex(foreground, background, percent))
+    // A colour mixed with transparent is the same colour at that opacity.
+    .replace(/color-mix\(in (?:srgb|oklch),\s*#([0-9a-f]{6})\s+(\d+)%,\s*transparent\)/gi,
+      (_, hex, percent) => `rgba(${[0, 2, 4].map(index => Number.parseInt(hex.slice(index, index + 2), 16)).join(', ')}, ${Number(percent) / 100})`);
 }
 
 export async function generateTokens() {
@@ -52,7 +55,7 @@ export async function generateTokens() {
     }));
   const tokens = {
     colors: { light: theme('light'), dark: theme('dark'), 'high-contrast': theme('high-contrast') },
-    brand: Object.fromEntries(['lilac', 'rose', 'peach', 'ink'].map((key) => [key, root[`--wd-brand-${key}`]])),
+    brand: Object.fromEntries(['lilac', 'rose', 'peach', 'ink'].map((key) => [key, resolve(`--wd-brand-${key}`, root)])),
     spacing: scale('--wd-space-'),
     radius: scale('--wd-radius-', ['round']),
     fontSize: scale('--wd-text-'),
