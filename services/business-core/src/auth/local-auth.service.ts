@@ -1,3 +1,4 @@
+import { acceptPendingInvitation } from "../workspaces/invitation-acceptance";
 import {
   ConflictException,
   ForbiddenException,
@@ -340,33 +341,11 @@ export class LocalAuthService {
            email_at_provider = EXCLUDED.email_at_provider, last_login_at = now(), updated_at = now()`,
         [row.userId, `local:${row.userId}`, row.email],
       );
-      const membership = await client.query<{ id: string }>(
-        `INSERT INTO workspace_memberships (workspace_id, user_id, status, joined_at)
-         VALUES ($1, $2, 'active', now())
-         ON CONFLICT (workspace_id, user_id) DO UPDATE SET status = 'active',
-           joined_at = COALESCE(workspace_memberships.joined_at, now()), updated_at = now()
-         RETURNING id`,
-        [row.workspaceId, row.userId],
-      );
+      const accepted = await acceptPendingInvitation(client, { invitationId: row.id, userId: row.userId });
       await client.query(
-        `INSERT INTO member_roles (workspace_id, membership_id, role_id)
-         SELECT $1, $2, assigned.role_id FROM invitation_roles assigned
-         WHERE assigned.invitation_id = $3
-         ON CONFLICT DO NOTHING`,
-        [row.workspaceId, membership.rows[0].id, row.id],
-      );
-      await client.query(
-        `INSERT INTO workspace_team_members (workspace_id, team_id, membership_id, is_lead)
-         SELECT invited_team.workspace_id, invited_team.team_id, $2, false
-         FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
-         WHERE invited_team.invitation_id=$1 AND team.status='active'
-         ON CONFLICT (team_id,membership_id) DO NOTHING`,
-        [row.id, membership.rows[0].id],
-      );
-      await client.query(
-        `UPDATE workspace_invitations SET status = 'accepted', accepted_at = now(), updated_at = now()
-         WHERE id = $1`,
-        [row.id],
+        `INSERT INTO audit_events (workspace_id, actor_user_id, source, action, entity_type, entity_id, after, correlation_id)
+         VALUES ($1, $2, 'user', 'workspace.invitation_accepted', 'workspace_membership', $3, $4::jsonb, $5)`,
+        [row.workspaceId, row.userId, accepted.membershipId, JSON.stringify({ invitationId: row.id, email: row.email }), randomUUID()],
       );
       return { ...row, passwordChangedAt: credential.rows[0].passwordChangedAt, passwordHash: encoded.hash };
     });
@@ -598,6 +577,9 @@ export class LocalAuthService {
         [actorUser.userId, current.familyId, mfaSessionVersion],
       );
     });
+    if (actorUser.email) {
+      await this.email.sendSecurityNotice({ email: actorUser.email, kind: "mfa_disabled", workspaceId }).catch(() => undefined);
+    }
     return {
       enabled: false,
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
@@ -742,7 +724,7 @@ export class LocalAuthService {
   async resetPassword(resetToken: string, password: string) {
     this.assertLocalAuthAvailable();
     const encoded = await hashPassword(password);
-    await this.database.transaction(async (client) => {
+    const userId = await this.database.transaction(async (client) => {
       const result = await client.query<{ id: string; userId: string; expiresAt: Date; usedAt: Date | null }>(
         `SELECT id, user_id AS "userId", expires_at AS "expiresAt", used_at AS "usedAt"
          FROM password_reset_tokens WHERE token_hash = $1 FOR UPDATE`,
@@ -765,7 +747,14 @@ export class LocalAuthService {
          WHERE user_id = $1`,
         [row.userId],
       );
+      return row.userId;
     });
+    const account = await this.database.query<{ email: string }>(`SELECT primary_email AS email FROM users WHERE id = $1`, [userId]);
+    const workspace = (await this.activeLoginWorkspaces(userId))[0];
+    if (account.rows[0]) {
+      await this.email.sendSecurityNotice({ email: account.rows[0].email, kind: "password_changed", loginSlug: workspace?.loginSlug })
+        .catch(() => undefined);
+    }
     return { passwordReset: true };
   }
 

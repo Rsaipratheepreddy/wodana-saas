@@ -152,6 +152,14 @@ try {
     { members: 2, pendingInvitations: 3, reservedSeats: 5, seatLimit: 5 },
   );
 
+  // Accepting an invitation tells the person who sent it, from the workspace's default template.
+  const joined = await database.query(
+    `SELECT subject FROM notifications WHERE workspace_id=$1 AND event_type='workspace.member_joined' AND channel='in_app'`,
+    [workspaceId],
+  );
+  assert.equal(joined.rowCount, 1, "The inviter is notified exactly once");
+  assert.match(joined.rows[0].subject, /joined Seat Capacity Test/);
+
   // The workspace is full (5 of 5). Edge cases around re-inviting and changing seats.
   const reserved = async () => (await request(`/workspaces/${workspaceId}/billing`)).usage.reservedSeats;
   const pending = (await request(`/workspaces/${workspaceId}/invitations`)).filter((invitation) => invitation.status === "pending");
@@ -202,5 +210,6 @@ process.stdout.write(`${JSON.stringify({
     "resend-keeps-one-seat",
     "expired-invitation-revival-needs-free-seat",
     "lowered-limit-blocks-new-invitations",
+    "inviter-notified-on-join",
   ],
 }, null, 2)}\n`);

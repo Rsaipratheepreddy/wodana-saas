@@ -1,3 +1,5 @@
+import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
+import { acceptPendingInvitation } from "./invitation-acceptance";
 import {
   BadRequestException,
   ConflictException,
@@ -223,6 +225,7 @@ export class WorkspacesService {
           await this.insertOnboarding(client, workspaceId);
           await this.insertDefaultSequences(client, workspaceId, legalEntityId, input.firstLegalEntity.code);
           await this.insertDefaultCrmAutomations(client, workspaceId);
+          await seedDefaultNotificationTemplates(client, workspaceId);
           await client.query(
             `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
              VALUES ($1, $2, now() + interval '14 days')`,
@@ -406,6 +409,7 @@ export class WorkspacesService {
           input.firstLegalEntity.code,
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
+          await seedDefaultNotificationTemplates(client, workspaceId);
         if (setup) {
           const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
           await client.query(
@@ -609,6 +613,7 @@ export class WorkspacesService {
       input.firstLegalEntity.code,
     );
     await this.insertDefaultCrmAutomations(client, workspaceId);
+          await seedDefaultNotificationTemplates(client, workspaceId);
     await client.query(
       `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
        VALUES ($1, $2, now() + interval '14 days')`,
@@ -4127,49 +4132,18 @@ export class WorkspacesService {
     if (new Date(invitation.expires_at).getTime() <= Date.now()) {
       throw new GoneException("Invitation has expired");
     }
-    await this.assertSeatAvailable(client, invitation.workspace_id, invitation.id);
-    const membership = await client.query<{ id: string }>(
-      `INSERT INTO workspace_memberships
-        (workspace_id, user_id, status, joined_at)
-       VALUES ($1, $2, 'active', now())
-       ON CONFLICT (workspace_id, user_id)
-       DO UPDATE SET status = 'active', joined_at = COALESCE(workspace_memberships.joined_at, now())
-       RETURNING id`,
-      [invitation.workspace_id, actorUser.userId],
-    );
-    await client.query(
-      `INSERT INTO member_roles (workspace_id, membership_id, role_id)
-       SELECT $1, $2, role_id
-       FROM invitation_roles
-       WHERE invitation_id = $3
-       ON CONFLICT (membership_id, role_id) DO NOTHING`,
-      [invitation.workspace_id, membership.rows[0].id, invitation.id],
-    );
-    await client.query(
-      `INSERT INTO workspace_team_members (workspace_id, team_id, membership_id, is_lead)
-       SELECT invited_team.workspace_id, invited_team.team_id, $2, false
-       FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
-       WHERE invited_team.invitation_id=$1 AND team.status='active'
-       ON CONFLICT (team_id, membership_id) DO NOTHING`,
-      [invitation.id, membership.rows[0].id],
-    );
-    await client.query(
-      `UPDATE workspace_invitations
-       SET status = 'accepted', accepted_at = now()
-       WHERE id = $1`,
-      [invitation.id],
-    );
+    const membership = await acceptPendingInvitation(client, { invitationId: invitation.id, userId: actorUser.userId });
     await this.recordChange(client, {
       workspaceId: invitation.workspace_id,
       actorUserId: actorUser.userId,
       action: "workspace.invitation_accepted",
       entityType: "workspace_membership",
-      entityId: membership.rows[0].id,
+      entityId: membership.membershipId,
       after: { invitationId: invitation.id, email: invitation.email },
     });
     return {
       workspaceId: invitation.workspace_id,
-      membershipId: membership.rows[0].id,
+      membershipId: membership.membershipId,
       status: "active",
     };
   }

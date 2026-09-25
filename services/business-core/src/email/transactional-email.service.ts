@@ -99,6 +99,30 @@ export class TransactionalEmailService {
     return this.send({ to: input.email, subject: `Reset your ${brand.name} password`, text, html, fromName: brand.name });
   }
 
+  /** Security notice after an account change, so the owner notices changes they did not make. */
+  async sendSecurityNotice(input: {
+    email: string;
+    kind: "password_changed" | "mfa_disabled";
+    workspaceId?: string;
+    loginSlug?: string;
+  }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId, loginSlug: input.loginSlug });
+    const signIn = new URL("/login", this.origin());
+    if (brand.loginSlug) signIn.searchParams.set("tenant", brand.loginSlug);
+    const copy = input.kind === "password_changed"
+      ? { subject: `Your ${brand.name} password was changed`, heading: "Your password was changed", body: "The password for your account was just changed and your other sessions were signed out." }
+      : { subject: `Two-step verification was turned off for ${brand.name}`, heading: "Two-step verification was turned off", body: "Two-step verification was just turned off for your account. Signing in now needs only your password." };
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: copy.heading,
+      heading: copy.heading,
+      paragraphs: [copy.body, "If this was you, no action is needed."],
+      action: { label: "Review account security", url: signIn.toString() },
+      footnote: "If you did not make this change, reset your password now and contact your workspace administrator.",
+    });
+    return this.send({ to: input.email, subject: copy.subject, text, html, fromName: brand.name });
+  }
+
   async sendWorkspaceInvitation(
     invitation: WorkspaceInvitationMessage,
   ): Promise<EmailDeliveryResult> {

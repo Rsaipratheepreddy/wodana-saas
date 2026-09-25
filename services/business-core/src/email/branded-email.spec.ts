@@ -56,4 +56,18 @@ describe("tenant-branded email", () => {
     expect((fetchMock.mock.calls[0][1].body as FormData).get("from")).toBe('Palm Living <hello@mg.example>');
     vi.unstubAllGlobals();
   });
+
+  it("sends branded security notices for password and two-step changes", async () => {
+    const database = { query: vi.fn().mockResolvedValue({ rows: [palm] }) };
+    const service = new TransactionalEmailService(new ConfigService({ WEB_ORIGIN: "https://wodana.example" }), database as never);
+    const send = vi.spyOn(service, "send").mockResolvedValue({ status: "sent", provider: "mailgun", messageId: "m" });
+    await service.sendSecurityNotice({ email: "sara@palm.ae", kind: "password_changed", loginSlug: "palm-living" });
+    await service.sendSecurityNotice({ email: "sara@palm.ae", kind: "mfa_disabled", workspaceId: "w1" });
+    expect(send.mock.calls.map(([message]) => message.subject)).toEqual([
+      "Your Palm Living password was changed",
+      "Two-step verification was turned off for Palm Living",
+    ]);
+    expect(send.mock.calls[0][0].text).toContain("https://wodana.example/login?tenant=palm-living");
+    expect(send.mock.calls[0][0].html).toContain("did not make this change");
+  });
 });
