@@ -342,4 +342,26 @@ describe("quotation-only custom materials", () => {
     q.lines[0].customMaterials = [m, m]; expect(() => parseLines(q.lines)).toThrow(/Duplicate/);
     q.lines[0].customMaterials = Array.from({length:21}, (_,i) => ({ ...m, id:String(i) })); expect(() => parseLines(q.lines)).toThrow(/20/);
   });
+
+  it("matches an approved snapshot after a reload that reorders keys, and still accepts older hashes", async () => {
+    const { createHash } = await import("node:crypto");
+    const q = quote();
+    q.hash = freezeHash(q);
+    // Rows rebuild objects with a different key order; the client approved the same content.
+    const reloaded = JSON.parse(JSON.stringify(q), (_key, value) => value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).reverse()) : value) as Quote;
+    expect(assertQuoteSnapshot(reloaded)).toBe(q.hash);
+    // A quote issued with the earlier insertion-order hash keeps working.
+    const legacy = quote();
+    legacy.hash = createHash("sha256").update(JSON.stringify({
+      round: legacy.round, direction: legacy.direction, familyId: legacy.familyId, definitionBaseline: legacy.definitionBaseline,
+      designEvidence: legacy.designEvidence, title: legacy.title, cover: legacy.cover, presentation: legacy.presentation, rooms: legacy.rooms,
+      inclusions: legacy.inclusions, currency: legacy.currency, lines: legacy.lines.map(({ unitCost: _u, manualReason: _m, ...line }) => line),
+      discount: legacy.discount, taxRate: legacy.taxRate, terms: legacy.terms, exclusions: legacy.exclusions, validUntil: legacy.validUntil,
+      total: legacy.total, brand: legacy.brand, paymentTerms: legacy.paymentTerms, paymentTemplate: legacy.paymentTemplate,
+    })).digest("hex");
+    expect(assertQuoteSnapshot(legacy)).toBe(legacy.hash);
+    // Real content changes are still refused.
+    expect(() => assertQuoteSnapshot({ ...reloaded, lines: [{ ...reloaded.lines[0], material: "Changed" }] })).toThrow(/no longer matches/);
+  });
 });

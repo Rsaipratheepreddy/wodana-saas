@@ -1,3 +1,4 @@
+import { canonicalHash } from "../crm/shared/crm-types";
 import {parseQuotationRichText} from "./quotation-rich-text";
 import { quotationLineVariant, quotationMaterialText } from "./quotation-presentation";
 import { materialsRate } from "./quotation-pricing";
@@ -266,10 +267,9 @@ export function actionable(q: Quote, now = new Date()) {
 export function quoteExpired(q: Pick<Quote, "validUntil">, now = new Date()) {
   return Date.parse(q.validUntil + "T23:59:59.999Z") < now.getTime();
 }
-export function freezeHash(q: Quote): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
+/** What a client sees and agrees to; changing any of it needs a new revision. */
+function snapshotFields(q: Quote) {
+  return {
         round: q.round,
         direction: q.direction,
         familyId: q.familyId,
@@ -291,14 +291,29 @@ export function freezeHash(q: Quote): string {
         brand: q.brand,
         paymentTerms: q.paymentTerms,
         paymentTemplate: q.paymentTemplate,
-      }),
-    )
-    .digest("hex");
+      };
 }
-export function assertQuoteSnapshot(q: Quote) {
+
+/**
+ * Canonical snapshot hash: keys sorted at every level, so a quote reloaded from rows (where key
+ * order can differ) still matches what the client approved.
+ */
+export function freezeHash(q: Quote): string {
+  return canonicalHash(snapshotFields(q));
+}
+
+/** Hashes issued before canonical hashing used insertion order; they remain valid. */
+function legacyFreezeHash(q: Quote): string {
+  return createHash("sha256").update(JSON.stringify(snapshotFields(q))).digest("hex");
+}
+
+export function matchesQuoteSnapshot(q: Quote) {
+  return Boolean(q.hash) && (q.hash === freezeHash(q) || q.hash === legacyFreezeHash(q));
+}
+export function assertQuoteSnapshot(q: Quote): string {
   if (
     !q.hash ||
-    q.hash !== freezeHash(q) ||
+    !matchesQuoteSnapshot(q) ||
     round(totals(q).total) !== round(q.total)
   )
     throw new ConflictException(
