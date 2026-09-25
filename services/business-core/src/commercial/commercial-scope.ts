@@ -100,6 +100,7 @@ export function importedScopeDetails(source: {
       dimensions,
     ]
       .filter(Boolean)
+      .map(value => value!.replace(/\r\n/g, "\n").replace(/\n(?:[ \t]*\n){2,}/g, "\n\n").trim())
       .join("\n"),
   };
 }

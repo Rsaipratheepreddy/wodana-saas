@@ -64,13 +64,13 @@ describe("web foundations", () => {
   });
 
   it("meets WCAG AA contrast for core light and dark combinations", () => {
-    expect(contrast("#19191f", "#fafafb")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#55555f", "#ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#666672", "#ededf1")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#ffffff", "#4a46f3")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#f3f3f6", "#111115")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#bfbfc9", "#1a1a20")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#111111", "#96a7ff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#1a1e1c", "#f8f8f6")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#555b56", "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#676d68", "#f1f2ef")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#ffffff", "#46705a")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#f2f4f1", "#141715")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#bdc3bd", "#1b1f1d")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#111111", "#8fbba2")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps global CSS structural and supports Arabic, RTL and numeric data", () => {

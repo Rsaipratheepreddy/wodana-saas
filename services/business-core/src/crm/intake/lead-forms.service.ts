@@ -9,7 +9,8 @@ import { stableHash, decodeCursor, encodeCursor } from "../shared/crm-types";
 import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
 import { ListIntakeQueryDto } from "./dto/intake.dto";
 import { CrmIntakeService } from "./crm-intake.service";
-import { defaultLeadForm, parseLeadForm, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
+import { completeLeadForm, defaultLeadForm, parseLeadForm, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
+import { countryFromLocale, normalizeIntakePartyPhones } from "./intake-phone";
 
 @Injectable()
 export class LeadFormsService {
@@ -20,7 +21,8 @@ export class LeadFormsService {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async client => {
       const result = await client.query(`SELECT id, token, draft, published, status, version, updated_at AS "updatedAt"
         FROM crm_lead_forms WHERE workspace_id=$1 ORDER BY updated_at DESC`, [workspaceId]);
-      return { data: result.rows };
+      const choices = await loadLeadOptions(client, workspaceId);
+      return { data: result.rows.map(row => ({ ...row, draft: completeLeadForm(row.draft as LeadFormSchema, choices) })) };
     });
   }
 
@@ -30,13 +32,14 @@ export class LeadFormsService {
       if (!form.rowCount) throw new NotFoundException("Form not found");
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || Number.isNaN(Date.parse(cursor.value)) || !/^[0-9a-f-]{36}$/i.test(cursor.id))) throw new BadRequestException("Invalid page cursor");
-      const result = await client.query(`SELECT intake.id, enquiry.reference, intake.original_payload->'party'->>'displayName' AS name,
+      const result = await client.query(`SELECT intake.id, enquiry.reference, lead.id AS "leadId", intake.original_payload->'party'->>'displayName' AS name,
         intake.status, intake.received_at AS "receivedAt", intake.original_payload->'formAnswers' AS answers,
         COALESCE((intake.original_payload->'consents'->0->>'status'), 'unknown') AS "consentStatus",
         (SELECT count(*)::int FROM crm_identity_candidates candidate
           WHERE candidate.workspace_id=intake.workspace_id AND candidate.intake_event_id=intake.id
             AND candidate.status='pending') AS "candidateCount"
         FROM crm_intake_events intake LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id=intake.id AND enquiry.workspace_id=intake.workspace_id
+        LEFT JOIN crm_leads lead ON lead.enquiry_id=enquiry.id AND lead.workspace_id=intake.workspace_id
         WHERE intake.workspace_id=$1 AND intake.original_payload->>'formId'=$2
           AND ($3::timestamptz IS NULL OR (intake.received_at,intake.id) < ($3::timestamptz,$4::uuid))
         ORDER BY intake.received_at DESC, intake.id DESC LIMIT $5`, [workspaceId, id, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
@@ -63,14 +66,16 @@ export class LeadFormsService {
       const before = found.rows[0];
       if (before.version !== input.version) throw new ConflictException("This form changed. Reload before saving");
       const publishing = input.action === "publish";
-      const draft = parseLeadForm(input.draft ?? before.draft, publishing);
       const choices = await loadLeadOptions(client, workspaceId);
+      const draft = parseLeadForm(completeLeadForm((input.draft ?? before.draft) as LeadFormSchema, choices), publishing);
       for (const question of draft.questions) {
         if (question.field === "serviceType") question.options = choices.enquiryTypes;
         if (question.field === "budgetRange") question.options = choices.budgetRanges;
+        if (question.field === "emirate") question.options = choices.emirates;
       }
       if (publishing) {
-        await validateLeadOptions(client, workspaceId, { source: draft.source, channel: draft.channel, serviceType: choices.enquiryTypes[0]?.id });
+        // Publishing defines the questions; an emirate is supplied by each eventual respondent.
+        await validateLeadOptions(client, workspaceId, { source: draft.source, channel: draft.channel, serviceType: choices.enquiryTypes[0]?.id }, undefined, { requireEmirate: false });
         const configured = await client.query(`SELECT 1 FROM crm_assignment_policies WHERE workspace_id=$1 AND status='active'
           UNION ALL SELECT 1 FROM crm_queues WHERE workspace_id=$1 AND status='active' AND is_fallback LIMIT 1`, [workspaceId]);
         if (!configured.rowCount) throw new BadRequestException("Set up a default sales team or routing rule before publishing");
@@ -98,8 +103,7 @@ export class LeadFormsService {
 
   async publicForm(token: string) {
     const form = await this.resolve(token);
-    const { title, description, questions } = form.published;
-    const branding = await this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
+    const appearance = await this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       const result = await client.query<{
         displayName: string; loginSlug: string; primaryColor: string | null; secondaryColor: string | null;
         headingFont: string | null; bodyFont: string | null; hasLogo: boolean;
@@ -111,43 +115,55 @@ export class LeadFormsService {
          FROM tenant_login_branding WHERE workspace_id=$1`, [form.workspace_id],
       );
       const tenant = result.rows[0];
-      return tenant ? {
+      const workspace = await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [form.workspace_id]);
+      const choices = await loadLeadOptions(client, form.workspace_id);
+      return { choices, defaultLocale: workspace.rows[0]?.defaultLocale ?? null, branding: tenant ? {
         displayName: tenant.displayName,
         primaryColor: tenant.primaryColor,
         secondaryColor: tenant.secondaryColor,
         headingFont: tenant.headingFont,
         bodyFont: tenant.bodyFont,
         logoUrl: tenant.hasLogo ? `/api/auth/tenant-logo/${tenant.loginSlug}` : null,
-      } : null;
+      } : null };
     });
+    const { title, description, questions } = completeLeadForm(form.published, appearance.choices);
     return {
       title,
       description,
-      branding,
+      branding: appearance.branding,
+      defaultLocale: appearance.defaultLocale,
+      defaultCountryCode: countryFromLocale(appearance.defaultLocale) ?? null,
+      areas: appearance.choices.areas,
       revision: stableHash(form.published),
       consentLabel: "I agree to be contacted about this enquiry.",
-      questions: questions.map(({ field, ...question }) => question),
+      questions,
     };
   }
 
-  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; serviceConsent: boolean }) {
+  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean }) {
     const form = await this.resolve(token);
     return this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       // Serialize submissions to enforce per-form limits and check publication atomically.
       const current = await client.query(`SELECT published FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2 AND status='published' FOR UPDATE`, [form.workspace_id, form.id]);
       if (!current.rowCount) throw new NotFoundException("This form is not accepting enquiries");
-      const schema = current.rows[0].published as LeadFormSchema;
-      if (stableHash(schema) !== input.revision) throw new ConflictException("The form has changed. Reload it before submitting");
+      const published = current.rows[0].published as LeadFormSchema;
+      if (stableHash(published) !== input.revision) throw new ConflictException("The form has changed. Reload it before submitting");
+      const schema = completeLeadForm(published, await loadLeadOptions(client, form.workspace_id));
       if (input.serviceConsent !== true) throw new BadRequestException("Consent is required before submitting an enquiry");
       const { fields, responses } = validateFormAnswers(schema, input.answers);
+      const mobileQuestion = schema.questions.find(question => question.field === "mobile");
+      const suppliedCountry = mobileQuestion ? input.phoneCountryCodes?.[mobileQuestion.id] : undefined;
+      const workspace = await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [form.workspace_id]);
+      const countryCode = suppliedCountry || countryFromLocale(workspace.rows[0]?.defaultLocale);
+      const party = normalizeIntakePartyPhones({ displayName: fields.displayName, email: fields.email, mobile: fields.mobile, mobileCountryCode: countryCode });
       const key = `lead-form:${form.id}:${input.requestId}`;
       const existing = await client.query(`SELECT payload_hash, original_payload FROM crm_intake_events WHERE workspace_id=$1 AND idempotency_key=$2`, [form.workspace_id, key]);
       if (existing.rowCount) {
         if (!isDeepStrictEqual(existing.rows[0].original_payload.formAnswers, responses)) throw new ConflictException("This submission was already received with different answers");
         return { received: true };
       }
-      const contactFingerprint = fields.mobile?.replace(/\D/g, "") || fields.email?.trim().toLowerCase();
-      if (!contactFingerprint) throw new BadRequestException("Enter an email or mobile number");
+      const contactFingerprint = party.mobile?.replace(/\D/g, "") || fields.email?.trim().toLowerCase();
+      if (!contactFingerprint) throw new BadRequestException("Enter a mobile number");
       const rate = await client.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE
           COALESCE(NULLIF(regexp_replace(original_payload->'party'->>'mobile', '[^0-9]', '', 'g'), ''), lower(original_payload->'party'->>'email'))=$3
         )::int AS contact
@@ -168,9 +184,9 @@ export class LeadFormsService {
       };
       await this.intake.createFormIntake(client, form.workspace_id, key, {
         source: schema.source, channel: schema.channel, intakeMethod: "form", title: "",
-        party: { displayName: fields.displayName, email: fields.email, mobile: fields.mobile },
-        serviceType: fields.serviceType || "not_sure", summary: fields.summary,
-        details: { location: fields.location, budgetRange: fields.budgetRange }, assignment: { mode: "automatic" },
+        party,
+        serviceType: fields.serviceType, summary: fields.summary,
+        details: { emirate: fields.emirate, area: fields.area, budgetRange: fields.budgetRange }, assignment: { mode: "automatic" },
         consents: [consent],
         originalPayload: {
           origin: "customer_enquiry_form",

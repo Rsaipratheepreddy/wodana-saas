@@ -62,4 +62,31 @@ describe("project workflow templates", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({ version: 0, isDefault: true });
     expect(refresh).toHaveBeenCalledOnce();
   });
+
+  it("lets an active stage be the single commercial-release entry", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const withDeliveryStage: ProjectWorkflowTemplatesResponse = {
+      ...data,
+      defaultTemplate: {
+        ...data.defaultTemplate,
+        stages: [
+          data.defaultTemplate.stages[0],
+          { key: "procurement", visibleName: "Procurement", description: "Buy approved materials.", phase: "active", ownerRole: "procurement_production", exitGates: [] },
+          data.defaultTemplate.stages[1],
+        ],
+      },
+    };
+    render(<DesignSystemProvider><ProjectWorkflowTemplatesPage initialData={withDeliveryStage} workspaceId="00000000-0000-4000-8000-000000000001" /></DesignSystemProvider>);
+
+    await user.click(screen.getByRole("button", { name: "Create template" }));
+    const editor = await screen.findByRole("dialog", { name: "Create workflow template" });
+    await user.click(within(editor).getByRole("checkbox", { name: "Start here after approved planning and commercial release" }));
+    await user.click(within(editor).getByRole("button", { name: "Save workflow" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const saved = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(saved.stages.filter((stage: { releaseStart?: boolean }) => stage.releaseStart).map((stage: { key: string }) => stage.key)).toEqual(["procurement"]);
+  });
 });

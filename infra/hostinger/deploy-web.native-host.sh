@@ -12,6 +12,7 @@ DEPLOY_USER="${DEPLOY_USER:-root}"
 SSH_PORT="${SSH_PORT:-22}"
 PUBLIC_URL="${PUBLIC_URL:-https://iglo.wodana.ai}"
 NGINX_SITE="${NGINX_SITE:-wodana.ai}"
+NGINX_CONFIG_PATH="${NGINX_CONFIG_PATH:-/etc/nginx/sites-available/${NGINX_SITE}}"
 RELEASE_NAME="${RELEASE_NAME:-$(date -u +%Y%m%d%H%M%S)-web}"
 WEB_PORT="${WEB_PORT:-13230}"
 CORE_PORT="${CORE_PORT:-}"
@@ -44,7 +45,7 @@ REMOTE_ARCHIVE="/tmp/${RELEASE_NAME}.web-image.tar.gz"
 [[ "$DEPLOY_INTELLIGENCE" == 0 || "$DEPLOY_INTELLIGENCE" == 1 ]] || exit 1
 [[ "$SKIP_IMAGE_BUILD" == 0 || "$SKIP_IMAGE_BUILD" == 1 ]] || exit 1
 [[ "$REMOTE_IMAGE_READY" == 0 || "$REMOTE_IMAGE_READY" == 1 ]] || exit 1
-[[ "$REMOTE_IMAGE_READY" == 0 || ( "$DEPLOY_CORE" == 0 && "$DEPLOY_INTELLIGENCE" == 0 ) ]] || { echo "A prebuilt remote image is supported for web-only releases." >&2; exit 1; }
+[[ "$NGINX_CONFIG_PATH" == /etc/nginx/sites-available/wodana.ai || "$NGINX_CONFIG_PATH" == /etc/nginx/sites-available/plm.wodana.ai || "$NGINX_CONFIG_PATH" == /etc/nginx/sites-enabled/plm.wodana.ai ]] || { echo "Unsupported Nginx config path." >&2; exit 1; }
 [[ "$APPLY_PENDING_MIGRATIONS" == 0 || "$APPLY_PENDING_MIGRATIONS" == 1 ]] || exit 1
 [[ "$CRM_ONLY_WORKSPACE_SLUGS" =~ ^[a-z0-9,-]*$ ]] || { echo "Invalid CRM-only workspace slugs." >&2; exit 1; }
 [[ "$ROUTED_TENANT_HOSTS" =~ ^[a-z0-9.,-]*$ ]] || { echo "Invalid routed tenant hostnames." >&2; exit 1; }
@@ -83,10 +84,11 @@ trap cleanup EXIT
 CURRENT_RELEASE="$(curl -fsSI "${PUBLIC_URL}/login" | tr -d '\r' | sed -n 's/^X-Wodana-Release:[[:space:]]*//Ip' | tail -n 1)"
 [[ -n "$CURRENT_RELEASE" ]] || { echo "The live release header is missing; refusing an ambiguous deployment." >&2; exit 1; }
 [[ "$CURRENT_RELEASE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]+$ ]] || exit 1
-CURRENT_RELEASE_DIR="/opt/wodana/releases/${CURRENT_RELEASE}"
+CURRENT_RELEASE_DIR="${CURRENT_RELEASE_DIR:-/opt/wodana/releases/${CURRENT_RELEASE}}"
+[[ "$CURRENT_RELEASE_DIR" =~ ^/opt/wodana/releases/[a-zA-Z0-9._-]+$ ]] || { echo "Invalid current release directory." >&2; exit 1; }
 
 echo "Preflight: ${CURRENT_RELEASE} is live."
-"${SSH[@]}" "$REMOTE" "test -f '$CURRENT_RELEASE_DIR/compose.yaml' && test -f '$CURRENT_RELEASE_DIR/web.env' && test -f '/etc/nginx/sites-available/$NGINX_SITE'"
+"${SSH[@]}" "$REMOTE" "test -f '$CURRENT_RELEASE_DIR/compose.yaml' && test -f '$CURRENT_RELEASE_DIR/web.env' && test -f '$NGINX_CONFIG_PATH'"
 DETECTED_CORE_PORT="$("${SSH[@]}" "$REMOTE" "sed -n 's@.*BUSINESS_CORE_URL: http://127.0.0.1:\\([0-9]*\\)/api/v1.*@\\1@p' '$CURRENT_RELEASE_DIR/compose.yaml' | head -n 1")"
 CURRENT_CORE_PORT="${CURRENT_CORE_PORT:-$DETECTED_CORE_PORT}"
 [[ "$CURRENT_CORE_PORT" =~ ^[0-9]+$ ]] || { echo "Could not resolve the live core port." >&2; exit 1; }
@@ -115,7 +117,7 @@ fi
 if [[ "$REMOTE_IMAGE_READY" != 1 ]]; then docker image inspect "$IMAGE" >/dev/null; fi
 if [[ "$DEPLOY_CORE" == 1 ]]; then
   npm run typecheck --workspace @wodana/business-core
-  if [[ "$SKIP_IMAGE_BUILD" == 0 ]]; then
+  if [[ "$SKIP_IMAGE_BUILD" == 0 && "$REMOTE_IMAGE_READY" != 1 ]]; then
     docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$CORE_IMAGE" -f services/business-core/Dockerfile .
   fi
 fi
@@ -123,8 +125,8 @@ if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
   (cd services/intelligence-automation && ../../.venv/bin/pytest -q)
   docker buildx build --progress plain --platform linux/amd64 --load --pull=false -t "$INTELLIGENCE_IMAGE" -f services/intelligence-automation/Dockerfile services/intelligence-automation
 fi
-if [[ "$DEPLOY_CORE" == 1 ]]; then docker image inspect "$CORE_IMAGE" >/dev/null; fi
-if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then docker image inspect "$INTELLIGENCE_IMAGE" >/dev/null; fi
+if [[ "$DEPLOY_CORE" == 1 && "$REMOTE_IMAGE_READY" != 1 ]]; then docker image inspect "$CORE_IMAGE" >/dev/null; fi
+if [[ "$DEPLOY_INTELLIGENCE" == 1 && "$REMOTE_IMAGE_READY" != 1 ]]; then docker image inspect "$INTELLIGENCE_IMAGE" >/dev/null; fi
 
 LOCAL_ARCHIVE="$TEMP_DIR/web-image.tar.gz"
 if [[ "$REMOTE_IMAGE_READY" != 1 ]]; then
@@ -178,7 +180,7 @@ if [[ -n "$MIGRATION_FILE" ]]; then "${SCP[@]}" "$ROOT_DIR/$MIGRATION_FILE" "$RE
 if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then "${SCP[@]}" "$MIGRATION_ARCHIVE" "$REMOTE:/tmp/${RELEASE_NAME}.migrations.tar.gz"; fi
 
 echo "Staging, backing up, and switching production traffic..."
-"${SSH[@]}" "$REMOTE" "bash -s -- '$RELEASE_NAME' '$IMAGE' '$WEB_PORT' '$CORE_PORT' '$INTELLIGENCE_PORT' '$PUBLIC_URL' '$CURRENT_RELEASE' '$CURRENT_RELEASE_DIR' '$REMOTE_ARCHIVE' '$DEPLOY_CORE' '$CORE_IMAGE' '$CURRENT_CORE_PORT' '$CURRENT_CORE_RELEASE_DIR' '$MIGRATION_FILE' '$DEPLOY_INTELLIGENCE' '$INTELLIGENCE_IMAGE' '$CURRENT_INTELLIGENCE_PORT' '$CURRENT_INTELLIGENCE_RELEASE_DIR' '$CURRENT_INTELLIGENCE_WORKER_CONTAINER' '$CRM_ONLY_WORKSPACE_SLUGS' '$ROUTED_TENANT_HOSTS' '$APPLY_PENDING_MIGRATIONS' '$NGINX_SITE' '$MIGRATION_ARCHIVE_HASH' '$REMOTE_IMAGE_READY'" <<'REMOTE_DEPLOY'
+"${SSH[@]}" "$REMOTE" "bash -s -- '$RELEASE_NAME' '$IMAGE' '$WEB_PORT' '$CORE_PORT' '$INTELLIGENCE_PORT' '$PUBLIC_URL' '$CURRENT_RELEASE' '$CURRENT_RELEASE_DIR' '$REMOTE_ARCHIVE' '$DEPLOY_CORE' '$CORE_IMAGE' '$CURRENT_CORE_PORT' '$CURRENT_CORE_RELEASE_DIR' '$MIGRATION_FILE' '$DEPLOY_INTELLIGENCE' '$INTELLIGENCE_IMAGE' '$CURRENT_INTELLIGENCE_PORT' '$CURRENT_INTELLIGENCE_RELEASE_DIR' '$CURRENT_INTELLIGENCE_WORKER_CONTAINER' '$CRM_ONLY_WORKSPACE_SLUGS' '$ROUTED_TENANT_HOSTS' '$APPLY_PENDING_MIGRATIONS' '$NGINX_SITE' '$MIGRATION_ARCHIVE_HASH' '$REMOTE_IMAGE_READY' '$NGINX_CONFIG_PATH'" <<'REMOTE_DEPLOY'
 set -euo pipefail
 umask 077
 
@@ -207,6 +209,7 @@ APPLY_PENDING_MIGRATIONS="${22}"
 NGINX_SITE="${23}"
 MIGRATION_ARCHIVE_HASH="${24}"
 REMOTE_IMAGE_READY="${25}"
+NGINX_CONFIG_PATH="${26}"
 RELEASE_DIR="/opt/wodana/releases/${RELEASE_NAME}"
 
 [[ ! -e "$RELEASE_DIR" ]] || { echo "Release directory already exists: $RELEASE_DIR" >&2; exit 1; }
@@ -238,7 +241,7 @@ CURRENT_WEB_PORT="$(awk '$1 == "web:" { in_web=1; next } in_web && $1 == "PORT:"
 
 mkdir -m 700 "$RELEASE_DIR"
 cp "$CURRENT_RELEASE_DIR/web.env" "$RELEASE_DIR/web.env"
-cp "/etc/nginx/sites-available/${NGINX_SITE}" "$RELEASE_DIR/nginx-before.conf"
+cp "$NGINX_CONFIG_PATH" "$RELEASE_DIR/nginx-before.conf"
 if [[ "$DEPLOY_CORE" == 1 ]]; then cp "$CURRENT_CORE_RELEASE_DIR/core.env" "$RELEASE_DIR/core.env"; fi
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then cp "$CURRENT_INTELLIGENCE_RELEASE_DIR/intelligence.env" "$RELEASE_DIR/intelligence.env"; fi
 if [[ "$APPLY_PENDING_MIGRATIONS" == 1 ]]; then
@@ -446,6 +449,16 @@ for line_number, raw in enumerate(database_path.read_text().splitlines(), 1):
         raise SystemExit(f"Malformed database migration history line {line_number}")
     database.append(tuple(fields))
 
+# An older Palm release applied a reviewed 0047 migration that was later
+# removed from the journal. Preserve and verify that exact historical record
+# while comparing the current journal sequence; never rewrite production history.
+legacy_palm_migration = (
+    "1788852000000",
+    "b11cfde39afe034b900f68feda376d5b2b4661d6bd02c9311fb568ddcc52b4af",
+)
+if legacy_palm_migration in database:
+    database.remove(legacy_palm_migration)
+
 if len(database) > len(manifest):
     raise SystemExit("Database migration history is ahead of this release")
 for index, (created_at, digest) in enumerate(database):
@@ -485,7 +498,8 @@ PY
     -c 'SELECT created_at,hash FROM drizzle.__drizzle_migrations ORDER BY created_at,id' \
     </dev/null > "$MIGRATION_DIR/database-after.tsv"
   cut -f1,3 "$MIGRATION_DIR/manifest.tsv" > "$MIGRATION_DIR/expected-after.tsv"
-  cmp -s "$MIGRATION_DIR/expected-after.tsv" "$MIGRATION_DIR/database-after.tsv" || {
+  grep -v '^1788852000000\s' "$MIGRATION_DIR/database-after.tsv" > "$MIGRATION_DIR/database-after-reviewed.tsv" || true
+  cmp -s "$MIGRATION_DIR/expected-after.tsv" "$MIGRATION_DIR/database-after-reviewed.tsv" || {
     echo "Database migration history does not exactly match the release after applying migrations." >&2
     exit 1
   }
@@ -493,7 +507,9 @@ fi
 docker compose -f compose.yaml up -d --wait --wait-timeout 180
 curl -fsS "http://127.0.0.1:${WEB_PORT}/login" >/dev/null
 curl -fsS "http://127.0.0.1:${CORE_PORT}/api/v1/health/ready" >/dev/null
-curl -fsS "http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1/health/ready" >/dev/null
+if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
+  curl -fsS "http://127.0.0.1:${INTELLIGENCE_PORT}/api/v1/health/ready" >/dev/null
+fi
 
 python3 - "$CURRENT_WEB_PORT" "$WEB_PORT" "$CURRENT_RELEASE" "$RELEASE_NAME" "$DEPLOY_CORE" "$CURRENT_CORE_PORT" "$CORE_PORT" "$DEPLOY_INTELLIGENCE" "$CURRENT_INTELLIGENCE_PORT" "$INTELLIGENCE_PORT" "$ROUTED_TENANT_HOSTS" <<'PY'
 from pathlib import Path
@@ -536,7 +552,7 @@ cat > rollback.sh <<ROLLBACK
 #!/usr/bin/env bash
 set -euo pipefail
 DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-cp "\$DIR/nginx-before.conf" "/etc/nginx/sites-available/${NGINX_SITE}"
+cp "\$DIR/nginx-before.conf" "${NGINX_CONFIG_PATH}"
 nginx -t
 systemctl reload nginx
 curl -fsSI ${PUBLIC_URL}/login | grep -qi 'X-Wodana-Release: ${CURRENT_RELEASE}'
@@ -560,7 +576,7 @@ restore_proxy() {
     echo "Worker cutover failed; the previous worker was restarted." >&2
   fi
   if [[ "$cutover_started" == 1 ]]; then
-    cp "$RELEASE_DIR/nginx-before.conf" "/etc/nginx/sites-available/${NGINX_SITE}"
+    cp "$RELEASE_DIR/nginx-before.conf" "$NGINX_CONFIG_PATH"
     nginx -t >/dev/null
     systemctl reload nginx
     echo "Cutover failed; the previous proxy configuration was restored." >&2
@@ -570,13 +586,13 @@ restore_proxy() {
 trap restore_proxy ERR
 
 cutover_started=1
-cp nginx-current.conf "/etc/nginx/sites-available/${NGINX_SITE}"
+cp nginx-current.conf "$NGINX_CONFIG_PATH"
 nginx -t
 systemctl reload nginx
 
 curl -fsS "${PUBLIC_URL}/login" >/dev/null
 curl -fsS "${PUBLIC_URL}/workspace/pre-projects/requirements" >/dev/null
-curl -fsS "https://api.wodana.ai/api/v1/health/ready" >/dev/null
+curl -fsS "${PUBLIC_URL}/api/v1/health/ready" >/dev/null
 curl -fsSI "${PUBLIC_URL}/login" | grep -qi "X-Wodana-Release: ${RELEASE_NAME}"
 if [[ "$DEPLOY_INTELLIGENCE" == 1 ]]; then
   worker_switched=1

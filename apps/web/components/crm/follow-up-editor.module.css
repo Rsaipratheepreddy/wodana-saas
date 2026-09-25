@@ -19,7 +19,7 @@
 .schedule { display: grid; gap: .65rem; }
 .schedule h3 { display: flex; align-items: center; gap: .4rem; margin: 0; font-size: .8rem; font-weight: 600; }
 .schedule h3 svg { color: var(--crm-accent); }
-.dateFields { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: .75rem; }
+.dateFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items:end; gap: .75rem; }
 .dateFields label { display: grid; gap: .4rem; font-size: .75rem; }
 .dateFields input { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; block-size: 2.5rem; padding-inline: .65rem; border: 1px solid var(--wd-color-border-control); border-radius: .5rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: .8rem; }
 .shortcuts { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -32,8 +32,20 @@
 .readOnly { display: grid; gap: .6rem; }
 .readOnly h3 { margin: 0; font-size: .8rem; }
 .readOnly p { margin: 0 0 .75rem; color: var(--wd-color-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
-.options summary { cursor: pointer; color: var(--wd-color-text-secondary); font-size: .75rem; }
-.options > div { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; padding-block-start: .8rem; }
-.options .hint { grid-column: 1 / -1; }
-.dateFields input:focus-visible, .shortcuts button:focus-visible, .options summary:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-@media (max-width: 30rem) { .editor { gap: 1rem; } .context { flex-wrap: wrap; } .options > div { grid-template-columns: 1fr; } .actions :global(.wd-button) { flex: 1; } }
+.assignmentFields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; }
+.assignmentFields .hint { grid-column: 1 / -1; }
+.dateFields input:focus-visible, .shortcuts button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+@media (max-width: 30rem) { .editor { gap: 1rem; } .context { flex-wrap: wrap; } .assignmentFields { grid-template-columns: 1fr; } .actions :global(.wd-button) { flex: 1; } }
+.document { animation: documentEnter 260ms ease-out; background: var(--wd-color-surface); border-radius: 16px; padding: 18px; }
+.documentBanner { margin-block: 18px 0; display: flex; align-items: center; gap: 18px; min-block-size: 110px; padding-inline: 36px; border-radius: 12px; color: var(--wd-color-text); background: linear-gradient(115deg, color-mix(in srgb, #a991dc 22%, var(--wd-color-surface)), color-mix(in srgb, #81b7a5 22%, var(--wd-color-surface))); }
+.documentBanner span { font-size: 17px; font-weight: 500; }
+.documentBody { max-inline-size: 720px; margin-inline: auto; padding: 28px 16px; }
+.documentBody h2 { font-size: 25px; margin: 0 0 28px; font-weight: 600; }
+.documentBody :global(.wd-textarea) { min-block-size: 180px; }
+.timeSuggestion { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--wd-color-text-secondary); }
+@keyframes documentEnter { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .document { animation: none; } }
+@media (max-width: 600px) { .document { padding: 12px; } .documentBanner { padding: 16px; min-block-size: 70px; } .documentBody { padding: 20px 0; } }
+.duration { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 12px; }
+.duration strong { font-size: 13px; padding-block: 12px; }
+@media(max-width:480px) { .dateFields { grid-template-columns:minmax(0,1fr); } }

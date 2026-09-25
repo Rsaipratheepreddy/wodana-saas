@@ -10,7 +10,7 @@ import styles from "./catalog-settings-page.module.css";
 
 export function CatalogPriceDialog({target,items,canManage,canViewCosts,initialSourceKey,onClose,onSave,onSaved,onArchive}:{target:CatalogRecord;items:CatalogRecord[];canManage:boolean;canViewCosts:boolean;initialSourceKey?:string;onClose:()=>void;onSave:(r:CatalogRecord)=>Promise<CatalogRecord>;onSaved:(r:CatalogRecord)=>void;onArchive:(r:CatalogRecord)=>Promise<CatalogRecord>}) {
   const {timeZone,currency}=useDesignSystem();
-  const prices=recordPrices(target,items);
+  const prices=recordPrices(target,items).filter(price=>canViewCosts||String(price.configuration?.priceType??"").trim().toLowerCase()==="selling");
   const sourcePrices=importedPrices(target).filter(price=>canViewCosts||price.key.trim().toLowerCase().startsWith("selling_"));
   const blank=()=>{
     const r=withRecordGroup({...blankCatalogRecord("rate_card"),catalogId:target.catalogId,name:`${target.name} price`,configuration:{currency,priceType:canViewCosts?"cost":"selling",effectiveFrom:new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}},recordGroupId(target)??"");

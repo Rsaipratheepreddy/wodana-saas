@@ -95,6 +95,7 @@ const organizations: CrmRecord[] = [
 const opportunities: CrmRecord[] = [
   {
     id: "73000000-0000-4000-8000-000000000001",
+    reference: "D-0001",
     title: "Emirates Hills villa interior renovation",
     partyName: "Amira Al Mansoori",
     pipelineId: "pipeline-1",
@@ -113,6 +114,7 @@ const opportunities: CrmRecord[] = [
   },
   {
     id: "73000000-0000-4000-8000-000000000002",
+    reference: "D-0002",
     title: "DIFC executive office fit-out",
     partyName: "Khalid Rahman",
     pipelineId: "pipeline-1",

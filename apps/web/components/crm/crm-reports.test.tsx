@@ -13,7 +13,7 @@ describe("CrmReports", () => {
     const user = userEvent.setup();
     render(<CrmReports initialData={structuredClone(crmScreenFixture("crm-reports"))} />);
 
-    expect(screen.getByRole("heading", { name: "Reports", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Reports workspace" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Sources breakdown" })).toHaveTextContent("Instagram");
     expect(screen.getByRole("table", { name: "Sources breakdown" })).toHaveTextContent("3 enquiries");
 

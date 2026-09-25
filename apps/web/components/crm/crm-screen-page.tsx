@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -34,14 +36,13 @@ import type { CrmRecord, CrmScreenId, CrmScreenPageData } from "@/lib/crm/screen
 import styles from "./crm-screen-page.module.css";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { CrmRecordWorkbench, CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
-import { CrmCalendar } from "./crm-calendar";
 import { PipelineSettings } from "./pipeline-settings";
 import { AutomationApprovals } from "./automation-approvals";
 import { CrmOverview } from "./crm-overview";
 import { CrmInbox } from "./crm-inbox";
 import { CrmSmartRules } from "./crm-smart-rules";
 import { CrmFollowUps } from "./crm-follow-ups";
-import { CrmProductShell } from "./crm-product-shell";
+import { CrmCalendar } from "./crm-calendar";
 
 const DUBAI_FORMAT = { locale: "en-GB", timeZone: "Asia/Dubai" };
 
@@ -316,10 +317,11 @@ function inspectorTitle(id: CrmScreenId, row: CrmRecord) {
   return text(row, "title");
 }
 
-export function CrmScreenPage({ initialData, initialRecordId, initialCalendar = false }: { initialData: CrmScreenPageData; initialRecordId?: string; initialCalendar?: boolean }) {
+export function CrmScreenPage({ initialData, initialRecordId, initialCalendar = false, initialFollowUpList = false }: { initialFollowUpList?: boolean; initialData: CrmScreenPageData; initialRecordId?: string; initialCalendar?: boolean }) {
   if (initialData.id === "crm-overview") return <CrmOverview key={initialData.workspaceId} initialData={initialData} />;
-  if (initialData.id === "follow-ups") return <CrmFollowUps key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;
-  if (initialData.id === "calendar") return <CrmProductShell title="Calendar" description="CRM commitments and connected Google events." canView={initialData.canView} compact useWorkspaceColors><h1 className="wd-visually-hidden">Calendar</h1><CrmCalendar focused={false} workspaceId={initialData.workspaceId} /></CrmProductShell>;
+  if (initialData.id === "calendar" || (initialData.id === "follow-ups" && initialCalendar)) return <CrmCalendar key={initialData.workspaceId} workspaceId={initialData.workspaceId} currentUserId={String(initialData.supporting.currentUserId ?? "")} canView={initialData.canView} />;
+  if (initialData.id === "follow-ups") return <CrmFollowUps initialLayout={initialFollowUpList ? "kanban" : "timeline"} tasksOnly={initialFollowUpList} key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;
+  if (initialData.id === "activities" && initialCalendar) redirect("/workspace/crm/follow-ups?view=schedule");
   if (initialData.id === "conversations") return <CrmInbox key={initialData.workspaceId} initialData={initialData} initialRecordId={initialRecordId} />;
   if (initialData.id === "automations") return <CrmSmartRules key={initialData.workspaceId} initialData={initialData} />;
   return <CrmTablePage key={`${initialData.workspaceId}/${initialData.id}`} initialData={initialData} initialRecordId={initialRecordId} initialCalendar={initialCalendar} />;
@@ -328,7 +330,6 @@ export function CrmScreenPage({ initialData, initialRecordId, initialCalendar = 
 function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }: { initialData: CrmScreenPageData; initialRecordId?: string; initialCalendar?: boolean }) {
   const [linkedRecord, setLinkedRecord] = useState(initialRecordId);
   const [section, setSection] = useState(initialCalendar ? "calendar" : "records");
-  const [calendarRevision, setCalendarRevision] = useState(0);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [data, setData] = useState(initialData);
   const [creating, setCreating] = useState(false);
@@ -367,11 +368,9 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
       const payload = await crmRequest<unknown>(initialData.workspaceId, endpoint + (more && data.nextCursor ? `&cursor=${encodeURIComponent(data.nextCursor)}` : ""));
       const incoming = rows(payload).map((row, index) => ({ ...row, id: initialData.id === "crm-overview" ? `${row.kind ?? "item"}-${row.recordId ?? index}` : String(row.id ?? row.recordId ?? index) }));
       setData((current) => ({ ...current, items: more ? [...current.items, ...incoming.filter((row) => !current.items.some((item) => item.id === row.id))] : incoming, nextCursor: (payload as { nextCursor?: string })?.nextCursor ?? null }));
-      setCalendarRevision((n) => n + 1);
     } catch (error) { setFailure(error instanceof Error ? error.message : "CRM could not be refreshed."); }
     finally { setBusy(false); }
   };
-  if (initialData.id === "activities" && section === "calendar" && initialData.canView) return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}><CrmCalendar workspaceId={initialData.workspaceId} revision={calendarRevision} /></DesignSystemProvider>;
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label={`${copy.title} workspace`} className={styles.page}>
       <header className={styles.pageHeading}><div><h1>{copy.title}</h1><p>{copy.description}</p></div>{initialData.canView && initialData.id === "crm-reports" ? <div className={styles.reportRange}><label>From<input type="date" value={reportFrom} max={reportTo} onChange={(event) => setReportFrom(event.target.value)} /></label><label>To<input type="date" value={reportTo} min={reportFrom} onChange={(event) => setReportTo(event.target.value)} /></label><Button size="compact" isLoading={busy} onPress={() => void reload()}>Apply</Button></div> : initialData.canView && initialData.id !== "crm-overview" ? <div className={styles.pageActions}><Button size="compact" isLoading={busy} onPress={() => void reload()}>Refresh</Button><Button size="compact" variant="primary" onPress={() => setCreating(true)}>Create {initialData.id === "customers" ? "customer" : initialData.id === "organizations" ? "organization" : initialData.id === "opportunities" ? "opportunity" : initialData.id === "activities" ? "activity" : initialData.id === "conversations" ? "conversation" : initialData.id === "sequences" ? "sequence" : "automation"}</Button></div> : null}</header>
@@ -384,7 +383,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
         {linkedRecord ? <InspectorSheet isOpen title="Record details" size="md" onOpenChange={(open) => { if (!open) setLinkedRecord(undefined); }}><LinkedRecordWorkbench workspaceId={initialData.workspaceId} id={initialData.id} recordId={linkedRecord} onChanged={() => reload()} /></InspectorSheet> : null}
         {initialData.id === "opportunities" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: "Opportunities", panel: null }, { id: "pipeline", label: "Pipelines & rules", panel: <PipelineSettings workspaceId={initialData.workspaceId} /> }]} /> : null}
         {initialData.id === "automations" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: "Workflows", panel: null }, { id: "approvals", label: "Approvals", panel: <AutomationApprovals workspaceId={initialData.workspaceId} /> }]} /> : null}
-        {initialData.id === "activities" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: "Activities", panel: null }, { id: "calendar", label: "Calendar", panel: <CrmCalendar workspaceId={initialData.workspaceId} revision={calendarRevision} /> }]} /> : null}
+        {initialData.id === "activities" ? <Link href="/workspace/crm/follow-ups?view=schedule">Open schedule</Link> : null}
         {section === "records" ? <><div className={styles.gridRegion}>
           <DataGrid
             ariaLabel={`CRM ${copy.noun}`}

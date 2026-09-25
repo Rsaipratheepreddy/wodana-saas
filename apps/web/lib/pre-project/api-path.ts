@@ -8,6 +8,7 @@ export function allowedCasePath(path:string[],method:string) {
   if(path.length===3)return (path[1]==='designs'&&path[2]==='upload'&&method==='POST')||(path[1]==='specifications'&&UUID.test(path[2])&&['GET','PUT'].includes(method))||(path[1]==='assets'&&UUID.test(path[2])&&['GET','POST'].includes(method))||(path[1]==='entries'&&((method==='POST'&&path[2]==='bulk')||(method==='PATCH'&&UUID.test(path[2]))));
   if(path.length===4&&path[1]==='assets'&&UUID.test(path[2])&&path[3]==='markup')return ['GET','POST'].includes(method);
   if(path.length===4&&path[1]==='definition-baselines'&&UUID.test(path[2])&&path[3]==='decisions')return method==='POST';
+  if(path.length===4&&path[1]==='design-folders'&&UUID.test(path[2])&&['reviewer','approve'].includes(path[3]))return method==='POST';
   if(path.length===6&&path[1]==='designs'&&UUID.test(path[2])&&path[3]==='threads'&&UUID.test(path[4])&&['replies','status'].includes(path[5]))return method==='POST';
   return path.length===4&&path[1]==='designs'&&UUID.test(path[2])&&['versions','activity','threads'].includes(path[3])&&method==='POST';
 }

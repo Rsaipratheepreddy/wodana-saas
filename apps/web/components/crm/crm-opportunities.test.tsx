@@ -1,28 +1,94 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
 import { crmRequest } from "@/lib/crm/client";
 import { CrmOpportunities } from "./crm-opportunities";
 
+vi.mock("next/font/google", () => ({ Caveat: () => ({ variable: "note-font" }) }));
+
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+
 vi.mock("@/lib/crm/client", async (original) => ({ ...await original<object>(), crmRequest: vi.fn() }));
 
 describe("CrmOpportunities", () => {
-  it("shows every opportunity with its backend pipeline and stage", () => {
+  it("starts an empty workspace from enquiries without pipeline setup", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    data.items = [];
+    data.supporting.pipelines = [];
+    render(<CrmOpportunities initialData={data} />);
+    expect(screen.getByText("Your pipeline starts with an enquiry")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pipeline settings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New deal" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Convert enquiry" }));
+    expect(push).toHaveBeenCalledWith("/workspace/crm/leads");
+    await userEvent.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("textbox", { name: "Search opportunities" })).toHaveLength(1);
+  });
+
+  it("persists a dropped opportunity with the latest version and leaves it in place on failure", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const record = data.items[0];
+    const pipeline = (data.supporting.pipelines as {id:string; stages:{id:string;name:string}[]}[])[0];
+    const target = pipeline.stages.find(stage => stage.id !== record.stageId)!;
+    const api = vi.mocked(crmRequest);
+    api.mockImplementation(async (_workspace, path, method) => {
+      if (method === "POST") throw new Error("Stage requirement not met");
+      return { ...record, version: 7 };
+    });
+    render(<CrmOpportunities initialData={data} />);
+    const card = screen.getByRole("button", { name: /Emirates Hills villa interior renovation/ });
+    const transfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+    fireEvent.dragStart(card, { dataTransfer: transfer });
+    fireEvent.dragOver(screen.getByRole("region", { name: target.name }), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByRole("region", { name: target.name }), { dataTransfer: transfer });
+    await screen.findByText("Stage requirement not met");
+    expect(api).toHaveBeenCalledWith(data.workspaceId, `opportunities/${record.id}/transition`, "POST", { version: 7, stageId: target.id, status: "open" });
+    expect(within(screen.getByRole("region", { name: String(record.stageName) })).getByRole("button", { name: /Emirates Hills villa interior renovation/ })).toBeInTheDocument();
+    api.mockImplementation(async () => ({ ...record, version: 8, stageId: target.id }));
+    fireEvent.dragStart(card, { dataTransfer: transfer });
+    fireEvent.drop(screen.getByRole("region", { name: target.name }), { dataTransfer: transfer });
+    await screen.findByText(`${record.title} moved to ${target.name}.`);
+    expect(within(screen.getByRole("region", { name: target.name })).getByRole("button", { name: /Emirates Hills villa interior renovation/ })).toBeInTheDocument();
+  });
+
+  it("shows every opportunity with its backend pipeline and stage", async () => {
     render(<CrmOpportunities initialData={structuredClone(crmScreenFixture("opportunities"))} />);
 
-    expect(screen.getByRole("heading", { name: "Opportunities", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: "Opportunities" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Sales pipeline board")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New deal" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Convert enquiry" }));
+    expect(push).toHaveBeenCalledWith("/workspace/crm/leads");
+    await userEvent.click(screen.getByRole("button", { name: "List" }));
+    const table = screen.getByRole("table", { name: "Opportunities" });
+    expect(table).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Opportunity ID" })).toBeInTheDocument();
+    expect(within(table).getByText("D-0001")).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /Emirates Hills villa interior renovation/ })).getByText("Proposal")).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /DIFC executive office fit-out/ })).getByText("Negotiation")).toBeInTheDocument();
   });
 
-  it("does not hide an opportunity when its stage is missing or inactive", () => {
+  it("does not hide an opportunity when its stage is missing or inactive", async () => {
     const data = structuredClone(crmScreenFixture("opportunities"));
     data.items.push({ id: "orphan", title: "New commercial brief", partyName: "Layla Omar", pipelineName: "Design & build sales", stageId: "inactive-stage", status: "open" });
     render(<CrmOpportunities initialData={data} />);
 
+    expect(screen.getByText("Needs a stage")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByRole("row", { name: /New commercial brief/ }).querySelector('[data-column="stage"]')).toHaveTextContent("Not set");
+  });
+
+  it("flags a legacy opportunity whose Won stage still has an open status", () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const pipeline = (data.supporting.pipelines as { stages: { id: string; name: string; code?: string; status: string; position: number }[] }[])[0];
+    pipeline.stages.push({ id: "won-stage", name: "Won", code: "won", status: "active", position: 3 });
+    data.items[0].stageId = "won-stage";
+    data.items[0].stageName = "Won";
+    render(<CrmOpportunities initialData={data} />);
+
+    expect(within(screen.getByRole("region", { name: "Won" })).getByText("Status is open — review outcome")).toBeInTheDocument();
   });
 
   it("loads additional backend cursor pages", async () => {
@@ -39,4 +105,56 @@ describe("CrmOpportunities", () => {
     expect(crmRequest).toHaveBeenCalledWith(data.workspaceId, "opportunities?limit=100&cursor=page-2");
     expect(screen.queryByRole("button", { name: "Load more opportunities" })).not.toBeInTheDocument();
   });
+  it("opens card details in a modal and starts the exact opportunity case", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const record = data.items[0];
+    vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}` ? { ...record, version: 1 } : path === "pipelines" ? data.supporting.pipelines : { data: [] });
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "exact-case" }) });
+    vi.stubGlobal("fetch", fetcher);
+    const user = userEvent.setup();
+    render(<CrmOpportunities initialData={data} />);
+    await user.click(screen.getByRole("button", { name: /Emirates Hills villa interior renovation/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Opportunity details" });
+    expect(dialog.closest(".wd-modal")?.className).toContain("opportunityModal");
+    expect(within(dialog).queryByRole("heading", { name: "Opportunity details" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Close dialog" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("heading", { name: String(record.title) })).toBeInTheDocument();
+    expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Open Design & Planning" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith(expect.stringContaining("/cases/exact-case/overview")));
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ opportunityId: record.id });
+    vi.unstubAllGlobals();
+  });
+
+  it("shows a reference once and requires a reason before a Won drop", async () => {
+    const data = structuredClone(crmScreenFixture("opportunities"));
+    const record = data.items[0];
+    record.title = String(record.reference);
+    const pipeline = (data.supporting.pipelines as { id: string; stages: { id: string; name: string; code?: string; status: string; position: number }[] }[])[0];
+    pipeline.stages.push({ id: "won-stage", name: "Won", code: "won", status: "active", position: 3 });
+    const api = vi.mocked(crmRequest);
+    api.mockImplementation(async (_workspace, _path, method) => method === "POST"
+      ? { ...record, status: "won", stageId: "won-stage", version: 8 }
+      : { ...record, version: 7 });
+    api.mockClear();
+    render(<CrmOpportunities initialData={data} />);
+
+    const card = within(screen.getByRole("region", { name: "Proposal" })).getByRole("button", { name: /Amira Al Mansoori/ });
+    expect(within(card).getByText("D-0001")).toBeInTheDocument();
+    expect(within(card).getAllByText("Amira Al Mansoori")).toHaveLength(1);
+    const transfer = { setData: vi.fn(), getData: () => record.id, effectAllowed: "", dropEffect: "" };
+    fireEvent.dragStart(card, { dataTransfer: transfer });
+    fireEvent.dragOver(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByRole("region", { name: "Won" }), { dataTransfer: transfer });
+    const dialog = screen.getByRole("dialog", { name: "Mark opportunity Won" });
+    expect(within(dialog).getByRole("button", { name: "Confirm win" })).toBeDisabled();
+    expect(api).not.toHaveBeenCalledWith(data.workspaceId, `opportunities/${record.id}/transition`, "POST", expect.anything());
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Reason" }), "Signed agreement and deposit received");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Confirm win" }));
+    await waitFor(() => expect(api).toHaveBeenCalledWith(data.workspaceId, `opportunities/${record.id}/transition`, "POST", {
+      version: 7, stageId: "won-stage", status: "won", reason: "Signed agreement and deposit received",
+    }));
+    await waitFor(() => expect(within(screen.getByRole("region", { name: "Won" })).getByRole("button", { name: /Amira Al Mansoori/ })).toBeInTheDocument());
+  });
+
 });

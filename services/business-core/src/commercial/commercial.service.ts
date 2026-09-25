@@ -3,6 +3,7 @@ import {
   importedScopeCatalogLinks,
 } from "./commercial-scope";
 import { quotationTemplateContent } from "./quotation-template";
+import { confirmCommissionAmounts, normalizeCommissionLines, paymentProofLink } from "./deal-submission";
 import { sameOffer, validateDeduction } from "./variation-controls";
 import {
   controlledChangeCanRelease,
@@ -16,6 +17,11 @@ import {
   validateControlledChangeSources,
 } from "./change-control";
 import { releaseDeliveryProject } from "../projects/project-release";
+import { openPalmProjectAtDealFile } from "../projects/palm-deal-project";
+import { palmFlowRoute, palmQuotationRequiresSitePlan, type PalmFlowScope } from "../projects/palm-flow-route";
+import { resolvedProjectWorkflowTemplate } from "../projects/project-workflow.repository";
+import { qsEstimateCurrent, qsEstimateHash } from "./qs-estimate";
+import { activeAcceptedBaseQuote, beginPalmMainRound } from "./palm-commercial-rounds";
 import { captureApprovedDesignBaseline } from "../projects/project-design-control";
 import { ensureJobForSource } from "../jobs/job-identity.store";
 import { verifiedInvoiceSnapshot } from "./accounting-invoice";
@@ -37,7 +43,9 @@ import {
   financeGatePaymentsReady,
   isOperationalEvidence,
   materialApprovalsComplete,
+  palmMaterialListSignedOff,
   ownerReviewInputsReady,
+  palmDesignDepositReady,
   quotationApprovalSources,
   releasePaymentIsOperational,
 } from "./release-integrity";
@@ -114,12 +122,23 @@ export function isManualQuotationLine(line: QuoteLine) {
 }
 
 export function commercialCommandPermission(action: string) {
-  if (["verify_payment", "verify_credit"].includes(action))
+  if (action === "qs_approve") return "commercial.estimate";
+  if (["verify_payment", "verify_credit", "review_deal_finance"].includes(action))
     return "commercial.finance.verify";
-  if (["approve", "decide_owner_review", "execute_agreement"].includes(action))
+  if (action === "decide_owner_review") return "commercial.deal.approve";
+  if (["approve", "execute_agreement"].includes(action))
     return "commercial.approve";
   if (action === "release") return "commercial.release";
   return "pre_projects.edit";
+}
+
+function dealInput<T>(validate: () => T): T {
+  try {
+    return validate();
+  } catch (error) {
+    if (error instanceof Error) throw new BadRequestException(error.message);
+    throw error;
+  }
 }
 
 export function manualLineAuthorizations(
@@ -161,12 +180,20 @@ export class CommercialService {
     lock = false,
   ) {
     const result = await client.query(
-      `SELECT c.status,o.title,p.display_name AS "customerName",o.currency_code AS currency,
+      `SELECT c.status,o.id AS "opportunityId",o.status AS "opportunityStatus",
+        o.reference AS "opportunityReference",enquiry.reference AS "enquiryReference",
+        enquiry.service_type AS "enquiryType",
+        o.amount AS "opportunityValue",o.title,p.display_name AS "customerName",o.currency_code AS currency,
+        (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=p.workspace_id AND cp.party_id=p.id AND cp.type='email' AND cp.status='active' ORDER BY cp.is_primary DESC,cp.created_at LIMIT 1) AS "customerEmail",
+        (SELECT raw_value FROM crm_contact_points cp WHERE cp.workspace_id=p.workspace_id AND cp.party_id=p.id AND cp.type='phone' AND cp.status='active' ORDER BY cp.is_primary DESC,cp.created_at LIMIT 1) AS "customerPhone",
+        (SELECT concat_ws(', ',NULLIF(a.line1,''),NULLIF(a.line2,''),NULLIF(a.locality,''),NULLIF(a.region,''),NULLIF(a.country_code,'')) FROM crm_addresses a WHERE a.workspace_id=p.workspace_id AND a.party_id=p.id ORDER BY a.is_primary DESC,a.created_at LIMIT 1) AS "customerAddress",
         e.id AS "legalEntityId",e.code AS "legalEntityCode",e.display_name AS "legalEntityName",
         e.registered_name AS "legalEntityRegisteredName",e.country_code AS "legalEntityCountryCode",
         e.base_currency AS "legalEntityBaseCurrency",e.tax_registration_number AS "legalEntityTaxRegistrationNumber"
        FROM pre_project_cases c
        JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id
+       LEFT JOIN crm_leads source_lead ON source_lead.workspace_id=o.workspace_id AND source_lead.id=o.lead_id
+       LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id=source_lead.workspace_id AND enquiry.id=source_lead.enquiry_id
        JOIN crm_parties p ON p.workspace_id=o.workspace_id AND p.id=o.party_id
        LEFT JOIN legal_entities e ON e.workspace_id=o.workspace_id AND e.id=o.legal_entity_id AND e.status='active'
        WHERE c.workspace_id=$1 AND c.id=$2 ${lock ? "FOR UPDATE OF c" : ""}`,
@@ -194,7 +221,32 @@ export class CommercialService {
   ) {
     if (!quote) return { designsRequired: 0, designsApproved: 0 };
     let designsApproved = 0;
+    const hasPackageLines = quote.lines.some((line) => !line.scopeId);
+    const packageDesigns = hasPackageLines
+      ? (await client.query<{ total: number; approved: number }>(
+          `SELECT count(*)::int AS total,
+                  count(*) FILTER (WHERE version.status='approved' AND NOT EXISTS (
+                    SELECT 1 FROM pre_project_design_threads thread
+                    WHERE thread.workspace_id=version.workspace_id AND thread.version_id=version.id
+                      AND thread.blocking AND thread.status='open'
+                  ))::int AS approved
+           FROM pre_project_designs design
+           JOIN LATERAL (
+             SELECT id,workspace_id,status FROM pre_project_design_versions
+             WHERE workspace_id=design.workspace_id AND design_id=design.id
+             ORDER BY number DESC LIMIT 1
+           ) version ON true
+           WHERE design.workspace_id=$1 AND design.case_id=$2
+             AND design.archived_at IS NULL AND design.scope_entry_id IS NULL`,
+          [workspaceId, caseId],
+        )).rows[0]
+      : null;
     for (const line of quote.lines) {
+      if (!line.scopeId) {
+        if (packageDesigns?.total && packageDesigns.total === packageDesigns.approved)
+          designsApproved += 1;
+        continue;
+      }
       const design = await client.query(
         `SELECT count(*)::int AS total,count(*) FILTER (WHERE v.status='approved' AND NOT EXISTS(SELECT 1 FROM pre_project_design_threads t WHERE t.workspace_id=v.workspace_id AND t.version_id=v.id AND t.blocking AND t.status='open'))::int AS approved FROM pre_project_item_design_refs r JOIN pre_project_design_versions v ON v.workspace_id=r.workspace_id AND v.id=r.design_version_id WHERE r.workspace_id=$1 AND r.case_id=$2 AND r.entry_id=$3 AND r.version=$4`,
         [workspaceId, caseId, line.scopeId, line.specificationVersion ?? 0],
@@ -409,6 +461,7 @@ export class CommercialService {
       async (client, user) => {
         const record = await this.caseRecord(client, workspaceId, caseId);
         const data = await this.load(client, workspaceId, caseId);
+        const palmFlowEnabled = (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === "palm_design_build_delivery";
         const canEditCosts = await this.access.hasPermission(
           client,
           workspaceId,
@@ -423,9 +476,7 @@ export class CommercialService {
             user.userId,
             "commercial.costs.view",
           ));
-        const accepted = data.quotes.find(
-          (quote) => quote.kind === "quotation" && quote.status === "accepted",
-        );
+        const accepted = activeAcceptedBaseQuote(data);
         const releaseReadiness = await this.designReadiness(
           client,
           workspaceId,
@@ -456,6 +507,7 @@ export class CommercialService {
           workspaceId,
           caseId,
           ...record,
+          palmFlowEnabled,
           data: commercialDataForCostAccess(data, canViewCosts),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
@@ -477,6 +529,28 @@ export class CommercialService {
             user.userId,
             "commercial.approve",
           ),
+          canEstimate: await this.access.hasPermission(
+            client,
+            workspaceId,
+            user.userId,
+            "commercial.estimate",
+          ),
+          canApproveDeal:
+            (await this.access.hasPermission(
+              client,
+              workspaceId,
+              user.userId,
+              "commercial.deal.approve",
+            )) &&
+            (!data.palmFlow || Boolean((await client.query(
+              `SELECT 1 FROM workspace_memberships membership
+               JOIN effective_member_roles assigned ON assigned.membership_id=membership.id
+               JOIN roles role ON role.id=assigned.role_id
+               WHERE membership.workspace_id=$1 AND membership.user_id=$2
+                 AND membership.status='active' AND role.code IN ('owner','administrator')
+               LIMIT 1`,
+              [workspaceId, user.userId],
+            )).rowCount)),
           canVerifyFinance: await this.access.hasPermission(
             client,
             workspaceId,
@@ -1162,12 +1236,15 @@ export class CommercialService {
     caseId: string,
     q: Quote,
     refreshExisting = false,
+    entryIds?: string[],
   ) {
     const rows = await client.query(
       `SELECT e.id,e.version,e.title,e.note,e.quantity,e.unit,r.id AS room_id,r.catalog_record_id,r.catalog_snapshot,coalesce(r.name,'General') AS room,coalesce((SELECT jsonb_agg(jsonb_build_object('role',l.role,'recordId',l.record_id,'version',l.snapshot->'version','snapshot',l.snapshot)) FROM pre_project_scope_links l WHERE l.workspace_id=e.workspace_id AND l.entry_id=e.id),'[]') AS catalog_links,s.version AS specification_version,s.content AS specification FROM pre_project_brief_entries e LEFT JOIN pre_project_rooms r ON r.workspace_id=e.workspace_id AND r.id=e.room_id LEFT JOIN LATERAL(SELECT version,content FROM pre_project_item_specifications WHERE workspace_id=e.workspace_id AND entry_id=e.id AND case_id=e.case_id ORDER BY version DESC LIMIT 1)s ON true WHERE e.workspace_id=$1 AND e.case_id=$2 AND e.kind='requirement' AND e.scope_status='included' AND e.archived_at IS NULL`,
       [workspaceId, caseId],
     );
-    for (const line of rows.rows) {
+    const selectedRows = entryIds ? rows.rows.filter(line => entryIds.includes(line.id)) : rows.rows;
+    if (entryIds && selectedRows.length !== new Set(entryIds).size) throw new ConflictException("A selected requirement is no longer available or included. Reopen the import dialog and choose again.");
+    for (const line of selectedRows) {
       const prior = q.lines.find((l) => l.scopeId === line.id);
       if (prior && !refreshExisting) continue;
       q.rooms ??= [];
@@ -1223,7 +1300,7 @@ export class CommercialService {
       if (prior) Object.assign(prior, next);
       else q.lines.push(next);
     }
-    return rows.rowCount ?? 0;
+    return selectedRows.length;
   }
   catalogOptions(
     actor: RequestActor,
@@ -1463,7 +1540,29 @@ export class CommercialService {
           ? data.quotes.find((q) => q.id === b.quoteId)
           : undefined;
         const now = new Date().toISOString();
-        if (action === "create_change_case") {
+        if (action === "set_palm_flow") {
+          const template = await resolvedProjectWorkflowTemplate(client, workspaceId);
+          if (template.code !== "palm_design_build_delivery")
+            throw new BadRequestException("This project flow is not configured for this workspace.");
+          if (data.quotes.length || data.dealFile)
+            throw new ConflictException("Choose the service path before preparing a quotation.");
+          const supplied = object(b.scope);
+          const keys: Array<keyof PalmFlowScope> = [
+            "design", "mainQuotation", "materialSelection", "procurement",
+            "manufacturing", "siteWorks", "installation",
+          ];
+          const scope = Object.fromEntries(keys.map((key) => {
+            if (typeof supplied[key] !== "boolean")
+              throw new BadRequestException(`Choose whether ${key} applies to this enquiry.`);
+            return [key, supplied[key]];
+          })) as PalmFlowScope;
+          try {
+            palmFlowRoute(scope);
+          } catch (error) {
+            throw new BadRequestException(error instanceof Error ? error.message : "Invalid service path.");
+          }
+          data.palmFlow = { scope, selectedAt: now, selectedBy: user.userId };
+        } else if (action === "create_change_case") {
           const kind = text(b.kind, 40, true) as ControlledChangeKind;
           if (!controlledChangeKinds.includes(kind))
             throw new BadRequestException("Choose a valid change type.");
@@ -1829,14 +1928,21 @@ export class CommercialService {
             );
           const kind =
             action === "variation" ? "variation" : (q?.kind ?? "quotation");
-          if (action === "create" && data.quotes.length)
-            throw new ConflictException(
-              "Use Create revision for the existing quotation.",
-            );
+          const mainRound = action === "create" && data.quotes.length > 0 && Boolean(data.palmFlow);
+          if (action === "create" && data.quotes.length && !mainRound)
+            throw new ConflictException("Use Create revision for the existing quotation.");
+          if (mainRound) beginPalmMainRound(data);
+          if (action === "create" &&
+              (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === "palm_design_build_delivery" &&
+              !data.palmFlow)
+            throw new ConflictException("Choose the enquiry's service path before preparing its quotation.");
           q = {
             id: randomUUID(),
             number: Math.max(0, ...data.quotes.map((q) => q.number)) + 1,
             kind,
+            round: action === "create" && data.palmFlow
+              ? mainRound ? "main" : palmFlowRoute(data.palmFlow.scope).firstPaidRound
+              : q?.round,
             direction: action === "variation" ? "addition" : q?.direction,
             familyId: action === "revise" ? (q?.familyId ?? q?.id) : undefined,
             baselineId: action === "variation" ? q?.id : q?.baselineId,
@@ -1876,19 +1982,21 @@ export class CommercialService {
             total: 0,
           };
           if (action === "create") {
-            await this.importIncludedScope(client, workspaceId, caseId, q);
             await this.seedPreparationRooms(client, workspaceId, caseId, q);
           }
           data.quotes.push(q);
         } else if (action === "import_scope") {
           if (!q) throw new NotFoundException("Quotation not found.");
           editable(q);
+          if (b.entryIds !== undefined && (!Array.isArray(b.entryIds) || !b.entryIds.length || b.entryIds.length > 500)) throw new BadRequestException("Select at least one requirement to import.");
+          const entryIds = Array.isArray(b.entryIds) ? b.entryIds.map(id => uuid(id, "requirement")) : undefined;
           const count = await this.importIncludedScope(
             client,
             workspaceId,
             caseId,
             q,
             b.refreshExisting === true,
+            entryIds,
           );
           if (!count)
             throw new ConflictException(
@@ -2289,7 +2397,7 @@ export class CommercialService {
           } else if (!v.paymentTemplate) delete q.paymentTemplate;
           q.total = totals(q).total;
         } else if (
-          ["submit", "approve", "return", "issue", "withdraw"].includes(action)
+          ["submit", "approve", "qs_approve", "return", "issue", "withdraw"].includes(action)
         ) {
           if (!q) throw new NotFoundException("Quotation not found.");
           if (action === "submit") {
@@ -2332,6 +2440,9 @@ export class CommercialService {
                 {
                   target: "pricing",
                   requireIncludedScope: linked.length > 0,
+                  requireSitePlan: data.palmFlow
+                    ? palmQuotationRequiresSitePlan(data.palmFlow.scope, q.round)
+                    : true,
                   scopeReferences: linked.map((line) => ({
                     scopeId: line.scopeId!,
                     title: line.title,
@@ -2370,20 +2481,45 @@ export class CommercialService {
                   })),
                   now,
                   q.definitionBaseline,
+                  { includePackageDesigns: Boolean(data.palmFlow?.scope.design && q.round === "main") },
                 );
               } else {
                 delete q.definitionBaseline;
-                delete q.designEvidence;
+                if (data.palmFlow && q.round === "main") {
+                  q.designEvidence = await captureApprovedDesignBaseline(
+                    client,
+                    workspaceId,
+                    caseId,
+                    q.lines.map((line) => ({ scopeLineId: line.id, title: line.title })),
+                    now,
+                    undefined,
+                    { includePackageDesigns: data.palmFlow.scope.design },
+                  );
+                } else delete q.designEvidence;
               }
             }
             q.total = totals(q).total;
             q.status = "internal_review";
           }
-          if (action === "approve") {
+          if (action === "approve" || action === "qs_approve") {
             if (q.status !== "internal_review")
               throw new ConflictException(
                 "Submit this version for review first.",
               );
+            if (action === "qs_approve") {
+              if (!data.palmFlow || q.kind !== "quotation")
+                throw new ConflictException("QS estimate review applies to a Palm quotation round.");
+              const estimate = totals(q);
+              if (estimate.cost <= 0)
+                throw new ConflictException("Enter the QS cost estimate for the quotation items before approving pricing.");
+              q.qsEstimate = {
+                quoteHash: qsEstimateHash(q), cost: estimate.cost,
+                sellingTotal: estimate.total, reviewedAt: now,
+                reviewedById: user.userId, reviewedBy: user.displayName,
+              };
+            } else if (data.palmFlow && q.kind === "quotation") {
+              throw new ConflictException("A Quantity Surveyor must review this Palm quotation before it is issued.");
+            }
             q.status = "internal_approved";
             q.approvedBy = user.displayName;
           }
@@ -2394,6 +2530,7 @@ export class CommercialService {
               );
             q.status = "draft";
             delete q.approvedBy;
+            delete q.qsEstimate;
           }
           if (action === "withdraw") {
             if (q.status !== "issued")
@@ -2411,6 +2548,8 @@ export class CommercialService {
               throw new ConflictException(
                 "Internal approval is required before issue.",
               );
+            if (data.palmFlow && q.kind === "quotation" && !qsEstimateCurrent(q))
+              throw new ConflictException("The QS estimate review is missing or the quotation changed. Return it for a fresh review.");
             const controlledRequest = controlledChangeForQuote(data, q.id);
             const isCaseSibling = (other: Quote) =>
               Boolean(
@@ -2462,6 +2601,10 @@ export class CommercialService {
             q.issuedAt = now;
             q.approverId = grant.id;
             q.brand = settings.brand;
+            // Brand is frozen only on issue. It changes the public snapshot,
+            // not the QS-reviewed quantities, costs or selling prices.
+            if (data.palmFlow && q.kind === "quotation" && q.qsEstimate)
+              q.qsEstimate.quoteHash = qsEstimateHash(q);
             q.hash = freezeHash(q);
             for (const id of q.requestIds) {
               const request = data.requests.find((r) => r.id === id);
@@ -2482,10 +2625,9 @@ export class CommercialService {
             }
           }
         } else if (action === "submit_owner_review") {
-          const accepted = data.quotes.find(
-            (quote) =>
-              quote.kind === "quotation" && quote.status === "accepted",
-          );
+          if (record.opportunityStatus !== "won")
+            throw new ConflictException("Mark the linked opportunity Won before submitting a deal.");
+          const accepted = activeAcceptedBaseQuote(data);
           if (!accepted)
             throw new ConflictException(
               "Client acceptance is required before owner review.",
@@ -2515,6 +2657,8 @@ export class CommercialService {
               materials: checklistInput.materials === true,
               payment: checklistInput.payment === true,
             };
+          const commissionLines = dealInput(() => normalizeCommissionLines(b.commissionLines, acceptedQuoteValue(accepted)));
+          const paymentProofUrl = dealInput(() => paymentProofLink(b.paymentProofUrl));
           data.ownerReview = {
             id:
               data.ownerReview?.quoteId === accepted.id
@@ -2522,26 +2666,73 @@ export class CommercialService {
                 : randomUUID(),
             quoteId: accepted.id,
             quoteHash: accepted.hash ?? freezeHash(accepted),
-            status: "submitted",
-            commission: roundAmount(b.commission ?? 0),
+            status: "pending_finance",
+            commission: roundAmount(commissionLines.reduce((total, line) => total + line.amount, 0)),
+            commissionLines,
+            paymentProofUrl,
             checklist,
             submissionNote: text(b.note, 3000, true),
             submittedAt: now,
             submittedBy: user.displayName,
             submittedById: user.userId,
           };
-          data.dealFile = null;
+          // The second paid round updates the same Deal File; it must never
+          // remove the Project Ref created after the first agreement.
+          if (!data.designRound) data.dealFile = null;
+        } else if (action === "review_deal_finance") {
+          const review = data.ownerReview;
+          if (!review || review.status !== "pending_finance")
+            throw new ConflictException("Submit the deal to Finance before verifying it.");
+          if (review.submittedById === user.userId)
+            throw new ForbiddenException("A separate Finance reviewer must verify the deal.");
+          const decision = text(b.decision, 20, true);
+          if (!["confirm", "return"].includes(decision))
+            throw new BadRequestException("Choose confirm or return.");
+          const financeNote = text(b.note ?? "", 3000, decision === "return");
+          if (decision === "confirm") {
+            if (b.paymentVerified !== true)
+              throw new BadRequestException("Finance must verify the linked proof of payment.");
+            const accepted = data.quotes.find(quote => quote.id === review.quoteId && quote.status === "accepted");
+            if (!accepted || assertQuoteSnapshot(accepted) !== review.quoteHash)
+              throw new ConflictException("The accepted quotation changed. Submit the deal again.");
+            const finalCommissionLines = dealInput(() => confirmCommissionAmounts(review.commissionLines ?? [], b.commissionLines, acceptedQuoteValue(accepted)));
+            review.finalCommissionLines = finalCommissionLines;
+            review.commission = roundAmount(finalCommissionLines.reduce((total, line) => total + line.amount, 0));
+            review.status = "pending_approval";
+          } else {
+            review.status = "returned";
+            review.decisionNote = financeNote;
+          }
+          review.financeNote = financeNote;
+          review.financeReviewedAt = now;
+          review.financeReviewedBy = user.displayName;
+          review.financeReviewedById = user.userId;
         } else if (action === "decide_owner_review") {
           const review = data.ownerReview,
             decision = text(b.decision, 20, true);
-          if (!review || review.status !== "submitted")
-            throw new ConflictException("Submit the owner review first.");
+          if (data.palmFlow) {
+            const ownerOrAdmin = await client.query(
+              `SELECT 1 FROM workspace_memberships membership
+               JOIN effective_member_roles assigned ON assigned.membership_id=membership.id
+               JOIN roles role ON role.id=assigned.role_id
+               WHERE membership.workspace_id=$1 AND membership.user_id=$2
+                 AND membership.status='active' AND role.code IN ('owner','administrator')
+               LIMIT 1`,
+              [workspaceId, user.userId],
+            );
+            if (!ownerOrAdmin.rowCount)
+              throw new ForbiddenException("Only a Palm Owner or Administrator can approve the agreement and payment.");
+          }
+          if (!review || review.status !== "pending_approval")
+            throw new ConflictException("Finance must confirm the Deal File before Owner approval.");
           if (!["approve", "return", "reject"].includes(decision))
             throw new BadRequestException("Choose approve, return or reject.");
-          if (review.submittedById === user.userId)
+          if (review.submittedById === user.userId || review.financeReviewedById === user.userId)
             throw new ForbiddenException(
-              "Another authorized owner must review this submission.",
+              "A separate Owner or Administrator must review this submission.",
             );
+          if (record.opportunityStatus !== "won")
+            throw new ConflictException("The linked opportunity must remain Won for Deal File approval.");
           const decisionNote = text(b.note ?? "", 3000, decision !== "approve");
           const accepted = data.quotes.find(
             (quote) =>
@@ -2556,26 +2747,37 @@ export class CommercialService {
             );
           if (decision === "approve") {
             const agreement = data.agreement;
-            if (Object.values(review.checklist).some((checked) => !checked))
+            if (!review.finalCommissionLines?.length || !review.paymentProofUrl || !review.financeReviewedById)
+              throw new ConflictException("Finance verification and payment proof are required before approval.");
+            if (Object.entries(review.checklist).some(([key, checked]) =>
+              !checked && !(data.palmFlow && key === "materials")))
               throw new ConflictException(
                 "Complete every owner review check before approval.",
               );
             if (
-              !ownerReviewInputsReady(data, accepted)
+              !(data.palmFlow
+                ? agreementIsOperational(data.agreement) && agreementMatchesAcceptedQuote(data.agreement, accepted)
+                : ownerReviewInputsReady(data, accepted))
             )
               throw new ConflictException(
                 "Verify the agreement and exact client material approvals before owner approval.",
               );
+            if (data.palmFlow && !financeGatePaymentsReady(data, "release", accepted.id))
+              throw new ConflictException("Finance must verify this quotation round's payment before Owner approval.");
+            if (data.palmFlow?.scope.design && accepted.round === "design" &&
+                !palmDesignDepositReady(data, accepted))
+              throw new ConflictException("Verify at least AED 15,000 for the design proposal before Owner approval and the Deal File.");
             const snapshot = acceptedQuoteTotals(accepted);
             review.status = "approved";
             review.decisionNote = decisionNote;
             review.decidedAt = now;
             review.decidedBy = user.displayName;
             review.decidedById = user.userId;
+            const existingDealFile = data.designRound?.dealFile;
             data.dealFile = {
-              id: randomUUID(),
-              reference: `DF-${now.slice(0, 4)}-${caseId.slice(0, 8).toUpperCase()}`,
-              revision: 1,
+              id: existingDealFile?.id ?? randomUUID(),
+              reference: existingDealFile?.reference ?? `DF-${now.slice(0, 4)}-${caseId.slice(0, 8).toUpperCase()}`,
+              revision: existingDealFile ? existingDealFile.revision + 1 : 1,
               ownerReviewId: review.id,
               quoteId: accepted.id,
               quoteNumber: accepted.number,
@@ -2588,33 +2790,40 @@ export class CommercialService {
               ),
               agreementReference: agreement!.reference,
               paymentIds: data.payments
-                .filter((payment) => payment.requiredForRelease)
+                .filter((payment) => payment.sourceQuoteId === accepted.id && payment.requiredForRelease)
                 .map((payment) => payment.id),
               value: acceptedQuoteValue(accepted),
               cost: snapshot.cost,
               margin: snapshot.margin,
               commission: review.commission,
+              commissionLines: review.finalCommissionLines,
+              paymentProofUrl: review.paymentProofUrl,
+              opportunityId: record.opportunityId,
+              opportunityReference: record.opportunityReference,
+              enquiryReference: record.enquiryReference,
               status: "active",
               approvedAt: now,
               approvedBy: user.displayName,
             };
+            if (data.palmFlow)
+              await openPalmProjectAtDealFile(client, workspaceId, caseId, user.userId, user.displayName, data);
           } else {
             review.status = decision === "return" ? "returned" : "rejected";
             review.decisionNote = decisionNote;
             review.decidedAt = now;
             review.decidedBy = user.displayName;
             review.decidedById = user.userId;
-            data.dealFile = null;
+            data.dealFile = data.designRound?.dealFile ?? null;
           }
         } else if (action === "sync_material_approvals") {
-          const accepted = data.quotes.find(
-            (quote) =>
-              quote.kind === "quotation" && quote.status === "accepted",
-          );
+          const accepted = activeAcceptedBaseQuote(data);
           if (!accepted)
             throw new ConflictException(
               "Accept the quotation before preparing material approvals.",
             );
+          if (data.palmFlow &&
+              (accepted.round !== "main" || data.dealFile?.quoteId !== accepted.id || data.ownerReview?.status !== "approved"))
+            throw new ConflictException("Book material selection after the main agreement, payment and Owner-approved Deal File.");
           const approvals =
             data.materialApprovals ?? (data.materialApprovals = []);
           for (const source of quotationApprovalSources(accepted)) {
@@ -2852,6 +3061,18 @@ export class CommercialService {
             text: text(b.text, 6000, true),
             visibility: b.visibility === "internal" ? "internal" : "client",
           });
+        } else if (action === "attach_agreement_file") {
+          if (!data.agreement) throw new ConflictException("Save the agreement before attaching its signed documents.");
+          if (b.quoteId !== data.agreement.quoteId) throw new ConflictException("The agreement changed. Reopen it before attaching files.");
+          const assetId = text(b.assetId, 80, true);
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assetId)) throw new BadRequestException("Choose an uploaded file.");
+          const files = data.agreement.files ?? [];
+          if (!files.some(file => file.id === assetId)) {
+            if (files.length >= 20) throw new ConflictException("An agreement can have up to 20 files.");
+            const asset = await client.query(`SELECT id,original_name AS name,mime_type AS "mimeType",byte_size AS "byteSize",preview_key IS NOT NULL AS "hasPreview" FROM pre_project_brief_assets WHERE workspace_id=$1 AND case_id=$2 AND id=$3`, [workspaceId, caseId, assetId]);
+            if (!asset.rowCount) throw new BadRequestException("This file does not belong to this project.");
+            data.agreement.files = [...files, { ...asset.rows[0], addedAt: now, addedBy: user.userId }];
+          }
         } else if (action === "agreement") {
           const quote = data.quotes.find(
             (q) =>
@@ -2861,6 +3082,8 @@ export class CommercialService {
           );
           if (!quote)
             throw new ConflictException("Select the accepted base quotation.");
+          if (data.designRound && quote.round !== "main")
+            throw new ConflictException("The design agreement is complete. Use the accepted main quotation for the next agreement.");
           const quoteHash = assertQuoteSnapshot(quote);
           const acceptedTotal = quote.clientDecision?.acceptedTotal;
           if (
@@ -2883,9 +3106,9 @@ export class CommercialService {
           );
           data.financeContext = financeContext;
           const agreementReference = text(b.reference, 200, true);
-          if (!data.payments.length) {
+          if (!data.payments.some(payment => payment.sourceQuoteId === quote.id)) {
             let allocated = 0;
-            data.payments = (quote.paymentTerms ?? []).map((term, index) => {
+            const roundPayments = (quote.paymentTerms ?? []).map((term, index) => {
               const amount =
                 index === quote.paymentTerms.length - 1
                   ? Math.round((acceptedTotal - allocated) * 100) / 100
@@ -2908,8 +3131,9 @@ export class CommercialService {
                 reference: "",
               };
             });
+            data.payments.push(...roundPayments);
           }
-          for (const payment of data.payments) {
+          for (const payment of data.payments.filter(payment => payment.sourceQuoteId === quote.id)) {
             if (
               payment.legalEntityId &&
               payment.legalEntityId !== financeContext.legalEntityId
@@ -2926,6 +3150,7 @@ export class CommercialService {
             payment.agreementReference = agreementReference;
           }
           data.agreement = {
+            files: data.agreement?.quoteId === quote.id ? data.agreement.files : [],
             quoteId: quote.id,
             quoteHash,
             selectedOptionLineIds: [...quote.clientDecision.selectedOptionLineIds],
@@ -3070,9 +3295,13 @@ export class CommercialService {
             throw new ConflictException(
               "Execution readiness already recorded.",
             );
-          const accepted = data.quotes.find(
-            (q) => q.kind === "quotation" && q.status === "accepted",
-          );
+          if (data.palmFlow && !data.palmFlow.scope.mainQuotation)
+            throw new ConflictException("This design-only enquiry ends after Design & Specifications; it has no delivery release.");
+          if (record.opportunityStatus !== "won")
+            throw new ConflictException("The linked opportunity must be Won before production release.");
+          const accepted = activeAcceptedBaseQuote(data);
+          if (data.palmFlow && accepted?.round !== "main")
+            throw new ConflictException("Complete the main quotation and its paid Owner-approved agreement before delivery release.");
           const designReadiness = await this.designReadiness(
             client,
             workspaceId,
@@ -3081,9 +3310,9 @@ export class CommercialService {
           );
           if (
             accepted &&
+            (!data.palmFlow || data.palmFlow.scope.design) &&
             (designReadiness.designsRequired === 0 ||
-              designReadiness.designsApproved !==
-                designReadiness.designsRequired)
+              designReadiness.designsApproved !== designReadiness.designsRequired)
           )
             throw new ConflictException(
               "Approve every linked design revision before execution release.",
@@ -3101,16 +3330,21 @@ export class CommercialService {
           if (
             !data.dealFile ||
             data.dealFile.quoteId !== accepted.id ||
-            data.ownerReview?.status !== "approved"
+            data.ownerReview?.status !== "approved" ||
+            !data.ownerReview.financeReviewedById ||
+            !data.dealFile.paymentProofUrl ||
+            !data.dealFile.commissionLines?.length
           )
             throw new ConflictException(
-              "Owner approval and an active Deal File are required before release.",
+              "Finance verification, Owner approval and an active Deal File are required before release.",
             );
-          if (!materialApprovalsComplete(accepted, data.materialApprovals))
+          if (!(data.palmFlow
+            ? palmMaterialListSignedOff(data, accepted)
+            : materialApprovalsComplete(accepted, data.materialApprovals)))
             throw new ConflictException(
               "Complete the client material approvals before release.",
             );
-          if (!financeGatePaymentsReady(data, "release"))
+          if (!financeGatePaymentsReady(data, "release", data.palmFlow ? accepted.id : undefined))
             throw new ConflictException(
               "The contract needs at least one finance-verified release milestone before execution release.",
             );
@@ -3122,6 +3356,12 @@ export class CommercialService {
             throw new ConflictException(
               "Resolve or explicitly decline pending change requests.",
             );
+          if (data.palmFlow && data.dealFile) {
+            // The material meeting follows the paid agreement, so its client
+            // sign-off is captured at procurement release, not Owner approval.
+            data.dealFile.materialEvidence = approvedMaterialEvidence(accepted, data.materialApprovals);
+            data.dealFile.revision++;
+          }
           data.release = {
             id: randomUUID(),
             at: now,
@@ -3150,9 +3390,61 @@ export class CommercialService {
           "",
           user.userId,
         );
+        if (["submit_owner_review", "review_deal_finance", "decide_owner_review"].includes(action))
+          await this.notifyDealReview(client, workspaceId, caseId, data, action, user.userId);
         return { data };
       },
     );
+  }
+
+  private async notifyDealReview(client: PoolClient, workspaceId: string, caseId: string, data: CommercialData, action: string, actorUserId: string) {
+    const review = data.ownerReview;
+    if (!review) return;
+    const pendingFinance = action === "submit_owner_review";
+    const pendingOwner = action === "review_deal_finance" && review.status === "pending_approval";
+    const recipientPermission = pendingFinance ? "commercial.finance.verify" : pendingOwner ? "commercial.deal.approve" : null;
+    const eventType = pendingFinance ? "commercial.deal.pending_finance" : pendingOwner ? "commercial.deal.pending_approval" : "commercial.deal.decision";
+    const subject = pendingFinance ? "Deal File needs Finance review" : pendingOwner ? "Deal File needs Owner approval" : review.status === "approved" ? "Deal File approved" : "Deal File returned for correction";
+    const body = pendingFinance ? "Verify payment evidence and final commission amounts." : pendingOwner ? "Review the Finance-confirmed Deal File." : review.decisionNote || review.financeNote || `Deal File status: ${review.status}.`;
+    const recipients = recipientPermission
+      ? await client.query<{ userId: string }>(
+          `SELECT DISTINCT membership.user_id AS "userId"
+           FROM workspace_memberships membership
+           JOIN users account ON account.id=membership.user_id AND account.status='active'
+           JOIN effective_member_roles assigned ON assigned.membership_id=membership.id
+           JOIN role_permissions granted ON granted.role_id=assigned.role_id
+           JOIN permissions permission ON permission.id=granted.permission_id
+           WHERE membership.workspace_id=$1 AND membership.status='active'
+             AND permission.code=$2 AND membership.user_id<>$3
+             AND ($4::boolean=false OR EXISTS (
+               SELECT 1 FROM effective_member_roles owner_assigned
+               JOIN roles owner_role ON owner_role.id=owner_assigned.role_id
+               WHERE owner_assigned.membership_id=membership.id
+                 AND owner_role.code IN ('owner','administrator')
+             ))`,
+          [workspaceId, recipientPermission, actorUserId, pendingOwner && Boolean(data.palmFlow)],
+        )
+      : { rows: [{ userId: review.submittedById }] };
+    for (const recipient of recipients.rows) {
+      const preference = await client.query<{ enabled: boolean }>(
+        `SELECT enabled FROM notification_preferences
+         WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2
+           AND channel='in_app' AND event_type IN ($3,'commercial.deal.*','*')
+         ORDER BY CASE event_type WHEN $3 THEN 0 WHEN 'commercial.deal.*' THEN 1 ELSE 2 END LIMIT 1`,
+        [workspaceId, recipient.userId, eventType],
+      );
+      if (preference.rows[0]?.enabled === false) continue;
+      await client.query(
+        `INSERT INTO notifications
+          (workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,
+           deep_link,idempotency_key,correlation_id,delivered_at)
+         VALUES ($1,'user',$2,'in_app',$3,'delivered',$4,$5,$6,$7,$8,now())
+         ON CONFLICT (workspace_id,idempotency_key) DO NOTHING`,
+        [workspaceId, recipient.userId, eventType, subject, body,
+          `/workspace/pre-projects/cases/${caseId}/approvals`,
+          `deal:${review.id}:${action}:${data.revision}:${recipient.userId}`, randomUUID()],
+      );
+    }
   }
 }
 function roundAmount(value: unknown) {

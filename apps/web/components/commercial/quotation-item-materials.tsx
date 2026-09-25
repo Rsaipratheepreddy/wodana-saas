@@ -328,8 +328,8 @@ export function QuotationItemMaterials({
                   }
                 />
               </label>
-              <details className={d.optionalFields}>
-                <summary>Brand, code & supply</summary>
+              <section className={d.optionalFields}>
+                <h3>Brand, code & supply</h3>
                 <label>
                   Brand / manufacturer
                   <input
@@ -363,7 +363,7 @@ export function QuotationItemMaterials({
                   />
                   Supplied by the client
                 </label>
-              </details>
+              </section>
               <p className={d.hint}>Saved in this quotation only.</p>
               <button
                 type="button"
@@ -420,13 +420,13 @@ export function QuotationItemMaterials({
           )}
         </div>
       )}
-      <details className={d.optionalFields}>
-        <summary>
+      <section className={d.optionalFields}>
+        <h3>
           Material & finish notes
           {materialNotes(item, "material") || materialNotes(item, "finish")
             ? " · added"
             : ""}
-        </summary>
+        </h3>
         {(["material", "finish"] as const).map((r) => (
           <label key={r}>
             {r === "material"
@@ -448,7 +448,7 @@ export function QuotationItemMaterials({
             />
           </label>
         ))}
-      </details>
+      </section>
     </section>
   );
 }

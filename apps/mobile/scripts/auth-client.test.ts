@@ -41,6 +41,26 @@ test('sign-in verifies /me and persists only refresh metadata, never password or
   assert.equal(JSON.parse(h.saved!).refreshToken, 'refresh-1');
   assert.doesNotMatch(h.saved!, /Keep#Spaces|access-1|primaryEmail/);
 });
+test('organization lookup accepts name, slug, or ID before tenant-scoped sign-in', async () => {
+  const h = harness(), client = h.create('');
+  h.override = (path) => path === '/auth/organization/resolve'
+    ? response({ displayName: 'Palm Living', loginSlug: 'palm-living', logoUrl: '/api/auth/tenant-logo/palm-living', primaryColor: '#E4E3DE' }, 201)
+    : undefined;
+  for (const identifier of ['Palm Living', 'palm-living', '00000000-0000-4000-8000-000000000001']) {
+    const organization = await client.resolveOrganization(identifier);
+    assert.equal(organization.displayName, 'Palm Living');
+    assert.equal(organization.loginSlug, 'palm-living');
+    assert.equal(organization.logoUrl, 'https://api.example.com/api/v1/public/tenant-branding/palm-living/logo');
+  }
+  assert.deepEqual(h.calls.map((call) => call.body?.identifier), ['Palm Living', 'palm-living', '00000000-0000-4000-8000-000000000001']);
+  assert.equal(client.tenantSlug, 'palm-living');
+});
+test('unknown or ambiguous organization does not advance to sign-in', async () => {
+  const h = harness(), client = h.create('');
+  h.override = () => response({ message: 'Organization was not found' }, 404);
+  await assert.rejects(client.resolveOrganization('missing'), /Organization was not found/);
+  assert.equal(client.tenantSlug, '');
+});
 test('native sign-in waits for an MFA challenge and persists no token before verification', async () => {
   const h = harness(), client = h.create();
   h.override = (path, init) => {

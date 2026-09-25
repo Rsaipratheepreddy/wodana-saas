@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Palm Living demo — guest bedroom storage coordination</title>
+  <desc id="desc">Not-to-scale technical coordination elevation for guest bedroom storage joinery showing storage bays, adjustable shelving, closed cabinets, veneer or laminate finish, and quality-control hold points.</desc>
+  <defs><style>.bg{fill:#f8f7f3}.paper{fill:#fff}.fine{stroke:#777771;stroke-width:1.5;fill:none}.line{stroke:#252525;stroke-width:3;fill:none}.dash{stroke:#777;stroke-width:2;stroke-dasharray:8 8;fill:none}.warm{fill:#ddd6ca}.oak{fill:#b6a28b}.soft{fill:#efede8}.label{font:600 24px Arial,sans-serif;fill:#171717}.note{font:20px Arial,sans-serif;fill:#4b4b48}.small{font:17px Arial,sans-serif;fill:#5b5b58}.head{font:700 42px Arial,sans-serif;fill:#171717}.caps{font:700 17px Arial,sans-serif;letter-spacing:3px;fill:#5b5b58}</style></defs>
+  <rect width="1600" height="1000" class="bg"/><rect x="36" y="36" width="1528" height="928" class="paper"/>
+  <text x="76" y="104" class="caps">PALM LIVING · DEMO TECHNICAL COORDINATION</text>
+  <text x="76" y="165" class="head">Guest bedroom · integrated storage</text>
+  <text x="76" y="204" class="note">Typical elevation · not to scale · final module count and widths require measured drawing</text>
+  <line x1="76" y1="232" x2="1524" y2="232" class="fine"/>
+  <text x="90" y="282" class="caps">STORAGE ZONES / DESIGN INTENT</text>
+  <rect x="185" y="342" width="920" height="432" class="soft" stroke="#282828" stroke-width="3"/>
+  <rect x="205" y="360" width="280" height="395" class="oak" stroke="#282828" stroke-width="2"/>
+  <rect x="505" y="360" width="280" height="395" class="warm" stroke="#282828" stroke-width="2"/>
+  <rect x="805" y="360" width="280" height="395" fill="#e5ddd0" stroke="#282828" stroke-width="2"/>
+  <line x1="345" y1="360" x2="345" y2="755" class="fine"/>
+  <line x1="645" y1="360" x2="645" y2="755" class="fine"/>
+  <line x1="805" y1="505" x2="1085" y2="505" class="line"/><line x1="805" y1="615" x2="1085" y2="615" class="line"/>
+  <circle cx="326" cy="565" r="5" fill="#222"/><circle cx="365" cy="565" r="5" fill="#222"/><circle cx="626" cy="565" r="5" fill="#222"/><circle cx="665" cy="565" r="5" fill="#222"/>
+  <text x="236" y="800" class="small">closed hanging</text><text x="548" y="800" class="small">closed storage</text><text x="849" y="800" class="small">adjustable shelves</text>
+  <line x1="185" y1="829" x2="1105" y2="829" class="line"/>
+  <path d="M1080 395L1180 345H1220" class="fine"/><text x="1230" y="348" class="label">Carcass + faces</text><text x="1230" y="380" class="note">MR plywood; approved</text><text x="1230" y="409" class="note">veneer / laminate finish</text>
+  <path d="M1077 565L1180 530H1220" class="fine"/><text x="1230" y="533" class="label">Door hardware</text><text x="1230" y="565" class="note">Soft-close hinges;</text><text x="1230" y="594" class="note">check swing and reveals</text>
+  <path d="M1080 715L1180 690H1220" class="fine"/><text x="1230" y="693" class="label">QC hold points</text><text x="1230" y="725" class="note">Edge finish, alignment,</text><text x="1230" y="754" class="note">fixings, snag closure</text>
+  <rect x="76" y="875" width="1448" height="56" fill="#f1efea"/><text x="94" y="910" class="note">Site verification required: wall dimensions, floor level, service obstructions, fixing substrate, cabinet clearances and client-approved finish.</text>
+  <text x="1395" y="211" class="small">SHEET 03 / 04</text>
+</svg>

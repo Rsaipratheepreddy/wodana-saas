@@ -8,61 +8,6 @@
   transition: grid-template-columns var(--wd-duration-slow) var(--wd-ease-out);
 }
 
-/* Palm Living and Iglo demo tenants use one restrained beige/black identity.
-   These semantic overrides keep every module consistent in both themes. */
-.shell[data-brand-palette="beige-black"] {
-  --wd-brand-lilac: #e4e3de;
-  --wd-brand-rose: #d7d6d0;
-  --wd-brand-peach: #c9c7c0;
-  --wd-color-canvas: #e4e3de;
-  --wd-color-workspace-canvas: #e4e3de;
-  --wd-color-workspace-toolbar: #f4f3ef;
-  --wd-color-sidebar: #e4e3de;
-  --wd-color-sidebar-hover: #d7d6d0;
-  --wd-color-sidebar-active: #c9c7c0;
-  --wd-color-structural-divider: #bdbbb3;
-  --wd-color-surface-selected: #d7d6d0;
-  --wd-color-navigation-selected: #d7d6d0;
-  --wd-color-action-primary: #000000;
-  --wd-color-action-primary-hover: #1a1a1a;
-  --wd-color-action-primary-pressed: #303030;
-  --wd-color-action-primary-subtle: #d7d6d0;
-  --wd-color-action-on-primary: #ffffff;
-  --wd-color-link: #000000;
-  --wd-color-link-hover: #222222;
-  --wd-color-focus: #000000;
-  --wd-field-focus-border: #000000;
-}
-
-:global([data-theme="dark"]) .shell[data-brand-palette="beige-black"],
-:global([data-wd-theme="dark"]) .shell[data-brand-palette="beige-black"] {
-  --wd-brand-lilac: #e4e3de;
-  --wd-brand-rose: #d7d6d0;
-  --wd-brand-peach: #c9c7c0;
-  --wd-color-canvas: #000000;
-  --wd-color-workspace-canvas: #000000;
-  --wd-color-workspace-toolbar: #111111;
-  --wd-color-sidebar: #111111;
-  --wd-color-sidebar-hover: #222222;
-  --wd-color-sidebar-active: #2b2b28;
-  --wd-color-structural-divider: #333330;
-  --wd-color-surface: #111111;
-  --wd-color-surface-subtle: #161616;
-  --wd-color-surface-muted: #20201e;
-  --wd-color-surface-hover: #292926;
-  --wd-color-surface-pressed: #33332f;
-  --wd-color-surface-selected: #33332f;
-  --wd-color-navigation-selected: #2a2a27;
-  --wd-color-action-primary: #e4e3de;
-  --wd-color-action-primary-hover: #f0efe9;
-  --wd-color-action-primary-pressed: #cfcec7;
-  --wd-color-action-primary-subtle: #242421;
-  --wd-color-action-on-primary: #000000;
-  --wd-color-link: #e4e3de;
-  --wd-color-link-hover: #ffffff;
-  --wd-color-focus: #e4e3de;
-  --wd-field-focus-border: #e4e3de;
-}
 .shell[data-focus] { grid-template-columns: minmax(0, 1fr); transition: none; }
 /* Only the platform's outer top edge is square; controls retain theme radii. */
 .shell, .desktopSidebar, .workspaceArea {
@@ -112,7 +57,7 @@
   block-size: 100vh;
   block-size: 100dvh;
   min-inline-size: 0;
-  border-inline-end: 1px solid var(--wd-color-structural-divider);
+  border-inline-end: 0;
   background: var(--wd-color-sidebar);
 }
 
@@ -126,7 +71,7 @@
   display: grid;
   block-size: 100%;
   min-inline-size: 0;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   border: 0;
   border-radius: 0;
   background: var(--wd-color-sidebar);
@@ -137,16 +82,16 @@
 .workspaceHeader {
   position: relative;
   display: flex;
-  min-block-size: 3.75rem;
+  min-block-size: 3.25rem;
   align-items: center;
   gap: 0.125rem;
-  padding: 0.5rem 0.75rem;
-  border-block-end: 1px solid transparent;
+  padding: 0.375rem 0.75rem;
+  border-block-end: 1px solid var(--wd-color-structural-divider);
 }
 
 .workspaceButton {
   display: grid;
-  min-block-size: 2.75rem;
+  min-block-size: 2.25rem;
   min-inline-size: 0;
   flex: 1;
   grid-template-columns: 2rem minmax(0, 1fr) auto;
@@ -355,7 +300,7 @@
 }
 
 .searchResult + .searchResult {
-  border-block-start: 1px solid var(--wd-color-border-subtle);
+  border-block-start: 1px solid var(--wd-color-border-subtle, #d9ddda);
 }
 
 .searchResult:hover,
@@ -417,14 +362,14 @@
 }
 
 .searchFooter {
-  border-block-start: 1px solid var(--wd-color-border-subtle);
+  border-block-start: 1px solid var(--wd-color-border-subtle, #d9ddda);
   text-align: center;
 }
 
 .navigation {
   --navigation-row-gap: 0.0625rem;
   min-block-size: 0;
-  padding: 0.25rem 0.75rem 0.75rem;
+  padding: 0.25rem 0.75rem 0.375rem;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-color: var(--wd-color-border-strong) transparent;
@@ -702,6 +647,26 @@
   color: var(--wd-color-text);
 }
 
+@supports (backdrop-filter: blur(1px)) {
+  .workspacePopover,
+  .modulePopover,
+  .userPopover {
+    background: var(--wd-glass-surface);
+    backdrop-filter: blur(var(--wd-glass-blur));
+    -webkit-backdrop-filter: blur(var(--wd-glass-blur));
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .workspacePopover,
+  .modulePopover,
+  .userPopover {
+    background: var(--wd-color-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .workspacePopover[data-entering],
 .modulePopover[data-entering],
 .userPopover[data-entering] {
@@ -915,12 +880,12 @@
 .workspaceArea {
   /* The workspace modules inherit one canvas, content width and rhythm. */
   --wd-workspace-page-width: 76rem;
-  --wd-workspace-page-inline: clamp(.875rem, 2vw, 1.5rem);
-  --wd-workspace-page-block-start: .875rem;
-  --wd-workspace-page-block-end: 1.5rem;
-  --wd-workspace-section-gap: .75rem;
-  --wd-workspace-row-padding: .7rem;
-  --wd-workspace-card-padding: .8rem;
+  --wd-workspace-page-inline: clamp(1rem, 2.5vw, var(--wd-phi-4));
+  --wd-workspace-page-block-start: var(--wd-phi-3);
+  --wd-workspace-page-block-end: var(--wd-phi-5);
+  --wd-workspace-section-gap: var(--wd-phi-4);
+  --wd-workspace-row-padding: var(--wd-phi-2);
+  --wd-workspace-card-padding: 0;
   display: grid;
   block-size: 100vh;
   block-size: 100dvh;
@@ -940,34 +905,42 @@
   inset-block-start: 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--wd-phi-2);
   border: 0;
-  border-block-end: 1px solid var(--wd-color-structural-divider);
-  padding-inline: 1.25rem;
+  padding-inline: var(--wd-phi-3);
   background: var(--wd-color-workspace-toolbar);
+}
+
+@media (min-width: 56.001rem) {
+  /* Reserve the header's actual height so it cannot cover the project tabs. */
+  .workspaceArea[data-project-revamp] {
+    grid-template-rows: minmax(3.25rem, max-content) minmax(0, 1fr);
+  }
 }
 
 .topModuleNav { align-self: center; flex: none; }
 .topModuleMenu { display: none; flex: none; }
-.globalUtilities { display: flex; align-items: center; gap: .75rem; margin-inline-start: auto; }
+.globalUtilities { display: flex; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; }
+.globalUtilities > .accountMenu { margin-inline-start: var(--wd-space-2); }
+.globalUtilities > .woddyControl { margin-inline-end: var(--wd-space-2); }
 
 .breadcrumbs {
   flex: 1;
   min-inline-size: 0;
-  border-inline-start: 1px solid var(--wd-color-structural-divider);
-  padding-inline-start: 0.875rem;
+  padding-inline-start: var(--wd-phi-1);
 }
 
 .breadcrumbs ol {
   display: flex;
   min-inline-size: 0;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
   padding: 0;
   margin: 0;
   list-style: none;
 }
 
+.breadcrumbs li { display: inline-flex; align-items: center; gap: 0.375rem; }
 .breadcrumbs li,
 .breadcrumbs a {
   overflow: hidden;
@@ -1009,7 +982,7 @@
 .woddyButton {
   position: relative;
   display: inline-flex;
-  block-size: 2.25rem;
+  block-size: 2.125rem;
   align-items: center;
   gap: 0.25rem;
   border: 0;
@@ -1154,22 +1127,26 @@
   inline-size: 2rem;
   place-items: center;
   flex: none;
-  border: 1px solid var(--wd-color-border);
+  border: 0;
   border-radius: var(--wd-radius-sm);
-  background: var(--wd-color-surface);
+  background: transparent;
   color: var(--wd-color-icon);
   cursor: pointer;
+  text-decoration: none;
   transition:
     background var(--wd-duration-fast) var(--wd-ease-standard),
-    border-color var(--wd-duration-fast) var(--wd-ease-standard),
     color var(--wd-duration-fast) var(--wd-ease-standard),
     transform var(--wd-duration-fast) var(--wd-ease-standard);
 }
 
 .themeToggle:hover {
-  border-color: var(--wd-color-border-strong);
   background: var(--wd-color-surface-hover);
   color: var(--wd-color-text);
+}
+
+.themeToggle[data-active] {
+  background: var(--wd-color-navigation-selected);
+  color: var(--wd-brand-800);
 }
 
 .themeToggle:active {
@@ -1400,3 +1377,837 @@
 }
 
 .shell[data-focus] .focusTitle{min-inline-size:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.shell[data-focus] .focusBack{white-space:nowrap;flex-shrink:0}@media(max-width:600px){.shell[data-focus] .focusTitle{display:none}}
+
+/* Quiet workspace shell: warm paper, sage selection, one navigation column. */
+.shell {
+  --sidebar-expanded: 15rem;
+  --wd-color-workspace-canvas: #fffef8;
+  --wd-color-surface: #fffef8;
+  --wd-color-sidebar: #f1f1e9;
+  --wd-color-surface-muted: #eeefe7;
+  --wd-color-surface-hover: #e9ede3;
+  --wd-color-navigation-selected: #dce7dc;
+  --wd-color-text: #28372e;
+  --wd-color-text-secondary: #687269;
+  --wd-color-text-tertiary: #7c847c;
+  --wd-color-structural-divider: #e6e8df;
+  --wd-ink: #28372e;
+  --wd-muted: #687269;
+  color: var(--wd-color-text);
+}
+.shell[data-workspace-theme="dark"] {
+  --wd-color-workspace-canvas: #1c1e1c;
+  --wd-color-surface: #1c1e1c;
+  --wd-color-sidebar: #222522;
+  --wd-color-surface-muted: #292e29;
+  --wd-color-surface-hover: #303730;
+  --wd-color-navigation-selected: #34453a;
+  --wd-color-text: #e5e9df;
+  --wd-color-text-secondary: #a6afa4;
+  --wd-color-text-tertiary: #899487;
+  --wd-color-structural-divider: #333a32;
+  --wd-ink: #e5e9df;
+  --wd-muted: #a6afa4;
+}
+.desktopSidebar { border-inline-end: 1px solid var(--wd-color-structural-divider); }
+.workspaceHeader { padding: .75rem .65rem .25rem; }
+.workspaceIdentity strong { font-weight: 500; font-size: .8125rem; }
+.workspaceIdentity small { display: none; }
+.workspaceMark { inline-size: 1.75rem; block-size: 1.75rem; border-radius: .4rem; }
+.navigation { padding-inline: .6rem; }
+.sectionToggle { font-size: .6875rem; font-weight: 400; color: var(--wd-color-text-tertiary); }
+.navigationSection + .navigationSection { margin-block-start: 1.25rem; }
+.navigationItem { min-block-size: 2.1rem; font-size: .8125rem; font-weight: 400; }
+.navigationItem svg { inline-size: 1rem; block-size: 1rem; stroke-width: 1.6; }
+.navigationItemRow[data-active] { background: var(--wd-color-navigation-selected); border-radius: .4rem; }
+.topbar { min-block-size: 3.25rem; padding-inline: 1.5rem; background: var(--wd-color-workspace-canvas); border: 0; }
+.breadcrumbs { font-size: .75rem; }
+.breadcrumbs li:last-child { font-weight: 400; }
+.breadcrumbs[data-project] { display:block; }
+.breadcrumbs[data-project] li:first-child { flex:none; }
+.breadcrumbs[data-project] li[aria-current="page"] { display:block; min-inline-size:0; color:var(--wd-color-text); font-weight:600; }
+.breadcrumbs[data-project] a { display:block; text-decoration:underline; text-underline-offset:4px; text-decoration-thickness:1px; cursor:pointer; }
+.breadcrumbs[data-project] li[aria-current="page"] a { color:var(--wd-color-text); font-weight:600; }
+.breadcrumbs[data-project] a:hover { text-decoration-thickness:2px; }
+.breadcrumbs[data-project] a:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
+.woddyButton { background: transparent; border: 0; }
+.woddyLabel { font-size: .75rem; font-weight: 400; }
+.woddyAvatar { inline-size: 1.5rem; block-size: 1.5rem; }
+.workspaceContent { background: var(--wd-color-workspace-canvas); }
+@media (max-width: 850px) { .shell { grid-template-columns: minmax(0, 1fr); } .topbar { padding-inline: .75rem; } }
+
+.shell[data-workspace-theme="dark"] {
+  --wd-color-workspace-canvas: #191919;
+  --wd-color-surface: #191919;
+  --wd-color-sidebar: #202020;
+  --wd-color-surface-muted: #262626;
+  --wd-color-surface-hover: #2c2c2c;
+  --wd-color-navigation-selected: #303030;
+  --wd-color-text: #e6e6e6;
+  --wd-color-text-secondary: #adadad;
+  --wd-color-text-tertiary: #939393;
+  --wd-color-structural-divider: #333333;
+  --wd-ink: #e6e6e6;
+  --wd-muted: #adadad;
+}
+.workspaceBack { display: flex; align-items: center; gap: .5rem; min-block-size: 2rem; padding-inline: .35rem; color: var(--wd-color-text-secondary); font-size: .75rem; text-decoration: none; }
+.workspaceBack:hover { background: var(--wd-color-surface-hover); border-radius: .35rem; }
+.shell .navigationItem { font-size: .8125rem; font-weight: 400; }
+.shell .workspaceContent h1 { font-size: 1.75rem; font-weight: 450; }
+.shell[data-workspace-theme="dark"] :global(.wd-button[data-variant="primary"]) { background: #e0e0e0 !important; color: #202020 !important; border-color: transparent !important; }
+.shell[data-workspace-theme="dark"] :global(.wd-button[data-variant="primary"]):hover { background: #c8c8c8 !important; }
+
+/* One persistent, substantial navigation rail across every workspace. */
+.shell { --sidebar-expanded: 14.25rem; }
+.shell .navigationItem { min-block-size: 2.25rem; font-size: .8125rem; line-height: 1.25rem; font-weight: 550; gap: 9px; }
+.shell .navigationItem svg { inline-size: 1.125rem; block-size: 1.125rem; flex-shrink: 0; stroke-width: 1.9; color: var(--wd-color-text-secondary); }
+.shell .workspaceIdentity strong { font-size: .875rem; font-weight: 550; }
+.shell .sectionToggle { block-size: var(--wd-navigation-section-height); font-size: .75rem; font-weight: 500; }
+.shell .submenuItem { min-block-size: 1.75rem; font-size: .75rem; font-weight: 400; }
+.shell .navigationItemRow[data-active] .navigationItem { font-weight: 600; }
+.shell .navigationItemRow[data-active] .navigationItem svg { color: var(--wd-color-text); }
+.shell .navigationSection + .navigationSection { margin-block-start: 1.15rem; }
+
+/* One rhythm for sidebar groups; collapsed panels occupy no space. */
+.shell .navigationSection + .navigationSection {
+  margin-block-start: 4px;
+  padding-block-start: 4px;
+  margin-inline: -.6rem;
+  padding-inline: .6rem;
+  border-block-start: 1px solid var(--wd-color-structural-divider);
+}
+.shell .sectionContentInner { gap: 1px; }
+.shell .navigationItemRow { grid-template-columns: minmax(0, 1fr); }
+.shell .navigationItem { block-size: 36px; }
+.shell .accordionTrigger {
+  inline-size: 100%;
+  grid-template-columns: 1.25rem minmax(0, 1fr) 15px;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+.shell .accordionTrigger:hover { background: var(--wd-color-sidebar-hover); }
+.shell .accordionTrigger:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.shell .accordionChevron { transition: transform 220ms ease; transform: rotate(-90deg); }
+.shell .accordionChevron[data-open] { transform: rotate(0); }
+.shell .submenuInner {
+  margin-block: 0;
+  border-inline-start: 1px solid var(--wd-color-border-subtle, #d9ddda);
+}
+.shell .submenu, .shell .sectionContent {
+  transition: grid-template-rows 220ms ease, opacity 180ms ease, visibility 0s linear 220ms;
+}
+.shell .submenu[data-open], .shell .sectionContent[data-open] {
+  transition: grid-template-rows 220ms ease, opacity 180ms ease, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell .submenu, .shell .sectionContent, .shell .accordionChevron { transition: none; }
+}
+
+.flowHeader { padding: 20px 24px 0; border-block-end: 1px solid var(--wd-color-border-subtle, #d9ddda); background: var(--wd-color-workspace-canvas); }
+.flowTitle { font-size: 20px; font-weight: 550; margin-block-end: 12px; color: var(--wd-color-text); }
+.flowTabs { display: flex; align-items: stretch; gap: 16px; min-inline-size: 0; }
+.flowTabScroll { display: flex; gap: 20px; overflow-x: auto; min-inline-size: 0; scrollbar-width: thin; }
+.flowTabs[aria-label="Planning sections"] .flowTabScroll,
+.commercialTabs[aria-label="Requirements views"] { scrollbar-width: none; }
+.flowTabs[aria-label="Planning sections"] .flowTabScroll::-webkit-scrollbar,
+.commercialTabs[aria-label="Requirements views"]::-webkit-scrollbar { display: none; }
+.flowTab { display: flex; align-items: center; min-block-size: 40px; white-space: nowrap; text-decoration: none; color: var(--wd-color-text-secondary); border-block-end: 2px solid transparent; font-size: 13px; font-weight: 500; }
+.flowTab:hover { color: var(--wd-color-text); }
+.flowTab[aria-current], .flowResources summary[data-active] { color: var(--wd-color-text); border-block-end-color: currentColor; }
+.flowResources { position: relative; flex-shrink: 0; margin-inline-start: auto; }
+.flowResources summary { display: flex; align-items: center; gap: 6px; min-block-size: 40px; font-size: 13px; cursor: pointer; color: var(--wd-color-text-secondary); border-block-end: 2px solid transparent; list-style: none; }
+.flowResources summary::-webkit-details-marker { display: none; }
+.flowResourceMenu { position: absolute; inset-inline-end: 0; inset-block-start: 100%; z-index: 30; min-inline-size: 220px; max-block-size: 360px; overflow-y: auto; padding: 6px; border: 1px solid var(--wd-color-border-subtle, #d9ddda); border-radius: 8px; background: var(--wd-color-workspace-canvas); box-shadow: 0 8px 24px #0002; }
+.flowResourceMenu a { display: block; padding: 9px 10px; text-decoration: none; font-size: 13px; color: var(--wd-color-text-secondary); border-radius: 4px; }
+.flowResourceMenu a:hover, .flowResourceMenu a[aria-current] { background: var(--wd-color-sidebar-hover); color: var(--wd-color-text); }
+@media (max-width: 600px) { .flowHeader { padding-inline: 16px; } .flowTabs { gap: 12px; } .flowTabScroll { gap: 16px; } }
+
+/* Compact workspace masthead and icon tabs. */
+.flowHeader { padding-block-start: 12px; }
+.flowTitle { margin-block-end: 4px; font-size: 12px; font-weight: 500; color: var(--wd-color-text-secondary); }
+.flowTabScroll { gap: 16px; }
+.flowTab { gap: 6px; font-size: 12px; min-block-size: 38px; }
+.flowTab svg { flex-shrink: 0; }
+/* Brand tint is shared by workspace headers and follows tenant branding. */
+.flowHeader {
+  background: var(--wd-workspace-brand-light-50, #eef3ed);
+  border-color: var(--wd-workspace-brand-light-100, #dce5da);
+}
+.flowTitle { color: #202320; font-weight: 600; }
+.flowTabScroll { gap: 16px; }
+.flowTab { padding-inline: 4px; gap: 8px; color: #454a46; border-radius: 0; }
+.flowTab:hover { background: transparent; color: #171c18; }
+.flowTab[aria-current] {
+  background: transparent;
+  color: var(--wd-workspace-brand-light-600, #46705a);
+  border-block-end: 3px solid var(--wd-workspace-brand-light-600, #46705a);
+  font-weight: 500;
+}
+.flowResources summary { color: #303530; }
+.flowTab:focus-visible, .flowResources summary:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.shell[data-workspace-theme="dark"] .flowHeader { background: #202020; border-color: #363636; }
+.shell[data-workspace-theme="dark"] .flowTitle { color: #f1f1f1; }
+.shell[data-workspace-theme="dark"] .flowTab,
+.shell[data-workspace-theme="dark"] .flowResources summary { color: #cccccc; }
+.shell[data-workspace-theme="dark"] .flowTab:hover { background: transparent; color: #f1f1f1; }
+.shell[data-workspace-theme="dark"] .flowTab[aria-current] { background: transparent; color: #ffffff; border-block-end-color: #dddddd; }
+
+/* Brand canvas surrounds the white working surface. */
+.shell .workspaceContent:has(> .crmContentPanel) {
+  --crm-panel-surface: #ffffff;
+  background: var(--wd-workspace-brand-light-50, #eef3ed);
+}
+.crmContentPanel {
+  --wd-color-surface: var(--crm-panel-surface);
+  --wd-color-workspace-canvas: var(--crm-panel-surface);
+  margin: 20px 24px 24px;
+  min-inline-size: 0;
+  border: 1px solid var(--wd-color-border-subtle, #d9ddda);
+  border-radius: 10px;
+  background: var(--crm-panel-surface);
+}
+.shell[data-workspace-theme="dark"] .workspaceContent:has(> .crmContentPanel) {
+  --crm-panel-surface: #242424;
+  background: #191919;
+}
+@media (max-width: 600px) {
+  .crmContentPanel { margin: 12px 12px 16px; border-radius: 8px; }
+}
+
+/* Continuous divider beneath tabs, separate from the active-tab underline. */
+.shell .flowHeader {
+  border-block-end: 2px solid var(--wd-workspace-brand-light-200, #cbd8cd);
+}
+.shell[data-workspace-theme="dark"] .flowHeader {
+  border-block-end-color: #454545;
+}
+
+/* Soft boundaries for the CRM working surface and navigation. */
+.shell .crmContentPanel {
+  border: 1px solid var(--wd-workspace-brand-light-200, #cbd8cd);
+  border-radius: 14px;
+}
+.shell .flowTab {
+  position: relative;
+  border-block-end: 0;
+  border-radius: 7px 7px 0 0;
+}
+.shell .flowTab[aria-current]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 4px;
+  inset-block-end: 0;
+  block-size: 3px;
+  border-radius: 3px;
+  background: currentColor;
+}
+.shell[data-workspace-theme="dark"] .crmContentPanel {
+  border-color: #3c3c3c;
+}
+
+/* Keep child page backgrounds inside the panel's rounded boundary. */
+.shell .crmContentPanel {
+  overflow: clip;
+  border-color: #dce2dc;
+}
+.shell[data-workspace-theme="dark"] .crmContentPanel {
+  border-color: #383838;
+}
+
+/* The header and tabs stay outside the CRM panel's scroll area. */
+.shell .workspaceContent:has(> .crmContentPanel) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.shell .workspaceContent:has(> .crmContentPanel) > .flowHeader {
+  min-inline-size: 0;
+  z-index: 2;
+}
+.shell .crmContentPanel {
+  min-block-size: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--wd-color-border-strong) transparent;
+}
+
+/* Neutral white sidebar in light mode. */
+.shell[data-workspace-theme="light"] { --wd-color-sidebar: #ffffff; }
+.shell[data-workspace-theme="light"] .sidebarCard {
+  --wd-color-navigation-selected: #eef0f2;
+  --wd-color-sidebar-active: #eef0f2;
+  --wd-color-sidebar-hover: #f5f6f7;
+  --wd-color-surface-muted: #f5f6f7;
+  --wd-color-surface-hover: #f5f6f7;
+  --wd-color-text: #292d32;
+  --wd-color-text-secondary: #5d6269;
+  --wd-color-text-tertiary: #777d85;
+  --wd-color-structural-divider: #e5e7eb;
+}
+
+/* White app header and a more generous brand-colored content gutter. */
+.shell[data-workspace-theme="light"] .topbar { background: #ffffff; }
+@supports (backdrop-filter: blur(1px)) {
+  .shell[data-workspace-theme] .topbar {
+    background: var(--wd-glass-surface);
+    backdrop-filter: blur(var(--wd-glass-blur));
+    -webkit-backdrop-filter: blur(var(--wd-glass-blur));
+  }
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .shell[data-workspace-theme] .topbar {
+    background: var(--wd-color-workspace-toolbar);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+.shell .crmContentPanel { margin: 28px 32px 32px; }
+.shell .workspaceContent[data-inbox] .crmContentPanel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.shell[data-workspace-theme="light"] .workspaceContent[data-inbox] {
+  --wd-color-surface: #fff;
+  --wd-color-surface-muted: #f5f7f8;
+}
+@media (max-width: 600px) {
+  .shell .crmContentPanel { margin: 16px; }
+}
+
+.shell[data-workspace-theme="light"] .flowTab:not([aria-current]) {
+  color: #171717;
+}
+
+/* Spreadsheet-style CRM lists with visible row and column separation. */
+.recordTablePanel :global(.wd-data-grid) { padding-block-start: 12px; }
+.recordTablePanel :global(.wd-table-scroll) { border:1px solid var(--wd-color-border-subtle, #d9ddda); border-radius:10px 10px 0 0; }
+.recordTablePanel :global(.wd-table th), .recordTablePanel :global(.wd-table td) { border-inline-end:1px solid var(--wd-color-border-subtle, #d9ddda); border-block-end:1px solid var(--wd-color-border-subtle, #d9ddda); padding:10px 12px; block-size:44px; font-size:13px; }
+.recordTablePanel :global(.wd-table th) { background:var(--wd-color-surface-muted); font-weight:600; }
+.recordTablePanel :global(.wd-table td) { background:var(--wd-color-surface); }
+.recordTablePanel :global(.wd-table tr:hover td) { background:var(--wd-color-surface-hover); }
+.recordTablePanel :global(.wd-table-scroll + .wd-grid-footer) { border:1px solid var(--wd-color-border-subtle, #d9ddda); border-block-start:0; border-radius:0 0 10px 10px; min-block-size:44px; padding-inline:12px; }
+
+/* Override the shared borderless record-table skin only within CRM. */
+.shell .recordTablePanel :global(.wd-data-grid .wd-table-scroll) {
+  border: 1px solid var(--wd-color-border-subtle, #d9ddda);
+  border-radius: 10px 10px 0 0;
+}
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  border: 0;
+  border-inline-end: 1px solid var(--wd-color-border-subtle, #d9ddda);
+  border-block-end: 1px solid var(--wd-color-border-subtle, #d9ddda);
+  padding: 10px 12px;
+  height: 44px;
+  font-size: 13px;
+}
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > thead > tr > th {
+  background: var(--wd-color-surface-muted);
+  font-weight: 600;
+}
+.shell .recordTablePanel :global(.wd-row-index[data-selectable] > .wd-checkbox) { opacity: 1; }
+.shell .recordTablePanel :global(.wd-row-index[data-selectable] > span) { display: none; }
+.shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) { padding-block: 8px 20px; }
+.shell .recordTablePanel :global(.wd-record-tools) { display:flex; flex-wrap:wrap; gap:12px; }
+.shell .recordTablePanel :global(.wd-record-search) { order: -1; }
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-button),
+.shell .recordTablePanel :global(.wd-record-controls > .wd-field .wd-select-button) {
+  border: 1px solid var(--wd-color-border-subtle, #d9ddda);
+  border-radius: 6px;
+  background: var(--wd-color-surface);
+  min-block-size: 34px;
+}
+.shell .recordTablePanel :global(.wd-record-view) { display:none; }
+.shell .recordTablePanel :global(.wd-data-grid .wd-grid-footer) {
+  border: 1px solid var(--wd-color-border-subtle, #d9ddda);
+  border-block-start: 0;
+  border-radius: 0 0 10px 10px;
+  padding: 8px 12px;
+}
+.shell .recordTablePanel h1 { font-size:20px; font-weight:550; }
+
+.shell .recordTablePanel { --wd-color-border-subtle: var(--wd-color-table-border); }
+.shell[data-workspace-theme="dark"] .recordTablePanel { --wd-color-border-subtle: var(--wd-color-table-border); }
+.shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) { padding: 0 0 12px; min-block-size: 34px; }
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) { block-size: 40px; height: 40px; padding: 6px 10px; }
+
+/* Explicit spreadsheet grid in both themes. */
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) + :is(th, td) {
+  border-inline-start: 1px solid #c8cdca;
+}
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  border-inline-end: 0;
+  border-block-end: 1px solid #c8cdca;
+}
+.shell[data-workspace-theme="dark"] .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  border-color: #414141;
+}
+
+/* The scroll frame supplies the bottom divider; the last row must not repeat it. */
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > tbody > tr:last-child > td {
+  border-block-end: 0;
+}
+
+/* Preserve primary-action contrast after the neutral toolbar button styling. */
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-button[data-variant="primary"]) {
+  background: #a0bcab;
+  color: #172b20;
+  border-color: #8eaa99;
+}
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-button[data-variant="primary"]):hover {
+  background: #91af9c;
+}
+.shell[data-workspace-theme="dark"] .recordTablePanel :global(.wd-record-toolbar .wd-button[data-variant="primary"]) {
+  background: #e5e5e5;
+  color: #191919;
+  border-color: #e5e5e5;
+}
+
+/* A compact, evenly spaced toolbar, with neutral secondary actions. */
+.shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) { gap: 8px 12px; padding-block-end: 16px; }
+.shell .recordTablePanel :global(.wd-record-tools),
+.shell .recordTablePanel :global(.wd-record-controls),
+.shell .recordTablePanel :global(.wd-record-actions) { gap: 8px; }
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-button),
+.shell .recordTablePanel :global(.wd-record-controls .wd-select-button) {
+  block-size: 32px;
+  min-block-size: 32px;
+  padding-inline: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  gap: 6px;
+}
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-button svg) { inline-size: 14px; block-size: 14px; }
+.shell[data-workspace-theme="light"] .recordTablePanel :global(.wd-record-toolbar .wd-button:not([data-variant="primary"])),
+.shell[data-workspace-theme="light"] .recordTablePanel :global(.wd-record-controls .wd-select-button) { color: #242424; border-color: #d9d9d9; background: #fff; }
+.shell .recordTablePanel :global(.wd-record-search) { border-radius: 6px; }
+.shell .recordTablePanel :global(.wd-record-search .wd-search-field) { block-size: 30px; min-block-size: 30px; }
+
+/* Neutral full-row hover, including sticky cells; selection remains stronger. */
+.shell .recordTablePanel { --crm-row-hover: #f1f2f3; --crm-row-selected: #e4e7e9; }
+.shell[data-workspace-theme="dark"] .recordTablePanel { --crm-row-hover: #2e2e2e; --crm-row-selected: #393939; }
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > tbody > tr:is(:hover, :focus-within) > td {
+  background: var(--crm-row-hover);
+}
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > tbody > tr[data-selected="true"] > td {
+  background: var(--crm-row-selected);
+}
+
+/* Consistent list density: stronger headers, comfortable horizontal cell inset. */
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  padding: 8px 12px;
+  block-size: 44px;
+  height: 44px;
+  line-height: 1.4;
+}
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > thead > tr > th {
+  font-size: 12px;
+  font-weight: 600;
+  color: #50545a;
+  background: #f7f7f8;
+}
+.shell[data-workspace-theme="dark"] .recordTablePanel :global(table.wd-record-table.wd-record-table) > thead > tr > th {
+  color: #d5d5d5;
+  background: #2a2a2a;
+}
+
+/* Keep selection light and separate the toolbar, bulk actions, and grid. */
+.shell[data-workspace-theme="light"] .recordTablePanel {
+  --crm-row-hover: #f7f9f7;
+  --crm-row-selected: #edf5ef;
+}
+.shell .recordTablePanel :global(.wd-record-toolbar.wd-record-toolbar) {
+  padding-block-end: 24px;
+  gap: 12px 16px;
+}
+.shell .recordTablePanel :global(.wd-record-tools),
+.shell .recordTablePanel :global(.wd-record-controls),
+.shell .recordTablePanel :global(.wd-record-actions) { gap: 10px; }
+.shell .recordTablePanel :global(.wd-bulk-bar) {
+  margin-block: 0 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+.shell[data-workspace-theme="light"] .recordTablePanel :global(.wd-bulk-bar) {
+  background: #f1f7f2;
+  color: #243d2d;
+}
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  padding-inline: 16px;
+  padding-block: 10px;
+  block-size: 48px;
+  height: 48px;
+}
+.shell[data-workspace-theme="light"] .recordTablePanel :global(table.wd-record-table.wd-record-table) > thead > tr > th {
+  background: #f0f1f0;
+  color: #333a35;
+}
+
+/* Compact cells with black text in light mode. */
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  padding: 5px 8px;
+  block-size: 38px;
+  height: 38px;
+}
+.shell[data-workspace-theme="light"] .recordTablePanel :global(table.wd-record-table.wd-record-table) {
+  --wd-record-ink: #171717;
+  --wd-color-text: #171717;
+  --wd-color-text-secondary: #171717;
+  --wd-color-action-primary: #171717;
+}
+.shell[data-workspace-theme="light"] .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) {
+  color: #171717;
+}
+
+/* Header controls must fit the compact header rather than expand its padding. */
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > thead > tr > th {
+  padding: 2px 8px;
+  height: 32px;
+  block-size: 32px;
+  --wd-record-header-height: 28px;
+}
+.shell .recordTablePanel :global(.wd-table-scroll) { scrollbar-width: none; }
+.shell .recordTablePanel :global(.wd-table-scroll)::-webkit-scrollbar { display: none; height: 0; width: 0; }
+.flowTabItem { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.tabInfo { display: grid; place-items: center; inline-size: 28px; block-size: 28px; flex-shrink: 0; padding: 4px; border: 0; border-radius: 4px; background: transparent; color: var(--wd-color-text-secondary); cursor: pointer; }
+.tabInfo:hover, .tabInfo[aria-expanded="true"] { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.tabInfo:focus-visible { outline: 2px solid var(--wd-color-focus); }
+
+.tabTooltip { max-inline-size: min(300px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid #515151; border-radius: 7px; background: #262626; color: #f5f5f5; font-size: 12px; font-weight: 400; line-height: 1.5; box-shadow: 0 4px 14px #0003; z-index: 1000; }
+
+/* Underline the complete tab, including its help control. */
+.flowTabItem { position: relative; }
+.shell .flowTabItem .flowTab[aria-current]::after { content: none; }
+.shell .flowTabItem:has(.flowTab[aria-current])::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 3px;
+  border-radius: 3px;
+  background: var(--wd-workspace-brand-light-600, #46705a);
+}
+.shell[data-workspace-theme="dark"] .flowTabItem:has(.flowTab[aria-current])::after { background: #ddd; }
+
+/* Overview widgets sit directly on the workspace canvas. */
+.shell .recordTablePanel[data-overview] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.shell .recordTablePanel[data-overview] > :global(.wd-root) { background: transparent; }
+
+.shell .recordTablePanel[data-overview] { margin: 32px 40px 32px; }
+@media (max-width: 600px) { .shell .recordTablePanel[data-overview] { margin: 12px; } }
+
+/* Enquiry detail modal: compact header and body, scoped to this dialog. */
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) > header { padding: 12px 16px; min-block-size: 0; }
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) > header h2 { font-size: 13px; margin: 0; }
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) > :global(.wd-dialog-body) { padding: 16px; }
+
+/* Use the record identity as the enquiry modal's single visible header. */
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) { position: relative; }
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) > header {
+  position: absolute;
+  inset-block-start: 10px;
+  inset-inline-end: 12px;
+  z-index: 2;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) > header > div { display: none; }
+.shell :global(.wd-dialog[aria-label="Enquiry details"]) > :global(.wd-dialog-body) { padding-block-start: 16px; }
+
+/* Consistent CRM form controls, without changing compact table toolbars. */
+.shell .recordTablePanel :global(.wd-dialog-body form) {
+  --wd-control-lg: 40px;
+}
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-field) { gap: 6px; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-field-label) { color: var(--wd-color-text); font-size: 12px; font-weight: 500; line-height: 1.4; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) {
+  min-block-size: 40px;
+  height: 40px;
+  border: 1px solid var(--wd-color-border-strong);
+  border-radius: 7px;
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  box-shadow: none;
+  font-size: 13px;
+}
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-input) { padding-inline: 12px; font-size: 13px; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) { padding-inline: 12px 4px; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-indicator) { inline-size: 28px; block-size: 28px; border: 0; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-textarea-frame) { border-radius: 7px; background: var(--wd-color-surface); }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-textarea) { padding: 10px 12px; min-block-size: 88px; font-size: 13px; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group:focus-within),
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button[data-focus-visible]) { border-color: var(--wd-color-action-primary); outline: 2px solid var(--wd-color-action-primary-subtle); outline-offset: 1px; }
+.shell .recordTablePanel :global(.wd-picker-popover) { padding: 4px; border-radius: 7px; background: var(--wd-color-surface); color: var(--wd-color-text); }
+.shell .recordTablePanel :global(.wd-picker-item) { padding: 8px 10px; min-block-size: 34px; font-size: 12px; border-radius: 4px; }
+
+/* Form dialogs use a narrower, quieter layout than record-detail modals. */
+.shell :global(.wd-modal):has(> :global(.wd-dialog) > :global(.wd-dialog-body) > form) {
+  inline-size: min(600px, calc(100vw - 32px));
+  max-block-size: min(720px, calc(100dvh - 32px));
+  border-radius: 10px;
+}
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) {
+  max-block-size: min(718px, calc(100dvh - 34px));
+  overflow: hidden;
+}
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header {
+  min-block-size: 0;
+  flex-shrink: 0;
+  padding: 16px 20px 12px;
+  border-block-end: 0;
+}
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header h2 { font-size: 17px; font-weight: 600; margin: 0; }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > header p { font-size: 12px; margin-block-start: 4px; }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > :global(.wd-dialog-body) { flex: 1 1 auto; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 16px; }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer { flex-shrink: 0; padding: 12px 20px 16px; border-block-start: 1px solid var(--wd-color-border); background: var(--wd-color-surface); }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer > div { display: flex; gap: 12px; }
+.shell :global(.wd-dialog):has(> :global(.wd-dialog-body) > form) > footer :global(.wd-button) { flex: 1; min-block-size: 36px; font-size: 12px; border-radius: 6px; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-field-label) { font-weight: 400; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) { min-block-size: 36px; height: 36px; border-radius: 6px; }
+.shell .recordTablePanel :global(.wd-dialog-body form .wd-textarea) { min-block-size: 64px; height: 64px; padding: 8px 10px; }
+@media(max-width:600px) {
+  .shell .recordTablePanel :global(.wd-dialog-body form .wd-input-group),
+  .shell .recordTablePanel :global(.wd-dialog-body form .wd-date-group),
+  .shell .recordTablePanel :global(.wd-dialog-body form .wd-select-button) { min-block-size: 44px; height: 44px; }
+}
+
+
+.commercialTabs { display:flex; align-items:center; gap:4px; padding-block:6px; overflow-x:auto; }
+.commercialTabs > .commercialSegment { flex:0 0 auto; }
+.commercialSegments { display:inline-flex; align-items:center; gap:3px; padding:3px; border-radius:999px; background:var(--wd-color-surface); }
+.commercialSegment { display:flex; align-items:center; justify-content:center; min-height:28px; padding:4px 14px; border-radius:999px; color:var(--wd-color-text-secondary); font-size:12px; font-weight:500; text-decoration:none; white-space:nowrap; transition:background 140ms ease,color 140ms ease; }
+.commercialSegment:hover { background:var(--wd-color-surface-muted); color:var(--wd-color-text); }
+.commercialSegment[aria-current="page"] { background:var(--wd-color-action-primary); color:var(--wd-color-text-on-action,#fff); }
+.commercialSegment:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
+@media(prefers-reduced-motion:reduce) { .commercialSegment { transition:none; } }
+@media(max-width:480px) { .commercialSegment { padding-inline:10px; } }
+
+/* Design and project tables use a white paper surface in light mode.
+   Scope this to tables, including modal tables, without changing page surfaces. */
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(.wd-data-grid),
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(table) {
+  --wd-color-surface: #fff;
+  --wd-record-surface: #fff;
+  background-color: #fff;
+}
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(table) > tbody > tr > :is(td, th),
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(table) > tfoot > tr > :is(td, th),
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(.wd-data-grid) > footer {
+  background-color: #fff;
+}
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(table) > tbody > tr:is(:hover, :focus-within) > :is(td, th) {
+  background-color: var(--crm-row-hover, #f7f9f7);
+}
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(table) > tbody > tr[data-selected="true"] > :is(td, th) {
+  background-color: var(--wd-color-table-selected);
+}
+
+/* A single structural boundary separates the app header from page content. */
+.shell .topbar { border-block-end:1px solid var(--wd-color-structural-divider); }
+.shell .navigationItemGroup[data-destination="home"] .navigationItem svg { color:var(--wd-color-module-home); }
+.shell .navigationItemGroup[data-destination="sales"] .navigationItem svg { color:var(--wd-color-module-sales); }
+.shell .navigationItemGroup[data-destination="clients"] .navigationItem svg { color:var(--wd-color-module-clients); }
+.shell .navigationItemGroup[data-destination="projects"] .navigationItem svg { color:var(--wd-color-module-projects); }
+.shell .navigationItemGroup[data-destination="resources"] .navigationItem svg { color:var(--wd-color-module-resources); }
+.shell .navigationItemGroup[data-destination="my-activity"] .navigationItem svg { color:var(--wd-color-module-activity); }
+.shell .navigationItemGroup[data-destination="personal-calendar"] .navigationItem svg { color:var(--wd-color-module-calendar); }
+
+.shell .navigationMark { --wd-module-icon-color:var(--nav-illustration,var(--wd-color-module-settings)); inline-size:var(--wd-navigation-icon-size); block-size:var(--wd-navigation-icon-size); flex:0 0 var(--wd-navigation-icon-size); border-radius:6px; }
+.shell .navigationMark svg { inline-size:16px; block-size:16px; color:var(--nav-illustration,#71818e); stroke-width:1.9; }
+.shell .navigationItemGroup[data-destination="inbox"] .navigationMark { background:transparent; }
+.shell .navigationItemGroup[data-destination="inbox"] .navigationMark svg { inline-size:22px; block-size:22px; }
+.shell .navigationItemGroup[data-destination="home"] { --nav-illustration:var(--wd-color-module-home); }
+.shell .navigationItemGroup[data-destination="sales"] { --nav-illustration:var(--wd-color-module-sales); }
+.shell .navigationItemGroup[data-destination="clients"] { --nav-illustration:var(--wd-color-module-clients); }
+.shell .navigationItemGroup[data-destination="projects"] { --nav-illustration:var(--wd-color-module-projects); }
+.shell .navigationItemGroup[data-destination="resources"] { --nav-illustration:var(--wd-color-module-resources); }
+.shell .navigationItemGroup[data-destination="my-activity"] { --nav-illustration:var(--wd-color-module-activity); }
+.shell .navigationItemGroup[data-destination="personal-calendar"] { --nav-illustration:var(--wd-color-module-calendar); }
+.shell .navigationItemGroup[data-destination="planning"] { --nav-illustration:var(--wd-color-module-planning); }
+.shell .navigationItemGroup[data-destination="team"] { --nav-illustration:var(--wd-color-module-team); }
+.shell .navigationItemGroup[data-destination="integrations"] { --nav-illustration:var(--wd-color-module-integrations); }
+.shell .navigationItemGroup[data-destination="settings"] { --nav-illustration:var(--wd-color-module-settings); }
+.shell .navigationItem { min-block-size:var(--wd-navigation-item-height); block-size:var(--wd-navigation-item-height); grid-template-columns:var(--wd-navigation-icon-size) minmax(0,1fr); gap:8px; }
+/* Links and expandable destinations share identical row geometry. */
+.shell .navigationItem { box-sizing: border-box; padding-block: 0; align-content: center; }
+.shell .navigationItem.accordionTrigger { grid-template-columns: var(--wd-navigation-icon-size) minmax(0, 1fr) 15px; }
+.shell .navigationItem .accordionChevron { inline-size: 15px; block-size: 15px; }
+@media (pointer: coarse) {
+  .shell .navigationItem { min-block-size: 44px; block-size: 44px; }
+  .shell .sectionToggle { min-block-size: 44px; block-size: 44px; }
+  .shell .submenuItem { min-block-size: 44px; }
+}
+.shell .navigationItemGroup[data-destination="daily-follow-ups"] { --nav-illustration: var(--wd-color-module-follow-ups); }
+.shell .workspaceContent[data-follow-ups] .crmContentPanel { margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; min-block-size: calc(100dvh - 52px); background: var(--wd-color-surface); }
+.shell .workspaceContent[data-follow-ups] { scrollbar-width: none; }
+.shell .workspaceContent[data-follow-ups]::-webkit-scrollbar { display: none; }
+.shell .workspaceContent[data-module="crm"] { background: var(--wd-color-surface); }
+.shell .workspaceContent[data-module="crm"] > .flowHeader { background: var(--wd-color-surface); }
+.shell .workspaceContent[data-module="crm"] > .crmContentPanel { background: var(--wd-color-surface); margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+.shell .flowHeader[data-module="crm"] { padding: 8px 24px; background: var(--wd-color-surface); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.flowHeader[data-module="crm"] .flowTabScroll { gap: 6px; align-items: center; }
+.salesTab { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: none; min-block-size: 36px; padding: 0 14px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--wd-color-text-secondary); text-decoration: none; white-space: nowrap; transition: background 140ms ease, color 140ms ease; }
+.salesTab:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.salesTab[aria-current="page"] { background: var(--wd-color-brand-subtle, #e7f0eb); color: var(--wd-color-action-primary); font-weight: 600; }
+.salesTab[data-section="Reports"] { margin-inline-start: 18px; }
+.salesTab[data-section="Reports"]::before { content: ''; position: absolute; inset-inline-start: -12px; block-size: 20px; border-inline-start: 1px solid var(--wd-color-structural-divider); }
+.salesTab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+@media(max-width:600px) { .shell .flowHeader[data-module="crm"] { padding-inline: 12px; } .salesTab { padding-inline: 10px; min-block-size: 40px; } }
+@media(prefers-reduced-motion:reduce) { .salesTab { transition: none; } }
+/* Sales navigation is a flat tab strip, not a second sidebar. */
+.shell .flowHeader[data-module="crm"] { padding-block: 0; background: var(--wd-color-surface); }
+.flowHeader[data-module="crm"] .flowTabScroll { gap: 24px; }
+.salesTab { min-block-size: 44px; padding-inline: 0; border-radius: 0; gap: 6px; font-size: 12px; color: var(--wd-color-text-secondary); }
+.salesTab svg { inline-size: 14px; block-size: 14px; }
+.salesTab:hover { background: transparent; color: var(--wd-color-text); }
+.salesTab[aria-current="page"] { background: transparent; color: var(--wd-color-text); font-weight: 600; }
+.salesTab[aria-current="page"]::after { content: ''; position: absolute; inset-inline: 0; inset-block-end: 0; block-size: 2px; background: var(--wd-color-action-primary); }
+.salesTab[data-section="Reports"] { margin-inline-start: 0; }
+.salesTab[data-section="Reports"]::before { display: none; }
+@media(max-width:600px) { .flowHeader[data-module="crm"] .flowTabScroll { gap: 20px; } .salesTab { min-block-size: 44px; } }
+/* Enquiries: a flat database view with a quiet property header. */
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid) { padding-block-start: 0; border: 0; border-radius: 0; box-shadow: none; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-table-scroll) { border: 0; border-radius: 0; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) { border-color: var(--wd-color-structural-divider); padding: 5px 10px; height: 34px; block-size: 34px; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font-weight: 400; border-block: 1px solid var(--wd-color-structural-divider); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border: 0; border-block-start: 1px solid var(--wd-color-structural-divider); border-radius: 0; padding: 6px 0; min-block-size: 32px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-empty-state) { min-block-size: 72px; padding: 18px 10px; align-items: flex-start; text-align: start; gap: 4px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-empty-state > strong) { font-size: 12px; font-weight: 400; color: var(--wd-color-text-secondary); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-empty-state p) { font-size: 11px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="quiet"]),
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls .wd-select-button) { background: transparent; border: 0; border-radius: 4px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="quiet"]:hover) { background: var(--wd-color-surface-hover); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls) { flex: 1; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search) { order: 0; max-inline-size: 190px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar.wd-record-toolbar) { padding-block-end: 8px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group) { border-color: transparent; background: transparent; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group:focus-within) { border-color: var(--wd-color-focus); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="primary"]) { background: var(--wd-color-action-primary); color: #fff; border-color: transparent; }
+.shell[data-workspace-theme="light"] .flowHeader[data-module="crm"] { background: #fff; }
+/* Crisp enquiry grid matched to the portal's neutral navigation. */
+.shell .recordTablePanel :global([data-sales-grid]) { --sales-grid-line: var(--wd-color-table-border); --sales-header-bg: var(--wd-color-table-header); --sales-header-ink: var(--wd-color-table-header-ink); }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) { border-block-end: 1px solid var(--sales-grid-line); border-inline-end: 1px solid var(--sales-grid-line); padding: 8px 10px; block-size: 40px; height: 40px; font-size: 13px; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) + :is(th, td) { border-inline-start: 0; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :last-child { border-inline-end: 0; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { background: var(--sales-header-bg); color: var(--sales-header-ink); font-weight: 600; border-block-start: 1px solid var(--sales-grid-line); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-sort-button) { color: inherit; font-weight: inherit; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border-block-start: 1px solid var(--sales-grid-line); color: var(--wd-color-text-secondary); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-empty-state > strong) { color: var(--wd-color-text); font-size: 13px; font-weight: 500; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-empty-state p) { color: var(--wd-color-text-secondary); font-size: 12px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="quiet"]) { color: var(--wd-color-text); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group) { border: 1px solid var(--sales-grid-line); border-radius: 5px; }
+/* Complete the enquiry grid edges without adding a rounded card frame. */
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-table-scroll) { border-inline: 1px solid var(--sales-grid-line); border-radius: 0; box-sizing: border-box; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > :is(th, td) { box-sizing: border-box; padding: 4px var(--wd-table-cell-padding); block-size: var(--wd-table-row-compact); height: var(--wd-table-row-compact); }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { font-size: 12px; font-weight: 500; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border-inline: 1px solid var(--sales-grid-line); border-block-end: 1px solid var(--sales-grid-line); padding: 8px 12px; border-radius: 0; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-empty-state) { padding: 20px 0; min-block-size: 80px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar.wd-record-toolbar) { padding-block-end: 12px; }
+/* One outer edge and one divider per boundary, including the footer join. */
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-table-scroll) { border: 1px solid var(--sales-grid-line); border-block-end: 0; border-radius: 8px 8px 0 0; overflow: auto; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) { border-collapse: collapse; border-spacing: 0; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > thead > tr > th { border-block-start: 0; }
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > tbody > tr:last-child > td { border-block-end: 0; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-data-grid .wd-grid-footer) { border: 1px solid var(--sales-grid-line); border-radius: 0 0 8px 8px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls .wd-select-button) { border: 1px solid var(--sales-grid-line); border-radius: 5px; background: var(--wd-color-surface); padding-inline: 10px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls > .wd-field .wd-select-button.wd-focus-frame) { border: 1px solid var(--sales-grid-line) !important; border-radius: 5px; padding-inline: 10px; }
+/* A consistent control scale throughout the enquiry toolbar. */
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button),
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls > .wd-field .wd-select-button),
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-input-group),
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search .wd-search-field) { box-sizing: border-box; min-block-size: var(--wd-control-md); block-size: var(--wd-control-md); font-size: var(--wd-text-sm); border-radius: var(--wd-radius-xs); }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar svg) { inline-size: 16px; block-size: 16px; flex-shrink: 0; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar[data-compact] .wd-record-controls > button),
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar[data-compact] .wd-record-actions > button[aria-label^="Export"]) { inline-size: 36px; min-inline-size: 36px; padding: 9px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-toolbar .wd-button[data-variant="primary"]) { padding-inline: 14px; gap: 8px; font-size: 13px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls .wd-select-button) { min-inline-size: 142px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search) { inline-size: 220px; max-inline-size: 220px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-search input) { font-size: 13px; }
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-controls),
+.shell .recordTablePanel :global([data-sales-grid] .wd-record-actions) { gap: 8px; align-items: center; }
+/* Keep client identity and request on distinct lines within the pinned cell. */
+.shell .recordTablePanel :global([data-sales-grid] td[data-column="partyName"] button > span:last-child) { display: grid; gap: 2px; min-inline-size: 0; }
+.shell .recordTablePanel :global([data-sales-grid] td[data-column="partyName"] button > span:last-child > strong),
+.shell .recordTablePanel :global([data-sales-grid] td[data-column="partyName"] button > span:last-child > small) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Inset divider stays visible on sticky cells in the collapsed table. */
+.shell .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > [data-pinned] { border-inline-end: 0; box-shadow: inset -1px 0 0 var(--sales-grid-line); }
+.shell:dir(rtl) .recordTablePanel :global([data-sales-grid] table.wd-record-table.wd-record-table) > :is(thead, tbody) > tr > [data-pinned] { box-shadow: inset 1px 0 0 var(--sales-grid-line); }
+
+/* Unified Projects uses the same full-width canvas as Sales. */
+.shell .workspaceContent[data-module="projects"] > .crmContentPanel[data-overview] { margin:0; padding:0; border:0; border-radius:0; background:var(--wd-color-surface); flex:1; }
+.shell .workspaceContent[data-module="projects"]:has(> .crmContentPanel[data-overview]) { background:var(--wd-color-surface); }
+
+/* Project planning uses white paper and neutral structural surfaces. */
+.shell[data-workspace-theme="light"]:is([data-project-flow="true"], [data-task-flow="true"], [data-account-flow="true"]) {
+  --wd-color-workspace-canvas:#fff;
+  --wd-color-surface:#fff;
+  --wd-color-sidebar:#fff;
+  --wd-color-surface-muted:#f5f5f5;
+  --wd-color-surface-hover:#f0f0f0;
+  --wd-color-structural-divider:#e6e6e6;
+  --wd-color-text:#252525;
+  --wd-color-text-secondary:#6b6b6b;
+  --wd-ink:#252525;
+  --wd-muted:#6b6b6b;
+  background:#fff;
+}
+.shell[data-project-flow="true"][data-workspace-theme="light"] .workspaceContent { background:#fff; }
+.shell[data-workspace-theme="light"][data-task-flow="true"] .workspaceContent,
+.shell[data-workspace-theme="light"] .flowHeader { background:#fff; }
+/* Nested form providers must not reintroduce the default tinted canvas. */
+.shell[data-project-flow="true"][data-workspace-theme="light"] :global(.wd-root) {
+  background:#fff;
+}
+/* The frame owns outer edges; cells own only interior dividers. This also
+   applies when DataGrid renders an empty/loading/error state instead of rows. */
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > :is(thead,tbody,tfoot) > tr > :last-child { border-inline-end:0; }
+.shell .recordTablePanel :global(table.wd-record-table.wd-record-table) > tbody > tr:last-child > :is(td,th) { border-block-end:0; }
+.shell .recordTablePanel :global(.wd-data-grid .wd-table-scroll:not(:has(+ .wd-grid-footer))) { border-radius:8px; border-block-end:1px solid var(--wd-color-border-subtle,#c8cdca); }
+.shell .recordTablePanel :global(.wd-grid-state .wd-empty-state) { min-block-size:180px; padding:24px 16px; align-items:center; text-align:center; gap:8px; }
+
+/* Keep account pages on the same white canvas as the project workspace. */
+.shell[data-account-flow="true"][data-workspace-theme="light"] .workspaceContent,
+.shell[data-account-flow="true"][data-workspace-theme="light"] :global(.wd-root) { background:#fff; }
+
+/* Sales uses the same compact, primary-tinted chips as project navigation. */
+@media(min-width:56.001rem) {
+  .workspaceArea:has(> .workspaceContent > .flowHeader[data-navigation="chips"]) { grid-template-rows:minmax(3.25rem,max-content) minmax(0,1fr); }
+}
+.shell .flowHeader[data-navigation="chips"] { padding:0 16px; }
+.flowHeader[data-navigation="chips"] .flowTabScroll { align-items:center; gap:6px; min-block-size:44px; padding-block:7px; box-sizing:border-box; scrollbar-width:none; }
+.flowHeader[data-navigation="chips"] .flowTabScroll::-webkit-scrollbar { display:none; }
+.flowHeader[data-navigation="chips"] .salesTab { box-sizing:border-box; min-block-size:30px; block-size:30px; padding:0 8px; gap:5px; border:0; border-radius:6px; background:#f7f6f4; color:#111; font-size:11px; font-weight:600; line-height:18px; }
+.flowHeader[data-navigation="chips"] .salesTab img { display:block; flex:none; inline-size:20px; block-size:20px; object-fit:contain; }
+.flowHeader[data-navigation="chips"] .salesTab:hover { background:color-mix(in srgb,var(--wd-color-action-primary) 7%,var(--wd-color-surface)); color:#111; }
+.flowHeader[data-navigation="chips"] .salesTab[aria-current="page"] { background:color-mix(in srgb,var(--wd-color-action-primary) 14%,var(--wd-color-surface)); color:#111; font-weight:700; }
+.flowHeader[data-navigation="chips"] .salesTab::after,.flowHeader[data-navigation="chips"] .salesTab::before { display:none; }
+.flowHeader[data-navigation="chips"] .salesTab:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
+.shell[data-workspace-theme="dark"] .flowHeader[data-navigation="chips"] .salesTab:not([aria-current="page"]):not(:hover) { background:#302e2b; }
+.shell[data-workspace-theme="dark"] .flowHeader[data-navigation="chips"] .salesTab { color:#fff; }
+@media(max-width:600px) { .shell .flowHeader[data-navigation="chips"] { padding-inline:12px; } }
+@media(pointer:coarse) { .flowHeader[data-navigation="chips"] .salesTab { block-size:44px; min-block-size:44px; } }
+
+/* Rounded filters belong to workspace toolbars, not editable form fields. */
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-record-search .wd-input-group),
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-record-search .wd-search-field),
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-record-controls > .wd-field .wd-select-button),
+.shell .recordTablePanel :global(.wd-record-toolbar .wd-record-controls > .wd-field .wd-select-button.wd-focus-frame),
+.shell .recordTablePanel :global(.wd-grid-tools .wd-search-field) {
+  border-radius:999px !important;
+  background:var(--wd-color-surface);
+}

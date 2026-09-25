@@ -1,5 +1,6 @@
 "use client";
 import Image from "next/image";
+import {ClientProjectProgress} from "./client-project-progress";
 import { WodanaLogo } from "@/components/brand";
 import { useEffect, useState, type CSSProperties } from "react";
 import {
@@ -10,7 +11,7 @@ import {
   Phone,
   ShieldCheck,
 } from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, DesignSystemProvider, SelectField, TextAreaField } from "@/design-system";
+import { Button, Checkbox, ControlledModalDialog, DataGrid, DesignSystemProvider, SelectField, TextAreaField } from "@/design-system";
 import type {
   ClientCase,
   ClientQuote,
@@ -24,9 +25,9 @@ import p from "./client-portal.module.css";
 type PortalData = { name: string; phone: string; cases: ClientCase[] };
 const tabs = [
   ["home", "Home"],
+  ["project", "Progress"],
   ["approvals", "Approvals"],
   ["payments", "Payments"],
-  ["project", "Progress"],
   ["requests", "Inbox"],
 ];
 const designContext = (design: NonNullable<ClientCase["designs"]>[number]) =>
@@ -40,7 +41,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [tab, setTab] = useState("home"),
+    [selectedTab, setTab] = useState("home"),
     [caseId, setCaseId] = useState(""),
     [quoteId, setQuoteId] = useState(""),
     [definitionOpen, setDefinitionOpen] = useState(false),
@@ -71,7 +72,12 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
     quote =
       current?.quotes.find((q) => q.id === quoteId) ?? current?.quotes.at(-1),
     request = current?.requests.find((r) => r.id === requestId),
-    brand = { ...settings.brand, primaryColor: "#E4E3DE", accentColor: "#000000" };
+    brand = settings.brand;
+  const clientSections = {progress:true,documents:true,handover:true,updates:true,...current?.project?.clientSections};
+  const hasProjectSections = Object.values(clientSections).some(Boolean);
+  const tab = selectedTab === "project" && !hasProjectSections ? "home" : selectedTab === "alerts" && !clientSections.updates ? (hasProjectSections ? "project" : "home") : selectedTab;
+  const mainTab = tab === "designs" ? "approvals" : tab === "alerts" ? "project" : tab;
+  const sharedImages = (current?.designs ?? []).filter(design => ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(design.mimeType)).slice(0, 3);
   const selectedDesign=current?.designs?.find(d=>d.id===designVersionId);
   const selectedMaterial=current?.materials?.find(item=>item.id===materialApprovalId);
   const selectedHandover=current?.project?.handovers.find(item=>item.id===handoverId);
@@ -92,17 +98,18 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
   function openHandoverDecision(id:string,value:"accept"|"changes"){setHandoverId(id);setDecision(value);setDialog('handover-decision');setNote('');setCode('');setChallenge('');setError('');}
   function openWarrantyClaim(id:string){setHandoverId(id);setWarrantyTitle('');setWarrantySeverity('minor');setDialog('warranty-claim');setNote('');setCode('');setChallenge('');setError('');}
   const style = {
-    "--portal-primary": "#000000",
-    "--portal-accent": "#000000",
+    "--portal-primary": brand.primaryColor || "#254e40",
+    "--portal-accent": brand.accentColor || "#626b65",
     "--portal-on-primary": "#ffffff",
   } as CSSProperties;
   async function load() {
     try {
       const next = await jsonRequest<PortalData>(api("data"));
       setData(next);
+      setError("");
       setCaseId((id) => id || next.cases[0]?.id || "");
     } catch {
-      setData(null);
+      setError("Could not refresh your project. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -126,6 +133,19 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
       active = false;
     };
   }, [settings.slug]);
+  useEffect(() => {
+    if (!data) return;
+    let active = true;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      void jsonRequest<PortalData>(api('data')).then(next => {
+        if (active) setData(next);
+      }).catch(() => { /* Keep the last verified view during a temporary outage. */ });
+    };
+    const timer = setInterval(refresh, 60000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { active=false; clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
+  }, [Boolean(data), settings.slug]);
   useEffect(() => {
     if (!challenge) return;
     const timer = setInterval(() => setClock(Date.now()), 1000);
@@ -408,10 +428,10 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
               )}
             </div>
             <nav className={p.nav} aria-label="Client portal sections">
-              {tabs.map(([id, label]) => (
+              {tabs.filter(([id]) => id !== "project" || hasProjectSections).map(([id, label]) => (
                 <button
                   key={id}
-                  aria-current={tab === id ? "page" : undefined}
+                  aria-current={mainTab === id ? "page" : undefined}
                   onClick={() => {
                     setTab(id);
                     setError("");
@@ -419,12 +439,15 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   }}
                 >
                   {label}
+                  {id === "project" && clientSections.updates && !!current?.project?.alerts?.length && <span className={p.count}>{current.project.alerts.length}</span>}
                   {id === "approvals" && pendingApprovals > 0
-                    ? ` · ${pendingApprovals}`
-                    : id === "requests" && pendingDecisions.length > 0 ? ` · ${pendingDecisions.length}` : ""}
+                    ? <span className={p.count}>{pendingApprovals}</span>
+                    : id === "requests" && pendingDecisions.length > 0 ? <span className={p.count}>{pendingDecisions.length}</span> : null}
                 </button>
               ))}
             </nav>
+            {mainTab === "approvals" && <nav className={p.subnav} aria-label="Approval views"><button aria-current={tab === "approvals" ? "page" : undefined} onClick={() => setTab("approvals")}>Review queue</button><button aria-current={tab === "designs" ? "page" : undefined} onClick={() => setTab("designs")}>Designs</button></nav>}
+            {mainTab === "project" && clientSections.updates && <nav className={p.subnav} aria-label="Progress views"><button aria-current={tab === "project" ? "page" : undefined} onClick={() => setTab("project")}>Project updates</button><button aria-current={tab === "alerts" ? "page" : undefined} onClick={() => setTab("alerts")}>Alerts{!!current?.project?.alerts?.length && <span className={p.count}>{current.project.alerts.length}</span>}</button></nav>}
             {error && !dialog && (
               <p role="alert" className={p.error}>
                 {error}
@@ -435,7 +458,8 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 {notice}
               </p>
             )}
-            {tab === "home" ? (
+            {clientSections.updates && !!current?.project?.alerts?.length && tab !== "alerts" && <div className={p.section} role="status"><strong>{current.project.alerts.length} schedule {current.project.alerts.length===1?'update':'updates'}</strong><button className={p.button} onClick={()=>setTab('alerts')}>View alerts</button></div>}
+            {tab === "alerts" ? <section><div className={p.title}><h2>Schedule alerts</h2><button className={p.button} onClick={()=>void load()}>Refresh</button></div>{current?.project?.alerts?.length ? current.project.alerts.map(alert=><article className={p.section} key={alert.id}><h3>{alert.title}</h3><p>{alert.message}</p><p className={p.muted}>Planned: {alert.dueDate}{alert.expectedDate?` · Updated expected date: ${alert.expectedDate}`:''}</p><button className={p.button} onClick={()=>{setTab('requests');setDialog('request');setRequestTitle(alert.title);setNote('');}}>Ask your team</button></article>) : <Empty title="No active schedule alerts" text="Delivery and work delays will appear here when they need your attention."/>}</section> : tab === "home" ? (
               <>
                 <div className={p.homeIntro}>
                   <h2>Hello, {data.name.split(" ")[0]}.</h2>
@@ -447,7 +471,8 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                       : "You’re up to date. Your project team will share the next steps here."}
                   </p>
                 </div>
-                <h3 style={{ fontWeight: 550 }}>Your next steps</h3>
+                {sharedImages.length > 0 && <section className={p.designGallery} aria-label="Shared project designs">{sharedImages.map(design => <a key={design.id} href={`/api/client-portal/${settings.slug}/designs/${design.id}`} target="_blank" rel="noreferrer"><Image unoptimized src={`/api/client-portal/${settings.slug}/designs/${design.id}`} width={480} height={300} alt={`${design.title} · V${design.number}`} /><span><strong>{design.title}</strong><small>{design.roomName || "Shared design"} · V{design.number}</small></span></a>)}</section>}
+                <h3 style={{ fontWeight: 650 }}>Your next steps</h3>
                 {pendingDecisions.map((item) => <div className={p.section} key={item.id}><div className={p.title}><div><span className={p.status} data-status="issued">Decision requested</span><h3>{item.title}</h3><p className={p.muted}>{item.decisionRequest?.target.label} · Due {item.dueDate}</p></div><button className={p.primary} onClick={() => openRequest(item.id)}>Respond <ArrowRight size={15}/></button></div></div>)}
                 {definition?.canDecide ? <div className={p.section}><div className={p.title}><div><span className={p.status} data-status="issued">Your review</span><h3>Scope definition · V{definition.number}</h3><p className={p.muted}>Confirm the current requirements before quotation.</p></div><button className={p.primary} onClick={() => { setTab("approvals"); setDefinitionOpen(true); }}>Review scope <ArrowRight size={15}/></button></div></div> : null}
                 {pending.map((q) => (
@@ -549,6 +574,17 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                   </div>
                 </div>
               </>
+            ) : tab === "designs" ? (
+current?.designs?.length ? <section className={p.approvalGroup} aria-labelledby="client-designs-heading">
+                  <h3 id="client-designs-heading">Designs</h3>
+                  <DataGrid gridLines appearance="card" ariaLabel="Shared designs" rowNumbers={false} selectable={false} data={current.designs} getRowId={design=>design.id} columns={[
+                    {id:'title',header:'Design',size:240,accessorFn:design=>`${design.title} · V${design.number}`,meta:{primary:true}},
+                    {id:'context',header:'Room / item',size:240,accessorFn:design=>designContext(design)},
+                    {id:'status',header:'Status',size:130,accessorFn:design=>design.status,meta:{renderCell:design=><span className={p.status} data-status={design.status}>{design.status==='approved'?'Approved':design.status==='changes_requested'?'Changes requested':design.status==='rejected'?'Rejected':design.status==='expired'?'Review expired':'For your review'}</span>}},
+                    {id:'due',header:'Decision due',size:160,accessorFn:design=>design.status==='client_review'?(designDue(design).replace('Decision due ','')||'—'):'—'},
+                    {id:'actions',header:'Actions',enableSorting:false,size:230,meta:{renderCell:design=><div className={p.designActions}><a className={p.button} href={`/api/client-portal/${settings.slug}/designs/${design.id}`} target="_blank" rel="noreferrer">Open design ↗</a>{design.status==='client_review'&&current.role==='approver'&&<Button size="compact" onPress={()=>setTab("approvals")}>Review</Button>}</div>}},
+                  ]} />
+                </section> : <Empty title="No shared designs yet" text="Design revisions and approval requests will appear here."/>
             ) : tab === "approvals" && definitionOpen && definition ? (
               <ClientScopeDefinition definition={definition} onBack={() => setDefinitionOpen(false)} onDecision={openDefinitionDecision} />
             ) : tab === "approvals" && !quoteId ? (
@@ -647,18 +683,8 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                 />
               )
             ) : tab === "project" ? (
-              current?.project ? <>
-                <section className={p.projectSummary} aria-labelledby="client-progress-heading">
-                  <div><span className={p.status}>{current.project.phase.replaceAll('_',' ')}</span><h2 id="client-progress-heading">{current.project.name}</h2><p>{current.project.promise || "Approved progress from your project team."}</p></div>
-                  <div className={p.projectProgress}><strong>{current.project.progress ?? 0}%</strong><span>overall progress</span><i><b style={{inlineSize:`${current.project.progress ?? 0}%`}}/></i></div>
-                  <dl><div><dt>Target completion</dt><dd>{current.project.targetCompletion || "To be confirmed"}</dd></div><div><dt>Handover</dt><dd>{current.project.handoverDate || "To be confirmed"}</dd></div></dl>
-                </section>
-                {current.project.milestones?.length ? <section className={p.progressSection} aria-labelledby="client-milestones-heading"><h2 id="client-milestones-heading">Project milestones</h2><ol className={p.clientTimeline}>{current.project.milestones.map(milestone=><li key={milestone.id} data-complete={Boolean(milestone.acceptedAt)}><span aria-hidden>{milestone.acceptedAt?<Check size={13}/>:null}</span><div><strong>{milestone.title}</strong><small>Due {milestone.dueDate}{milestone.acceptedAt?` · Accepted ${milestone.acceptedAt.slice(0,10)}`:` · ${milestone.progress}% complete`}</small></div></li>)}</ol></section>:null}
-                {current.project.reports.length ? <section className={p.progressSection} aria-labelledby="client-updates-heading"><h2 id="client-updates-heading">Recent updates</h2>{current.project.reports.slice().reverse().map(r=><div className={p.section} key={r.id}><span className={p.status}>Approved update · {r.location}</span><h3>{r.date}</h3>{r.work?.map((work,i)=><p key={i}>{work.title}<strong> · {work.quantity} {work.unit} completed</strong></p>)}{r.files?.map(file=><p key={file.id}><a className={p.button} href={`/api/client-portal/${settings.slug}/project-files/${current.project!.id}/${file.id}`} target="_blank" rel="noreferrer">{file.name} ↗</a></p>)}<p className={p.muted}>Next shift</p><p style={{whiteSpace:'pre-wrap'}}>{r.tomorrow||"Your team has shared an approved progress record."}</p></div>)}</section>:null}
-                {current.project.documents.length ? <section className={p.progressSection} aria-labelledby="client-documents-heading"><h2 id="client-documents-heading">Approved documents</h2>{current.project.documents.map(doc=><div className={p.section} key={doc.id}><h3>{doc.title} · {doc.revision}</h3>{doc.url?<a className={p.button} href={doc.url} target="_blank" rel="noreferrer">Open approved document ↗</a>:<p className={p.muted}>Ask your project team for the controlled document.</p>}</div>)}</section>:null}
-                {current.project.handovers.length ? <section className={p.progressSection} aria-labelledby="client-handover-heading"><h2 id="client-handover-heading">Handover</h2>{current.project.handovers.map(h=><div className={p.section} key={h.id}><span className={p.status}>{h.status}</span><h3>{h.title} · {h.area}</h3>{h.clientReviewDueDate&&h.status==='ready'&&<p className={p.muted}>Decision requested by {h.clientReviewDueDate}</p>}{h.acceptedAt&&<p>Accepted {h.acceptedAt.slice(0,10)}</p>}{h.warrantyUntil&&<p className={p.muted}>Warranty until {h.warrantyUntil}</p>}{h.packet&&<details><summary>Review handover pack · V{h.packet.version}</summary><p>{h.packet.tasks.map(task=>`${task.title} · ${task.quantity} ${task.unit}`).join(', ')}</p>{h.packet.documents.map(document=><p key={document.id}>{document.url?<a className={p.button} href={document.url} target="_blank" rel="noreferrer">{document.title} · {document.revision} ↗</a>:`${document.title} · ${document.revision}`}</p>)}</details>}{h.outstandingItems?.map(item=><p key={item.id} className={p.muted}>{item.title} · {item.status}{item.dueDate?` · due ${item.dueDate}`:''}</p>)}{h.outstanding&&<p>{h.outstanding}</p>}{current.project!.warrantyClaims.filter(claim=>claim.handoverId===h.id).map(claim=><p key={claim.id} className={p.muted}>Warranty request · {claim.title} · {claim.status.replaceAll('_',' ')}</p>)}{h.canDecide&&<div className={p.actions}><button className={p.primary} onClick={()=>openHandoverDecision(h.id,'accept')}>Accept handover</button><button className={p.button} onClick={()=>openHandoverDecision(h.id,'changes')}>Request changes</button></div>}{h.canReportWarranty&&<div className={p.actions}><button className={p.button} onClick={()=>openWarrantyClaim(h.id)}>Report a warranty issue</button></div>}</div>)}</section>:null}
-                {!current.project.reports.length&&!current.project.documents.length&&!current.project.handovers.length&&!current.project.milestones?.length&&<Empty title="Your project workspace is ready" text="Your team will share approved progress updates and handover documents here."/>}
-              </>:<Empty title="Project updates will appear here" text="Once your agreed scope is released, your team can share progress, approved documents and handover details."/>
+              current?.project ? <ClientProjectProgress project={current.project} slug={settings.slug} onRefresh={()=>void load()} handover={current.project.handovers.length ? <section className={p.progressSection} aria-labelledby="client-handover-heading"><h2 id="client-handover-heading">Handover</h2>{current.project.handovers.map(h=><div className={p.section} key={h.id}><span className={p.status}>{h.status}</span><h3>{h.title} · {h.area}</h3>{h.clientReviewDueDate&&h.status==='ready'&&<p className={p.muted}>Decision requested by {h.clientReviewDueDate}</p>}{h.acceptedAt&&<p>Accepted {h.acceptedAt.slice(0,10)}</p>}{h.warrantyUntil&&<p className={p.muted}>Warranty until {h.warrantyUntil}</p>}{h.packet&&<details><summary>Review handover pack · V{h.packet.version}</summary><p>{h.packet.tasks.map(task=>`${task.title} · ${task.quantity} ${task.unit}`).join(', ')}</p>{h.packet.documents.map(document=><p key={document.id}>{document.url?<a className={p.button} href={document.url} target="_blank" rel="noreferrer">{document.title} · {document.revision} ↗</a>:`${document.title} · ${document.revision}`}</p>)}</details>}{h.outstandingItems?.map(item=><p key={item.id} className={p.muted}>{item.title} · {item.status}{item.dueDate?` · due ${item.dueDate}`:''}</p>)}{h.outstanding&&<p>{h.outstanding}</p>}{current.project!.warrantyClaims.filter(claim=>claim.handoverId===h.id).map(claim=><p key={claim.id} className={p.muted}>Warranty request · {claim.title} · {claim.status.replaceAll('_',' ')}</p>)}{h.canDecide&&<div className={p.actions}><button className={p.primary} onClick={()=>openHandoverDecision(h.id,'accept')}>Accept handover</button><button className={p.button} onClick={()=>openHandoverDecision(h.id,'changes')}>Request changes</button></div>}{h.canReportWarranty&&<div className={p.actions}><button className={p.button} onClick={()=>openWarrantyClaim(h.id)}>Report a warranty issue</button></div>}</div>)}</section>:null}/>
+              :<Empty title="Project updates will appear here" text="Once your agreed scope is released, your team can share progress, approved documents and handover details."/>
             ) : tab === "payments" ? (
               <>
                 {current?.agreement ? (
@@ -792,7 +818,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
           </span>
         </footer>
         <ControlledModalDialog
-          isOpen={Boolean(dialog)}
+          isOpen={Boolean(dialog) && (!['handover-decision','warranty-claim'].includes(dialog) || clientSections.handover)}
           onOpenChange={(open) => !open && setDialog("")}
           title={
             dialog === 'warranty-claim' ? 'Report a warranty issue' : dialog === 'definition-decision' ? decision === 'accept' ? 'Confirm scope' : 'Request scope changes' : dialog === 'material-decision' ? decision==='accept'?'Approve material':'Reject material / remarks' : dialog === 'design-decision' ? decision==='accept'?'Approve design':decision==='changes'?'Request design changes':'Reject design' : dialog === 'handover-decision' ? decision==='accept'?'Accept handover':'Request handover changes' : dialog === "decision"

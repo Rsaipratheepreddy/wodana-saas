@@ -21,6 +21,7 @@ describe("project portfolio", () => {
   it("shows projects in the shared grid and opens a selected project", async () => {
     const user = userEvent.setup();
     render(<ProjectPortfolio rows={[project]} today="2026-09-17" workspaceId="workspace" />);
+    await user.click(screen.getByRole("radio", { name: "Table" }));
     expect(screen.getByRole("table", { name: "Projects" })).toBeInTheDocument();
     expect(screen.getByText("Amira Hassan")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Jumeirah villa interiors" }));

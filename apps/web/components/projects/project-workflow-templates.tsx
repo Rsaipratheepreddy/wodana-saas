@@ -58,6 +58,7 @@ const roles: Array<{ id: ProjectWorkflowRole | "none"; label: string }> = [
 const gateLabels: Record<ProjectWorkflowGate, string> = {
   project_manager_assigned: "Project manager assigned",
   tasks_planned: "Tasks planned",
+  production_plan_ready: "Production packages ready",
   all_tasks_closed: "All tasks closed",
   all_snags_closed: "All snags closed",
   all_handovers_accepted: "Handover accepted",
@@ -153,11 +154,22 @@ export function ProjectWorkflowTemplatesPage({
   const setStage = (index: number, change: Partial<ProjectWorkflowStage>) =>
     setDraft((current) => current ? {
       ...current,
-      stages: current.stages.map((stage, stageIndex) => stageIndex === index ? { ...stage, ...change } : stage),
+      stages: current.stages.map((stage, stageIndex) => stageIndex === index
+        ? { ...stage, ...change, ...(change.phase && change.phase !== "active" ? { releaseStart: false } : {}) }
+        : stage),
+    } : current);
+
+  const setReleaseStart = (index: number, enabled: boolean) =>
+    setDraft((current) => current ? {
+      ...current,
+      stages: current.stages.map((stage, stageIndex) => ({
+        ...stage,
+        releaseStart: enabled && stageIndex === index,
+      })),
     } : current);
 
   const addStage = () => setDraft((current) => {
-    if (!current || current.stages.length >= 12) return current;
+    if (!current || current.stages.length >= 18) return current;
     const completedIndex = Math.max(1, current.stages.findIndex((stage) => stage.phase === "completed"));
     const stage: ProjectWorkflowStage = {
       key: `stage_${current.stages.length}`,
@@ -282,7 +294,7 @@ export function ProjectWorkflowTemplatesPage({
         title="Workflow setup"
       />
       {error && !draft && !historyTemplate ? <Callout tone="danger" title="The action could not be completed">{error}</Callout> : null}
-      <DataGrid
+      <DataGrid gridLines
         ariaLabel="Project workflow templates"
         columns={columns}
         data={rows}
@@ -317,7 +329,7 @@ export function ProjectWorkflowTemplatesPage({
             <div className={styles.wide}><TextAreaField label="Description" onChange={(value) => setField("description", value)} value={draft.description} /></div>
             <div className={styles.wide}><Checkbox isSelected={draft.isDefault} onChange={(value) => setField("isDefault", value)}>Use for new projects by default</Checkbox></div>
           </div>
-          <div className={styles.stageHeading}><div><h2>Stages</h2><p>Projects move forward in this order. The first stage must be Planning and the last Completed.</p></div><Button isDisabled={draft.stages.length >= 12} onPress={addStage} size="compact"><Plus aria-hidden="true" size={14} />Add stage</Button></div>
+          <div className={styles.stageHeading}><div><h2>Stages</h2><p>Projects move forward in this order. The first stage must be Planning and the last Completed.</p></div><Button isDisabled={draft.stages.length >= 18} onPress={addStage} size="compact"><Plus aria-hidden="true" size={14} />Add stage</Button></div>
           <ol className={styles.stages}>
             {draft.stages.map((stage, index) => <li key={`${stage.key}-${index}`}>
               <div className={styles.stageTop}><span>{index + 1}</span><strong>{stage.visibleName || "Untitled stage"}</strong><IconButton aria-label={`Remove ${stage.visibleName || `stage ${index + 1}`}`} isDisabled={draft.stages.length <= 2 || index === 0 || index === draft.stages.length - 1} onPress={() => removeStage(index)} size="compact"><Trash2 aria-hidden="true" size={14} /></IconButton></div>
@@ -326,6 +338,7 @@ export function ProjectWorkflowTemplatesPage({
                 <TextInput description="Stable internal name." isDisabled={draft.version > 0} isRequired label="Stage key" onChange={(value) => setStage(index, { key: value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} value={stage.key} />
                 <SelectField isRequired items={phases} label="Project phase" onSelectionChange={(key) => key && setStage(index, { phase: String(key) as ProjectWorkflowPhase })} selectedKey={stage.phase} />
                 <SelectField items={roles} label="Default owner" onSelectionChange={(key) => setStage(index, { ownerRole: key === "none" ? null : String(key) as ProjectWorkflowRole })} selectedKey={stage.ownerRole ?? "none"} />
+                {stage.phase === "active" ? <div className={styles.wide}><Checkbox isSelected={stage.releaseStart === true} onChange={(enabled) => setReleaseStart(index, enabled)}>Start here after approved planning and commercial release</Checkbox></div> : null}
                 <div className={styles.wide}><TextAreaField label="What happens here" onChange={(value) => setStage(index, { description: value })} value={stage.description} /></div>
                 <div className={styles.wide}><MultiSelectField items={initialData.supportedExitGates.map((gate) => ({ id: gate, label: gateLabels[gate] }))} label="Checks required before moving forward" onSelectionChange={(keys) => setStage(index, { exitGates: [...keys].map(String) as ProjectWorkflowGate[] })} selectedKeys={new Set(stage.exitGates)} /></div>
               </div>

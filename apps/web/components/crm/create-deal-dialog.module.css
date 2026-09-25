@@ -1,0 +1,16 @@
+.form, .fields { display: grid; gap: 16px; min-inline-size: 0; }
+.fields { border: 0; padding: 0; margin: 0; }
+.explanation { margin: 0; color: var(--wd-color-text-secondary); font-size: 12px; line-height: 1.5; }
+.identityRow, .optional { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.optional { border-block-start: 1px solid var(--wd-color-structural-divider); padding-block-start: 16px; }
+.optional > span { grid-column: 1 / -1; font-size: 12px; font-weight: 600; line-height: 18px; color: var(--wd-color-text-secondary); }
+.valueRow { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; }
+.form.form :global(.wd-field) { gap: 6px; }
+.form.form :global(.wd-field-label), .form.form label { font-size: 12px; font-weight: 500; line-height: 18px; }
+.form.form :global(.wd-input-group), .form.form :global(.wd-date-group), .form.form :global(.wd-select-button), .form.form input[type="time"] { box-sizing: border-box; block-size: 36px; min-block-size: 36px; border-radius: 6px; }
+.form.form :global(.wd-date-group) > button { min-block-size: 34px; block-size: 34px; inline-size: 34px; }
+.form.form :global(.wd-input) { min-block-size: 0; }
+.form.form > .fields > div:has(> label > input[type="time"]) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.form.form label:has(> input[type="time"]) { gap: 6px; }
+@media(max-width:480px) { .identityRow, .optional { grid-template-columns: minmax(0, 1fr); } }

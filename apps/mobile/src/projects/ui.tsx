@@ -4,9 +4,9 @@ import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, useTheme } from '../design-system';
 import { Button, Card, EmptyState, Notice, Sheet, StatusBadge, TextField } from '../hrms/ui';
-import { NumberField } from '../pre-project/ui';
+import { NumberField, Tabs } from '../pre-project/ui';
 import { useProjectFieldActions, useProjectFieldQueue, type ProjectFieldHandover, type ProjectFieldOutstandingItem, type ProjectFieldProject, type ProjectFieldReceipt, type ProjectFieldSnag, type ProjectFieldTask } from './api';
-import { projectFieldLabel, receiveCommand } from './field-work';
+import { projectFieldLabel, receiveCommand, receiptQuantityError } from './field-work';
 import { ProjectFieldQueuePanel } from './field-queue-panel';
 import { HandoverItemStatusSheet, HandoverWalkthroughSheet, ProjectHandoverCard } from './handover';
 import { NewSnagSheet, ProjectSnagCard, ReportProgressSheet, SnagStatusSheet } from './quality';
@@ -54,24 +54,30 @@ function ReceiptSheet({ workspaceId, action, onClose, onSaved }: {
   workspaceId: string; action: Extract<Action, { kind: 'dispatch' | 'order' }>; onClose: () => void; onSaved: () => void;
 }) {
   const api = useProjectFieldActions(workspaceId);
-  const [quantity, setQuantity] = useState<number | null>(action.record.remaining ?? action.record.quantity);
+  const [quantity, setQuantity] = useState<number | null>(null);
   const [rejected, setRejected] = useState<number | null>(0);
   const [evidence, setEvidence] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const title = `Receive ${action.record.title}`;
+  const pendingRequest = useRef<{ fingerprint: string; id: string } | null>(null);
+  const remaining = action.record.remaining ?? action.record.quantity;
   async function save() {
-    if (!quantity || quantity < 0 || (rejected ?? 0) < 0) { setError('Enter the quantities received.'); return; }
+    const quantityError = receiptQuantityError(quantity, rejected, remaining, action.record.unit);
+    if (quantityError || quantity === null) { setError(quantityError ?? 'Enter the quantities received.'); return; }
     if (!evidence.trim()) { setError('Add the site, delivery-note or inspection reference.'); return; }
     setBusy(true); setError('');
     try {
-      const base = { revision: action.project.revision, requestId: Crypto.randomUUID() };
-      const body = receiveCommand(base, action.kind, { recordId: action.record.id, accepted: quantity, rejected: rejected ?? 0, evidence });
+      const fingerprint = JSON.stringify([action.record.id, action.kind, action.project.revision, quantity, rejected ?? 0, evidence.trim()]);
+      if (pendingRequest.current?.fingerprint !== fingerprint) pendingRequest.current = { fingerprint, id: Crypto.randomUUID() };
+      const base = { revision: action.project.revision, requestId: pendingRequest.current.id };
+      const body = receiveCommand(base, action.kind, { recordId: action.record.id, accepted: quantity, rejected: rejected ?? 0, evidence: evidence.trim() });
       await api.command(action.project.id, body);
       onSaved(); onClose();
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'The action could not be saved. Refresh and try again.'); }
     finally { setBusy(false); }
   }
   return <Sheet title={title} onClose={onClose}>
+    <Text>{remaining} {action.record.unit} outstanding</Text>
     <NumberField label={`Accepted ${action.record.unit}`} value={quantity} onChange={setQuantity} />
     <NumberField label={`Rejected ${action.record.unit}`} value={rejected} onChange={setRejected} />
     <TextField label="Evidence reference" value={evidence} onChangeText={setEvidence} multiline placeholder="Delivery note, inspection or site evidence" />
@@ -86,6 +92,7 @@ export function ProjectFieldWorkspace({ workspaceId, initialProjectId, initialAc
   const { colors } = useTheme();
   const [revision, setRevision] = useState(0), [action, setAction] = useState<Action | null>(null);
   const result = useProjectFieldQueue(workspaceId, revision);
+  const [view, setView] = useState('tasks');
   const openedAction = useRef<string | null>(null);
   const projects = useMemo(() => {
     const items = result.data?.projects ?? [];
@@ -121,37 +128,42 @@ export function ProjectFieldWorkspace({ workspaceId, initialProjectId, initialAc
   const refresh = () => setRevision(value => value + 1);
   return <>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 48, gap: 16 }}>
-      <View style={{ gap: 4 }}><Text accessibilityRole="header" size="xl" weight="semibold">My field work</Text><Text size="sm" tone="textSecondary">Assigned tasks, receipts and evidence—nothing else.</Text></View>
+      <View style={{ gap: 4 }}><Text accessibilityRole="header" size="xl" weight="semibold">My field work</Text></View>
       {result.error && <><Notice error>{result.error}</Notice><Button label="Retry" variant="secondary" onPress={refresh} /></>}
       {result.loading && !result.data && <Text tone="textSecondary">Loading assigned work…</Text>}
       {result.data && !result.data.projects.length && <EmptyState title="No assigned field work" description="Tasks and receipts appear here when they are assigned to you." icon="projects" />}
       <ProjectFieldQueuePanel workspaceId={workspaceId} projects={projects} revision={revision} onSynced={refresh} />
+      <Tabs value={view} onChange={setView} items={[{id:'tasks',label:'Tasks'},{id:'receipts',label:'Receiving'},{id:'updates',label:'Daily updates'},{id:'quality',label:'QC & handover'}]} />
       {projects.map(project => <View key={project.id} style={{ gap: 12 }}>
         <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 10 }}><Text size="lg" weight="semibold">{project.name}</Text><Text size="xs" tone="textSecondary">{project.customer}</Text></View>
-        <Button label="Record snag" variant="secondary" onPress={() => setAction({ kind: 'new-snag', project })} />
-        {project.deliveries.map(item => <Card key={item.id} tinted>
+        {view === 'quality' && <Button label="Record snag" variant="secondary" onPress={() => setAction({ kind: 'new-snag', project })} />}
+        {view === 'receipts' && project.deliveries.map(item => <Card key={item.id} tinted>
           <StatusBadge label="Delivery arriving" status="needs_review" />
           <View style={{ gap: 4 }}><Text weight="semibold">{item.title}</Text><Text size="xs" tone="textSecondary">{item.quantity} {item.unit} · due {item.dueDate} · {item.destination}</Text></View>
           {item.canReceive && <Button label="Receive delivery" onPress={() => setAction({ kind: 'dispatch', project, record: item })} />}
           <EvidencePhoto workspaceId={workspaceId} projectId={project.id} recordId={item.id} onUploaded={refresh} />
         </Card>)}
-        {project.purchaseReceipts.map(item => <Card key={item.id}>
+        {view === 'receipts' && project.purchaseReceipts.map(item => <Card key={item.id}>
           <StatusBadge label="Purchase order" status="pending" />
           <View style={{ gap: 4 }}><Text weight="semibold">{item.number} · {item.title}</Text><Text size="xs" tone="textSecondary">{item.vendor} · {item.remaining} {item.unit} remaining</Text></View>
           <Button label="Receive purchase order" onPress={() => setAction({ kind: 'order', project, record: item })} />
           <EvidencePhoto workspaceId={workspaceId} projectId={project.id} recordId={item.id} onUploaded={refresh} />
         </Card>)}
-        {project.tasks.map(item => <Card key={item.id}>
+        {view === 'tasks' && !project.tasks.length && <Text tone="textSecondary">No assigned tasks.</Text>}
+        {view === 'receipts' && !project.deliveries.length && !project.purchaseReceipts.length && <Text tone="textSecondary">No materials awaiting receipt.</Text>}
+        {view === 'quality' && !project.snags.length && !(project.handovers ?? []).length && <Text tone="textSecondary">No open quality checks or handovers.</Text>}
+        {view === 'tasks' && project.tasks.map(item => <Card key={item.id}>
           <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'space-between', alignItems: 'flex-start' }}><View style={{ flex: 1, gap: 4 }}><Text weight="semibold">{item.title}</Text><Text size="xs" tone="textSecondary">{item.area} · {item.location === 'factory' ? 'Factory' : 'Site'} · due {item.end}</Text></View><StatusBadge label={projectFieldLabel(item.status)} status={item.status} /></View>
           <Text size="sm">{item.approved} / {item.quantity} {item.unit} approved · {item.remaining} remaining</Text>
           {item.canReport && <Button label="Report progress" onPress={() => setAction({ kind: 'task', project, record: item })} />}
           <EvidencePhoto workspaceId={workspaceId} projectId={project.id} recordId={item.id} onUploaded={refresh} />
         </Card>)}
-        {project.snags.length > 0 && <View style={{ gap: 10 }}>
+        {view === 'updates' && <View style={{gap:10}}><Text weight="semibold">Daily updates</Text>{(project.reports??[]).length?(project.reports??[]).map(report=><Card key={report.id}><StatusBadge label={projectFieldLabel(report.status)} status={report.status}/><Text weight="semibold">{report.summary||'Daily update'}</Text><Text size="xs" tone="textSecondary">{report.date} · {projectFieldLabel(report.location)} · {report.photoCount} photos</Text>{report.note&&<Notice>{report.note}</Notice>}<Text size="xs" tone="textSecondary">{report.published?'Shared with client':report.status==='approved'?'Approved · not shared with client':'Internal · pending review'}</Text></Card>):<Text size="sm" tone="textSecondary">Your submitted daily updates and their review status appear here.</Text>}</View>}
+        {view === 'quality' && project.snags.length > 0 && <View style={{ gap: 10 }}>
           <Text weight="semibold">Quality & snags</Text>
           {project.snags.map(item => <ProjectSnagCard key={item.id} snag={item} onStatus={status => setAction({ kind: 'snag-status', project, record: item, status })} />)}
         </View>}
-        {(project.handovers ?? []).length > 0 && <View style={{ gap: 10 }}>
+        {view === 'quality' && (project.handovers ?? []).length > 0 && <View style={{ gap: 10 }}>
           <Text weight="semibold">Handover & aftercare</Text>
           {(project.handovers ?? []).map(item => <ProjectHandoverCard key={item.id} handover={item} onOpen={() => setAction({ kind: 'handover', project, record: item })} />)}
         </View>}

@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-delivery-flows.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: /workspaces/50cacfe9-91f0-43c3-a246-32456bad25b9/projects/9f85e149-b0fd-420b-94ea-6327a09433a8/execution: {"message":"Another reviewer must inspect the site team's batch.","error":"Forbidden","statusCode":403}
+
+403 !== 201
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:22:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:256:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 403,
+  expected: 201,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

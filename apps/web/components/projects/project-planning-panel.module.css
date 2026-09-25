@@ -1,0 +1,4 @@
+.panel { min-inline-size:0; padding:16px; font-size:12px; color:var(--wd-color-text); }
+.message { padding-block:12px; }
+.message p { margin-block:0 12px; }
+@media(max-width:600px) { .panel { padding:12px; } }

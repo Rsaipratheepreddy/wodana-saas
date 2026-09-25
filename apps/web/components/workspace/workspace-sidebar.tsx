@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ProjectShortcuts } from "./project-shortcuts";
 import { useSearchParams } from "next/navigation";
 import {
   Activity,
@@ -48,11 +49,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
-  useCallback,
-  useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -67,9 +65,11 @@ import type {
   WorkspaceModuleDefinition,
   WorkspaceNavigationSection,
 } from "./workspace-navigation";
+import { MessagingMark } from "@/components/brand/messaging-mark";
+import { ModuleIcon as WorkspaceModuleIconTile } from "@/design-system/atoms/module-icon";
+import { productNavigation, productNavigationActive } from "./workspace-navigation";
 import styles from "./workspace.module.css";
 import { identityInitials, identityStyle as visualForIdentity } from "@/lib/brand/identity";
-import { WorkspaceUniversalSearch } from "./workspace-universal-search";
 
 const icons: Record<WorkspaceIconName, LucideIcon> = {
   activity: Activity,
@@ -118,7 +118,7 @@ const icons: Record<WorkspaceIconName, LucideIcon> = {
 export function WorkspaceModuleSwitcher({ activeModule, modules }: { activeModule: WorkspaceModuleDefinition; modules: WorkspaceModuleDefinition[] }) {
   const ActiveIcon = icons[activeModule.icon];
   return <DialogTrigger><AriaButton aria-label={`Switch module. Current: ${activeModule.label}`} className={styles.moduleButton}><ActiveIcon aria-hidden="true" size={16} /><span>{activeModule.label}</span><ChevronDown aria-hidden="true" size={14} /></AriaButton>
-    <Popover className={styles.modulePopover} offset={8} placement="bottom start"><Dialog aria-label="Choose module" className={styles.moduleDialog}>{({ close }) => <><p className={styles.popoverLabel}>Products</p>{modules.map((module) => {
+    <Popover className={styles.modulePopover} offset={8} placement="bottom start"><Dialog aria-label="Choose module" className={styles.moduleDialog}>{({ close }) => <><p className={styles.popoverLabel}>Workspaces</p>{modules.map((module) => {
       const ModuleIcon = icons[module.icon];
       return <Link aria-current={module.id === activeModule.id ? "page" : undefined} className={styles.moduleOption} data-selected={module.id === activeModule.id || undefined} href={module.href} key={module.id} onClick={close}><span aria-hidden="true" className={styles.moduleOptionIcon} data-module={module.id}><ModuleIcon size={17} strokeWidth={1.8} /></span><span><strong>{module.label}</strong><small>{module.description}</small></span></Link>;
     })}</>}</Dialog></Popover>
@@ -127,6 +127,7 @@ export function WorkspaceModuleSwitcher({ activeModule, modules }: { activeModul
 
 export type WorkspaceSidebarProps = {
   activeModule: WorkspaceModuleDefinition;
+  activeItemId?: string;
   mode?: "desktop" | "mobile";
   modules: WorkspaceModuleDefinition[];
   unavailableOrganizations?: Array<{ workspaceId: string; workspaceName: string; workspaceStatus: string; accountName: string | null }>;
@@ -139,23 +140,23 @@ export type WorkspaceSidebarProps = {
 
 export function WorkspaceSidebar({
   activeModule,
+  activeItemId,
+  modules,
   mode = "desktop",
   unavailableOrganizations = [],
-  navigation,
   onDismiss,
   onNavigate,
   pathname,
   workspaces,
 }: WorkspaceSidebarProps) {
+  const contextualNavigation = useMemo(() => productNavigation(modules), [modules]);
   const instanceId = useId().replaceAll(":", "");
   const searchParams = useSearchParams();
-  const searchRef = useRef<HTMLInputElement>(null);
   const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
   const [workspaceError, setWorkspaceError] = useState("");
-  const [query, setQuery] = useState("");
-  const visibleNavigation = useMemo(() => navigation
+  const visibleNavigation = useMemo(() => contextualNavigation
     .map((section) => ({ ...section, items: section.items.filter((item) => item.showInSidebar !== false) }))
-    .filter((section) => section.items.length > 0), [navigation]);
+    .filter((section) => section.items.length > 0), [contextualNavigation]);
   // Newly authorized navigation groups start expanded; only explicit collapses are stored.
   const [closedSections, setClosedSections] = useState(() => new Set<string>());
   const [submenuOpen, setSubmenuOpen] = useState<Record<string, boolean>>({});
@@ -165,37 +166,6 @@ export function WorkspaceSidebar({
     activeWorkspace?.imageUrl,
     { fit: "contain", surface: "brand" },
   );
-
-  const filteredNavigation = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return visibleNavigation;
-    return visibleNavigation
-      .map((section) => ({
-        ...section,
-        items: section.items.flatMap((item) => {
-          const itemMatches = [item.label, item.description].some((text) => text?.toLocaleLowerCase().includes(normalizedQuery));
-          const matchingChildren = item.children?.filter((child) => child.label.toLocaleLowerCase().includes(normalizedQuery));
-          if (!itemMatches && !matchingChildren?.length) return [];
-          return [{ ...item, ...(itemMatches ? {} : { children: matchingChildren }) }];
-        }),
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [visibleNavigation, query]);
-
-  const focusSearch = useCallback(() => {
-    requestAnimationFrame(() => searchRef.current?.focus());
-  }, []);
-
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
-        event.preventDefault();
-        focusSearch();
-      }
-    };
-    document.addEventListener("keydown", handleShortcut);
-    return () => document.removeEventListener("keydown", handleShortcut);
-  }, [focusSearch]);
 
   const toggleSection = (sectionId: string) => {
     setClosedSections((current) => {
@@ -209,7 +179,7 @@ export function WorkspaceSidebar({
   const location = searchParams.size ? `${pathname}?${searchParams}` : pathname;
   const submenuIsOpen = (itemId: string, active: boolean) => submenuOpen[itemId] ?? active;
   const toggleSubmenu = (itemId: string, active: boolean) => {
-    setSubmenuOpen((current) => ({ ...current, [itemId]: !submenuIsOpen(itemId, active) }));
+    setSubmenuOpen((current) => ({ ...current, [itemId]: !(current[itemId] ?? active) }));
   };
 
   return (
@@ -313,21 +283,11 @@ export function WorkspaceSidebar({
           ) : null}
         </div>
 
-        <div className={styles.searchArea}>
-          <WorkspaceUniversalSearch
-            inputRef={searchRef}
-            onNavigate={onNavigate}
-            onQueryChange={setQuery}
-            query={query}
-            workspaceId={activeWorkspace?.id ?? ""}
-          />
-        </div>
-
         <nav aria-label="Main navigation" className={styles.navigation}>
-          {filteredNavigation.map((section) => {
+          {visibleNavigation.map((section) => {
             const sectionContentId = `${instanceId}-${section.id}`;
             const isOpen =
-              !section.label || Boolean(query) || !closedSections.has(section.id);
+              !section.label || !closedSections.has(section.id);
             return (
               <section className={styles.navigationSection} data-heading={Boolean(section.label) || undefined} key={section.id}>
                 {section.label ? (
@@ -350,13 +310,25 @@ export function WorkspaceSidebar({
                   <div className={styles.sectionContentInner}>
                     {section.items.map((item) => {
                       const ItemIcon = icons[item.icon];
-                      const active = pathname === item.href.split("?")[0]
-                        || (item.id === "settings" && pathname.startsWith("/workspace/settings/"));
-                      const showSubmenu = Boolean(item.children?.length) && (Boolean(query) || submenuIsOpen(item.id, active));
+                      const active = item.id === (activeItemId ?? productNavigationActive(pathname, searchParams, visibleNavigation));
+                      const defaultOpen = active || Boolean(item.children?.some((child) => child.href.split("?")[0] === pathname));
+                      const showSubmenu = Boolean(item.children?.length) && submenuIsOpen(item.id, defaultOpen);
                       return (
-                        <div className={styles.navigationItemGroup} key={item.id}>
+                        <div className={styles.navigationItemGroup} data-destination={item.id} key={item.id}>
                           <div className={styles.navigationItemRow} data-active={active || undefined}>
-                            <Link
+                            {item.children?.length ? (
+                              <AriaButton
+                                aria-controls={`${instanceId}-${item.id}-submenu`}
+                                aria-expanded={showSubmenu}
+                                className={`${styles.navigationItem} ${styles.accordionTrigger}`}
+                                isDisabled={!isOpen}
+                                onPress={() => toggleSubmenu(item.id, defaultOpen)}
+                              >
+                                <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
+                                <span>{item.label}</span>
+                                <ChevronDown aria-hidden="true" className={styles.accordionChevron} data-open={showSubmenu || undefined} size={15} />
+                              </AriaButton>
+                            ) : <Link
                               aria-current={active ? "page" : undefined}
                               className={styles.navigationItem}
                               data-active={active || undefined}
@@ -364,11 +336,11 @@ export function WorkspaceSidebar({
                               onClick={onNavigate}
                               tabIndex={isOpen ? undefined : -1}
                             >
-                              <ItemIcon aria-hidden="true" size={18} strokeWidth={1.8} />
+                              <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
                               <span>{item.label}</span>
-                            </Link>
-                            {item.children?.length ? <AriaButton aria-controls={`${instanceId}-${item.id}-submenu`} aria-expanded={showSubmenu} aria-label={`Toggle ${item.label} submenu`} className={styles.submenuToggle} isDisabled={!isOpen} onPress={() => toggleSubmenu(item.id, active)}><ChevronDown aria-hidden="true" data-open={showSubmenu || undefined} size={15} /></AriaButton> : null}
+                            </Link>}
                           </div>
+                          {item.id === "projects" && activeWorkspace?.id ? <ProjectShortcuts workspaceId={activeWorkspace.id} pathname={pathname} visible={isOpen} onNavigate={onNavigate} /> : null}
                           {item.children?.length ? <div aria-hidden={!showSubmenu} className={styles.submenu} data-open={showSubmenu || undefined} id={`${instanceId}-${item.id}-submenu`}>
                             <div className={styles.submenuInner}>{item.children.map((child) => {
                               const childActive = location === child.href;
@@ -383,9 +355,6 @@ export function WorkspaceSidebar({
               </section>
             );
           })}
-          {filteredNavigation.length === 0 ? (
-            <p className={styles.noResults}>No navigation results</p>
-          ) : null}
         </nav>
 
       </aside>

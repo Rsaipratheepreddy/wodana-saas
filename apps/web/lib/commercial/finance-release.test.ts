@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialData } from "./types";
-import { commercialReleaseInputsReady } from "./release";
+import { activeDeliveryQuote, commercialReleaseInputsReady, commercialReleaseReady, financeGatePaymentsReady } from "./release";
 
 function fixture(): CommercialData {
   return {
@@ -107,6 +107,7 @@ function fixture(): CommercialData {
       submittedAt: "2026-09-18T00:00:00.000Z",
       submittedBy: "Sales",
       submittedById: "sales",
+      financeReviewedById: "finance",
     },
     dealFile: {
       id: "deal",
@@ -122,6 +123,8 @@ function fixture(): CommercialData {
       cost: 50,
       margin: 50,
       commission: 0,
+      commissionLines: [{ recipientName: "Sales", type: "sales", basis: "amount", value: 1, amount: 1 }],
+      paymentProofUrl: "https://example.com/payment-proof",
       status: "active",
       approvedAt: "2026-09-18T00:00:00.000Z",
       approvedBy: "Owner",
@@ -138,10 +141,54 @@ describe("web commercial finance readiness", () => {
     data.receipts![0].status = "finance_verified";
     data.payments[0].status = "verified";
     expect(commercialReleaseInputsReady(data)).toBe(true);
+    data.ownerReview!.financeReviewedById = undefined;
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+    data.ownerReview!.financeReviewedById = "finance";
+    data.dealFile!.paymentProofUrl = undefined;
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+    data.dealFile!.paymentProofUrl = "https://example.com/payment-proof";
     data.payments[0].requiredForRelease = false;
     expect(commercialReleaseInputsReady(data)).toBe(false);
     data.payments[0].requiredForRelease = true;
     data.allocations![0].reversedAt = "2026-09-18T01:00:00.000Z";
     expect(commercialReleaseInputsReady(data)).toBe(false);
+  });
+
+  it("uses the paid main round, not the earlier design round, for Palm delivery", () => {
+    const data = fixture();
+    const main = { ...data.quotes[0], round: "main" as const };
+    const design = { ...data.quotes[0], id: "design", round: "design" as const };
+    data.quotes = [design, main];
+    data.palmFlow = { selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "sales", scope: {
+      design: true, mainQuotation: true, materialSelection: false, procurement: true,
+      manufacturing: false, siteWorks: false, installation: true,
+    } };
+    data.payments[0].sourceQuoteId = main.id;
+    data.payments[0].status = "verified";
+    data.receipts![0].status = "finance_verified";
+    data.payments.push({ ...data.payments[0], id: "design-payment", sourceQuoteId: design.id, status: "proof_submitted" });
+    expect(activeDeliveryQuote(data)?.id).toBe(main.id);
+    expect(financeGatePaymentsReady(data, main.id)).toBe(true);
+    expect(financeGatePaymentsReady(data)).toBe(false);
+    expect(commercialReleaseInputsReady(data)).toBe(true);
+    data.release = { id: "release", at: "2026-09-18T01:00:00.000Z", by: "Owner", quoteId: main.id, dealFileId: data.dealFile!.id, note: "Ready" };
+    expect(commercialReleaseReady(data)).toBe(true);
+    data.agreement!.quoteId = design.id;
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+  });
+
+  it("does not release a Palm material-list path with no actual client selections", () => {
+    const data = fixture();
+    data.quotes[0].round = "main";
+    data.palmFlow = { selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "sales", scope: {
+      design: false, mainQuotation: true, materialSelection: true, procurement: true,
+      manufacturing: false, siteWorks: false, installation: true,
+    } };
+    data.payments[0].sourceQuoteId = data.quotes[0].id;
+    data.payments[0].status = "verified";
+    data.receipts![0].status = "finance_verified";
+    expect(commercialReleaseInputsReady(data)).toBe(false);
+    data.palmFlow.scope.materialSelection = false;
+    expect(commercialReleaseInputsReady(data)).toBe(true);
   });
 });

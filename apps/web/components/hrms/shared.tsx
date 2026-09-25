@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { ControlledModalDialog } from "@/design-system";
+import { Inbox } from "lucide-react";
 import { hrmsRequest } from "@/lib/hrms/client";
 import styles from "./hrms.module.css";
 export function useHrms<T>(
@@ -71,6 +72,7 @@ export function Empty({
 }) {
   return (
     <div className={styles.empty}>
+      <Inbox size={28} aria-hidden="true" />
       <h2>{title}</h2>
       <p>{children}</p>
     </div>

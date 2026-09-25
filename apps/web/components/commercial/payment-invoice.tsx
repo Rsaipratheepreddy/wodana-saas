@@ -11,6 +11,7 @@ type Connection = {
   displayName: string;
   provider: string;
   status: string;
+  legalEntityId?: string | null;
 };
 type InvoiceChoice = {
   id: string;
@@ -122,7 +123,8 @@ export function PaymentInvoice({
         list = rows.filter(
           (c) =>
             ["zoho_books", "quickbooks"].includes(c.provider) &&
-            c.status === "connected",
+            c.status === "connected" &&
+            (!payment.legalEntityId || c.legalEntityId === payment.legalEntityId),
         );
       if (sequence !== requestSequence.current) return;
       setConnections(list);

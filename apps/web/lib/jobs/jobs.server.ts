@@ -108,12 +108,6 @@ export async function jobsRead(): Promise<{ workspaceId: string; data: JobIdenti
   }
   const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/jobs?limit=100&offset=0`);
   if (result.unauthenticated) redirect("/login");
-  // Jobs is a newer aggregate endpoint. Older tenant cores legitimately return
-  // 404/501; render the dashboard empty state instead of a demo-blocking alert.
-  if (result.upstream?.status === 404 || result.upstream?.status === 501) return {
-    workspaceId,
-    data: jobFixtureList(),
-  };
   if (!result.upstream?.ok) return {
     workspaceId,
     data: { items: [], total: 0, limit: 100, offset: 0 },

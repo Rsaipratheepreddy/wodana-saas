@@ -6,7 +6,7 @@ const ROLE_CODE = /^[a-z0-9]+(?:[_-][a-z0-9]+)*$/;
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
-  const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
+  const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : undefined;
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
   const roleCodes = Array.isArray(body?.roleCodes)
     ? body.roleCodes.filter((role): role is string => typeof role === "string")
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     : [];
 
   if (!UUID.test(workspaceId)) return invalidRequest("A valid workspace is required.");
-  if (displayName.length < 2 || displayName.length > 160) {
+  if (body?.displayName !== undefined && (typeof displayName !== "string" || displayName.length < 2 || displayName.length > 160)) {
     return invalidRequest("Enter the member's full name.");
   }
   if (!EMAIL.test(email) || email.length > 255) return invalidRequest("Enter a valid work email address.");

@@ -29,10 +29,10 @@ test("moves through the connected schedule, task, resource and calendar views", 
     page.getByRole("radio", { name: "Schedule & milestones" }),
   ).toHaveAttribute("aria-checked", "true");
   await expect(
-    page.getByRole("heading", { name: "Milestone timeline" }),
+    page.getByRole("heading", { name: "Milestones" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Baseline vs current forecast" }),
+    page.getByRole("heading", { name: "Task timeline" }),
   ).toBeVisible();
 
   await page.getByRole("radio", { name: "Tasks" }).click();
@@ -47,7 +47,7 @@ test("moves through the connected schedule, task, resource and calendar views", 
     page.getByRole("region", { name: "Project resources" }),
   ).toBeVisible();
 
-  await page.getByRole("radio", { name: "Work calendars" }).click();
+  await page.getByRole("radio", { name: "Calendar" }).click();
   await expect(
     page.getByRole("heading", { name: "Working hours & exceptions" }),
   ).toBeVisible();
@@ -70,7 +70,7 @@ test("keeps the planning workspace usable across themes and viewport sizes", asy
 
   await page.getByRole("radio", { name: "Schedule & milestones" }).click();
   await expect(
-    page.getByRole("heading", { name: "Milestone timeline" }),
+    page.getByRole("heading", { name: "Milestones" }),
   ).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),

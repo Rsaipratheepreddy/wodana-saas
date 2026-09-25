@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "scope": "factory batch authorization and factory-to-installation delivery",
+  "workspaceId": "8b48dbba-cde1-4bd2-b685-d20f108616a1",
+  "projectId": "77b28ddf-4722-4634-b3eb-d0cb997f6c8b",
+  "batchId": "09562a02-2aed-4bcf-8980-925158dce9bd",
+  "checks": [
+    "Declined unaccepted replacement restores original released scope through the commercial API",
+    "Concurrent identical create requests return one batch",
+    "Payload mismatch and duplicate active task allocation rejected",
+    "Persisted quantities, candidate exclusion and project-scoped projection",
+    "Nonmember cannot read factory batches",
+    "Source changes flag review while the batch snapshot stays frozen",
+    "Versioned cancellation is replay safe and preserves historical allocation",
+    "Booked factory work, independent measured output, lot rework and passed finished stock persist through the API",
+    "Passed lot dispatch, independent site receipt, installation output and independent installation QC remain linked",
+    "Signed partial handover preserves inspected quantity and frozen closeout documents; duplicate acceptance is blocked and remaining work stays open",
+    "Global operational work reflects persisted source states, filters completed work and enforces workspace access",
+    "Database RLS hides batch, allocation and replay records from another workspace"
+  ]
+}

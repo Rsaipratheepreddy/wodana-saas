@@ -18,6 +18,8 @@ export const statusLabel: Record<string, string> = {
   verified: "Verified",
   executed: "Signed agreement verified",
   submitted: "Submitted",
+  pending_finance: "Awaiting Finance",
+  pending_approval: "Awaiting Operations",
   approved: "Approved",
   returned: "Returned",
   rejected: "Rejected",

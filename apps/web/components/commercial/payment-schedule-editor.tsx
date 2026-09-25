@@ -206,8 +206,8 @@ export function PaymentScheduleEditor({
       {error ? <Callout title="Payment schedule unavailable" tone="danger">{error}</Callout> : null}
 
       {!readOnly && templates.length ? (
-        <details className={s.section}>
-          <summary>Saved schedules</summary>
+        <section className={s.section}>
+          <h3>Saved schedules</h3>
           <div className={s.actions}>
             {templates.map((template) => (
               <span
@@ -219,7 +219,7 @@ export function PaymentScheduleEditor({
               </span>
             ))}
           </div>
-        </details>
+        </section>
       ) : null}
 
       {quote.paymentTemplate ? (

@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { CircleCheck, CircleDot, ShieldCheck } from "lucide-react";
 import {
+  activeDeliveryQuote,
   agreementIsOperational,
   commercialReleaseInputsReady,
   commercialReleaseReady,
   materialApprovalsComplete,
+  palmMaterialListSignedOff,
+  paymentHasFinanceVerifiedReceipt,
   releasePaymentIsOperational,
 } from "@/lib/commercial/release";
 import type { CommercialState } from "@/lib/commercial/types";
@@ -16,41 +19,46 @@ export function PreExecutionFlow({
   state,
   section,
   root,
+  compact = true,
 }: {
   state: CommercialState;
   section: string;
   root: string;
+  compact?: boolean;
 }) {
   const data = state.data;
-  const accepted = data.quotes.find(
-    (quote) => quote.kind === "quotation" && quote.status === "accepted",
-  );
+  const accepted = activeDeliveryQuote(data);
   const requiredPayments = data.payments.filter(
-    (payment) => payment.requiredForRelease,
+    (payment) => payment.requiredForRelease && (!data.palmFlow || payment.sourceQuoteId === accepted?.id),
   );
-  const verifiedPayments = requiredPayments.filter(releasePaymentIsOperational).length;
+  const verifiedPayments = requiredPayments.filter((payment) =>
+    releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment)).length;
   const agreementReady =
     agreementIsOperational(data.agreement) && data.agreement?.quoteId === accepted?.id;
   const paymentsReady =
     requiredPayments.length > 0 &&
-    requiredPayments.every(releasePaymentIsOperational);
+    requiredPayments.every((payment) =>
+      releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment));
   const openChanges = data.requests.filter(
     (request) => !["resolved", "declined", "withdrawn"].includes(request.status),
   ).length;
   const materialsReady = Boolean(
-    accepted && materialApprovalsComplete(accepted, data.materialApprovals),
+    accepted && (data.palmFlow ? palmMaterialListSignedOff(data, accepted) : materialApprovalsComplete(accepted, data.materialApprovals)),
   );
   const ownerAndDealReady = Boolean(
     accepted &&
+      state.opportunityStatus === "won" &&
       data.ownerReview?.status === "approved" &&
       data.ownerReview.quoteId === accepted.id &&
       data.dealFile?.quoteId === accepted.id,
   );
   const designReady = Boolean(
     accepted &&
-      state.releaseReadiness &&
-      state.releaseReadiness.designsRequired > 0 &&
-      state.releaseReadiness.designsApproved === state.releaseReadiness.designsRequired,
+      (data.palmFlow && !data.palmFlow.scope.design || Boolean(
+        state.releaseReadiness &&
+        state.releaseReadiness.designsRequired > 0 &&
+        state.releaseReadiness.designsApproved === state.releaseReadiness.designsRequired,
+      )),
   );
   const releaseChecks = [
     Boolean(accepted),
@@ -112,13 +120,13 @@ export function PreExecutionFlow({
   ];
 
   return (
-    <nav className={s.preExecutionFlow} aria-label="Pre-execution readiness timeline">
+    <nav className={s.preExecutionFlow} aria-label="Pre-execution readiness timeline" data-compact={compact || undefined}>
       <div className={s.flowIntro}>
         <div>
-          <span>LIVE READINESS</span>
-          <strong>From accepted scope to execution release</strong>
+          <span>Release readiness</span>
+          {!compact ? <strong>From accepted scope to execution release</strong> : null}
         </div>
-        <small>{checksDone} of 7 release checks complete</small>
+        <small>{checksDone} of 7 checks complete</small>
       </div>
       <ol>
         {steps.map((step) => (

@@ -1,6 +1,7 @@
 import { NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { canonicalHash } from "../shared/crm-types";
+import { hasResolvedEnquiryType } from "./lead-options";
 
 type QualificationQuestion = {
   id?: string;
@@ -175,11 +176,19 @@ export async function evaluateQualification(
   }));
   validateQualificationQuestionDefinitions(questions);
   for (const question of questions) assertAnswer(question, answers.get(question.key)?.value);
-  const missingRequired = questions
+  const missingRequired = [
+    ...(!hasResolvedEnquiryType(serviceType) ? ["serviceType"] : []),
+    ...questions
     .filter(question => question.required && !isAnswered(answers.get(question.key)?.value))
-    .map(question => question.key);
+    .map(question => question.key),
+  ];
   if (requireComplete && missingRequired.length) {
-    throw new UnprocessableEntityException({ message: "Qualification requirements are not met", missing: missingRequired });
+    throw new UnprocessableEntityException({
+      message: missingRequired.includes("serviceType")
+        ? "Choose a specific enquiry type before qualifying this enquiry"
+        : "Qualification requirements are not met",
+      missing: missingRequired,
+    });
   }
   const evaluatedAt = new Date().toISOString();
   const evidence: QualificationEvidence = {

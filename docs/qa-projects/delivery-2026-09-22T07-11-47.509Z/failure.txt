@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-funnel.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: PUT /workspaces/c8d20839-4afb-49c0-8694-ea438dca2e1d/catalog/records: expected 200, got 400: {"message":"Unknown configuration field: symbol.","error":"Bad Request","statusCode":400}
+
+400 !== 200
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-funnel.mjs:91:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-funnel.mjs:920:60 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 400,
+  expected: 200,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

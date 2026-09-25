@@ -1,0 +1,54 @@
+# Palm Living commercial-to-project flow (client confirmation, 24 Sep 2026)
+
+Status: implementation contract, **not** a claim of production readiness.
+
+## Journey and ownership
+
+An enquiry has one selected service scope. The CRM owns Requirements, quote preparation, QS estimate review, client approval, Finance's payment record, and Owner/Admin approval **until the first applicable agreement is paid and approved**. That event creates exactly one Deal File, one Project Ref #, and one linked project. Subsequent design, main quotation, sourcing, and delivery work uses that project; it must not create a second deal or duplicate records. On Hold is an orthogonal state available at every stage and preserves the current stage and evidence.
+
+Sales Admin prepares a quote from the requirements, inspiration, moodboards, or agreed design scope. A Quantity Surveyor reviews and records the estimate before the quote can be issued to the client. Client acceptance is bound to the issued revision. Finance records/verifies the applicable receipt; only Owner/Admin approves the agreement/payment round. These are separate actors and events for each applicable quote round.
+
+| Service path | CRM before Deal File | First project stage | Subsequent stages |
+| --- | --- | --- | --- |
+| Design plus fitout/furniture | Requirements → Design Quote → QS → client approval → agreement, Finance-verified payment of at least AED 15,000 and Owner/Admin approval | Site visit & scope → Design & Specifications | Main quote → QS → client approval → second agreement, Finance payment and Owner/Admin approval → Material List Sign Off → applicable delivery |
+| Moodboards/design only | Requirements → Design Quote → QS → client approval → agreement, Finance-verified payment of at least AED 15,000 and Owner/Admin approval | Site visit & scope → Design & Specifications | Complete after accepted design deliverables; no main quote or delivery stages |
+| Furniture only, no design | Requirements → Main Quote → QS → client approval → agreement, Finance payment and Owner/Admin approval | Material List Sign Off | Procurement → applicable manufacturing/site/installation → Snagging → Client Handover |
+
+Delivery order where applicable: Material List Sign Off → Procurement → Manufacturing Readiness → Factory Production → Site Works → Installation → Snagging → Client Handover. Ready-made furniture skips Manufacturing Readiness and Factory Production. Service scope may skip other inapplicable stages, but a required approval cannot be bypassed by a stage skip. The ID/account manager schedules material selection with the client **after** applicable approval/payment. The client signs off the resulting material list before procurement. Conditional Founder/Creative Director sourcing approval is a future extension point, not a current mandatory gate.
+
+The design quote is a selected package/inspiration proposal before detailed design. Its first Finance-verified release payment is at least AED 15,000; the accepted fee may be higher. The sample design proposal shows a 100%-upfront AED 90,000 package, but that is an example, not a universal amount or schedule. First Owner approval creates the Deal File and Project Ref. The subsequent site visit records the confirmed design scope and flags any fee change for a controlled commercial review; detailed design does not start until this visit is recorded. If the client later opts into full ID/furniture/fitout, the separately reviewed main proposal, acceptance, agreement, and payment are appended to that **same** Deal File. The sample main proposal has an itemized BOQ, validity, client signature, and terms; its example prices and payment terms are not global defaults.
+
+Reference PDFs supplied by the client: [Design Fee Proposal](https://drive.google.com/file/d/1vEmVN32b6SafLE7V7rq8W2vULK6nNGHN/view?usp=sharing) and [Main Fitout/Furniture Proposal](https://drive.google.com/file/d/12OZ1iwamzXFsN2sAuyh2KjSAo8LRLx3q/view?usp=sharing). These are content references, not authority to copy client-specific names, addresses, prices, legal terms, or scope into another customer proposal.
+
+## Record fields and API dependencies
+
+- Enquiry: service type and explicit selected scope/capabilities; `not_sure` cannot silently select a route. Ready-made versus manufactured furniture must be recorded, not inferred from a title.
+- Quote round: `design` or `main`, revision/hash, Sales Admin preparer, QS estimate and reviewer, internal review state, client decision and evidence. Two rounds may coexist for one case.
+- Agreement/payment round: quote ID/hash, agreement evidence, finance-verified receipts and Owner/Admin decision, each tied to its own round. The second round must not overwrite the first.
+- Deal/project: one stable Deal File and Project Ref # linked to case/opportunity; project creation event at first approved paid round; later commercial evidence remains linked to that project.
+- Project workflow: selected stage set frozen per project, current stage, On Hold state, stage history, and required gate results. Existing frozen projects remain unchanged unless an audited migration explicitly maps them.
+- APIs: CRM intake/qualification, commercial quote commands and client portal acceptance, finance receipt and owner review, project creation/link, stage transition, material approval, manufacturing readiness, handover acceptance.
+
+## Minimum acceptance tests
+
+1. Each of the three paths above creates exactly one project at the correct first agreement/payment; a design path rejects a sub-AED 15,000 verified payment; repeated commands are idempotent.
+2. Neither quote can be issued without a QS estimate review; an old QS review is invalid after the quote revision changes.
+3. Client, Finance and Owner/Admin decisions are enforced independently for each applicable round.
+4. A design-plus-delivery project requires recorded site-visit scope before detailed design, retains its design data while the main quote completes inside it, and creates no second Deal File.
+5. Material-list approval follows the main paid agreement and blocks procurement, while Karen approval does not block this release.
+6. Ready-made furniture skips both factory stages; moodboards-only completes after design acceptance; On Hold prevents advancement without losing evidence.
+7. Existing projects and commercial data survive migration without automatic stage rewrites; desktop/mobile, dark mode, RTL and real Palm roles pass browser acceptance.
+
+Release is blocked until these behaviours pass against the same image and migration intended for Palm production, with verified backup and rollback.
+
+## Local verification update, 25 September 2026
+
+Palm project stage transitions now fail closed when the first paid, Owner-approved Deal File or its matching approval is missing. The next-action summary shows the same blocker. The disposable Palm flow smoke corrupted then restored a linked Deal File: the transition returned 409 while corrupt, then the design-to-main path continued after restoration. Focused stage/route tests passed (15); the full Business Core suite passed 1,238 tests with 10 skipped, and typecheck passed. Production migration and rollback review remain outstanding.
+
+New workspaces now provision a dedicated Quantity Surveyor role with estimate, cost-view, preparation-view and opportunity-view access. Migration `0119_quantity_surveyor_workspace_role` adds it to existing workspaces where absent, preserves any tenant-defined role with that code, and grants the newer estimate permission to existing system Owner/Admin roles. The disposable Palm run verified the new role permissions after migration and provisioning.
+
+The isolated Palm smoke now exercises **both** paid quotation rounds through the APIs: Sales saves and submits each quote, a separate QS approves its estimate, the client accepts the issued revision through the portal, Finance verifies each receipt and review, and a different Owner approves each Deal File round. It verifies that Finance approval alone opens no project, first Owner approval creates one Project Ref, the paid site visit and client-approved design precede the main quotation, and the second paid round retains the same Deal File and project. Design-only work freezes no main/delivery stages and requires client-approved deliverables to complete; On Hold blocks advancement without losing the site-visit record. Ready-made furniture now uses the API-driven main-quote path, starts its one project at that payment, and releases without a site plan, separate material meeting or factory stages. The sub-AED 15,000 negative case still uses direct synthetic evidence; this run does not prove production data migration, browser UX, or every conditional service path. The full Business Core suite passed 1,241 tests with 10 skipped, typecheck passed, and the generic isolated funnel remained green after the handover change.
+
+The same disposable design-plus-delivery case follows the Owner-approved main agreement/payment into material-list sign-off. Procurement and execution release both reject missing client material decisions; portal-approved selections then release the **existing** Deal/project into Procurement. It can enter Manufacturing Readiness after the contracted production payment, but Factory Production rejects an unready plan. The API test confirms quantities against the released BOQ, links factory and site tasks to the approved design, plans a factory material requirement, blocks readiness while stock is short, approves a linked purchase order, and independently inspects its receipt. Only then does it book capacity, mark the package Ready and advance the **same project** into Factory Production. Factory and site daily reports require another reviewer and independent QC; the site task cannot start until a separately reviewed dispatch is received and accepted. A controlled as-built record is reviewed and published, an open snag blocks handover until its correction is independently verified, the client accepts the frozen handover pack through the authenticated portal, the final account is closed, and the project reaches Completed. Unit regressions prevent an empty set of production packages, an unconfirmed delivery-quantity plan, or a plan stale against the released BOQ from satisfying the production-ready gate. A further handover regression avoids buying the same factory raw material a second time for installation when accepted finished output is already receipted; distinct site consumables still require their own evidence.
+
+This is an isolated API journey using synthetic records and a disposable local database, **not** evidence that every conditional path, browser/mobile screen, existing production record, tenant-specific permission, or deployment has been verified. Production data migration and UI acceptance remain open.

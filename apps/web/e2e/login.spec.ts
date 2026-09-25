@@ -172,8 +172,8 @@ test.describe("login UI", () => {
       await expect(page.getByRole("button", { name: "Use a recovery code" })).toBeVisible();
       return;
     }
-    await expect(page).toHaveURL(/\/workspace$/, { timeout: 15_000 });
-    await expect(page.getByRole("region", { name: "Company profile" })).toBeVisible();
+    await expect(page).toHaveURL(/\/workspace\/crm$/, { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
     await page.waitForLoadState("networkidle");
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();

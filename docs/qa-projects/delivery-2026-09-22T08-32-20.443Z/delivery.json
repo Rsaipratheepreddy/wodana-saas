@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "scope": "factory-to-installation delivery, partial handover, material and subcontract acceptance, supplier billing, warranty correction and operational authorization",
+  "workspaceId": "ea8d290f-3b31-4ab3-9cfd-a0fa7ad611e9",
+  "projectId": "76bbce27-9a4c-4e41-a3af-9faf55ae1b18",
+  "batchId": "61fecb33-2bac-4968-9a22-025a7fbe1fc6",
+  "checks": [
+    "Declined unaccepted replacement restores original released scope through the commercial API",
+    "Concurrent identical create requests return one batch",
+    "Payload mismatch and duplicate active task allocation rejected",
+    "Persisted quantities, candidate exclusion and project-scoped projection",
+    "Nonmember cannot read factory batches",
+    "Source changes flag review while the batch snapshot stays frozen",
+    "Versioned cancellation is replay safe and preserves historical allocation",
+    "Booked factory work, independent measured output, lot rework and passed finished stock persist through the API",
+    "Passed lot dispatch, independent site receipt, installation output and independent installation QC remain linked",
+    "Signed partial handover preserves inspected quantity and frozen closeout documents; duplicate acceptance is blocked and remaining work stays open",
+    "Partial receiving excludes quarantine and rejection from stock/billing, requires independent QC, blocks overbilling/overpayment and premature order closure",
+    "Subcontract service acceptance requires inspected task output, blocks early and duplicate certification across orders, and persists independent certification through invoice, full payment and order closure",
+    "Purchased wardrobe brackets pass partial receipt QC, issue to a booked site task, bound approved output by the two-brackets-per-unit basis and support independently inspected partial handover; unissued stock, excess output and returns of consumed stock are blocked",
+    "Warranty correction stays linked to accepted work, rejects uncovered tasks and requires independent verification without rewriting handover",
+    "Client updates persist draft, submission, independent publication and withdrawal; self-publishing and silent published edits are denied, and project section visibility persists",
+    "Global operational work reflects persisted source states, filters completed work and enforces workspace access",
+    "Database RLS hides batch, allocation and replay records from another workspace"
+  ]
+}

@@ -1,246 +1,69 @@
 "use client";
-import Link from "next/link";
-import { ArrowRight, PackageCheck, Truck, MessageSquare } from "lucide-react";
-import { label, type ProjectState, type Order } from "@/lib/projects/execution";
+import { ProjectOrderAmendments } from "./project-order-amendments";
+import {DecisionEvidenceLinks} from './project-decision-evidence';
+import { useState } from "react";
+import { label, type ProjectState, type Order, type SupplierInvoice } from "@/lib/projects/execution";
+import { orderReceivingPosition, procurementContext, procurementLocationLabel } from "@/lib/projects/procurement-context";
 import { money } from "@/lib/commercial/client";
-import theme from "../crm/crm-workspace-colors.module.css";
-import f from "./project-flow.module.css";
+import { Badge, Button, MenuButton, SegmentedControl } from "@/design-system";
+import c from "./project-order-detail.module.css";
 import s from "./project-workspace.module.css";
-export function ProjectOrderDetail({
-  state,
-  order: o,
-  busy,
-  onEdit,
-  onVendor,
-  onStep,
-  onComments,
-}: {
-  state: ProjectState;
-  order: Order;
-  busy: boolean;
-  onEdit: () => void;
-  onVendor: () => void;
-  onStep: () => void;
-  onComments: () => void;
+const date = (value?: string) => value && !Number.isNaN(Date.parse(value)) ? new Intl.DateTimeFormat("en-GB", {day:"numeric",month:"short",year:"numeric",timeZone:"UTC"}).format(new Date(value)) : "Not set";
+export function ProjectOrderDetail({state,order:o,busy,onEdit,onCancelRequest,onReplaceRequest,onOpenRelated,onProposeAmendment,onDecideAmendment,onReassignAmendment,onInspectReceipt,onVendor,onStep,onInvoice,onShipment,onNotes,onOffer,onApproveInvoice,onPayInvoice,onReopen,focusedAmendmentId,initialSection="items"}: {
+  onInspectReceipt?:(receipt:Order["receipts"][number])=>void;
+  onReassignAmendment?:(amendment:NonNullable<Order["amendments"]>[number])=>void;
+  onProposeAmendment?:()=>void; onDecideAmendment?:(amendment:NonNullable<Order["amendments"]>[number],decision:"approved"|"rejected"|"withdrawn")=>void;
+  onReplaceRequest?:()=>void; onOpenRelated?:(id:string)=>void; onCancelRequest?:()=>void; onReopen?:()=>void; initialSection?:string; focusedAmendmentId?:string; state:ProjectState; order:Order; busy:boolean; onEdit:()=>void; onVendor:()=>void; onStep:()=>void;
+  onOffer:()=>void; onApproveInvoice:(invoice:SupplierInvoice)=>void; onPayInvoice:(invoice:SupplierInvoice)=>void;
+  onInvoice:(invoice?:SupplierInvoice)=>void; onShipment:()=>void; onNotes:()=>void;
 }) {
-  const material = state.data.materials.find((m) => m.id === o.materialId),
-    task = state.data.tasks.find((t) => t.id === o.taskId),
-    accepted = o.receipts.reduce((n, r) => n + r.accepted, 0),
-    rejected = o.receipts.reduce((n, r) => n + r.rejected, 0),
-    pending = Math.max(0, o.quantity - accepted),
-    step = [
-      "enquiry",
-      "draft",
-      "submitted",
-      "approved",
-      "acknowledged",
-      "closed",
-    ].indexOf(o.status),
-    next =
-      o.status === "enquiry"
-        ? "Compare vendor offer"
-        : o.status === "draft"
-          ? "Submit for approval"
-          : o.status === "submitted"
-            ? "Approve order"
-            : o.status === "approved"
-              ? "Review vendor confirmation"
-              : pending
-                ? "Verify delivery"
-                : "Close completed order";
-  return (
-    <div className={`${theme.theme} ${f.orderDetail}`}>
-      <header className={f.orderHero}>
-        <div>
-          <span className={f.route}>
-            {o.number} ·{" "}
-            {o.kind === "factory" ? "Outside factory" : label(o.kind)}
-          </span>
-          <h2>{o.title}</h2>
-          <p>{o.vendor}</p>
-        </div>
-        <span className={s.status} data-state={o.status}>
-          {label(o.status)}
-        </span>
-      </header>
-      <div className={f.flowSteps}>
-        {["Offer", "Approval", "Vendor confirmation", "Delivery"].map(
-          (x, i) => (
-            <div key={x} data-done={step >= [1, 3, 4, 5][i]}>
-              <span>{i + 1}</span>
-              <strong>{x}</strong>
-            </div>
-          ),
-        )}
-      </div>
-      <div className={f.orderFacts}>
-        <div>
-          <small>Order value</small>
-          <strong>{money(o.quantity * o.unitCost, o.currency)}</strong>
-        </div>
-        <div>
-          <small>Required quantity</small>
-          <strong>
-            {o.quantity} {o.unit}
-          </strong>
-        </div>
-        <div>
-          <small>Promised delivery</small>
-          <strong>{o.promisedDate}</strong>
-        </div>
-      </div>
-      <section className={f.nextAction}>
-        <PackageCheck size={22} />
-        <div>
-          <h3>
-            {["closed", "cancelled"].includes(o.status)
-              ? label(o.status)
-              : next}
-          </h3>
-          <p>
-            {o.status === "approved"
-              ? "Check the vendor’s dates and scope before accepting their confirmation."
-              : o.status === "acknowledged"
-                ? `${accepted} accepted · ${rejected} rejected · ${pending} ${o.unit} still due.`
-                : o.status === "submitted"
-                  ? `Review ${money(o.quantity * o.unitCost, o.currency)} against the approved project budget.`
-                  : o.status === "draft"
-                    ? "Confirm the scope, quantity, vendor and agreed rate."
-                    : o.status === "enquiry"
-                      ? "Review the vendor’s offer alongside the other offers for this scope."
-                      : "The order history remains available below."}
-          </p>
-        </div>
-        {state.canBuy && !["closed", "cancelled"].includes(o.status) && (
-          <button
-            className={s.primary}
-            disabled={busy || (o.status === "submitted" && !state.canReview)}
-            onClick={onStep}
-          >
-            {next}
-            <ArrowRight size={14} />
-          </button>
-        )}
-      </section>
-      <div className={f.orderColumns}>
-        <section>
-          <h3>What this order supplies</h3>
-          {material ? (
-            <>
-              <strong>{material.title}</strong>
-              <p>{material.specification}</p>
-              <Link
-                className={s.link}
-                href={`/workspace/projects/${state.id}/material-planning`}
-              >
-                Material requirement <ArrowRight size={13} />
-              </Link>
-            </>
-          ) : (
-            <p>
-              {o.kind === "material"
-                ? "Link a material requirement before approval."
-                : task?.description || o.title}
-            </p>
-          )}
-          {task && (
-            <Link
-              className={f.connectedTask}
-              href={`/workspace/projects/${state.id}/${task.location === "factory" ? "production" : "site-work"}?record=${task.id}`}
-            >
-              <strong>{task.title}</strong>
-              <small>
-                {task.area} ·{" "}
-                {state.members.find((m) => m.id === task.ownerId)?.name ??
-                  "Owner needed"}
-              </small>
-              <ArrowRight size={15} />
-            </Link>
-          )}
-        </section>
-        <section>
-          <h3>
-            <Truck size={15} />
-            Receipts & inspection
-          </h3>
-          {o.receipts.length ? (
-            o.receipts.map((r) => (
-              <div className={f.receipt} key={r.id}>
-                <strong>
-                  {r.accepted} accepted · {r.rejected} rejected
-                </strong>
-                <p>{r.evidence}</p>
-                <small>{new Date(r.at).toLocaleString()}</small>
-              </div>
-            ))
-          ) : (
-            <p>
-              Procurement records accepted and rejected quantities when the
-              delivery arrives.
-            </p>
-          )}
-          {o.acknowledgement && (
-            <p>
-              <strong>Confirmed:</strong> {o.acknowledgement}
-            </p>
-          )}
-        </section>
-      </div>
-      <section>
-        <div className={f.sectionHeader}>
-          <h3>Vendor updates</h3>
-          {state.canBuy && !["closed", "cancelled"].includes(o.status) && (
-            <button className={s.button} onClick={onVendor}>
-              Open vendor workspace <ArrowRight size={13} />
-            </button>
-          )}
-        </div>
-        {o.vendorUpdates?.length ? (
-          <ol className={f.updateTimeline}>
-            {[...o.vendorUpdates].reverse().map((u) => (
-              <li key={u.id}>
-                <span className={f.timelineDot} />
-                <div>
-                  <strong>
-                    {label(u.kind)} · {u.date}
-                  </strong>
-                  <p>{u.note}</p>
-                  {u.evidence && <p>{u.evidence}</p>}
-                  <small>
-                    {u.quantity} {o.unit}
-                    {u.unitCost !== undefined
-                      ? ` · ${money(u.quantity * u.unitCost, o.currency)}`
-                      : ""}{" "}
-                    · Received {new Date(u.at).toLocaleString()}
-                  </small>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className={f.caption}>
-            Share the secure order link to collect an offer, confirmed dates and
-            delivery updates.
-          </p>
-        )}
-      </section>
-      <footer className={f.detailActions}>
-        <button className={s.button} onClick={onComments}>
-          <MessageSquare size={14} />
-          Comments
-        </button>
-        {state.canBuy && ["draft", "enquiry"].includes(o.status) && (
-          <button className={s.button} onClick={onEdit}>
-            Edit {o.status === "enquiry" ? "enquiry" : "draft order"}
-          </button>
-        )}
-        <Link
-          className={s.button}
-          href={`/workspace/projects/${state.id}/commercial`}
-        >
-          Commercial & accounting <ArrowRight size={13} />
-        </Link>
-      </footer>
-    </div>
-  );
+  const [selectedSection,setSection]=useState(initialSection);
+  const {material,task,location,area}=procurementContext(state.data,o);
+  const {accepted,pendingInspection,remainingToArrive}=orderReceivingPosition(state.data,o);
+  const rejected=o.receipts.reduce((n,r)=>n+r.rejected,0);
+  const invoices=(state.data.supplierInvoices??[]).filter(i=>i.orderId===o.id);
+  const enquiry=o.status==="enquiry", approved=["approved","acknowledged","closed"].includes(o.status);
+  const section=selectedSection;
+  const specification=o.rfqSnapshot?.specification ?? material?.specification;
+  const workTitle=o.rfqSnapshot?.workTitle ?? task?.title;
+  const offers=(o.vendorUpdates??[]).filter(u=>u.kind==="quotation");
+  const service=o.kind==="subcontract";
+  const receiptLabel=service?"Accept measured service":"Receive materials";
+  const next=o.status==="draft"?"Submit for approval":o.status==="submitted"?"Approve order":o.status==="approved"?(service?"Confirm service date":"Confirm delivery date"):remainingToArrive?receiptLabel:"Close order";
+  const primarySections=[{id:"items",label:"Items"},enquiry?{id:"offers",label:"Offers"}:{id:"deliveries",label:service?"Acceptance":"Shipping"}];
+  const moreSections=[...(!enquiry&&offers.length?[{id:"offers",label:"Offers"}]:[]),...(!enquiry?[{id:"invoices",label:"Invoices"},...((o.amendments?.length||["approved","acknowledged"].includes(o.status))?[{id:"amendments",label:"Amendments"}]:[])]:[]),{id:"notes",label:"Notes"}];
+  return <div className={c.detail}>
+    <div className={c.top}><strong>{o.number} · {o.vendor || "Supplier not selected"}</strong><span className={s.status} data-state={o.status}>{label(o.status)}</span></div>
+    {o.status==="closed" && <div className={c.top}><p className={c.note}>{service?"Service acceptance closed. Invoices are tracked separately.":"Receiving closed. Factory progress, installation and invoices are tracked separately."}</p>{state.canBuy && state.canReview && onReopen && <Button size="compact" isDisabled={busy} onPress={onReopen}>{service?"Reopen acceptance":"Reopen receiving"}</Button>}</div>}
+    {o.kind==="material" && !material && <p role="alert" className={c.note}>Link a material requirement before approval so accepted receipts update stock.</p>}
+    <dl className={c.facts}>
+      <div><dt>For</dt><dd>{procurementLocationLabel(location)} · {area}</dd></div>
+      <div><dt>{enquiry?"Required by":service?"Service due":"Expected delivery"}</dt><dd>{date(o.promisedDate)}</dd></div>
+      {o.sourceEnquiry && o.rfqSnapshot && <div><dt>Originally requested</dt><dd>{o.rfqSnapshot.quantity} {o.rfqSnapshot.unit} · {o.sourceEnquiry}</dd></div>}
+      {o.replacesRequestId && <div><dt>Replaces</dt><dd><Button size="compact" variant="quiet" onPress={()=>onOpenRelated?.(o.replacesRequestId!)}>{state.data.orders.find(order=>order.id===o.replacesRequestId)?.number ?? "Previous request"}</Button></dd></div>}
+      {o.replacedByRequestId && <div><dt>Replaced by</dt><dd><Button size="compact" variant="quiet" onPress={()=>onOpenRelated?.(o.replacedByRequestId!)}>{state.data.orders.find(order=>order.id===o.replacedByRequestId)?.number ?? "Replacement request"}</Button></dd></div>}
+    </dl>
+    {o.replacementReason && <p className={c.note}>{o.replacementReason}</p>}
+    <div className={c.subtabs}><SegmentedControl label="Order detail sections" value={section} onChange={setSection} options={primarySections} /><MenuButton size="compact" label={moreSections.find(item=>item.id===section)?.label??"More"} items={moreSections} onAction={setSection}/></div>
+    {section==="items" && <section><h3>{service?"Service scope":enquiry?"Requested items":"Ordered items"}</h3><div className={c.scroll}><table><thead><tr><th>{service?"Service / work":"Material / item"}</th><th>Quantity</th><th>Unit price</th><th>Amount · before tax</th></tr></thead><tbody><tr><td><strong>{o.rfqSnapshot?.title ?? (material?.title || o.title)}</strong>{specification && <p className={c.note}>{specification}</p>}{workTitle && <small className={c.note}>For: {workTitle}</small>}</td><td>{o.quantity} {o.unit}</td><td>{enquiry && !o.unitCost?"Awaiting quote":money(o.unitCost,o.currency)}</td><td>{enquiry && !o.unitCost?"Awaiting quote":money(o.quantity*o.unitCost,o.currency)}</td></tr></tbody></table></div></section>}
+    {section==="offers" ? <section><div className={c.top}><h3>Supplier offers</h3>{enquiry && state.canBuy && <div className={c.links}><Button size="compact" onPress={onVendor}>Share request</Button><Button size="compact" onPress={onOffer}>Record offer</Button><Button size="compact" variant="primary" isDisabled={!offers.length} onPress={onStep}>Select quote</Button></div>}</div>{offers.length ? <div className={c.scroll}><table><thead><tr><th>State</th><th>Received</th><th>Quantity</th><th>Unit price</th><th>Delivery</th><th>Notes / reference</th></tr></thead><tbody>{offers.map(u=><tr key={u.id}><td><strong>{o.selectedOffer?.offerId===u.id?"Selected":u.id===offers.at(-1)?.id?"Latest":"Superseded"}</strong></td><td>{date(u.at)}</td><td>{u.quantity} {o.unit}</td><td>{u.unitCost===undefined?"—":money(u.unitCost,o.currency)}</td><td>{date(u.date)}</td><td>{u.note}<p className={c.note}>{u.evidence}</p></td></tr>)}</tbody></table></div>:<p className={c.note}>Awaiting supplier offer.</p>}{o.selectedOffer && <p className={c.note}>Selected {o.selectedOffer.quantity} {o.unit} · {date(o.selectedOffer.selectedAt)} · {o.selectedOffer.reason}</p>}</section> : null}
+    {!enquiry && section==="deliveries" && <section>
+      {!service && <>
+        <div className={c.top}><h3>Shipping</h3>{state.canBuy && ["approved","acknowledged"].includes(o.status) && remainingToArrive>0 && <Button size="compact" onPress={onShipment} isDisabled={busy}>Update shipment</Button>}</div>
+        {o.shipments?.length ? <div className={c.scroll}><table><thead><tr><th>State</th><th>Quantity</th><th>Expected</th><th>Shipment / carrier</th><th>Notes</th></tr></thead><tbody>{[...o.shipments].reverse().map(shipment=><tr key={shipment.id}><td><Badge tone={shipment.status==="arrived"?"success":shipment.status==="dispatched"?"info":"neutral"}>{label(shipment.status)}</Badge></td><td>{shipment.quantity} {o.unit}</td><td>{date(shipment.expectedDate)}</td><td>{shipment.reference}<p className={c.note}>{shipment.carrier}</p></td><td>{shipment.note || "—"}</td></tr>)}</tbody></table></div>:<p className={c.note}>No shipment updates.</p>}
+      </>}
+      <div className={c.top}><h3>{service?"Service acceptance":"Receiving"}</h3>{state.canBuy && !["closed","cancelled"].includes(o.status) && !(o.status==="acknowledged" && pendingInspection>0 && remainingToArrive===0) && <Button size="compact" variant="primary" isDisabled={busy || (o.status==="submitted"&&!state.canReview)} onPress={onStep}>{next}</Button>}</div>
+      <p className={c.note}>{accepted} of {o.quantity} {o.unit} {service?"certified":"accepted"}{pendingInspection?` · ${pendingInspection} awaiting inspection`:""}{remainingToArrive?` · ${remainingToArrive} to arrive`:""}{rejected?` · ${rejected} rejected`:""}</p>
+      {o.receipts.length ? <div className={c.scroll}><table><thead><tr><th>{service?"Measured":"Received"}</th><th>Quantity</th><th>Inspection</th><th>Reference</th><th>Action</th></tr></thead><tbody>{o.receipts.map(r=><tr key={r.id}><td>{date(r.receivedOn || r.at)}</td><td>{r.accepted+r.rejected+(r.pending??0)} {o.unit}</td><td><span className={c.inspection}>{r.accepted>0&&<Badge tone="success">{service?"Certified":"Accepted"} {r.accepted} {o.unit}</Badge>}{(r.pending??0)>0&&<Badge tone="warning">{service?"Awaiting certification":"Pending QC"} {r.pending} {o.unit}</Badge>}{r.rejected>0&&<Badge tone="danger">Rejected {r.rejected} {o.unit}</Badge>}</span></td><td>{r.evidence}<DecisionEvidenceLinks files={r.evidenceFiles} state={state}/>{r.inspections?.map(i=><div key={i.id} className={c.note}>{date(i.at)} · {state.members.find(m=>m.id===i.by)?.name??"Reviewer"} · {i.accepted} accepted / {i.rejected} rejected · {i.evidence}<DecisionEvidenceLinks files={i.evidenceFiles} state={state}/></div>)}</td><td>{(r.pending??0)>0 && state.canReview && r.receivedBy!==state.memberId && o.status==="acknowledged" && onInspectReceipt ? <Button size="compact" isDisabled={busy} onPress={()=>onInspectReceipt(r)}>{service?"Certify work":"Inspect"}</Button> : (r.pending??0)>0 ? "Awaiting independent review" : "—"}</td></tr>)}</tbody></table></div>:<p className={c.note}>{service?"No service measurements recorded.":"No receipts recorded."}</p>}
+      {service && <p className={c.note}>Only certified quantities are eligible for invoice approval.</p>}
+    </section>}
+    {!enquiry && section==="invoices" && <section><div className={c.top}><h3>Supplier invoices</h3>{state.canBuy && approved && <Button size="compact" isDisabled={busy} onPress={()=>onInvoice()}>Record invoice</Button>}</div>{invoices.length?<div className={c.scroll}><table><thead><tr><th>Invoice / document</th><th>Due</th><th>Total incl. tax</th><th>Paid</th><th>Status</th><th></th></tr></thead><tbody>{invoices.map(i=><tr key={i.id}><td>{i.number}<p className={c.note}>{i.evidence}</p></td><td>{date(i.dueDate)}</td><td>{money(i.quantity*i.unitCost+i.tax,o.currency)}</td><td>{money(i.payments.reduce((n,p)=>n+p.amount,0),o.currency)}</td><td>{label(i.status)}</td><td><div className={c.links}><Button size="compact" onPress={()=>onInvoice(i)}>Details</Button>{state.canReview && <Button size="compact" isDisabled={busy || (i.status==="approved" && i.payments.reduce((n,p)=>n+p.amount,0)>=i.quantity*i.unitCost+i.tax-0.005)} onPress={()=>i.status==="draft"?onApproveInvoice(i):onPayInvoice(i)}>{i.status==="draft"?"Approve":"Record payment"}</Button>}</div></td></tr>)}</tbody></table></div>:<p className={c.note}>No supplier invoice recorded. Add the supplier’s bill when received.</p>}</section>}
+    {section==="amendments" && onProposeAmendment && onDecideAmendment && <ProjectOrderAmendments focusedId={focusedAmendmentId} state={state} order={o} busy={busy} onPropose={onProposeAmendment} onDecide={onDecideAmendment} onReassign={onReassignAmendment}/>}
+    {section==="notes" && <section><div className={c.top}><h3>Notes</h3>{state.canBuy && <Button size="compact" isDisabled={busy} onPress={onNotes}>Edit notes</Button>}</div><p className={c.note}>{o.notes || "No notes added."}</p>{o.acknowledgement && <p className={c.note}>Supplier confirmation: {o.acknowledgement}</p>}{(o.vendorUpdates??[]).filter(u=>u.kind!=="quotation").map(u=><p className={c.note} key={u.id}>{date(u.at)} · {label(u.kind)} · {u.note}{u.evidence?` · ${u.evidence}`:""}</p>)}</section>}
+    {section==="items" && state.canBuy && o.status==="acknowledged" && remainingToArrive>0 && <div><Button size="compact" variant="primary" isDisabled={busy} onPress={onStep}>{receiptLabel}</Button><p className={c.note}>{accepted} / {o.quantity} {o.unit} {service?"certified":"accepted"} · {remainingToArrive} to arrive</p></div>}
+    {section==="items" && !enquiry && state.canBuy && ["draft","submitted"].includes(o.status) && <div><Button size="compact" variant="primary" isDisabled={busy || (o.status==="submitted"&&!state.canReview)} onPress={onStep}>{next}</Button></div>}
+    {section==="items" && !o.replacedByRequestId && !o.sourceEnquiry && ["enquiry","cancelled"].includes(o.status) && o.rfqSnapshot && o.materialId && o.vendorId && state.canBuy && onReplaceRequest && <div><Button size="compact" isDisabled={busy} onPress={onReplaceRequest}>Replace request</Button></div>}
+    {section==="items" && (enquiry || (o.status==="draft" && o.sourceEnquiry)) && state.canBuy && onCancelRequest && <div><Button size="compact" isDisabled={busy} onPress={onCancelRequest}>{enquiry?"Cancel request":"Cancel selection"}</Button></div>}
+    {section==="items" && state.canBuy && ["draft","enquiry"].includes(o.status) && !(enquiry && (o.rfqSnapshot || o.vendorUpdates?.length)) && <div><Button size="compact" isDisabled={busy} onPress={onEdit}>{enquiry?"Edit request":"Edit order"}</Button></div>}
+  </div>;
 }

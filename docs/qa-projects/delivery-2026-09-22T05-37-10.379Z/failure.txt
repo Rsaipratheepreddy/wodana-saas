@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-delivery-flows.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: /workspaces/03888c96-7e2d-434f-8921-f6d64910673e/projects/3fb3bb10-02c1-42c5-876c-4186dfabae88/execution: {"message":"Link the approved design evidence for Revised wardrobe specification.","error":"Conflict","statusCode":409}
+
+409 !== 201
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:22:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:88:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 409,
+  expected: 201,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

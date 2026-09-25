@@ -41,6 +41,7 @@ import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
+import { UpdateHomeLayoutDto } from "./dto/update-home-layout.dto";
 import { CompleteOnboardingDto, UpdateOnboardingDto } from "./dto/update-onboarding.dto";
 import { VersionDto } from "./dto/version.dto";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
@@ -130,6 +131,21 @@ export class WorkspacesController {
     @Body() input: UpdateWorkspaceAppearanceDto,
   ) {
     return this.workspaces.updateAppearance(actor, workspaceId, input);
+  }
+
+  @Get(":workspaceId/home-layout")
+  homeLayout(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeLayout(actor, workspaceId);
+  }
+
+  @Get(":workspaceId/home-overview")
+  homeOverview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeOverview(actor, workspaceId);
+  }
+
+  @Put(":workspaceId/home-layout")
+  updateHomeLayout(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: UpdateHomeLayoutDto) {
+    return this.workspaces.updateHomeLayout(actor, workspaceId, input);
   }
 
   @Patch(":workspaceId/company-profile")

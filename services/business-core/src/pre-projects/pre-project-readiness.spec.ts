@@ -164,7 +164,7 @@ describe("Preparation pricing readiness", () => {
     ]);
   });
 
-  it("keeps review, material, site and newer-design concerns as warnings", () => {
+  it("keeps material, site and newer-design concerns as warnings without requiring raw-note review", () => {
     const item = readyItem({
       reviewStatus: "captured",
       specification: { materials: [{ status: "proposed" }] },
@@ -180,7 +180,6 @@ describe("Preparation pricing readiness", () => {
     expect(result.ready).toBe(true);
     expect(result.warnings.map((value) => value.code)).toEqual([
       "open_site_observations",
-      "requirement_review",
       "newer_design_revision",
       "material_selection_pending",
     ]);
@@ -242,6 +241,20 @@ describe("Preparation pricing readiness", () => {
       "RESUME_ENGAGEMENT",
       "ADD_SITE_PLAN",
     ]);
+  });
+
+  it("allows a pre-payment design proposal before the site visit without relaxing the main quote", () => {
+    const facts = readyFacts({ sitePlanCount: 0, items: [] });
+    const design = evaluatePreProjectReadiness(facts, {
+      requireIncludedScope: false, requireSitePlan: false, scopeReferences: [],
+    });
+    expect(design.ready).toBe(true);
+    expect(design.checks.some(value => value.code === "site_plan")).toBe(false);
+    const main = evaluatePreProjectReadiness(facts, {
+      requireIncludedScope: false, scopeReferences: [],
+    });
+    expect(main.ready).toBe(false);
+    expect(main.blockers.map(value => value.code)).toContain("site_plan");
   });
 
   it("requires a current confirmed definition and returns the correct workflow action", () => {

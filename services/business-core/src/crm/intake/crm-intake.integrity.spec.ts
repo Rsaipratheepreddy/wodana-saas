@@ -3,12 +3,13 @@ import { canonicalHash, stableHash } from "../shared/crm-types";
 import { CrmIntakeService } from "./crm-intake.service";
 
 const intake = (overrides: Record<string, unknown> = {}) => ({
-  source: "website",
-  channel: "form",
+  source: "company",
+  channel: "website",
   intakeMethod: "manual",
   receivedAt: "2026-09-15T08:00:00.000Z",
-  party: { displayName: "Asha Rao", email: "asha@example.com" },
+  party: { displayName: "Asha Rao", email: "asha@example.com", mobile: "+971501234567" },
   serviceType: "not_sure",
+  details: { emirate: "dubai" },
   originalPayload: { campaign: "autumn", nested: { b: 2, a: 1 } },
   ...overrides,
 });
@@ -45,15 +46,29 @@ const candidate = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("CRM intake idempotency integrity", () => {
+  it.each(["manual", "form", "import", "webhook", "automated", "api"])("rejects incomplete %s intake before creating records", async (intakeMethod) => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const { instance } = service(query);
+    for (const [change, message] of [
+      [{ party: { displayName: "Asha Rao", mobile: "" } }, "mobile number"],
+      [{ serviceType: "" }, "enquiry type"],
+      [{ details: { emirate: "" } }, "emirate"],
+    ] as const) {
+      await expect(instance["ingest"]({ query } as never, "workspace", null, "integration", `${intakeMethod}-${message}`, undefined,
+        intake({ intakeMethod, ...change }) as never)).rejects.toThrow(message);
+    }
+    expect(query.mock.calls.some(([sql]) => sql.includes("INSERT INTO crm_intake_events"))).toBe(false);
+  });
   it("replays version-2 intake content independent of JSON key order", async () => {
     const reordered = {
       originalPayload: { nested: { a: 1, b: 2 }, campaign: "autumn" },
       serviceType: "not_sure",
-      party: { email: "asha@example.com", displayName: "Asha Rao" },
+      details: { emirate: "dubai" },
+      party: { email: "asha@example.com", mobile: "+971501234567", displayName: "Asha Rao" },
       receivedAt: "2026-09-15T08:00:00.000Z",
       intakeMethod: "manual",
-      channel: "form",
-      source: "website",
+      channel: "website",
+      source: "company",
     };
     const query = vi.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes("SELECT id,payload_hash,payload_hash_version")) {
@@ -111,6 +126,27 @@ describe("CRM intake idempotency integrity", () => {
     expect(inserted?.[1]?.[9]).toBe(canonicalHash(intake()));
     expect(query.mock.calls.filter(([sql]) => sql.includes("INSERT INTO crm_identity_candidates"))).toHaveLength(2);
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.identity.review_required.v1" }));
+  });
+
+  it("normalizes local integration numbers using the workspace locale before identity matching", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT id,payload_hash,payload_hash_version")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT default_locale")) return { rows: [{ defaultLocale: "en-AE" }], rowCount: 1 };
+      if (sql.includes("INSERT INTO crm_intake_events")) return { rows: [{ id: "intake" }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { instance } = service(query);
+    vi.spyOn(instance as never, "identityMatches" as never).mockResolvedValue([
+      { partyId: "party-1", strength: "exact", score: 1, reasons: ["verified_phone"] },
+      { partyId: "party-2", strength: "exact", score: 1, reasons: ["verified_phone"] },
+    ] as never);
+    await instance["ingest"]({ query } as never, "workspace", null, "integration", "local-phone-key", undefined,
+      intake({ party: { displayName: "Asha Rao", mobile: "050 123 4567" } }) as never);
+    const inserted = query.mock.calls.find(([sql]) => sql.includes("INSERT INTO crm_intake_events"));
+    expect(inserted?.[1]?.[10]).toMatchObject({
+      party: { mobile: "+971501234567", mobileCountryCode: "AE" },
+      submittedParty: { mobile: "050 123 4567" },
+    });
   });
 
   it("rejects materially future-dated intake before creating a record", async () => {

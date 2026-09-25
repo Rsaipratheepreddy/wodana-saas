@@ -32,7 +32,7 @@ describe("public enquiry form branding", () => {
       headingFont: "alta", bodyFont: "montserrat", logoUrl: "/api/auth/tenant-logo/plm",
     });
     expect(result.consentLabel).toBe("I agree to be contacted about this enquiry.");
-    expect(result.questions[0]).not.toHaveProperty("field");
+    expect(result.questions[0]).toMatchObject({ id: "name", field: "displayName" });
     expect(result).not.toHaveProperty("source");
     expect(result).not.toHaveProperty("channel");
     expect(result).not.toHaveProperty("workspaceId");

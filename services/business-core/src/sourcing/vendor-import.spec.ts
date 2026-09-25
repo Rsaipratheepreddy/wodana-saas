@@ -1,0 +1,18 @@
+import 'reflect-metadata';
+import {describe,it,expect,vi} from 'vitest';
+import {plainToInstance} from 'class-transformer';
+import {validate} from 'class-validator';
+import {randomUUID} from 'node:crypto';
+import {reviewSupplierImport} from './vendor-import';
+import {ImportVendorsDto,type ImportVendorRowDto} from './vendor.dto';
+import {VendorDirectoryService} from './vendor-directory.service';
+const row=(name='Boards'):ImportVendorRowDto=>({id:randomUUID(),siteId:randomUUID(),version:0,sourceRow:2,displayName:name,capabilities:['materials'],notes:''});
+const existing={id:randomUUID(),displayName:'Boards',code:'BOARDS',status:'active'};
+describe('supplier import',()=>{
+ it('keeps existing suppliers without replacing their contact or status',()=>{const result=reviewSupplierImport([row()],[existing],[]);expect(result).toMatchObject({newCount:0,skipped:1});expect(result.rows[0].status).toBe('existing');});
+ it('blocks ambiguous and conflicting identities',()=>{const result=reviewSupplierImport([{...row('Other'),email:'same@example.com'}],[existing],[{vendorId:existing.id,email:'same@example.com'}]);expect(result.rows[0].status).toBe('error');const duplicate=reviewSupplierImport([row()],[existing,{...existing,id:randomUUID()}],[]);expect(duplicate.rows[0].detail).toMatch(/multiple/);});
+ it('rejects duplicates within the file and recognizes archived suppliers',()=>{const a=row(),b={...row(' boards '),sourceRow:3};expect(reviewSupplierImport([a,b],[],[]).rows[1].status).toBe('error');expect(reviewSupplierImport([a],[{...existing,status:'archived'}],[]).rows[0].detail).toContain('archived');});
+ it('validates nested data even when the client preview is bypassed',async()=>{const good=plainToInstance(ImportVendorsDto,{mode:'commit',rows:[{...row(),phone:'+12025550101'}]});expect(await validate(good)).toEqual([]);for(const bad of [{mode:'commit',rows:[]},{mode:'commit',rows:[{...row(),phone:'2025550101'}]},{mode:'commit',rows:[{...row(),email:'bad',capabilities:['invalid']}]}])expect((await validate(plainToInstance(ImportVendorsDto,bad))).length).toBeGreaterThan(0);});
+ it('previews without writing and skips existing suppliers on commit',async()=>{const client={query:vi.fn(async(sql:string)=>({rows:sql.includes('FROM workspace_vendors')?[existing]:[]}))};const access={withPermission:vi.fn(async(_a:unknown,_w:string,_p:string,fn:Function)=>fn(client,{userId:'user'}))};const service=new VendorDirectoryService(access as any,{record:vi.fn()} as any);const create=vi.spyOn(service as any,'createRecord').mockResolvedValue({});const site=vi.spyOn(service as any,'createSiteRecord').mockResolvedValue({});const rows=[row(),{...row('New supplier'),email:'new@example.com'}];await service.import({} as any,'workspace',{mode:'preview',rows});expect(create).not.toHaveBeenCalled();const result=await service.import({} as any,'workspace',{mode:'commit',rows});expect(result).toMatchObject({created:1,skipped:1});expect(create).toHaveBeenCalledTimes(1);expect(site).toHaveBeenCalledTimes(1);expect(access.withPermission).toHaveBeenCalledWith({},'workspace','vendors.manage',expect.any(Function));});
+ it('rechecks duplicates before committing and writes nothing on conflict',async()=>{const client={query:vi.fn(async()=>({rows:[]}))};const access={withPermission:vi.fn(async(_a:unknown,_w:string,_p:string,fn:Function)=>fn(client,{userId:'user'}))};const service=new VendorDirectoryService(access as any,{record:vi.fn()} as any);const create=vi.spyOn(service as any,'createRecord').mockResolvedValue({});await expect(service.import({} as any,'workspace',{mode:'commit',rows:[row(),row()]})).rejects.toThrow(/Duplicate/);expect(create).not.toHaveBeenCalled();});
+});

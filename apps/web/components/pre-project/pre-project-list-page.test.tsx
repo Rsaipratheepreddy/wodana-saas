@@ -33,30 +33,29 @@ describe("pre-project table selector", () => {
   });
   it("always shows the table with customer initials and real case links", () => {
     render(<PreProjectListPage initialData={data} search="view=cards" />);
-    const table = screen.getByRole("table", { name: "Qualified leads" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["", "Client", "Pre-execution", "Lead manager", "Status", "Created", "Action"]);
+    const table = screen.getByRole("table", { name: "Pre-execution cases" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Client", "Case", "Phase", "Status", "Owner", "Value", "Target", "Priority", "Risk", "Updated", "Created", "Action"]);
     expect(within(table).getByRole("img", { name: "Khalid Rahman" })).toHaveTextContent("KR");
-    expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/overview`);
+    expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/requirements`);
     expect(screen.queryByRole("button", { name: "Cards" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export filtered rows" })).toBeInTheDocument();
     expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "card");
   });
   it("searches all server pages as you type and drops obsolete filters", async () => {
     render(<PreProjectListPage initialData={data} search="view=cards&status=released&page=2&search=Villa" />);
-    expect(screen.getByRole("heading", { name: "Qualified leads" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Cases" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Pre-execution status" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start pre-execution" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search qualified leads" }), { target: { value: "Palm" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search cases" }), { target: { value: "Palm" } });
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/workspace/pre-projects?search=Palm"));
   });
   it("keeps the server page and section when paging or opening an existing case", () => {
     render(<PreProjectListPage initialData={{ ...data, total: 70 }} search="page=2&section=designs" />);
     expect(replace).not.toHaveBeenCalled();
-    expect(screen.getByRole("navigation", { name: "Qualified leads pagination" })).toHaveTextContent("Page 2 of 3");
-    expect(within(screen.getByRole("table")).getByText("25")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByRole("navigation", { name: "Pre-execution cases pagination" })).toHaveTextContent("Page 2 of 3");
+        fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(replace).toHaveBeenCalledWith("/workspace/pre-projects?page=3&section=designs");
     expect(screen.getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/designs?page=2&section=designs`);
   });
@@ -71,7 +70,7 @@ describe("pre-project table selector", () => {
   });
   it("distinguishes an empty first list from an empty filtered list and keeps the section on clear", () => {
     render(<PreProjectListPage initialData={{ ...data, items: [], total: 0 }} search="section=site&search=Villa" />);
-    expect(screen.getByText("No matching qualified leads")).toBeInTheDocument();
+    expect(screen.getByText("No matching cases")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Clear search" })[1]);
     expect(replace).toHaveBeenCalledWith("/workspace/pre-projects?section=site");
   });

@@ -1,6 +1,6 @@
-import type {Material,Order} from './execution';
-export function quantityToSource(material:Material,orders:Order[]):number{
- const covered=material.movements.reduce((n,m)=>n+(m.kind==='receive'?m.quantity:['waste','supplier_return','transfer_out'].includes(m.kind)?-m.quantity:0),0);
- const incoming=orders.filter(o=>o.materialId===material.id&&['submitted','approved','acknowledged'].includes(o.status)).reduce((n,o)=>n+Math.max(0,o.quantity-o.receipts.reduce((sum,r)=>sum+r.accepted,0)),0);
- return Math.max(0,Math.round((material.required-covered-incoming)*1e6)/1e6);
+import type {Material,Order,ProjectData} from './execution';
+import type {StockTransfer} from '../../../../services/business-core/src/projects/project-stock.types';
+import {materialInventory} from '../../../../services/business-core/src/projects/project-inventory';
+export function quantityToSource(material:Material,orders:Order[],transfers:StockTransfer[]=[],supplierReturns:ProjectData['supplierReturns']=[]):number {
+ return materialInventory(material,orders,transfers,supplierReturns).shortfall;
 }

@@ -48,19 +48,31 @@ const nextConfig: NextConfig = {
   redirects() {
     return [
       {
-        source: "/workspace/catalogs",
-        destination: "/workspace/pre-projects/master-data",
+        source: "/workspace/pre-projects/master-data",
+        destination: "/workspace/catalogs",
         permanent: false,
       },
       {
         source: "/workspace/pre-projects/catalogs",
-        destination: "/workspace/pre-projects/master-data",
+        destination: "/workspace/catalogs",
         permanent: false,
       },
     ];
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      {
+        // HRMS check-in can be reached through client-side navigation from any
+        // staff page, so its document policy must allow these same-origin APIs.
+        // The browser still requires the user's camera/location permission.
+        source: "/workspace/:path*",
+        headers: [{
+          key: "Permissions-Policy",
+          value: "camera=(self), microphone=(), geolocation=(self), browsing-topics=()",
+        }],
+      },
+    ];
   },
 };
 

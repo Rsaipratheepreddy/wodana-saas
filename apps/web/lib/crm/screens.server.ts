@@ -60,12 +60,13 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
         { channel: "push", connected: false, delivered: 0, failed: 0, lastDeliveredAt: null, pricing: "Included with Wodana", receiptState: "not_connected" },
       ] },
     };
-    return crmScreenFixture(id);
+    return id === "calendar" || id === "follow-ups" ? { ...crmScreenFixture(id), supporting: { currentUserId: authProfile.id } } : crmScreenFixture(id);
   }
 
   const token = (await cookies()).get(ACCESS_COOKIE)?.value;
   if (!token) redirect("/login");
   const page = base(id, membership.workspaceId);
+  if (id === "calendar" || id === "follow-ups") page.supporting = { currentUserId: authProfile.id };
 
   if (id === "crm-overview") {
     const today = await backend(token, membership.workspaceId, "today");
@@ -131,7 +132,9 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
 
   if (id === "opportunities") {
     const pipelines = await backend(token, membership.workspaceId, "pipelines");
-    page.supporting = { pipelines: pipelines.forbidden ? [] : records(pipelines.payload).items };
+    const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+    const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
+    page.supporting = { defaultCurrency: workspace?.workspace?.defaultCurrency, pipelines: pipelines.forbidden ? [] : records(pipelines.payload).items };
   }
   if (id === "automations") {
     const payload = primary.payload && typeof primary.payload === "object" ? primary.payload as { providers?: unknown } : {};

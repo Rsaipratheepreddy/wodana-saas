@@ -19,12 +19,13 @@ export class IntakePartyDto {
   @IsString() @IsNotEmpty() @MaxLength(240) displayName!: string;
   @IsOptional() @IsString() @MaxLength(500) email?: string;
   @IsOptional() @IsString() @MaxLength(80) phone?: string;
-  @IsOptional() @IsString() @MaxLength(80) mobile?: string;
+  @IsString() @IsNotEmpty() @MaxLength(80) mobile!: string;
   @IsOptional() @IsString() @MaxLength(240) company?: string;
   @IsOptional() @IsString() @MaxLength(160) jobPosition?: string;
   @IsOptional() @IsString() @MaxLength(2000) website?: string;
   @IsOptional() @IsString() @MaxLength(2000) address?: string;
   @IsOptional() @IsString() @MaxLength(2) phoneCountryCode?: string;
+  @IsOptional() @IsString() @MaxLength(2) mobileCountryCode?: string;
   @IsOptional() @IsString() @MaxLength(35) preferredLocale?: string;
   @IsOptional() @IsString() @MaxLength(64) preferredTimezone?: string;
 }
@@ -49,6 +50,8 @@ export class IntakeConsentDto {
 }
 
 export class EnquiryDetailsDto {
+  @IsString() @IsNotEmpty() @MaxLength(80) emirate!: string;
+  @IsOptional() @IsString() @MaxLength(240) area?: string;
   @IsOptional() @IsString() @MaxLength(240) location?: string;
   @IsOptional() @IsString() @MaxLength(80) customerType?: string;
   @IsOptional() @IsString() @MaxLength(80) budgetRange?: string;
@@ -84,10 +87,10 @@ export class CreateIntakeEventDto {
   @IsOptional() @IsString() receivedAt?: string;
   @IsDefined() @ValidateNested() @Type(() => IntakePartyDto) party!: IntakePartyDto;
   @IsOptional() @IsString() @MaxLength(240) title?: string;
-  @IsOptional() @ValidateNested() @Type(() => EnquiryDetailsDto) details?: EnquiryDetailsDto;
+  @IsDefined() @ValidateNested() @Type(() => EnquiryDetailsDto) details!: EnquiryDetailsDto;
   @IsOptional() @ValidateNested() @Type(() => InitialAssignmentDto) assignment?: InitialAssignmentDto;
   @IsOptional() @IsString() @MaxLength(10_000) summary?: string;
-  @IsOptional() @IsString() @MaxLength(100) serviceType?: string;
+  @IsString() @IsNotEmpty() @MaxLength(100) serviceType!: string;
   @IsObject() originalPayload!: Record<string, unknown>;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => AttributionTouchDto)
   attribution?: AttributionTouchDto[];

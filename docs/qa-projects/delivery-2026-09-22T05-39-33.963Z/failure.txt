@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-delivery-flows.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: /workspaces/55d6a745-7f97-4275-8399-80f2d2b28e59/projects/8700bcfb-bc67-4efd-ae4a-39817271ac48/execution: {"message":"Choose the members so team clashes can be checked.","error":"Bad Request","statusCode":400}
+
+400 !== 201
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:22:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:106:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 400,
+  expected: 201,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

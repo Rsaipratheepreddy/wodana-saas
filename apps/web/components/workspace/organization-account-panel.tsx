@@ -24,14 +24,10 @@ function emptyDraft(): RequestDraft {
 }
 
 function requestStatusTone(status: OrganizationRequest["status"]) {
+  if (status === "pending") return "warning" as const;
   if (status === "approved") return "success" as const;
   if (status === "rejected") return "danger" as const;
   return "neutral" as const;
-}
-
-async function responseMessage(response: Response, fallback: string) {
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
-  return payload?.message ?? fallback;
 }
 
 export function OrganizationAccountPanel({
@@ -149,6 +145,7 @@ export function OrganizationAccountPanel({
         {account?.canRequestOrganization ? <Button onPress={openRequest} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />Add workspace</Button> : null}
       </header>
       {notice ? <p aria-live="polite" className={styles.organizationNotice}><CheckCircle2 aria-hidden="true" size={14} />{notice}</p> : null}
+      {error && !dialogOpen ? <Callout title="Workspace request could not be updated" tone="danger">{error}</Callout> : null}
       {unavailable ? <Callout title="Organization account unavailable" tone="warning">Your current workspace is still available. Refresh this page to try loading organization requests again.</Callout> : null}
       {account ? <>
         <div className={styles.organizationSummary}><div><strong>{accountSummary}</strong><small>{account.availableOrganizationSlots > 0 ? `${account.availableOrganizationSlots} available in your current account limit.` : "Additional companies require Wodana approval."}</small></div><Badge tone="neutral">{account.status}</Badge></div>

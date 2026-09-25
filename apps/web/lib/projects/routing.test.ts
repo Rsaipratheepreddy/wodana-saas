@@ -22,7 +22,7 @@ describe("project workspace routing", () => {
       { id: "project-workflow-templates", href: "/workspace/projects/workflow-templates", icon: "settings", label: "Workflow setup" },
     ] }]);
     expect(navigation.flatMap((group) => group.items).map((item) => item.href)).toEqual([
-      "/workspace/projects", "/workspace/projects/calendar", "/workspace/projects/workflow-templates",
+      "/workspace/projects", "/workspace/projects/workflow-templates",
     ]);
   });
 

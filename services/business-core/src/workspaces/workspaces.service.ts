@@ -39,6 +39,8 @@ import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
+import { UpdateHomeLayoutDto } from "./dto/update-home-layout.dto";
+import { readHomeOverview } from "./home-overview";
 import { WorkspaceAccessService } from "./workspace-access.service";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "../crm/automations/default-automation-templates";
 import { parseProjectWorkflowTemplate } from "../projects/project-workflow";
@@ -127,6 +129,27 @@ const SYSTEM_ROLES = [
   ["viewer", "Viewer", "Read-only workspace access"],
 ] as const;
 
+const COMMERCIAL_REVIEW_ROLES = [
+  {
+    code: "quantity_surveyor",
+    name: "Quantity Surveyor",
+    description: "Review quotation estimates before the client receives a proposal",
+    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate"],
+  },
+  {
+    code: "finance_reviewer",
+    name: "Finance reviewer",
+    description: "Verify deal payment evidence and confirm final commissions before operations approval",
+    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify"],
+  },
+  {
+    code: "operations_approver",
+    name: "Operations approver",
+    description: "Approve Finance-verified deals and authorize their release to production",
+    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.deal.approve", "commercial.release"],
+  },
+] as const;
+
 @Injectable()
 export class WorkspacesService {
   constructor(
@@ -190,6 +213,7 @@ export class WorkspacesService {
           );
 
           const roleIds = await this.insertSystemRoles(client, workspaceId);
+          await this.insertCommercialReviewRoles(client, workspaceId);
           await client.query(
             `INSERT INTO member_roles (workspace_id, membership_id, role_id)
              VALUES ($1, $2, $3)`,
@@ -354,6 +378,7 @@ export class WorkspacesService {
           input.firstLegalEntity,
         );
         const roleIds = await this.insertSystemRoles(client, workspaceId);
+        await this.insertCommercialReviewRoles(client, workspaceId);
         const invitationToken = randomBytes(32).toString("base64url");
         const tokenHash = createHash("sha256").update(invitationToken).digest("hex");
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -570,6 +595,7 @@ export class WorkspacesService {
       [membershipId, workspaceId, ownerUserId],
     );
     const roleIds = await this.insertSystemRoles(client, workspaceId);
+    await this.insertCommercialReviewRoles(client, workspaceId);
     await client.query(
       `INSERT INTO member_roles (workspace_id, membership_id, role_id)
        VALUES ($1, $2, $3)`,
@@ -1117,6 +1143,48 @@ export class WorkspacesService {
   async terminology(actor: RequestActor, workspaceId: string) {
     return this.access.asMember(actor, workspaceId, (client) =>
       this.resolvedTerminology(client, workspaceId));
+  }
+
+  async homeLayout(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const result = await client.query(
+        `SELECT home_layout AS widgets, home_layout_version AS version FROM workspace_memberships
+         WHERE workspace_id=$1 AND user_id=$2 AND status='active'`, [workspaceId, user.userId],
+      );
+      if (!result.rows[0]) throw new NotFoundException("Workspace membership not found");
+      return result.rows[0];
+    });
+  }
+
+  async homeOverview(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`,
+        [workspaceId, user.userId],
+      );
+      if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
+      const [sales, planning, projects, manageProjects] = await Promise.all([
+        this.access.hasPermission(client, workspaceId, user.userId, "crm.activities.view"),
+        this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.view"),
+        this.access.hasPermission(client, workspaceId, user.userId, "projects.view"),
+        this.access.hasPermission(client, workspaceId, user.userId, "projects.manage"),
+      ]);
+      return readHomeOverview(client, workspaceId, membership.rows[0].id, { sales, planning, projects, manageProjects });
+    });
+  }
+
+  async updateHomeLayout(actor: RequestActor, workspaceId: string, input: UpdateHomeLayoutDto) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      // Personal presentation only: a member cannot target another user or change access.
+      const result = await client.query(
+        `UPDATE workspace_memberships SET home_layout=$3::jsonb, home_layout_version=home_layout_version+1
+         WHERE workspace_id=$1 AND user_id=$2 AND status='active' AND home_layout_version=$4
+         RETURNING home_layout AS widgets, home_layout_version AS version`,
+        [workspaceId, user.userId, JSON.stringify(input.widgets), input.version],
+      );
+      if (!result.rows[0]) throw new ConflictException("Your Home layout changed elsewhere. Reload it before saving.");
+      return result.rows[0];
+    });
   }
 
   async terminologyHistory(actor: RequestActor, workspaceId: string, key: string) {
@@ -2552,12 +2620,22 @@ export class WorkspacesService {
   }
 
   async listRoles(actor: RequestActor, workspaceId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, ["module.roles.read", "workspace.roles.manage"], async (client) => {
+    // A member who can create, edit or delete roles must be able to see the
+    // catalogue before acting; those grants do not imply the other mutations.
+    return this.access.withAnyPermission(actor, workspaceId, [
+      "module.roles.read", "module.roles.write", "module.roles.edit", "module.roles.delete", "workspace.roles.manage",
+      "module.members.read", "module.members.write", "module.members.edit", "module.members.delete", "workspace.members.manage",
+    ], async (client) => {
       const roles = await client.query(
         `SELECT role.id, role.code, role.name, role.description, role.is_system AS "isSystem",
                 role.version,
                 (SELECT count(*)::int FROM member_roles assigned
                  WHERE assigned.role_id = role.id) AS "memberCount",
+                (SELECT count(*)::int FROM workspace_team_roles assigned
+                 WHERE assigned.role_id = role.id) AS "teamCount",
+                (SELECT count(*)::int FROM invitation_roles assigned
+                 JOIN workspace_invitations invitation ON invitation.id = assigned.invitation_id
+                 WHERE assigned.role_id = role.id AND invitation.status = 'pending') AS "pendingInvitationCount",
                 COALESCE(json_agg(permission.code ORDER BY permission.code)
                   FILTER (WHERE permission.code IS NOT NULL), '[]') AS permissions
          FROM roles role
@@ -2580,6 +2658,7 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const permissions = await this.resolvePermissions(client, input.permissionCodes);
+        await this.assertRoleDelegation(client, workspaceId, actorUser.userId, input.permissionCodes);
 
         try {
           const role = await client.query<{ id: string } & Record<string, unknown>>(
@@ -2628,6 +2707,7 @@ export class WorkspacesService {
         if (before.isSystem) {
           throw new ConflictException("System roles cannot be edited");
         }
+        await this.assertRoleDelegation(client, workspaceId, actorUser.userId, before.permissions as string[]);
         if (
           input.name === undefined
           && input.description === undefined
@@ -2638,6 +2718,9 @@ export class WorkspacesService {
         const permissions = input.permissionCodes === undefined
           ? undefined
           : await this.resolvePermissions(client, input.permissionCodes);
+        if (input.permissionCodes !== undefined) {
+          await this.assertRoleDelegation(client, workspaceId, actorUser.userId, input.permissionCodes);
+        }
         const updated = await client.query(
           `UPDATE roles
            SET name = COALESCE($1, name),
@@ -2694,6 +2777,7 @@ export class WorkspacesService {
         if (before.isSystem) {
           throw new ConflictException("System roles cannot be deleted");
         }
+        await this.assertRoleDelegation(client, workspaceId, actorUser.userId, before.permissions as string[]);
         const assignments = await client.query<{ members: number; invitations: number; teams: number }>(
           `SELECT
              (SELECT count(*)::int FROM member_roles WHERE role_id = $1) AS members,
@@ -2783,6 +2867,7 @@ export class WorkspacesService {
           );
           if (teams.rowCount !== teamIds.length) throw new UnprocessableEntityException("One or more teams are not active");
         }
+        await this.assertMemberRoleDelegation(client, workspaceId, actorUser.userId, roles.rows.map((role) => role.id), teamIds);
 
         const displayName = input.displayName
           ?? input.email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -2859,7 +2944,9 @@ export class WorkspacesService {
   }
 
   async listMembers(actor: RequestActor, workspaceId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, ["module.members.read", "workspace.members.manage"], async (client) => {
+    return this.access.withAnyPermission(actor, workspaceId, [
+      "module.members.read", "module.members.write", "module.members.edit", "module.members.delete", "workspace.members.manage",
+    ], async (client) => {
       const members = await client.query(
         `SELECT membership.id, membership.status, membership.joined_at AS "joinedAt",
                 membership.version,
@@ -2917,6 +3004,12 @@ export class WorkspacesService {
           );
           if (!inherited.rowCount) throw new BadRequestException("A member needs a direct role or an active team role");
         }
+        const currentRoles = await client.query<{ roleId: string }>(
+          `SELECT DISTINCT role_id AS "roleId" FROM effective_member_roles WHERE membership_id=$1`,
+          [membershipId],
+        );
+        await this.assertMemberRoleDelegation(client, workspaceId, actorUser.userId,
+          [...new Set([...currentRoles.rows.map((role) => role.roleId), ...(requestedRoles?.rows.map((role) => role.id) ?? [])])], []);
         const nextStatus = input.status ?? String(before.status);
         if (String(before.status) !== "active" && nextStatus === "active") {
           await this.assertSeatAvailable(client, workspaceId);
@@ -2967,7 +3060,7 @@ export class WorkspacesService {
     return this.access.withAnyPermission(
       actor,
       workspaceId,
-      ["module.members.read", "workspace.members.manage"],
+      ["module.members.read", "module.members.write", "module.members.delete", "workspace.members.manage"],
       async (client) => {
         const result = await client.query(
           `SELECT invitation.id, invitation.email, invitee.display_name AS "displayName",
@@ -3013,6 +3106,7 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const invitation = await this.requirePendingInvitation(client, workspaceId, invitationId);
+        await this.assertInvitationDelegation(client, workspaceId, actorUser.userId, invitationId);
         const cancelled = await client.query(
           `UPDATE workspace_invitations
            SET status = 'cancelled', cancelled_at = now()
@@ -3049,6 +3143,7 @@ export class WorkspacesService {
         await this.lockWorkspace(client, workspaceId);
         const workspace = await this.requireWorkspace(client, workspaceId);
         const before = await this.requirePendingInvitation(client, workspaceId, invitationId);
+        await this.assertInvitationDelegation(client, workspaceId, actorUser.userId, invitationId);
         const details = await client.query<{ displayName: string; roleCodes: string[] }>(
           `SELECT invitee.display_name AS "displayName",
                   COALESCE(array_agg(role.code ORDER BY role.code)
@@ -3791,6 +3886,96 @@ export class WorkspacesService {
     return roles;
   }
 
+  private async assertRoleDelegation(
+    client: PoolClient,
+    workspaceId: string,
+    actorUserId: string,
+    permissionCodes: readonly string[],
+  ): Promise<void> {
+    const grants = await client.query<{ roleCode: string; permissionCode: string | null }>(
+      `SELECT DISTINCT role.code AS "roleCode", permission.code AS "permissionCode"
+       FROM workspace_memberships membership
+       JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+       JOIN roles role ON role.id = assigned.role_id
+       LEFT JOIN role_permissions granted ON granted.role_id = role.id
+       LEFT JOIN permissions permission ON permission.id = granted.permission_id
+       WHERE membership.workspace_id = $1 AND membership.user_id = $2
+         AND membership.status = 'active'`,
+      [workspaceId, actorUserId],
+    );
+    if (grants.rows.some(({ roleCode }) => roleCode === "owner" || roleCode === "administrator")) return;
+    const effective = new Set(await this.access.effectivePermissions(
+      client,
+      workspaceId,
+      grants.rows.map(({ permissionCode }) => permissionCode).filter((code): code is string => Boolean(code)),
+    ));
+    if (effective.has("workspace.roles.manage")) return;
+    if (permissionCodes.some((code) => !effective.has(code))) {
+      throw new ForbiddenException("You cannot manage a role containing permissions outside your own access");
+    }
+  }
+
+  private async assertMemberRoleDelegation(
+    client: PoolClient,
+    workspaceId: string,
+    actorUserId: string,
+    roleIds: string[],
+    teamIds: string[],
+  ): Promise<void> {
+    const actorGrants = await client.query<{ roleCode: string; permissionCode: string | null }>(
+      `SELECT DISTINCT role.code AS "roleCode", permission.code AS "permissionCode"
+       FROM workspace_memberships membership
+       JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+       JOIN roles role ON role.id = assigned.role_id
+       LEFT JOIN role_permissions granted ON granted.role_id = role.id
+       LEFT JOIN permissions permission ON permission.id = granted.permission_id
+       WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active'`,
+      [workspaceId, actorUserId],
+    );
+    if (actorGrants.rows.some(({ roleCode }) => roleCode === "owner" || roleCode === "administrator")) return;
+
+    const delegated = await client.query<{ roleCode: string; permissionCode: string | null }>(
+      `SELECT DISTINCT role.code AS "roleCode", permission.code AS "permissionCode"
+       FROM roles role
+       LEFT JOIN role_permissions granted ON granted.role_id = role.id
+       LEFT JOIN permissions permission ON permission.id = granted.permission_id
+       WHERE role.workspace_id=$1 AND (
+         role.id=ANY($2::uuid[]) OR EXISTS (
+           SELECT 1 FROM workspace_team_roles assigned
+           WHERE assigned.role_id=role.id AND assigned.team_id=ANY($3::uuid[])
+         )
+       )`,
+      [workspaceId, roleIds, teamIds],
+    );
+    if (delegated.rows.some(({ roleCode }) => roleCode === "owner" || roleCode === "administrator")) {
+      throw new ForbiddenException("Only an Owner or Administrator can assign privileged workspace roles");
+    }
+    const effective = new Set(await this.access.effectivePermissions(client, workspaceId,
+      actorGrants.rows.map(({ permissionCode }) => permissionCode).filter((code): code is string => Boolean(code))));
+    if (delegated.rows.some(({ permissionCode }) => permissionCode && !effective.has(permissionCode))) {
+      throw new ForbiddenException("You cannot grant access beyond your own permissions");
+    }
+  }
+
+  private async assertInvitationDelegation(
+    client: PoolClient,
+    workspaceId: string,
+    actorUserId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const assigned = await client.query<{ roleId: string }>(
+      `SELECT DISTINCT role_id AS "roleId" FROM invitation_roles WHERE invitation_id=$1
+       UNION
+       SELECT DISTINCT granted.role_id AS "roleId"
+       FROM invitation_teams invited_team
+       JOIN workspace_team_roles granted ON granted.team_id=invited_team.team_id
+       WHERE invited_team.invitation_id=$1`,
+      [invitationId],
+    );
+    await this.assertMemberRoleDelegation(client, workspaceId, actorUserId,
+      assigned.rows.map((role) => role.roleId), []);
+  }
+
   private async requireRole(
     client: PoolClient,
     workspaceId: string,
@@ -4173,6 +4358,21 @@ export class WorkspacesService {
       );
     }
     return roleIds;
+  }
+
+  private async insertCommercialReviewRoles(client: PoolClient, workspaceId: string) {
+    for (const role of COMMERCIAL_REVIEW_ROLES) {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO roles (workspace_id, code, name, description, is_system)
+         VALUES ($1, $2, $3, $4, false) RETURNING id`,
+        [workspaceId, role.code, role.name, role.description],
+      );
+      await client.query(
+        `INSERT INTO role_permissions (workspace_id, role_id, permission_id)
+         SELECT $1, $2, id FROM permissions WHERE code = ANY($3::text[])`,
+        [workspaceId, result.rows[0].id, [...role.permissions]],
+      );
+    }
   }
 
   private async insertOnboarding(

@@ -12,7 +12,7 @@ export function LeadAssignmentDialog({ lead, members, workspaceId, onClose, onSa
   members: CrmWorkspaceMember[];
   workspaceId: string;
   onClose: () => void;
-  onSaved: (result: RecordData) => void;
+  onSaved: (result: RecordData) => void | Promise<void>;
 }) {
   const id = useId();
   const [selected, setSelected] = useState(lead.ownerMembershipId ?? "auto");
@@ -29,9 +29,9 @@ export function LeadAssignmentDialog({ lead, members, workspaceId, onClose, onSa
     try {
       const result = await crmRequest(workspaceId,
         selected === "auto" ? `leads/${lead.id}/auto-assign?version=${lead.version}` : `leads/${lead.id}/assign`,
-        "POST", selected === "auto" ? {} : { version: lead.version, ownerMembershipId: selected, ...(lead.queueId ? { queueId: lead.queueId } : {}), reason: "Sales owner reassigned from the enquiries list" });
+        "POST", selected === "auto" ? {} : { version: lead.version, ownerMembershipId: selected, ...(lead.queueId ? { queueId: lead.queueId } : {}), reason: "Sales owner selected in enquiry assignment" });
       setSaved(true);
-      try { onSaved(result); onClose(); }
+      try { await onSaved(result); onClose(); }
       catch { setFailure("Assignment saved. Refresh the page to see the updated sales owner."); }
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "The enquiry could not be assigned.");

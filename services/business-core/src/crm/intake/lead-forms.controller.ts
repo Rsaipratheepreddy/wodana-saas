@@ -15,6 +15,7 @@ class SubmitFormDto {
   @IsUUID() requestId!: string;
   @IsString() @MaxLength(100) revision!: string;
   @IsObject() answers!: Record<string, unknown>;
+  @IsOptional() @IsObject() phoneCountryCodes?: Record<string, string>;
   @IsBoolean() @Equals(true, { message: "Consent is required before submitting an enquiry" })
   serviceConsent!: boolean;
 }

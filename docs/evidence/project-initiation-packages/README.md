@@ -12,22 +12,25 @@ P08.1 is accepted as a local engineering slice. No Palm production tenant, clien
 
 ## Palm mapping
 
-[`palm-project-workflow.json`](../../fixtures/palm-project-workflow.json) is an API-ready local tenant configuration, not generic hardcoding. It maps Palm's post-release process into the platform's twelve-stage bound:
+[`palm-project-workflow.json`](../../fixtures/palm-project-workflow.json) is an API-ready local tenant configuration, not generic hardcoding. It maps Palm's planning-to-handover process to fifteen distinct stages:
 
-- Project setup
+- New Project
 - Concept & moodboard
 - Space planning
-- Renders & client approval
-- Technical drawings & materials
-- BOQ & procurement
-- Manufacturing readiness
+- Renders
+- Awaiting Client Approval
+- Technical Drawings
+- Material Selection
+- Costing / BOQ
+- Procurement
+- Ready for Manufacturing
 - Manufacturing
 - Site works
 - Installation
-- Snagging & handover
-- Completed
+- Snagging
+- Complete / Handover
 
-Owner Review and Deal File stay pre-release commercial gates rather than being repeated as project stages. The combined labels retain Palm's decisions while fitting the bounded tenant template; detailed design, approval, procurement, production and site truth remains in the underlying records and package tasks.
+Owner Review and Deal File stay pre-release commercial gates rather than being repeated as project stages. The later requested planning sequence (Requirements, Design Quote, Design & Specifications, Approvals, Fitout / Furniture Quotations) remains in the planning case before production release. When that approved case is commercially released, the Palm delivery project adopts this frozen workflow at Procurement; the earlier decisions remain in the linked case and are not falsely replayed as new project activity. Templates without a release entry still begin at their first stage. Procurement cannot advance until production-bound packages have passed readiness; the Manufacturing transition checks the live contracted production payment, and task start retains its own release and readiness checks. Palm browser and real-role acceptance are still pending.
 
 ## Hold semantics
 
@@ -35,13 +38,15 @@ Owner Review and Deal File stay pre-release commercial gates rather than being r
 
 ## Verification
 
-- Focused project release/workflow/package suite: 3 files, 26 tests passed.
-- Business Core typecheck passed.
-- Full Business Core regression: 127 files passed, 1 skipped; 763 tests passed, 10 skipped.
+- Focused project release/workflow/readiness suite: 3 files, 28 tests passed.
+- Project workspace and workflow-strip UI suites: 23 tests passed; workflow-template editor suite: 3 tests passed.
+- Business Core and Web typechecks, and the Web production build passed.
+- Full Business Core regression: 190 files passed, 1 skipped; 1205 tests passed, 10 skipped.
+- The isolated Palm synthetic funnel passed from intake through project release with the persisted fifteen-stage workflow starting at Procurement. Its local database was disposable; this is not production UAT.
 - `git diff --check` passed.
 
 ## Remaining boundaries
 
-- Applying this fixture to an isolated Palm clone and completing two-role browser/mobile UAT belongs to P00.5/P09; it is not evidence of live Palm configuration.
+- Applying this fixture to an isolated Palm clone and completing two-role browser/mobile UAT belongs to P00.5/P09; the synthetic local run is not evidence of live Palm configuration.
 - Supplier lead times, HRMS capacity and recovery planning belong to P08.2.
 - Regional tax acceptance, physical-device UAT, provider verification and deployment remain explicitly outside this slice.

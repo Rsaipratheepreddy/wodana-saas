@@ -70,5 +70,12 @@ describe("work-package readiness", () => {
       currency: "AED", promisedDate: "2026-09-19", status: "acknowledged", acknowledgement: "Confirmed", receipts: [],
     });
     expect(workPackageReadiness(data, workPackage)).toEqual([]);
+    data.materials[0].reservations=[{taskId:'other-task',quantity:1}];
+    expect(workPackageReadiness(data, workPackage).map(i=>i.code)).toContain('company_supply');
+    data.materials[0].reservations=[];
+    data.materials[0].movements.push({id:'issue',kind:'issue',quantity:2,taskId:'task-1',reference:'Issue to assigned team',at:'now'});
+    expect(workPackageReadiness(data, workPackage)).toEqual([]);
+    data.materials[0].movements[1].taskId='other-task';
+    expect(workPackageReadiness(data, workPackage).map(i=>i.code)).toContain('company_supply');
   });
 });

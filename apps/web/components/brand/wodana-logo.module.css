@@ -32,13 +32,13 @@
 }
 
 .artwork::before {
-  background: linear-gradient(145deg, #87c4ff 0%, #3979f6 45%, #1538ff 100%);
+  background: linear-gradient(145deg, #a3bfae 0%, #46705a 45%, #2f4b3d 100%);
   clip-path: inset(0 72.5% 0 0);
 }
 
 :global([data-theme="dark"]) .artwork::before,
 :global([data-wd-theme="dark"]) .artwork::before {
-  background-image: linear-gradient(42deg, #747bff 0%, #a1adff 54%, #e0e5ff 100%);
+  background-image: linear-gradient(42deg, #6a8f7b 0%, #8fbba2 54%, #d9ebe1 100%);
 }
 
 .artwork::after {

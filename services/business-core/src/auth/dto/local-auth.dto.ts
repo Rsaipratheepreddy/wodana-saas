@@ -47,6 +47,14 @@ export class LocalLoginDto {
 
 }
 
+export class ResolveOrganizationDto {
+  @ApiProperty({ example: "Palm Living", description: "Organization name, sign-in slug, or workspace ID" })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(160)
+  identifier!: string;
+}
+
 export class ActivateInvitationDto {
   @ApiProperty()
   @IsString()

@@ -1,0 +1,109 @@
+"use client";
+
+import { useState } from "react";
+import { Button, Callout, ControlledModalDialog, SelectField } from "@/design-system";
+import type { LeadsPageData } from "@/lib/crm/leads";
+import type { LeadOption } from "@/lib/crm/lead-options";
+import { matchCsvHeader, parseLeadCsv, type CsvTable } from "@/lib/crm/import-csv";
+import styles from "./lead-import-dialog.module.css";
+
+type Field = "displayName" | "mobile" | "emirate" | "serviceType" | "area" | "email" | "source" | "channel" | "mobileCountryCode";
+const fields: Array<{ id: Field; label: string; names: string[]; required?: boolean }> = [
+  { id: "displayName", label: "Customer name", names: ["customer name", "name", "client name", "full name"], required: true },
+  { id: "mobile", label: "Mobile", names: ["mobile", "mobile number", "phone number", "phone"], required: true },
+  { id: "emirate", label: "Emirate", names: ["emirate", "emirates"], required: true },
+  { id: "serviceType", label: "Enquiry type", names: ["enquiry type", "service type", "service required"], required: true },
+  { id: "area", label: "Area", names: ["area", "community", "neighbourhood"] },
+  { id: "email", label: "Email", names: ["email", "email address"] },
+  { id: "source", label: "Source per row", names: ["source", "lead source"] },
+  { id: "channel", label: "Channel per row", names: ["channel", "lead channel"] },
+  { id: "mobileCountryCode", label: "Mobile country (ISO code)", names: ["mobile country code", "country code", "country"] },
+];
+type RowResult = { status: "created" | "review" | "error"; message: string };
+
+function findOption(value: string, choices: LeadOption[] | undefined) {
+  const normalized = value.trim().toLocaleLowerCase();
+  return choices?.find(option => option.id.toLocaleLowerCase() === normalized || option.label.toLocaleLowerCase() === normalized)?.id;
+}
+
+export function LeadImportDialog({ initialData, onClose, onImported }: { initialData: LeadsPageData; onClose: () => void; onImported: () => Promise<void> }) {
+  const [table, setTable] = useState<CsvTable>();
+  const [filename, setFilename] = useState("");
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const [mapping, setMapping] = useState<Record<Field, string>>({ displayName: "", mobile: "", emirate: "", serviceType: "", area: "", email: "", source: "", channel: "", mobileCountryCode: "" });
+  const [source, setSource] = useState("");
+  const [channel, setChannel] = useState("");
+  const [results, setResults] = useState<Record<number, RowResult>>({});
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState("");
+  const options = initialData.leadOptions;
+  const value = (row: string[], field: Field) => row[table?.headers.indexOf(mapping[field]) ?? -1]?.trim() ?? "";
+  const prepare = (row: string[], index: number) => {
+    if (!options) throw new Error("Enquiry options are unavailable. Refresh and try again.");
+    const displayName = value(row, "displayName"), mobile = value(row, "mobile");
+    const emirate = findOption(value(row, "emirate"), options.emirates);
+    const serviceType = findOption(value(row, "serviceType"), options.enquiryTypes);
+    const rowSource = value(row, "source") ? findOption(value(row, "source"), options.sources) : source;
+    const rowChannel = value(row, "channel") ? findOption(value(row, "channel"), options.channels[rowSource ?? ""]) : options.channels[rowSource ?? ""]?.some(item => item.id === channel) ? channel : options.channels[rowSource ?? ""]?.[0]?.id;
+    if (!displayName || !mobile || !emirate || !serviceType || !rowSource || !rowChannel || !options.channels[rowSource]?.some(item => item.id === rowChannel)) throw new Error(`Row ${index + 2}: check customer name, mobile, Emirate, Enquiry Type, source and channel.`);
+    const areaText = value(row, "area");
+    const area = areaText ? findOption(areaText, options.areas[emirate]) ?? areaText : "";
+    const country = value(row, "mobileCountryCode").toUpperCase();
+    if (country && !/^[A-Z]{2}$/.test(country)) throw new Error(`Row ${index + 2}: use a two-letter country code, such as AE.`);
+    return {
+      workspaceId: initialData.workspaceId, requestId, rowIndex: index + 1, filename,
+      source: rowSource, channel: rowChannel, serviceType,
+      party: { displayName, mobile, ...(value(row, "email") ? { email: value(row, "email") } : {}), ...(country ? { mobileCountryCode: country } : {}) },
+      details: { emirate, area },
+    };
+  };
+  const loadFile = async (file?: File) => {
+    if (!file) return;
+    setFailure(""); setTable(undefined); setResults({});
+    if (file.size > 1_000_000) { setFailure("Choose a CSV file under 1 MB."); return; }
+    try {
+      const parsed = parseLeadCsv(await file.text());
+      setTable(parsed); setFilename(file.name); setRequestId(crypto.randomUUID());
+      setMapping(Object.fromEntries(fields.map(field => [field.id, matchCsvHeader(parsed.headers, field.names)])) as Record<Field, string>);
+    } catch (error) { setFailure(error instanceof Error ? error.message : "The CSV could not be read."); }
+  };
+  const importRows = async () => {
+    if (!table || !options || busy) return;
+    setBusy(true); setFailure("");
+    const next = { ...results };
+    let imported = false;
+    for (const [index, row] of table.rows.entries()) {
+      if (next[index]?.status === "created" || next[index]?.status === "review") continue;
+      try {
+        const payload = prepare(row, index);
+        const response = await fetch("/api/workspace/crm/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? "The row could not be imported.");
+        next[index] = result.status === "duplicate_candidate"
+          ? { status: "review", message: "Possible duplicate — review in Intake review." }
+          : { status: "created", message: String(result.reference ?? "Enquiry created") };
+        imported = true;
+      } catch (error) { next[index] = { status: "error", message: error instanceof Error ? error.message : "The row could not be imported." }; }
+      setResults({ ...next });
+    }
+    if (imported) await onImported().catch(() => setFailure("Rows were imported. Refresh the list to see them."));
+    setBusy(false);
+  };
+  const counts = Object.values(results).reduce((totals, result) => ({ ...totals, [result.status]: totals[result.status] + 1 }), { created: 0, review: 0, error: 0 });
+  const complete = Boolean(table && Object.keys(results).length === table.rows.length && counts.error === 0);
+  return <ControlledModalDialog isOpen title="Import enquiries" description="Map your CSV columns, preview values, then import. Possible duplicates wait for review." size="lg" isDismissable={!busy} onOpenChange={open => { if (!open && !busy) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button isDisabled={busy} onPress={onClose}>Close</Button><Button variant="primary" isDisabled={!table || !options || busy || complete || fields.some(field => field.required && !mapping[field.id]) || !source || !channel} isLoading={busy} onPress={() => void importRows()}>{complete ? "Import complete" : Object.keys(results).length ? "Retry failed rows" : "Import enquiries"}</Button></div>}>
+    <div className={styles.importBody}>
+      {failure ? <Callout title="Import needs attention" tone="warning">{failure}</Callout> : null}
+      <label className={styles.fileField}>CSV file<input type="file" accept=".csv,text/csv" disabled={busy} onChange={event => void loadFile(event.target.files?.[0])} /></label>
+      {table ? <>
+        <p>{filename} · {table.rows.length} {table.rows.length === 1 ? "row" : "rows"}. Values are checked against this workspace’s enquiry choices.</p>
+        <div className={styles.mapping}>{fields.map(field => <SelectField key={field.id} label={`${field.label}${field.required ? " *" : ""}`} items={[{ id: "", label: field.required ? "Choose column" : "Not in file" }, ...table.headers.map(header => ({ id: header, label: header }))]} selectedKey={mapping[field.id]} onSelectionChange={key => setMapping(previous => ({ ...previous, [field.id]: String(key ?? "") }))} />)}</div>
+        <div className={styles.mapping}><SelectField label="Default source *" items={options?.sources ?? []} selectedKey={source || null} onSelectionChange={key => { const selected = String(key ?? ""); setSource(selected); setChannel(options?.channels[selected]?.[0]?.id ?? ""); }} /><SelectField label="Default channel *" items={options?.channels[source] ?? []} selectedKey={channel || null} onSelectionChange={key => setChannel(String(key ?? ""))} /></div>
+        <div className={styles.preview}><strong>Preview</strong>{table.rows.slice(0, 5).map((row, index) => <p key={index}>Row {index + 2}: {["displayName", "mobile", "emirate", "serviceType"].map(field => value(row, field as Field) || "—").join(" · ")}</p>)}</div>
+        {Object.keys(results).length ? <div role="status" className={styles.summary}>{counts.created} created · {counts.review} need duplicate review · {counts.error} failed</div> : null}
+        {Object.entries(results).filter(([, result]) => result.status !== "created").slice(0, 20).map(([index, result]) => <p key={index} className={styles.rowResult}>Row {Number(index) + 2}: {result.message}</p>)}
+      </> : null}
+    </div>
+  </ControlledModalDialog>;
+}

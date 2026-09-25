@@ -24,6 +24,12 @@ describe('multiple record attachments',()=>{
  });
 });
 describe('web photo drawing',()=>{
+ it('routes externally stored photo drawing through the parent adapter',()=>{
+  const draw=vi.fn();const photo={id:'image',name:'Reference.jpg',mimeType:'image/jpeg',byteSize:2048,hasPreview:true};
+  render(<AssetFiles workspaceId="w" caseId="c" assets={[photo]} onDraw={draw}/>);
+  fireEvent.click(screen.getByRole('button',{name:'Draw on Reference.jpg'}));
+  expect(draw).toHaveBeenCalledWith(photo);
+ });
  it('offers the same draw action for editable image attachments, not PDFs or read-only files',()=>{
   const images=[{id:'image',name:'Living room.jpg',mimeType:'image/jpeg',byteSize:2048,hasPreview:true},{id:'pdf',name:'Plan.pdf',mimeType:'application/pdf',byteSize:2048,hasPreview:false}];
   const {rerender}=render(<AssetFiles workspaceId="w" caseId="c" assets={images} onMarked={vi.fn()}/>);

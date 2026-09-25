@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyExecution, emptyProject, type ExecutionActor } from "./execution.domain";
+import { applyExecution, emptyProject, publicProject, type ExecutionActor } from "./execution.domain";
 import type { Task } from "./execution.types";
 
 const manager: ExecutionActor = {
@@ -26,7 +26,7 @@ describe("procurement to installed quantity truth", () => {
   it("keeps PO, stock, factory output, delivery receipt and installation variance connected", () => {
     const data = emptyProject();
     data.phase = "active";
-    data.scope = { quoteId: "quote", quoteNumber: 1, currency: "AED", value: 1000, lines: [] };
+    data.scope = { quoteId: "quote", quoteNumber: 1, currency: "AED", value: 1000, lines: [{id:"scope",title:"Wardrobe",room:"Bedroom",material:"Board",quantity:2,unit:"nos"}] };
     data.budget = 1000;
     const factory = task({ id: "factory", title: "Fabricate wardrobe" });
     const site = task({
@@ -50,10 +50,16 @@ describe("procurement to installed quantity truth", () => {
     applyExecution(data, "order_status", {
       id: orderId, status: "acknowledged", note: "Supplier confirmed PO", promisedDate: "2026-09-18",
     }, manager);
-    applyExecution(data, "receipt", {
-      id: orderId, accepted: 2, rejected: 0, note: "GRN-001 · inspected",
-    }, manager);
-    expect(data.materials[0].movements).toMatchObject([{ kind: "receive", quantity: 2 }]);
+    expect(publicProject("p","Villa",data,"2026-09-18").alerts).toEqual([]);
+    applyExecution(data,"order_shipment",{id:orderId,status:"dispatched",reference:"TRACK-PRIVATE",carrier:"Private supplier",quantity:2,expectedDate:"2026-09-21",note:"Private negotiation"},manager);
+    const delayed=publicProject("p","Villa",data,"2026-09-19");
+    expect(delayed.alerts).toEqual([expect.objectContaining({kind:"delivery",title:"Delivery delayed · Wardrobe",expectedDate:"2026-09-21"})]);
+    expect(JSON.stringify(delayed)).not.toMatch(/Private supplier|Private negotiation|TRACK-PRIVATE|unitCost/);
+    applyExecution(data,"receipt",{id:orderId,accepted:1,rejected:1,note:"Partial delivery"},manager);
+    expect(publicProject("p","Villa",data,"2026-09-19").alerts?.[0].message).toContain("Part");
+    applyExecution(data,"receipt",{id:orderId,accepted:1,rejected:0,note:"GRN-001 · inspected"},manager);
+    expect(publicProject("p","Villa",data,"2026-09-22").alerts).toEqual([]);
+    expect(data.materials[0].movements.reduce((n,m)=>n+m.quantity,0)).toBe(2);
     expect(data.budget).toBe(1000);
     expect(data.orders[0]).toMatchObject({ quantity: 2, unitCost: 200, currency: "AED" });
 
@@ -75,9 +81,11 @@ describe("procurement to installed quantity truth", () => {
     applyExecution(data, "dispatch_status", {
       id: "dispatch", status: "dispatched", carrier: "Truck 1", reference: "DN-001",
     }, manager);
+    expect(publicProject("p","Villa",data,"2026-09-19").alerts).toEqual([expect.objectContaining({id:"dispatch:dispatch",kind:"delivery"})]);
     applyExecution(data, "dispatch_status", {
       id: "dispatch", status: "received", accepted: 1, rejected: 1, evidence: "Signed GRN-002",
     }, installer);
+    expect(publicProject("p","Villa",data,"2026-09-19").alerts).toEqual([]);
     expect(data.dispatches?.[0]).toMatchObject({ accepted: 1, rejected: 1, receivedBy: "installer" });
     expect(data.snags[0]).toMatchObject({ severity: "major", status: "open" });
 
@@ -95,6 +103,6 @@ describe("procurement to installed quantity truth", () => {
     applyExecution(data, "approve_report", { id: "site-report" }, reviewer);
     expect(site.approved).toBe(1);
     expect(site.quantity - site.approved).toBe(1);
-    expect(data.orders[0].receipts[0].evidence).toContain("GRN-001");
+    expect(data.orders[0].receipts[1].evidence).toContain("GRN-001");
   });
 });

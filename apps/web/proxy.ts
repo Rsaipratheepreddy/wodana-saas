@@ -24,7 +24,7 @@ function workspaceRedirect(profile: BootstrapProfile | null, request: NextReques
   const selectedId = request.cookies.get("wodana_workspace")?.value;
   const membership = profile?.memberships?.find((item) => item.workspaceId === selectedId) ?? profile?.memberships?.[0];
   if (needsOnboarding(profile, membership)) return onboardingRedirect(request);
-  const module = deferredModuleForPath(request.nextUrl.pathname);
+  const deferred = deferredModuleForPath(request.nextUrl.pathname);
   const ownerAccess = membership?.roles?.some((role) => role === "owner" || role === "administrator") ?? false;
   // Legacy business-core releases do not include module grants in /me. Keep
   // their established access working until an explicit entitlement list exists.
@@ -32,9 +32,9 @@ function workspaceRedirect(profile: BootstrapProfile | null, request: NextReques
   if (!membership || !allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))) {
     return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
   }
-  if (module && membership && isCrmFirstWorkspace(membership.workspaceSlug)) {
+  if (deferred && membership && isCrmFirstWorkspace(membership.workspaceSlug)) {
     const destination = new URL("/workspace/coming-soon", request.url);
-    destination.searchParams.set("module", module);
+    destination.searchParams.set("module", deferred);
     return NextResponse.redirect(destination);
   }
   return refreshed ? NextResponse.next({ request: { headers: request.headers } }) : NextResponse.next();

@@ -36,3 +36,17 @@ it("never turns a notification destination into an external link", async () => {
   expect(screen.queryByRole("link", { name: /Update/ })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Update/ })).toBeInTheDocument();
 });
+
+it("filters notifications and marks the whole inbox read", async () => {
+  const fetcher = vi.fn(async (_input: string, options?: RequestInit) => options?.method === 'POST' ? { ok: true, json: async () => ({ updated: 1 }) } : { ok: true, json: async () => [{ id, subject: 'New enquiry assigned', body: 'Review the enquiry.', deepLink: '/workspace/crm/leads?lead=lead', readAt: null, createdAt: '2026-09-17T08:00:00Z' }] });
+  vi.stubGlobal('fetch', fetcher);
+  const user = userEvent.setup();
+  render(<WorkspaceNotifications workspaceId={workspaceId} />);
+  await user.click(await screen.findByRole('button', { name: 'Notifications, 1 unread' }));
+  await user.click(screen.getByRole('button', { name: /Projects 0/ }));
+  expect(screen.queryByRole('link', { name: /New enquiry assigned/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /Unread 1/ }));
+  await user.click(screen.getByRole('button', { name: 'Mark all as read' }));
+  await waitFor(() => expect(screen.getByText('You’re all caught up')).toBeInTheDocument());
+  expect(fetcher).toHaveBeenCalledWith(`/api/workspace/crm/data/notifications/read-all?workspaceId=${workspaceId}`, { method: 'POST' });
+});

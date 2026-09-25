@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { DataGrid, ControlledModalDialog } from "@/design-system";
+import { Button, Checkbox, DataGrid, ControlledModalDialog } from "@/design-system";
 import { caseRequest, type CaseContent } from "@/lib/pre-project/content";
 import type { Quote } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -25,8 +25,10 @@ export function ScopeImport({
   const [content, setContent] = useState<CaseContent | null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(false);
+  const [selected,setSelected] = useState<string[]>([]);
   useEffect(() => {
     if (!open) return;
+    setContent(null);setError('');setSelected([]);setRefresh(false);
     let live = true;
     caseRequest<CaseContent>(workspaceId, caseId, "brief")
       .then((c) => {
@@ -54,7 +56,7 @@ export function ScopeImport({
       size="lg"
       isOpen={open}
       onOpenChange={(v) => !v && onClose()}
-      title="Bring in Requirement gathering scope"
+      title="Import requirements"
     >
       <div className={s.form}>
         {error && (
@@ -63,11 +65,10 @@ export function ScopeImport({
           </p>
         )}
         <p className={s.muted}>
-          Included room items, specifications and selected materials carry into
-          the BOQ. Selling rates stay under your control.
+          Choose the requirements to add. Existing prices stay unchanged; set quantities and prices before review.
         </p>
-        {!content && !error && <p>Loading Requirement gathering…</p>}
-        <DataGrid ariaLabel="Requirement import" data={included} getRowId={row=>row.id} searchLabel="Search requirement import" exportFileName="requirement-import.csv" selectable={false} columns={[{id:"title",header:"Room / item",size:320,accessorFn:(e)=>`${e.roomName ?? "General"} ${e.title}`,cell:({row:{original:e}})=>{return <>
+        {!content && !error && <p>Loading requirements…</p>}
+        {included.length > 0 && <DataGrid compactToolbar rowNumbers={false} ariaLabel="Requirement import" data={included} getRowId={row=>row.id} searchLabel="Search requirement import" exportFileName="requirement-import.csv" selectable={false} columns={[{id:"include",header:"Include",size:80,cell:({row:{original:e}})=><Checkbox aria-label={`Include ${e.title}`} isDisabled={busy} isSelected={selected.includes(e.id)} onChange={checked=>setSelected(ids=>checked?[...ids,e.id]:ids.filter(id=>id!==e.id))}/>},{id:"title",header:"Room / item",size:320,accessorFn:(e)=>`${e.roomName ?? "General"} ${e.title}`,cell:({row:{original:e}})=>{return <>
                       <strong>{e.title}</strong>
                       <small className={s.detail}>
                         {e.roomName ?? "General"}
@@ -86,34 +87,29 @@ export function ScopeImport({
                             ? "Source updated"
                             : "Already included"}
                       </span>
-                    </>;}}]}/>
+                    </>;}}]}/>}
         {content && !included.length && (
           <p className={s.notice}>
             No included requirements yet. Mark the intended items Included in{" "}
             <Link href={`/workspace/pre-projects/cases/${caseId}/requirements`}>
-              Requirement gathering
+              Requirements
             </Link>
-            , or add rooms from your catalogs.
+            .
           </p>
         )}
-        <label className={s.check}>
-          <input
-            type="checkbox"
-            checked={refresh}
-            onChange={(e) => setRefresh(e.target.checked)}
-          />
-          Update previously imported descriptions, quantities and materials.
-          Keep their selling rates and costs.
-        </label>
-        <p className={s.muted}>
+        {quote.lines.some(line => line.scopeId) && <Checkbox isSelected={refresh} onChange={setRefresh}>
+          Update existing imported items, keeping their rates and costs
+        </Checkbox>}
+        {quote.lines.some(line => line.scopeId) && <p className={s.muted}>
           Existing quotation items are retained if they were removed from
-          Requirement gathering; review those items before issuing.
-        </p>
-        <button
-          className={s.primary}
-          disabled={busy || !included.length}
-          onClick={async () => {
-            if (await run("import_scope", { refreshExisting: refresh }))
+          Requirements; review those items before issuing.
+        </p>}
+        <Button
+          variant="primary"
+          isDisabled={busy || !selected.length}
+          isLoading={busy}
+          onPress={async () => {
+            if (await run("import_scope", { refreshExisting: refresh, entryIds: selected }))
               onClose();
             else
               setError(
@@ -121,8 +117,8 @@ export function ScopeImport({
               );
           }}
         >
-          Apply included scope
-        </button>
+          Import selected requirements{selected.length ? ` (${selected.length})` : ""}
+        </Button>
       </div>
     </ControlledModalDialog>
   );

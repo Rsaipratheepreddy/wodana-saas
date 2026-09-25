@@ -1,6 +1,6 @@
 import { expect,it } from "vitest";
 import {blankCatalogRecord} from "./catalog";
-import {convertCatalogQuantity} from "./catalog-units";
+import {convertCatalogQuantity,unitMeaning} from "./catalog-units";
 const foot={...blankCatalogRecord("unit"),name:"My custom foot",dimension:"length",baseFactor:0.3048};
 const metre={...blankCatalogRecord("unit"),name:"Metre",dimension:"length",baseFactor:1};
 it("uses dimensions and factors independently of names",()=>{
@@ -12,4 +12,7 @@ it("does not convert unlike dimensions, packs or invalid factors",()=>{
  expect(convertCatalogQuantity(1,foot,{...metre,dimension:"area"})).toBeNull();
  expect(convertCatalogQuantity(1,{...foot,dimension:"pack"},{...metre,dimension:"pack"})).toBeNull();
  expect(convertCatalogQuantity(1,foot,{...metre,baseFactor:0})).toBeNull();
+ const watt={...foot,name:"Watt",dimension:"reference",baseFactor:undefined};
+ expect(unitMeaning(watt)).toContain("no quantity conversion");
+ expect(convertCatalogQuantity(1,watt,{...watt,name:"Lumen"})).toBeNull();
 });

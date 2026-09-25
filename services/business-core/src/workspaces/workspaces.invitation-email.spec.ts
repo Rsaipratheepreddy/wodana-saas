@@ -45,6 +45,9 @@ describe("WorkspacesService invitation email", () => {
           }],
         };
       }
+      if (sql.includes('SELECT DISTINCT role.code AS "roleCode"')) {
+        return { rowCount: 1, rows: [{ roleCode: "owner", permissionCode: null }] };
+      }
       if (sql.includes("FROM workspace_memberships membership")) {
         return { rowCount: 0, rows: [] };
       }

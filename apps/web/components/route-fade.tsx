@@ -17,8 +17,8 @@ export function RouteFade() {
     const content = document.querySelector("main") ?? document.body;
     if (motionPreference.matches || typeof content.animate !== "function") return;
 
-    const animation = content.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: 240,
+    const animation = content.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], {
+      duration: 260,
       easing: "cubic-bezier(0.16, 1, 0.3, 1)",
     });
     const cancel = () => animation.cancel();

@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { PoolClient } from "pg";
 import { applyExecution, emptyProject, type ExecutionActor } from "./execution.domain";
 import {
   designReadinessForTask,
+  captureApprovedDesignBaseline,
   mergeDesignBaseline,
   sameDesignEvidence,
   synchroniseApprovedDesignDocuments,
@@ -62,6 +64,26 @@ const baseline = {
 };
 
 describe("project design control", () => {
+  it("captures approved package-level design against a manual main-quote line", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{
+      ...baseline.links[0], status: "approved", hasBlockingThread: false,
+    }] });
+    const captured = await captureApprovedDesignBaseline(
+      { query } as unknown as PoolClient, "workspace", "case",
+      [{ scopeLineId: "package-line", title: "Fitout package" }],
+      "2026-09-24T00:00:00Z", undefined, { includePackageDesigns: true },
+    );
+    expect(captured.links).toEqual([expect.objectContaining({
+      scopeLineId: "package-line", sourceScopeId: "", designVersionId: "design-version-1",
+    })]);
+    query.mockResolvedValueOnce({ rows: [{ ...baseline.links[0], status: "draft", hasBlockingThread: false }] });
+    await expect(captureApprovedDesignBaseline(
+      { query } as unknown as PoolClient, "workspace", "case",
+      [{ scopeLineId: "package-line", title: "Fitout package" }],
+      "2026-09-24T00:00:00Z", undefined, { includePackageDesigns: true },
+    )).rejects.toThrow(/Approve the latest package-level designs/);
+  });
+
   it("materialises an approved design revision as project-controlled evidence", () => {
     const data = emptyProject();
     synchroniseApprovedDesignDocuments(data, baseline, baseline.capturedAt, () => "document-1");

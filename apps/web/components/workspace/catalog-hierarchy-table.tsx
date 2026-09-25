@@ -5,12 +5,12 @@ import { Button, DataGrid, IconMenuButton, type DataGridColumn } from '@/design-
 import type { CatalogRecord } from '@/lib/workspace/catalog';
 import { catalogAttribute, catalogHierarchy, catalogRecordName, isMaterialRequirement, materialKinds } from '@/lib/workspace/catalog-hierarchy';
 import type {CatalogRelatedAction} from './catalog-entry-editor';
-import { importedPrices, priceLabel, recordPrices, sourcePriceBasis } from '@/lib/workspace/catalog-prices';
+import { importedPrices, priceLabel, recordPrices } from '@/lib/workspace/catalog-prices';
 import styles from './catalog-hierarchy.module.css';
 
 export type CatalogView = 'room' | 'work' | 'variant' | 'components' | 'material' | 'products' | 'brand' | 'unit';
-export function CatalogHierarchyTable({ view, rows, items, workspaceId, canManage, componentCounts, pricesLoading, searchValue, onSearchChange, totalRowCount, toolbarActions, footerActions, onOpen, onEdit, onPrice, onDetails, onRelated }: {
-  view: CatalogView; rows: CatalogRecord[]; items: CatalogRecord[]; canManage: boolean; componentCounts?: {id:string;count:number}[]; pricesLoading?: boolean;
+export function CatalogHierarchyTable({ view, rows, items, workspaceId, canManage, canViewCosts, componentCounts, pricesLoading, searchValue, onSearchChange, totalRowCount, toolbarActions, footerActions, onOpen, onEdit, onPrice, onDetails, onRelated }: {
+  view: CatalogView; rows: CatalogRecord[]; items: CatalogRecord[]; canManage: boolean; canViewCosts: boolean; componentCounts?: {id:string;count:number}[]; pricesLoading?: boolean;
   workspaceId: string;
   searchValue: string; onSearchChange: (value: string) => void; totalRowCount: number; toolbarActions?: ReactNode; footerActions?: ReactNode;
   onDetails: (r:CatalogRecord) => void; onOpen: (r: CatalogRecord) => void; onEdit: (r: CatalogRecord) => void; onPrice: (r: CatalogRecord) => void;
@@ -29,16 +29,18 @@ export function CatalogHierarchyTable({ view, rows, items, workspaceId, canManag
     return <span className={styles.imageCell}><img alt={asset.name || `${target.name} preview`} loading="lazy" src={`/api/workspace/catalog/records/${target.id}/assets/${asset.id}/content?${query}`} /></span>;
   };
   const productLinks = (records: CatalogRecord[]) => <div className={styles.cellLinks}>{records.map(record => <button key={record.id} className={styles.link} title={record.name} onClick={() => onOpen(record)}>{catalogRecordName(record)}<ArrowUpRight size={12}/></button>)}</div>;
+  const visibleRates = (r: CatalogRecord) => recordPrices(r, items).filter(rate => canViewCosts || String(rate.configuration?.priceType ?? '').trim().toLowerCase() === 'selling');
+  const visibleSourceAmounts = (r: CatalogRecord) => importedPrices(r).filter(amount => canViewCosts || amount.key.trim().toLowerCase().startsWith('selling_'));
   const priceText = (r: CatalogRecord) => {
     if (pricesLoading) return 'Loading…';
-    const rates = recordPrices(r, items), source = importedPrices(r);
-    return rates.length === 1 ? priceLabel(rates[0], items) : rates.length ? `${rates.length} prices` : source.length ? source[0].formatted : 'Not set';
+    const rates = visibleRates(r);
+    return rates.length === 1 ? priceLabel(rates[0], items) : rates.length ? `${rates.length} prices` : 'No saved price';
   };
   const price = (r: CatalogRecord) => {
     if (pricesLoading) return <span>Loading…</span>;
-    const rates = recordPrices(r, items), source = importedPrices(r);
+    const rates = visibleRates(r), source = visibleSourceAmounts(r);
     const value = priceText(r);
-    return <button className={styles.price} onClick={() => onPrice(r)} aria-label={`Prices for ${r.name}`}><span>{value}{!rates.length && source.length ? <small>{r.kind === 'variant' ? 'Estimated cost / item' : sourcePriceBasis(source[0], r)}</small> : null}</span><Pencil size={12} aria-hidden="true" /></button>;
+    return <button className={styles.price} onClick={() => onPrice(r)} aria-label={`Prices for ${r.name}`}><span>{value}{!rates.length && source.length ? <small>Imported amount · needs review</small> : null}</span><Pencil size={12} aria-hidden="true" /></button>;
   };
   const columns: DataGridColumn<CatalogRecord>[] = [
     { id: 'name', header: view === 'room' ? 'Room' : view === 'work' ? 'Item' : view === 'variant' ? 'Variant' : view === 'components' ? 'Component / role' : 'Material', size: view === 'components' ? 180 : view === 'variant' ? 165 : 310, accessorFn: r => catalogRecordName(r), cell: ({ row: { original: r } }) => <button className={`${styles.name} ${styles.link}`} title={r.name} onClick={() => onOpen(r)} aria-label={`Open ${r.name}`}><strong>{catalogRecordName(r)}</strong></button> },
@@ -83,9 +85,25 @@ export function CatalogHierarchyTable({ view, rows, items, workspaceId, canManag
   if (['work', 'variant', 'material', 'products'].includes(view)) columns.push({ id: 'price', header: view === 'variant' ? 'Cost / price' : 'Price', size: view === 'variant' ? 175 : 210, accessorFn: priceText, cell: ({ row: { original: r } }) => price(r) });
   columns.push({ id: 'actions', header: 'Action', size: 85, enableSorting: false, enableColumnFilter: false, cell: ({ row: { original: r } }) => <div className={styles.rowActions}>{canManage && <Button size="compact" variant="quiet" aria-label={`Edit ${r.name}`} onPress={() => onEdit(r)}><Pencil size={14} /></Button>}<IconMenuButton ariaLabel={`Actions for ${r.name}`} items={[{id:"details",label:"View details"}]} onAction={() => onDetails(r)} /></div> });
   const headerIcons: Record<string, ReactNode> = { name: <Package size={14}/>, image: <ImageIcon size={14}/>, variants: <Boxes size={14}/>, materials: <Layers size={14}/>, category: <ListFilter size={14}/>, room: <Boxes size={14}/>, unit: <Ruler size={14}/>, price: <CircleDollarSign size={14}/>, board: <Layers size={14}/>, finish: <Layers size={14}/>, hardware: <Package size={14}/>, timeline: <Timer size={14}/>, brand: <Tag size={14}/>, quantity: <Hash size={14}/> };
-  for (const column of columns) column.meta = { ...column.meta, headerIcon: headerIcons[column.id ?? ''] };
+  const chipColumns = new Set(['category', 'room', 'unit', 'brand', 'required', 'dimension', 'scope']);
+  for (const column of columns) {
+    column.meta = { ...column.meta, headerIcon: headerIcons[column.id ?? ''] };
+    if (chipColumns.has(column.id ?? '') && !column.cell) {
+      const relation = column.id === 'scope' ? 'variant' : column.id;
+      column.cell = ({ row: { original: record }, getValue }) => {
+        const targets = record.links.filter(link => link.relation === relation)
+          .map(link => items.find(item => item.id === link.targetId))
+          .filter((item): item is CatalogRecord => Boolean(item));
+        const value = String(getValue() ?? '—');
+        if (value === '—') return <span className={styles.context}>—</span>;
+        return <div className={styles.chipList}>{targets.length ? targets.map(target =>
+          <button key={target.id} className={styles.valueChip} data-tone={column.id} onClick={() => onDetails(target)} aria-label={`View ${target.name}`}>{catalogRecordName(target)}<ArrowUpRight size={11} aria-hidden="true" /></button>
+        ) : <span className={styles.valueChip} data-tone={column.id}>{value}</span>}</div>;
+      };
+    }
+  }
   const label = view === 'components' ? 'Item materials' : view === 'products' ? 'Materials' : view === 'work' ? 'Items' : view === 'room' ? 'Rooms' : view === 'variant' ? 'Variants' : view === 'material' ? 'Material master' : view === 'brand' ? 'Brands' : 'Units';
-  return <DataGrid ariaLabel={label} data={rows} columns={columns} getRowId={r => r.id} onRowAction={onOpen}
+  return <DataGrid gridLines compactToolbar ariaLabel={label} data={rows} columns={columns} getRowId={r => r.id} onRowAction={onOpen}
     initialColumnVisibility={view === 'work' ? {category:false,room:false} : {}} pageSize={50}
     searchLabel={`Search ${label.toLowerCase()}`} searchValue={searchValue} onSearchChange={onSearchChange} totalRowCount={totalRowCount}
     exportFileName={`master-data-${label.toLowerCase().replaceAll(' ', '-')}.csv`} toolbarActions={toolbarActions} footerActions={footerActions}

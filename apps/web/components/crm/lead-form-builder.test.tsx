@@ -20,6 +20,7 @@ function mockApi() {
   let record = structuredClone(fixture);
   const saves: Array<{ draft: LeadFormRecord["draft"]; version: number; action: string }> = [];
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (String(_url).includes("/responses")) return { ok: true, json: async () => ({ data: [{ id: "response-1", reference: "E-0007", leadId: "62000000-0000-4000-8000-000000000001", name: "Test customer", status: "ready", receivedAt: "2026-09-09T10:00:00Z", answers: [{ title: "Your name", value: "Test customer" }], consentStatus: "granted", candidateCount: 0 }], nextCursor: null }) };
     if (init?.method === "PATCH") {
       const body = JSON.parse(String(init.body)); saves.push(body);
       record = { ...record, draft: body.draft, version: record.version + 1, ...(body.action === "publish" ? { status: "published", published: body.draft } : {}) };
@@ -35,48 +36,64 @@ function mockApi() {
 async function openBuilder() {
   const user = userEvent.setup();
   render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
-  await user.click(await screen.findByRole("button", { name: "Edit form" }));
+  await user.click(await screen.findByRole("button", { name: /Edit form Project enquiry/ }));
   return user;
 }
 afterEach(() => vi.unstubAllGlobals());
 
 describe("LeadFormBuilder", () => {
-  it("shows form attribution without implying a social account connection", async () => {
+  it("shows a focused form gallery and keeps attribution in settings", async () => {
     mockApi();
     render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
-    const table = await screen.findByRole("table", { name: "Enquiry forms" });
-    expect(within(table).getByRole("columnheader", { name: "Source" })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: "Channel" })).toBeInTheDocument();
-    expect(screen.getByText(/does not connect social inboxes or lead ads/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Edit form Project enquiry/ })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search forms" })).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Enquiry forms" })).not.toBeInTheDocument();
   });
-  it("adds field types, updates live preview without clearing answers, and saves and reloads the draft", async () => {
+  it("adds field types, previews them, and saves and reloads the draft", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
-    const preview = screen.getByRole("complementary", { name: "Live form preview" });
-    await user.type(within(preview).getByRole("textbox", { name: "Your name" }), "Preview customer");
     await user.click(screen.getByRole("button", { name: "Add multiple choice" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Field label" }), { target: { value: "Property type" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Option 1" }), { target: { value: "Villa" } });
     fireEvent.change(screen.getByRole("textbox", { name: "Option 2" }), { target: { value: "Apartment" } });
+    await user.click(screen.getByRole("button", { name: "Preview form" }));
+    const preview = await screen.findByRole("dialog", { name: "Form preview" });
     expect(within(preview).getByRole("radio", { name: "Villa" })).toBeInTheDocument();
-    expect(within(preview).getByRole("textbox", { name: "Your name" })).toHaveValue("Preview customer");
     expect(within(preview).getByRole("button", { name: "Submit enquiry" })).toBeDisabled();
+    await user.click(within(preview).getByRole("button", { name: "Close dialog" }));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     expect(await screen.findByText("Draft saved.")).toBeInTheDocument();
     expect(saves[0]).toMatchObject({ version: 1, action: "save" });
     expect(saves[0].draft.questions.at(-1)).toMatchObject({ title: "Property type", type: "radio", field: "custom", options: [{ label: "Villa" }, { label: "Apartment" }] });
     await user.click(screen.getByRole("button", { name: "Back to forms" }));
-    await user.click(await screen.findByRole("button", { name: "Edit form" }));
+    await user.click(await screen.findByRole("button", { name: /Edit form Project enquiry/ }));
     expect(screen.getByRole("button", { name: "Drag Property type to reorder" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Publish" }));
     expect(await screen.findByText("Form published. Its link is ready to share.")).toBeInTheDocument();
     expect(saves[1]).toMatchObject({ version: 2, action: "publish" });
+    const share = await screen.findByRole("dialog", { name: "Share enquiry form" });
+    expect((within(share).getByRole("textbox", { name: "Form link" }) as HTMLInputElement).value).toMatch(/\/enquiry\/test-token$/);
+    await user.click(within(share).getByRole("button", { name: "Close dialog" }));
     expect(screen.getByRole("button", { name: "Share form" })).toBeInTheDocument();
+  });
+
+  it("shows the workspace brand and links a response to its enquiry", async () => {
+    mockApi(); const user = userEvent.setup();
+    render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} initialBranding={{ logoUrl: "/api/auth/tenant-logo/test", primaryColor: "#35715b", secondaryColor: null, workspaceName: "Test Company", canManage: true }} />);
+    await user.click(await screen.findByRole("button", { name: /Edit form Project enquiry/ }));
+    await user.click(screen.getByRole("button", { name: "Brand" }));
+    expect(screen.getByRole("img", { name: "Test Company logo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replace logo" })).toBeEnabled();
+    await user.click(screen.getByRole("tab", { name: "Responses" }));
+    expect(await screen.findByText("E-0007")).toBeInTheDocument();
+    await user.click(screen.getByText("E-0007"));
+    expect(screen.getByRole("link", { name: "Open E-0007 in Enquiries" })).toHaveAttribute("href", "/workspace/crm/leads?lead=62000000-0000-4000-8000-000000000001");
   });
 
   it("provides touch/keyboard reorder controls and protects required lead fields", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
     expect(screen.getByRole("checkbox", { name: "Required" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete Your name" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete Email address" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Move Your name down" }));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await screen.findByText("Draft saved.");
@@ -84,7 +101,7 @@ describe("LeadFormBuilder", () => {
     await user.click(screen.getByRole("button", { name: "Duplicate" }));
     expect(screen.getByRole("textbox", { name: "Field label" })).toHaveValue("Your name (copy)");
     expect(screen.getByRole("checkbox", { name: "Required" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(screen.getByRole("button", { name: "Delete Your name (copy)" }));
     expect(screen.queryByRole("button", { name: /Your name \(copy\)/ })).not.toBeInTheDocument();
   });
 
@@ -113,19 +130,15 @@ describe("LeadFormBuilder", () => {
     const user = userEvent.setup();
     render(<LeadFormBuilder initialData={structuredClone(leadsPageFixture)} />);
     await user.click(await screen.findByRole("button", { name: "Retry loading forms" }));
-    await screen.findByRole("button", { name: "Edit form" });
+    await screen.findByRole("button", { name: /Edit form Project enquiry/ });
     await user.click(screen.getByRole("button", { name: "New form" }));
-    expect(await screen.findByRole("complementary", { name: "Live form preview" })).toBeInTheDocument();
+    expect(await screen.findByRole("complementary", { name: "Add fields" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
   });
 
-  it("adds all nine field types and resets preview answers without changing the form", async () => {
+  it("adds all nine field types and saves their order", async () => {
     const { saves } = mockApi(); const user = await openBuilder();
     for (const type of ["short answer", "paragraph", "multiple choice", "checkboxes", "dropdown", "email", "phone number", "number", "date"]) await user.click(screen.getByRole("button", { name: `Add ${type}` }));
-    const preview = screen.getByRole("complementary", { name: "Live form preview" });
-    fireEvent.change(within(preview).getByRole("textbox", { name: "Your name" }), { target: { value: "Test answer" } });
-    await user.click(screen.getByRole("button", { name: "Reset answers" }));
-    expect(within(preview).getByRole("textbox", { name: "Your name" })).toHaveValue("");
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(saves).toHaveLength(1));
     expect(saves[0].draft.questions.slice(4).map(question => question.type)).toEqual(["text", "paragraph", "radio", "checkboxes", "dropdown", "email", "tel", "number", "date"]);

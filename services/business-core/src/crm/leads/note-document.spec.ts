@@ -73,3 +73,27 @@ describe('Private note videos', () => {
     await expect(prepareReferenceUpload({ buffer, size: buffer.length, originalname: 'site.mp4', mimetype: 'video/mp4' })).rejects.toThrow();
   });
 });
+
+describe('Requirement tables', () => {
+  const cell=(text:string):NoteNode=>({type:'tableCell',attrs:{colspan:1,rowspan:1,colwidth:null},content:[p(text)]});
+  it('preserves editable cells and their searchable text through round trips',()=>{
+    const input=doc([{type:'table',content:[{type:'tableRow',content:[cell('Room'),cell('Need')]},{type:'tableRow',content:[cell('Kitchen'),cell('Drawers')]}]}]);
+    const saved=validateNoteDocument(input,new Map());
+    expect(validateNoteDocument(saved,new Map())).toEqual(saved);
+    expect(noteDocumentText(saved.content)).toBe('Room\nNeed\nKitchen\nDrawers');
+  });
+  it('rejects malformed and nested tables instead of saving an unreadable document',()=>{
+    expect(()=>validateNoteDocument(doc([{type:'table',content:[{type:'tableRow',content:[cell('A')]},{type:'tableRow',content:[cell('B'),cell('C')]}]}]),new Map())).toThrow();
+    expect(()=>validateNoteDocument(doc([{type:'table',content:[{type:'tableRow',content:[{type:'tableCell',content:[{type:'table',content:[]}]}]}]}]),new Map())).toThrow();
+  });
+});
+
+describe('Requirement checklists', () => {
+  it('preserves checked and unchecked items alongside ordinary text',()=>{
+    const input=doc([p('Site visit'),{type:'taskList',content:[{type:'taskItem',attrs:{checked:true},content:[p('Measure wall')]},{type:'taskItem',attrs:{checked:false},content:[p('Confirm finish')]}]}]);
+    const saved=validateNoteDocument(input,new Map());
+    expect(validateNoteDocument(saved,new Map())).toEqual(saved);
+    expect(saved.content.content?.[1].content?.map(item=>item.attrs?.checked)).toEqual([true,false]);
+    expect(noteDocumentText(saved.content)).toBe('Site visit\nMeasure wall\nConfirm finish');
+  });
+});

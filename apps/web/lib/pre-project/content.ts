@@ -82,7 +82,7 @@ export function chooseItemMaterial(current:ItemMaterial,value:CatalogChoice|null
  return updateItemMaterial(current,{materialId:value.id,brandId:brand?.id??null,finishId:finish?.id??null,productName:value.name,productCode:String(value.configuration?.manufacturerCode??''),finishCode:String(value.configuration?.finishCode??''),stockSize:String(value.configuration?.format??''),catalog:{material:value,...(brand?{brand}:{}),...(finish?{finish}:{})}});
 }
 
-export type DesignFolder={id:string;name:string;description:string;roomId:string|null;roomName?:string|null;scopeEntryId:string|null;scopeTitle?:string|null;version:number};
-export type DesignOptions={folders:DesignFolder[];reviewers:Array<{id:string;name:string}>;actorId:string;canReview:boolean;canRecordClient:boolean;portal?:{enabled:boolean;slug:string|null;hasApprover:boolean}};
+export type DesignFolder={reviewerId?:string|null;approvedVersions?:string[]|null;approvedAt?:string|null;id:string;name:string;description:string;roomId:string|null;roomName?:string|null;scopeEntryId:string|null;scopeTitle?:string|null;version:number};
+export type DesignOptions={members?:Array<{id:string;name:string}>;folders:DesignFolder[];reviewers:Array<{id:string;name:string}>;actorId:string;canReview:boolean;canRecordClient:boolean;portal?:{enabled:boolean;slug:string|null;hasApprover:boolean}};
 
-export type DesignThread={id:string;versionId:string;title:string;blocking:boolean;status:string;version:number;createdBy:string;createdByName:string;createdAt:string;resolvedAt:string|null;resolvedByName:string|null;messages:Array<{id:string;body:string;createdBy:string;createdByName:string;createdAt:string}>};
+export type DesignThread={anchor?:{x:number;y:number}|null;mentions?:string[];id:string;versionId:string;title:string;blocking:boolean;status:string;version:number;createdBy:string;createdByName:string;createdAt:string;resolvedAt:string|null;resolvedByName:string|null;messages:Array<{id:string;body:string;createdBy:string;createdByName:string;createdAt:string}>};

@@ -189,7 +189,35 @@ describe("MembersPage", () => {
     render(<MembersPage initialData={data} />);
     expect(screen.queryByRole("button", { name: "Invite with details" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Actions for/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Only workspace owners and administrators/)).toBeInTheDocument();
+    expect(screen.getByText(/Your access is read-only/)).toBeInTheDocument();
+  });
+
+  it("explains missing People access without implying the service failed", () => {
+    const data = structuredClone(membersPageFixture);
+    data.canView = false;
+    data.canManage = false;
+    render(<MembersPage initialData={data} />);
+    expect(screen.getByText("People access unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Workspace members" })).not.toBeInTheDocument();
+  });
+
+  it("lets a scoped inviter use only delegable roles and hides edits to privileged people", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(membersPageFixture);
+    data.canManage = false;
+    data.canInvite = true;
+    data.canEdit = true;
+    data.canCancelInvitations = false;
+    data.assignableRoleCodes = ["member", "viewer"];
+    render(<MembersPage initialData={data} />);
+
+    expect(screen.getByRole("button", { name: "Invite with details" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Actions for Iglo Administrator" })).not.toBeInTheDocument();
+    await interaction.click(screen.getByRole("button", { name: "Invite with details" }));
+    const dialog = await screen.findByRole("dialog", { name: "Invite a member" });
+    expect(within(dialog).getByRole("checkbox", { name: /Member/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox", { name: /Owner/ })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox", { name: /Administrator/ })).not.toBeInTheDocument();
   });
 
   it("reviews member access changes before applying them and preserves team access", async () => {

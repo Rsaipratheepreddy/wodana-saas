@@ -13,7 +13,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
   const mutation=request.method!=='GET';
   if(mutation&&!isSameOrigin(request))return NextResponse.json({message:'This request must come from your workspace.'},{status:403});
   const backendPath=`/workspaces/${workspaceId}/pre-projects${path.length?'/'+path.join('/'):''}${query.size?'?'+query:''}`;
-  const asset=path[1]==='assets';
+  const asset=path[1]==='assets' && path.length===3;
   if(asset&&request.method==='GET') {
     const result=await authenticatedBackendFetch(backendPath,{cache:'no-store'});
     if(result.unauthenticated||!result.upstream?.ok) {

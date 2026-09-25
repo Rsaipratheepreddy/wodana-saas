@@ -190,7 +190,7 @@ export function SelectField({
       isInvalid={!!error}
       isRequired={required}
       isDisabled={disabled}
-      disabledKeys={options.filter((o) => o.disabled).map((o) => o.id)}
+      disabledKeys={options.filter((o) => o.disabled).map((o) => o.id || "__hrms_none__")}
     />
   );
 }

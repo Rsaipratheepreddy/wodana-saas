@@ -11,6 +11,7 @@ if (!["127.0.0.1", "localhost"].includes(new URL(api).hostname))
 const run = randomUUID();
 const palmFixture = process.env.WODANA_SYNTHETIC_FIXTURE === "palm";
 const palmIntakeProfile = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-crm-intake-profile.json", import.meta.url), "utf8"));
+const palmWorkflowFixture = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
 if (process.env.WODANA_SYNTHETIC_FIXTURE && !palmFixture)
   throw new Error("WODANA_SYNTHETIC_FIXTURE only accepts the isolated palm profile.");
 const fixture = palmFixture ? {
@@ -50,6 +51,11 @@ const reviewer = {
   "x-wodana-user-subject": `${fixture.reviewerEmailPrefix}-${run}`,
   "x-wodana-user-email": `${fixture.reviewerEmailPrefix}-${run}@wodana.invalid`,
   "x-wodana-user-name": fixture.reviewerName,
+};
+const operationsApprover = {
+  "x-wodana-user-subject": `funnel-operations-${run}`,
+  "x-wodana-user-email": `funnel-operations-${run}@wodana.invalid`,
+  "x-wodana-user-name": "Funnel Operations approver",
 };
 const internal = {
   "x-wodana-internal-token": process.env.BUSINESS_CORE_INTERNAL_TOKEN ?? "local-development-token",
@@ -202,6 +208,7 @@ const reviewerRole = await request(`/workspaces/${workspaceId}/roles`, {
       "pre_projects.edit",
       "pre_projects.review_designs",
       "commercial.approve",
+      "commercial.estimate",
       "commercial.finance.verify",
     ],
   },
@@ -299,6 +306,13 @@ if (palmFixture) {
   assert.deepEqual(configuredOptions.enquiryTypes.map(option => option.label), palmIntakeProfile.enquiryTypes.map(option => option.label));
   assert.deepEqual(configuredOptions.channels.third_party.map(option => option.label), ["PlyLeads"]);
   assert.deepEqual(configuredOptions.channels.digital_marketing.map(option => option.label), ["Palm Living", "TBD"]);
+} else {
+  await request(`/workspaces/${workspaceId}/crm/taxonomies`, {
+    body: { code: "enquiry_type", name: "Enquiry type", options: [
+      { code: "not_sure", label: "Not Sure Yet", position: 0 },
+      { code: "renovation_fit_out", label: "Renovation / Fit-Out", position: 1 },
+    ] },
+  });
 }
 
 const workflowPath = `/workspaces/${workspaceId}/projects/workflow-templates`;
@@ -344,18 +358,20 @@ assert.equal(archivedWorkflow.status, "archived");
 assert.equal(archivedWorkflow.version, 2);
 assert.equal((await request(workflowPath)).defaultTemplate.source, "built_in");
 const projectWorkflowTemplateId = randomUUID();
-const projectWorkflowStages = workflowFallback.defaultTemplate.stages.map(
+const projectWorkflowStages = palmFixture ? palmWorkflowFixture.stages : workflowFallback.defaultTemplate.stages.map(
   (stage, index) => ({
     ...stage,
     visibleName: index === 0 ? "Mobilisation" : stage.visibleName,
   }),
 );
+const projectWorkflowCode = palmFixture ? palmWorkflowFixture.code : "tenant_delivery";
+const projectFirstStageName = palmFixture ? "Deal File" : "Mobilisation";
 await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
   method: "PUT",
   body: {
     version: 0,
-    code: "tenant_delivery",
-    name: "Tenant delivery",
+    code: projectWorkflowCode,
+    name: palmFixture ? palmWorkflowFixture.name : "Tenant delivery",
     description: "The default frozen by new projects in this workspace.",
     isDefault: true,
     stages: projectWorkflowStages,
@@ -376,6 +392,8 @@ const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
         forecastCategory: "pipeline",
         entryRequirements: {},
       },
+      { code: "won", name: "Won", position: 2, probability: 100, forecastCategory: "closed", entryRequirements: {} },
+      { code: "lost", name: "Lost", position: 3, probability: 0, forecastCategory: "closed", entryRequirements: {} },
     ],
   },
 });
@@ -383,7 +401,7 @@ const qualificationDraft = await request(`/workspaces/${workspaceId}/crm/qualifi
   body: {
     code: "funnel_qualification",
     name: "Funnel qualification",
-    serviceType: "not_sure",
+    serviceType: "renovation_fit_out",
     questions: [
       { key: "scope_confirmed", label: "Scope confirmed", dataType: "boolean", required: true, position: 1 },
       { key: "property_type", label: "Property type", dataType: "select", required: true, position: 2, configuration: { options: ["villa", "apartment"] } },
@@ -425,7 +443,9 @@ const publicSharedForm = await request(`/public/crm/lead-forms/${sharedForm.toke
 assert.equal(publicSharedForm.branding.displayName, fixture.workspaceName);
 assert.equal(publicSharedForm.source, undefined);
 assert.equal(publicSharedForm.channel, undefined);
-assert(publicSharedForm.questions.every((question) => question.field === undefined));
+// Core field identifiers drive the public emirate/area and phone widgets; routing metadata stays private.
+assert(publicSharedForm.questions.some((question) => question.field === "emirate"));
+assert(publicSharedForm.questions.every((question) => question.field !== "source" && question.field !== "channel"));
 assert.equal(publicSharedForm.consentLabel, "I agree to be contacted about this enquiry.");
 if (palmFixture) {
   assert.equal(publicSharedForm.questions.find(question => question.title === "Email")?.required, true);
@@ -437,6 +457,8 @@ const sharedValues = {
   displayName: "Noor Al Mansoori (synthetic shared link)",
   mobile: "+971500000001",
   email: "noor.shared-link@wodana.invalid",
+  emirate: "dubai",
+  area: "Dubai Hills",
   location: "Dubai Hills (synthetic)",
   serviceType: "not_sure",
   budgetRange: "",
@@ -541,6 +563,7 @@ if (palmFixture) {
         preferredTimezone: "Asia/Dubai",
       },
       title: staffName,
+      details: { emirate: "dubai", area: "Dubai Hills" },
       summary: "Synthetic staff-created enquiry assigned to a named eligible team owner.",
       serviceType: "not_sure",
       originalPayload: { method: "manual_staff_entry" },
@@ -674,11 +697,12 @@ const intakeBody = {
   party: {
     displayName: fixture.customerName,
     email: `client-${run}@wodana.invalid`,
-    phone: "+971501234567",
+    mobile: "+971501234567",
     preferredLocale: "en-AE",
     preferredTimezone: "Asia/Dubai",
   },
   title: fixture.enquiryTitle,
+  details: { emirate: "dubai", area: "Dubai Hills" },
   summary: fixture.enquirySummary,
   serviceType: "not_sure",
   originalPayload: { form: "generic-funnel-smoke" },
@@ -729,14 +753,24 @@ await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, {
   body: initialConversion,
   expected: 422,
 });
+const selectedType = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/details`, {
+  method: "PATCH",
+  body: {
+    version: lead.version,
+    serviceType: "renovation_fit_out",
+    summary: fixture.enquirySummary,
+    party: intakeBody.party,
+    details: intakeBody.details,
+  },
+});
 await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, {
   method: "PUT",
-  body: { version: lead.version, values: { scope_confirmed: "yes", property_type: "villa" } },
+  body: { version: selectedType.version, values: { scope_confirmed: "yes", property_type: "villa" } },
   expected: 422,
 });
 const qualifiedLead = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, {
   method: "PUT",
-  body: { version: lead.version, values: { scope_confirmed: true, property_type: "villa" } },
+  body: { version: selectedType.version, values: { scope_confirmed: true, property_type: "villa" } },
 });
 assert.equal(qualifiedLead.qualificationState.ready, true);
 assert.equal(qualifiedLead.qualificationState.selection, "service_specific");
@@ -848,11 +882,12 @@ assert.equal(held.status, "on_hold");
 assert.equal(held.phase, "define");
 assert.equal(held.isOnHold, true);
 assert.equal(duplicateHolds[1].body.version, held.version);
-await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/rooms`, {
+const heldRoom = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/rooms`, {
   method: "PUT",
-  expected: 409,
-  body: { id: randomUUID(), version: 0, name: "Blocked while held" },
+  expected: 200,
+  body: { id: randomUUID(), version: 0, name: "Survey room while held" },
 });
+assert.equal(heldRoom.name, "Survey room while held");
 const resumed = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
   body: { requestId: randomUUID(), version: held.version, action: "resume", reason: "Client replied" },
 });
@@ -867,7 +902,7 @@ const reopened = await request(`/workspaces/${workspaceId}/pre-projects/${caseId
 });
 assert.equal(reopened.status, "active");
 assert.equal(reopened.phase, "define");
-const plannedProject = await request(
+const plannedProject = palmFixture ? null : await request(
   `/workspaces/${workspaceId}/projects/planning`,
   { body: { caseId } },
 );
@@ -910,9 +945,16 @@ const designVersionId = randomUUID();
 const measurementId = randomUUID();
 const dimensionId = randomUUID();
 const contentPath = `/workspaces/${workspaceId}/pre-projects/${caseId}`;
+const deliveryCatalogId=randomUUID(),catalogRoomId=randomUUID(),catalogUnitId=randomUUID(),catalogWorkId=randomUUID();
+await request(`/workspaces/${workspaceId}/catalog/collections`,{body:{id:deliveryCatalogId,name:'Synthetic delivery catalog',description:'Isolated source traceability acceptance',starter:false}});
+const catalogRecord=(id,kind,code,name,links=[])=>({id,catalogId:deliveryCatalogId,version:0,kind,code,name,description:'Synthetic local acceptance record',market:'CUSTOM',aliases:[],attributes:[],sizes:[],sources:[],links,specificationStatus:'workspace_verified',dimension:kind==='unit'?'count':'none',...(kind==='unit'?{baseFactor:1}:{})});
+const catalogRoom=catalogRecord(catalogRoomId,'room','DELIVERY_ROOM','Primary bedroom');
+const catalogUnit=catalogRecord(catalogUnitId,'unit','DELIVERY_NOS','Number');
+const catalogWork=catalogRecord(catalogWorkId,'work','DELIVERY_WARDROBE','Built-in wardrobe',[{relation:'unit',targetId:catalogUnitId},{relation:'room',targetId:catalogRoomId}]);
+for(const record of [catalogRoom,catalogUnit,catalogWork]) await request(`/workspaces/${workspaceId}/catalog/records`,{method:'PUT',body:record});
 
 await request(`${contentPath}/rooms`, {
-  body: { id: roomId, version: 0, name: "Primary bedroom" },
+  body: { id: roomId, version: 0, name: "Primary bedroom", catalogRecordId:catalogRoomId },
   method: "PUT",
 });
 await request(`${contentPath}/entries`, {
@@ -933,7 +975,7 @@ await request(`${contentPath}/entries`, {
     avoid: "",
     source: "client",
     assetIds: [],
-    catalogLinks: [],
+    catalogLinks: [{role:'work',recordId:catalogWorkId}],
   },
   method: "PUT",
 });
@@ -944,7 +986,7 @@ assert.deepEqual(
   incompleteReadiness.nextActions.map((next) => next.code),
   [
     "ADD_SITE_PLAN",
-    "COMPLETE_DEFINITION",
+    "PUBLISH_DEFINITION",
     "CREATE_SPECIFICATION",
     "RECORD_MEASUREMENT",
     "LINK_DESIGN_REVISION",
@@ -1254,6 +1296,10 @@ async function commercial(action, body = {}, headers = owner) {
   });
 }
 
+if (palmFixture) await commercial("set_palm_flow", { scope: {
+  design: false, mainQuotation: true, materialSelection: false, procurement: true,
+  manufacturing: false, siteWorks: false, installation: true,
+} });
 quoteId = (await commercial("create")).data.quotes[0].id;
 let commercialState = await request(commercialPath);
 const composerPath = `${commercialPath}/quotation-proposals`;
@@ -1267,7 +1313,7 @@ const composerInput = {
 const scopeProposal = await request(composerPath, { body: composerInput });
 assert.equal(scopeProposal.run.proposal.items.length, 1);
 assert.equal(scopeProposal.run.proposal.coverage.linkedSourceIds[0], scopeId);
-assert.equal(scopeProposal.run.duplicates.length, 1);
+assert.equal(scopeProposal.run.duplicates.length, 0);
 const proposalReplay = await request(composerPath, { body: composerInput });
 assert.equal(proposalReplay.replayed, true);
 assert.equal(proposalReplay.run.id, scopeProposal.run.id);
@@ -1281,8 +1327,8 @@ const appliedProposal = await request(
   `${composerPath}/${scopeProposal.run.id}/apply`,
   { body: applyInput },
 );
-assert.equal(appliedProposal.addedItemIds.length, 0);
-assert.equal(appliedProposal.skippedDuplicateItemIds.length, 1);
+assert.equal(appliedProposal.addedItemIds.length, 1);
+assert.equal(appliedProposal.skippedDuplicateItemIds.length, 0);
 const appliedReplay = await request(
   `${composerPath}/${scopeProposal.run.id}/apply`,
   { body: applyInput },
@@ -1306,6 +1352,7 @@ Object.assign(quote.lines[0], {
   finish: "",
   unitCost: 400,
   rate: 750,
+  catalogPriceRequest: { action: 'override', reason: 'Synthetic negotiated wardrobe price including installation' },
 });
 quote.taxRate = 5;
 quote.paymentTerms = [
@@ -1335,7 +1382,7 @@ assert.deepEqual(
     hash: replacementBaseline.snapshotHash,
   },
 );
-await commercial("approve");
+await commercial(palmFixture ? "qs_approve" : "approve", {}, palmFixture ? reviewer : owner);
 commercialState = await request(commercialPath);
 const approverId = commercialState.contacts.find((contact) => contact.phone === mobile).id;
 await commercial("issue", { approverId });
@@ -1373,8 +1420,22 @@ await commercial("report_payment_receipt", {
   evidence: "Synthetic local-only bank receipt evidence; no provider or real payment.",
 });
 await commercial("verify_payment", { paymentId: releasePayment.id }, reviewer);
+const wonCandidate = await request(`/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`);
+await request(`/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}/transition`, {
+  body: { version: wonCandidate.version, stageId: pipeline.stages.find(stage => stage.code === "won").id, status: "won", reason: "Client accepted the synthetic quotation." },
+});
+if (palmFixture) {
+  await request(`/workspaces/${workspaceId}/roles`, {
+    body: { code: "uat_sales_submitter", name: "UAT Sales submitter", permissionCodes: ["pre_projects.view", "pre_projects.edit"] },
+  });
+}
+const opsInvitation = await request(`/workspaces/${workspaceId}/invitations`, {
+  body: { email: operationsApprover["x-wodana-user-email"], roleCodes: palmFixture ? ["operations_approver", "uat_sales_submitter"] : ["operations_approver"] },
+});
+await request(`/workspaces/invitations/${opsInvitation.id}/accept`, { headers: operationsApprover, method: "POST" });
 await commercial("submit_owner_review", {
-  commission: 0,
+  commissionLines: [{ recipientName: "Synthetic Sales", type: "sales", basis: "amount", value: 10 }],
+  paymentProofUrl: "https://example.com/synthetic-payment-proof",
   checklist: {
     agreement: true,
     boq: true,
@@ -1384,18 +1445,24 @@ await commercial("submit_owner_review", {
     payment: true,
   },
   note: "Accepted scope and commercial evidence checked.",
-});
+}, palmFixture ? operationsApprover : owner);
+await commercial("review_deal_finance", {
+  decision: "confirm",
+  paymentVerified: true,
+  commissionLines: [{ recipientName: "Synthetic Sales", type: "sales", basis: "amount", value: 10 }],
+  note: "Synthetic payment evidence and commission checked.",
+}, reviewer);
 await commercial(
   "decide_owner_review",
-  { decision: "approve", note: "Independent owner review complete." },
-  reviewer,
+  { decision: "approve", note: "Independent Operations review complete." },
+  palmFixture ? owner : operationsApprover,
 );
 const released = await commercial("release", {
   note: "Approved for delivery planning.",
 });
 const projectId = released.data.release.projectId;
 assert(projectId);
-assert.equal(projectId, plannedProject.id);
+if (!palmFixture) assert.equal(projectId, plannedProject.id);
 
 commercialState = await request(commercialPath);
 const project = await request(
@@ -1423,15 +1490,28 @@ assert.equal(releasedLine.rate, 750);
 assert.equal(releasedLine.lineTotal, 1500);
 assert.equal("unitCost" in releasedLine, false);
 assert.equal("photo" in releasedLine, false);
+// Editing the reusable master must not rewrite the captured requirement or released BOQ.
+await request(`/workspaces/${workspaceId}/catalog/records`,{method:'PUT',body:{...catalogWork,version:1,name:'Updated master wardrobe'}});
+const capturedSpecification=await request(`${contentPath}/specifications/${scopeId}`);
+assert(capturedSpecification.items[0].requirement.catalogLinks.some(link=>link.recordId===catalogWorkId&&link.snapshot.name==='Built-in wardrobe'));
+const afterCatalogEdit=await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
+assert.deepEqual(afterCatalogEdit.data.scope,project.data.scope);
 assert.equal(project.data.workflow.template.id, projectWorkflowTemplateId);
 assert.equal(project.data.workflow.template.version, 1);
-assert.equal(project.data.workflow.template.stages[0].visibleName, "Mobilisation");
+assert.equal(project.data.workflow.template.stages[0].visibleName, projectFirstStageName);
+assert.equal(project.data.workflow.currentStageKey, palmFixture ? "procurement" : "planning");
+if (palmFixture) {
+  assert(project.data.workflow.template.stages.some(stage => stage.key === "procurement"));
+  assert(!project.data.workflow.template.stages.some(stage => stage.key === "factory_production"));
+  assert(!project.data.workflow.template.stages.some(stage => stage.key === "manufacturing_readiness"));
+  assert.deepEqual(project.data.workflow.template.stages.find(stage => stage.key === "procurement")?.exitGates, []);
+}
 
 await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
   method: "PUT",
   body: {
     version: 1,
-    code: "tenant_delivery",
+    code: projectWorkflowCode,
     name: "Tenant delivery",
     description: "Updated for future projects only.",
     isDefault: true,
@@ -1447,7 +1527,7 @@ assert.equal(
       `/workspaces/${workspaceId}/projects/${projectId}/execution`,
     )
   ).data.workflow.template.stages[0].visibleName,
-  "Mobilisation",
+  projectFirstStageName,
 );
 
 async function projectCommand(action, body = {}, expected = 201) {
@@ -1704,12 +1784,18 @@ const cancelledTentative = await request(
   },
 );
 assert.equal(cancelledTentative.status, "cancelled");
-let workflowState = await projectCommand("workflow_transition", {
-  toStageKey: "delivery",
-  note: "Delivery plan and ownership reviewed.",
-});
-assert.equal(workflowState.data.workflow.currentStageKey, "delivery");
-assert.equal(workflowState.data.workflow.history.at(-1).action, "advanced");
+let workflowState;
+if (palmFixture) {
+  workflowState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
+  assert.equal(workflowState.data.workflow.currentStageKey, "procurement");
+} else {
+  workflowState = await projectCommand("workflow_transition", {
+    toStageKey: "delivery",
+    note: "Delivery plan and ownership reviewed.",
+  });
+  assert.equal(workflowState.data.workflow.currentStageKey, "delivery");
+  assert.equal(workflowState.data.workflow.history.at(-1).action, "advanced");
+}
 
 workflowState = await projectCommand("project_controls", {
   controls: {
@@ -1727,7 +1813,7 @@ const holdPreview = await request(
 assert(holdPreview.blockers.some((message) => message.includes("project hold")));
 await projectCommand(
   "workflow_transition",
-  { toStageKey: "handover", note: "" },
+  { toStageKey: palmFixture ? "installation" : "handover", note: "" },
   409,
 );
 workflowState = await projectCommand("project_controls", {

@@ -12,11 +12,17 @@ vi.mock("@/lib/auth/client", async (importOriginal) => ({
 }));
 afterEach(() => { vi.unstubAllGlobals(); replace.mockReset(); refresh.mockReset(); vi.mocked(openAuthenticatedWorkspace).mockClear(); });
 
+async function fillCredentials(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByRole("textbox", { name: "Email" }), "owner@example.com");
+  await user.type(screen.getByLabelText(/^Password/, { selector: "input" }), "DemoPassword#2026");
+}
+
 async function limitedLogin() {
   const user = userEvent.setup();
   const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "DEVICE_LIMIT_REACHED", sessions: securityPageFixture.sessions.slice(0, 2) }) });
   vi.stubGlobal("fetch", fetchMock);
-  render(<LoginScreen demoCredentials={{ email: "owner@example.com", password: "DemoPassword#2026" }} nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+  render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+  await fillCredentials(user);
   await user.click(screen.getByRole("button", { name: "Sign in" }));
   const dialog = await screen.findByRole("dialog", { name: "Device limit reached" });
   return { user, fetchMock, dialog };
@@ -68,15 +74,23 @@ describe("login tenant branding", () => {
   it("presents the tenant as the primary identity and Wodana as the platform provider", () => {
     render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null }} />);
 
-    expect(screen.getAllByLabelText("Palm Living workspace")).toHaveLength(2);
-    expect(screen.getAllByLabelText("Powered by Wodana")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Palm Living workspace")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Powered by Wodana")).toHaveLength(1);
   });
 });
 
 describe("login progress and failure feedback", () => {
-  function renderLogin() {
-    render(<LoginScreen demoCredentials={{ email: "owner@example.com", password: "DemoPassword#2026" }} nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
-    return userEvent.setup();
+  it("does not present a completed password reset as a sign-in error", () => {
+    render(<LoginScreen nextPath="/workspace" initialStatus="Password updated. Sign in with your new password." initialStatusTone="info" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Password updated");
+    expect(screen.getByRole("status")).toHaveAttribute("data-tone", "info");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  async function renderLogin() {
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    const user = userEvent.setup();
+    await fillCredentials(user);
+    return user;
   }
   it("keeps progress visible through session confirmation and the workspace handoff", async () => {
     let releaseLogin!: (response: unknown) => void;
@@ -85,9 +99,10 @@ describe("login progress and failure feedback", () => {
       .mockImplementationOnce(() => new Promise(resolve => { releaseLogin = resolve; }))
       .mockImplementationOnce(() => new Promise(resolve => { releaseSession = resolve; }));
     vi.stubGlobal("fetch", fetchMock);
-    const user = renderLogin();
+    const user = await renderLogin();
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(screen.getByRole("status")).toHaveTextContent("Signing you in");
+    expect(screen.getByRole("status")).toHaveAttribute("data-tone", "info");
     expect(screen.getByRole("button", { name: /Signing in/ })).toBeDisabled();
     releaseLogin({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Confirming your browser session"));
@@ -102,9 +117,23 @@ describe("login progress and failure feedback", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, nextAction: "start_onboarding" }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
     vi.stubGlobal("fetch", fetchMock);
-    const user = renderLogin();
+    const user = await renderLogin();
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/onboarding"));
+  });
+  it("highlights a rate-limit error as an assertive alert without retrying automatically", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({ message: "Too many sign-in attempts. Try again later." }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = await renderLogin();
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Sign-in needs attention");
+    expect(alert).toHaveTextContent("Too many sign-in attempts");
+    expect(alert).toHaveAttribute("data-tone", "error");
+    expect(alert).toHaveAttribute("data-visible", "true");
+    expect(alert).toHaveAttribute("aria-live", "assertive");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
   it.each([
     { label: "invalid JSON", login: { ok: true, status: 200, json: async () => null }, session: null, message: "incomplete response" },
@@ -113,7 +142,7 @@ describe("login progress and failure feedback", () => {
     { label: "service failure", login: { ok: false, status: 503, json: async () => ({ message: "Sign-in is temporarily unavailable." }) }, session: null, message: "temporarily unavailable" },
   ])("shows a retryable error for $label", async ({ login, session, message }) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(login).mockResolvedValueOnce(session));
-    const user = renderLogin();
+    const user = await renderLogin();
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(message));
     expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
@@ -122,9 +151,11 @@ describe("login progress and failure feedback", () => {
 });
 
 describe("login MFA flow", () => {
-  function renderLogin() {
-    render(<LoginScreen demoCredentials={{ email: "owner@example.com", password: "DemoPassword#2026" }} nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
-    return userEvent.setup();
+  async function renderLogin() {
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    const user = userEvent.setup();
+    await fillCredentials(user);
+    return user;
   }
 
   async function enterOtp(user: ReturnType<typeof userEvent.setup>, code: string) {
@@ -139,7 +170,7 @@ describe("login MFA flow", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: "00000000-0000-4000-8000-000000000002" }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
     vi.stubGlobal("fetch", fetchMock);
-    const user = renderLogin();
+    const user = await renderLogin();
 
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("heading", { name: "Verify it’s you" })).toBeInTheDocument();
@@ -152,6 +183,22 @@ describe("login MFA flow", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/mfa/verify");
   });
 
+  it("returns from the authenticator challenge to sign in and clears the pending session", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ mfaRequired: true, methods: ["totp"] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ signedOut: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = await renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { name: "Verify it’s you" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/logout");
+    expect(openAuthenticatedWorkspace).not.toHaveBeenCalled();
+  });
+
   it("keeps the selected device logout through a second MFA challenge", async () => {
     const sessions = securityPageFixture.sessions.slice(0, 2);
     const fetchMock = vi.fn()
@@ -161,7 +208,7 @@ describe("login MFA flow", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: securityPageFixture.workspaceId }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
     vi.stubGlobal("fetch", fetchMock);
-    const user = renderLogin();
+    const user = await renderLogin();
 
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await enterOtp(user, "123456");
@@ -185,7 +232,7 @@ describe("login MFA flow", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ enabled: true, recoveryCodes: codes }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
     vi.stubGlobal("fetch", fetchMock);
-    const user = renderLogin();
+    const user = await renderLogin();
 
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByRole("heading", { name: "Protect your account" })).toBeInTheDocument();
@@ -203,5 +250,26 @@ describe("login MFA flow", () => {
     await user.click(screen.getByRole("checkbox", { name: "I saved these recovery codes" }));
     await user.click(screen.getByRole("button", { name: "Continue to workspace" }));
     await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+  });
+
+  it("shows the setup key in one row and lets the user go back through enrollment", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: "00000000-0000-4000-8000-000000000002", mfaEnrollmentRequired: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ secret: "ABCDEFGHIJKLMNOP", otpauthUri: "otpauth://totp/Wodana:test?secret=ABCDEFGHIJKLMNOP" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ signedOut: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = await renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(await screen.findByRole("button", { name: "Set up authenticator" }));
+    expect(await screen.findByLabelText("Authenticator setup key")).toHaveTextContent("ABCDEFGHIJKLMNOP");
+    expect(screen.getByRole("button", { name: "Copy setup key" })).toBeInTheDocument();
+    expect(screen.queryByText("Can’t scan? Use setup key")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Back$/ }));
+    expect(await screen.findByRole("heading", { name: "Protect your account" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to sign in" }));
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/logout");
   });
 });

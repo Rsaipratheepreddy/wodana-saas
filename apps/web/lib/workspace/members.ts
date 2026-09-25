@@ -6,6 +6,8 @@ export type WorkspaceRole = {
   isSystem: boolean;
   version: number;
   memberCount?: number;
+  teamCount?: number;
+  pendingInvitationCount?: number;
   permissions: string[];
 };
 
@@ -37,15 +39,47 @@ export type WorkspaceInvitation = {
 };
 
 export type MembersPageData = {
+  canView?: boolean;
   canManage: boolean;
+  canInvite?: boolean;
+  canEdit?: boolean;
+  canCancelInvitations?: boolean;
+  assignableRoleCodes?: string[];
   currentUserId: string;
   currentUserName: string;
   invitations: WorkspaceInvitation[];
   members: WorkspaceMember[];
   roles: WorkspaceRole[];
-  teams: Array<{ id: string; name: string }>;
+  teams: Array<{ id: string; name: string; roleIds?: string[] }>;
   workspaceId: string;
 };
+
+export function memberAccessCapabilities(
+  allowedPermissions: readonly string[] | undefined,
+  roleCodes: readonly string[],
+  roles: readonly WorkspaceRole[],
+) {
+  const isAdministrator = roleCodes.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+  const permissions = new Set(allowedPermissions ?? []);
+  const canManage = isAdministrator;
+  const canView = isAdministrator || permissions.has("workspace.members.manage") || [
+    "module.members.read", "module.members.write", "module.members.edit", "module.members.delete",
+  ].some((permission) => permissions.has(permission));
+  const canInvite = isAdministrator || permissions.has("workspace.members.manage") || permissions.has("module.members.write");
+  const canEdit = isAdministrator || permissions.has("workspace.members.manage") || permissions.has("module.members.edit");
+  const canCancelInvitations = isAdministrator || permissions.has("workspace.members.manage") || permissions.has("module.members.delete");
+  const canReadInvitations = isAdministrator || permissions.has("workspace.members.manage") || [
+    "module.members.read", "module.members.write", "module.members.delete",
+  ].some((permission) => permissions.has(permission));
+  const canReadTeams = isAdministrator || permissions.has("module.teams.read") || permissions.has("legal_entities.view");
+  const assignableRoleCodes = roles
+    .filter((role) => isAdministrator || (
+      !["owner", "administrator"].includes(role.code.toLowerCase())
+      && role.permissions.every((permission) => permissions.has(permission))
+    ))
+    .map((role) => role.code);
+  return { canView, canManage, canInvite, canEdit, canCancelInvitations, canReadInvitations, canReadTeams, assignableRoleCodes };
+}
 
 export const membersPageFixture: MembersPageData = {
   canManage: true,

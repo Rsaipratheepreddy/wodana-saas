@@ -43,7 +43,11 @@ describe("structured commercial finance ledger", () => {
     expect(commercialCommandPermission("verify_credit")).toBe(
       "commercial.finance.verify",
     );
+    expect(commercialCommandPermission("review_deal_finance")).toBe(
+      "commercial.finance.verify",
+    );
     expect(commercialCommandPermission("approve")).toBe("commercial.approve");
+    expect(commercialCommandPermission("decide_owner_review")).toBe("commercial.deal.approve");
     expect(commercialCommandPermission("report_payment_receipt")).toBe(
       "pre_projects.edit",
     );

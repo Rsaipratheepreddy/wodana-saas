@@ -1,3 +1,5 @@
+import { PlanningApprovals } from "@/components/pre-project/planning-approvals";
+import { QuotationBuilderShell } from "@/components/commercial/quotation-builder-shell";
 import { CommercialPage } from '@/components/commercial/commercial-page';
 import { getCommercial } from '@/lib/commercial/server';
 import { notFound, redirect } from "next/navigation";
@@ -16,22 +18,27 @@ export default async function CasePage({ params, searchParams }: {
   if (!route) notFound();
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(await searchParams)) if (typeof value === "string") query.set(key, value);
-  if (!section?.length) redirect(caseHref(caseId, query, "overview"));
+  if (!section?.length) redirect(caseHref(caseId, query, "requirements"));
   if (route.section === "measurements" || route.section === "site-layouts") {
     const destination = caseHref(caseId, query, 'requirements');
     redirect(`${destination}${destination.includes('?') ? '&' : '?'}tab=${route.section === 'measurements' ? 'measurements' : 'site-plan'}`);
   }
   const commercialSection = ['boq','quotations','contracts','payment-plan','variations','approvals','execution-release','client-portal'].includes(route.section);
   const needsCommercialState = commercialSection || route.section === "overview";
-  const preparation = requirementViews.some(item=>item.section===route.section)||['designs','site'].includes(route.section);
+  const preparation = requirementViews.some(item=>item.section===route.section)||['designs','site','approvals'].includes(route.section);
   const [record, commercialState, content, definition, overview] = await Promise.all([
     getPreProject(caseId),
     needsCommercialState ? getCommercial(caseId) : undefined,
-    preparation ? getCaseContent(caseId,route.section==='designs',route.section==='site') : undefined,
-    ["definition", "overview"].includes(route.section) ? getDefinitionPageData(caseId) : undefined,
+    preparation ? getCaseContent(caseId,['designs','approvals'].includes(route.section),route.section==='site') : undefined,
+    ["definition", "overview", "approvals"].includes(route.section) ? getDefinitionPageData(caseId) : undefined,
     route.section === "overview" ? getCaseOverviewData() : undefined,
   ]);
   if ("error" in record) return <section style={{ padding: "2rem" }}><h1>Pre-execution unavailable</h1><p role="alert">{record.error}</p><Link href={PRE_PROJECT_ROOT}>Back to all pre-execution records</Link></section>;
+  if (route.section === "quotations" && query.has("quote") && commercialState && !("error" in commercialState)) {
+    if (!commercialState.data.quotes.some(quote => quote.id === query.get("quote"))) notFound();
+    return <QuotationBuilderShell key={query.get("quote")!} initial={commercialState} quoteId={query.get("quote")!} backHref={caseHref(caseId, new URLSearchParams(listSearch(query).toString()), "quotations")} />;
+  }
+  if (route.section === "approvals" && content && definition && commercialState) return <PlanningApprovals record={record} content={content} definition={definition} commercial={commercialState} search={listSearch(query).toString()} review={query.get("review") ?? undefined} />;
   if(commercialSection && commercialState)return <CommercialPage key={`${caseId}-${route.section}-${query.get("quote")??"list"}`} quotationId={query.get("quote")??undefined} initial={commercialState} record={record} section={route.section} search={listSearch(query).toString()}/>;
   return <PreProjectCasePage commercial={commercialState} content={content} definition={definition} overview={overview} record={record} section={route.section} search={listSearch(query).toString()} siteItem={query.get('item')??undefined} />;
 }

@@ -58,6 +58,7 @@ export function ProjectControls({
   onOpenRecord,
   serverError,
   initialValues,
+  taskId,
 }: {
   state: ProjectState;
   kind: ControlKind;
@@ -67,6 +68,7 @@ export function ProjectControls({
   onOpenRecord?: (id: string) => void;
   serverError?: string;
   initialValues?: Value;
+  taskId?: string;
 }) {
   const d = state.data;
   const [editor, setEditor] = useState<{
@@ -79,14 +81,14 @@ export function ProjectControls({
     } | null>(null),
     [inspected, setInspected] = useState<Value | null>(null),
     [error, setError] = useState("");
-  const rows = ({
+  const rows = (({
     dispatch: d.dispatches,
     commissioning: d.commissioning,
     technical_query: d.technicalQueries,
     transmittal: d.transmittals,
     retention: d.retentions,
     supplier_return: d.supplierReturns,
-  }[kind] ?? []) as unknown as Value[];
+  }[kind] ?? []) as unknown as Value[]).filter(row=>!taskId||row.taskId===taskId);
   const tasks = d.tasks
     .filter((t) => t.status !== "cancelled")
     .map((t) => ({ value: t.id, label: `${t.title} · ${t.area}` }));
@@ -121,6 +123,7 @@ export function ProjectControls({
         ),
       ),
       f("quantity", "Quantity", "number"),
+      f("factoryLotId", "Passed production lot", "select", d.tasks.flatMap(task=>(task.factoryLots??[]).filter(lot=>lot.status==='passed').map(lot=>({value:lot.id,label:`${task.title} · ${lot.title} · ${lot.quantity} ${lot.unit}`}))), true),
       f(
         "receivingTaskId",
         "Receiving site task (if applicable)",
@@ -247,7 +250,9 @@ export function ProjectControls({
   function transition(r: Value, status: string) {
     setError("");
     let fields: Field[] = [];
-    if (kind === "dispatch" && status === "dispatched")
+    if (kind === "dispatch" && status === "return_factory")
+      fields=[f("quantity","Total quantity returned to factory","number"),f("evidence","Factory receipt evidence","textarea")];
+    else if (kind === "dispatch" && status === "dispatched")
       fields = [
         f("carrier", "Carrier / driver"),
         f("reference", "Delivery note reference"),
@@ -304,11 +309,12 @@ export function ProjectControls({
     else fields = [f("note", "Review note / evidence", "textarea")];
     setEditor({
       title: `${label(status)} · ${String(r.title ?? "Supplier return")}`,
-      action: `${kind}_status`,
+      action: status==="return_factory"?"dispatch_return":`${kind}_status`,
       stage: status,
       id: String(r.id),
       fields,
       value: {
+        quantity:r.rejected,
         accepted: r.quantity,
         rejected: 0,
         carrier: r.carrier,
@@ -326,7 +332,8 @@ export function ProjectControls({
           ? [{ title: "Record dispatch", status: "dispatched" }]
           : status === "dispatched" && state.canReview
             ? [{ title: "Receive at site", status: "received" }]
-            : [];
+            : status === "received" && state.canManage && Number(r.rejected)>Number(r.returnedToFactory??0)
+              ? [{title:"Return rejected output",status:"return_factory"}] : [];
     if (kind === "commissioning")
       return status === "draft" && canAdd
         ? [{ title: "Submit check", status: "submitted" }]

@@ -287,8 +287,8 @@ export function QuotationPaymentInspector({
             <Plus size={14} />
             Add milestone
           </button>
-          <details className={d.details}>
-            <summary>Save this payment schedule</summary>
+          <section className={d.details}>
+            <h3>Save this payment schedule</h3>
             <label>
               Schedule name
               <input
@@ -327,7 +327,7 @@ export function QuotationPaymentInspector({
             >
               Save schedule
             </button>
-          </details>
+          </section>
         </>
       )}
       {error && (

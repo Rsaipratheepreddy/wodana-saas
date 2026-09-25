@@ -4,6 +4,7 @@ import { acceptedQuoteLines, acceptedQuoteValue } from "./commercial.domain";
 export function sameOffer(a: Quote, b: Quote) {
   return (
     a.kind === b.kind &&
+    (a.kind !== "quotation" || a.round === b.round) &&
     (a.kind === "quotation" || (a.familyId ?? a.id) === (b.familyId ?? b.id))
   );
 }

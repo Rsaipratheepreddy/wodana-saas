@@ -14,6 +14,7 @@ export function draftReportTaskCommand(base: FieldCommandBase, input: {
   summary: string;
   evidence: string;
   issues: string;
+  shift?:string;hours?:number;people?:number;weather?:string;safety?:string;safetyStatus?:"none"|"observation"|"incident";materials?:string;tomorrow?:string;
   scheduleImpact: 'none' | 'watch' | 'blocked';
   impactReason: string;
   recoveryPlan: string;
@@ -79,3 +80,10 @@ export const localDay = (date = new Date()) => {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 };
+
+/** Validate physical receiving independently of shipment or order status. */
+export function receiptQuantityError(accepted: number | null, rejected: number | null, remaining: number, unit: string): string | null {
+  if (accepted === null || !Number.isFinite(accepted) || !Number.isFinite(rejected ?? 0) || accepted < 0 || (rejected ?? 0) < 0 || accepted + (rejected ?? 0) <= 0) return 'Enter the quantities received.';
+  if (accepted + (rejected ?? 0) > remaining) return `Received quantity cannot exceed ${remaining} ${unit} outstanding.`;
+  return null;
+}

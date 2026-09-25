@@ -4,6 +4,10 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, Check, CheckCheck, Clock3, FileText, ImageIcon, Info, MessageCircle, Plus, RefreshCw, Send, Video } from "lucide-react";
+import { SampleInbox } from "./sample-inbox";
+import { MessagingMark } from "@/components/brand/messaging-mark";
+import { ProviderMark } from "@/components/brand/provider-mark";
+import { Globe2 } from "lucide-react";
 import { Avatar, Button, Callout, ControlledModalDialog, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton } from "@/design-system";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
@@ -14,6 +18,8 @@ import styles from "./crm-inbox.module.css";
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const timeout = () => AbortSignal.timeout(20_000);
 export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScreenPageData; initialRecordId?: string }) {
+  const [sample, setSample] = useState(false);
+  const [channelFilter, setChannelFilter] = useState("all");
   const [items, setItems] = useState(initialData.items);
   const [cursor, setCursor] = useState(initialData.nextCursor);
   const [selected, setSelected] = useState<string | null>(initialRecordId ?? null);
@@ -24,7 +30,7 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState("");
   const requestPending = useRef(false), controller = useRef<AbortController | null>(null), cursorRef = useRef(cursor);
   useEffect(() => { cursorRef.current = cursor; }, [cursor]);
-  const query = new URLSearchParams({ limit: "100", ...(search.trim() ? { search: search.trim() } : {}), ...(filter === "unread" ? { unread: "true" } : filter === "closed" ? { status: "closed" } : {}) }).toString();
+  const query = new URLSearchParams({ limit: "100", ...(channelFilter !== "all" ? { channel: channelFilter } : {}), ...(search.trim() ? { search: search.trim() } : {}), ...(filter === "unread" ? { unread: "true" } : filter === "closed" ? { status: "closed" } : {}) }).toString();
   const reload = useCallback(async (more = false, background = false) => {
     if (background && requestPending.current) return;
     requestPending.current = true;
@@ -45,20 +51,21 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     return () => { clearTimeout(timer); clearInterval(poll); controller.current?.abort(); };
   }, [reload, initialData.canView]);
   return <CrmProductShell title="Inbox" description="Customer conversations" canView={initialData.canView} compact useWorkspaceColors>
-    <div className={styles.inbox} data-selected={Boolean(selected)}>
+    {sample ? <SampleInbox onClose={() => setSample(false)} /> : <div className={styles.inbox} data-selected={Boolean(selected)}>
       <section aria-label="Customer conversations" className={styles.threadList}>
         <header className={styles.listHeading}><h1>Inbox</h1><div className={styles.actions}><IconButton aria-label="Refresh inbox" size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton><IconButton aria-label="New conversation" className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton></div></header>
         <div className={styles.searchArea}><SearchInput label="Search inbox" placeholder="Search conversations" value={search} maxLength={200} onChange={setSearch} /></div>
+        <div className={styles.channels} aria-label="Conversation channels">{["all", "whatsapp", "portal"].map(channel => <button key={channel} aria-pressed={channelFilter === channel} onClick={() => setChannelFilter(channel)}>{channel === "whatsapp" ? <span className={styles.channelMark}><ProviderMark provider="whatsapp" /></span> : channel === "portal" ? <Globe2 size={15} /> : null}{channel === "all" ? "All" : channel === "portal" ? "Client portal" : "WhatsApp"}</button>)}</div>
         <div className={styles.filters}><SegmentedControl label="Inbox filters" options={[{ id: "all", label: "All" }, { id: "unread", label: "Unread" }, { id: "closed", label: "Resolved" }]} value={filter} onChange={setFilter} /></div>
         {failure ? <p className={styles.error} role="alert">{failure} <Button size="compact" variant="quiet" onPress={() => void reload()}>Retry</Button></p> : null}
         <div aria-busy={busy} className={styles.threadItems}>{items.map((item) => <ToggleButton key={item.id} className={styles.threadItem} isSelected={selected === item.id} onPress={() => setSelected(item.id)} variant="quiet">
           <Avatar name={String(item.partyName ?? "Customer")} size="md" />
           <span className={styles.threadCopy}><span className={styles.threadTop}><strong>{String(item.partyName ?? "Customer")}</strong><time dateTime={String(item.lastMessageAt ?? "")} title={item.lastMessageAt ? crmTime(item.lastMessageAt) : "New conversation"}>{inboxDate(item.lastMessageAt)}</time></span><span className={styles.threadBottom}><span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}{String(item.lastMessageText ?? item.subject ?? "No messages yet")}</span>{Number(item.unreadCount) > 0 ? <span className={styles.unread} aria-label={`${item.unreadCount} unread messages`}>{String(item.unreadCount)}</span> : <small>{label(item.channel)}</small>}</span></span>
-        </ToggleButton>)}{!items.length && !busy ? <div className={styles.empty}><MessageCircle size={28} /><p>{search || filter !== "all" ? "No matching conversations." : "Customer conversations will appear here."}</p></div> : null}</div>
+        </ToggleButton>)}{!items.length && !busy ? <div className={styles.empty}><MessagingMark size={36} /><p>{search || filter !== "all" ? "No matching conversations." : "Customer conversations will appear here."}</p></div> : null}</div>
         {cursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>Load more chats</Button> : null}
       </section>
-      {selected ? <ConversationThread key={`${initialData.workspaceId}/${selected}`} workspaceId={initialData.workspaceId} id={selected} draft={drafts[selected] ?? ""} onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} /> : <section className={styles.empty} aria-label="Conversation messages"><MessageCircle size={40} /><h2>Inbox</h2><p>Select a conversation to read and reply.</p></section>}
-    </div>
+      {selected ? <ConversationThread key={`${initialData.workspaceId}/${selected}`} workspaceId={initialData.workspaceId} id={selected} draft={drafts[selected] ?? ""} onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} /> : <section className={styles.empty} aria-label="Conversation messages"><span className={styles.emptyMark}><MessagingMark size={48} /></span><h2>Your conversations, together</h2><p>Select a chat or start a conversation with a client.</p><Button size="compact" variant="primary" className={styles.brandButton} onPress={() => setCreating(true)}><Plus size={16} />New conversation</Button><Button size="compact" variant="quiet" onPress={() => setSample(true)}>Explore sample chats</Button></section>}
+    </div>}
     {creating ? <NewChat workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onOpened={(id) => { setCreating(false); setSelected(id); void reload(); }} /> : null}
   </CrmProductShell>;
 }
@@ -106,7 +113,6 @@ function ConversationThread({ workspaceId, id, draft, onDraftChange, onBack, onC
       {failure ? <p className={styles.error} role="alert">{failure}</p> : null}
     </form>
   </section>
-    <aside className={styles.contactPanel} aria-label="Contact details"><ChatContactDetails thread={thread}/></aside>
     {detailsOpen ? <InspectorSheet isOpen title="Contact details" onOpenChange={setDetailsOpen} size="sm"><ChatContactDetails thread={thread}/></InspectorSheet> : null}
   </div>;
 }
@@ -142,7 +148,7 @@ function useLiveConversation(workspaceId: string, id: string) {
 function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onClose: () => void; onOpened: (id: string) => void }) {
   const [search, setSearch] = useState(""), [contacts, setContacts] = useState<RecordData[]>([]), [failure, setFailure] = useState("");
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
-  const [channel, setChannel] = useState<"email" | "whatsapp">("whatsapp");
+  const [channel, setChannel] = useState<"email" | "whatsapp" | "portal">("whatsapp");
   const saving = useRef(false);
   useEffect(() => {
     const controller = new AbortController(); const timer = setTimeout(() => {
@@ -155,10 +161,12 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
   }, [workspaceId, search]);
   return <ControlledModalDialog title="New conversation" description="Choose the customer and channel. An enquiry is not required." isOpen isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <div className={styles.newChat}>
-      <SelectField label="Channel" items={[{ id: "whatsapp", label: "WhatsApp" }, { id: "email", label: "Email" }]} selectedKey={channel} onSelectionChange={(key) => key && setChannel(String(key) as "email" | "whatsapp")} />
+      <SelectField label="Channel" items={[{ id: "whatsapp", label: "WhatsApp" }, { id: "portal", label: "Client portal" }, { id: "email", label: "Email" }]} selectedKey={channel} onSelectionChange={(key) => key && setChannel(String(key) as "email" | "whatsapp" | "portal")} />
+      {channel === "portal" ? <Callout title="Client portal"><p>Preview portal conversations in the sample Inbox. Starting a live portal chat is not available yet.</p><Link href="/workspace/settings/client-portal">Open client portal settings</Link></Callout> : <>
       <TextInput label="Search customers" value={search} onChange={setSearch} placeholder={channel === "whatsapp" ? "Name or phone number" : "Name or email"} />
       {failure ? <Callout title="Could not open conversation" tone="warning">{failure}</Callout> : null}
       {loading ? <p role="status">Loading customers…</p> : !contacts.length ? <p>No matching customers.</p> : <div className={styles.contacts}>{contacts.map((contact) => <Button className={styles.contactItem} key={contact.id} variant="quiet" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { const result = await crmRequest(workspaceId, "conversations", "POST", { channel, partyId: contact.id }, timeout()); onOpened(result.id); } catch (error) { setFailure((error as Error).message); saving.current = false; setBusy(false); } }}><Avatar name={String(contact.displayName)} size="sm" /><span>{String(contact.displayName)}</span><MessageCircle size={16} /></Button>)}</div>}
+      </>}
       <small>Only connected channels can deliver outbound messages. Incoming provider messages appear automatically.</small>
     </div>
   </ControlledModalDialog>;
@@ -179,7 +187,7 @@ function MessageHistory({ workspaceId, thread }: { workspaceId: string; thread: 
   return <div className={styles.messages} ref={scroller} tabIndex={0} role="log" aria-label="Message history" onScroll={() => { const el = scroller.current; if (el) stayAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
     {cursor ? <Button size="compact" isLoading={busy} onPress={async () => { setBusy(true); setFailure(""); try { const result = await crmRequest<ChatPage>(workspaceId, `conversations/${thread.id}/messages?limit=100&cursor=${encodeURIComponent(cursor)}`, "GET", undefined, timeout()); if (scroller.current) olderAnchor.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; setOlderMessages((old) => [...result.data.filter((item) => !old.some((value) => value.id === item.id)), ...old]); setOlderCursor(result.nextCursor ?? ""); } catch (error) { setFailure((error as Error).message); } finally { setBusy(false); } }}>Load earlier messages</Button> : null}
     {failure ? <p role="alert">{failure}</p> : null}
-    {visible.map((message, index) => <Fragment key={message.id}>{inboxDate(message.createdAt) !== inboxDate(visible[index - 1]?.createdAt) ? <div className={styles.dateDivider}><span>{inboxDate(message.createdAt)}</span></div> : null}<article className={styles.message} data-direction={message.direction} aria-label={message.direction === "inbound" ? "Contact message" : "Your message"}><strong className={styles.messageSender}>{message.direction === "inbound" ? String(thread.partyName ?? "Contact") : "You"}</strong><MessageContent message={message} workspaceId={workspaceId} /><footer><time dateTime={String(message.createdAt)}>{inboxTime(message.createdAt)}</time>{message.direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>{message.failureCode ? <small className={styles.error}>{String(message.failureCode)}</small> : null}</article></Fragment>)}
+    {visible.map((message, index) => <Fragment key={message.id}>{inboxDate(message.createdAt) !== inboxDate(visible[index - 1]?.createdAt) ? <div className={styles.dateDivider}><span>{inboxDate(message.createdAt)}</span></div> : null}<article className={styles.message} data-direction={message.direction} aria-label={message.direction === "inbound" ? "Contact message" : "Your message"}><span className={styles.messageAvatar}><Avatar name={message.direction === "inbound" ? String(thread.partyName ?? "Contact") : "You"} size="sm" /></span><strong className={styles.messageSender}>{message.direction === "inbound" ? String(thread.partyName ?? "Contact") : "You"}</strong><MessageContent message={message} workspaceId={workspaceId} /><footer><time dateTime={String(message.createdAt)}>{inboxTime(message.createdAt)}</time>{message.direction === "outbound" ? <DeliveryState status={String(message.status)} /> : null}</footer>{message.failureCode ? <small className={styles.error}>{String(message.failureCode)}</small> : null}</article></Fragment>)}
     {!visible.length ? <div className={styles.empty}><MessageCircle size={30} /><p>No messages yet.</p></div> : null}
   </div>;
 }

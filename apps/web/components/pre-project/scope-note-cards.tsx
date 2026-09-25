@@ -23,7 +23,7 @@ export function DimensionReadout({ dimensions, expanded = false, showAll = false
   const shown = showAll?dimensions:dimensions.slice(0, expanded ? 6 : 3);
   const verified=dimensions.filter(d=>d.verification==='verified').length;
   const recheck=dimensions.filter(d=>d.verification==='recheck').length;
-  return <div className={styles.dimensions}>
+  return <div className={styles.dimensions} data-expanded={expanded || undefined}>
     <div className={styles.dimensionHeader}><Ruler size={13} /><span>Dimensions</span></div>
     <div className={styles.dimensionLabels}><span>Dimension</span><span>Approx.</span><span>Measured</span></div>
     <dl>{shown.map(d => <div key={d.id} className={styles.dimensionRow}>

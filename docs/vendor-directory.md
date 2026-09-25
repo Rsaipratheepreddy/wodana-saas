@@ -28,3 +28,17 @@ Owner and administrator roles receive `vendors.view` and `vendors.manage`. Other
 - `POST /workspaces/:workspaceId/vendors/:vendorId/sites/:siteId/lifecycle`
 
 The list is keyset-paginated and supports status, capability and text search. All mutations are permission checked and emit audit/outbox events in the same transaction.
+
+## Project procurement consumer
+
+Procurement → Suppliers exposes the shared directory through the existing permission-checked vendor APIs. Staff can add a draft, maintain its primary contact and activate it. New purchase orders select an active supplier identity; legacy free-text order records remain editable without silently creating duplicate master records.
+
+`request_supplier_quotes` is an execution command with the existing project lock, revision and request-ID retry protection. It resolves up to 25 active workspace supplier IDs server-side, snapshots the supplier identity and primary contact, and creates one enquiry per supplier for a material requirement. The batch is atomic, open duplicate supplier/material enquiries are rejected, and enquiries create no purchase commitment. Requests share a batch ID and retain a response deadline.
+
+Each enquiry uses the existing restricted supplier response page; replies feed supplier comparison and the selected offer becomes a draft order. WhatsApp sharing opens a prepared message with that supplier's private link. It does not automatically send, report delivery, or broadcast supplier links. Localhost/private app addresses and missing international phone numbers do not offer WhatsApp sharing. Automatic WhatsApp Business dispatch and provider receipt reconciliation for supplier identities are not implemented by this consumer.
+
+### Excel supplier import
+
+Procurement → Suppliers includes Import Excel and a sample workbook download. The browser reads `.xlsx`, CSV or TSV (2 MB maximum), preserves text phone numbers, and validates up to 500 supplier rows. The sample uses a `Suppliers` worksheet with headers in row 1 and a separate `Instructions` worksheet.
+
+`POST /workspaces/:workspaceId/vendors/import` accepts `preview` and `commit` modes. Both require `vendors.manage`. The server validates nested rows, checks duplicate names/codes/emails against the workspace (including archived suppliers), and rechecks under the directory lock at commit time. Existing matching suppliers are kept unchanged. Conflicting identities block the whole batch. Creation of draft suppliers, primary contact locations and audit events uses one tenant transaction; retrying a completed import skips existing matches rather than adding duplicates. Imports do not activate suppliers or send messages.

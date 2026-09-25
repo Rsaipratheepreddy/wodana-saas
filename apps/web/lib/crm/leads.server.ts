@@ -43,8 +43,13 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     const payload = await result.json();
     return path === "crm/lead-options" ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
   }));
+  const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
   return {
+    defaultCurrency: workspace?.workspace?.defaultCurrency,
+    defaultLocale: workspace?.workspace?.defaultLocale,
     canView: true,
+    currentMembershipId: (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     leadOptions: supporting[6],
     items: page.data ?? page.items ?? [],
     queues: supporting[0], assignmentPolicies: supporting[1], slaPolicies: supporting[2], intake: supporting[3], pipelines: supporting[4], members: supporting[5],

@@ -976,11 +976,17 @@ export const crmPipelineStages = pgTable(
   ],
 );
 
+export const crmOpportunityCounters = pgTable("crm_opportunity_counters", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  lastValue: bigint("last_value", { mode: "bigint" }).notNull().default(0n),
+}, table => [check("crm_opportunity_counters_last_value_check", sql`${table.lastValue} >= 0`)]);
+
 export const crmOpportunities = pgTable(
   "crm_opportunities",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    reference: varchar("reference", { length: 40 }).notNull(),
     legalEntityId: uuid("legal_entity_id").references(() => legalEntities.id, { onDelete: "set null" }),
     businessUnitId: uuid("business_unit_id").references(() => businessUnits.id, { onDelete: "set null" }),
     partyId: uuid("party_id").notNull().references(() => crmParties.id),
@@ -1018,6 +1024,7 @@ export const crmOpportunities = pgTable(
     index("crm_opportunities_stage_idx").on(table.workspaceId, table.pipelineId, table.stageId, table.status),
     index("crm_opportunities_owner_idx").on(table.workspaceId, table.ownerMembershipId, table.status),
     index("crm_opportunities_party_idx").on(table.workspaceId, table.partyId, table.createdAt),
+    uniqueIndex("crm_opportunities_reference_uidx").on(table.workspaceId, table.reference),
     uniqueIndex("crm_opportunities_lead_uidx").on(table.workspaceId, table.leadId).where(sql`${table.leadId} IS NOT NULL`),
     check("crm_opportunities_amount_currency_check", sql`(${table.amount} IS NULL AND ${table.currencyCode} IS NULL) OR (${table.amount} IS NOT NULL AND ${table.currencyCode} IS NOT NULL)`),
     check("crm_opportunities_probability_check", sql`${table.probability} IS NULL OR (${table.probability} >= 0 AND ${table.probability} <= 100)`),

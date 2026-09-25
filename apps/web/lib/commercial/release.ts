@@ -66,6 +66,12 @@ export function releasePaymentIsOperational(payment: Payment) {
   return paymentIsVerified(payment) && isOperationalEvidence(payment);
 }
 
+/** The delivery round is distinct from the first paid design round. */
+export function activeDeliveryQuote(data: CommercialData | null | undefined) {
+  return data?.quotes.find((quote) => quote.kind === "quotation" && quote.status === "accepted" &&
+    (!data.palmFlow || quote.round === "main"));
+}
+
 function agreementMatchesFinanceContext(data: CommercialData) {
   return Boolean(
     data.financeContext &&
@@ -74,7 +80,7 @@ function agreementMatchesFinanceContext(data: CommercialData) {
   );
 }
 
-function paymentHasFinanceVerifiedReceipt(
+export function paymentHasFinanceVerifiedReceipt(
   data: CommercialData,
   payment: Payment,
 ) {
@@ -142,13 +148,22 @@ export function materialApprovalsComplete(
   );
 }
 
+export function palmMaterialListSignedOff(data: CommercialData, quote: Quote) {
+  if (!data.palmFlow?.scope.materialSelection) return materialApprovalsComplete(quote, data.materialApprovals);
+  return quotationApprovalSources(quote).length > 0 && materialApprovalsComplete(quote, data.materialApprovals);
+}
+
+export function financeGatePaymentsReady(data: CommercialData, quoteId?: string) {
+  const required = data.payments.filter((payment) => payment.requiredForRelease &&
+    (!quoteId || payment.sourceQuoteId === quoteId));
+  return required.length > 0 && required.every((payment) =>
+    releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment));
+}
+
 export function commercialReleaseInputsReady(
   data: CommercialData | null | undefined,
 ) {
-  const quote = data?.quotes.find(
-    (candidate) =>
-      candidate.kind === "quotation" && candidate.status === "accepted",
-  );
+  const quote = activeDeliveryQuote(data);
   if (
     !data ||
     !quote ||
@@ -159,19 +174,14 @@ export function commercialReleaseInputsReady(
     data.dealFile.quoteId !== quote.id ||
     data.ownerReview?.status !== "approved" ||
     data.ownerReview.quoteId !== quote.id ||
-    !materialApprovalsComplete(quote, data.materialApprovals)
+    !data.ownerReview.financeReviewedById ||
+    !data.dealFile.paymentProofUrl ||
+    !data.dealFile.commissionLines?.length ||
+    !(data.palmFlow ? palmMaterialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;
-  const releasePayments = data.payments.filter(
-    (payment) => payment.requiredForRelease,
-  );
   return (
-    releasePayments.length > 0 &&
-    releasePayments.every(
-        (payment) =>
-          releasePaymentIsOperational(payment) &&
-          paymentHasFinanceVerifiedReceipt(data, payment),
-      ) &&
+    financeGatePaymentsReady(data, data.palmFlow ? quote.id : undefined) &&
     data.requests.every((request) =>
       ["resolved", "declined", "withdrawn"].includes(request.status),
     )

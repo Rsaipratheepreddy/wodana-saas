@@ -20,14 +20,19 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   c.cancelled_at AS "cancelledAt", c.cancelled_by AS "cancelledBy", c.released_at AS "releasedAt",
   c.released_by AS "releasedBy", engagement_owner.display_name AS "engagementOwnerName",
   o.conversion_origin AS "conversionOrigin", o.converted_at AS "convertedAt",
-  o.qualification_evidence AS "qualificationEvidence", o.qualification_evidence_hash AS "qualificationEvidenceHash"
+  o.qualification_evidence AS "qualificationEvidence", o.qualification_evidence_hash AS "qualificationEvidenceHash",
+  project.id AS "projectId",
+  EXISTS (SELECT 1 FROM project_workflow_templates workflow
+    WHERE workflow.workspace_id = c.workspace_id AND workflow.status = 'active'
+      AND workflow.is_default AND workflow.code = 'palm_design_build_delivery') AS "palmFlowEnabled"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
   LEFT JOIN workspace_memberships m ON m.id = o.owner_membership_id AND m.workspace_id = c.workspace_id
   LEFT JOIN users u ON u.id = m.user_id
   LEFT JOIN workspace_memberships engagement_membership ON engagement_membership.id = c.owner_membership_id AND engagement_membership.workspace_id = c.workspace_id
-  LEFT JOIN users engagement_owner ON engagement_owner.id = engagement_membership.user_id`;
+  LEFT JOIN users engagement_owner ON engagement_owner.id = engagement_membership.user_id
+  LEFT JOIN delivery_projects project ON project.workspace_id = c.workspace_id AND project.case_id = c.id`;
 
 type LifecycleRow = EngagementLifecycleState & {
   id: string;
@@ -42,7 +47,7 @@ export class PreProjectsService {
   list(actor: RequestActor, workspaceId: string, query: ListPreProjectsDto) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => {
       const status = query.status === "archived" ? "cancelled" : (query.status ?? "all");
-      const values = [workspaceId, query.search?.trim() ?? "", status];
+      const values = [workspaceId, query.search?.trim() ?? "", status, query.pendingDeal === "true"];
       // Qualified leads are visible immediately, including records qualified before this release.
       // A linked case replaces its incoming lead row; cancelled cases never reappear as new leads.
       const records = `WITH records AS (
@@ -56,7 +61,11 @@ export class PreProjectsService {
           NULL::uuid, false, NULL::varchar, NULL::timestamptz, NULL::uuid, NULL::timestamptz, NULL::uuid,
           manager.display_name, opportunity.conversion_origin, opportunity.converted_at,
           COALESCE(opportunity.qualification_evidence, lead.qualification_evidence),
-          COALESCE(opportunity.qualification_evidence_hash, lead.qualification_evidence_hash)
+          COALESCE(opportunity.qualification_evidence_hash, lead.qualification_evidence_hash),
+          NULL::uuid,
+          EXISTS (SELECT 1 FROM project_workflow_templates workflow
+            WHERE workflow.workspace_id = lead.workspace_id AND workflow.status = 'active'
+              AND workflow.is_default AND workflow.code = 'palm_design_build_delivery')
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
@@ -66,9 +75,9 @@ export class PreProjectsService {
         WHERE lead.workspace_id = $1 AND lead.status = 'qualified'
           AND NOT EXISTS (SELECT 1 FROM pre_project_cases existing JOIN crm_opportunities linked ON linked.id = existing.opportunity_id AND linked.workspace_id = existing.workspace_id WHERE existing.workspace_id = lead.workspace_id AND linked.lead_id = lead.id)
       )`;
-      const where = ` WHERE ($2 = '' OR strpos(lower(title || ' ' || "customerName"), lower($2)) > 0) AND ($3 = 'all' OR status = $3)`;
+      const where = ` WHERE ($2 = '' OR strpos(lower(title || ' ' || "customerName"), lower($2)) > 0) AND ($3 = 'all' OR status = $3) AND (NOT $4 OR "projectId" IS NULL)`;
       const total = await client.query(`${records} SELECT count(*)::int AS total FROM records${where}`, values);
-      const items = await client.query(`${records} SELECT * FROM records${where} ORDER BY "updatedAt" DESC, id DESC LIMIT 24 OFFSET $4`, [...values, ((query.page ?? 1) - 1) * 24]);
+      const items = await client.query(`${records} SELECT * FROM records${where} ORDER BY "updatedAt" DESC, id DESC LIMIT 24 OFFSET $5`, [...values, ((query.page ?? 1) - 1) * 24]);
       const canCreate = await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.create")
         && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.view");
       const canStartLead = canCreate && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.manage")

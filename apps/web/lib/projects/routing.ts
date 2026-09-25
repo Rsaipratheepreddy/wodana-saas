@@ -16,12 +16,12 @@ export function projectNavigation(
   return navigation.map((group) => ({
     ...group,
     items: group.items
-      .filter((item) => !["portfolio", "active-projects", "projects-calendar", "project-workflow-templates"].includes(item.id))
+      .filter((item) => !["portfolio", "active-projects", "projects-calendar", "project-workflow-templates", "global-purchasing", "global-inventory"].includes(item.id))
       .map((item) => {
         const section = item.id === "projects-overview"
           ? "overview"
           : item.href.split("/").at(-1);
-        return { ...item, label: item.id === "projects-overview" ? "Overview" : item.label, href: `${root}/${section}` };
+        return { ...item, label: item.id === "projects-overview" ? "Daily progress" : item.label, href: `${root}/${section}` };
       }),
   }));
 }
@@ -35,7 +35,7 @@ export function projectPortfolioNavigation(
     {
       id: "projects-portfolio",
       label: "Projects",
-      items: [pick("projects-overview"), pick("projects-calendar")].filter((item): item is NonNullable<typeof item> => Boolean(item)),
+      items: [pick("projects-overview")].filter((item): item is NonNullable<typeof item> => Boolean(item)),
     },
     {
       id: "projects-setup",

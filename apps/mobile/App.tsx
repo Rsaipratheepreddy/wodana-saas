@@ -9,9 +9,9 @@ import { SplashScreen } from './src/screens/splash-screen';
 import { LoginScreen } from './src/screens/login-screen';
 import { HomeScreen } from './src/screens/home-screen';
 import { SessionScreen } from './src/screens/session-screen';
-import { HelpSheet } from './src/components/help-sheet';
 import { AuthProvider, useAuth } from './src/auth/provider';
-import { authConfig } from './src/auth/config';
+import type { OrganizationBranding } from './src/auth/client';
+import { organizationStorage } from './src/auth/organization-storage';
 import { OperationalErrorBoundary } from './src/operational/error-boundary';
 
 void NativeSplashScreen.preventAutoHideAsync().catch(() => {});
@@ -19,48 +19,65 @@ void NativeSplashScreen.preventAutoHideAsync().catch(() => {});
 function AppContent() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
   const [screen, setScreen] = useState<'welcome' | 'login'>('welcome');
-  const [help, setHelp] = useState(false);
+  const [organization, setOrganization] = useState<OrganizationBranding | null>(null);
+  const [organizationReady, setOrganizationReady] = useState(false);
   const { client, state } = useAuth();
   const signedIn = state.status === 'signedIn';
   const onboardingPending = signedIn && state.profile.nextAction !== 'enter_workspace';
   useEffect(() => {
+    let mounted = true;
+    void organizationStorage.read().then((saved) => {
+      if (!mounted) return;
+      if (saved) { setOrganization(saved); setScreen('login'); }
+    }).catch(() => {}).finally(() => { if (mounted) setOrganizationReady(true); });
+    return () => { mounted = false; };
+  }, []);
+  useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (state.status === 'authenticating') return true;
-      if (help) { setHelp(false); return true; }
       if (state.status === 'mfa') { client.cancelMfa(); return true; }
-      if (!signedIn && screen === 'login') { setScreen('welcome'); return true; }
+      if (!signedIn && screen === 'login') {
+        setOrganization(null); setScreen('welcome'); void organizationStorage.clear(); return true;
+      }
       return false;
     });
     return () => subscription.remove();
-  }, [screen, help, signedIn, state.status, client]);
+  }, [screen, signedIn, state.status, client]);
   useEffect(() => {
-    if (state.status === 'signedOut' && state.message) setScreen('login');
-    if (state.status === 'signedIn') { setHelp(false); setScreen('welcome'); }
+    if (state.status === 'signedOut' && state.message && organization) setScreen('login');
+    if (state.status === 'signedIn') setScreen('welcome');
   }, [state]);
   useEffect(() => {
     if (fontsLoaded || fontError) void NativeSplashScreen.hideAsync();
   }, [fontsLoaded, fontError]);
   if (!fontsLoaded && !fontError) return null;
-  const signOut = () => { setHelp(false); setScreen('login'); void client.signOut(); };
+  const signOut = () => { setScreen(organization ? 'login' : 'welcome'); void client.signOut(); };
 
   return <SafeAreaProvider initialMetrics={initialWindowMetrics}>
     <DesignSystemProvider theme={signedIn ? 'system' : 'light'} fontsReady={fontsLoaded}>
-      <OperationalErrorBoundary>{onboardingPending ? <SessionScreen message="Finish your workspace setup in the browser, then try again here."
+      <OperationalErrorBoundary>{onboardingPending ? <SessionScreen tenantSlug={client.tenantSlug} message="Finish your workspace setup in the browser, then try again here."
           onRetry={() => { void client.restore(); }} onSignOut={signOut} />
         : signedIn ? <HomeScreen onSignOut={signOut} />
-        : state.status === 'checking' || state.status === 'unavailable'
-          ? <SessionScreen message={state.status === 'unavailable' ? state.message : undefined}
+        : state.status === 'checking' || state.status === 'unavailable' || !organizationReady
+          ? <SessionScreen tenantSlug={client.tenantSlug} message={state.status === 'unavailable' ? state.message : undefined}
             onRetry={() => { void client.restore(); }} onSignOut={signOut} />
-          : screen === 'welcome'
-            ? <SplashScreen onSignIn={() => setScreen('login')} onJoin={() => setHelp(true)} />
-            : <LoginScreen onBack={() => { if (state.status === 'mfa') client.cancelMfa(); else setScreen('welcome'); }}
-              mfaRequired={state.status === 'mfa'} initialTenantSlug={client.tenantSlug} workspaceLocked={Boolean(authConfig.tenantSlug)}
+          : screen === 'welcome' || !organization
+              ? <SplashScreen onContinue={async (identifier) => {
+                const resolved = await client.resolveOrganization(identifier);
+                await organizationStorage.write(resolved);
+                setOrganization(resolved);
+                setScreen('login');
+              }} />
+            : <LoginScreen organization={organization}
+              onBack={() => {
+                if (state.status === 'mfa') client.cancelMfa();
+                setOrganization(null); setScreen('welcome'); void organizationStorage.clear();
+              }}
+              mfaRequired={state.status === 'mfa'}
               message={state.status === 'signedOut' ? state.message : undefined}
               onSignIn={(email, password, tenantSlug) => client.signIn(email, password, tenantSlug)}
               onRecovery={(email, tenantSlug) => client.requestPasswordReset(email, tenantSlug)}
               onVerifyMfa={(code) => client.verifyMfa(code)} />}
-      <HelpSheet topic={help ? 'invitation' : null} onClose={() => setHelp(false)}
-        onSignIn={() => { setHelp(false); setScreen('login'); }} />
       </OperationalErrorBoundary>
     </DesignSystemProvider>
   </SafeAreaProvider>;

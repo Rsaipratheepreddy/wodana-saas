@@ -1,3 +1,15 @@
+import { applyRfa } from "./project-rfa.command";
+import { applyClientPublication, projectClientSections, publicProjectUpdates } from "./project-client-publication";
+import { acceptedServiceQuantity, assertServiceAcceptance } from "./project-service-acceptance";
+import { quoteBatchRemaining } from "./project-quote-allocation";
+import { approveProjectDocument, rfaReadiness } from "./project-rfa";
+import { applyDeliveryQuantities } from "./project-delivery-quantities.command";
+import { deliveryQuantityReadiness, itemHasCommitments } from "./project-delivery-quantities";
+import { itemDeliveryRoute, itemWorkLocations } from "./project-item-plan";
+import { materialInventory, orderReceivingPosition } from "./project-inventory";
+import { captureDecisionEvidence } from "./project-decision-evidence";
+import { installationMaterialCapacity } from "./project-installation-materials";
+import {clientProjectAlerts} from "./project-client-alerts";
 import { applyControls, assertCloseout } from "./execution-controls";
 import {
   BadRequestException,
@@ -35,6 +47,7 @@ import {
 import { workPackageReadiness } from "./project-package-readiness";
 import {
   addHandoverOutstandingItem,
+  assertHandoverPacketCurrent,
   createAutomaticHandover,
   refreshHandoverPacket,
   setHandoverOutstandingStatus,
@@ -237,8 +250,11 @@ export function refreshProgress(d: ProjectData) {
         t.status = "planned";
       continue;
     }
+    const outputBatches=t.location==='factory'?t.factoryLots:t.installationBatches;
     if (t.approved >= t.quantity)
-      t.status = t.inspectionRequired
+      t.status = outputBatches?.some(batch=>batch.status!=="cancelled")
+        ? outputBatches.filter(batch=>batch.status==="passed").reduce((total,batch)=>total+batch.quantity,0) >= t.quantity ? "completed" : "awaiting_inspection"
+        : t.inspectionRequired
         ? t.status === "completed"
           ? "completed"
           : "awaiting_inspection"
@@ -250,6 +266,10 @@ export function refreshProgress(d: ProjectData) {
 }
 
 function assertSubmittableDailyReport(d: ProjectData, r: DailyReport) {
+  r.workforce?.forEach((line, index) => {
+    if (!line.trade.trim() || !Number.isInteger(line.people) || line.people < 1 || line.hours <= 0)
+      throw new BadRequestException(`Complete trade, people and hours for crew line ${index + 1} before submitting.`);
+  });
   if (!r.evidence.trim() && !d.files?.some((file) => file.recordId === r.id))
     throw new BadRequestException(
       "Add evidence or a site record reference before submitting.",
@@ -290,21 +310,44 @@ export function publicProject(
   id: string,
   name: string,
   d: ProjectData,
+  today = "",
 ): PublicProject {
+  const clientSections = projectClientSections(d);
   const workflow = ensureProjectWorkflow(d);
   const stage = workflow.template.stages.find(
     (candidate) => candidate.key === workflow.currentStageKey,
   )!;
+  // An internal correction replaces the client's update only after publication.
+  const publishedReports = clientSections.progress ? d.reports.filter(r => r.status === "approved" && r.publishedAt) : [];
+  const sharedReports = publishedReports.filter(r => !publishedReports.some(n => n.supersedes === r.id));
+  const sharedTasks = new Set(sharedReports.flatMap(r=>r.entries.map(e=>e.taskId)));
+  const sharedQuantity = (taskId: string) => Math.round(sharedReports.flatMap(r => r.entries).filter(e => e.taskId === taskId).reduce((sum, e) => sum + e.quantity, 0) * 10000) / 10000;
+  const sharedStatus = (task: Task): Task["status"] => {
+    const quantity = sharedQuantity(task.id);
+    if (quantity <= 0) return "planned";
+    if (!task.quantity || quantity < task.quantity) return "in_progress";
+    const batches = (task.location === "factory" ? task.factoryLots : task.installationBatches)?.filter(batch => batch.status !== "cancelled") ?? [];
+    const inspection = task.inspections?.at(-1);
+    const passed = batches.length
+      ? batches.filter(batch => batch.status === "passed" && batch.unit === task.unit).reduce((sum, batch) => sum + batch.quantity, 0) >= task.quantity
+      : inspection?.passed && inspection.unit === task.unit && inspection.quantity >= task.quantity;
+    return (!task.inspectionRequired && !batches.length) || passed ? "completed" : "awaiting_inspection";
+  };
+  const sharedData = { ...d, reports: sharedReports, tasks: d.tasks.map(task => ({ ...task, status: sharedStatus(task) })) };
   return {
     id,
     name,
+    clientSections,
+    clientUpdates: publicProjectUpdates(d),
+    alerts: clientSections.updates && clientSections.progress ? clientProjectAlerts(d,today) : [],
+    tasks: d.tasks.filter(t=>sharedTasks.has(t.id)).map(t=>({id:t.id,title:t.title,area:t.area,location:t.location,quantity:t.quantity,reportedQuantity:sharedQuantity(t.id),unit:t.unit,status:sharedStatus(t)})),
     phase: d.phase,
     stage: { key: stage.key, name: stage.visibleName },
-    progress: Math.round(progress(d)),
+    progress: clientSections.progress ? Math.round(progress(sharedData)) : 0,
     targetCompletion: d.controls?.targetCompletion || undefined,
     handoverDate: d.controls?.handoverDate || undefined,
     promise: d.controls?.promise || undefined,
-    milestones: (d.milestones ?? [])
+    milestones: (clientSections.progress ? d.milestones ?? [] : [])
       .filter((milestone) => milestone.visibleToClient)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       .map((milestone) => {
@@ -317,25 +360,18 @@ export function publicProject(
           dueDate: milestone.dueDate,
           acceptedAt: milestone.acceptedAt,
           progress: tasks.length
-            ? Math.round(tasks.reduce((total, task) => total + progress(d, task), 0) / tasks.length)
+            ? Math.round(tasks.reduce((total, task) => total + progress(sharedData, task), 0) / tasks.length)
             : 0,
         };
       }),
-    reports: d.reports
-      .filter(
-        (r) =>
-          r.status === "approved" &&
-          r.publishedAt &&
-          !d.reports.some(
-            (n) => n.status === "approved" && n.supersedes === r.id,
-          ),
-      )
+    reports: sharedReports
       .map((r) => ({
         id: r.id,
         date: r.date,
         location: r.location,
         tomorrow: r.tomorrow,
         publishedAt: r.publishedAt,
+        clientSummary: r.clientSummary,
         files: (d.files ?? [])
           .filter((f) => f.recordId === r.id && r.clientFileIds?.includes(f.id))
           .map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType })),
@@ -343,9 +379,10 @@ export function publicProject(
           title: d.tasks.find((t) => t.id === e.taskId)?.title ?? "Work item",
           quantity: e.quantity,
           unit: d.tasks.find((t) => t.id === e.taskId)?.unit ?? "",
+          status: sharedData.tasks.find((t) => t.id === e.taskId)?.status,
         })),
       })),
-    documents: d.documents
+    documents: (clientSections.documents ? d.documents : [])
       .filter((r) => r.published && r.status === "approved")
       .map((r) => ({
         id: r.id,
@@ -354,7 +391,7 @@ export function publicProject(
         revision: r.revision,
         url: r.url,
       })),
-    handovers: d.handovers
+    handovers: (clientSections.handover ? d.handovers : [])
       .filter((r) => r.published)
       .map((r) => ({
         id: r.id,
@@ -369,8 +406,8 @@ export function publicProject(
           ? {
               id: r.packet.id,
               version: r.packet.version,
-              tasks: r.packet.tasks,
-              documents: r.packet.documents,
+              tasks: clientSections.progress ? r.packet.tasks : [],
+              documents: clientSections.documents ? r.packet.documents : [],
             }
           : undefined,
         outstandingItems: (r.outstandingItems ?? []).map((item) => ({
@@ -381,7 +418,7 @@ export function publicProject(
           status: item.status,
         })),
       })),
-    warrantyClaims: d.snags
+    warrantyClaims: (clientSections.handover ? d.snags : [])
       .filter((snag) => Boolean(snag.handoverId) && d.handovers.some(
         (handover) => handover.id === snag.handoverId && handover.published,
       ))
@@ -407,12 +444,15 @@ export type ExecutionActor = {
   report: boolean;
   buy: boolean;
   memberIds: string[];
+  reviewerIds?: string[];
   resourceIds: string[];
   resourceKinds?: Record<string, "crew" | "person" | "factory" | "vendor">;
   /** Project-owned sites prevalidated by the command handler. */
   siteIds?: string[];
   now: string;
   released: boolean;
+  /** Set only after the linked case's latest design revisions are client-approved. */
+  designOnlySignedOff?: boolean;
 };
 export function applyExecution(
   d: ProjectData,
@@ -464,13 +504,21 @@ export function applyExecution(
       "publish_report",
       "unpublish_report",
       "publish_document",
+      "client_update_save",
+      "client_update_submit",
+      "client_update_publish",
+      "client_update_withdraw",
+      "client_sections_save",
     ].includes(action)
   )
     throw new ConflictException(
       "Reopen the completed project with a reason before changing it.",
     );
-  const controlId = applyControls(d, action, b, a);
-  if (controlId !== undefined) {
+  const publicationId = applyClientPublication(d, action, b, a);
+  const controlId = publicationId === undefined ? applyControls(d, action, b, a) : undefined;
+  if (publicationId !== undefined) {
+    recordId = publicationId;
+  } else if (controlId !== undefined) {
     recordId = controlId;
   } else if (action === "project_controls") {
     manage();
@@ -549,6 +597,22 @@ export function applyExecution(
       });
     }
     recordId = "project-controls";
+  } else if (action === "record_site_visit") {
+    manage();
+    if (d.workflow?.template.code !== "palm_design_build_delivery" ||
+        d.workflow.currentStageKey !== "site_visit")
+      throw new ConflictException("Record the visit during the Palm site visit stage.");
+    if (d.controls?.onHold)
+      throw new ConflictException("Release the project hold before recording the site visit.");
+    d.siteVisit = {
+      visitedOn: day(b.visitedOn, true),
+      scopeSummary: str(b.scopeSummary, 5000, true),
+      feeReviewNote: str(b.feeReviewNote, 2000),
+      evidenceReference: str(b.evidenceReference, 1000, true),
+      recordedAt: a.now,
+      recordedBy: a.userId ?? a.id,
+    };
+    recordId = "site-visit";
   } else if (action === "project_roles") {
     manage();
     if (!Array.isArray(b.assignments) || b.assignments.length > 12)
@@ -742,6 +806,12 @@ export function applyExecution(
     recordId = "project-initiation";
   } else if (action === "workflow_transition") {
     manage();
+    const stages = d.workflow?.template.stages ?? [];
+    const releaseIndex = stages.findIndex(stage => stage.releaseStart);
+    const targetIndex = stages.findIndex(stage => stage.key === b.toStageKey);
+    const beforePalmRelease = d.workflow?.template.code === "palm_design_build_delivery" &&
+      targetIndex >= 0 && (releaseIndex < 0 || targetIndex < releaseIndex);
+    if (!beforePalmRelease) active();
     recordId = transitionProjectWorkflow(d, b.toStageKey, b.note, {
       id: a.userId ?? a.id,
       name: a.name,
@@ -888,7 +958,7 @@ export function applyExecution(
       (old.quantity !== t.quantity ||
         old.unit !== t.unit ||
         old.parentId !== t.parentId ||
-        old.weight !== t.weight)
+        old.weight !== t.weight || old.location !== t.location || old.inspectionRequired !== t.inspectionRequired)
     )
       throw new ConflictException(
         "Reported work keeps its quantity, unit, parent and progress weight. Create an approved scope change instead.",
@@ -904,6 +974,9 @@ export function applyExecution(
     assertGraph(next);
     if (old) Object.assign(old, t);
     else d.tasks.push(t);
+  } else if (action === "delivery_quantities" || action === "revise_delivery_quantities") {
+    recordId = applyDeliveryQuantities(d, b, a, action === "revise_delivery_quantities");
+    note = action === "revise_delivery_quantities" ? str(b.reason, 3000, true) : b.status === "confirmed" ? "Confirmed delivery quantities." : "Saved delivery quantity draft.";
   } else if (action === "work_package") {
     manage();
     const value = obj(b.workPackage);
@@ -935,18 +1008,23 @@ export function applyExecution(
       "watch",
       "blocked",
     ] as const);
-    const nextAction = str(value.nextAction, 500);
-    const nextActionOwnerId = member(value.nextActionOwnerId);
-    const nextActionDate = day(value.nextActionDate);
+    const firstPendingTask = d.tasks.filter(task=>task.packageId===workPackage.id && !["completed","cancelled"].includes(task.status)).sort((a,b)=>a.start.localeCompare(b.start))[0];
+    const nextAction = str(value.nextAction || (firstPendingTask?.ownerId ? firstPendingTask.title : ""), 500);
+    const nextActionOwnerId = member(value.nextActionOwnerId || firstPendingTask?.ownerId);
+    const nextActionDate = day(value.nextActionDate || (firstPendingTask?.ownerId ? firstPendingTask.start : ""));
     const recoveryPlan = str(value.recoveryPlan, 3000);
     const blocker = str(value.blocker, 1000);
-    const deliveryRoute = choice(value.deliveryRoute, [
-      "site",
-      "factory",
-      "vendor",
-      "office",
-      "mixed",
-    ] as const);
+    const supplyMethod = value.supplyMethod === undefined ? workPackage.supplyMethod : value.supplyMethod === "" ? undefined : choice(value.supplyMethod, ["make", "buy", "subcontract", "client"] as const);
+    const siteWork = value.siteWork === undefined ? workPackage.siteWork : value.siteWork === "" ? undefined : choice(value.siteWork, ["none", "delivery", "install", "site_work"] as const);
+    const workLocation = value.workLocation === undefined ? workPackage.workLocation : value.workLocation === "" ? undefined : choice(value.workLocation, ["factory", "supplier", "site", "office"] as const);
+    if (workLocation && !itemWorkLocations(supplyMethod).includes(workLocation))
+      throw new BadRequestException("Choose a work location that matches the supply responsibility.");
+    const deliveryRoute = itemDeliveryRoute({supplyMethod, siteWork, workLocation, deliveryRoute: choice(value.deliveryRoute, ["site", "factory", "vendor", "office", "mixed"] as const)});
+    const classificationChanged = supplyMethod !== workPackage.supplyMethod || siteWork !== workPackage.siteWork || deliveryRoute !== workPackage.deliveryRoute || workLocation !== workPackage.workLocation;
+    if (classificationChanged && itemHasCommitments(d, workPackage))
+      throw new ConflictException("This item has recorded work or supply commitments. Review the change and its affected records before changing its delivery plan.");
+    if (supplyMethod && siteWork && d.tasks.some(task=>task.packageId===workPackage.id && !["completed","cancelled"].includes(task.status) && !routeSupportsLocation(deliveryRoute,task.location)))
+      throw new ConflictException("Move or resolve incompatible tasks before changing this work order's delivery method.");
     if (plannedStart && plannedEnd && plannedEnd < plannedStart)
       throw new BadRequestException("Package finish must be on or after start.");
     if (
@@ -976,6 +1054,9 @@ export function applyExecution(
     const linkedTasks = d.tasks.filter((task) => task.packageId === workPackage.id);
     const plannedPackage = {
         ...workPackage,
+        supplyMethod,
+        workLocation,
+        siteWork,
         ownerId,
         deliveryRoute,
         plannedStart,
@@ -1011,11 +1092,11 @@ export function applyExecution(
     }
     if (
       status === "completed" &&
-      (!linkedTasks.length ||
+      (!linkedTasks.some((task) => task.status !== "cancelled") ||
         linkedTasks.some((task) => !["completed", "cancelled"].includes(task.status)))
     )
       throw new ConflictException(
-        "Complete or cancel every linked task before completing this work package.",
+        "Complete the delivery work before completing this item. Cancelled tasks alone do not represent delivered work.",
       );
     if (
       status === "cancelled" &&
@@ -1032,6 +1113,9 @@ export function applyExecution(
       title: str(value.title, 240, true),
       area: str(value.area, 160),
       deliveryRoute,
+      supplyMethod,
+      workLocation,
+      siteWork,
       status,
       ownerId,
       plannedStart,
@@ -1100,18 +1184,28 @@ export function applyExecution(
             "Link the approved design revision captured with this released scope before starting delivery work.",
           );
       }
-      if (t.predecessors.some((id) => get(d.tasks, id).status !== "completed"))
+      if (t.predecessors.some((id) => {
+        const preceding=get(d.tasks,id);
+        return preceding.status!=="completed" && !(t.location==="site" && preceding.location==="factory" && !["blocked","on_hold","cancelled"].includes(preceding.status));
+      }))
         throw new ConflictException("Complete the preceding tasks first.");
       const handoff = factoryHandoffReadiness(d, t);
       if (!handoff.ready) throw new ConflictException(handoff.detail);
+      const capacity = installationMaterialCapacity(d, t);
+      if (capacity.controlled && (capacity.issue || capacity.quantity <= approvedQuantity(d, t.id)))
+        throw new ConflictException(capacity.issue ?? "Issue accepted materials to this site task before starting the next installation quantity.");
+      const approvalIssue = rfaReadiness(d, t.scopeIds);
+      if (approvalIssue) throw new ConflictException(approvalIssue);
       const workPackage = workPackageForTask(d, t);
       if (workPackage) {
+        const quantityIssue = deliveryQuantityReadiness(d, workPackage);
+        if (quantityIssue) throw new ConflictException(quantityIssue);
         if (!routeSupportsLocation(workPackage.deliveryRoute, t.location))
           throw new ConflictException(
             "This task location does not match its work package delivery route.",
           );
         if (
-          workPackage.deliveryRoute === "vendor" &&
+          (workPackage.deliveryRoute === "vendor" || (workPackage.supplyMethod === "subcontract" && t.location === "factory")) &&
           a.resourceKinds &&
           a.resourceKinds[t.resourceId] !== "vendor"
         )
@@ -1171,6 +1265,21 @@ export function applyExecution(
       v.scheduleImpact ?? old?.scheduleImpact ?? "none",
       ["none", "watch", "blocked"] as const,
     );
+    const workforceInput = v.workforce ?? old?.workforce;
+    if (workforceInput !== undefined && (!Array.isArray(workforceInput) || workforceInput.length > 20))
+      throw new BadRequestException("Use up to 20 crew lines.");
+    const workforce = (workforceInput as unknown[] | undefined)?.map((line, index) => {
+      const crew = obj(line);
+      const trade = str(crew.trade, 120);
+      const people = num(crew.people, 1000);
+      const hours = num(crew.hours, 24);
+      if (action === "report_submit" && (!trade || !Number.isInteger(people) || people < 1 || hours <= 0))
+        throw new BadRequestException(`Enter valid people and hours for crew line ${index + 1}.`);
+      return { trade, people, hours };
+    }) ?? [];
+    const crewPeople = workforce.reduce((total, line) => total + line.people, 0);
+    const crewHours = workforce.reduce((total, line) => total + line.people * line.hours, 0);
+    if (crewPeople > 10000) throw new BadRequestException("Too many people on this shift.");
     const r: DailyReport = {
       id: recordId,
       date: day(v.date, true),
@@ -1180,9 +1289,10 @@ export function applyExecution(
       author: a.name,
       status: "draft",
       entries,
-      hours: num(v.hours, 24),
-      people: num(v.people, 10000),
-      summary: str(v.summary, 240),
+      hours: workforce.length ? (crewPeople ? Math.round(crewHours / crewPeople * 10000) / 10000 : 0) : num(v.hours, 24),
+      people: workforce.length ? crewPeople : num(v.people, 10000),
+      workforce,
+      summary: str(v.summary, 1000),
       weather: str(v.weather, 500),
       safety: str(v.safety, 3000),
       safetyStatus,
@@ -1270,15 +1380,8 @@ export function applyExecution(
         throw new BadRequestException(
           "Select files attached to this approved report.",
         );
-      if (
-        r.entries.some((entry) => {
-          const task = get(d.tasks, entry.taskId);
-          return task.inspectionRequired && task.status !== "completed";
-        })
-      )
-        throw new ConflictException(
-          "Complete the required inspections before sharing this report with the client.",
-        );
+      // Sharing reviewed progress does not accept the work or bypass its QC gate.
+      r.clientSummary = str(b.clientSummary, 2000);
       r.clientFileIds = fileIds;
       r.publishedAt = a.now;
     } else {
@@ -1312,6 +1415,13 @@ export function applyExecution(
           for (const e of r.entries) {
             const task = get(d.tasks, e.taskId);
             const approved = approvedQuantity(d, e.taskId);
+            if (approved + 0.000001 < acceptedServiceQuantity(d, task.id))
+              throw new ConflictException("Resolve accepted subcontract work before reducing its approved output.");
+            if (approved + 0.000001 < [...(task.installationBatches??[]),...(task.factoryLots??[])].filter(batch=>batch.status!=="cancelled").reduce((total,batch)=>total+batch.quantity,0))
+              throw new ConflictException("Cancel uninspected batches or resolve passed batch acceptance before reducing installed output.");
+            const capacity = installationMaterialCapacity(d, task);
+            if (capacity.controlled && (capacity.issue || approved > capacity.quantity + 0.000001))
+              throw new ConflictException(capacity.issue ?? `Only ${capacity.quantity} ${task.unit} is backed by materials issued to this site task.`);
             if (approved > task.quantity + 0.00001)
               throw new ConflictException(
                 "Output exceeds the planned quantity. Review the change or correct this report.",
@@ -1327,17 +1437,78 @@ export function applyExecution(
         r.reviewedAt = a.now;
       }
     }
+  } else if (action === "factory_lot") {
+    active();
+    const task=get(d.tasks,recordId);
+    if(!a.manage && (!a.report || (task.ownerId!==a.id&&!task.assigneeIds.includes(a.id)))) throw new ForbiddenException("Only the assigned factory team can create a production lot.");
+    if(task.location!=="factory" || ["cancelled","on_hold","blocked"].includes(task.status) || d.tasks.some(child=>child.parentId===task.id)) throw new ConflictException("Choose active measured factory work.");
+    if(task.inspections?.length || (d.dispatches??[]).some(dispatch=>dispatch.taskId===task.id&&!dispatch.factoryLotId&&dispatch.status!=="cancelled")) throw new ConflictException("Keep existing whole-task inspection and dispatch history together; create lots before the first dispatch.");
+    const quantity=num(b.quantity),title=str(b.title,240,true);
+    const allocated=(task.factoryLots??[]).filter(lot=>lot.status!=="cancelled").reduce((total,lot)=>total+lot.quantity,0);
+    if(!quantity || allocated+quantity>approvedQuantity(d,task.id)+0.000001) throw new ConflictException("Lot quantity must fit approved factory output not yet allocated.");
+    (task.factoryLots??=[]).push({id:randomUUID(),title,quantity,unit:task.unit,createdBy:a.id,at:a.now,status:"pending_qc",reviews:[]});
+  } else if (action === "factory_lot_review" || action === "factory_lot_cancel") {
+    active();
+    const task=get(d.tasks,recordId),lot=get(task.factoryLots??[],b.batchId);
+    if(!["pending_qc","rework"].includes(lot.status)) throw new ConflictException("Review the current production lot status.");
+    if(!note) throw new BadRequestException("Record the inspection or cancellation evidence.");
+    if(action==="factory_lot_cancel") {manage();lot.status="cancelled";}
+    else {
+      review();
+      if(lot.createdBy===a.id||task.ownerId===a.id||task.assigneeIds.includes(a.id)) throw new ForbiddenException("Another reviewer must inspect the factory team's lot.");
+      if(["cancelled","on_hold","blocked"].includes(task.status)) throw new ConflictException("Resolve the task hold before inspecting this lot.");
+      lot.reviews.push({by:a.id,at:a.now,passed:b.passed===true,evidence:note,evidenceFiles:captureDecisionEvidence(d,task.id,b.fileIds)});
+      lot.status=b.passed===true?"passed":"rework";
+    }
+  } else if (action === "installation_batch") {
+    active();
+    const task=get(d.tasks,recordId);
+    if(!a.manage && (!a.report || (task.ownerId!==a.id && !task.assigneeIds.includes(a.id)))) throw new ForbiddenException("Only the assigned site team can create an installation batch.");
+    if(task.location!=="site" || ["cancelled","on_hold","blocked"].includes(task.status) || d.tasks.some(child=>child.parentId===task.id) || d.handovers.some(h=>["ready","accepted"].includes(h.status) && !h.installationBatchIds?.length && h.taskIds.includes(task.id))) throw new ConflictException("Create batches for site work not already offered as a full-task handover.");
+    const quantity=num(b.quantity),title=str(b.title,240,true);
+    const allocated=(task.installationBatches??[]).filter(batch=>batch.status!=="cancelled").reduce((total,batch)=>total+batch.quantity,0);
+    if(!quantity || allocated+quantity>approvedQuantity(d,task.id)+0.000001) throw new ConflictException("Batch quantity must fit the approved installed output not yet allocated.");
+    (task.installationBatches??=[]).push({id:randomUUID(),title,quantity,unit:task.unit,createdBy:a.id,at:a.now,status:"pending_qc",reviews:[]});
+  } else if (action === "installation_batch_review" || action === "installation_batch_cancel") {
+    active();
+    const task=get(d.tasks,recordId),batch=get(task.installationBatches??[],b.batchId);
+    if(!["pending_qc","rework"].includes(batch.status)) throw new ConflictException("Review the current batch status.");
+    if(!note) throw new BadRequestException("Record the inspection or cancellation evidence.");
+    if(action==="installation_batch_cancel") {manage();batch.status="cancelled";}
+    else {
+      review();
+      if(batch.createdBy===a.id || task.ownerId===a.id || task.assigneeIds.includes(a.id)) throw new ForbiddenException("Another reviewer must inspect the site team's batch.");
+      if(["cancelled","on_hold","blocked"].includes(task.status)) throw new ConflictException("Resolve the task hold before inspecting this batch.");
+      const evidenceFiles=captureDecisionEvidence(d,task.id,b.fileIds);
+      batch.reviews.push({by:a.id,at:a.now,passed:b.passed===true,evidence:note,evidenceFiles});batch.status=b.passed===true?"passed":"rework";
+    }
   } else if (action === "inspect") {
     review();
     active();
     const t = get(d.tasks, recordId);
+    if(t.factoryLots?.some(lot=>lot.status!=="cancelled")) throw new ConflictException("Review the production lots individually.");
+    if(t.installationBatches?.some(batch=>batch.status!=="cancelled")) throw new ConflictException("Review the installation batches individually.");
+    if(t.ownerId===a.id || t.assigneeIds.includes(a.id)) throw new ForbiddenException("Another reviewer must inspect the executing team's work.");
     if (t.approved < t.quantity || !t.inspectionRequired)
       throw new ConflictException(
         "Complete the measured work before inspection.",
       );
     if (!note) throw new BadRequestException("Add the inspection evidence.");
+    const evidenceFiles = captureDecisionEvidence(d,t.id,b.fileIds);
+    (t.inspections ??= []).push({id:randomUUID(),by:a.id,at:a.now,passed:b.passed===true,quantity:t.approved,unit:t.unit,evidence:note,evidenceFiles});
     t.status = b.passed === true ? "completed" : "blocked";
     t.blocker = b.passed === true ? "" : note;
+  } else if (action === "material_output_basis") {
+    manage();
+    const material = get(d.materials, recordId);
+    const task = get(d.tasks, material.taskId);
+    if (task.location !== "site" || material.supply === "vendor" || ["completed", "cancelled"].includes(task.status))
+      throw new ConflictException("Set a usage basis for an active site task's company or client material.");
+    if (material.movements.some(m => ["issue", "return"].includes(m.kind)) || d.reports.some(r => r.entries.some(e => e.taskId === task.id)))
+      throw new ConflictException("Set the usage basis before issuing material or reporting site output.");
+    const perUnit = num(b.perUnit);
+    if (!perUnit || !note) throw new BadRequestException("Enter material quantity per output unit and planning evidence.");
+    material.outputBasis = {perUnit, outputUnit:task.unit, by:a.id, at:a.now, evidence:note};
   } else if (action === "material") {
     manage();
     const v = obj(b.material);
@@ -1345,7 +1516,7 @@ export function applyExecution(
     const old = d.materials.find((m) => m.id === recordId);
     if (
       old &&
-      (old.movements.length ||
+      (old.outputBasis || old.movements.length ||
         d.orders.some((order) => order.materialId === old.id))
     )
       throw new ConflictException(
@@ -1361,15 +1532,135 @@ export function applyExecution(
       catalogVersion: num(v.catalogVersion ?? 0),
       unit: str(v.unit, 30, true),
       required: num(v.required),
+      estimatedUnitCost: v.estimatedUnitCost === undefined || v.estimatedUnitCost === "" ? undefined : num(v.estimatedUnitCost),
       supply: choice(v.supply, ["company", "vendor", "client"]),
       taskId,
+      scopeLineId: str(v.scopeLineId, 80) || old?.scopeLineId || "",
       needBy: day(v.needBy, true),
       movements: [],
     };
+    if (value.scopeLineId && !activeReleasedScopeLines(d).some(line=>line.id===value.scopeLineId)) throw new BadRequestException("Choose an active approved BOQ item.");
     if (!value.required)
       throw new BadRequestException("Enter the required quantity.");
     if (old) Object.assign(old, value);
     else d.materials.push(value);
+  } else if (action === "link_designs") {
+    manage();
+    let linked = 0;
+    for (const t of d.tasks) {
+      if (["cancelled", "completed"].includes(t.status) || t.location === "office")
+        continue;
+      const gate = designReadinessForTask(d, t);
+      const current = d.documents.find((x) => x.id === t.drawingId);
+      if (gate.ready && current?.status === "approved") continue;
+      const candidates = gate.documentIds.length
+        ? gate.documentIds
+        : d.documents
+            .filter(
+              (x) =>
+                x.status === "approved" &&
+                x.scopeLineIds?.some((id) => t.scopeIds.includes(id)),
+            )
+            .map((x) => x.id);
+      if (!candidates.length) continue;
+      const preferred = candidates[candidates.length - 1];
+      if (t.drawingId === preferred) continue;
+      t.drawingId = preferred;
+      linked++;
+    }
+    if (!linked)
+      throw new ConflictException(
+        "No approved drawing covers the tasks that still need one.",
+      );
+    note = `${linked} task${linked === 1 ? "" : "s"} linked to approved drawings.`;
+  } else if (action === "materials_from_scope") {
+    manage();
+    const activeLines = activeReleasedScopeLines(d);
+    const selected = b.scopeLineIds === undefined ? null : ids(b.scopeLineIds);
+    if (selected && (!selected.length || selected.length > 100 || selected.some(id => !activeLines.some(line => line.id === id))))
+      throw new BadRequestException("Select between 1 and 100 active released items.");
+    const lines = selected ? activeLines.filter(line => selected.includes(line.id)) : activeLines;
+    if (!lines.length)
+      throw new ConflictException("No released scope to plan materials from.");
+    const planned = new Set(
+      d.materials.map((material) => material.scopeLineId).filter(Boolean),
+    );
+    let created = 0;
+    for (const line of lines) {
+      if (planned.has(line.id) || line.deductsLineId) continue;
+      const task = d.tasks.find(
+        (candidate) =>
+          candidate.status !== "cancelled" &&
+          (candidate.scopeIds ?? []).includes(line.id),
+      );
+      const needBy =
+        task?.start || d.controls?.targetCompletion || a.now.slice(0, 10);
+      const rows =
+        line.pricingMode === "materials" && line.materialRows?.length
+          ? line.materialRows
+              .filter((row) => row.type === "material" || row.type === "finish")
+              .map((row) => ({
+                title: row.name || line.material || line.title,
+                specification: [row.specification, line.room]
+                  .filter(Boolean)
+                  .join(" · "),
+                unit: row.unit || line.unit,
+                required: row.quantity || line.quantity,
+                supply: row.suppliedByClient
+                  ? ("client" as const)
+                  : ("company" as const),
+              }))
+          : [
+              {
+                title: line.material || line.title,
+                specification: [
+                  line.title,
+                  line.specification,
+                  line.finish,
+                  line.room,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                unit: line.unit,
+                required: line.quantity,
+                supply: line.customMaterials?.some(
+                  (material) => material.suppliedByClient,
+                )
+                  ? ("client" as const)
+                  : ("company" as const),
+              },
+            ];
+      for (const row of rows) {
+        if (!row.required) continue;
+        d.materials.push({
+          id: randomUUID(),
+          title: row.title.slice(0, 240),
+          specification: row.specification.slice(0, 2000),
+          catalogId: "",
+          catalogVersion: 0,
+          unit: (row.unit || "nos").slice(0, 30),
+          required: row.required,
+          supply: row.supply,
+          taskId: task?.id ?? "",
+          scopeLineId: line.id,
+          needBy,
+          movements: [],
+        });
+        created++;
+      }
+    }
+    if (!created)
+      throw new ConflictException(
+        "Every released scope item already has material requirements.",
+      );
+    note = `${created} material requirement${created === 1 ? "" : "s"} planned from the released scope.`;
+  } else if (action === "material_scope_link") {
+    manage();
+    const material = get(d.materials, recordId);
+    const scopeLineId = str(b.scopeLineId, 80, true);
+    if (!activeReleasedScopeLines(d).some(line=>line.id===scopeLineId)) throw new BadRequestException("Choose an active approved BOQ item.");
+    material.scopeLineId = scopeLineId;
+    note = "Requirement linked to approved BOQ item.";
   } else if (action === "reserve_material") {
     manage();
     active();
@@ -1441,13 +1732,16 @@ export function applyExecution(
       );
     const issued =
       m.movements
-        .filter((x) => x.kind === "issue")
+        .filter((x) => x.kind === "issue" && x.taskId === taskId)
         .reduce((s, x) => s + x.quantity, 0) -
       m.movements
-        .filter((x) => x.kind === "return")
+        .filter((x) => x.kind === "return" && x.taskId === taskId)
         .reduce((s, x) => s + x.quantity, 0);
     if (kind === "return" && quantity > issued)
       throw new ConflictException("Returns cannot exceed issued material.");
+    if (kind === "return" && m.outputBasis && taskId === m.taskId &&
+        issued - quantity + 0.000001 < approvedQuantity(d, taskId) * m.outputBasis.perUnit)
+      throw new ConflictException("This material supports approved installation. Return only the unused balance.");
     m.movements.push({
       taskId,
       id: randomUUID(),
@@ -1461,6 +1755,150 @@ export function applyExecution(
       if (reservation)
         reservation.quantity = Math.max(0, reservation.quantity - quantity);
     }
+  } else if (action === "record_supplier_offer") {
+    buy();
+    const order = get(d.orders, recordId);
+    if (order.status !== "enquiry") throw new ConflictException("Record offers against an open supplier quote request.");
+    const quantity = num(b.quantity), unitCost = num(b.unitCost);
+    if (!quantity || !unitCost) throw new BadRequestException("Enter a positive offered quantity and unit price.");
+    if (quantity > order.quantity) throw new BadRequestException("Offered quantity cannot exceed the requested quantity.");
+    const offer = {id:randomUUID(),at:a.now,kind:"quotation" as const,quantity,unitCost,date:day(b.promisedDate,true),note:str(b.note,3000),evidence:str(b.evidence,2000,true)};
+    order.vendorUpdates ??= [];
+    order.vendorUpdates.push(offer);
+  } else if (action === "reopen_order") {
+    buy();
+    review();
+    const order=get(d.orders,recordId);
+    if (order.status!=="closed") throw new ConflictException("Only a closed order can be reopened.");
+    if (!note) throw new BadRequestException("Record why the order is being reopened.");
+    if (d.financeClosed) throw new ConflictException("Reopen the final account before reopening the order.");
+    order.status="acknowledged";
+  } else if (action === "order_notes") {
+    buy();
+    const order = get(d.orders, recordId);
+    order.notes = str(b.notes, 10000);
+  } else if (action === "order_shipment") {
+    buy();
+    const order = get(d.orders, recordId);
+    if (!["approved", "acknowledged"].includes(order.status)) throw new ConflictException("Track shipments against an open approved order.");
+    if (orderReceivingPosition(d, order).remainingToArrive <= 0)
+      throw new ConflictException("All ordered quantity has arrived. Inspect pending receipts or close the order instead.");
+    const quantity = num(b.quantity);
+    if (!quantity || quantity > order.quantity) throw new BadRequestException("Shipment quantity must be positive and cannot exceed the order quantity.");
+    const shipment = {id: randomUUID(), at: a.now, status: choice(b.status, ["preparing", "dispatched", "arrived"]), carrier: str(b.carrier, 200), reference: str(b.reference, 240, true), expectedDate: day(b.expectedDate, true), quantity, note: str(b.note, 3000)};
+    order.shipments ??= [];
+    order.shipments.push(shipment);
+  } else if (action === "supplier_invoice") {
+    buy();
+    if (d.financeClosed) throw new ConflictException("Reopen the final account before recording invoices.");
+    const o = get(d.orders, str(b.orderId, 80, true));
+    if (!["approved", "acknowledged", "closed"].includes(o.status)) throw new ConflictException("Choose an approved purchase order.");
+    const existing = (d.supplierInvoices ?? []).find(i=>i.id===recordId);
+    if (existing && existing.status !== "draft") throw new ConflictException("Approved invoices cannot be edited.");
+    const number = str(b.number, 120, true);
+    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+    d.supplierInvoices ??= [];
+    if (d.supplierInvoices.some(i => i.id !== recordId && normalize(i.number) === normalize(number) && normalize(get(d.orders, i.orderId).vendor) === normalize(o.vendor)))
+      throw new ConflictException("This supplier invoice number is already recorded.");
+    const quantity = num(b.quantity), unitCost = num(b.unitCost), tax = num(b.tax);
+    if (!quantity || !unitCost) throw new BadRequestException("Enter a positive quantity and unit cost.");
+    const date = day(b.date, true), dueDate = day(b.dueDate, true);
+    if (dueDate < date) throw new BadRequestException("Due date cannot be before invoice date.");
+    recordId = existing?.id ?? randomUUID();
+    const invoice: import("./execution.types").SupplierInvoice = {id: recordId, orderId: o.id, number, date, dueDate, quantity, unitCost, tax, evidence: str(b.evidence, 2000, true), status: "draft", payments: []};
+    if (existing) Object.assign(existing, invoice); else d.supplierInvoices.push(invoice);
+  } else if (action === "approve_supplier_invoice") {
+    review();
+    if (d.financeClosed) throw new ConflictException("Reopen the final account before changing supplier invoices.");
+    const invoice = get(d.supplierInvoices ?? [], recordId);
+    if (invoice.status !== "draft") throw new ConflictException("Invoice is already approved.");
+    const o = get(d.orders, invoice.orderId);
+    assertServiceAcceptance(d, o, 0);
+    const returned = (d.supplierReturns ?? []).filter(r => r.orderId === o.id && ["dispatched", "credited"].includes(r.status)).reduce((n,r) => n+r.quantity,0);
+    const accepted = o.receipts.reduce((n,r) => n+r.accepted,0)-returned;
+    const billed = (d.supplierInvoices ?? []).filter(i => i.orderId === o.id && i.status === "approved").reduce((n,i) => n+i.quantity,0);
+    if (invoice.quantity+billed > accepted + 0.000001) throw new ConflictException("Invoice quantity exceeds accepted, unbilled delivery. Record the receipt or resolve the return first.");
+    if (Math.abs(invoice.unitCost-o.unitCost)>0.005) throw new ConflictException("Invoice rate differs from the approved order. Resolve the supplier invoice before approval.");
+    invoice.status = "approved"; invoice.approvedBy = a.id;
+  } else if (action === "supplier_payment") {
+    review();
+    if (d.financeClosed) throw new ConflictException("Reopen the final account before changing supplier invoices.");
+    const invoice = get(d.supplierInvoices ?? [], recordId);
+    if (invoice.status !== "approved") throw new ConflictException("Approve the invoice before recording payment.");
+    const amount = num(b.amount), reference = str(b.reference, 240, true);
+    if (!amount || amount + invoice.payments.reduce((n,p)=>n+p.amount,0) > invoice.quantity*invoice.unitCost+invoice.tax+0.005)
+      throw new ConflictException("Payment must be positive and cannot exceed the invoice balance.");
+    if ((d.supplierInvoices ?? []).some(i=>i.payments.some(p=>p.reference===reference))) throw new ConflictException("This payment reference is already recorded.");
+    invoice.payments.push({id:randomUUID(),amount,reference,date:day(b.date,true)});
+  } else if (action === "replace_enquiry") {
+    buy();
+    const original = get(d.orders, recordId);
+    if (!["enquiry", "cancelled"].includes(original.status) || original.sourceEnquiry || original.replacedByRequestId)
+      throw new ConflictException("Only the latest unselected supplier request can be replaced.");
+    if (!original.vendorId || !original.materialId || !original.rfqSnapshot)
+      throw new ConflictException("Create a new request from a linked requirement for this legacy record.");
+    if (!note) throw new BadRequestException("Record why this request is being replaced.");
+    if (d.orders.some(order => order.id !== original.id && order.vendorId === original.vendorId && order.materialId === original.materialId && order.status === "enquiry"))
+      throw new ConflictException("An open request already exists for this supplier and requirement. Review it before replacing this request.");
+    if (original.quoteRequestId && d.orders.some(order => order.quoteRequestId === original.quoteRequestId && order.sourceEnquiry && order.status !== "cancelled"))
+      throw new ConflictException("This request batch has supplier selections. Resolve those selections before changing its scope.");
+    const material = get(d.materials, original.materialId);
+    if (material.unit !== original.unit || material.taskId !== original.taskId)
+      throw new ConflictException("The requirement unit or consuming task changed. Plan a new request batch.");
+    const draft = structuredClone(d), retired = get(draft.orders, original.id);
+    const replacementId = randomUUID();
+    applyExecution(draft, "enquiry", {order: {
+      ...original, ...obj(b.supplier), id: replacementId, title: material.title,
+      quantity: original.rfqSnapshot.quantity, unitCost: 0,
+      quoteDueDate: day(b.quoteDueDate, true), promisedDate: day(b.promisedDate, true),
+    }}, a);
+    const replacement = get(draft.orders, replacementId);
+    replacement.replacesRequestId = original.id;
+    replacement.replacementReason = note;
+    replacement.replacementBy = a.id;
+    replacement.replacementAt = a.now;
+    retired.status = "cancelled";
+    retired.replacedByRequestId = replacementId;
+    d.orders = draft.orders;
+    d.audit = draft.audit;
+    recordId = replacementId;
+  } else if (action === "request_item_quotes") {
+    buy();
+    const rows = Array.isArray(b.requirements) ? b.requirements.map(obj) : [];
+    if (!rows.length || rows.length > 100 || new Set(rows.map(row => row.materialId)).size !== rows.length)
+      throw new BadRequestException("Select between 1 and 100 distinct material requirements.");
+    // Apply every existing RFQ rule to a private draft. One invalid requirement
+    // rejects the whole selection; no partially created RFQs or audit entries.
+    const draft = structuredClone(d);
+    for (const requirement of rows) applyExecution(draft, "request_supplier_quotes", {
+      materialId: requirement.materialId, quantity: requirement.quantity,
+      suppliers: b.suppliers, quoteDueDate: b.quoteDueDate, promisedDate: b.promisedDate,
+    }, a);
+    d.orders = draft.orders;
+    d.audit = draft.audit;
+    note = `${rows.length} requirements requested from suppliers. Draft requests created; nothing sent.`;
+  } else if (action === "request_supplier_quotes") {
+    buy();
+    const suppliers = Array.isArray(b.suppliers) ? b.suppliers.map(obj) : [];
+    if (!suppliers.length || suppliers.length > 25 || new Set(suppliers.map(s=>s.id)).size !== suppliers.length)
+      throw new BadRequestException("Choose distinct suppliers.");
+    const material = get(d.materials, b.materialId);
+    const due = day(b.quoteDueDate, true);
+    const quantity = num(b.quantity);
+    if (!quantity) throw new BadRequestException("Enter the requested quantity.");
+    if (suppliers.some(s=>d.orders.some(o=>o.vendorId===s.id && o.materialId===material.id && o.status==="enquiry")))
+      throw new ConflictException("An open quote request already exists for one of these suppliers and this requirement.");
+    const draft = structuredClone(d);
+    recordId = randomUUID();
+    for (const supplier of suppliers) {
+      applyExecution(draft, "enquiry", {order:{title:material.title,materialId:material.id,taskId:material.taskId,
+        kind:"material",quantity,unit:material.unit,unitCost:0,promisedDate:day(b.promisedDate,true),
+        vendorId:supplier.id,vendor:supplier.name,vendorSiteId:supplier.siteId ?? "",vendorPhone:supplier.phone ?? "",
+        vendorContact:supplier.email ?? supplier.phone ?? "",quoteRequestId:recordId,quoteDueDate:due}}, a);
+    }
+    d.orders = draft.orders;
+    d.audit = draft.audit;
+    note = `${suppliers.length} supplier quote requests created. Not sent.`;
   } else if (action === "order" || action === "enquiry") {
     buy();
     const v = obj(b.order);
@@ -1468,8 +1906,13 @@ export function applyExecution(
     const old = d.orders.find((o) => o.id === recordId);
     if (old && old.status !== (action === "enquiry" ? "enquiry" : "draft"))
       throw new ConflictException("Only draft orders can be edited.");
+    if (old && action === "enquiry" && (old.rfqSnapshot || old.vendorUpdates?.length))
+      throw new ConflictException("This request is frozen. Cancel it and create a replacement request to change the scope.");
     const materialId = str(v.materialId, 80),
-      taskId = str(v.taskId, 80);
+      material = materialId ? get(d.materials, materialId) : undefined,
+      taskId = str(v.taskId, 80) || material?.taskId || "";
+    if (material?.taskId && taskId !== material.taskId)
+      throw new ConflictException("Use the consuming task linked to this material requirement.");
     if (materialId && get(d.materials, materialId).supply !== "company")
       throw new ConflictException(
         "This material is supplied by the client or vendor package. Do not buy it twice.",
@@ -1482,6 +1925,11 @@ export function applyExecution(
         `${action === "enquiry" ? "RFQ" : "PO"}-${String(d.orders.length + 1).padStart(3, "0")}`,
       title: str(v.title, 240, true),
       vendor: str(v.vendor, 240, true),
+      vendorId: str(v.vendorId, 80) || undefined,
+      vendorSiteId: str(v.vendorSiteId, 80) || undefined,
+      vendorPhone: str(v.vendorPhone, 80) || undefined,
+      quoteRequestId: old?.quoteRequestId || str(v.quoteRequestId, 80) || undefined,
+      quoteDueDate: v.quoteDueDate ? day(v.quoteDueDate, true) : old?.quoteDueDate,
       vendorContact: str(v.vendorContact, 240),
       kind: choice(v.kind, ["material", "subcontract", "factory"]),
       materialId,
@@ -1509,8 +1957,23 @@ export function applyExecution(
       throw new ConflictException(
         "Order unit must match the material requirement.",
       );
+    if ((old?.rfqSnapshot || old?.selectedOffer) && (value.materialId !== old.materialId || value.taskId !== old.taskId || value.unit !== old.unit || value.title !== old.title || value.kind !== old.kind || value.vendor !== old.vendor || value.vendorId !== old.vendorId))
+      throw new ConflictException("Keep the selected request's item, supplier and unit. Create a separate request for different scope.");
+    const task = taskId ? get(d.tasks, taskId) : undefined;
+    if (old?.selectedOffer && (value.unitCost !== old.selectedOffer.unitCost || value.promisedDate !== old.selectedOffer.promisedDate))
+      throw new ConflictException("Keep the selected quote price and delivery date. Cancel the selection and request a revised quote to change these terms.");
+    if (old?.selectedOffer && value.quantity > Math.min(old.selectedOffer.quotedQuantity, quoteBatchRemaining(d.orders, old)) + 0.000001)
+      throw new ConflictException("Order quantity exceeds the selected offer or remaining request batch quantity.");
     if (old) Object.assign(old, value);
-    else d.orders.push(value);
+    else d.orders.push({...value, ...(action === "enquiry" ? {rfqSnapshot: {
+      capturedAt: a.now, capturedBy: a.id, projectRevision: d.revision,
+      materialId, taskId, scopeLineId: material?.scopeLineId ?? "",
+      catalogId: material?.catalogId ?? "", catalogVersion: material?.catalogVersion ?? 0,
+      title: value.title, specification: material?.specification ?? task?.description ?? "",
+      workTitle: task?.title ?? "", workArea: task?.area ?? "",
+      quantity: value.quantity, unit: value.unit, currency: value.currency,
+      promisedDate: value.promisedDate, quoteDueDate: value.quoteDueDate ?? "",
+    }} : {})});
   } else if (action === "award_enquiry") {
     buy();
     const order = get(d.orders, recordId);
@@ -1520,11 +1983,106 @@ export function applyExecution(
       throw new BadRequestException(
         "Record the comparison and selection reason.",
       );
-    order.unitCost = num(b.unitCost);
-    order.promisedDate = day(b.promisedDate, true);
+    const offer = order.vendorUpdates?.filter(update => update.kind === "quotation").at(-1);
+    if (!offer || str(b.offerId, 80, true) !== offer.id)
+      throw new ConflictException("The supplier offer changed. Review and select the latest recorded offer.");
+    const awardedQuantity = b.quantity === undefined ? offer.quantity : num(b.quantity);
+    if (!awardedQuantity || awardedQuantity > order.quantity) throw new BadRequestException("Order quantity must be within the requested quantity.");
+    if (awardedQuantity > offer.quantity) throw new BadRequestException("Order quantity cannot exceed the supplier's offered quantity.");
+    if (awardedQuantity > quoteBatchRemaining(d.orders, order) + 0.000001)
+      throw new ConflictException("Selection exceeds the remaining request batch quantity. Review the other supplier selections.");
+    const unitCost = num(offer.unitCost), promisedDate = day(offer.date, true);
+    if (!unitCost) throw new BadRequestException("Enter a positive selected unit price.");
+    order.selectedOffer = {offerId: offer.id, selectedBy: a.id, selectedAt: a.now, reason: note,
+      quantity: awardedQuantity, quotedQuantity: offer.quantity, unitCost, promisedDate, evidence: offer.evidence};
+    order.quantity = awardedQuantity;
+    order.unitCost = unitCost;
+    order.promisedDate = promisedDate;
     order.sourceEnquiry = order.number;
     order.number = `PO-${order.number.replace("RFQ-", "")}`;
     order.status = "draft";
+  } else if (action === "order_amendment_assign") {
+    const order = get(d.orders, recordId);
+    const amendment = get(order.amendments ?? [], str(b.amendmentId, 80, true));
+    if (!a.manage && !(a.buy && amendment.createdBy === a.id))
+      throw new ForbiddenException("A project manager or the proposer with procurement permission must reassign this review.");
+    if (amendment.status !== "submitted") throw new ConflictException("Only pending amendments can be reassigned.");
+    const reviewerId = str(b.reviewerId, 80, true), dueDate = day(b.dueDate, true);
+    if (reviewerId === amendment.createdBy || !a.reviewerIds?.includes(reviewerId))
+      throw new BadRequestException("Choose an independent reviewer with access to this project.");
+    if (!note) throw new BadRequestException("Record why this review is being reassigned.");
+    if (reviewerId === amendment.reviewerId && dueDate === amendment.dueDate)
+      throw new BadRequestException("Change the reviewer or due date before saving.");
+    const assignment = {fromReviewerId: amendment.reviewerId ?? "", toReviewerId: reviewerId,
+      fromDueDate: amendment.dueDate ?? "", toDueDate: dueDate, by: a.id, at: a.now, reason: note};
+    amendment.assignments ??= [];
+    amendment.assignments.push(assignment);
+    amendment.reviewerId = reviewerId;
+    amendment.dueDate = dueDate;
+  } else if (action === "order_amendment" || action === "order_amendment_decide") {
+    const order = get(d.orders, recordId);
+    const assertAmendable = () => {
+      if (!["approved", "acknowledged"].includes(order.status))
+        throw new ConflictException("Amend an open approved order.");
+      if (d.financeClosed) throw new ConflictException("Reopen the final account before amending an order.");
+      if (order.receipts.length || order.shipments?.length ||
+        order.vendorUpdates?.some(update => ["progress", "delivery"].includes(update.kind)) ||
+        d.supplierInvoices?.some(invoice => invoice.orderId === order.id) ||
+        d.supplierReturns?.some(ret => ret.orderId === order.id))
+        throw new ConflictException("This order has fulfilment or financial records. Use a controlled return or financial adjustment instead.");
+    };
+    if (action === "order_amendment") {
+      buy();
+      assertAmendable();
+      if (order.amendments?.some(amendment => amendment.status === "submitted"))
+        throw new ConflictException("Resolve the pending amendment first.");
+      const after = {unitCost: num(b.unitCost), promisedDate: day(b.promisedDate, true)};
+      if (!after.unitCost || !note) throw new BadRequestException("Enter a positive unit price and amendment reason.");
+      if (after.unitCost === order.unitCost && after.promisedDate === order.promisedDate)
+        throw new BadRequestException("Change the price or delivery date before proposing an amendment.");
+      const reviewerId = str(b.reviewerId, 80, true), dueDate = day(b.dueDate, true);
+      if (reviewerId === a.id || !a.reviewerIds?.includes(reviewerId))
+        throw new BadRequestException("Choose an independent reviewer with access to this project.");
+      const amendment = {id: randomUUID(), status: "submitted" as const, createdBy: a.id, createdAt: a.now, reviewerId, dueDate,
+        reason: note, evidence: str(b.evidence, 2000, true),
+        before: {quantity: order.quantity, unitCost: order.unitCost, promisedDate: order.promisedDate, currency: order.currency}, after};
+      order.amendments ??= [];
+      order.amendments.push(amendment);
+    } else {
+      const amendment = get(order.amendments ?? [], str(b.amendmentId, 80, true));
+      if (amendment.status !== "submitted") throw new ConflictException("This amendment has already been decided.");
+      const decision = choice(b.decision, ["approved", "rejected", "withdrawn"]);
+      if (decision === "withdrawn") {
+        buy();
+        if (amendment.createdBy !== a.id) throw new ForbiddenException("Only the proposer can withdraw this amendment.");
+      } else {
+        review();
+        if (!amendment.reviewerId || amendment.reviewerId !== a.id)
+          throw new ForbiddenException("Only the assigned reviewer can decide this amendment.");
+        if (amendment.createdBy === a.id) throw new ForbiddenException("Another reviewer must decide this amendment.");
+      }
+      if (!note) throw new BadRequestException("Record the decision reason.");
+      if (decision === "approved") {
+        assertAmendable();
+        active();
+        if (order.quantity !== amendment.before.quantity || order.unitCost !== amendment.before.unitCost ||
+          order.promisedDate !== amendment.before.promisedDate || order.currency !== amendment.before.currency)
+          throw new ConflictException("Order terms changed. Reject this proposal and request a fresh amendment.");
+        const otherCommitments = d.orders.filter(other => other.id !== order.id && ["approved", "acknowledged", "closed"].includes(other.status))
+          .reduce((sum, other) => sum + other.quantity * other.unitCost, 0);
+        if (!d.budget || otherCommitments + order.quantity * amendment.after.unitCost > d.budget)
+          throw new ConflictException("The amendment exceeds the approved operational budget.");
+        order.baselinePromisedDate ||= order.promisedDate;
+        order.unitCost = amendment.after.unitCost;
+        order.promisedDate = amendment.after.promisedDate;
+        order.status = "approved";
+        order.acknowledgement = "";
+      }
+      amendment.status = decision;
+      amendment.decidedBy = a.id;
+      amendment.decidedAt = a.now;
+      amendment.decisionNote = note;
+    }
   } else if (action === "order_status") {
     buy();
     const o = get(d.orders, recordId),
@@ -1546,6 +2104,13 @@ export function applyExecution(
       throw new ConflictException(
         "The order changed. Review its current state.",
       );
+    if (["submitted", "approved"].includes(status) && o.kind==="material" && !o.materialId)
+      throw new ConflictException("Link the ordered item to a material requirement so receiving updates its stock.");
+    if (["submitted", "approved"].includes(status) && o.materialId) {
+      const material = get(d.materials, o.materialId);
+      const position = materialInventory(material, d.orders.filter(order => order.id !== o.id), [], d.supplierReturns);
+      if(o.quantity > position.shortfall + 0.000001) throw new ConflictException("This quantity exceeds the remaining requirement. Review existing orders or update the approved requirement first.");
+    }
     if (status === "approved") {
       review();
       active();
@@ -1567,9 +2132,16 @@ export function applyExecution(
       throw new BadRequestException(
         "Record the vendor acknowledgement and promised date.",
       );
+    if (status === "closed" && (b.confirmed !== true || !note))
+      throw new BadRequestException("Review accepted quantities and confirm closure with an inspection reference.");
+    const returnedQuantity = (d.supplierReturns ?? []).filter(r=>r.orderId===o.id && ["dispatched","credited"].includes(r.status)).reduce((n,r)=>n+r.quantity,0);
+    if (status === "closed" && (d.supplierReturns ?? []).some(r=>r.orderId===o.id && !["credited","cancelled"].includes(r.status)))
+      throw new ConflictException("Resolve the supplier return before closing this order.");
+    if (status === "closed" && o.receipts.some(r => (r.pending ?? 0) > 0))
+      throw new ConflictException("Inspect the remaining quantity before closing.");
     if (
       status === "closed" &&
-      o.receipts.reduce((s, r) => s + r.accepted, 0) < o.quantity
+      o.receipts.reduce((s, r) => s + r.accepted, 0) - returnedQuantity < o.quantity
     )
       throw new ConflictException(
         "Accept the remaining quantity before closing.",
@@ -1578,6 +2150,7 @@ export function applyExecution(
       throw new ConflictException(
         "An order with receipts needs a controlled return or credit, not cancellation.",
       );
+    if (["approved", "acknowledged"].includes(status)) o.baselinePromisedDate ||= o.promisedDate;
     o.status = status;
     if (status === "acknowledged") {
       o.acknowledgement = note;
@@ -1590,18 +2163,30 @@ export function applyExecution(
     if (o.status !== "acknowledged")
       throw new ConflictException("Receive against an acknowledged order.");
     const accepted = num(b.accepted),
-      rejected = num(b.rejected);
-    if (!(accepted + rejected) || !note)
+      rejected = num(b.rejected), pending = num(b.pending ?? 0);
+    if (b.received !== undefined && Math.abs(num(b.received) - accepted - rejected - pending) > 0.000001)
+      throw new BadRequestException("Arrived quantity must equal accepted plus rejected plus pending inspection quantity.");
+    const receiptToday = a.today ?? a.now.slice(0,10);
+    const receivedOn = b.receivedOn ? day(b.receivedOn,true) : receiptToday;
+    if (accepted > 0) assertServiceAcceptance(d, o, accepted);
+    if (receivedOn > receiptToday) throw new BadRequestException("Received date cannot be in the future.");
+    if (!(accepted + rejected + pending) || !note)
       throw new BadRequestException(
         "Record received quantities and delivery/inspection evidence.",
       );
-    if (o.receipts.reduce((s, r) => s + r.accepted, 0) + accepted > o.quantity)
+    const returnedQuantity = (d.supplierReturns ?? []).filter(r=>r.orderId===o.id && ["dispatched","credited"].includes(r.status)).reduce((n,r)=>n+r.quantity,0);
+    if (o.receipts.reduce((s, r) => s + r.accepted + (r.pending ?? 0), 0) - returnedQuantity + accepted + pending > o.quantity)
       throw new ConflictException(
-        "Accepted receipts cannot exceed the ordered quantity.",
+        "Accepted receipts and pending inspection cannot exceed the ordered quantity.",
       );
     const id = randomUUID();
-    o.receipts.push({ id, accepted, rejected, evidence: note, at: a.now });
-    if (o.materialId && accepted)
+    const evidenceFiles = captureDecisionEvidence(d,o.id,b.fileIds);
+    const serviceTask = o.kind === "subcontract" ? get(d.tasks, o.taskId) : undefined;
+    o.receipts.push({ id, accepted, rejected, pending, receivedBy:a.id, receivedOn, evidence: note, evidenceFiles, at: a.now,
+      basis:serviceTask ? "service" : "goods",
+      ...(serviceTask ? {serviceBasis:{taskId:serviceTask.id,unit:serviceTask.unit,approvedQuantity:serviceTask.approved,capturedAt:a.now}} : {}),
+    });
+    if (o.kind !== "subcontract" && o.materialId && accepted)
       get(d.materials, o.materialId).movements.push({
         id,
         kind: "receive",
@@ -1609,6 +2194,32 @@ export function applyExecution(
         reference: `${o.number} · ${note}`,
         at: a.now,
       });
+  } else if (action === "receipt_inspect") {
+    review(); active();
+    const o = get(d.orders, recordId);
+    if (o.status !== "acknowledged") throw new ConflictException("Inspect against an acknowledged order.");
+    const receipt = get(o.receipts, b.receiptId);
+    if (receipt.receivedBy === a.id) throw new ForbiddenException("A different reviewer must inspect this receipt.");
+    const pending = receipt.pending ?? 0;
+    if (!pending || b.expectedPending === undefined || num(b.expectedPending) !== pending)
+      throw new ConflictException("Pending inspection changed. Refresh the receipt before reviewing.");
+    const accepted = num(b.accepted), rejected = num(b.rejected);
+    if (accepted > 0) assertServiceAcceptance(d, o, accepted);
+    if (!note || !(accepted + rejected) || accepted + rejected > pending)
+      throw new BadRequestException("Record inspection evidence and quantities within the pending balance.");
+    const material = o.materialId ? get(d.materials, o.materialId) : undefined;
+    const evidenceFiles = captureDecisionEvidence(d,o.id,b.fileIds);
+    const id = randomUUID();
+    receipt.accepted += accepted;
+    receipt.rejected += rejected;
+    receipt.pending = pending - accepted - rejected;
+    const inspectedServiceTask = o.kind === "subcontract" ? get(d.tasks, o.taskId) : undefined;
+    (receipt.inspections ??= []).push({id, by:a.id, at:a.now, accepted, rejected, evidence:note,evidenceFiles,
+      ...(inspectedServiceTask ? {serviceBasis:{taskId:inspectedServiceTask.id,unit:inspectedServiceTask.unit,approvedQuantity:inspectedServiceTask.approved,capturedAt:a.now}} : {}),
+    });
+    if (material && accepted && o.kind !== "subcontract") material.movements.push({id,kind:"receive",quantity:accepted,reference:`${o.number} · QC ${receipt.id} · ${note}`,at:a.now});
+  } else if (["rfa_save","rfa_submit","rfa_review","rfa_decide","rfa_withdraw","rfa_revise"].includes(action)) {
+    recordId = applyRfa(d, action, b, a);
   } else if (action === "document") {
     manage();
     const v = obj(b.document);
@@ -1693,6 +2304,7 @@ export function applyExecution(
   } else if (action === "document_status") {
     const doc = get(d.documents, recordId),
       status = choice(b.status, ["review", "approved"]);
+    if (d.rfas?.some(request => request.documentId === doc.id)) throw new ConflictException("Use the linked RFA to submit or approve this document.");
     if (status === "review") {
       manage();
       if (doc.status !== "draft")
@@ -1701,22 +2313,7 @@ export function applyExecution(
       review();
       if (doc.status !== "review")
         throw new ConflictException("This document is not awaiting review.");
-      if (doc.replaces) {
-        const old = get(d.documents, doc.replaces);
-        old.status = "superseded";
-        old.published = false;
-        for (const t of d.tasks.filter(
-          (t) =>
-            t.drawingId === old.id &&
-            t.status !== "completed" &&
-            t.status !== "cancelled",
-        )) {
-          t.status = "blocked";
-          t.blocker =
-            "Drawing revised. Review affected work and link the approved revision.";
-        }
-      }
-      doc.approvedBy = a.name;
+      approveProjectDocument(d, doc, a.name);
     }
     doc.status = status;
   } else if (action === "publish_document") {
@@ -1814,6 +2411,7 @@ export function applyExecution(
       warrantyUntil: day(v.warrantyUntil),
       clientReviewDueDate: day(v.clientReviewDueDate),
       clientApproverId: str(v.clientApproverId, 80),
+      installationBatchIds: ids(v.installationBatchIds),
     });
     if (old?.packets?.length) value.packets = old.packets;
     if (old?.outstandingItems?.length) value.outstandingItems = old.outstandingItems;
@@ -1909,10 +2507,13 @@ export function applyExecution(
         throw new BadRequestException(
           "Use the authenticated client portal or explicitly record a signed acceptance.",
         );
-      refreshHandoverPacket(d, h, a.id, a.now);
+      assertHandoverPacketCurrent(d, h);
       if (!note)
         throw new BadRequestException("Attach the signed client acceptance evidence.");
-      h.acceptedBy = str(b.acceptedBy, 240, true);
+      const acceptedBy = str(b.acceptedBy, 240, true);
+      const acceptanceFiles = captureDecisionEvidence(d,h.id,b.fileIds);
+      h.acceptedBy = acceptedBy;
+      h.acceptanceFiles = acceptanceFiles;
       h.acceptedAt = a.now;
       h.evidence = note;
       h.decisionSource = "signed_record";
@@ -1922,6 +2523,7 @@ export function applyExecution(
     if (
       d.handovers.length &&
       d.handovers.every((handover) => ["ready", "accepted"].includes(handover.status)) &&
+      d.tasks.every(task=>["completed","cancelled"].includes(task.status)) &&
       d.snags.every((snag) => snag.status === "closed")
     )
       d.phase = "handover";
@@ -1936,6 +2538,7 @@ export function applyExecution(
       throw new ConflictException(
         "Budget cannot be below approved commitments.",
       );
+    if (b.financeClosed === true && (d.supplierInvoices ?? []).some(i => i.status === "draft" || i.quantity*i.unitCost+i.tax-i.payments.reduce((n,p)=>n+p.amount,0)>0.005)) throw new ConflictException("Resolve supplier invoices and unpaid balances before closing the final account.");
     if (!note)
       throw new BadRequestException(
         "Reference the approved budget or forecast decision.",
@@ -1955,6 +2558,8 @@ export function applyExecution(
       throw new ConflictException(
         "Complete physical handover acceptance before closing the final account.",
       );
+    if(b.financeClosed === true && d.tasks.some(task=>task.installationBatches?.some(batch=>batch.status!=="cancelled") && !["completed","cancelled"].includes(task.status))) throw new ConflictException("Complete the remaining work before closing the final account.");
+    if(b.financeClosed === true && d.tasks.some(task=>(task.installationBatches??[]).some(batch=>batch.status!=="cancelled" && !d.handovers.some(h=>h.status==="accepted" && (h.installationBatchIds?.includes(batch.id) || (!h.installationBatchIds?.length && h.taskIds.includes(task.id))))))) throw new ConflictException("Accept every installation batch before closing the final account.");
     d.financeClosed = b.financeClosed === true;
     d.financeEvidence = d.financeClosed
       ? str(b.financeEvidence, 3000, true)
@@ -1962,6 +2567,19 @@ export function applyExecution(
   } else if (action === "complete_project") {
     review();
     assertCloseout(d);
+    if (a.designOnlySignedOff) {
+      if (d.workflow?.currentStageKey !== "design_specifications" ||
+          d.tasks.some(task => !["completed", "cancelled"].includes(task.status)) ||
+          (d.workPackages ?? []).some(work => !["completed", "cancelled"].includes(work.status)) ||
+          d.snags.some(snag => snag.status !== "closed"))
+        throw new ConflictException("Finish the design stage and close its tasks before completion.");
+      recordId = completeProjectWorkflow(d, b.note, {
+        id: a.userId ?? a.id, name: a.name, now: a.now,
+      });
+      d.phase = "completed";
+    } else {
+    if(d.tasks.some(task=>(task.installationBatches??[]).some(batch=>batch.status!=="cancelled" && !d.handovers.some(h=>h.status==="accepted" && (h.installationBatchIds?.includes(batch.id) || (!h.installationBatchIds?.length && h.taskIds.includes(task.id)))))))
+      throw new ConflictException("Obtain client acceptance for every installation batch before closing the project.");
     if (
       d.orders.some(
         (order) => !["closed", "cancelled", "enquiry"].includes(order.status),
@@ -1995,6 +2613,7 @@ export function applyExecution(
       now: a.now,
     });
     d.phase = "completed";
+    }
   } else if (action === "reopen_project") {
     review();
     if (!note)

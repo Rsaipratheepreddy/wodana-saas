@@ -28,6 +28,7 @@ import {
 import { normalizeSlaSchedule, SlaSchedule, SlaScheduleValidationError } from "./sla-schedule";
 import { CrmSlaLifecycleService } from "./crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvaluation } from "./qualification-evidence";
+import { hasResolvedEnquiryType } from "./lead-options";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -301,6 +302,8 @@ export class CrmLeadsService {
                 party.id AS "partyId", party.display_name AS "partyName",
                 enquiry.id AS "enquiryId", enquiry.reference, enquiry.details, enquiry.title, enquiry.source, enquiry.channel,
                 intake.intake_method AS "intakeMethod",
+                intake.original_payload->>'formId' AS "formId",
+                intake.original_payload->'formAnswers' AS "formAnswers",
                 enquiry.service_type AS "serviceType",
                 user_account.display_name AS "ownerName", queue.name AS "queueName",
                 sla.status AS "slaStatus", sla.warning_at AS "slaWarningAt", sla.due_at AS "slaDueAt"
@@ -384,24 +387,33 @@ export class CrmLeadsService {
         [workspaceId, lead.enquiry_id],
       );
       const canViewOpportunities = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.view");
-      const opportunities = canViewOpportunities ? await client.query(`SELECT id, title, status FROM crm_opportunities WHERE workspace_id = $1 AND lead_id = $2`, [workspaceId, leadId]) : { rows: [] };
+      const opportunities = canViewOpportunities ? await client.query(`SELECT opportunity.id, opportunity.title, opportunity.status,
+          source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference"
+        FROM crm_opportunities opportunity
+        LEFT JOIN pre_project_cases source_case ON source_case.workspace_id=opportunity.workspace_id AND source_case.opportunity_id=opportunity.id
+        LEFT JOIN commercial_cases commercial_case ON commercial_case.workspace_id=source_case.workspace_id AND commercial_case.case_id=source_case.id
+        WHERE opportunity.workspace_id = $1 AND opportunity.lead_id = $2`, [workspaceId, leadId]) : { rows: [] };
       const frozenQualification = lead.status === "qualified" && lead.qualification_evidence
         ? lead.qualification_evidence as Record<string, unknown>
         : null;
-      // Once qualified, always show the exact form snapshot used for the decision.
-      // Later settings edits must not rewrite the apparent conversion basis.
-      const qualificationState = frozenQualification
+      // Valid frozen decisions retain their exact form snapshot even after
+      // settings change; invalid provisional-type snapshots must be rechecked.
+      const frozenTypeResolved = frozenQualification ? hasResolvedEnquiryType(String(frozenQualification.serviceType ?? "")) : false;
+      // Older qualified leads may have been frozen with the provisional type.
+      // Recheck those against the current enquiry so correcting the type can
+      // unblock conversion without treating their invalid snapshot as ready.
+      const qualificationState = frozenQualification && frozenTypeResolved
         ? null
         : await evaluateQualification(client, workspaceId, leadId);
       return {
         ...this.mapLead(lead), enquiry: { ...enquiry.rows[0], attribution: attribution.rows }, opportunities: opportunities.rows,
         qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows,
         qualificationState: {
-          ready: frozenQualification ? true : qualificationState!.ready,
-          missingRequired: frozenQualification ? [] : qualificationState!.missingRequired,
-          selection: frozenQualification ? frozenQualification.selection : qualificationState!.evidence.selection,
-          form: frozenQualification ? frozenQualification.form : qualificationState!.evidence.form,
-          frozen: Boolean(frozenQualification),
+          ready: qualificationState ? qualificationState.ready : true,
+          missingRequired: qualificationState ? qualificationState.missingRequired : [],
+          selection: qualificationState ? qualificationState.evidence.selection : frozenQualification!.selection,
+          form: qualificationState ? qualificationState.evidence.form : frozenQualification!.form,
+          frozen: Boolean(frozenQualification && frozenTypeResolved),
         },
       };
     });

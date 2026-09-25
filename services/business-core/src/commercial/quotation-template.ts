@@ -49,7 +49,7 @@ export function quotationTemplateContent(
     inclusions: q.inclusions,
     terms: q.terms,
     exclusions: q.exclusions,
-    presentation: q.presentation,
+    presentation: q.presentation?{...q.presentation,details:q.presentation.details?Object.fromEntries(Object.entries(q.presentation.details).filter(([key])=>['companyName','preparedBy','estimator','manager'].includes(key))):undefined}:undefined,
     paymentTerms: q.paymentTerms.map(
       ({ id, title, percent, trigger, requiredForRelease, requiredForProduction }) => ({
         id,

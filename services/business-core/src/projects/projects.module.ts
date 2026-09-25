@@ -37,6 +37,7 @@ import { ExecutionService } from "./execution.service";
 import { ProjectsService } from "./projects.service";
 import { ProjectWorkflowService } from "./project-workflow.service";
 import { ProjectScheduleService } from "./project-schedule.service";
+import { ProjectFactoryBatchesService } from "./project-factory-batches.service";
 import { CrmNotificationsModule } from "../crm/notifications/crm-notifications.module";
 import { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 @ApiTags("projects-sites")
@@ -51,7 +52,16 @@ export class ProjectsController {
     private readonly stock: ProjectStockService,
     private readonly workflows: ProjectWorkflowService,
     private readonly schedule: ProjectScheduleService,
+    private readonly factoryBatches: ProjectFactoryBatchesService,
   ) {}
+  @Get("factory-batches")
+  listFactoryBatches(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query("projectId") projectId?:string){
+    return this.factoryBatches.state(actor,workspaceId,projectId);
+  }
+  @Post("factory-batches")
+  factoryBatchCommand(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:unknown){
+    return this.factoryBatches.command(actor,workspaceId,body);
+  }
   @Get("workflow-templates")
   workflowTemplates(
     @CurrentActor() actor: RequestActor,
@@ -151,6 +161,17 @@ export class ProjectsController {
     @Body() b: unknown,
   ) {
     return this.stock.command(a, w, p, b);
+  }
+  @Get("approvals") approvals(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Query() query: Record<string,unknown>,
+  ) { return this.execution.approvalQueue(actor,workspaceId,query); }
+  @Get("work-queue") workQueue(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query() query:Record<string,unknown>){
+    return this.execution.workQueue(actor,workspaceId,query);
+  }
+  @Get("supply-queue") supplyQueue(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){
+    return this.execution.supplyQueue(actor,workspaceId);
   }
   @Get("portfolio") portfolio(
     @CurrentActor() actor: RequestActor,
@@ -333,6 +354,7 @@ class InternalProjectRemindersController {
     HrmsAccessService,
     ProjectWorkflowService,
     ProjectScheduleService,
+    ProjectFactoryBatchesService,
   ],
   exports: [ProjectsService, ProjectNotificationsService],
 })

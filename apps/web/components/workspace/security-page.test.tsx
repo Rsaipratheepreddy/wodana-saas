@@ -6,6 +6,7 @@ import { SecurityPage } from "./security-page";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("SecurityPage", () => {
@@ -56,6 +57,40 @@ describe("SecurityPage", () => {
       "/api/auth/mfa/step-up",
       "/api/auth/mfa/recovery",
     ]);
+  });
+
+  it("explains how to retain recovery codes when clipboard access is unavailable", async () => {
+    const interaction = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recoveryCodes: ["AAAA-BBBB-CCCC-DDDD"] }) }));
+    render(<SecurityPage initialData={structuredClone(securityPageFixture)} />);
+    await interaction.click(screen.getByRole("button", { name: "Recovery codes" }));
+    await interaction.type(screen.getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
+    await interaction.click(screen.getByRole("button", { name: "Generate codes" }));
+    const dialog = await screen.findByRole("dialog", { name: "Save your recovery codes" });
+    vi.spyOn(navigator, "clipboard", "get").mockReturnValue(undefined as unknown as Clipboard);
+    await interaction.click(within(dialog).getByRole("button", { name: "Copy all" }));
+    expect(await within(dialog).findByText("Select and copy the codes manually.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
+    expect(within(dialog).getByText("AAAA-BBBB-CCCC-DDDD")).toBeInTheDocument();
+  });
+
+  it("removes revoked devices after the server confirms MFA disable", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(securityPageFixture);
+    data.mfa.required = false;
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SecurityPage initialData={data} />);
+    await interaction.click(screen.getByRole("button", { name: "Turn off" }));
+    const dialog = await screen.findByRole("dialog", { name: "Turn off two-step verification" });
+    await interaction.type(within(dialog).getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
+    await interaction.click(within(dialog).getByRole("button", { name: "Turn off verification" }));
+    expect(await screen.findByText("Two-step verification was turned off. Other sessions were signed out.")).toBeInTheDocument();
+    expect(screen.getByText("This device")).toBeInTheDocument();
+    expect(screen.queryByText("iPhone or iPad")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(["/api/auth/mfa/step-up", "/api/auth/mfa/disable"]);
   });
 
 });

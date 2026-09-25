@@ -5,7 +5,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { ArchiveBriefEntryDto, BulkBriefEntriesDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
 import { BRIEF_MAX_BYTES, BriefService } from "./brief.service";
-import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
+import { FolderReviewerDto, ApproveFolderDto, AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
 import { DesignService } from "./design.service";
 
 import {ItemSpecificationService} from "./item-specification.service";
@@ -37,6 +37,8 @@ export class CaseContentController {
   response.setHeader('Content-Security-Policy',"sandbox; default-src 'none'");
   return new StreamableFile(file.body,{type:file.contentType,disposition:`${file.preview||(view==='1'&&file.contentType==='application/pdf')?'inline':'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`});
  }
+ @Post('design-folders/:id/reviewer') reviewer(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Body() b:FolderReviewerDto){return this.designs.assignFolderReviewer(a,w,c,id,b);}
+ @Post('design-folders/:id/approve') approveFolder(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Body() b:ApproveFolderDto){return this.designs.approveFolder(a,w,c,id,b);}
  @Put('design-folders') folder(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:SaveDesignFolderDto) {return this.designs.saveFolder(a,w,c,b);}
  @Post('designs/upload') uploadDesigns(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:UploadDesignFilesDto) {return this.designs.uploadFiles(a,w,c,b);}
  @Post('designs/:id/threads') thread(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Body() b:CreateDesignThreadDto){return this.designs.createThread(a,w,c,id,b);}

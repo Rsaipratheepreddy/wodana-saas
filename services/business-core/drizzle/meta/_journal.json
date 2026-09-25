@@ -743,6 +743,76 @@
       "when": 1789668000000,
       "tag": "0109_tenant_lifecycle_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1789842000000,
+      "tag": "0110_design_comment_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1789843000000,
+      "tag": "0111_folder_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0112_member_home_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1790035200000,
+      "tag": "0113_project_factory_batches",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1790200000000,
+      "tag": "0114_crm_opportunity_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1790280000000,
+      "tag": "0115_sales_enquiry_titles",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1790294400000,
+      "tag": "0116_commercial_review_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1790370000000,
+      "tag": "0117_project_workflow_stage_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1790373600000,
+      "tag": "0118_palm_qs_estimate_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1790460000000,
+      "tag": "0119_quantity_surveyor_workspace_role",
+      "breakpoints": true
     }
   ]
 }

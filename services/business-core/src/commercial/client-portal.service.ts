@@ -365,8 +365,8 @@ export class ClientPortalService {
             })),
           project: project
             ? (() => {
-                const publicData = publicProject(project.id, project.name, project.content);
                 const today = localDate(new Date(), project.timezone ?? "UTC");
+                const publicData = publicProject(project.id, project.name, project.content, today);
                 let warrantyReportingReady = true;
                 try {
                   warrantyOwnerId(project.content);
@@ -424,7 +424,7 @@ export class ClientPortalService {
       return { name: session.grants[0].name, phone: session.phone, cases };
     });
   }
-  async projectFile(slug:string,token:string,projectId:string,fileId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const row=(await client.query(`SELECT p.case_id,e.content FROM delivery_projects p JOIN project_execution e ON e.project_id=p.id AND e.workspace_id=p.workspace_id WHERE p.workspace_id=$1 AND p.id=$2`,[settings.workspaceId,projectId])).rows[0];if(!row||!session.grants.some(g=>g.caseId===row.case_id))throw new NotFoundException("Shared file not available.");const d=row.content as import('../projects/execution.types').ProjectData;const file=d.files?.find(f=>f.id===fileId);const report=d.reports.find(r=>r.status==="approved"&&r.publishedAt&&r.clientFileIds?.includes(fileId)&&r.id===file?.recordId&&!d.reports.some(n=>n.status==="approved"&&n.supersedes===r.id));if(!file||!report)throw new NotFoundException("Shared file not available.");const stored=await this.storage.read(`projects/${settings.workspaceId}/${projectId}/${fileId}`).catch(()=>null);if(!stored)throw new NotFoundException("The shared file is temporarily unavailable.");return {body:stored.body,mimeType:file.mimeType};});}
+  async projectFile(slug:string,token:string,projectId:string,fileId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const row=(await client.query(`SELECT p.case_id,e.content FROM delivery_projects p JOIN project_execution e ON e.project_id=p.id AND e.workspace_id=p.workspace_id WHERE p.workspace_id=$1 AND p.id=$2`,[settings.workspaceId,projectId])).rows[0];if(!row||!session.grants.some(g=>g.caseId===row.case_id))throw new NotFoundException("Shared file not available.");const d=row.content as import('../projects/execution.types').ProjectData;const file=d.files?.find(f=>f.id===fileId);const report=d.reports.find(r=>r.status==="approved"&&r.publishedAt&&r.clientFileIds?.includes(fileId)&&r.id===file?.recordId&&!d.reports.some(n=>n.status==="approved"&&n.publishedAt&&n.supersedes===r.id));if(d.clientSections?.progress===false||!file||!report)throw new NotFoundException("Shared file not available.");const stored=await this.storage.read(`projects/${settings.workspaceId}/${projectId}/${fileId}`).catch(()=>null);if(!stored)throw new NotFoundException("The shared file is temporarily unavailable.");return {body:stored.body,mimeType:file.mimeType};});}
   async designAsset(slug:string,token:string,versionId:string){const settings=await this.branding(slug);return this.db.tenantTransaction(settings.workspaceId,actorId,async client=>{const session=await this.session(client,settings.workspaceId,token);const asset=(await client.query(`SELECT v.case_id,a.object_key,a.mime_type,a.original_name FROM pre_project_design_versions v JOIN pre_project_designs d ON d.workspace_id=v.workspace_id AND d.id=v.design_id JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.id=v.asset_id WHERE v.workspace_id=$1 AND v.id=$2 AND v.status IN ('client_review','approved','changes_requested','rejected') AND d.archived_at IS NULL`,[settings.workspaceId,versionId])).rows[0];if(!asset||!session.grants.some(g=>g.caseId===asset.case_id))throw new NotFoundException("Design not available.");const stored=await this.storage.read(asset.object_key).catch(()=>null);if(!stored)throw new NotFoundException("Design file is unavailable. Contact your project team.");return {body:stored.body,mimeType:asset.mime_type};});}
   async command(slug: string, token: string, input: unknown) {
     const s = await this.branding(slug),
@@ -483,6 +483,8 @@ export class ClientPortalService {
           if (!project.rowCount)
             throw new NotFoundException("This project handover is not available.");
           const execution = project.rows[0].content;
+          if (execution.clientSections?.handover === false)
+            throw new NotFoundException("This project handover is not available.");
           const existing = execution.handovers.find((handover) => handover.id === handoverId);
           const expectedStatus = decision === "accept" ? "accepted" : "returned";
           if (
@@ -534,6 +536,8 @@ export class ClientPortalService {
           if (!project.rowCount)
             throw new NotFoundException("This warranty area is not available.");
           const execution = project.rows[0].content;
+          if (execution.clientSections?.handover === false)
+            throw new NotFoundException("This warranty area is not available.");
           const existing = execution.snags.find(
             (claim) => claim.warrantyClaimChallengeId === challengeId,
           );

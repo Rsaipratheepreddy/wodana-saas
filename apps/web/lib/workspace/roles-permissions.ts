@@ -5,15 +5,18 @@ export type WorkspacePermissionDefinition = {
   description: string;
 };
 
-export type PermissionAreaId = "all" | "workspace" | "crm" | "pre-execution" | "projects" | "hrms" | "platform";
+export type PermissionAreaId = "all" | "company" | "sales" | "planning" | "commercial" | "projects" | "supply" | "clients" | "people" | "platform";
 
 export const PERMISSION_AREAS: Array<{ id: PermissionAreaId; label: string }> = [
   { id: "all", label: "All" },
-  { id: "workspace", label: "Workspace" },
-  { id: "crm", label: "CRM" },
-  { id: "pre-execution", label: "Pre-execution" },
-  { id: "projects", label: "Projects" },
-  { id: "hrms", label: "HRMS" },
+  { id: "company", label: "Company" },
+  { id: "sales", label: "Sales" },
+  { id: "planning", label: "Planning & design" },
+  { id: "commercial", label: "Quotations & finance" },
+  { id: "projects", label: "Projects & work" },
+  { id: "supply", label: "Supply & catalog" },
+  { id: "clients", label: "Client portal" },
+  { id: "people", label: "People" },
   { id: "platform", label: "AI & platform" },
 ];
 
@@ -83,6 +86,9 @@ const ACTION_LABELS: Record<string, string> = {
 
 const EXACT_LABELS: Record<string, string> = {
   "ai.suggestions.use": "Use AI suggestions",
+  "commercial.deal.approve": "Approve Deal File (Owner/Admin for Palm Living)",
+  "commercial.estimate": "Approve QS quotation estimate",
+  "commercial.finance.verify": "Verify payment evidence",
   "commercial.override_price": "Override quotation prices",
   "crm.opportunities.sensitive_values": "View sensitive opportunity values",
   "crm.privacy.erase": "Erase customer data",
@@ -105,17 +111,20 @@ function words(value: string) {
 }
 
 export function permissionArea(code: string): Exclude<PermissionAreaId, "all"> {
-  if (code.startsWith("crm.") || code.startsWith("jobs.")) return "crm";
-  if (["pre_projects.", "commercial.", "catalog.", "supplier_offers.", "vendors.", "portal."].some((prefix) => code.startsWith(prefix))) return "pre-execution";
+  if (code.startsWith("crm.") || code.startsWith("jobs.")) return "sales";
+  if (code.startsWith("pre_projects.")) return "planning";
+  if (code.startsWith("commercial.")) return "commercial";
+  if (code === "projects.buy" || ["catalog.", "supplier_offers.", "vendors."].some((prefix) => code.startsWith(prefix))) return "supply";
+  if (code.startsWith("portal.")) return "clients";
   if (code.startsWith("projects.")) return "projects";
-  if (code.startsWith("hrms.")) return "hrms";
+  if (code.startsWith("hrms.")) return "people";
   if (code.startsWith("ai.")) return "platform";
-  return "workspace";
+  return "company";
 }
 
 export function permissionAreaLabel(code: string) {
   const area = permissionArea(code);
-  return PERMISSION_AREAS.find((item) => item.id === area)?.label ?? "Workspace";
+  return PERMISSION_AREAS.find((item) => item.id === area)?.label ?? "Company";
 }
 
 export function permissionLabel(code: string) {
@@ -130,12 +139,28 @@ export function permissionLabel(code: string) {
 }
 
 export type RolesPermissionsPageData = {
-  canManage: boolean;
-  memberCount: number;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  delegablePermissions: string[] | null;
+  memberCount: number | null;
   permissions: WorkspacePermissionDefinition[];
   roles: WorkspaceRole[];
   workspaceId: string;
 };
+
+export function roleMutationCapabilities(allowedPermissions: readonly string[] | undefined, roles: readonly string[]) {
+  // The fallback keeps Owner/Admin access during a rolling backend update; a
+  // current /me response is authoritative even when it grants no actions.
+  const legacyOwner = !allowedPermissions && roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+  const granted = new Set(allowedPermissions ?? []);
+  const managesAll = legacyOwner || granted.has("workspace.roles.manage");
+  return {
+    canCreate: managesAll || granted.has("module.roles.write"),
+    canEdit: managesAll || granted.has("module.roles.edit"),
+    canDelete: managesAll || granted.has("module.roles.delete"),
+  };
+}
 
 // Every code below is registered by a business-core migration. This fixture
 // keeps the local workspace faithful to the production permission catalogue.
@@ -157,6 +182,7 @@ const FIXTURE_PERMISSION_CODES = [
   "pre_projects.review_designs", "pre_projects.record_client_design_decisions", "pre_projects.verify_measurements",
   "pre_projects.publish_definition", "pre_projects.record_client_definition_decisions",
   "commercial.approve", "commercial.release", "commercial.override_price", "commercial.finance.verify",
+  "commercial.estimate", "commercial.deal.approve",
   "commercial.costs.view", "commercial.costs.manage", "catalog.view", "catalog.manage",
   "supplier_offers.view", "supplier_offers.manage", "vendors.view", "vendors.manage", "portal.manage",
   "projects.view", "projects.manage", "projects.report", "projects.review", "projects.buy",
@@ -175,7 +201,10 @@ const readOnlyFixturePermissions = workspacePermissionFixture
   .map((permission) => permission.code);
 
 export const rolesPermissionsFixture: RolesPermissionsPageData = {
-  canManage: true,
+  canCreate: true,
+  canEdit: true,
+  canDelete: true,
+  delegablePermissions: null,
   memberCount: 1,
   permissions: workspacePermissionFixture,
   roles: [

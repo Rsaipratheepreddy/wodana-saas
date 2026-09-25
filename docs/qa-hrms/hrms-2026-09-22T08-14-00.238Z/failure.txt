@@ -1,0 +1,23 @@
+Error: node services/business-core/scripts/smoke-hrms.mjs failed (1)
+PASS: self-service, scoped access, photos, idempotency, multiple sessions, corrections and matching CSV
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: POST /workspaces/be9b2bee-aa79-4a6c-b134-6e1d20260e1d/projects/from-pre-project: {"message":"Complete the commercial release checklist first.","error":"Conflict","statusCode":409}
+
+409 !== 201
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-hrms.mjs:15:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-hrms.mjs:62:16 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 409,
+  expected: 201,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

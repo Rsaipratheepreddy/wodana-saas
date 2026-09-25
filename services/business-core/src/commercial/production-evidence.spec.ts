@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { freezeHash } from "./commercial.domain";
+import { emptyCommercial, freezeHash } from "./commercial.domain";
 import {
   approvedMaterialEvidence,
   agreementMatchesAcceptedQuote,
   materialApprovalsComplete,
+  palmMaterialListSignedOff,
   sameMaterialEvidence,
 } from "./release-integrity";
 import type { MaterialApproval, Quote } from "./commercial.types";
@@ -114,6 +115,21 @@ describe("commercial production evidence", () => {
     expect(approvedMaterialEvidence(withOption, [approval()])).toHaveLength(1);
     expect(materialApprovalsComplete(withoutOption, [approval()])).toBe(true);
     expect(materialApprovalsComplete(withOption, [approval()])).toBe(false);
+  });
+
+  it("uses the accepted quote without inventing a separate material meeting on ready-made routes", () => {
+    const accepted = quote();
+    expect(materialApprovalsComplete(accepted, [])).toBe(false);
+    const data = emptyCommercial();
+    data.palmFlow = { scope: {
+        design: false, mainQuotation: true, materialSelection: false, procurement: true,
+        manufacturing: false, siteWorks: false, installation: true,
+      }, selectedAt: "2026-09-25T00:00:00Z", selectedBy: "Sales" };
+    expect(palmMaterialListSignedOff(data, accepted)).toBe(true);
+    data.palmFlow.scope.materialSelection = true;
+    expect(palmMaterialListSignedOff(data, accepted)).toBe(false);
+    data.materialApprovals = [approval()];
+    expect(palmMaterialListSignedOff(data, accepted)).toBe(true);
   });
 
   it("binds agreement evidence to the exact accepted revision and selection", () => {

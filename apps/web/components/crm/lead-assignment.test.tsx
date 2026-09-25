@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { leadsPageFixture } from "@/lib/crm/leads";
+import { LeadAssignmentDialog } from "./lead-assignment-dialog";
 import { LeadRouting } from "./lead-operations";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -73,4 +74,19 @@ describe("Auto-assignment settings", () => {
     expect(JSON.parse(String(call[1].body))).toMatchObject({ membershipId: data.members[0].id, capacity: 25, weight: 1, isAvailable: true });
   });
 
+});
+
+it("keeps a successful assignment saved when refreshing fails and prevents another submission", async () => {
+  const data = structuredClone(leadsPageFixture), lead = data.items[0];
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, version: lead.version + 1 }) });
+  vi.stubGlobal("fetch", fetchMock);
+  const onClose = vi.fn(), onSaved = vi.fn().mockRejectedValue(new Error("Refresh unavailable"));
+  render(<LeadAssignmentDialog lead={lead} members={data.members} workspaceId={data.workspaceId} onClose={onClose} onSaved={onSaved} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: "Auto-assign" }));
+  await user.click(screen.getByRole("button", { name: "Reassign" }));
+  expect(await screen.findByText("Assignment saved. Refresh the page to see the updated sales owner.")).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Reassign" })).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });

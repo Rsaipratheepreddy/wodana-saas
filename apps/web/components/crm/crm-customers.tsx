@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Building2, Plus, RefreshCw, UserRound } from "lucide-react";
-import { Badge, Button, Callout, DataGrid, IconButton, InspectorSheet, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Callout, DataGrid, IconButton, ControlledModalDialog, type DataGridColumn } from "@/design-system";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
@@ -98,6 +98,6 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
       onViewChange={(id) => setView(id as CustomerView)}
     />
     {creating ? <CrmCreateDialog id="customers" workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onSaved={async () => { setCreating(false); await reload(); }} /> : null}
-    {selected ? <InspectorSheet isOpen title="Customer" size="md" onOpenChange={(open) => { if (!open) setSelected(undefined); }}><LinkedRecordWorkbench id="customers" workspaceId={initialData.workspaceId} recordId={selected} onChanged={reload} /></InspectorSheet> : null}
+    {selected ? <ControlledModalDialog isOpen title="Customer details" hideTitle size="xl" className={styles.customerModal} onOpenChange={(open) => { if (!open) setSelected(undefined); }}><LinkedRecordWorkbench id="customers" workspaceId={initialData.workspaceId} recordId={selected} onChanged={reload} /></ControlledModalDialog> : null}
   </CrmProductShell>;
 }

@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Button,
   Checkbox,
+  ComboboxField,
   DateField,
   NumericInput,
   SelectField,
@@ -11,7 +12,8 @@ import {
 } from "@/design-system";
 import { today, type CalendarDate } from "@internationalized/date";
 import {
-  caseRequest,
+  caseApi, caseRequest,
+  blankEntry, entryPayload, type CatalogChoice, type CaseRoom, type ScopeEntry,
   designPayload,
   documentTypes,
   type CaseAsset,
@@ -20,7 +22,7 @@ import {
   type DesignFolder,
   type DesignOptions,
 } from "@/lib/pre-project/content";
-import { AssetFiles, AssetUpload, CaseModal } from "./case-controls";
+import { AssetFiles, AssetUpload, CaseModal, CatalogChoiceField } from "./case-controls";
 import {
   folderSelection,
   matchingFolder,
@@ -29,18 +31,23 @@ import {
 import styles from "./case-content.module.css";
 
 export function FolderEditor({
-  data,
+  data: initialData,
   initial,
   folders,
   onClose,
   onSaved,
+  onContentChange,
 }: {
   data: CaseContent;
+  onContentChange?: (data: CaseContent) => void;
   initial: DesignFolder;
   folders: DesignFolder[];
   onClose: () => void;
   onSaved: (folder: DesignFolder) => void;
 }) {
+  const [data, setData] = useState(initialData);
+  const [catalogRoom, setCatalogRoom] = useState<CatalogChoice|null>(null);
+  const [catalogItem, setCatalogItem] = useState<CatalogChoice|null>(null);
   const initialKind: FolderKind = initial.scopeEntryId
     ? initial.name ===
       (initial.scopeTitle ??
@@ -59,7 +66,12 @@ export function FolderEditor({
       !e.archivedAt &&
       (kind === "item" || e.roomId === roomId),
   );
-  const selection = folderSelection(data, kind, roomId, itemId);
+  const [newRoomId] = useState(()=>crypto.randomUUID());
+  const [newItemId] = useState(()=>crypto.randomUUID());
+  const selectedRoomId = kind === 'item' ? null : catalogRoom ? newRoomId : roomId;
+  const pendingRoom = catalogRoom ? {id:newRoomId,version:0,name:catalogRoom.name,catalogRecordId:catalogRoom.id} : null;
+  const pendingItem = catalogItem ? {...blankEntry(selectedRoomId),id:newItemId,title:catalogItem.name,catalogLinks:[{role:'work',recordId:catalogItem.id,snapshot:catalogItem}]} : null;
+  const selection = folderSelection({...data,rooms:pendingRoom?[...data.rooms,pendingRoom]:data.rooms,entries:pendingItem?[...data.entries,pendingItem]:data.entries}, kind, selectedRoomId, pendingItem?.id ?? itemId);
   const duplicate = selection.valid
     ? matchingFolder(folders, selection, initial.id)
     : undefined;
@@ -67,11 +79,11 @@ export function FolderEditor({
     <CaseModal
       size="md"
       title={initial.version ? "Edit design folder" : "New design folder"}
-      description="Choose a room, an item, or both. The folder name is automatic."
+
       onClose={onClose}
       busy={busy}
       dirty={
-        kind !== initialKind ||
+        Boolean(catalogRoom || catalogItem) || kind !== initialKind ||
         roomId !== initial.roomId ||
         itemId !== initial.scopeEntryId
       }
@@ -81,7 +93,7 @@ export function FolderEditor({
           form="folder-form"
           variant="primary"
           isLoading={busy}
-          isDisabled={!selection.valid || Boolean(duplicate)}
+          isDisabled={busy || !data.canEdit || !selection.valid || Boolean(duplicate)}
         >
           {initial.version ? "Save folder" : "Create folder"}
         </Button>
@@ -94,12 +106,22 @@ export function FolderEditor({
       )}
       <form
         id="folder-form"
+        style={{display:"grid",gap:16}}
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!selection.valid || duplicate) return;
+          if (!data.canEdit || busy || !selection.valid || duplicate) return;
           setBusy(true);
           setError("");
           try {
+            let next = data;
+            if (pendingRoom && !next.rooms.some(r=>r.id===pendingRoom.id)) {
+              const saved = await caseRequest<CaseRoom>(data.workspaceId,data.caseId,'rooms','PUT',pendingRoom);
+              next={...next,rooms:[...next.rooms,saved]};setData(next);onContentChange?.(next);
+            }
+            if (pendingItem && !next.entries.some(e=>e.id===pendingItem.id)) {
+              const saved = await caseRequest<ScopeEntry>(data.workspaceId,data.caseId,'entries','PUT',entryPayload(pendingItem));
+              next={...next,entries:[...next.entries,saved]};setData(next);onContentChange?.(next);
+            }
             const { name, roomId, scopeEntryId } = selection;
             onSaved(
               await caseRequest<DesignFolder>(
@@ -136,63 +158,13 @@ export function FolderEditor({
           onSelectionChange={(key) => {
             if (key) {
               setKind(String(key) as FolderKind);
-              setItemId(null);
+              setItemId(null);setCatalogItem(null);setCatalogRoom(null);setRoomId(null);
               setError("");
             }
           }}
         />
-        {kind !== "item" && (
-          <>
-            <SelectField
-              label="Room"
-              placeholder="Choose a room"
-              selectedKey={roomId}
-              isDisabled={busy || !data.rooms.length}
-              items={data.rooms.map((r) => ({ id: r.id, label: r.name }))}
-              onSelectionChange={(key) => {
-                setRoomId(key ? String(key) : null);
-                setItemId(null);
-                setError("");
-              }}
-            />
-            {!data.rooms.length && (
-              <p className={styles.muted}>
-                No rooms yet. Add a room in Requirements first.
-              </p>
-            )}
-          </>
-        )}
-        {kind !== "room" && (
-          <>
-            <SelectField
-              label="Item"
-              placeholder={
-                kind === "room-item" && !roomId
-                  ? "Choose a room first"
-                  : "Choose an item"
-              }
-              selectedKey={itemId}
-              isDisabled={busy || !requirements.length}
-              items={requirements.map((e) => ({
-                id: e.id,
-                label:
-                  kind === "item" && e.roomId
-                    ? `${e.title} · ${data.rooms.find((r) => r.id === e.roomId)?.name ?? "Room"}`
-                    : e.title,
-              }))}
-              onSelectionChange={(key) => {
-                setItemId(key ? String(key) : null);
-                setError("");
-              }}
-            />
-            {!requirements.length && (kind === "item" || roomId) && (
-              <p className={styles.muted}>
-                No items {roomId && kind === "room-item" ? "in this room " : ""}
-                yet. Add an item in Requirements first.
-              </p>
-            )}
-          </>
-        )}
+        {kind !== 'item' && <FolderChoice data={data} kind="room" label="Room" disabled={busy || !data.canEdit} selectedKey={catalogRoom?.id ?? roomId} existing={data.rooms.map(r=>({id:r.id,name:r.name,catalogId:r.catalogRecordId}))} onSelect={(id,choice)=>{setRoomId(choice?null:id);setCatalogRoom(choice);setItemId(null);setCatalogItem(null);}}/>}
+        {kind !== 'room' && <FolderChoice data={data} kind="work" label="Item" disabled={busy || !data.canEdit || (kind==='room-item'&&!selectedRoomId)} selectedKey={catalogItem?.id ?? itemId} existing={requirements.map(e=>({id:e.id,name:e.title,catalogId:e.catalogLinks.find(l=>l.role==='work')?.recordId}))} onSelect={(id,choice)=>{setItemId(choice?null:id);setCatalogItem(choice);}}/>}
         {selection.valid && (
           <p className={styles.muted}>
             Folder name: <strong>{selection.name}</strong>
@@ -209,17 +181,29 @@ export function FolderEditor({
   );
 }
 
+function FolderChoice({data,kind,label,disabled,selectedKey,existing,onSelect}:{data:CaseContent;kind:string;label:string;disabled:boolean;selectedKey:string|null;existing:Array<{id:string;name:string;catalogId?:string|null}>;onSelect:(id:string|null,choice:CatalogChoice|null)=>void}) {
+ const [search,setSearch]=useState(''),[items,setItems]=useState<CatalogChoice[]>([]),[error,setError]=useState('');
+ useEffect(()=>{const controller=new AbortController();const timer=setTimeout(()=>{fetch(caseApi(data.workspaceId,data.caseId,`catalog-options?kind=${kind}&search=${encodeURIComponent(search)}`),{signal:controller.signal}).then(async r=>{if(!r.ok)throw Error('Could not load options. Try searching again.');return r.json();}).then(result=>{setItems(result.items);setError('');}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});},180);return()=>{clearTimeout(timer);controller.abort();};},[data.workspaceId,data.caseId,kind,search]);
+ const options=[...existing.map(r=>({id:r.id,label:r.name})),...items.filter(c=>!existing.some(r=>r.catalogId===c.id)).map(c=>({id:c.id,label:c.name}))];
+ return <div><ComboboxField label={label} placeholder={`Choose ${label.toLowerCase()}`} selectedKey={selectedKey} isDisabled={disabled} items={options} onInputChange={setSearch} onSelectionChange={key=>{const id=key?String(key):null;onSelect(id,items.find(c=>c.id===id)??null);}}/>{error&&<small role="alert">{error}</small>}</div>;
+}
+
+export type DesignUploadTarget = { folderId: string | null; roomId: string | null; scopeEntryId: string | null; name: string };
 export function DesignUpload({
   data,
   folder,
+  target,
   onClose,
   onSaved,
 }: {
   data: CaseContent;
-  folder: DesignFolder;
+  /** Legacy folder target; prefer `target` for scope-rooted uploads. */
+  folder?: DesignFolder;
+  target?: DesignUploadTarget;
   onClose: () => void;
   onSaved: (designs: CaseDesign[]) => void;
 }) {
+  const destination: DesignUploadTarget = target ?? { folderId: folder?.id ?? null, roomId: folder?.roomId ?? null, scopeEntryId: folder?.scopeEntryId ?? null, name: folder?.name ?? "Whole home" };
   const [files, setFiles] = useState<
     Array<{
       id: string;
@@ -234,7 +218,7 @@ export function DesignUpload({
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const disabled = busy || uploading;
+  const disabled = busy || uploading || !data.canEdit;
   const save = async () => {
     if (!files.length) return;
     setBusy(true);
@@ -246,9 +230,9 @@ export function DesignUpload({
         "designs/upload",
         "POST",
         {
-          folderId: folder.id,
-          roomId: folder.roomId,
-          scopeEntryId: folder.scopeEntryId,
+          ...(destination.folderId ? { folderId: destination.folderId } : {}),
+          roomId: destination.roomId,
+          scopeEntryId: destination.scopeEntryId,
           note: "",
           files: files.map((f) => ({
             id: f.id,
@@ -270,8 +254,9 @@ export function DesignUpload({
   };
   return (
     <CaseModal
+      size="md"
       title="Add design files"
-      description={folder.name}
+      description={destination.name}
       onClose={onClose}
       busy={disabled}
       dirty={files.length > 0}
@@ -314,8 +299,7 @@ export function DesignUpload({
         }
       />
       {files.map((f) => (
-        <fieldset className={styles.divider} disabled={disabled} key={f.id}>
-          <legend>{f.asset.name}</legend>
+        <fieldset className={styles.uploadFile} disabled={disabled} key={f.id} aria-label={f.asset.name}>
           <AssetFiles
             workspaceId={data.workspaceId}
             caseId={data.caseId}
@@ -339,7 +323,9 @@ export function DesignUpload({
                 : undefined
             }
           />
+          <div className={styles.uploadFields}>
           <SelectField
+            isDisabled={disabled}
             label="Design type"
             selectedKey={f.documentType}
             items={documentTypes.map((id) => ({ id, label: id }))}
@@ -353,8 +339,9 @@ export function DesignUpload({
             }
           />
           <NumericInput
-            label="Included client review rounds"
-            description="Leave empty when the agreement does not define a limit."
+            isDisabled={disabled}
+            label="Review rounds · optional"
+            description="Leave blank for no limit."
             minValue={0}
             maxValue={99}
             value={f.includedClientRounds ?? NaN}
@@ -373,8 +360,10 @@ export function DesignUpload({
               )
             }
           />
+          </div>
           <TextAreaField
-            label="Note · optional"
+            isDisabled={disabled}
+            label="Description · optional"
             maxLength={5000}
             value={f.note}
             onChange={(value) =>

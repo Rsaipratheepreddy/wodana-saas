@@ -3,15 +3,18 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus } from "lucide-react";
-import { Avatar, Badge, Button, Container, ControlledModalDialog, DataGrid, Form, SelectField, type DataGridColumn } from "@/design-system";
+import { Plus, FolderKanban, ContactRound, UsersRound, CalendarClock, Flag, CheckCircle2 } from "lucide-react";
+import { Avatar, Badge, Button, DesignSystemProvider, ControlledModalDialog, DataGrid, Form, SearchInput, SegmentedControl, SelectField, type DataGridColumn } from "@/design-system";
 import { jsonRequest } from "@/lib/commercial/client";
 import { projectPath, label } from "@/lib/projects/execution";
 import styles from "./project-portfolio.module.css";
+import enquiryStyles from "../crm/leads-page.module.css";
 
 export type PortfolioRow = {
-  id: string; caseId: string; name: string; customer: string; phase: string;
-  manager: string | null; reference: string; priority: string; risk: string;
+  id: string; caseId: string; name: string; description?: string | null; customer: string; phase: string;
+  workflow?: { templateCode: string; currentStageKey: string; currentStageName: string };
+  manager: string | null; team?: string[]; reference: string; priority: string; risk: string;
+  progress?: number; taskSummary?: { total: number }; targetCompletion?: string;
   onHold: boolean; handoverDate: string; nextAction: string; nextActionDate: string;
 };
 
@@ -23,7 +26,8 @@ const views = [
   { id: "completed", label: "Completed" },
 ];
 
-function statusTone(value: string): "neutral" | "success" | "warning" | "danger" {
+function statusTone(value: string): "neutral" | "success" | "warning" | "danger" | "info" {
+  if (value === "active") return "info";
   if (["completed", "on_track"].includes(value)) return "success";
   if (["high_risk", "urgent_action", "blocked"].includes(value)) return "danger";
   if (["get_ready", "planning", "handover"].includes(value)) return "warning";
@@ -32,6 +36,7 @@ function statusTone(value: string): "neutral" | "success" | "warning" | "danger"
 
 export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: string; rows: PortfolioRow[]; today: string }) {
   const router = useRouter();
+  const [layout, setLayout] = useState("cards");
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -43,22 +48,13 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
     (status === "all" || row.phase === status) &&
     `${row.name} ${row.customer} ${row.reference}`.toLowerCase().includes(search.toLowerCase()),
   );
-  const handoverLimit = new Date(`${today}T12:00:00Z`);
-  handoverLimit.setUTCDate(handoverLimit.getUTCDate() + 30);
-  const handoverLimitDay = handoverLimit.toISOString().slice(0, 10);
-  const metrics = [
-    { label: "High risk", value: rows.filter((row) => ["high_risk", "urgent_action"].includes(row.risk)).length },
-    { label: "On hold", value: rows.filter((row) => row.onHold).length },
-    { label: "Overdue actions", value: rows.filter((row) => row.nextActionDate && row.nextActionDate < today).length },
-    { label: "Handover next 30 days", value: rows.filter((row) => row.handoverDate && row.handoverDate >= today && row.handoverDate <= handoverLimitDay).length },
-  ];
   const columns: DataGridColumn<PortfolioRow>[] = [
-    { accessorKey: "name", header: "Project", meta: { primary: true, renderCell: (row) => <span className={styles.projectName}>{row.name}</span> } },
-    { accessorKey: "customer", header: "Client", meta: { renderCell: (row) => <span className={styles.client}><Avatar name={row.customer} size="sm" />{row.customer}</span> } },
-    { accessorKey: "manager", header: "Project manager", meta: { mobileHidden: true, renderCell: (row) => row.manager || "–" } },
-    { accessorKey: "nextAction", header: "Next action", meta: { mobileHidden: true, renderCell: (row) => <span className={styles.action} title={row.nextAction || undefined}><span className={styles.actionText}>{row.nextAction || "–"}</span>{row.nextActionDate ? <small>{row.nextActionDate}</small> : null}</span> } },
-    { accessorKey: "risk", header: "Risk", meta: { mobileHidden: true, renderCell: (row) => <Badge tone={statusTone(row.onHold ? "blocked" : row.risk)}>{row.onHold ? "On hold" : label(row.risk)}</Badge> } },
-    { accessorKey: "phase", header: "Status", meta: { renderCell: (row) => <Badge tone={statusTone(row.phase)}>{row.phase === "active" ? "In progress" : label(row.phase)}</Badge> } },
+    { accessorKey: "name", header: "Project", size: 260, meta: { headerIcon: <FolderKanban size={14} aria-hidden="true" />, primary: true, renderCell: (row) => <span className={styles.projectName}>{row.name}</span> } },
+    { accessorKey: "customer", header: "Client", size: 220, meta: { headerIcon: <ContactRound size={14} aria-hidden="true" />, renderCell: (row) => <span className={styles.client}><Avatar name={row.customer} size="sm" />{row.customer}</span> } },
+    { accessorKey: "manager", header: "Project manager", size: 220, meta: { headerIcon: <UsersRound size={14} aria-hidden="true" />, mobileHidden: true, renderCell: (row) => row.manager || "–" } },
+    { accessorKey: "nextAction", header: "Next action", size: 280, meta: { headerIcon: <CalendarClock size={14} aria-hidden="true" />, mobileHidden: true, renderCell: (row) => <span className={styles.action} title={row.nextAction || undefined}><span className={styles.actionText}>{row.nextAction || "–"}</span>{row.nextActionDate ? <small>{row.nextActionDate}</small> : null}</span> } },
+    { accessorKey: "risk", header: "Risk", size: 150, meta: { headerIcon: <Flag size={14} aria-hidden="true" />, mobileHidden: true, renderCell: (row) => <Badge tone={statusTone(row.onHold ? "blocked" : row.risk)}>{row.onHold ? "On hold" : label(row.risk)}</Badge> } },
+    { accessorKey: "phase", header: "Status", size: 150, meta: { headerIcon: <CheckCircle2 size={14} aria-hidden="true" />, renderCell: (row) => <Badge tone={statusTone(row.phase)}>{row.phase === "active" ? "In progress" : label(row.phase)}</Badge> } },
   ];
 
   async function start() {
@@ -84,14 +80,36 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
     }
   }
 
-  return <Container as="section" aria-label="Projects" className={styles.page}>
-    <Link className={styles.back} href="/workspace/pre-projects"><ArrowLeft aria-hidden="true" size={15} />Pre-execution</Link>
-    <div className={styles.heading}><h1>Projects</h1><span>{rows.length}</span></div>
-    {metrics.some((metric) => metric.value > 0) ? <div aria-label="Project attention" className={styles.metrics} role="group">
-      {metrics.filter((metric) => metric.value > 0).map((metric) => <div key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>)}
-    </div> : null}
-    <DataGrid
+  return <DesignSystemProvider className={enquiryStyles.provider}><section aria-label="Projects" className={`${enquiryStyles.page} ${styles.compactPage}`}>
+    {layout === "cards" ? <>
+      <div className={styles.cardToolbar}>
+        <SearchInput label="Search projects" placeholder="Search projects…" value={search} onChange={setSearch} />
+        <SelectField label="Project status" items={views} selectedKey={status} onSelectionChange={key => setStatus(String(key ?? "all"))} />
+        <div className={styles.viewSwitch}><SegmentedControl label="Project view" options={[{id:"cards",label:"Cards"},{id:"table",label:"Table"}]} value={layout} onChange={setLayout} /></div>
+        <Button onPress={() => void start()} size="compact" variant="primary"><Plus size={14} aria-hidden="true" />Start project</Button>
+      </div>
+      <div className={styles.cards}>
+        {visible.map(row => {
+          const progress = typeof row.progress === "number" && Number.isFinite(row.progress) ? Math.max(0, Math.min(100, row.progress)) : null;
+          const date = row.targetCompletion || row.handoverDate;
+          return <Link className={styles.card} key={row.id} href={`/workspace/projects/${row.id}/overview`}>
+            <div className={styles.cardTop}><span className={styles.reference}>{row.reference || "Project"}</span><Badge tone={statusTone(row.phase)}>{row.phase === "active" ? "In progress" : label(row.phase)}</Badge></div>
+            <h2>{row.name}</h2><p className={styles.customer}>{row.customer}</p>
+            <div className={styles.cardMeta}><span className={styles.client}>{row.manager && <Avatar name={row.manager} size="sm" />}{row.manager || "Manager unassigned"}</span><Badge tone={statusTone(row.onHold ? "blocked" : row.risk)}>{row.onHold ? "On hold" : label(row.risk)}</Badge></div>
+            <div className={styles.progressLabel}><span>Verified progress</span><span>{progress === null || row.taskSummary?.total === 0 ? "Not started" : `${progress}%`}</span></div>
+            <progress aria-label={`${row.name} verified progress`} max={100} value={progress ?? 0} />
+            <div className={styles.deadline} data-overdue={Boolean(date && date < today && row.phase !== "completed") || undefined}><span>{row.targetCompletion ? "Target completion" : "Target handover"}</span><span>{date ? new Intl.DateTimeFormat("en-GB", {day:"numeric",month:"short",year:"numeric",timeZone:"UTC"}).format(new Date(`${date.slice(0,10)}T00:00:00Z`)) : "Not scheduled"}</span></div>
+            {row.nextAction && <div className={styles.next}><span>Next action</span><p>{row.nextAction}</p>{row.nextActionDate && <time dateTime={row.nextActionDate}>{row.nextActionDate}</time>}</div>}
+          </Link>;
+        })}
+      </div>
+      {!visible.length && <div className={styles.emptyCards}><FolderKanban size={26} aria-hidden="true" /><strong>{rows.length ? "No matching projects" : "No projects yet"}</strong><p>{rows.length ? "Try another status or search." : "Start a project from an active Pre-execution case."}</p></div>}
+    </> : <>
+      <div className={styles.viewSwitch}><SegmentedControl label="Project view" options={[{id:"cards",label:"Cards"},{id:"table",label:"Table"}]} value={layout} onChange={setLayout} /></div>
+      <DataGrid gridLines
       ariaLabel="Projects"
+      pageSize={50}
+      toolbarActions={<Button onPress={() => void start()} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Start project</Button>}
       columns={columns}
       data={visible}
       emptyTitle={rows.length ? "No matching projects" : "No projects yet"}
@@ -101,14 +119,13 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
       onRowAction={(row) => router.push(`/workspace/projects/${row.id}/overview`)}
       onSearchChange={setSearch}
       onViewChange={setStatus}
+      persistKey="projects-portfolio"
       rowNumbers={false}
       savedViews={views}
       searchLabel="Search projects"
       searchValue={search}
-      selectable={false}
       selectedView={status}
-      toolbarActions={<Button onPress={() => void start()} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Start project</Button>}
-    />
+    /></>}
     <ControlledModalDialog isOpen={open} onOpenChange={setOpen} title="Start project">
       <Form className={styles.form} onSubmit={createProject}>
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
@@ -125,5 +142,5 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
         <div className={styles.formActions}><Button onPress={() => setOpen(false)}>Cancel</Button><Button isDisabled={!caseId} isLoading={busy} type="submit" variant="primary">Create planning workspace</Button></div>
       </Form>
     </ControlledModalDialog>
-  </Container>;
+  </section></DesignSystemProvider>;
 }

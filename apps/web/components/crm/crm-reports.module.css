@@ -1,6 +1,7 @@
 .actions { display: flex; align-items: end; gap: .45rem; flex-wrap: wrap; }
 .actions :global(.wd-field) { inline-size: 10.5rem; }
 .actions :global(.wd-field-label) { font-size: var(--wd-text-xs); }
+.actions :global(.wd-select-button) { border-radius:999px; background:var(--wd-color-surface); }
 .panel { display: grid; gap: 1rem; padding-block-start: 1rem; }
 .metrics { display: flex; flex-wrap: wrap; gap: 1.5rem; padding-block: .1rem 1.25rem; }
 .metrics > div { display: grid; gap: .25rem; min-inline-size: 7rem; }

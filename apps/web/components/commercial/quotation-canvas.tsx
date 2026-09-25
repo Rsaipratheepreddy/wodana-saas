@@ -38,6 +38,7 @@ import {
   type DocumentPage,
 } from "./quotation-document-page";
 import "@xyflow/react/dist/style.css";
+import {QuoteRichText} from "./quotation-rich-text";
 import styles from "./quotation-canvas.module.css";
 
 const PAGE_WIDTH = 940;
@@ -142,8 +143,8 @@ function pageOverride(presentation: QuotePresentation, id: string) {
 
 function fileData(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("Choose an image file."));
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
+      reject(new Error("Choose a PNG, JPEG or WebP under 8 MB."));
       return;
     }
     const reader = new FileReader();
@@ -159,7 +160,11 @@ function fileData(file: File): Promise<string> {
         canvas.width = Math.max(1, Math.round(image.width * scale));
         canvas.height = Math.max(1, Math.round(image.height * scale));
         canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.86));
+        for (const quality of [0.85, 0.65, 0.45, 0.25]) {
+          const result = canvas.toDataURL("image/jpeg", quality);
+          if (result.length <= 450000) { resolve(result); return; }
+        }
+        reject(new Error("Choose a smaller or simpler image."));
       };
       image.src = source;
     };
@@ -336,6 +341,7 @@ export function QuotationCanvasPreview({ quote, brand, customerName }: {
             key={page.id}
             aria-label={`${page.title} page`}
             style={{
+              minHeight: page.kind === "custom" ? 1329 : 1150,
               backgroundColor: override?.background ?? presentation.pageBackground,
               backgroundImage: override?.backgroundImage ? `url(${JSON.stringify(override.backgroundImage).slice(1, -1)})` : undefined,
             }}
@@ -358,12 +364,12 @@ export function QuotationCanvasPreview({ quote, brand, customerName }: {
               <div
                 className={styles.staticElement}
                 key={element.id}
-                style={{ left: element.x, top: element.y, width: element.width, height: element.height }}
+                style={{ left: element.x, top: element.y, width: element.width, height: element.height, fontFamily: page.kind === "custom" ? "Arial, sans-serif" : undefined, lineHeight: page.kind === "custom" ? 1.25 : undefined }}
               >
                 {element.type === "image" ? (
                   element.src ? <img alt="Quotation artwork" src={element.src} /> : null
                 ) : (
-                  <div style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }}>{element.text}</div>
+                  <div style={{ color: element.color ?? presentation.textColor, fontSize: element.fontSize ?? 28, textAlign: element.align ?? "left" }}>{element.richText?<QuoteRichText node={element.richText}/>:element.text}</div>
                 )}
               </div>
             ))}
@@ -374,7 +380,14 @@ export function QuotationCanvasPreview({ quote, brand, customerName }: {
   );
 }
 
-function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChange, onEditItems, toolbarStart, toolbarEnd }: {
+/** Free editor using the canvas dependency already shipped with the app. */
+export function QuotationFreeformCanvas(props: React.ComponentProps<typeof CanvasWorkspace>) {
+  return <ReactFlowProvider><CanvasWorkspace {...props} /></ReactFlowProvider>;
+}
+
+function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChange, onEditItems, toolbarStart, toolbarEnd, pageId, hidePages = false }: {
+  pageId?: string;
+  hidePages?: boolean;
   quote: Quote;
   brand?: PortalBrand;
   customerName: string;
@@ -398,7 +411,7 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
   const backgroundInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const flowElement = useRef<HTMLDivElement>(null);
-  const activePage = pages.find((page) => page.id === activePageId) ?? pages[0];
+  const activePage = pages.find((page) => page.id === (pageId ?? activePageId)) ?? pages[0];
   const activeOverride = activePage ? pageOverride(presentation, activePage.id) : undefined;
   const selected = activeOverride?.elements.find((element) => element.id === selectedId);
   const pageSelected = selectedId === "__page__";
@@ -549,8 +562,8 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
   }
 
   return (
-    <section className={styles.workspace} aria-label="Quotation page designer" data-inspector={Boolean(selected) || pageSelected || undefined}>
-      <aside className={styles.pages} aria-label="Quotation pages">
+    <section className={styles.workspace} aria-label="Quotation page designer" data-inspector={Boolean(selected) || pageSelected || undefined} data-standalone={hidePages || undefined}>
+      {!hidePages && <aside className={styles.pages} aria-label="Quotation pages">
         <div className={styles.pageList}>
           {pages.map((page, index) => {
             const override = pageOverride(presentation, page.id);
@@ -571,7 +584,7 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
             );
           })}
         </div>
-      </aside>
+      </aside>}
 
       <div className={styles.stage}>
         <header className={styles.toolbar}>
@@ -595,22 +608,17 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
             ) : null}
           </div>
         </header>
-        <div className={styles.pageStack} ref={flowElement}>
+        <div className={styles.flow} ref={flowElement}>
           <ReactFlow<CanvasNode>
             key={activePage?.id}
             nodes={draftNodes}
             edges={[]}
             nodeTypes={nodeTypes}
             minZoom={0.3}
-            maxZoom={1.4}
+            maxZoom={3}
             defaultViewport={{ x: 0, y: 24, zoom: 0.68 }}
             onInit={(instance) => {
-              const width = flowElement.current?.clientWidth ?? PAGE_WIDTH;
-              void instance.setViewport({
-                x: Math.max(24, (width - PAGE_WIDTH * 0.68) / 2),
-                y: 24,
-                zoom: 0.68,
-              });
+              void instance.fitView({ padding: 0.12 });
             }}
             nodesConnectable={false}
             deleteKeyCode={null}
@@ -622,8 +630,8 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
             onPaneClick={() => setSelectedId("")}
             onNodeDragStop={(_event, node) => {
               if (node.id !== "__page__") updateElement(node.id, {
-                x: Math.max(0, Math.min(PAGE_WIDTH - 40, node.position.x)),
-                y: Math.max(0, Math.min(PAGE_HEIGHT - 40, node.position.y)),
+                x: Math.max(0, Math.min(PAGE_WIDTH - (node.measured?.width ?? 40), node.position.x)),
+                y: Math.max(0, Math.min(PAGE_HEIGHT - (node.measured?.height ?? 40), node.position.y)),
               });
             }}
           >
@@ -647,7 +655,7 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
           ) : selected?.type === "text" ? (
             <div className={styles.inspectorBody}>
               <label>Content<textarea value={selected.text ?? ""} disabled={readOnly} onChange={(event) => updateElement(selected.id, { text: event.target.value })} /></label>
-              <label>Size<input type="number" min="10" max="120" value={selected.fontSize ?? 28} disabled={readOnly} onChange={(event) => updateElement(selected.id, { fontSize: Math.max(10, Math.min(120, Number(event.target.value) || 10)) })} /></label>
+              <label>Size<input type="number" min="10" max="96" value={selected.fontSize ?? 28} disabled={readOnly} onChange={(event) => updateElement(selected.id, { fontSize: Math.max(10, Math.min(96, Number(event.target.value) || 10)) })} /></label>
               <label>Colour<input type="color" value={selected.color ?? presentation.textColor} disabled={readOnly} onChange={(event) => updateElement(selected.id, { color: event.target.value })} /></label>
               <div className={styles.align} aria-label="Text alignment">
                 {(["left", "center", "right"] as const).map((align) => {
@@ -659,6 +667,9 @@ function CanvasWorkspace({ quote, brand, customerName, readOnly = false, onChang
           ) : (
             <div className={styles.inspectorBody}><p>Move and resize the image directly on the page.</p><button type="button" disabled={readOnly} onClick={() => imageInput.current?.click()}><Upload size={14} />Add another image</button></div>
           )}
+          {selected ? <div className={styles.inspectorBody}>
+            {([['x', 'Horizontal position'], ['y', 'Vertical position'], ['width', 'Width'], ['height', 'Height']] as const).map(([key, label]) => <label key={key}>{label}<input type="number" min={key === 'width' || key === 'height' ? 24 : 0} max={key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT} value={Math.round(selected[key])} disabled={readOnly} onChange={event => updateElement(selected.id, { [key]: Math.max(key === 'width' || key === 'height' ? 24 : 0, Math.min(key === 'x' || key === 'width' ? PAGE_WIDTH : PAGE_HEIGHT, Number(event.target.value) || 0)) })}/></label>)}
+          </div> : null}
           {selected && !readOnly ? <button type="button" className={styles.deleteElement} onClick={() => { updatePage(activePage!.id, { elements: (activeOverride?.elements ?? []).filter((element) => element.id !== selected.id) }); setSelectedId(""); }}><Trash2 size={14} />Delete element</button> : null}
         </aside>
       ) : null}

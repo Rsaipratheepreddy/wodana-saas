@@ -2,12 +2,12 @@
   "version": 0,
   "code": "palm_design_build_delivery",
   "name": "Palm design and build delivery",
-  "description": "Palm Living's post-release delivery stages. Owner Review and Deal File remain release gates; On Hold remains a project condition.",
+  "description": "Palm Living's planning-to-handover stage map. Approved planning evidence is carried into the delivery project at Procurement; On Hold remains a project condition.",
   "isDefault": true,
   "stages": [
     {
       "key": "project_setup",
-      "visibleName": "Project setup",
+      "visibleName": "New Project",
       "description": "Confirm the project manager, delivery team and executable package plan from the released Deal File.",
       "phase": "planning",
       "ownerRole": "project_manager",
@@ -30,32 +30,57 @@
       "exitGates": []
     },
     {
-      "key": "renders_client_approval",
-      "visibleName": "Renders & client approval",
-      "description": "Manage render revisions and exact client decisions through the design approval records.",
+      "key": "renders",
+      "visibleName": "Renders",
+      "description": "Coordinate render work and its revision rounds against the approved design brief.",
+      "phase": "active",
+      "ownerRole": "visualizer",
+      "exitGates": []
+    },
+    {
+      "key": "awaiting_client_approval",
+      "visibleName": "Awaiting Client Approval",
+      "description": "Record the client's decision on the exact design revision before downstream work proceeds.",
       "phase": "active",
       "ownerRole": "senior_designer",
       "exitGates": []
     },
     {
-      "key": "technical_materials",
-      "visibleName": "Technical drawings & materials",
-      "description": "Coordinate approved technical drawings and material selections for delivery.",
+      "key": "technical_drawings",
+      "visibleName": "Technical Drawings",
+      "description": "Coordinate technical drawings against the accepted design revision.",
       "phase": "active",
       "ownerRole": "technical_designer",
       "exitGates": []
     },
     {
-      "key": "boq_procurement",
-      "visibleName": "BOQ & procurement",
-      "description": "Plan released quantities, purchase requirements, suppliers and evidence-backed commitments.",
+      "key": "material_selection",
+      "visibleName": "Material Selection",
+      "description": "Record selected materials and client sign-off before procurement.",
       "phase": "active",
-      "ownerRole": "procurement_production",
+      "ownerRole": "senior_designer",
       "exitGates": []
     },
     {
-      "key": "manufacturing_readiness",
-      "visibleName": "Manufacturing readiness",
+      "key": "costing_boq",
+      "visibleName": "Costing / BOQ",
+      "description": "Prepare measured quantities and costs against the approved design and material selections.",
+      "phase": "active",
+      "ownerRole": "surveyor",
+      "exitGates": []
+    },
+    {
+      "key": "procurement",
+      "visibleName": "Procurement",
+      "description": "Manage purchase requirements, suppliers and evidence-backed commitments.",
+      "phase": "active",
+      "ownerRole": "procurement_production",
+      "exitGates": ["production_plan_ready"],
+      "releaseStart": true
+    },
+    {
+      "key": "ready_for_manufacturing",
+      "visibleName": "Ready for Manufacturing",
       "description": "Confirm package readiness, approved production evidence and applicable finance gates.",
       "phase": "active",
       "ownerRole": "procurement_production",
@@ -86,16 +111,16 @@
       "exitGates": ["all_tasks_closed"]
     },
     {
-      "key": "snagging_handover",
-      "visibleName": "Snagging & handover",
-      "description": "Close verified snags and complete the exact client handover and finance controls.",
+      "key": "snagging",
+      "visibleName": "Snagging",
+      "description": "Close verified defects before client handover and finance closeout.",
       "phase": "handover",
       "ownerRole": "project_manager",
       "exitGates": ["all_snags_closed", "all_handovers_accepted", "finance_closed"]
     },
     {
       "key": "completed",
-      "visibleName": "Completed",
+      "visibleName": "Complete / Handover",
       "description": "Keep the accepted project, package and aftercare history available as an auditable record.",
       "phase": "completed",
       "ownerRole": null,

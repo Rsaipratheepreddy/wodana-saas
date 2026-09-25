@@ -6,10 +6,11 @@ import { quotationDescription } from "@/lib/commercial/presentation";
 import { QuotationCover } from "./quotation-cover";
 import { BrandLogo } from "./portal-settings";
 import d from "./quotation-studio.module.css";
+import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
 
 export type DocumentPage = {
   id: string;
-  kind: "cover" | "room" | "summary" | "payments" | "terms" | "acceptance";
+  kind: "cover" | "room" | "summary" | "payments" | "terms" | "acceptance" | "custom";
   title: string;
   room?: string;
   lines?: QuoteLine[];
@@ -18,20 +19,28 @@ export function quotationPages(q: Quote): DocumentPage[] {
   const pages: DocumentPage[] = [
     { id: "cover", kind: "cover", title: "Cover" },
   ];
-  for (let start = 0; start < Math.max(1, q.lines.length); start += 3)
+  const reference=q.presentation?.template==='palm-reference-v1';
+  const groups=reference?referenceItemGroups(q.lines):Array.from({length:Math.max(1,Math.ceil(q.lines.length/3))},(_,index)=>({start:index*3,count:3}));
+  for (const {start,count} of groups)
     pages.push({
       id: `items:${start}`,
-      kind: "room",
-      title: start ? `Items · ${Math.floor(start / 3) + 1}` : "Items",
-      lines: q.lines.slice(start, start + 3),
+      kind: q.presentation?.template==='palm-reference-v1'?"custom":"room",
+      title: start ? `Scope & Items · ${groups.findIndex(group=>group.start===start)+1}` : "Scope & Items",
+      lines: q.lines.slice(start, start + count),
     });
-  return [
+  const all: DocumentPage[] = [
     ...pages,
     { id: "summary", kind: "summary", title: "Summary" },
     { id: "payments", kind: "payments", title: "Payment schedule" },
     { id: "terms", kind: "terms", title: "Terms & scope" },
     { id: "acceptance", kind: "acceptance", title: "Acceptance" },
+    ...(q.presentation?.pages.filter(page => page.kind === "custom" && !page.id.startsWith("items:") && !["cover","summary","payments","terms","acceptance"].includes(page.id)).map(page => ({ id: page.id, kind: "custom" as const, title: page.title || "Custom page" })) ?? []),
   ];
+  const rendered = all.map(page => q.presentation?.pages.some(override => override.id === page.id && override.kind === "custom") ? { ...page, kind: "custom" as const } : page);
+  const ordered = q.presentation?.pageOrder
+    ? q.presentation.pageOrder.flatMap(id => id === "scope" ? rendered.filter(page => page.id.startsWith("items:")) : rendered.filter(page => page.id === id))
+    : rendered;
+  return ordered.filter(page=>!q.presentation?.hiddenPages?.includes(page.id)&&!(page.id.startsWith("items:")&&q.presentation?.hiddenPages?.includes("scope"))).map((page,index)=>reference?{...page,title:page.id.startsWith('items:')?'Scope & Items':`Page ${index+1}`}:page);
 }
 
 export function QuotationDocumentPage({
@@ -60,6 +69,7 @@ export function QuotationDocumentPage({
   const selectedOptionIds = new Set(quote.clientDecision?.selectedOptionLineIds ?? []),
     totals = quote.status === "accepted" ? acceptedQuoteTotals(quote) : quoteTotals(quote),
     rooms = [...new Set([...(quote.rooms ?? []).map(r => r.name), ...quote.lines.map((l) => l.room)])].filter(room => quote.lines.some(l => l.room === room));
+  if (page.kind === "custom") return null;
   if (page.kind === "cover")
     return (
       <div className={d.coverDocument}>

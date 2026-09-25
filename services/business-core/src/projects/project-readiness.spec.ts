@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommercialData } from "../commercial/commercial.types";
-import { commercialExecutionReady } from "./project-readiness";
+import { assertPalmManufacturingPaymentReady, commercialExecutionReady } from "./project-readiness";
 import { financeGatePaymentsReady } from "../commercial/release-integrity";
 
 const fixture = () =>
@@ -29,8 +29,13 @@ const fixture = () =>
       reference: "AGR-100",
       terms: "Terms",
     },
-    ownerReview: { id: "review", quoteId: "q", status: "approved" },
-    dealFile: { id: "deal", quoteId: "q" },
+    ownerReview: { id: "review", quoteId: "q", status: "approved", financeReviewedById: "finance-user" },
+    dealFile: {
+      id: "deal",
+      quoteId: "q",
+      paymentProofUrl: "https://example.com/proof/receipt-100",
+      commissionLines: [{ recipientName: "Sales", type: "sales", basis: "amount", value: 10, amount: 10 }],
+    },
     materialApprovals: [
       {
         id: "approval",
@@ -115,7 +120,7 @@ describe("execution commercial readiness", () => {
     expect(commercialExecutionReady(data)).toBe(true);
     data.dealFile = null;
     expect(commercialExecutionReady(data)).toBe(false);
-    data.dealFile = { id: "deal", quoteId: "q" } as CommercialData["dealFile"];
+    data.dealFile = fixture().dealFile;
     data.materialApprovals![0].status = "proposed";
     expect(commercialExecutionReady(data)).toBe(false);
     data.materialApprovals![0].status = "approved";
@@ -162,5 +167,15 @@ describe("execution commercial readiness", () => {
     expect(financeGatePaymentsReady(data, "production")).toBe(true);
     data.receipts![0].status = "rejected";
     expect(financeGatePaymentsReady(data, "production")).toBe(false);
+  });
+
+  it("blocks the Palm Manufacturing stage until the contracted production payment is verified", () => {
+    const data = fixture();
+    data.payments[0].requiredForProduction = true;
+    expect(() => assertPalmManufacturingPaymentReady("palm_design_build_delivery", "manufacturing", data)).not.toThrow();
+    data.receipts![0].status = "rejected";
+    expect(() => assertPalmManufacturingPaymentReady("palm_design_build_delivery", "manufacturing", data)).toThrow("production payment");
+    expect(() => assertPalmManufacturingPaymentReady("standard_delivery", "manufacturing", data)).not.toThrow();
+    expect(() => assertPalmManufacturingPaymentReady("palm_design_build_delivery", "site_works", data)).not.toThrow();
   });
 });

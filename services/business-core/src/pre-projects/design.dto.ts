@@ -1,5 +1,5 @@
 import { Transform, Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsISO8601, ValidateNested, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsISO8601, IsNumber, ValidateNested, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 const trim = ({value}:{value:unknown}) => typeof value === "string" ? value.trim() : value;
 export const documentTypes = [
  "Concept / mood board","Material / finish board","Space plan / furniture layout","2D floor plan","Demolition / partition plan",
@@ -68,7 +68,13 @@ export class UploadDesignFilesDto {
  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20) @ArrayUnique((f:DesignUploadFileDto)=>f.id) @ValidateNested({each:true}) @Type(()=>DesignUploadFileDto) files!:DesignUploadFileDto[];
 }
 
+export class DesignCommentAnchorDto {
+ @IsNumber() @Min(0) @Max(1) x!:number;
+ @IsNumber() @Min(0) @Max(1) y!:number;
+}
 export class CreateDesignThreadDto {
+ @IsOptional() @ValidateNested() @Type(() => DesignCommentAnchorDto) anchor?:DesignCommentAnchorDto;
+ @IsOptional() @IsArray() @ArrayMaxSize(20) @ArrayUnique() @IsUUID(undefined,{each:true}) mentions?:string[];
  @IsUUID() id!:string;
  @IsUUID() versionId!:string;
  @Transform(trim) @IsString() @MinLength(1) @MaxLength(240) title!:string;
@@ -83,3 +89,6 @@ export class ResolveDesignThreadDto {
  @IsInt() @Min(1) version!:number;
  @IsIn(['open','resolved']) status!:string;
 }
+
+export class FolderReviewerDto { @IsInt() @Min(1) version!:number; @IsUUID() reviewerId!:string; }
+export class ApproveFolderDto { @IsInt() @Min(1) version!:number; @IsArray() @ArrayMaxSize(500) @IsUUID('all',{each:true}) versionIds!:string[]; }

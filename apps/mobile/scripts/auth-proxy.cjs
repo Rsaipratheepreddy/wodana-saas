@@ -2,7 +2,7 @@ const COOKIE = 'wodana_mobile_refresh';
 const PLACEHOLDER = 'http-only-cookie';
 const routes = new Map([
   ['/auth/login', 'POST'], ['/auth/mfa/verify', 'POST'], ['/auth/refresh', 'POST'], ['/auth/logout', 'POST'],
-  ['/auth/password/forgot', 'POST'], ['/me', 'GET'],
+  ['/auth/password/forgot', 'POST'], ['/auth/organization/resolve', 'POST'], ['/me', 'GET'],
 ]);
 
 function cookieValue(header = '') {
@@ -37,12 +37,14 @@ function createAuthProxy({ target, fetcher = fetch }) {
     if (!pathname.startsWith('/api/v1/')) return next();
     const path = pathname.slice('/api/v1'.length);
     const workspaceRoute = allowedWorkspaceRoute(path,request.method);
-    if (!workspaceRoute && (!routes.has(path) || routes.get(path) !== request.method)) return send(response, 404, { message: 'Not found' });
+    const publicLogoRoute = request.method === 'GET' && /^\/public\/tenant-branding\/[a-z0-9]+(?:-[a-z0-9]+)*\/logo$/.test(path);
+    if (!workspaceRoute && !publicLogoRoute && (!routes.has(path) || routes.get(path) !== request.method)) return send(response, 404, { message: 'Not found' });
     const secure = !!request.socket.encrypted;
     const origin = `${secure ? 'https' : 'http'}://${request.headers.host}`;
     if ((request.headers.origin && request.headers.origin !== origin)
       || request.headers['sec-fetch-site'] === 'cross-site') return send(response, 403, { message: 'Origin not allowed' });
     if(workspaceRoute)return proxyWorkspace(request,response,target,fetcher,path+requestUrl.search);
+    if(publicLogoRoute)return proxyPublicLogo(response,target,fetcher,path);
     let body;
     try {
       if (request.method === 'POST') {
@@ -89,6 +91,17 @@ function createAuthProxy({ target, fetcher = fetch }) {
       return send(response, 503, { message: 'Authentication is unavailable' });
     }
   };
+}
+async function proxyPublicLogo(response,target,fetcher,path){
+  try {
+    const upstream=await fetcher(`${target.replace(/\/$/,'')}${path}`,{method:'GET',redirect:'error',signal:AbortSignal.timeout(12000)});
+    response.writeHead(upstream.status,{
+      'Content-Type':upstream.headers.get('content-type')??'application/octet-stream',
+      'Cache-Control':upstream.ok?'public, max-age=3600':'no-store',
+      'X-Content-Type-Options':'nosniff',
+    });
+    response.end(Buffer.from(await upstream.arrayBuffer()));
+  } catch { return send(response,503,{message:'The organization logo is unavailable.'}); }
 }
 function allowedWorkspaceRoute(path,method){
  const match=path.match(/^\/workspaces\/[0-9a-f-]{36}\/(crm|hrms|projects|pre-projects)(?:\/(.*))?$/);if(!match)return false;

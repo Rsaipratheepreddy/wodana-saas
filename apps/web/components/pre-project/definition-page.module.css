@@ -20,7 +20,7 @@
 .items small, .items p { color: var(--wd-color-text-secondary); font-size: .76rem; }
 .items p { margin: 0; }
 .form { display: grid; gap: .9rem; }
-.form label { display: grid; gap: .35rem; font-size: .82rem; }
-.form input, .form select, .form textarea { inline-size: 100%; min-block-size: 2.5rem; padding: .55rem .7rem; border: 1px solid var(--wd-color-border-control); border-radius: .55rem; background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; }
-.form textarea { min-block-size: 5rem; resize: vertical; }
+.formGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.9rem; }
+.form :global(.wd-field) { min-inline-size:0; }
+@media(max-width:600px) { .formGrid { grid-template-columns:minmax(0,1fr); } }
 .error { margin: 0; color: var(--wd-color-status-danger); font-size: .82rem; }

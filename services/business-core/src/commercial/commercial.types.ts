@@ -106,6 +106,13 @@ export type QuotationTemplate = {
   status?: "active" | "archived";
   content: Pick<Quote, "rooms" | "lines" | "currency" | "discount" | "taxRate" | "inclusions" | "terms" | "exclusions" | "paymentTerms" | "presentation">;
 };
+export type QuoteRichTextNode = {
+  type: string;
+  text?: string;
+  content?: QuoteRichTextNode[];
+  marks?: { type: string }[];
+  attrs?: { level?: number; start?: number };
+};
 export type QuoteCanvasElement = {
   id: string;
   type: "text" | "image";
@@ -114,6 +121,7 @@ export type QuoteCanvasElement = {
   width: number;
   height: number;
   text?: string;
+  richText?: QuoteRichTextNode;
   src?: string;
   color?: string;
   fontSize?: number;
@@ -130,6 +138,12 @@ export type QuoteCanvasPage = {
 };
 export type QuotePresentation = {
   version: 1;
+  template?: 'palm-reference-v1';
+  details?: Partial<Record<'companyName' | 'clientName' | 'clientPhone' | 'clientEmail' | 'projectName' | 'location' | 'reference' | 'date' | 'preparedBy' | 'estimator' | 'manager' | 'clientLogo', string>>;
+  /** Logical sections in reading order; scope expands into item pages. */
+  pageOrder?: string[];
+  hiddenPages?: string[];
+  scopeColumns?: { hidden: string[]; custom: { id: string; name: string; values: Record<string, string> }[] };
   pageBackground: string;
   textColor: string;
   accentColor: string;
@@ -207,6 +221,16 @@ export type QuoteDecisionEvidence = {
   note?: string;
 };
 export type Quote = {
+  /** Separate client and payment rounds for Palm's design and main proposal. */
+  round?: "design" | "main";
+  qsEstimate?: {
+    quoteHash: string;
+    cost: number;
+    sellingTotal: number;
+    reviewedAt: string;
+    reviewedById: string;
+    reviewedBy: string;
+  };
   rooms?: { id:string; name:string; catalog?:CatalogSelection }[];
   direction?:"addition"|"deduction";
   familyId?:string;
@@ -371,6 +395,7 @@ export type ClientChangeRequest = Omit<
   };
 };
 export type Agreement = {
+  files?: { id: string; name: string; mimeType: string; byteSize: number; hasPreview: boolean; addedAt: string; addedBy: string }[];
   quoteId: string;
   /** Exact accepted quotation snapshot bound to this agreement. */
   quoteHash?: string;
@@ -507,8 +532,15 @@ export type OwnerReview = {
   id: string;
   quoteId: string;
   quoteHash: string;
-  status: "submitted" | "approved" | "returned" | "rejected";
+  status: "submitted" | "pending_finance" | "pending_approval" | "approved" | "returned" | "rejected";
   commission: number;
+  commissionLines?: import("./deal-submission").CommissionLine[];
+  finalCommissionLines?: import("./deal-submission").CommissionLine[];
+  paymentProofUrl?: string;
+  financeNote?: string;
+  financeReviewedAt?: string;
+  financeReviewedBy?: string;
+  financeReviewedById?: string;
   checklist: OwnerReviewChecklist;
   submissionNote: string;
   submittedAt: string;
@@ -536,6 +568,11 @@ export type DealFile = {
   cost: number;
   margin: number;
   commission: number;
+  commissionLines?: import("./deal-submission").CommissionLine[];
+  paymentProofUrl?: string;
+  opportunityId?: string;
+  opportunityReference?: string | null;
+  enquiryReference?: string | null;
   status: "active";
   approvedAt: string;
   approvedBy: string;
@@ -568,6 +605,19 @@ export type MaterialApproval = {
   decisionChallengeId?: string;
 };
 export type CommercialData = {
+  /** Palm's selected service path. Frozen when its first quotation is created. */
+  palmFlow?: {
+    scope: import("../projects/palm-flow-route").PalmFlowScope;
+    selectedAt: string;
+    selectedBy: string;
+  };
+  /** First paid design round retained when a second, main round starts in the same Deal. */
+  designRound?: {
+    quoteId: string;
+    agreement: Agreement;
+    ownerReview: OwnerReview;
+    dealFile: DealFile;
+  };
   financeContext?: CommercialFinanceContext | null;
   financeDocuments?: FinanceDocument[];
   receipts?: FinanceReceipt[];
@@ -620,15 +670,27 @@ export type PortalGrant = {
   testContact: boolean;
 };
 export type CommercialState = {
+  palmFlowEnabled?: boolean;
+  enquiryType?: string | null;
   workspaceId: string;
   caseId: string;
   title: string;
+  opportunityId?: string;
+  opportunityStatus?: string;
+  opportunityReference?: string | null;
+  enquiryReference?: string | null;
+  opportunityValue?: number | null;
   customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   currency: string;
   data: CommercialData;
   contacts: PortalGrant[];
   canEdit: boolean;
   canApprove: boolean;
+  canEstimate?: boolean;
+  canApproveDeal?: boolean;
   canVerifyFinance: boolean;
   canOverridePrice?: boolean;
   canViewCosts?: boolean;

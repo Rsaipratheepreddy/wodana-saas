@@ -38,6 +38,7 @@ export type ProjectFieldHandover = {
 export type ProjectFieldProject = {
   id: string; name: string; customer: string; revision: number; memberId: string;
   members: ProjectFieldMember[];
+  reports?: {id:string;date:string;location:string;summary:string;status:string;note:string;published:boolean;photoCount:number}[];
   tasks: ProjectFieldTask[];
   deliveries: ProjectFieldReceipt[];
   purchaseReceipts: ProjectFieldReceipt[];

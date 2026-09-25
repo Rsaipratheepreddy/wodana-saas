@@ -1,0 +1,12 @@
+.page { min-inline-size: 0; padding: 1.25rem 1.5rem 2rem; background: var(--wd-color-surface); color: var(--wd-color-text); }
+.toolbar { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-block: 0 .75rem; }
+.toolbar :global(.wd-search-field) { inline-size: 19rem; max-inline-size: 100%; }
+.name { display: flex; align-items: center; gap: .6rem; min-inline-size: 0; }
+.name strong { color: inherit; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.open:hover { color: var(--wd-color-action-primary); }
+.name small { flex: none; color: var(--wd-color-text-secondary); font-size: .6875rem; font-weight: 500; }
+.open { display: inline-flex; align-items: center; gap: .25rem; color: var(--wd-color-text-secondary); font-size: .75rem; text-decoration: none; }
+.form { display: grid; gap: .85rem; }
+.actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.error { color: var(--wd-color-danger); font-size: .8rem; }
+@media (max-width: 48rem) { .page { padding: 1rem; }.toolbar :global(.wd-search-field) { inline-size: 100%; }.toolbar { flex-wrap: wrap; }.toolbar > :first-child { flex: 1 1 12rem; } }

@@ -1,66 +1,62 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useRef, useState } from 'react';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import * as NativeSplashScreen from 'expo-splash-screen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Text, tokens, useTheme } from '../design-system';
+import { Button, Text, TextField } from '../design-system';
+import { loginTheme } from '../design-system/login-theme';
 import { BrandLogo } from '../components/brand-logo';
-import { Icon } from '../components/icon';
+import { AuthError } from '../auth/client';
 
-/** Welcome is a persistent entry screen; the native launch splash is handled separately. */
-export function SplashScreen({ onSignIn, onJoin }: { onSignIn: () => void; onJoin: () => void }) {
-  const { reducedMotion } = useTheme();
+/** A single organization lookup keeps the mobile entry flow independent of any tenant. */
+export function SplashScreen({ onContinue }: { onContinue: (identifier: string) => Promise<void> }) {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const [ready, setReady] = useState(false);
-  const [logoError, setLogoError] = useState(false);
-  const opacity = useRef(new Animated.Value(0)).current;
-  const compact = height < 680;
+  const [identifier, setIdentifier] = useState('');
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+  const submitting = useRef(false);
 
-  const reveal = useCallback(() => {
-    NativeSplashScreen.hide();
-    setReady(true);
-  }, []);
+  const submit = async () => {
+    if (submitting.current) return;
+    const value = identifier.trim();
+    if (value.length < 2) { setError('Enter your organization name, slug, or ID.'); return; }
+    submitting.current = true;
+    setPending(true);
+    setError('');
+    Keyboard.dismiss();
+    try { await onContinue(value); }
+    catch (cause) {
+      setError(cause instanceof AuthError ? cause.message : 'Unable to find your organization. Try again.');
+    } finally { submitting.current = false; setPending(false); }
+  };
 
-  useEffect(() => {
-    if (!ready) return;
-    const animation = Animated.timing(opacity, {
-      toValue: 1, duration: reducedMotion ? 0 : tokens.motion.slow,
-      easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web',
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [opacity, ready, reducedMotion]);
-
-  return <View testID="splash-screen" style={styles.screen}>
+  return <View testID="organization-screen" style={styles.screen}>
     <StatusBar style="dark" />
-    <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={[
-      styles.scroll, { paddingTop: insets.top + 24, paddingBottom: Math.max(insets.bottom, 20) + 16 },
-    ]}>
-      <View style={[styles.hero, compact && styles.heroCompact]}>
-        <View style={[styles.logoTile, compact && styles.logoTileCompact]}>
-          {logoError
-            ? <Text size="3xl" weight="semibold" style={styles.ink}>wodana</Text>
-            : <BrandLogo width={186} onLoadEnd={reveal} onError={() => { setLogoError(true); reveal(); }} />}
+    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 24 }]}>
+        <View style={styles.brand}><BrandLogo width={146} /></View>
+        <View style={styles.body}>
+          <Text accessibilityRole="header" style={styles.title}>Find your workspace</Text>
+          <Text style={styles.subtitle}>Enter your organization name, slug, or ID to continue.</Text>
+          <View style={styles.form}>
+            <TextField label="Organization" variant="login" placeholder="Organization name, slug, or ID"
+              value={identifier} editable={!pending} error={error} autoCapitalize="none" autoCorrect={false}
+              returnKeyType="go" onSubmitEditing={submit}
+              onChangeText={(value) => { setIdentifier(value); setError(''); }} />
+            <Button label={pending ? 'Finding workspace…' : 'Continue'} variant="brand" pill loading={pending} onPress={submit} />
+          </View>
         </View>
-      </View>
-
-      <Animated.View style={[styles.actions, { opacity }]}>
-        <Button label="Sign in with email" variant="brand" onPress={onSignIn}
-          startIcon={<Icon name="mail" size={19} color={tokens.colors.light.actionOnPrimary} />} />
-        <Button label="I don’t have an account" variant="brand-secondary" onPress={onJoin} />
-      </Animated.View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: tokens.colors.light.canvas },
-  scroll: { flexGrow: 1, width: '100%', maxWidth: 468, alignSelf: 'center', paddingHorizontal: 24 },
-  hero: { flex: 1, minHeight: 280, justifyContent: 'center', alignItems: 'center', paddingVertical: 24 },
-  heroCompact: { minHeight: 220, paddingVertical: 20 },
-  logoTile: { width: 226, height: 164, alignItems: 'center', justifyContent: 'center' },
-  logoTileCompact: { height: 126 },
-  ink: { color: tokens.brand.ink },
-  actions: { gap: 10 },
+  screen: { flex: 1, backgroundColor: loginTheme.form },
+  fill: { flex: 1 },
+  scroll: { flexGrow: 1, width: '100%', maxWidth: 520, alignSelf: 'center', paddingHorizontal: 28 },
+  brand: { alignItems: 'flex-start' },
+  body: { flexGrow: 1, justifyContent: 'center', paddingBottom: 100, gap: 14 },
+  title: { color: loginTheme.ink, fontSize: 32, lineHeight: 40, fontWeight: '500', letterSpacing: -1.1 },
+  subtitle: { color: loginTheme.muted, fontSize: 15, lineHeight: 23 },
+  form: { gap: 18, marginTop: 24 },
 });

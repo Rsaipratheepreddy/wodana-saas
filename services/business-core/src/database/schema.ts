@@ -664,7 +664,7 @@ export const projectWorkflowTemplates = pgTable(
     check("project_workflow_templates_version_check", sql`${table.version} > 0`),
     check(
       "project_workflow_templates_stages_check",
-      sql`jsonb_typeof(${table.stages}) = 'array' AND jsonb_array_length(${table.stages}) BETWEEN 2 AND 12`,
+      sql`jsonb_typeof(${table.stages}) = 'array' AND jsonb_array_length(${table.stages}) BETWEEN 2 AND 18`,
     ),
     check(
       "project_workflow_templates_default_check",
@@ -933,6 +933,8 @@ export const workspaceMemberships = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     status: membershipStatus("status").notNull().default("active"),
+    homeLayout: jsonb("home_layout"),
+    homeLayoutVersion: integer("home_layout_version").notNull().default(0),
     joinedAt: timestamp("joined_at", { withTimezone: true }),
     version: integer("version").notNull().default(1),
     ...auditColumns,

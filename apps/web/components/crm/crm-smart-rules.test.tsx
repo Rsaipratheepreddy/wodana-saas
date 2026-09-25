@@ -26,7 +26,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("CRM smart rules", () => {
   it("shows plain-language rules and honest provider receipt state", () => {
     render(<CrmSmartRules initialData={data} />);
-    expect(screen.getByRole("heading", { name: "Smart rules" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Smart rules workspace" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Turn off New enquiry ownership" })).toBeChecked();
     expect(screen.getByText("Needs delivery test")).toBeInTheDocument();
     expect(screen.getByText("No successful provider receipt recorded yet.")).toBeInTheDocument();

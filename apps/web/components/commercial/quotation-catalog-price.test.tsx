@@ -21,7 +21,8 @@ describe("quotation catalogue price", () => {
     request.mockResolvedValue({ status: "resolved", code: "resolved", message: "Selling rate resolved", snapshot });
     const apply = vi.fn().mockReturnValue(true);
     render(<QuotationCatalogPrice line={line} currency="AED" taxRate={5} workspaceId="workspace" caseId="case" readOnly={false} canOverride={false} onApply={apply} />);
-    expect(screen.queryByRole("button", { name: "Override" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Override price" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Review price for Joinery" }));
     await userEvent.click(screen.getByRole("button", { name: "Check price" }));
     await waitFor(() => expect(apply).toHaveBeenCalledWith(line, "AED", 5, { catalogPrice: snapshot, catalogPriceRequest: { action: "resolve" }, rate: 350 }));
     expect(request).toHaveBeenCalledWith(expect.stringContaining("/cases/case/catalog-price?workspaceId=workspace"), "POST", { catalogId: "catalog", workId: "work", workVersion: 4, unitLabel: "nos", quantity: 2, currency: "AED", taxRate: 5 });
@@ -31,7 +32,8 @@ describe("quotation catalogue price", () => {
     const apply = vi.fn().mockReturnValue(true);
     render(<QuotationCatalogPrice line={line} currency="AED" taxRate={5} workspaceId="workspace" caseId="case" readOnly={false} canOverride onApply={apply} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Override" }));
+    await user.click(screen.getByRole("button", { name: "Review price for Joinery" }));
+    await user.click(screen.getByRole("button", { name: "Override price" }));
     await user.type(screen.getByLabelText("Override rate for Joinery"), "425");
     await user.type(screen.getByLabelText("Override reason for Joinery"), "Client-approved custom finish");
     await user.click(screen.getByRole("button", { name: "Use override" }));
@@ -46,7 +48,8 @@ describe("quotation catalogue price", () => {
       rateCard: { id: "rate", version: 3, amount: 350, baseUnitRate: 350, appliedUnitRate: 350, effectiveFrom: "2026-01-01", taxIncluded: false, costIncludes: "labour", reference: "Joinery 2026" },
     } };
     render(<QuotationCatalogPrice line={priced} currency="AED" taxRate={5} workspaceId="workspace" caseId="case" readOnly canOverride={false} onApply={vi.fn()} />);
-    await userEvent.click(screen.getByText("Price details"));
+    expect(screen.queryByText("Joinery 2026 · v3")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Review price for Joinery" }));
     expect(screen.getByText("Joinery 2026 · v3")).toBeInTheDocument();
     expect(screen.getByText(/Effective 1 Jan 2026/)).toBeInTheDocument();
   });

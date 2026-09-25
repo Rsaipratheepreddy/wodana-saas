@@ -1,6 +1,6 @@
 .page {
   min-block-size: 100%;
-  padding: 1.75rem clamp(1rem, 3vw, 2rem);
+  padding: var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem);
   background: var(--wd-color-surface);
   color: var(--wd-color-text);
 }
@@ -12,20 +12,27 @@
   gap: .75rem;
 }
 
+.header { justify-content: space-between; margin-block-end: var(--wd-phi-3); }
+.header > div > p { margin: .2rem 0 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .header h1 {
   margin: 0;
-  font-size: var(--wd-text-2xl);
+  font-size: var(--wd-text-xl);
   font-weight: var(--wd-weight-semibold);
   letter-spacing: -.025em;
 }
 
 .status {
-  padding: .3rem .6rem;
-  border-radius: var(--wd-radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: .375rem;
+  min-block-size: 1.375rem;
+  padding-inline: .5rem;
+  border-radius: var(--wd-radius-pill);
   background: var(--wd-color-action-primary-subtle);
-  color: var(--wd-color-action-primary);
-  font-size: var(--wd-text-xs);
+  color: var(--wd-brand-800);
+  font-size: var(--wd-text-2xs);
   font-weight: var(--wd-weight-medium);
+  line-height: 1;
 }
 
 .subtitle,

@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-delivery-flows.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: /workspaces/12b3da9f-831b-42cb-b2f5-933e0801e910/projects/75f14cc4-d2c4-4ff8-adb2-e1959bde0eb9/execution: {"message":"Daily updates cannot be dated in the future.","error":"Bad Request","statusCode":400}
+
+400 !== 201
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:22:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-delivery-flows.mjs:93:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 400,
+  expected: 201,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

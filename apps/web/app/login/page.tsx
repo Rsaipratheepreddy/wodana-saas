@@ -10,33 +10,25 @@ export const metadata: Metadata = {
   description: "Sign in to your Wodana business workspace.",
 };
 
-const FLAT_BEIGE_TENANTS = new Set(["iglo", "iglo-architects", "plm", "palm-living"]);
-
-function applyDemoPalette(branding: TenantBranding): TenantBranding {
-  return FLAT_BEIGE_TENANTS.has(branding.loginSlug)
-    ? { ...branding, primaryColor: "#E4E3DE", secondaryColor: "#000000" }
-    : branding;
-}
-
 async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding> {
   const resolved = await resolveTenantHost((await headers()).get("host"));
   if (!resolved) notFound();
-  if (resolved.kind === "tenant") return applyDemoPalette({
+  if (resolved.kind === "tenant") return {
     ...resolved.branding,
     logoUrl: resolved.branding.logoUrl ? `/api/auth/tenant-logo/${resolved.branding.loginSlug}` : null,
-  });
+  };
   const loginSlug = requestedSlug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug)
     ? requestedSlug
-    : process.env.LOGIN_TENANT_SLUG ?? "iglo-architects";
+    : process.env.LOGIN_TENANT_SLUG ?? "";
   const response = await fetch(businessApiUrl(`/auth/tenant/${loginSlug}`), {
     cache: "no-store",
   }).catch(() => null);
   if (response?.ok) {
     const branding = await response.json() as TenantBranding;
-    return applyDemoPalette({
+    return {
       ...branding,
       logoUrl: branding.logoUrl ? `/api/auth/tenant-logo/${branding.loginSlug}` : null,
-    });
+    };
   }
   return {
     displayName: "Wodana", loginSlug, logoUrl: null, primaryColor: null,
@@ -54,16 +46,13 @@ export default async function LoginPage({
   const nextPath = query.next?.startsWith("/workspace") || query.next?.startsWith("/internal") ? query.next : "/workspace";
   return (
     <LoginScreen
-      demoCredentials={process.env.NODE_ENV === "production" ? undefined : {
-        email: "admin@igloarchitects.com",
-        password: "IgloDemo#2026",
-      }}
       invitationToken={query.invitation && query.invitation.length <= 256 ? query.invitation : undefined}
       passwordResetToken={!query.invitation && query.reset && /^[A-Za-z0-9_-]{32,256}$/.test(query.reset) ? query.reset : undefined}
       initialStatus={query.reason === "session-unavailable" ? "The sign-in service is temporarily unavailable. Please try again."
         : query.reason === "session-ended" ? "Your session has ended. Please sign in again."
           : query.reason === "password-reset" ? "Password updated. Sign in with your new password." : undefined}
       nextPath={nextPath}
+      initialStatusTone={query.reason === "password-reset" ? "info" : "error"}
       tenant={tenant}
     />
   );

@@ -11,6 +11,9 @@ import {
   ComboBox,
   DateInput,
   DatePicker,
+  TimeField as AriaTimeField,
+  type TimeFieldProps,
+  type TimeValue,
   DateRangePicker,
   DateSegment,
   FieldError,
@@ -42,9 +45,9 @@ import {
   type SelectProps,
   type TextFieldProps,
 } from "react-aria-components";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Paperclip, Search, Upload, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Paperclip, Search, Upload, X } from "lucide-react";
 import type { DateValue } from "@internationalized/date";
-import { useDesignSystem } from "../foundations/provider";
+import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 import { Tag } from "./status";
 import { Button, IconButton } from "./actions";
 
@@ -60,7 +63,7 @@ function FieldLabel({ label, required }: { label: ReactNode; required?: boolean 
 }
 
 function FieldMeta({ description, errorMessage }: { description?: ReactNode; errorMessage?: ReactNode }) {
-  return <>{description ? <Text className="wd-field-help" slot="description">{description}</Text> : null}{errorMessage ? <FieldError className="wd-field-error">{errorMessage}</FieldError> : null}</>;
+  return <>{description ? <Text className="wd-field-help" slot="description">{description}</Text> : null}{errorMessage ? <FieldError className="wd-field-error"><CircleAlert aria-hidden="true" size={14} />{errorMessage}</FieldError> : null}</>;
 }
 
 export type TextInputProps = TextFieldProps & FieldChromeProps & { prefix?: ReactNode; suffix?: ReactNode; inputType?: "text" | "email" | "password" | "url" | "tel" | "date" | "datetime-local"; placeholder?: string };
@@ -101,15 +104,17 @@ export function RadioSet({ description, errorMessage, items, label, ...props }: 
   return <RadioGroup {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><div className="wd-choice-list">{items.map((item) => <Radio className="wd-radio" id={item.id} key={item.id} value={item.id}><span aria-hidden="true" className="wd-radio-dot" /><span><strong>{item.label}</strong>{item.description ? <small>{item.description}</small> : null}</span></Radio>)}</div><FieldMeta description={description} errorMessage={errorMessage} /></RadioGroup>;
 }
 
-export type SelectItem = { id: string; label: string; description?: string };
-export function SelectField({ accent = "brand", description, errorMessage, items, label, placeholder = "Select an option", ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; items: SelectItem[] }) {
-  const { portalContainer } = useDesignSystem();
-  return <Select {...props} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame"><SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" data-accent={accent}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
+export type SelectItem = { id: string; label: string; description?: string; icon?: ReactNode };
+export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder = "Select an option", ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+  const { portalContainer, direction } = useDesignSystem();
+  const portalTheme = usePortalThemeAttributes();
+  return <Select {...props} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame">{prefix ? <span className="wd-select-prefix" aria-hidden="true">{prefix}</span> : null}<SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" data-accent={accent} dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
 }
 
-export function ComboboxField({ description, errorMessage, items, label, placeholder, ...props }: ComboBoxProps<object> & FieldChromeProps & { items: SelectItem[]; placeholder?: string }) {
-  const { portalContainer } = useDesignSystem();
-  return <ComboBox {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame"><Input className="wd-input" placeholder={placeholder} /><AriaButton aria-label="Show options" className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover"><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.label}</ListBoxItem>}</ListBox></Popover></ComboBox>;
+export function ComboboxField({ description, errorMessage, items, label, placeholder, prefix, ...props }: ComboBoxProps<object> & FieldChromeProps & { items: SelectItem[]; placeholder?: string; prefix?: ReactNode }) {
+  const { portalContainer, direction } = useDesignSystem();
+  const portalTheme = usePortalThemeAttributes();
+  return <ComboBox {...props} className="wd-field wd-combobox"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" placeholder={placeholder} /><AriaButton aria-label="Show options" className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.icon ? <span className="wd-option-icon" aria-hidden="true">{item.icon}</span> : null}<span>{item.label}</span></ListBoxItem>}</ListBox></Popover></ComboBox>;
 }
 
 export function MultiSelectField({ label, items, selectedKeys, onSelectionChange }: { label: string; items: SelectItem[]; selectedKeys: Set<Key>; onSelectionChange: (keys: Set<Key>) => void }) {
@@ -123,15 +128,21 @@ function CalendarBody({firstDayOfWeek}:CalendarStart) { return <Calendar firstDa
 function RangeCalendarBody() { return <RangeCalendar className="wd-calendar"><CalendarHeader /><CalendarGrid>{(date) => <CalendarCell className="wd-calendar-cell" date={date} />}</CalendarGrid></RangeCalendar>; }
 
 export function DateField({ description, errorMessage, label, firstDayOfWeek, ...props }: DatePickerProps<DateValue> & FieldChromeProps & CalendarStart) {
-  const { portalContainer } = useDesignSystem();
-  return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover"><DialogCalendar firstDayOfWeek={firstDayOfWeek}/></Popover></DatePicker>;
+  const { portalContainer, direction } = useDesignSystem();
+  const portalTheme = usePortalThemeAttributes();
+  return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><DialogCalendar firstDayOfWeek={firstDayOfWeek}/></Popover></DatePicker>;
+}
+
+export function TimeField({ description, errorMessage, label, ...props }: TimeFieldProps<TimeValue> & FieldChromeProps) {
+  return <AriaTimeField {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><DateInput className="wd-date-group wd-date-input wd-time-input wd-focus-frame">{segment => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><FieldMeta description={description} errorMessage={errorMessage} /></AriaTimeField>;
 }
 
 function DialogCalendar({firstDayOfWeek}:CalendarStart) { return <div role="dialog"><CalendarBody firstDayOfWeek={firstDayOfWeek}/></div>; }
 
 export function DateRangeField({ description, errorMessage, label, ...props }: DateRangePickerProps<DateValue> & FieldChromeProps) {
-  const { portalContainer } = useDesignSystem();
-  return <DateRangePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input" slot="start">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><span aria-hidden="true">–</span><DateInput className="wd-date-input" slot="end">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover"><div role="dialog"><RangeCalendarBody /></div></Popover></DateRangePicker>;
+  const { portalContainer, direction } = useDesignSystem();
+  const portalTheme = usePortalThemeAttributes();
+  return <DateRangePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input" slot="start">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><span aria-hidden="true">–</span><DateInput className="wd-date-input" slot="end">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><div role="dialog"><RangeCalendarBody /></div></Popover></DateRangePicker>;
 }
 
 export function FieldStack({ children }: { children: ReactNode }) { return <div className="wd-field-stack">{children}</div>; }

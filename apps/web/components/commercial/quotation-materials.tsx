@@ -62,10 +62,10 @@ export function QuotationMaterialsSummary({
         </span>
       )}
       {selections.length > 0 && materialNotes(line, "material") && (
-        <details className={q.materialNote}>
-          <summary>Specification notes</summary>
+        <section className={q.materialNote}>
+          <h3>Specification notes</h3>
           <p>{materialNotes(line, "material")}</p>
-        </details>
+        </section>
       )}
       <CustomMaterialSummary materials={line.customMaterials} />
       {onEdit && (
@@ -474,8 +474,8 @@ export function QuotationMaterialsEditor(props: {
           </>
         )}
       </section>
-      <details className={q.clientPreview}>
-        <summary>Client-facing specification</summary>
+      <section className={q.clientPreview}>
+        <h3>Client-facing specification</h3>
         <div>
           <strong>Materials</strong>
           <p>{props.item.material || "No material selected"}</p>
@@ -486,7 +486,7 @@ export function QuotationMaterialsEditor(props: {
             </>
           )}
         </div>
-      </details>
+      </section>
     </div>
   );
 }

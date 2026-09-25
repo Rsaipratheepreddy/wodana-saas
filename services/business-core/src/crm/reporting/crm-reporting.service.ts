@@ -17,6 +17,7 @@ export class CrmReportingService {
           mainSource: "enquiry.source", channel: "enquiry.channel",
           source: "enquiry.source || ' / ' || enquiry.channel", enquiryType: "enquiry.service_type",
           customerType: "enquiry.details->>'customerType'", budget: "enquiry.details->>'budgetRange'",
+          emirate: "enquiry.details->>'emirate'",
           owner: "account.display_name", team: "queue.name", intake: "intake.intake_method",
           freshness: `CASE
             WHEN lead.status IN ('qualified','disqualified') THEN 'closed'

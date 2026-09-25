@@ -7,7 +7,7 @@ import type { CommercialData, Quote } from "../commercial/commercial.types";
 import { emptyProject } from "./execution.domain";
 import { releaseDeliveryProject } from "./project-release";
 import { ensureJobForSource } from "../jobs/job-identity.store";
-import type { ProjectWorkflowTemplateInput } from "./project-workflow";
+import { adoptProjectWorkflow, type ProjectWorkflowTemplateInput } from "./project-workflow";
 
 vi.mock("../jobs/job-identity.store", () => ({
   ensureJobForSource: vi.fn().mockResolvedValue({ id: "job-1", reference: "J-000001", workspaceId: "workspace-1" }),
@@ -220,7 +220,13 @@ function fixture(): CommercialData {
       quoteId: quote.id,
       quoteHash: quote.hash,
       status: "approved",
-      commission: 0,
+      commission: 10,
+      commissionLines: [{ recipientName: "Sales", type: "sales", basis: "amount", value: 10, amount: 10 }],
+      finalCommissionLines: [{ recipientName: "Sales", type: "sales", basis: "amount", value: 10, amount: 10 }],
+      paymentProofUrl: "https://example.com/proof/receipt-1",
+      financeReviewedAt: now,
+      financeReviewedBy: "Finance",
+      financeReviewedById: "finance-user",
       checklist: {
         agreement: true,
         boq: true,
@@ -270,7 +276,9 @@ function fixture(): CommercialData {
       value: quote.total,
       cost: 600,
       margin: 650,
-      commission: 0,
+      commission: 10,
+      commissionLines: [{ recipientName: "Sales", type: "sales", basis: "amount", value: 10, amount: 10 }],
+      paymentProofUrl: "https://example.com/proof/receipt-1",
       status: "active",
       approvedAt: now,
       approvedBy: "Owner",
@@ -436,7 +444,7 @@ describe("commercial project release", () => {
       ],
     });
     expect(scope?.lines[0]).not.toHaveProperty("unitCost");
-    expect(scope?.lines[0]).not.toHaveProperty("photo");
+    expect(scope?.lines[0].photo).toBe("data:image/webp;base64,cHJpdmF0ZQ==");
     expect(scope?.lines[0]).not.toHaveProperty("catalogLinks");
     expect(db.stored()?.workflow).toMatchObject({
       currentStageKey: "planning",
@@ -586,7 +594,7 @@ describe("commercial project release", () => {
     await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", fixture());
 
     expect(db.stored()?.workflow).toMatchObject({
-      currentStageKey: "project_setup",
+      currentStageKey: "procurement",
       template: {
         id: "workflow-palm-1",
         code: "palm_design_build_delivery",
@@ -595,18 +603,24 @@ describe("commercial project release", () => {
       },
     });
     expect(db.stored()?.workflow?.template.stages.map((stage) => stage.visibleName)).toEqual([
-      "Project setup",
+      "New Project",
       "Concept & moodboard",
       "Space planning",
-      "Renders & client approval",
-      "Technical drawings & materials",
-      "BOQ & procurement",
-      "Manufacturing readiness",
+      "Renders",
+      "Awaiting Client Approval",
+      "Technical Drawings",
+      "Material Selection",
+      "Costing / BOQ",
+      "Procurement",
+      "Ready for Manufacturing",
       "Manufacturing",
       "Site works",
       "Installation",
-      "Snagging & handover",
-      "Completed",
+      "Snagging",
+      "Complete / Handover",
+    ]);
+    expect(db.stored()?.workflow?.history).toEqual([
+      expect.objectContaining({ action: "adopted", fromStageKey: null, toStageKey: "procurement" }),
     ]);
     expect(db.stored()?.workPackages).toEqual([
       expect.objectContaining({
@@ -623,6 +637,29 @@ describe("commercial project release", () => {
     ]);
 
     workflow.stages[0].visibleName = "Changed after project release";
-    expect(db.stored()?.workflow?.template.stages[0].visibleName).toBe("Project setup");
+    expect(db.stored()?.workflow?.template.stages[0].visibleName).toBe("New Project");
+  });
+
+  it("moves an existing pre-release Palm project to Procurement when the case is released", async () => {
+    const workflow = palmWorkflow();
+    const existing = emptyProject();
+    existing.workflow = adoptProjectWorkflow({
+      ...workflow,
+      id: "workflow-palm-1",
+      version: 1,
+      status: "active",
+      source: "workspace",
+      updatedAt: now,
+    }, now, "user-1", "Planner");
+    const db = database({ existing, workflow });
+
+    await releaseDeliveryProject(db.client, "workspace-1", "case-1", "user-1", fixture());
+
+    expect(db.stored()?.workflow?.currentStageKey).toBe("procurement");
+    expect(db.stored()?.workflow?.history).toEqual([
+      expect.objectContaining({ action: "adopted", toStageKey: "project_setup" }),
+      expect.objectContaining({ action: "released", fromStageKey: "project_setup", toStageKey: "procurement" }),
+    ]);
+    expect(db.stored()?.scope?.releaseId).toBe("release-1");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { Building2, ClipboardCheck, FolderKanban, Handshake, KeyRound, Plus, ShieldCheck, Sparkles, Users } from "lucide-react";
+import { Building2, ClipboardCheck, FolderKanban, Handshake, KeyRound, Package, Plus, ShieldCheck, Sparkles, Users, Wallet } from "lucide-react";
 import {
   Badge,
   Button,
@@ -33,11 +33,14 @@ import styles from "./roles-permissions-page.module.css";
 const SYSTEM_ROLE_ORDER: Record<string, number> = { owner: 0, administrator: 1, member: 2, viewer: 3 };
 
 const AREA_ICONS = {
-  workspace: Building2,
-  crm: Handshake,
-  "pre-execution": ClipboardCheck,
+  company: Building2,
+  sales: Handshake,
+  planning: ClipboardCheck,
+  commercial: Wallet,
   projects: FolderKanban,
-  hrms: Users,
+  supply: Package,
+  clients: Users,
+  people: Users,
   platform: Sparkles,
 } as const;
 
@@ -90,13 +93,19 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const changed = Boolean(selectedRole && !selectedRole.isSystem
     && !samePermissions(drafts[selectedRole.id], selectedRole.permissions));
 
-  const mergeRole = (role: WorkspaceRole) => {
+  const mergeRole = (role: WorkspaceRole, preservePermissionDraft = false) => {
     setRoles((current) => {
       const previous = current.find((item) => item.id === role.id);
-      const next = { ...previous, ...role, memberCount: role.memberCount ?? previous?.memberCount ?? 0 };
+      const next = {
+        ...previous, ...role,
+        memberCount: role.memberCount ?? previous?.memberCount ?? 0,
+        teamCount: role.teamCount ?? previous?.teamCount ?? 0,
+        pendingInvitationCount: role.pendingInvitationCount ?? previous?.pendingInvitationCount ?? 0,
+      };
       return sortRoles(previous ? current.map((item) => item.id === role.id ? next : item) : [...current, next]);
     });
-    setDrafts((current) => ({ ...current, [role.id]: new Set(role.permissions) }));
+    setDrafts((current) => ({ ...current, [role.id]: preservePermissionDraft && current[role.id]
+      ? current[role.id] : new Set(role.permissions) }));
   };
 
   const selectRole = (roleId: string) => {
@@ -106,7 +115,8 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   };
 
   const togglePermission = (permissionCode: string, enabled: boolean) => {
-    if (!selectedRole || selectedRole.isSystem || !initialData.canManage) return;
+    if (!selectedRole || selectedRole.isSystem || !initialData.canEdit ||
+      (initialData.delegablePermissions !== null && !initialData.delegablePermissions.includes(permissionCode))) return;
     setDrafts((current) => {
       const nextPermissions = new Set(current[selectedRole.id] ?? selectedRole.permissions);
       if (enabled) nextPermissions.add(permissionCode); else nextPermissions.delete(permissionCode);
@@ -121,7 +131,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   };
 
   const saveChanges = async () => {
-    if (!selectedRole || selectedRole.isSystem || !changed) return;
+    if (!selectedRole || selectedRole.isSystem || !initialData.canEdit || !changed) return;
     setSaving(true);
     setFailure("");
     try {
@@ -146,7 +156,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   };
 
   const deleteRole = async () => {
-    if (!deletingRole) return;
+    if (!deletingRole || !initialData.canDelete) return;
     setDeleting(true);
     setFailure("");
     try {
@@ -172,7 +182,12 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
 
   if (!selectedRole) return null;
   const selectedPermissions = drafts[selectedRole.id] ?? new Set(selectedRole.permissions);
-  const isEditable = initialData.canManage && !selectedRole.isSystem;
+  const roleWithinDelegation = initialData.delegablePermissions === null
+    || selectedRole.permissions.every((code) => initialData.delegablePermissions?.includes(code));
+  const isEditable = initialData.canEdit && !selectedRole.isSystem && roleWithinDelegation;
+  const assignedCount = (selectedRole.memberCount ?? 0) + (selectedRole.teamCount ?? 0) + (selectedRole.pendingInvitationCount ?? 0);
+  const isDeletable = initialData.canDelete && !selectedRole.isSystem && roleWithinDelegation && assignedCount === 0;
+  const canUseRoleActions = isEditable || isDeletable;
   const normalizedPermissionSearch = permissionSearch.trim().toLocaleLowerCase();
   const visiblePermissions = initialData.permissions
     .filter((permission) => permissionAreaFilter === "all" || permissionArea(permission.code) === permissionAreaFilter)
@@ -203,6 +218,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       header: "Product area",
       size: 180,
       enableSorting: false,
+      meta: { mobileHidden: true },
       cell: ({ row }) => <span className={styles.parentModule}><Badge>{permissionAreaLabel(row.original.code)}</Badge></span>,
     },
     {
@@ -216,7 +232,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         const permission = row.original;
         return <Switch
           aria-label={`${selectedRole.name}: ${permissionLabel(permission.code)}`}
-          isDisabled={!isEditable}
+          isDisabled={!isEditable || (initialData.delegablePermissions !== null && !initialData.delegablePermissions.includes(permission.code))}
           isSelected={selectedPermissions.has(permission.code)}
           onChange={(enabled) => togglePermission(permission.code, enabled)}
         />;
@@ -229,14 +245,14 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       <section aria-labelledby="roles-heading" className={styles.page}>
         <header className={styles.pageHeading}>
           <h1 id="roles-heading">Roles &amp; permissions</h1>
-          <p>Create roles and control real access across every product capability.</p>
+          <p>Set who can see and act in each part of the workspace.</p>
         </header>
 
         <div aria-label="Role actions" className={styles.toolbar}>
           <div className={styles.summary}>
             <span><ShieldCheck aria-hidden="true" size={15} /><strong>{roles.length}</strong> roles</span>
             <span><KeyRound aria-hidden="true" size={15} /><strong>{customRoleCount}</strong> custom</span>
-            <span><Users aria-hidden="true" size={15} /><strong>{initialData.memberCount}</strong> member{initialData.memberCount === 1 ? "" : "s"}</span>
+            {initialData.memberCount === null ? null : <span><Users aria-hidden="true" size={15} /><strong>{initialData.memberCount}</strong> member{initialData.memberCount === 1 ? "" : "s"}</span>}
             <span><ClipboardCheck aria-hidden="true" size={15} /><strong>{initialData.permissions.length}</strong> capabilities</span>
           </div>
           <div className={styles.actions}>
@@ -248,12 +264,15 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
               onSelectionChange={(key) => key && selectRole(String(key))}
               selectedKey={selectedRole.id}
             />
-            {isEditable ? <>
-              <IconMenuButton ariaLabel={`Actions for ${selectedRole.name}`} items={[{ id: "edit", label: "Edit role" }, { id: "delete", label: "Delete role", tone: "danger" }]} onAction={(action) => action === "edit" ? setEditingRole(selectedRole) : setDeletingRole(selectedRole)} />
-              <Button isDisabled={!changed || saving} onPress={resetChanges} size="compact">Reset</Button>
-              <Button isDisabled={!changed} isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">Save changes</Button>
+            {canUseRoleActions ? <IconMenuButton ariaLabel={`Actions for ${selectedRole.name}`} items={[
+              ...(isEditable ? [{ id: "edit", label: "Edit role" }] : []),
+              ...(isDeletable ? [{ id: "delete", label: "Delete role", tone: "danger" as const }] : []),
+            ]} onAction={(action) => action === "edit" ? setEditingRole(selectedRole) : setDeletingRole(selectedRole)} /> : null}
+            {isEditable && changed ? <>
+              <Button isDisabled={saving} onPress={resetChanges} size="compact">Reset</Button>
+              <Button isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">Save changes</Button>
             </> : null}
-            {initialData.canManage ? <Button onPress={() => setEditingRole("new")} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Custom role</Button> : null}
+            {initialData.canCreate ? <Button onPress={() => setEditingRole("new")} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Custom role</Button> : null}
           </div>
         </div>
 
@@ -264,9 +283,12 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
           <div>
             <strong>{selectedRole.name}</strong>
             <Badge>{selectedRole.isSystem ? "System" : "Custom"}</Badge>
-            <span>{selectedRole.memberCount ?? 0} member{selectedRole.memberCount === 1 ? "" : "s"}</span>
+            <span>{selectedRole.memberCount ?? 0} direct member{selectedRole.memberCount === 1 ? "" : "s"}</span>
+            {(selectedRole.teamCount ?? 0) > 0 ? <span>{selectedRole.teamCount} team{selectedRole.teamCount === 1 ? "" : "s"}</span> : null}
+            {(selectedRole.pendingInvitationCount ?? 0) > 0 ? <span>{selectedRole.pendingInvitationCount} pending invite{selectedRole.pendingInvitationCount === 1 ? "" : "s"}</span> : null}
           </div>
-          <p>{selectedRole.description || "Product capabilities available to this role."}</p>
+          <p>{selectedRole.description || "Product capabilities available to this role."}
+            {!selectedRole.isSystem && assignedCount > 0 ? " Reassign members, teams and pending invites before deleting this role." : null}</p>
         </div>
 
         <div className={styles.permissionToolbar}>
@@ -302,11 +324,15 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         <p className={styles.permissionNote}>
           {selectedRole.isSystem
             ? "System role permissions are managed by Wodana and cannot be changed."
-            : "Every switch maps to a permission enforced by the corresponding product service."}
+            : isEditable
+              ? `Save changes to apply access. ${initialData.delegablePermissions === null ? "Some approvals also require a named role and completed business checks." : "You can grant only permissions you hold."}`
+              : roleWithinDelegation
+                ? "You can review this role. Permission changes require role editing access."
+                : "This role contains permissions outside your access and is read-only for you."}
         </p>
       </section>
 
-      <RoleDialog initialData={initialData} item={editingRole} key={editingRole === "new" ? "role-new" : editingRole?.id ?? "role-closed"} onClose={() => setEditingRole(null)} onSaved={(role) => { mergeRole(role); setSelectedRoleId(role.id); setEditingRole(null); setStatus(`${role.name} was saved.`); }} />
+      <RoleDialog initialData={initialData} item={editingRole} key={editingRole === "new" ? "role-new" : editingRole?.id ?? "role-closed"} onClose={() => setEditingRole(null)} onSaved={(role) => { mergeRole(role, editingRole !== "new"); setSelectedRoleId(role.id); setEditingRole(null); setStatus(editingRole === "new" ? `${role.name} was saved.` : `${role.name} details saved. Any unsaved permission changes remain ready to apply.`); }} />
       <ConfirmationDialog body={deletingRole ? <>Delete <strong>{deletingRole.name}</strong>? This cannot be undone.</> : null} confirmLabel={deleting ? "Deleting…" : "Delete role"} isOpen={Boolean(deletingRole)} onConfirm={() => void deleteRole()} onOpenChange={(open) => { if (!open && !deleting) setDeletingRole(null); }} title="Delete custom role?" />
     </DesignSystemProvider>
   );

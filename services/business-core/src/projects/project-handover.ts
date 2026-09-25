@@ -5,6 +5,8 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { assertCloseout } from "./execution-controls";
+import { installationMaterialCapacity } from "./project-installation-materials";
+import { factoryReceiptsForSiteTask } from "./project-factory-handoff";
 import type {
   Handover,
   HandoverOutstandingItem,
@@ -89,12 +91,21 @@ export function deriveHandoverSource(
 }
 
 function sourceForExistingHandover(data: ProjectData, handover: Handover): HandoverSource {
-  if (handover.source === "work_package" || handover.source === "area")
-    return deriveHandoverSource(data, {
+  if (handover.source === "work_package" || handover.source === "area") {
+    const source = deriveHandoverSource(data, {
       area: handover.source === "area" ? handover.area : undefined,
       sourcePackageId: handover.sourcePackageId,
       title: handover.title,
     });
+    if(!handover.installationBatchIds?.length)return source;
+    const tasks=handover.installationBatchIds.map(id=>{
+      const task=data.tasks.find(task=>source.taskIds.includes(task.id) && task.installationBatches?.some(batch=>batch.id===id));
+      const batch=task?.installationBatches?.find(batch=>batch.id===id);
+      if(!task || task.location!=="site" || !batch || batch.status!=="passed" || batch.unit!==task.unit) throw new ConflictException("Select passed installation batches within this delivery source.");
+      return task;
+    });
+    return {...source,taskIds:unique(tasks.map(task=>task.id)),scopeLineIds:unique(tasks.flatMap(task=>task.scopeIds))};
+  }
 
   // Existing projects retain their prior controlled links. New records always
   // use one of the automatic sources above.
@@ -149,6 +160,10 @@ function assertMaterialCloseout(data: ProjectData, tasks: Task[]) {
     ),
   )) {
     const planned = data.materials.filter((material) => material.taskId === task.id);
+    const factoryReceipts = factoryReceiptsForSiteTask(data, task);
+    if (!planned.length && factoryReceipts.length &&
+        factoryReceipts.every((receipt) => receipt.acceptedQuantity + 0.000001 >= task.quantity))
+      continue;
     if (!planned.length)
       throw new ConflictException(
         `Add material planning and procurement evidence for ${task.title}.`,
@@ -193,6 +208,11 @@ export function assertHandoverPacketCurrent(data: ProjectData, handover: Handove
   const packet = handover.packet;
   if (!packet) throw new ConflictException("Prepare and review the handover pack first.");
   const source = sourceForExistingHandover(data, handover);
+  const overlap = data.handovers.find(other => other.id !== handover.id &&
+    ["ready", "accepted"].includes(other.status) &&
+    (other.packet?.tasks.map(task => task.id) ?? other.taskIds).some(id => source.taskIds.includes(id)) &&
+    (!handover.installationBatchIds?.length || !other.installationBatchIds?.length || handover.installationBatchIds.some(id=>other.installationBatchIds!.includes(id))));
+  if (overlap) throw new ConflictException(`This work is already included in ${overlap.title || overlap.area}. Resolve that handover before offering it again.`);
   if (
     JSON.stringify([...source.scopeLineIds].sort()) !==
       JSON.stringify([...packet.scopeLineIds].sort()) ||
@@ -203,8 +223,13 @@ export function assertHandoverPacketCurrent(data: ProjectData, handover: Handove
     );
   const tasks = packet.tasks.map((snapshot) => {
     const task = data.tasks.find((candidate) => candidate.id === snapshot.id);
-    if (!task || task.status !== "completed")
+    const partial=Boolean(handover.installationBatchIds?.length);
+    if (!task || (partial ? ["cancelled","blocked","on_hold"].includes(task.status) : task.status !== "completed"))
       throw new ConflictException("Complete and inspect the linked tasks before handover.");
+    const quantity=partial ? task.installationBatches!.filter(batch=>handover.installationBatchIds!.includes(batch.id)).reduce((total,batch)=>total+batch.quantity,0) : task.quantity;
+    if (quantity !== snapshot.quantity || task.unit !== snapshot.unit || task.area !== snapshot.area || task.location !== snapshot.location)
+      throw new ConflictException("Task quantity, unit or location changed after review. Return this pack for a fresh review.");
+    if(partial && (task.approved+0.000001<quantity || (installationMaterialCapacity(data,task).controlled && installationMaterialCapacity(data,task).quantity+0.000001<task.approved))) throw new ConflictException("Reconcile approved installation and issued materials before handover.");
     return task;
   });
   if (!packet.documents.length)
@@ -225,7 +250,8 @@ export function assertHandoverPacketCurrent(data: ProjectData, handover: Handove
   const snags = relatedOpenSnags(data, handover, packet.tasks.map((task) => task.id));
   if (snags.length)
     throw new ConflictException("Resolve the affected open defects before client handover.");
-  assertMaterialCloseout(data, tasks);
+  if(!handover.installationBatchIds?.length) assertMaterialCloseout(data, tasks);
+  if(JSON.stringify([...(handover.installationBatchIds??[])].sort())!==JSON.stringify([...(packet.installationBatchIds??[])].sort())) throw new ConflictException("The reviewed installation batches changed. Prepare a fresh pack.");
   assertOutstandingItems(handover, true);
 }
 
@@ -242,13 +268,8 @@ export function refreshHandoverPacket(
     if (!task) throw new ConflictException("A linked handover task no longer exists.");
     return task;
   });
-  handover.source = source.source;
-  handover.sourcePackageId = source.sourcePackageId;
-  handover.area = source.area;
-  handover.title = source.title;
-  handover.taskIds = source.taskIds;
-  handover.documentIds = documentsForSource(data, source).map((document) => document.id);
   const packet: HandoverPacket = {
+    installationBatchIds:handover.installationBatchIds?.length?[...handover.installationBatchIds]:undefined,
     id: randomUUID(),
     version: (handover.packets?.length ?? 0) + 1,
     createdAt: now,
@@ -258,10 +279,10 @@ export function refreshHandoverPacket(
     scopeLineIds: source.scopeLineIds,
     tasks: tasks.map((task) => ({
       id: task.id,
-      title: task.title,
+      title: handover.installationBatchIds?.length ? `${task.title} · ${task.installationBatches!.filter(batch=>handover.installationBatchIds!.includes(batch.id)).map(batch=>batch.title).join(', ')}` : task.title,
       area: task.area,
       location: task.location,
-      quantity: task.quantity,
+      quantity: handover.installationBatchIds?.length ? task.installationBatches!.filter(batch=>handover.installationBatchIds!.includes(batch.id)).reduce((total,batch)=>total+batch.quantity,0) : task.quantity,
       unit: task.unit,
     })),
     documents: documentsForSource(data, source).map(packetDocument),
@@ -277,27 +298,31 @@ export function refreshHandoverPacket(
       .filter((record) => record.status === "received")
       .map((record) => record.id),
   };
-  handover.packet = packet;
-  handover.packets = [...(handover.packets ?? []), packet];
-  assertHandoverPacketCurrent(data, handover);
+  const candidate = {...handover, source:source.source, sourcePackageId:source.sourcePackageId,
+    area:source.area, title:source.title, taskIds:source.taskIds,
+    documentIds:packet.documents.map(document => document.id), packet,
+    packets:[...(handover.packets ?? []), packet]};
+  assertHandoverPacketCurrent(data, candidate);
+  Object.assign(handover, candidate);
   return packet;
 }
 
 export function createAutomaticHandover(
   data: ProjectData,
-  input: { id: string; area?: string; sourcePackageId?: string; title?: string; warrantyUntil: string; clientReviewDueDate?: string; clientApproverId?: string },
+  input: { id: string; area?: string; sourcePackageId?: string; title?: string; warrantyUntil: string; clientReviewDueDate?: string; clientApproverId?: string; installationBatchIds?:string[] },
 ): Handover {
   const source = deriveHandoverSource(data, input);
   const duplicate = data.handovers.find(
     (handover) =>
       handover.id !== input.id &&
-      handover.status !== "returned" &&
+      handover.status !== "returned" && !input.installationBatchIds?.length && !handover.installationBatchIds?.length &&
       ((source.source === "work_package" && handover.sourcePackageId === source.sourcePackageId) ||
         (source.source === "area" && handover.source === "area" && handover.area === source.area)),
   );
   if (duplicate)
     throw new ConflictException("This delivery source already has an active handover pack.");
-  return {
+  const handover:Handover = {
+    installationBatchIds: input.installationBatchIds?.length ? [...new Set(input.installationBatchIds)] : undefined,
     id: input.id,
     area: source.area,
     title: source.title,
@@ -316,6 +341,11 @@ export function createAutomaticHandover(
     clientReviewDueDate: input.clientReviewDueDate ?? "",
     published: false,
   };
+  if(handover.installationBatchIds?.length) {
+    handover.taskIds=sourceForExistingHandover(data,handover).taskIds;
+    if(!input.title) handover.title=`${source.title} · ${data.tasks.flatMap(task=>task.installationBatches??[]).filter(batch=>handover.installationBatchIds!.includes(batch.id)).map(batch=>batch.title).join(', ')}`;
+  }
+  return handover;
 }
 
 export function addHandoverOutstandingItem(

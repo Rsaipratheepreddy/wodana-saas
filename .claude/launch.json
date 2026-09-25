@@ -1,0 +1,32 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "business-core",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:business"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:web"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "web-e2e",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "E2E_AUTH_BYPASS=true npm run dev --workspace @wodana/web -- -p 3100"
+      ],
+      "port": 3100
+    }
+  ]
+}

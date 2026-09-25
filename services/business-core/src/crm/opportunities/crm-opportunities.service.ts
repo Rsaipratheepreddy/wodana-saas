@@ -13,6 +13,7 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { canonicalHash, decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
+import { hasResolvedEnquiryType } from "../leads/lead-options";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -260,6 +261,7 @@ export class CrmOpportunitiesService {
       if (input.leadId && input.leadId !== leadId) throw new UnprocessableEntityException("leadId does not match the route");
       if (String(row.party_id) !== input.partyId) throw new UnprocessableEntityException("Opportunity party must match the lead party");
       const qualification = row.status === "qualified" && row.qualification_evidence && row.qualification_evidence_hash
+        && hasResolvedEnquiryType(String((row.qualification_evidence as Record<string, unknown>).serviceType ?? ""))
         ? {
           evidence: row.qualification_evidence as Record<string, unknown>,
           evidenceHash: String(row.qualification_evidence_hash),
@@ -353,6 +355,19 @@ export class CrmOpportunitiesService {
       if (["won", "lost", "abandoned"].includes(targetStatus) && !input.reason?.trim()) throw new UnprocessableEntityException("A reason is required for this transition");
       if (targetStatus === "lost" && !input.reason) throw new UnprocessableEntityException("Loss reason is required");
       const targetStage = input.stageId ? await this.requireStage(client, workspaceId, input.stageId, String(before.pipeline_id)) : await this.requireStage(client, workspaceId, String(before.stage_id), String(before.pipeline_id));
+      const terminalStageStatus = ["won", "lost"].includes(String(targetStage.code)) ? String(targetStage.code) : null;
+      if (terminalStageStatus && targetStatus !== terminalStageStatus) {
+        throw new UnprocessableEntityException(`The ${terminalStageStatus} stage requires a ${terminalStageStatus} outcome`);
+      }
+      if (targetStatus === "won" || targetStatus === "lost") {
+        const configuredTerminalStage = await client.query<{ id: string }>(
+          `SELECT id FROM crm_pipeline_stages WHERE workspace_id = $1 AND pipeline_id = $2 AND code = $3 AND status = 'active' LIMIT 1`,
+          [workspaceId, before.pipeline_id, targetStatus],
+        );
+        if (configuredTerminalStage.rowCount && String(targetStage.id) !== configuredTerminalStage.rows[0].id) {
+          throw new UnprocessableEntityException(`Choose the ${targetStatus} stage for this outcome`);
+        }
+      }
       const nextActionAt = input.nextActionAt ? this.date(input.nextActionAt, "nextActionAt") : before.next_action_at;
       if (targetStatus === "open" && !nextActionAt && !before.paused_reason) throw new UnprocessableEntityException("Schedule the next action when reopening an opportunity");
       if (targetStatus === "open" || targetStatus === "won") await this.assertEntryRequirements(client, workspaceId, { ...before, next_action_at: nextActionAt }, targetStage);
@@ -671,10 +686,16 @@ export class CrmOpportunitiesService {
                    opportunity.expected_close_at AS "expectedCloseAt",
                    opportunity.next_action_at AS "nextActionAt",
                    opportunity.created_at AS "createdAt", opportunity.updated_at AS "updatedAt",
-                   party.display_name AS "partyName", pipeline.name AS "pipelineName",
+                   party.display_name AS "partyName", enquiry.reference AS "enquiryReference",
+                   source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference",
+                   pipeline.name AS "pipelineName",
                    stage.name AS "stageName", account.display_name AS "ownerName"
             FROM crm_opportunities opportunity
             JOIN crm_parties party ON party.id = opportunity.party_id AND party.workspace_id = opportunity.workspace_id
+            LEFT JOIN crm_leads source_lead ON source_lead.id = opportunity.lead_id AND source_lead.workspace_id = opportunity.workspace_id
+            LEFT JOIN crm_enquiries enquiry ON enquiry.id = source_lead.enquiry_id AND enquiry.workspace_id = opportunity.workspace_id
+            LEFT JOIN pre_project_cases source_case ON source_case.workspace_id = opportunity.workspace_id AND source_case.opportunity_id = opportunity.id
+            LEFT JOIN commercial_cases commercial_case ON commercial_case.workspace_id = source_case.workspace_id AND commercial_case.case_id = source_case.id
             JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id AND pipeline.workspace_id = opportunity.workspace_id
             JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id AND stage.workspace_id = opportunity.workspace_id
             LEFT JOIN workspace_memberships membership ON membership.id = opportunity.owner_membership_id

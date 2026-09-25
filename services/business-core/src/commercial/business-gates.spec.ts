@@ -3,6 +3,7 @@ import type { CommercialData, Quote } from "./commercial.types";
 import {
   financeGatePaymentsReady,
   ownerReviewInputsReady,
+  palmDesignDepositReady,
   variationReleasePaymentsReady,
 } from "./release-integrity";
 
@@ -141,5 +142,26 @@ describe("four business gates", () => {
     expect(variationReleasePaymentsReady(data, variation)).toBe(false);
     data.receipts[0].status = "finance_verified";
     expect(variationReleasePaymentsReady(data, variation)).toBe(true);
+  });
+
+  it("requires AED 15,000 in Finance-verified design receipts before the first paid Deal", () => {
+    const data = fixture();
+    const design = data.quotes[0];
+    design.round = "design";
+    design.currency = "AED";
+    data.financeContext = {
+      legalEntityId: "entity", code: "PLM-AE", displayName: "Palm Living UAE",
+      registeredName: "Palm Living Interiors LLC", countryCode: "AE", baseCurrency: "AED",
+      currency: "AED", taxValidation: "unvalidated", boundAt: "2026-09-18T00:00:00.000Z",
+    };
+    const payment = data.payments[0];
+    Object.assign(payment, { sourceQuoteId: design.id, legalEntityId: "entity", currency: "AED", amount: 14_999, status: "verified", proof: "Bank receipt", reference: "RCT-1" });
+    data.receipts = [{ id: "receipt", paymentId: payment.id, legalEntityId: "entity", currency: "AED", amount: 14_999, source: "manual", status: "finance_verified", reference: "RCT-1", evidence: "Bank receipt", reportedAt: "2026-09-18T00:00:00.000Z", reportedBy: "Finance", verifiedAt: "2026-09-18T00:00:00.000Z", verifiedBy: "Finance" }];
+    data.allocations = [{ id: "allocation", receiptId: "receipt", paymentId: payment.id, legalEntityId: "entity", currency: "AED", amount: 14_999, createdAt: "2026-09-18T00:00:00.000Z", createdBy: "Finance" }];
+    expect(palmDesignDepositReady(data, design)).toBe(false);
+    payment.amount = 15_000;
+    data.receipts[0].amount = 15_000;
+    data.allocations[0].amount = 15_000;
+    expect(palmDesignDepositReady(data, design)).toBe(true);
   });
 });

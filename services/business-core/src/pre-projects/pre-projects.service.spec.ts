@@ -25,6 +25,21 @@ function setup(status = "open", existing = false) {
   return { service, query, events, withPermissions, record };
 }
 describe("pre-project case boundary", () => {
+  it("keeps paid Deal projects out of the Sales preparation list", async () => {
+    const query = vi.fn(async (sql: string) => sql.includes("count(*)")
+      ? { rows: [{ total: 1 }], rowCount: 1 }
+      : { rows: [{ id: "case-1", projectId: null }], rowCount: 1 });
+    const access = {
+      withPermission: vi.fn(async (_actor, _workspace, _permission, callback) => callback({ query }, { userId: "user-1" })),
+      hasPermission: vi.fn().mockResolvedValue(true),
+    };
+    const service = new PreProjectsService(access as never, { record: vi.fn() } as never, {} as never);
+    await expect(service.list(actor, "workspace-1", { pendingDeal: "true" })).resolves.toMatchObject({ total: 1, items: [{ projectId: null }] });
+    const [countSql, countArgs] = query.mock.calls.find(([sql]) => sql.includes("count(*)"))!;
+    expect(countSql).toContain('"projectId" IS NULL');
+    expect(countSql).toContain('project.id AS "projectId"');
+    expect(countArgs).toEqual(["workspace-1", "", "all", true]);
+  });
   it.each(["open", "won"])("starts from %s opportunity without changing its CRM status", async (status) => {
     const { service, query, events, withPermissions, record } = setup(status);
     await expect(service.start(actor, "workspace-1", "opportunity-1")).resolves.toEqual(record);

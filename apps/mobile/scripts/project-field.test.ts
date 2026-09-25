@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSnagCommand, createWarrantySnagCommand, draftReportTaskCommand, handoverItemStatusCommand, localDay, receiveCommand, reportTaskCommand, snagStatusCommand } from '../src/projects/field-work';
+import { createSnagCommand, createWarrantySnagCommand, draftReportTaskCommand, handoverItemStatusCommand, localDay, receiveCommand, receiptQuantityError, reportTaskCommand, snagStatusCommand } from '../src/projects/field-work';
 
 test('project field actions keep the optimistic revision and stable request identity', () => {
   const base = { revision: 7, requestId: 'request-id' };
@@ -63,4 +63,22 @@ test('handover and warranty actions preserve the exact packet and commitment ide
     handoverId: 'handover-id', title: 'Adjust hinge', taskId: 'task-id', ownerId: 'owner-id',
     severity: 'minor', dueDate: '2026-09-22', evidence: 'Client service note',
   });
+});
+
+test('daily field update preserves workforce, safety and next-shift data',()=>{
+ const details={recordId:'report',taskId:'task',date:'2026-09-20',quantity:0,summary:'Access closed',evidence:'Site diary',issues:'No permit',shift:'Night',hours:0,people:3,materials:'None used',weather:'Dry',safetyStatus:'observation' as const,safety:'Area cordoned',tomorrow:'Resume after permit',scheduleImpact:'blocked' as const,impactReason:'Permit',recoveryPlan:'Confirm access',nextUpdateOwnerId:'owner',nextUpdateDate:'2026-09-21'};
+ assert.deepEqual(draftReportTaskCommand({revision:5,requestId:'stable'},details),{revision:5,requestId:'stable',action:'draft_report_task',...details});
+});
+
+
+test('receiving requires actual quantities and supports partial and rejected deliveries', () => {
+  assert.ok(receiptQuantityError(null, 0, 10, 'nos'));
+  assert.ok(receiptQuantityError(0, 0, 10, 'nos'));
+  assert.ok(receiptQuantityError(NaN, 0, 10, 'nos'));
+  assert.ok(receiptQuantityError(1, Infinity, 10, 'nos'));
+  assert.ok(receiptQuantityError(-1, 2, 10, 'nos'));
+  assert.ok(receiptQuantityError(9, 2, 10, 'nos'));
+  assert.equal(receiptQuantityError(3, 1, 10, 'nos'), null);
+  assert.equal(receiptQuantityError(0, 10, 10, 'nos'), null);
+  assert.equal(receiptQuantityError(10, 0, 10, 'nos'), null);
 });

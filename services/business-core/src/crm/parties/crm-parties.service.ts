@@ -35,6 +35,7 @@ import {
   UpsertConsentDto,
 } from "./dto/parties.dto";
 import { queryClientTimeline } from "../shared/client-timeline";
+import { refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
 
 interface RelocationRecord { id: string; version: number }
 interface StakeholderRelocation { opportunityId: string; role: string }
@@ -248,6 +249,9 @@ export class CrmPartiesService {
         ],
       );
       if (!result.rowCount) throw new ConflictException("Party changed; reload and try again");
+      if (input.displayName && input.displayName.trim() !== before.displayName) {
+        await refreshEnquiryTitlesForParty(client, workspaceId, partyId, input.displayName);
+      }
       if (before.type === "person") {
         await client.query(
           `UPDATE crm_person_profiles SET

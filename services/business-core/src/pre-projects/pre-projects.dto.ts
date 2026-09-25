@@ -6,6 +6,7 @@ export class ListPreProjectsDto {
   @IsOptional() @IsString() @MaxLength(200) search?: string;
   @IsOptional() @IsIn(["all", "qualified", "draft", "active", "on_hold", "released", "cancelled", "archived"]) status?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10000) page?: number;
+  @IsOptional() @IsIn(["true"]) pendingDeal?: "true";
 }
 
 export class PreProjectReadinessQueryDto {

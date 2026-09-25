@@ -1,50 +1,24 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Tab, TabList, TabPanel, Tabs } from "react-aria-components";
-import {
-  designStateLabels,
-  designTabHints,
-  designTabs,
-  inDesignTab,
-  mergeDesigns,
-  type DesignTab,
-} from "@/lib/pre-project/design-workflow";
-import { DesignFileDetails } from "./design-file-details";
+import { ChevronRight, FolderPlus, Pencil, Upload } from "lucide-react";
+import { SelectField, Avatar, Badge, Button, MenuButton } from "@/design-system";
+import { mergeDesigns } from "@/lib/pre-project/design-workflow";
+import { caseRequest, type CaseContent, type CaseDesign, type DesignFolder, type DesignOptions } from "@/lib/pre-project/content";
+import { DesignReviewModal } from "./design-review-modal";
+import { CaseModal } from "./case-controls";
 import { FileCover } from "./design-file-preview";
-import {
-  ArrowLeft,
-  ChevronRight,
-  Folder,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Upload,
-} from "lucide-react";
-import { Button, Checkbox, SearchInput, SelectField } from "@/design-system";
-import {
-  caseRequest,
-  type CaseContent,
-  type CaseDesign,
-  type DesignFolder,
-  type DesignOptions,
-} from "@/lib/pre-project/content";
-import { DesignUpload, FolderEditor } from "./design-forms";
+import { DesignUpload, FolderEditor, DesignMetadata, RevisionUpload, type DesignUploadTarget } from "./design-forms";
 import styles from "./case-content.module.css";
 import view from "./designs.module.css";
 
-const emptyOptions: DesignOptions = {
-  folders: [],
-  reviewers: [],
-  actorId: "",
-  canReview: false,
-  canRecordClient: false,
-};
-export function DesignsPage({
-  initialData,
-  initialDesigns,
-  options = emptyOptions,
-}: {
+const emptyOptions: DesignOptions = { folders: [], reviewers: [], actorId: "", canReview: false, canRecordClient: false };
+
+/** A simple folder and file browser; formal approval stays in its own workflow. */
+export function DesignsPage({ initialData, initialDesigns, options = emptyOptions, ownerName, readOnlyReason, preserveNavigation = false }: {
+  preserveNavigation?: boolean;
+  ownerName?: string | null;
+  readOnlyReason?: string;
   initialData: CaseContent;
   initialDesigns: CaseDesign[];
   options?: DesignOptions;
@@ -54,548 +28,131 @@ export function DesignsPage({
   const [data, setData] = useState(initialData);
   const [designs, setDesigns] = useState(initialDesigns);
   const [reviewOptions, setReviewOptions] = useState(options);
-  const folders = reviewOptions.folders;
-  const folderId = params.get("folder");
   const fileId = params.get("file");
-  const tab = (
-    designTabs.some((t) => t.id === params.get("tab"))
-      ? params.get("tab")
-      : "designs"
-  ) as DesignTab;
-  const [search, setSearch] = useState("");
-  const [type, setType] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [archived, setArchived] = useState(false);
+  const [upload, setUpload] = useState<DesignUploadTarget | null>(null);
+  const [editingFile,setEditingFile] = useState<CaseDesign|null>(null);
+  const [revisionFile,setRevisionFile] = useState<CaseDesign|null>(null);
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [folderEditor, setFolderEditor] = useState<DesignFolder | null>(null);
-  const [upload, setUpload] = useState(false);
+  const folders = reviewOptions.folders;
+  const virtualFolders: DesignFolder[] = [];
+  for (const d of designs.filter(d => !d.archivedAt && !d.folderId)) {
+    const id = `linked:${d.scopeEntryId ?? d.roomId ?? 'general'}`;
+    if (!virtualFolders.some(f => f.id === id)) virtualFolders.push({ id, version: 0, name: d.scopeTitle ?? data.entries.find(e => e.id === d.scopeEntryId)?.title ?? d.roomName ?? data.rooms.find(r => r.id === d.roomId)?.name ?? 'Project designs', description: '', roomId: d.roomId, scopeEntryId: d.scopeEntryId });
+  }
+  const displayFolders = [...folders, ...virtualFolders];
+  const activeFolder = displayFolders.find((f) => f.id === folderId) ?? null;
+  const inFolder = (d: CaseDesign, id: string) => id.startsWith('linked:') ? !d.folderId && `linked:${d.scopeEntryId ?? d.roomId ?? 'general'}` === id : d.folderId === id;
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reviewerOpen,setReviewerOpen]=useState(false),[reviewerId,setReviewerId]=useState<string|null>(null),[reviewBusy,setReviewBusy]=useState(false);
+  const folderFiles=activeFolder?designs.filter(d=>!d.archivedAt&&inFolder(d,activeFolder.id)):[];
+  const folderReady=(folder:DesignFolder)=>{const files=designs.filter(d=>!d.archivedAt&&inFolder(d,folder.id));return Boolean(folder.approvedAt&&files.length&&JSON.stringify(files.map(d=>d.versions[0]?.id).sort())===JSON.stringify([...(folder.approvedVersions??[])].sort()));};
+  async function reviewFolder(action:'reviewer'|'approve'){
+    if(!activeFolder)return;setReviewBusy(true);setError('');
+    try{const saved=await caseRequest<DesignFolder>(data.workspaceId,data.caseId,`design-folders/${activeFolder.id}/${action}`,'POST',{version:activeFolder.version,...(action==='reviewer'?{reviewerId}:{versionIds:folderFiles.map(d=>d.versions[0]?.id)})});setReviewOptions(o=>({...o,folders:o.folders.map(f=>f.id===saved.id?saved:f)}));setReviewerOpen(false);if(action==='approve')setDesigns(ds=>ds.map(d=>d.folderId===saved.id?{...d,versions:d.versions.map((v,i)=>i===0?{...v,status:'internal_approved'}:v)}:d));}catch(e){setError(e instanceof Error?e.message:'Could not update review.');}finally{setReviewBusy(false);}
+  }
   const selected = designs.find((d) => d.id === fileId) ?? null;
-  const applyListing = useCallback(
-    (listing: DesignOptions & { items: CaseDesign[] }) => {
-      setDesigns((current) => mergeDesigns(current, listing.items));
-      setReviewOptions((current) => ({
-        ...listing,
-        folders: [
-          ...new Map(
-            [
-              ...current.folders,
-              ...listing.folders.map((f) => {
-                const previous = current.folders.find((old) => old.id === f.id);
-                return previous && previous.version > f.version ? previous : f;
-              }),
-            ].map((f) => [f.id, f]),
-          ).values(),
-        ],
-      }));
-    },
-    [],
-  );
+
+  const applyListing = useCallback((listing: DesignOptions & { items: CaseDesign[] }) => {
+    setDesigns((current) => mergeDesigns(current, listing.items));
+    setReviewOptions((current) => ({ ...listing, folders: listing.folders.length ? listing.folders : current.folders }));
+  }, []);
   useEffect(() => {
-    let active = true;
-    let pending = false;
+    let active = true, pending = false;
     const refresh = async () => {
       if (document.hidden || pending) return;
       pending = true;
       try {
-        const listing = await caseRequest<
-          DesignOptions & { items: CaseDesign[] }
-        >(initialData.workspaceId, initialData.caseId, "designs");
-        if (active) {
-          applyListing(listing);
-          setError("");
-        }
-      } catch {
-        if (active)
-          setError(
-            "Could not refresh designs. Your files are still shown below. Try Reload designs.",
-          );
-      } finally {
-        pending = false;
-      }
+        const listing = await caseRequest<DesignOptions & { items: CaseDesign[] }>(initialData.workspaceId, initialData.caseId, "designs");
+        if (active) { applyListing(listing); setError(""); }
+      } catch { if (active) setError("Could not refresh designs. Your files are still shown below. Try Reload designs."); }
+      finally { pending = false; }
     };
     const timer = window.setInterval(() => void refresh(), 15000);
     window.addEventListener("focus", refresh);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-    };
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [initialData.workspaceId, initialData.caseId, applyListing]);
-  const resetFilters = () => {
-    setSearch("");
-    setType("all");
-    setStatus("all");
-    setArchived(false);
-  };
-  const changeTab = (next: DesignTab) => {
+
+  const navigate = (file: string | null) => {
     const query = new URLSearchParams(params.toString());
-    query.set("tab", next);
-    query.delete("file");
+    if (file) query.set("file", file); else query.delete("file");
+    if (!preserveNavigation) query.delete("tab");
     query.delete("folder");
-    window.history.pushState(null, "", pathname + "?" + query);
-    resetFilters();
-    setMessage("");
+    window.history.pushState(null, "", pathname + (query.size ? "?" + query : ""));
   };
-  const navigate = (file: string | null, folder: string | null) => {
-    const query = new URLSearchParams(params.toString());
-    query.set("tab", tab);
-    if (file) query.set("file", file);
-    else query.delete("file");
-    if (folder) query.set("folder", folder);
-    else query.delete("folder");
-    window.history.pushState(null, "", pathname + "?" + query);
-  };
-  const openFolder = (id: string | null) => {
-    navigate(null, id);
-    setSearch("");
-    setType("all");
-    setStatus("all");
-    setMessage("");
-  };
-  const activeFolder = folders.find((f) => f.id === folderId) ?? null;
-  const update = (saved: CaseDesign) =>
-    setDesigns((items) => mergeDesigns(items, [saved]));
-  const reload = async (create = false) => {
-    setLoading(true);
-    setError("");
+  const update = (saved: CaseDesign) => setDesigns((items) => mergeDesigns(items, [saved]));
+  const reload = async () => {
+    setLoading(true); setError("");
     try {
       const [fresh, listing] = await Promise.all([
         caseRequest<CaseContent>(data.workspaceId, data.caseId, "brief"),
-        caseRequest<DesignOptions & { items: CaseDesign[] }>(
-          data.workspaceId,
-          data.caseId,
-          "designs",
-        ),
+        caseRequest<DesignOptions & { items: CaseDesign[] }>(data.workspaceId, data.caseId, "designs"),
       ]);
-      setData(fresh);
-      applyListing(listing);
-      if (create && fresh.canEdit)
-        setFolderEditor({
-          id: crypto.randomUUID(),
-          version: 0,
-          name: "",
-          description: "",
-          roomId: null,
-          scopeEntryId: null,
-        });
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Could not load designs. Please try Reload designs.",
-      );
-    } finally {
-      setLoading(false);
-    }
+      setData(fresh); applyListing(listing);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not load designs. Please try Reload designs."); }
+    finally { setLoading(false); }
   };
-  const source = designs.filter(
-    (d) =>
-      (archived && tab === "designs" ? Boolean(d.archivedAt) : !d.archivedAt) &&
-      inDesignTab(d, tab),
-  );
-  const query = search.trim().toLocaleLowerCase();
-  const atRoot = tab === "designs" && folderId === null;
-  const showingFolders = atRoot && !query && status === "all" && type === "all";
-  const inFolder = source.filter(
-    (d) =>
-      tab !== "designs" || atRoot || (d.folderId ?? "unfiled") === folderId,
-  );
-  const folderName = (d: CaseDesign) =>
-    folders.find((f) => f.id === d.folderId)?.name ?? "Unfiled";
-  const rows = inFolder.filter(
-    (d) =>
-      (type === "all" || d.documentType === type) &&
-      (status === "all" || (d.versions[0]?.status ?? "no_file") === status) &&
-      [
-        d.title,
-        d.versions[0]?.asset.name,
-        d.documentType,
-        d.description,
-        folderName(d),
-      ]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(query),
-  );
-  const folderItems = [
-    ...folders,
-    ...(source.some((d) => !d.folderId)
-      ? [
-          {
-            id: "unfiled",
-            name: "Unfiled",
-            description: "",
-            roomId: null,
-            scopeEntryId: null,
-            version: 0,
-          },
-        ]
-      : []),
-  ].filter(
-    (f) => !archived || source.some((d) => (d.folderId ?? "unfiled") === f.id),
-  );
-  const fileButton = (d: CaseDesign, queue = false) => {
-    const revision = d.versions[0];
-    return (
-      <button
-        className={queue ? view.queueRow : view.fileCard}
-        key={d.id}
-        onClick={() => navigate(d.id, tab === "designs" ? folderId : null)}
-        aria-label={"Open " + d.title}
-      >
-        <FileCover key={revision?.asset.id} design={d} data={data} />
-        <span className={view.fileInfo}>
-          <strong>{revision?.asset.name ?? d.title}</strong>
-          {(queue || atRoot) && <small>{folderName(d)}</small>}
-          <small>
-            {d.documentType} · {revision ? "R" + revision.number : "No file"}
-          </small>
-          {!queue && d.description && (
-            <small className={view.fileNote}>{d.description}</small>
-          )}
-        </span>
-        <span className={view.fileState}>
-          <span className={view.status} data-status={revision?.status}>
-            {designStateLabels[revision?.status ?? "no_file"] ??
-              revision?.status}
-          </span>
-          {queue && revision?.status === "internal_review" && (
-            <small>
-              {reviewOptions.reviewers.find((r) => r.id === revision.reviewerId)
-                ?.name ?? "Internal reviewer"}
-            </small>
-          )}
-        </span>
-        {queue && <ChevronRight size={16} />}
-      </button>
-    );
-  };
-  if (selected)
-    return (
-      <>
-        <DesignFileDetails
-          key={selected.id}
-          data={data}
-          design={selected}
-          options={reviewOptions}
-          folderName={folderName(selected)}
-          backLabel={
-            tab === "designs"
-              ? folderId
-                ? folderName(selected)
-                : "All folders"
-              : designTabs.find((t) => t.id === tab)!.label
-          }
-          onClose={() => navigate(null, folderId)}
-          onUpdate={update}
-          onReviewed={update}
-        />
-        {error && (
-          <p role="alert" className={styles.error}>
-            {error}
-            <Button
-              variant="quiet"
-              size="compact"
-              onPress={() => void reload()}
-            >
-              Reload designs
-            </Button>
-          </p>
-        )}
-      </>
-    );
-  return (
-    <Tabs
-      className="wd-tabs"
-      selectedKey={tab}
-      onSelectionChange={(key) => changeTab(String(key) as DesignTab)}
-    >
-      <TabList
-        aria-label="Design workflow"
-        className={"wd-tab-list " + view.tabs}
-      >
-        {designTabs.map((t) => (
-          <Tab key={t.id} id={t.id} className="wd-tab">
-            {t.label}
-            <span className={view.tabCount}>
-              {
-                designs.filter((d) => !d.archivedAt && inDesignTab(d, t.id))
-                  .length
-              }
-            </span>
-          </Tab>
-        ))}
-      </TabList>
-      <TabPanel id={tab}>
-        <div className={styles.content}>
-          {message && (
-            <p role="status" className={styles.notice}>
-              {message}
-            </p>
-          )}
-          {error && (
-            <p role="alert" className={styles.error}>
-              {error}
-            </p>
-          )}
-          {fileId && !selected && (
-            <p role="alert" className={styles.error}>
-              This file could not be found. Reload designs or choose a file
-              below.
-            </p>
-          )}
-          {tab === "designs" && folderId !== null ? (
-            <div className={view.location}>
-              <Button
-                variant="quiet"
-                size="compact"
-                onPress={() => openFolder(null)}
-              >
-                <ArrowLeft size={14} />
-                All folders
-              </Button>
-              <ChevronRight size={14} />
-              <strong>
-                {activeFolder?.name ??
-                  (folderId === "unfiled" ? "Unfiled" : "Folder not found")}
-              </strong>
-              {activeFolder && data.canEdit && (
-                <Button
-                  variant="quiet"
-                  size="compact"
-                  aria-label="Edit folder"
-                  onPress={() => setFolderEditor(activeFolder)}
-                >
-                  <Pencil size={14} />
-                </Button>
-              )}
-              <span>{inFolder.length} {inFolder.length === 1 ? "file" : "files"}</span>
-            </div>
-          ) : (
-            <p className={view.libraryHint}>{designTabHints[tab]}</p>
-          )}
-          <div className={view.libraryToolbar}>
-            <SearchInput
-              label="Search designs"
-              value={search}
-              onChange={setSearch}
-              placeholder={
-                atRoot ? "Find a folder, file or note…" : "Find a file or note…"
-              }
-            />
-            {!showingFolders && (
-              <div className={view.fileFilters}>
-                <SelectField
-                  label={
-                    <span className="wd-visually-hidden">Design type</span>
-                  }
-                  selectedKey={type}
-                  onSelectionChange={(key) => key && setType(String(key))}
-                  items={[
-                    { id: "all", label: "All types" },
-                    ...Array.from(
-                      new Set(inFolder.map((d) => d.documentType)),
-                    ).map((id) => ({ id, label: id })),
-                  ]}
-                />
-                {tab === "designs" && (
-                  <SelectField
-                    label={<span className="wd-visually-hidden">Status</span>}
-                    selectedKey={status}
-                    onSelectionChange={(key) => key && setStatus(String(key))}
-                    items={[
-                      { id: "all", label: "All statuses" },
-                      ...Object.entries(designStateLabels).map(
-                        ([id, label]) => ({
-                          id,
-                          label,
-                        }),
-                      ),
-                    ]}
-                  />
-                )}
-                <small>
-                  {rows.length} {rows.length === 1 ? "file" : "files"}
-                </small>
-              </div>
-            )}
-            <div className={view.toolbarActions}>
-              {tab === "designs" && (
-                <Checkbox isSelected={archived} onChange={setArchived}>
-                  Archived
-                </Checkbox>
-              )}
-              <Button
-                variant="quiet"
-                size="compact"
-                aria-label="Reload designs"
-                isLoading={loading}
-                onPress={() => void reload()}
-              >
-                <RotateCcw size={14} />
-              </Button>
-              {data.canEdit &&
-                tab === "designs" &&
-                (atRoot ? (
-                  <Button
-                    size="compact"
-                    variant="primary"
-                    isDisabled={loading}
-                    onPress={() => void reload(true)}
-                  >
-                    <Plus size={14} />
-                    New folder
-                  </Button>
-                ) : (
-                  activeFolder && (
-                    <Button
-                      size="compact"
-                      variant="primary"
-                      onPress={() => setUpload(true)}
-                    >
-                      <Upload size={14} />
-                      Add files
-                    </Button>
-                  )
-                ))}
-            </div>
-          </div>
-          {(showingFolders || (atRoot && query)) && (
-            <div className={view.folderGrid} aria-label="Design folders">
-              {folderItems
-                .filter(
-                  (f) =>
-                    showingFolders ||
-                    f.name.toLocaleLowerCase().includes(query),
-                )
-                .map((f) => {
-                  const files = source.filter(
-                    (d) => (d.folderId ?? "unfiled") === f.id,
-                  );
-                  const changes = files.filter(
-                    (d) => d.versions[0]?.status === "changes_requested",
-                  ).length;
-                  return (
-                    <button
-                      key={f.id}
-                      className={view.folder}
-                      onClick={() => openFolder(f.id)}
-                      aria-label={"Open folder " + f.name}
-                    >
-                      <span className={view.folderTop}>
-                        <Folder size={24} strokeWidth={1.5} />
-                        <span>
-                          {files.length} {files.length === 1 ? "file" : "files"}
-                        </span>
-                      </span>
-                      <strong>{f.name}</strong>
-                      {changes > 0 && (
-                        <small className={view.needsChanges}>
-                          {changes} need changes
-                        </small>
-                      )}
-                      <ChevronRight className={view.folderArrow} size={16} />
-                    </button>
-                  );
-                })}
-            </div>
-          )}
-          {!showingFolders && (
-            <div
-              className={tab === "designs" ? view.fileGrid : view.queue}
-              aria-label="Design files"
-            >
-              {rows.map((d) => fileButton(d, tab !== "designs"))}
-            </div>
-          )}
-          {(showingFolders
-            ? !folderItems.length
-            : !rows.length &&
-              !(
-                atRoot &&
-                query &&
-                folderItems.some((f) =>
-                  f.name.toLocaleLowerCase().includes(query),
-                )
-              )) && (
-            <div className={view.empty}>
-              <Folder size={28} />
-              <strong>
-                {query || status !== "all" || type !== "all"
-                  ? "No matching files"
-                  : archived
-                    ? "No archived files"
-                    : tab !== "designs"
-                      ? "Nothing here yet"
-                      : showingFolders
-                        ? "Start with a folder"
-                        : "No files yet"}
-              </strong>
-              <p>
-                {query || status !== "all" || type !== "all"
-                  ? "Try another search or clear your filters."
-                  : tab !== "designs"
-                    ? designTabHints[tab]
-                    : archived
-                      ? "Archived files can be restored here."
-                      : showingFolders
-                        ? "Create a folder for a room, an item, or both."
-                        : activeFolder
-                          ? "Add your file, select a design type, and include a note if needed."
-                          : "Return to All folders to choose where your files belong."}
-              </p>
-              {(query || status !== "all" || type !== "all") && (
-                <Button variant="quiet" size="compact" onPress={resetFilters}>
-                  Clear filters
-                </Button>
-              )}
-            </div>
-          )}
-          {folderEditor && (
-            <FolderEditor
-              key={folderEditor.id}
-              data={data}
-              initial={folderEditor}
-              folders={folders}
-              onClose={() => setFolderEditor(null)}
-              onSaved={(f) => {
-                setReviewOptions((o) => ({
-                  ...o,
-                  folders: [
-                    f,
-                    ...o.folders.filter((row) => row.id !== f.id),
-                  ].sort((a, b) => a.name.localeCompare(b.name)),
-                }));
-                setFolderEditor(null);
-                resetFilters();
-                setMessage(
-                  "Folder saved. Open it when you are ready to add files.",
-                );
-              }}
-            />
-          )}
-          {upload && activeFolder && (
-            <DesignUpload
-              data={data}
-              folder={activeFolder}
-              onClose={() => setUpload(false)}
-              onSaved={(saved) => {
-                setDesigns((current) => mergeDesigns(current, saved));
-                setUpload(false);
-                resetFilters();
-                setMessage(
-                  saved.length +
-                    " " +
-                    (saved.length === 1 ? "file" : "files") +
-                    " saved.",
-                );
-              }}
-            />
-          )}
-        </div>
-      </TabPanel>
-    </Tabs>
-  );
+
+  const roomName = useCallback((roomId: string | null) => data.rooms.find((room) => room.id === roomId)?.name ?? null, [data.rooms]);
+  return <div className={view.board} aria-label="Design board">
+    {selected && <DesignReviewModal data={{...data,canEdit:data.canEdit || Boolean(reviewOptions.canReview && reviewOptions.folders.find(f=>f.id===selected.folderId)?.reviewerId===reviewOptions.actorId)}} design={selected} options={reviewOptions} onClose={() => navigate(null)} onUpdate={update} />}
+    {message ? <p role="status" className={styles.notice}>{message}</p> : null}
+    {error ? <p role="alert" className={styles.error}>{error}<Button size="compact" isLoading={loading} onPress={()=>void reload()}>Reload designs</Button></p> : null}
+    {fileId && !selected ? <p role="alert" className={styles.error}>This file could not be found. Reload designs or choose a row below.</p> : null}
+    <div className={view.organize}>
+      <strong>Design files</strong>
+      <div className={view.displaySwitch}>
+        {!activeFolder && data.canEdit && <Button size="compact" onPress={()=>setFolderEditor({id:crypto.randomUUID(),version:0,name:'',description:'',roomId:null,scopeEntryId:null})}><FolderPlus size={14}/>Add folder</Button>}
+        {!activeFolder && data.canEdit && <Button size="compact" variant="primary" onPress={()=>setUpload({folderId:null,roomId:null,scopeEntryId:null,name:'Project designs'})}>Add files</Button>}
+      </div>
+    </div>
+    {!activeFolder && folderId !== "unfiled" ? <div aria-label="Design folders" className={view.folderGrid}>
+      {displayFolders.map((f) => {
+        const files = designs.filter((d) => !d.archivedAt && inFolder(d, f.id));
+        const approved = files.filter((d) => d.versions[0]?.status === "approved").length;
+        const attention = files.filter((d) => ["changes_requested", "rejected", "expired"].includes(d.versions[0]?.status ?? "")).length;
+        return <button aria-label={"Open folder " + f.name} className={view.folder} key={f.id} onClick={() => setFolderId(f.id)} type="button">
+          <span className={view.folderArtwork} aria-hidden="true"><span /></span>
+          <strong>{f.name}</strong>
+          <small>{f.roomName ?? roomName(f.roomId) ?? "Whole home"}{f.scopeTitle ? ` · ${f.scopeTitle}` : ""}</small>
+          <Badge tone={attention ? "warning" : files.length && approved === files.length ? "success" : "neutral"}>{folderReady(f) ? "Ready to send to client" : f.reviewerId ? "In review" : attention ? "Changes requested" : files.length && approved === files.length ? "Approved" : files.length ? "In progress" : "Empty"}</Badge>
+          <span className={view.folderOwner} title={ownerName ? `Case owner: ${ownerName}` : 'No case owner assigned'}>{ownerName ? <><Avatar name={ownerName} size="sm"/><span>{ownerName}</span></> : <span>Unassigned</span>}</span>
+
+        </button>;
+      })}
+      {!folders.length && !designs.some((d) => !d.archivedAt) ? <p className={view.muted}>No files yet. Add a folder or upload your first drawing.</p> : null}
+    </div> : null}
+    {(activeFolder || folderId === "unfiled") ? <div className={view.location}>
+      <Button onPress={() => setFolderId(null)} size="compact" variant="quiet"><ChevronRight aria-hidden="true" data-directional="true" size={14} style={{ transform: "rotate(180deg)" }} />All folders</Button>
+      <strong>{activeFolder?.name ?? "Unfiled"}</strong>
+      {!data.canEdit && <small id="design-add-reason" className={view.muted}>{readOnlyReason ?? "Your role does not have permission to add files."}</small>}
+      {activeFolder && !activeFolder.id.startsWith("linked:") && data.canEdit ? <Button aria-label="Edit folder" onPress={() => setFolderEditor(activeFolder)} size="compact" variant="quiet"><Pencil size={14} /></Button> : null}
+      {activeFolder ? <Button isDisabled={!data.canEdit} aria-describedby={!data.canEdit ? "design-add-reason" : undefined} onPress={() => setUpload({ folderId: activeFolder.id.startsWith("linked:") ? null : activeFolder.id, roomId: activeFolder.roomId, scopeEntryId: activeFolder.scopeEntryId, name: activeFolder.name })} size="compact" variant="primary"><Upload aria-hidden="true" size={14} />Add files</Button> : null}
+    </div> : null}
+    {activeFolder && !activeFolder.id.startsWith('linked:') && <div className={view.location}>
+     {data.canEdit&&<Button size="compact" isDisabled={reviewBusy} onPress={()=>{setReviewerId(activeFolder.reviewerId??null);setReviewerOpen(true);}}>{activeFolder.reviewerId?'Change reviewer':'Add reviewer'}</Button>}
+     {activeFolder.reviewerId&&<><Avatar size="sm" name={reviewOptions.reviewers.find(r=>r.id===activeFolder.reviewerId)?.name??'Reviewer'}/><span>{reviewOptions.reviewers.find(r=>r.id===activeFolder.reviewerId)?.name??'Reviewer'}</span><Badge tone={folderReady(activeFolder)?'success':'neutral'}>{folderReady(activeFolder)?'Ready to send to client':'In review'}</Badge></>}
+     {reviewOptions.canReview&&activeFolder.reviewerId===reviewOptions.actorId&&!folderReady(activeFolder)&&<Button variant="primary" size="compact" isDisabled={reviewBusy||!folderFiles.length} isLoading={reviewBusy} onPress={()=>void reviewFolder('approve')}>Approve folder</Button>}
+    </div>}
+    {reviewerOpen&&<CaseModal title="Folder reviewer" size="md" busy={reviewBusy} onClose={()=>setReviewerOpen(false)} footer={<Button variant="primary" isDisabled={!reviewerId||reviewBusy} onPress={()=>void reviewFolder('reviewer')}>Assign reviewer</Button>}><SelectField label="Reviewer" placeholder="Choose reviewer" selectedKey={reviewerId} onSelectionChange={k=>setReviewerId(k?String(k):null)} items={reviewOptions.reviewers.map(r=>({id:r.id,label:r.name}))}/></CaseModal>}
+    {activeFolder ? <div className={view.fileGrid} aria-label="Folder files">
+      {folderFiles.map(design => {
+        const asset = design.versions[0]?.asset;
+        const extension = asset?.name.split('.').pop()?.toUpperCase() ?? 'FILE';
+        return <div key={design.id}><button type="button" className={view.fileTile} onClick={() => navigate(design.id)} aria-label={`Open file ${asset?.name ?? design.title}`}>
+          <div className={view.fileThumbnail}><FileCover data={data} design={design}/></div>
+          <strong title={asset?.name ?? design.title}>{asset?.name ?? design.title}</strong>
+          <span className={view.fileType}>{extension} · R{design.versions[0]?.number ?? 1}</span>
+          {design.description && <p title={design.description}>{design.description}</p>}
+        </button>{data.canEdit && <MenuButton label="File actions" items={[{id:'edit',label:'Edit details'},{id:'revision',label:'Upload revision'}]} onAction={key=>key==='edit'?setEditingFile(design):setRevisionFile(design)}/>}</div>;
+      })}
+      {!folderFiles.length && <p className={view.muted}>No files in this folder yet.</p>}
+    </div> : null}
+    {editingFile&&<DesignMetadata data={data} design={editingFile} folders={folders} onClose={()=>setEditingFile(null)} onSaved={saved=>{update(saved);setEditingFile(null);}}/>}
+    {revisionFile&&<RevisionUpload data={data} design={revisionFile} onClose={()=>setRevisionFile(null)} onSaved={saved=>{update(saved);setRevisionFile(null);}}/>}
+    {folderEditor ? <FolderEditor onContentChange={setData} key={folderEditor.id} data={data} initial={folderEditor} folders={folders} onClose={() => setFolderEditor(null)} onSaved={(f) => { setReviewOptions((o) => ({ ...o, folders: [f, ...o.folders.filter((row) => row.id !== f.id)].sort((a, b) => a.name.localeCompare(b.name)) })); setFolderEditor(null); setFolderId(f.id); setMessage("Folder saved."); }} /> : null}
+    {upload ? <DesignUpload data={data} target={upload} onClose={() => setUpload(null)} onSaved={(saved) => { setDesigns((current) => mergeDesigns(current, saved)); setUpload(null); setMessage(`${saved.length} ${saved.length === 1 ? "design" : "designs"} added.`); }} /> : null}
+  </div>;
 }

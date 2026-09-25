@@ -340,6 +340,17 @@ class GoogleIntegrationService:
                             "status": event.get("status"),
                             "htmlLink": event.get("htmlLink"),
                             "etag": event.get("etag"),
+                            "description": event.get("description"),
+                            "location": event.get("location"),
+                            "attendees": [
+                                {
+                                    "email": attendee.get("email"),
+                                    "displayName": attendee.get("displayName"),
+                                    "responseStatus": attendee.get("responseStatus"),
+                                }
+                                for attendee in event.get("attendees", [])
+                                if attendee.get("email")
+                            ],
                         }
                     )
             await self._business_core.record_health(

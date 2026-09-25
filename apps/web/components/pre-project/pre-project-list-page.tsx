@@ -3,15 +3,28 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { Archive, ArrowUpRight, BriefcaseBusiness, CalendarDays, CircleCheck, Clock3, ContactRound, RefreshCw, UsersRound } from "lucide-react";
-import { Avatar, Button, Callout, DataGrid, DesignSystemProvider, IconButton, type DataGridColumn } from "@/design-system";
+import { ArrowUpRight, RefreshCw } from "lucide-react";
+import { Avatar, Badge, Button, Callout, DataGrid, DesignSystemProvider, IconButton, type DataGridColumn } from "@/design-system";
+import { money } from "@/lib/commercial/client";
+import { casePhaseLabel, casePhases, caseStatusLabel, caseStatusTone, riskTone } from "./case-spine";
 import { caseHref, requirementViews, PRE_PROJECT_ROOT, listSearch, type PreProjectList, type PreProjectListItem } from "@/lib/pre-project/types";
 import { StartQualifiedLead } from "./start-qualified-lead";
 import styles from "./pre-project.module.css";
 
-const statusLabel = (status: PreProjectListItem["status"]) => status === "active" ? "In progress" : status === "on_hold" ? "On hold" : status[0].toUpperCase() + status.slice(1);
+const statusLabel = caseStatusLabel;
+const journeyViews = [
+  { id: "all", label: "All cases" },
+  { id: "qualified", label: "Ready to start" },
+  ...casePhases.map((phase) => ({ id: phase, label: casePhaseLabel[phase] })),
+  { id: "on_hold", label: "On hold" },
+  { id: "released", label: "Released" },
+];
+function dateCell(value: string | null | undefined, fallback = "—") {
+  if (!value) return fallback;
+  return new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
-export function PreProjectListPage({ initialData, search }: { initialData: PreProjectList; search: string }) {
+export function PreProjectListPage({ initialData, search, basePath = PRE_PROJECT_ROOT, salesPreparation = false }: { initialData: PreProjectList; search: string; basePath?: string; salesPreparation?: boolean }) {
   const router = useRouter();
   const params = listSearch(new URLSearchParams(search));
   const page = Number(params.get("page") ?? 1);
@@ -26,6 +39,7 @@ export function PreProjectListPage({ initialData, search }: { initialData: PrePr
   }
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [qualifiedLead, setQualifiedLead] = useState<PreProjectListItem | null>(null);
+  const [view, setView] = useState("all");
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [startError, setStartError] = useState("");
   const [pending, startTransition] = useTransition();
@@ -34,14 +48,14 @@ export function PreProjectListPage({ initialData, search }: { initialData: PrePr
     if ("search" in values) next.delete("page");
     Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
     setRequestedSearch(next.get("search") ?? "");
-    startTransition(() => router.replace(`${PRE_PROJECT_ROOT}${next.size ? `?${next}` : ""}`));
-  }, [router, search]);
+    startTransition(() => router.replace(`${basePath}${next.size ? `?${next}` : ""}`));
+  }, [basePath, router, search]);
   useEffect(() => {
     if (term.trim() === appliedSearch) return;
     const timer = setTimeout(() => update({ search: term.trim() }), 300);
     return () => clearTimeout(timer);
   }, [term, appliedSearch, update]);
-  const destination = (id: string) => caseHref(id, params, ["overview", ...requirementViews.map(item => item.section), "definition", "designs", "quotations", "client-portal"].includes(params.get("section") ?? "") ? params.get("section")! : "overview");
+  const destination = (id: string) => caseHref(id, params, ["overview", ...requirementViews.map(item => item.section), "definition", "designs", "quotations", "client-portal"].includes(params.get("section") ?? "") ? params.get("section")! : "requirements");
   const canStart = (record: PreProjectListItem) => !pending && !openingId && Boolean(record.opportunityId ? initialData.canCreate : initialData.canStartLead);
   const startQualified = async (record: PreProjectListItem) => {
     if (!canStart(record)) return;
@@ -56,30 +70,37 @@ export function PreProjectListPage({ initialData, search }: { initialData: PrePr
     } catch (error) { setStartError(error instanceof Error ? error.message : "Pre-execution could not be started."); setOpeningId(null); }
   };
   const columns: DataGridColumn<PreProjectListItem>[] = [
-    { accessorKey: "customerName", header: "Client", size: 210, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({ row: { original: record } }) => <div className={styles.qualifiedIdentity}><Avatar name={record.customerName} size="sm"/><span title={record.customerName}>{record.customerName}</span></div> },
-    { accessorKey: "title", header: "Pre-execution", size: 290, meta: { headerIcon: <BriefcaseBusiness size={14}/> }, cell: ({ row: { original: record } }) => record.qualifiedLead ? <span className={styles.qualifiedName} title={record.title}>{record.title}</span> : <Link className={styles.qualifiedName} title={record.title} href={destination(record.id)}>{record.title}</Link> },
-    { id: "leadManagerName", header: "Lead manager", size: 205, accessorFn: record => record.leadManagerName ?? "Unassigned", meta: { headerIcon: <UsersRound size={14}/> }, cell: ({ row: { original: record } }) => record.leadManagerName ? <div className={styles.qualifiedIdentity}><Avatar name={record.leadManagerName} size="sm"/><span title={record.leadManagerName}>{record.leadManagerName}</span></div> : <span className={styles.qualifiedMuted}>Unassigned</span> },
-    { id: "status", header: "Status", size: 140, accessorFn: record => statusLabel(record.status), filterFn: "equalsString", meta: { headerIcon: <CircleCheck size={14}/>, filterOptions: ["qualified", "draft", "active", "on_hold", "released", "cancelled"].map(status => ({ id: statusLabel(status as PreProjectListItem["status"]), label: statusLabel(status as PreProjectListItem["status"]) })) }, cell: ({ row: { original: record } }) => {
-      const Icon = record.status === "active" ? Clock3 : ["released", "qualified"].includes(record.status) ? CircleCheck : Archive;
-      return <span className={styles.qualifiedStatus} data-status={record.status}><Icon size={13} aria-hidden="true"/>{statusLabel(record.status)}</span>;
-    } },
-    { accessorKey: "createdAt", header: "Created", size: 135, meta: { headerIcon: <CalendarDays size={14}/> }, cell: ({ row: { original: record } }) => <time dateTime={record.createdAt} title={record.qualifiedLead ? "Qualified" : "Opened"}>{new Date(record.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</time> },
-    { id: "action", header: "Action", size: 100, enableSorting: false, enableColumnFilter: false, enableHiding: false, cell: ({ row: { original: record } }) => record.qualifiedLead ? <Button size="compact" variant="primary" isDisabled={!canStart(record)} isLoading={openingId === record.id} onPress={() => void startQualified(record)} aria-label={`Start ${record.title}`}>Start</Button> : <Link className={styles.qualifiedOpen} aria-label={`Open ${record.title}`} href={destination(record.id)}>Open <ArrowUpRight size={14} aria-hidden="true"/></Link> },
+    { accessorKey: "customerName", header: "Client", size: 200, meta: { primary: true }, cell: ({ row: { original: record } }) => <div className={styles.qualifiedIdentity}><Avatar name={record.customerName} size="sm"/><span title={record.customerName}>{record.customerName}</span></div> },
+    { accessorKey: "title", header: "Case", size: 260, cell: ({ row: { original: record } }) => record.qualifiedLead ? <span className={styles.qualifiedName} title={record.title}>{record.title}</span> : <Link className={styles.qualifiedName} title={record.title} href={destination(record.id)}>{record.title}</Link> },
+    { id: "phase", header: "Phase", size: 150, accessorFn: record => record.qualifiedLead ? "Ready to start" : record.phase ? casePhaseLabel[record.phase] : "—", filterFn: "equalsString", meta: { filterOptions: casePhases.map(phase => ({ id: casePhaseLabel[phase], label: casePhaseLabel[phase] })) }, cell: ({ row: { original: record } }) => record.qualifiedLead ? <span className={styles.qualifiedMuted}>Ready to start</span> : record.phase ? <span className={styles.phaseCell}><i data-step={casePhases.indexOf(record.phase) + 1} aria-hidden="true" /><span>{casePhaseLabel[record.phase]}</span><small>{casePhases.indexOf(record.phase) + 1}/{casePhases.length}</small></span> : "—" },
+    { id: "status", header: "Status", size: 120, accessorFn: record => statusLabel(record.status), filterFn: "equalsString", meta: { filterOptions: ["qualified", "draft", "active", "on_hold", "released", "cancelled"].map(status => ({ id: statusLabel(status as PreProjectListItem["status"]), label: statusLabel(status as PreProjectListItem["status"]) })) }, cell: ({ row: { original: record } }) => <Badge tone={caseStatusTone(record.status)}>{statusLabel(record.status)}</Badge> },
+    { id: "leadManagerName", header: "Owner", size: 170, accessorFn: record => record.leadManagerName ?? "Unassigned", cell: ({ row: { original: record } }) => record.leadManagerName ? <div className={styles.qualifiedIdentity}><Avatar name={record.leadManagerName} size="sm"/><span title={record.leadManagerName}>{record.leadManagerName}</span></div> : <span className={styles.qualifiedMuted}>Unassigned</span> },
+    { id: "amount", header: "Value", size: 130, accessorFn: record => Number(record.amount ?? 0), meta: { align: "end" }, cell: ({ row: { original: record } }) => record.amount ? <span className={styles.money}>{money(Number(record.amount), record.currencyCode ?? "AED")}</span> : <span className={styles.qualifiedMuted}>—</span> },
+    { id: "targetDate", header: "Target", size: 120, accessorFn: record => record.targetDate ?? "", cell: ({ row: { original: record } }) => dateCell(record.targetDate, "No target") },
+    { id: "priority", header: "Priority", size: 100, accessorFn: record => record.priority ?? "normal", cell: ({ row: { original: record } }) => <span className={styles.capitalize} data-priority={record.priority}>{record.priority ?? "normal"}</span> },
+    { id: "risk", header: "Risk", size: 100, accessorFn: record => record.riskLevel ?? "none", cell: ({ row: { original: record } }) => <Badge tone={riskTone(record.riskLevel ?? "none")}>{record.riskLevel && record.riskLevel !== "none" ? record.riskLevel : "None"}</Badge> },
+    { accessorKey: "updatedAt", header: "Updated", size: 120, meta: { mobileHidden: true }, cell: ({ row: { original: record } }) => <time dateTime={record.updatedAt}>{dateCell(record.updatedAt)}</time> },
+    { accessorKey: "createdAt", header: "Created", size: 120, meta: { mobileHidden: true }, cell: ({ row: { original: record } }) => <time dateTime={record.createdAt} title={record.qualifiedLead ? "Qualified" : "Opened"}>{dateCell(record.createdAt)}</time> },
+    { id: "action", header: "Action", size: 110, enableSorting: false, enableColumnFilter: false, enableHiding: false, cell: ({ row: { original: record } }) => record.qualifiedLead ? <Button size="compact" variant="primary" isDisabled={!canStart(record)} isLoading={openingId === record.id} onPress={() => void startQualified(record)} aria-label={`Start ${record.title}`}>Start</Button> : <Link className={styles.qualifiedOpen} aria-label={`Open ${record.title}`} href={destination(record.id)}>Open <ArrowUpRight size={13} aria-hidden="true"/></Link> },
   ];
+  const visibleItems = initialData.items.filter((record) => view === "all"
+    || (view === "qualified" && record.qualifiedLead)
+    || (view === "on_hold" && record.status === "on_hold")
+    || (view === "released" && record.status === "released")
+    || (!record.qualifiedLead && record.phase === view && !["on_hold", "released", "cancelled"].includes(record.status)));
   return <DesignSystemProvider className={styles.qualifiedProvider} portalContainer={portal} ref={setPortal}>
-    <section className={`${styles.page} ${styles.preProjectPage} ${styles.qualifiedPage}`} aria-label="Qualified leads workspace" aria-busy={pending}>
-      <h1 className="wd-visually-hidden">Qualified leads</h1>
+    <section className={`${styles.page} ${styles.preProjectPage} ${styles.qualifiedPage}`} aria-label={salesPreparation ? "Sales preparation workspace" : "Pre-execution cases workspace"} aria-busy={pending}>
       {startError ? <p role="alert" className={styles.hint}>{startError}</p> : null}
       {params.has("section") ? <p className={styles.hint}>Select a pre-execution to open this section.</p> : null}
-      {initialData.error ? <Callout tone="danger" title="Qualified leads could not be loaded" actions={<Button size="compact" onPress={() => router.refresh()}>Try again</Button>}>{initialData.error}</Callout> : <DataGrid ariaLabel="Qualified leads" columns={columns} data={initialData.items} getRowId={record => record.id}
-        searchLabel="Search qualified leads" searchValue={term} onSearchChange={value => setTerm(value.slice(0, 200))}
-        exportFileName="qualified-leads.csv" manualPagination page={page} pageSize={24} pageCount={Math.ceil(initialData.total / 24)}
+      {initialData.error ? <Callout tone="danger" title="Preparation cases could not be loaded" actions={<Button size="compact" onPress={() => router.refresh()}>Try again</Button>}>{initialData.error}</Callout> : <DataGrid ariaLabel={salesPreparation ? "Sales preparation cases" : "Pre-execution cases"} columns={columns} data={visibleItems} getRowId={record => record.id} rowNumbers={false} selectable={false} savedViews={journeyViews} selectedView={view} onViewChange={setView} persistKey={salesPreparation ? "sales-preparation-cases" : "pre-project-cases"}
+        searchLabel="Search cases" searchValue={term} onSearchChange={value => setTerm(value.slice(0, 200))}
+        exportFileName="pre-execution-cases.csv" manualPagination page={page} pageSize={24} pageCount={Math.ceil(initialData.total / 24)}
         onPageChange={next => update({ page: next > 1 ? String(next) : "" })} totalRowCount={initialData.error ? undefined : initialData.total} hasMoreRows={initialData.total > initialData.items.length}
         error={initialData.error} isLoading={pending}
         onRowAction={record => record.qualifiedLead ? void startQualified(record) : router.push(destination(record.id))}
-        emptyTitle={appliedSearch || page > 1 ? "No matching qualified leads" : "No qualified leads yet"}
-        emptyDescription={appliedSearch || page > 1 ? "Try another search or clear the filters." : "Qualified leads appear here, ready to start a pre-execution."}
-        footerActions={<>{initialData.error ? <Button size="compact" onPress={() => router.refresh()}>Try again</Button> : appliedSearch || page > 1 ? <Button size="compact" variant="quiet" onPress={() => { setTerm(""); update({ search: "", page: "" }); }}>Clear search</Button> : !initialData.items.length ? <Link className={styles.qualifiedOpen} href="/workspace/crm/leads">Open Leads <ArrowUpRight size={14}/></Link> : null}<IconButton size="compact" aria-label="Refresh qualified leads" onPress={() => router.refresh()}><RefreshCw size={14}/></IconButton></>}
+        emptyTitle={appliedSearch || page > 1 || view !== "all" ? "No matching cases" : salesPreparation ? "No deals in preparation" : "No pre-execution cases yet"}
+        emptyDescription={appliedSearch || page > 1 || view !== "all" ? "Try another view or clear the search." : salesPreparation ? "Qualify an enquiry, then prepare its quotation and first approval here. The project opens after the paid Deal File is approved." : "Qualify an enquiry in CRM and it appears here, ready to start."}
+        footerActions={<>{initialData.error ? <Button size="compact" onPress={() => router.refresh()}>Try again</Button> : appliedSearch || page > 1 ? <Button size="compact" variant="quiet" onPress={() => { setTerm(""); update({ search: "", page: "" }); }}>Clear search</Button> : !initialData.items.length ? <Link className={styles.qualifiedOpen} href="/workspace/crm/leads">Open Leads <ArrowUpRight size={14}/></Link> : null}<IconButton size="compact" aria-label="Refresh cases" onPress={() => router.refresh()}><RefreshCw size={14}/></IconButton></>}
       />}
     </section>
     {qualifiedLead ? <StartQualifiedLead workspaceId={initialData.workspaceId} lead={qualifiedLead} onClose={() => setQualifiedLead(null)} onStarted={(id) => router.push(destination(id))} /> : null}

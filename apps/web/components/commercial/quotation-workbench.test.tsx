@@ -106,6 +106,7 @@ describe("quotation spreadsheet workspace", () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes("/catalog-price") ? { status: "resolved", code: "resolved", message: "Price resolved", snapshot } : { items: [], templates: [] }), { headers: { "content-type": "application/json" } })));
     render(<Harness catalogPriced />);
     expect(screen.queryByRole("textbox", { name: "Rate for Wardrobe" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Review price for Wardrobe" }));
     await userEvent.click(screen.getByRole("button", { name: "Check price" }));
     await waitFor(() => expect(onChange.mock.lastCall?.[0].lines[0]).toMatchObject({ rate: 275, catalogPriceRequest: { action: "resolve" }, catalogPrice: snapshot }));
   });

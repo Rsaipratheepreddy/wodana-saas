@@ -9,23 +9,47 @@ afterEach(() => {
 });
 
 describe("IntegrationsPage", () => {
-  it("separates available and planned integrations while keeping search useful", async () => {
+  it("starts supported Sales source setup in place and does not offer a fake Meta connect", async () => {
+    const data = structuredClone(integrationsPageFixture);
+    data.connections = [];
+    render(<IntegrationsPage initialData={data} embedded onlyIds={["whatsapp", "meta_lead_ads"]} />);
+    expect(screen.getByRole("article", { name: "WhatsApp Business integration" })).toBeVisible();
+    const meta = screen.getByRole("article", { name: "Meta Lead Ads integration" });
+    expect(within(meta).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Google Workspace integration" })).not.toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole("article", { name: "WhatsApp Business integration" })).getByRole("button", { name: "Connect" }));
+    expect(await screen.findByRole("dialog", { name: "Connect WhatsApp Business" })).toBeInTheDocument();
+    expect(document.cookie).not.toContain("wodana_onboarding_connect");
+  });
+  it("finds accounting tools by business purpose", async () => {
+    render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
+    await userEvent.click(screen.getByRole("button", { name: "Invoices & payments" }));
+    expect(screen.getByRole("article", { name: "QuickBooks integration" })).toBeVisible();
+    expect(screen.queryByRole("article", { name: "Google Workspace integration" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "All apps" }));
+    expect(screen.getByRole("article", { name: "Google Workspace integration" })).toBeVisible();
+  });
+  it("shows unavailable status without presenting a zero count as fact", () => {
+    render(<IntegrationsPage initialData={{ ...structuredClone(integrationsPageFixture), canManage: false, connections: [], loadError: "Connection status is unavailable." }} />);
+    expect(screen.getByRole("button", { name: "Reload connections" })).toBeVisible();
+    expect(screen.getAllByText("Status unavailable").length).toBeGreaterThan(0);
+    for (const button of screen.getAllByRole("button", { name: "Connect" })) expect(button).toBeDisabled();
+  });
+  it("shows only available integrations while keeping search useful", async () => {
     const interaction = userEvent.setup();
     render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
 
-    expect(screen.getAllByRole("article")).toHaveLength(12);
+    expect(screen.getAllByRole("article")).toHaveLength(5);
     const googleCard = screen.getByRole("article", { name: "Google Workspace integration" });
     expect(googleCard).toBeInTheDocument();
     expect(within(googleCard).getByRole("link", { name: /workspace.google.com/ })).toHaveAttribute("href", "https://workspace.google.com/");
     expect(within(screen.getByRole("article", { name: "Zoho Books integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
     expect(within(screen.getByRole("article", { name: "WhatsApp Business integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
-    expect(within(googleCard).getByText("Setup: Configured · Evidence: Provider operation confirmed")).toBeVisible();
+    expect(within(googleCard).getByText("Provider operation confirmed")).toBeVisible();
     expect(screen.getByRole("region", { name: "Built into Wodana" })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Wodana AI review integration" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Planned" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "External lead capture" })).toBeInTheDocument();
-    expect(within(screen.getByRole("article", { name: "Meta Lead Ads integration" })).getByText("Details required")).toBeInTheDocument();
-    expect(within(screen.getByRole("article", { name: "PlyLeads integration" })).getByText("Details required")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Planned" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "External lead capture" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Custom integration" })).not.toBeInTheDocument();
 
     await interaction.type(screen.getByRole("searchbox", { name: "Search integrations" }), "accounting");

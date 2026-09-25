@@ -6,6 +6,7 @@ import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/au
 import type { WorkspaceMember, WorkspaceRole } from "./members";
 import {
   rolesPermissionsFixture,
+  roleMutationCapabilities,
   type RolesPermissionsPageData,
   type WorkspacePermissionDefinition,
 } from "./roles-permissions";
@@ -15,9 +16,12 @@ export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPag
   const membership = authProfile.memberships[0];
   if (!membership) redirect("/login");
 
-  const canManage = membership.roles.some((role) =>
-    ["owner", "administrator"].includes(role.toLowerCase()),
-  );
+  const capabilities = roleMutationCapabilities(membership.allowedPermissions, membership.roles);
+  const canDelegateAll = membership.allowedPermissions?.includes("workspace.roles.manage")
+    ?? membership.roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+  const canReadMembers = membership.allowedPermissions
+    ? membership.allowedPermissions.some((permission) => ["module.members.read", "workspace.members.manage"].includes(permission))
+    : membership.roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
   if (process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") {
     return rolesPermissionsFixture;
   }
@@ -31,24 +35,25 @@ export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPag
   const [rolesResponse, permissionsResponse, membersResponse] = await Promise.all([
     request(`/workspaces/${membership.workspaceId}/roles`),
     request("/reference/permissions"),
-    request(`/workspaces/${membership.workspaceId}/members`),
+    canReadMembers ? request(`/workspaces/${membership.workspaceId}/members`) : Promise.resolve(null),
   ]);
 
   if ([rolesResponse, permissionsResponse, membersResponse].some((response) => response?.status === 401)) {
     redirect("/login");
   }
-  if (!rolesResponse || !permissionsResponse || !membersResponse) {
+  if (!rolesResponse || !permissionsResponse || (canReadMembers && !membersResponse)) {
     throw new Error("The roles and permissions service is unavailable.");
   }
-  if (!rolesResponse.ok || !permissionsResponse.ok || !membersResponse.ok) {
+  if (!rolesResponse.ok || !permissionsResponse.ok || (membersResponse && !membersResponse.ok)) {
     throw new Error("Roles and permissions could not be loaded.");
   }
 
   const permissions = await permissionsResponse.json() as WorkspacePermissionDefinition[];
-  const members = await membersResponse.json() as WorkspaceMember[];
+  const members = membersResponse ? await membersResponse.json() as WorkspaceMember[] : null;
   return {
-    canManage,
-    memberCount: members.length,
+    ...capabilities,
+    delegablePermissions: canDelegateAll ? null : membership.allowedPermissions ?? [],
+    memberCount: members?.length ?? null,
     permissions,
     roles: await rolesResponse.json() as WorkspaceRole[],
     workspaceId: membership.workspaceId,

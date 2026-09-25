@@ -27,6 +27,7 @@ export type IntegrationConnection = {
 };
 
 export type IntegrationsPageData = {
+  loadError?: string;
   canManage: boolean;
   connections: IntegrationConnection[];
   legalEntities: LegalEntityRecord[];

@@ -1,5 +1,5 @@
 export type DefinitionIssue = { code: string; detail: string; scopeItemId?: string };
-export type DefinitionItem = { id: string; title: string; roomName: string | null; scopeStatus: string; quantity: number | null; unit: string; specification: null | { refinedRequirement: string } };
+export type DefinitionItem = { requirement?: string; id: string; title: string; roomName: string | null; scopeStatus: string; quantity: number | null; unit: string; specification: null | { refinedRequirement: string } };
 export type DefinitionBaseline = {
   id: string;
   number: number;

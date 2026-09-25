@@ -170,7 +170,7 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid var(--wd-color-structural-divider);
+  border:0;
   border-radius: .65rem;
   background: var(--wd-color-surface);
   color: var(--wd-color-text-secondary);
@@ -212,7 +212,7 @@
   display: flex;
   align-items: center;
   gap: .5rem;
-  border-block-start: 1px solid var(--wd-color-structural-divider);
+  border:0;
   padding: .65rem 1.2rem;
 }
 
@@ -227,7 +227,7 @@
   display: flex;
   align-items: center;
   gap: .65rem;
-  border: 1px solid var(--wd-color-structural-divider);
+  border:0;
   border-radius: var(--wd-radius-md);
   padding: .8rem;
 }
@@ -266,7 +266,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-block-end: 1px solid var(--wd-color-structural-divider);
+  border:0;
   padding-block-end: .65rem;
 }
 
@@ -302,3 +302,58 @@
 
   .accountIdentity .accountMobileStatus { display: block; }
 }
+
+.page .integrationCard,.page .plannedCard { background:var(--wd-color-surface-muted); border:0; border-radius:12px;  }
+.page .integrationCard { min-block-size:11.5rem; }
+.cardBody { padding:1rem 1.1rem .8rem; }
+.page .cardFooter { background:var(--wd-color-surface-muted); border:0; padding:.7rem 1.1rem; }
+.page .providerIcon { border:0; background:var(--wd-color-surface-muted); border-radius:10px; }
+.catalogGrid { gap:14px; }
+
+.purposes{display:flex;flex-wrap:wrap;gap:6px;margin-block:1rem}
+.purposes button{border:0;border-radius:6px;padding:.6rem .8rem;background:var(--wd-color-surface-muted);color:var(--wd-color-text-secondary);font:inherit;font-size:.8125rem;cursor:pointer}
+.purposes button[aria-pressed=true]{background:var(--wd-color-action-primary-subtle);color:var(--wd-color-text);font-weight:600}
+.purposes button:focus-visible{outline:2px solid var(--wd-color-action-primary);outline-offset:3px}
+
+.accounts :is(th,td){border:0!important}.accounts tbody tr:nth-child(even){background:var(--wd-color-surface-muted)}
+
+.setupIdentity { display:flex; align-items:center; gap:12px; margin-block-end:8px; padding:12px; background:var(--wd-color-surface-muted); border-radius:10px; }
+.setupIdentity strong,.setupIdentity small { display:block; }
+.setupIdentity strong { font-size:14px; font-weight:600; }
+.setupIdentity small { margin-block-start:4px; font-size:12px; color:var(--wd-color-text-secondary); }
+.form :global(.wd-input-affix),.form :global(.wd-select-prefix) { color:var(--wd-color-action-primary); }
+.form>p { font-size:12px; line-height:1.6; color:var(--wd-color-text-secondary); margin:0; }
+.form :global(.wd-input-affix) { border:0; background:transparent; }
+
+.embedded { padding:0; inline-size:100%; }
+.embedded .catalogSection { margin:0; }
+.embedded .catalogSection + .catalogSection { margin-block-start:16px; }
+.embedded .sectionHeading { display:none; }
+.embedded .catalogGrid { grid-template-columns:1fr; gap:10px; }
+.embedded .plannedGrid { grid-template-columns:1fr; gap:10px; }
+.embedded .plannedCard { min-block-size:76px; gap:14px; padding:16px 18px; border:0; border-radius:10px; background:var(--wd-color-surface-muted); }
+.embedded .plannedIdentity strong { font-size:14px; font-weight:650; }
+.embedded .plannedIdentity small { overflow:visible; white-space:normal; line-height:1.45; font-size:12px; color:var(--wd-color-text-secondary); }
+.embedded .integrationCard { min-block-size:0; }
+.embedded .cardBody { padding:12px 14px 4px; }
+.embedded .cardBody>p { margin:8px 0 0; font-size:12px; }
+.embedded .cardIdentity a { display:none; }
+.embedded .cardFooter { min-block-size:0; padding:8px 14px 12px; }
+.embedded .cardBody strong { font-size:14px; }
+.embedded.provider { background:transparent; }
+.embedded .integrationCard { grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto; align-items:center; background:var(--wd-color-surface); }
+.embedded .cardBody { padding:14px; }
+.embedded .cardHeader { gap:8px; flex-wrap:wrap; }
+.embedded .cardHeader :global(.wd-badge) { margin-inline-start:44px; }
+.embedded .cardBody>p,.embedded .connectionName,.embedded .capabilityTruth { display:none; }
+.embedded .cardFooter { flex-direction:column; padding:12px; background:transparent; }
+.embedded .integrationCard { min-block-size:76px; border:0; background:var(--wd-color-surface-muted); border-radius:10px; }
+.embedded .cardHeader { display:grid; grid-template-columns:28px minmax(0,1fr); column-gap:10px; row-gap:3px; }
+.embedded .providerIcon { grid-row:1 / 3; inline-size:28px; block-size:28px; background:transparent; }
+.embedded .providerIcon svg { inline-size:24px; block-size:24px; }
+.embedded .cardHeader :global(.wd-badge) { grid-column:2; margin:0; inline-size:fit-content; font-size:10px; padding:0; background:transparent; }
+.embedded .cardBody { padding:12px; }
+.embedded .cardFooter { padding:10px; }
+.embedded .cardFooter :global(.wd-button) { min-block-size:30px; font-size:12px; }
+.embedded .cardFooter :global(.wd-button):nth-child(n+2) { display:none; }
+@container (max-width:38rem) { .embedded .plannedCard { flex-wrap:wrap; } .embedded .plannedCard :global(.wd-badge) { margin-inline-start:46px; } }

@@ -1,3 +1,4 @@
+import { reviewSupplierImport } from "./vendor-import";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
@@ -5,6 +6,7 @@ import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
   CreateVendorDto,
+  ImportVendorsDto,
   CreateVendorSiteDto,
   ListVendorsQueryDto,
   UpdateVendorDto,
@@ -177,6 +179,11 @@ export class VendorDirectoryService {
   create(actor: RequestActor, workspaceId: string, input: CreateVendorDto) {
     return this.access.withPermission(actor, workspaceId, "vendors.manage", async (client, user) => {
       await this.lock(client, workspaceId);
+      return this.createRecord(client, workspaceId, user.userId, input);
+    });
+  }
+
+  private async createRecord(client: PoolClient, workspaceId: string, userId: string, input: CreateVendorDto) {
       const normalized = vendorInput(input);
       const existing = (await client.query<VendorRow>(`${vendorSelect} AND id=$2`, [workspaceId, input.id])).rows[0];
       if (existing) {
@@ -200,15 +207,35 @@ export class VendorDirectoryService {
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
           [workspaceId, input.id, code, normalized.displayName, normalized.legalName, normalized.capabilities ?? [],
             normalized.registrationNumber, normalized.taxRegistrationNumber, normalized.defaultCurrency,
-            normalized.website, normalized.notes ?? "", user.userId],
+            normalized.website, normalized.notes ?? "", userId],
         );
       } catch (error) {
         if ((error as { code?: string }).code === "23505") throwVendorUniqueConflict(error);
         throw error;
       }
       const after = await this.aggregate(client, workspaceId, input.id);
-      await this.record(client, workspaceId, user.userId, "vendor.created.v1", input.id, null, after);
+      await this.record(client, workspaceId, userId, "vendor.created.v1", input.id, null, after);
       return after;
+  }
+
+  import(actor: RequestActor, workspaceId: string, input: ImportVendorsDto) {
+    return this.access.withPermission(actor, workspaceId, "vendors.manage", async (client, user) => {
+      await this.lock(client, workspaceId);
+      const existing = (await client.query(`${vendorSelect}`, [workspaceId])).rows;
+      const contacts = (await client.query(`SELECT vendor_id AS "vendorId",email FROM workspace_vendor_sites WHERE workspace_id=$1 AND email IS NOT NULL`, [workspaceId])).rows;
+      const review = reviewSupplierImport(input.rows, existing, contacts);
+      if (input.mode === "preview") return review;
+      if (review.rows.some(row=>row.status==="error")) throw new BadRequestException(review.rows.filter(row=>row.status==="error").map(row=>`Row ${row.sourceRow}: ${row.detail}`).slice(0,8).join("; "));
+      for (let i=0;i<input.rows.length;i++) {
+        if (review.rows[i].status!=="new") continue;
+        const row=input.rows[i];
+        await this.createRecord(client,workspaceId,user.userId,row);
+        if(row.contactName || row.email || row.phone) await this.createSiteRecord(client,workspaceId,user.userId,row.id,{
+          id:row.siteId,version:0,name:"Main contact",siteType:"office",isPrimary:true,
+          contactName:row.contactName,email:row.email,phone:row.phone,
+        });
+      }
+      return {...review,created:review.newCount};
     });
   }
 
@@ -285,6 +312,11 @@ export class VendorDirectoryService {
   createSite(actor: RequestActor, workspaceId: string, vendorId: string, input: CreateVendorSiteDto) {
     return this.access.withPermission(actor, workspaceId, "vendors.manage", async (client, user) => {
       await this.lock(client, workspaceId);
+      return this.createSiteRecord(client, workspaceId, user.userId, vendorId, input);
+    });
+  }
+
+  private async createSiteRecord(client: PoolClient, workspaceId: string, userId: string, vendorId: string, input: CreateVendorSiteDto) {
       const vendor = await this.vendor(client, workspaceId, vendorId, true);
       if (vendor.status === "archived") throw new ConflictException("Restore this vendor before adding a location.");
       const normalized = { ...siteInput(input), isPrimary: input.isPrimary === true };
@@ -300,19 +332,18 @@ export class VendorDirectoryService {
         return this.aggregate(client, workspaceId, vendorId);
       }
       const before = await this.aggregate(client, workspaceId, vendorId);
-      if (normalized.isPrimary) await this.clearPrimary(client, workspaceId, vendorId, input.id, user.userId);
+      if (normalized.isPrimary) await this.clearPrimary(client, workspaceId, vendorId, input.id, userId);
       await client.query(
         `INSERT INTO workspace_vendor_sites(workspace_id,vendor_id,id,name,site_type,contact_name,email,phone,
           address_line1,address_line2,locality,region,postal_code,country_code,is_primary,created_by,updated_by)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)`,
         [workspaceId, vendorId, input.id, normalized.name, normalized.siteType, normalized.contactName,
           normalized.email, normalized.phone, normalized.addressLine1, normalized.addressLine2, normalized.locality,
-          normalized.region, normalized.postalCode, normalized.countryCode, normalized.isPrimary ?? false, user.userId],
+          normalized.region, normalized.postalCode, normalized.countryCode, normalized.isPrimary ?? false, userId],
       );
       const after = await this.aggregate(client, workspaceId, vendorId);
-      await this.record(client, workspaceId, user.userId, "vendor.site_created.v1", input.id, before, after);
+      await this.record(client, workspaceId, userId, "vendor.site_created.v1", input.id, before, after);
       return after;
-    });
   }
 
   updateSite(actor: RequestActor, workspaceId: string, vendorId: string, siteId: string, input: UpdateVendorSiteDto) {

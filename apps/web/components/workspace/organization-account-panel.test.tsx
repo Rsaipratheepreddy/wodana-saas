@@ -53,6 +53,17 @@ afterEach(() => {
 });
 
 describe("OrganizationAccountPanel", () => {
+  it("keeps a failed cancellation visible and preserves the pending request", async () => {
+    const interaction = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ message: "Request changed. Refresh and try again." }) }));
+    renderPanel({ initialRequests: [request()] });
+    await interaction.click(screen.getByRole("button", { name: "Cancel Palm Living Projects request" }));
+    const dialog = await screen.findByRole("dialog", { name: "Cancel organization request?" });
+    await interaction.click(within(dialog).getByRole("button", { name: "Cancel request" }));
+    expect(await screen.findByText("Request changed. Refresh and try again.")).toBeVisible();
+    expect(screen.getByText("pending")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel Palm Living Projects request" })).toBeEnabled();
+  });
   it("explains that workspaces are independent companies", () => {
     renderPanel();
 

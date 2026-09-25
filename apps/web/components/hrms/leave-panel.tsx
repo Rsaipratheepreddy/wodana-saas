@@ -110,7 +110,10 @@ export function LeavePanel({
         />
       </div>
       {requests.error || balances.error || types.error ? (
-        <Notice error>{requests.error || balances.error || types.error}</Notice>
+        <div className={styles.actions}>
+          <Notice error>{requests.error || balances.error || types.error}</Notice>
+          <Button variant="secondary" onClick={onSaved}>Retry</Button>
+        </div>
       ) : null}
       {balanceCards.length ? (
         <div className={styles.balanceGrid}>
@@ -165,12 +168,12 @@ export function LeavePanel({
             </div>
           ))}
         </div>
-      ) : (
+      ) : !balances.loading && !balances.error ? (
         <p className={styles.muted}>
           Your leave allowances appear once your attendance profile and leave
           types are configured.
         </p>
-      )}
+      ) : null}
       <div className={styles.leaveOverview}>
         <section className={styles.cleanCard}>
           <h3>Recent leave</h3>
@@ -194,9 +197,9 @@ export function LeavePanel({
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : !requests.loading && !requests.error ? (
             <p>No leave requests yet.</p>
-          )}
+          ) : null}
         </section>
         <section className={styles.cleanCard}>
           <h3>Coming up</h3>
@@ -256,7 +259,7 @@ export function LeavePanel({
       </div>
       <div className={styles.sectionHeading}>
         <h2>{team ? "Team leave history" : "Leave history"}</h2>
-        <span>{requests.data?.length ?? 0} requests</span>
+        {requests.data ? <span>{requests.data.length} requests</span> : null}
       </div>
       {requests.loading ? <Notice>Loading leave requests…</Notice> : null}
       {requests.data?.length ? (
@@ -333,7 +336,7 @@ export function LeavePanel({
             },
           ]}
         />
-      ) : !requests.loading ? (
+      ) : !requests.loading && !requests.error ? (
         <Empty title="No leave requests">
           Requests for {year} will appear here.
         </Empty>
@@ -460,6 +463,7 @@ function LeaveForm({
             onChange={(e) => {
               setStart(e.target.value);
               if (e.target.value > end) setEnd(e.target.value);
+              setPart("full");
             }}
           />
           <TextField

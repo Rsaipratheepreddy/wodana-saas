@@ -62,6 +62,24 @@ describe("project schedule capacity", () => {
     expect(availability.availableCapacityMinutes).toBe(480);
   });
 
+  it("dates split overnight availability on the actual calendar day", () => {
+    const calendar = validateCalendar({ weekdays: [1], startTime: "20:00", endTime: "06:00", holidays: [] });
+    const [availability] = resourceAvailability(
+      [{ id: "night", capacity: 2, calendar }],
+      [{ bookingId: "after-midnight", resourceId: "night", status: "confirmed", units: 1,
+        date: "2026-09-08", startTime: "00:00", endTime: "02:00" }],
+      "2026-09-07", "2026-09-07",
+    );
+    expect(availability.segments).toEqual([
+      expect.objectContaining({ date: "2026-09-07", endDate: "2026-09-08", startTime: "20:00", endTime: "00:00", durationMinutes: 240, confirmed: 0 }),
+      expect.objectContaining({ date: "2026-09-08", startTime: "00:00", endTime: "02:00", durationMinutes: 120, confirmed: 1 }),
+      expect.objectContaining({ date: "2026-09-08", startTime: "02:00", endTime: "06:00", durationMinutes: 240, confirmed: 0 }),
+    ]);
+    expect(availability.segments[1]).not.toHaveProperty("endDate");
+    expect(availability.segments[2]).not.toHaveProperty("endDate");
+    expect(availability.availableCapacityMinutes).toBe(1080);
+  });
+
   it("validates every lifecycle state", () => {
     expect(scheduleStatus("draft")).toBe("draft");
     expect(scheduleStatus("completed")).toBe("completed");

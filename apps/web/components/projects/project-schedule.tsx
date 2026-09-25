@@ -72,9 +72,8 @@ export function ProjectSchedule({
       <section className={s.milestoneSection} aria-labelledby="milestone-heading">
         <div className={s.timelineHeading}>
           <div>
-            <span className={s.timelineEyebrow}>DELIVERY CHECKPOINTS</span>
-            <h2 id="milestone-heading">Milestone timeline</h2>
-            <p>Dates, accountable owners, and linked work in one view.</p>
+            <h2 id="milestone-heading">Milestones</h2>
+            <p>Client, procurement and handover dates with their owners and linked work.</p>
           </div>
           {state.canManage && (
             <button className={s.button} onClick={() => onMilestone()}>
@@ -166,8 +165,7 @@ export function ProjectSchedule({
         <section className={s.taskTimelineSection} aria-labelledby="task-timeline-heading">
           <div className={s.timelineHeading}>
             <div>
-              <span className={s.timelineEyebrow}>LIVE SCHEDULE</span>
-              <h2 id="task-timeline-heading">Baseline vs current forecast</h2>
+              <h2 id="task-timeline-heading">Task timeline</h2>
               <p>Thin line is the approved baseline. Solid bar is the latest forecast.</p>
             </div>
             {state.canManage && run && (

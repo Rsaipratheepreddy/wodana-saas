@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "scope": "factory-to-installation delivery, partial handover, material and subcontract acceptance, supplier billing, warranty correction and operational authorization",
+  "workspaceId": "4453fe0c-2eb8-4356-92cf-a160a6321a4f",
+  "projectId": "f2bb5292-8fab-4f6a-bf48-a62e3b861dae",
+  "batchId": "6a28ebcc-57e4-4263-8721-b4602385e983",
+  "checks": [
+    "Declined unaccepted replacement restores original released scope through the commercial API",
+    "Concurrent identical create requests return one batch",
+    "Payload mismatch and duplicate active task allocation rejected",
+    "Persisted quantities, candidate exclusion and project-scoped projection",
+    "Nonmember cannot read factory batches",
+    "Source changes flag review while the batch snapshot stays frozen",
+    "Versioned cancellation is replay safe and preserves historical allocation",
+    "Booked factory work, independent measured output, lot rework and passed finished stock persist through the API",
+    "Passed lot dispatch, independent site receipt, installation output and independent installation QC remain linked",
+    "Signed partial handover preserves inspected quantity and frozen closeout documents; duplicate acceptance is blocked and remaining work stays open",
+    "Partial receiving excludes quarantine and rejection from stock/billing, requires independent QC, blocks overbilling/overpayment and premature order closure",
+    "Subcontract service acceptance requires inspected task output, blocks early and duplicate certification across orders, and persists independent certification through invoice, full payment and order closure",
+    "Warranty correction stays linked to accepted work, rejects uncovered tasks and requires independent verification without rewriting handover",
+    "Global operational work reflects persisted source states, filters completed work and enforces workspace access",
+    "Database RLS hides batch, allocation and replay records from another workspace"
+  ]
+}

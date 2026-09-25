@@ -1,12 +1,19 @@
 export type * from '../../../../services/business-core/src/projects/execution.types';
+export { installationMaterialCapacity, issuedToTask } from '../../../../services/business-core/src/projects/project-installation-materials';
 import type {ProjectData,ProjectExecutionAction,Task} from '../../../../services/business-core/src/projects/execution.types';
-export const projectTabs=[['overview','Dashboard'],['plan-teams','Schedules'],['material-planning','Material planning'],['procurement','Procurement'],['production','Production'],['site-work','Execution'],['daily-progress','Daily progress'],['snagging','Snagging'],['handover','Handover'],['documents','Scope & Design'],['commercial','Budget'],['boq','BOQ']] as const;
+export const projectTabs=[['overview','Project items'],['plan-teams','Execution'],['material-planning','Materials'],['procurement','Procurement'],['production','Factory'],['site-work','Site'],['daily-progress','Daily progress'],['snagging','Snags & warranty'],['handover','Handover'],['documents','Drawings & documents'],['commercial','Budget & payments'],['boq','Scope']] as const;
 export function taskProgress(d:ProjectData,t?:Task):number{const children=t?d.tasks.filter(c=>c.parentId===t.id&&c.status!=='cancelled'):d.tasks.filter(c=>!c.parentId&&c.status!=='cancelled');if(children.length){const w=children.reduce((s,c)=>s+c.weight,0);return w?children.reduce((s,c)=>s+taskProgress(d,c)*c.weight,0)/w:0;}return t?.quantity?Math.min(100,t.approved/t.quantity*100):0;}
 export const label=(s:string)=>s.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
 export const projectPath=(w:string,p:string)=>`/api/projects/${p}?workspaceId=${w}`;
 
 /** Routes a backend decision to the part of the project that owns the record. */
 export function projectActionRoute(projectId: string, action: ProjectExecutionAction): string {
+  if (action.kind === "review_rfa" || action.kind === "correct_rfa") return `/workspace/projects/${encodeURIComponent(projectId)}/overview?view=approvals&record=${encodeURIComponent(action.recordId)}`;
+  if (["source_material", "review_order", "confirm_order", "inspect_receipt", "recover_delivery", "close_order"].includes(action.kind)) {
+    const view = action.kind === "source_material" ? "shortages" : ["inspect_receipt", "close_order"].includes(action.kind) ? "deliveries" : "all";
+    return `/workspace/projects/${encodeURIComponent(projectId)}/procurement?view=${view}&record=${encodeURIComponent(action.recordId)}`;
+  }
+  if (action.taskId && ["start_task", "resolve_task", "recover_task", "inspect_task", "resolve_booking", "receive_factory_output"].includes(action.kind)) return `/workspace/tasks?projectId=${encodeURIComponent(projectId)}&taskId=${encodeURIComponent(action.taskId)}`;
   const section = action.kind.includes("handover") ? "handover"
     : action.kind.includes("warranty") ? "snagging"
     : action.kind.includes("factory") || action.kind.includes("dispatch") ? "production"

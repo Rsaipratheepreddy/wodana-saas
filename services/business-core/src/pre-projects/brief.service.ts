@@ -73,7 +73,7 @@ export class BriefService {
       const measurements = await client.query(`SELECT entry_id AS "entryId",status FROM pre_project_site_records WHERE workspace_id=$1 AND case_id=$2 AND kind='measurement' AND entry_id IS NOT NULL`, [workspaceId, caseId]);
       return { caseId, workspaceId, brief: { ...defaults, ...saved.rows[0]?.content, version: saved.rows[0]?.version ?? 0, updatedAt: saved.rows[0]?.updatedAt ?? null }, rooms: rooms.rows, entries: entries.rows,
         coverage: discoveryCoverage(rooms.rows, entries.rows, measurements.rows),
-        canEdit: context.status === "active" && await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"), caseStatus: context.status,
+        canEdit: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"), caseStatus: context.status,
         fromCrm: !saved.rowCount, crmContext: { description: context.description, opportunityAmount: context.amount, currencyCode: context.currencyCode } };
     });
   }
@@ -282,8 +282,9 @@ export class BriefService {
   }
   edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string)=>Promise<T>) {
     return this.access.withPermissions(actor,workspaceId,["pre_projects.view","pre_projects.edit"],async (client,user)=>{
-      const record=await this.case(client,workspaceId,caseId,true);
-      if (record.status!=="active") throw new ConflictException("This pre-execution is read-only. Resume or reopen it before making changes.");
+      // Working records remain revisionable throughout execution. Commercial
+      // acceptance and execution release retain their own immutable snapshots.
+      await this.case(client,workspaceId,caseId,true);
       const result=await work(client,user.userId);
       await client.query(`UPDATE pre_project_cases SET updated_at=now() WHERE workspace_id=$1 AND id=$2`,[workspaceId,caseId]);
       return result;

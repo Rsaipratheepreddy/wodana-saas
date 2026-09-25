@@ -119,4 +119,12 @@ describe("DataGrid", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(screen.queryByText(/per page/)).not.toBeInTheDocument();
   });
+  it("provides the enclosed table treatment without changing row behavior", () => {
+    const { container } = render(<DesignSystemProvider><DataGrid appearance="contained" ariaLabel="Compact projects" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} /></DesignSystemProvider>);
+    const grid = container.querySelector(".wd-data-grid");
+    expect(grid).toHaveAttribute("data-appearance", "contained");
+    expect(grid).toHaveAttribute("data-grid-lines", "true");
+    expect(screen.getByRole("table", { name: "Compact projects" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
 });

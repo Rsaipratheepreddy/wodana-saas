@@ -1465,3 +1465,9 @@
 
 :global([dir="rtl"]) .roomGroupTitle > button > svg, :global([dir="rtl"]) .itemRow > svg { transform: scaleX(-1); }
 :global([dir="rtl"]) .optionalFields[open] > summary::before { transform: rotate(-45deg); }
+
+section.optionalFields {display:grid; gap:.65rem; border-block-start:1px solid var(--wd-color-structural-divider); padding-block:.85rem;}
+section.optionalFields > h3 {margin:0; font-size:.8rem; font-weight:600; color:var(--wd-color-text);}
+section.optionalFields > :not(h3) {margin-block-start:0;}
+
+section.details > h3, section.optionalFields > h3 {margin:0 0 10px;font-size:13px;font-weight:600;}

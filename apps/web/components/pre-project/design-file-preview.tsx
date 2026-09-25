@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { FileImage, FileText } from "lucide-react";
+import { FileImage, FileText, FileSpreadsheet, File, FileArchive } from "lucide-react";
 import {
   caseApi,
   type CaseContent,
@@ -20,6 +20,8 @@ export function FileCover({
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const asset = design.versions[0]?.asset;
+  const extension = asset?.name.split('.').pop()?.toUpperCase() ?? 'FILE';
+  const DocumentIcon = ['XLS', 'XLSX', 'CSV', 'ODS'].includes(extension) ? FileSpreadsheet : ['PDF', 'DOC', 'DOCX', 'ODT', 'TXT', 'RTF'].includes(extension) ? FileText : ['ZIP', 'RAR', '7Z'].includes(extension) ? FileArchive : asset?.mimeType.startsWith('image/') ? FileImage : File;
   const image = asset?.mimeType.startsWith("image/");
   const src = asset
     ? caseApi(
@@ -45,20 +47,8 @@ export function FileCover({
         </>
       ) : (
         <>
-          {asset?.mimeType === "application/pdf" ? (
-            <FileText size={36} />
-          ) : (
-            <FileImage size={36} />
-          )}
-          <small>
-            {failed
-              ? "Preview unavailable"
-              : asset?.mimeType === "application/pdf"
-                ? "PDF"
-                : asset
-                  ? "Preview not available for this file type"
-                  : "No file uploaded"}
-          </small>
+          <DocumentIcon size={36} />
+          <small>{failed ? 'Preview unavailable' : asset ? extension : 'No file uploaded'}</small>
           {full && asset && (
             <a
               href={caseApi(

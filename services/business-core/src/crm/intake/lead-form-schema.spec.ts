@@ -1,22 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LEAD_OPTIONS } from "../leads/lead-options";
-import { defaultLeadForm, parseLeadForm, validateFormAnswers } from "./lead-form-schema";
+import { completeLeadForm, defaultLeadForm, parseLeadForm, validateFormAnswers } from "./lead-form-schema";
 
 const schema = () => defaultLeadForm(DEFAULT_LEAD_OPTIONS);
-const answers = (form = schema()) => Object.fromEntries(form.questions.map(question => [question.id, ({ displayName: "A customer", mobile: "+971501234567", email: "customer@example.com", location: "Dubai", serviceType: "not_sure", budgetRange: "not_sure", summary: "" } as Record<string, string>)[question.field]]));
+const answers = (form = schema()) => Object.fromEntries(form.questions.map(question => [question.id, ({ displayName: "A customer", mobile: "+971501234567", email: "customer@example.com", emirate: "dubai", area: "", serviceType: "not_sure", budgetRange: "not_sure", summary: "" } as Record<string, string>)[question.field]]));
 describe("Customer enquiry forms", () => {
   it("does not impose one company's enquiry types on a new workspace", () => {
     expect(DEFAULT_LEAD_OPTIONS.enquiryTypes).toEqual([{ id: "not_sure", label: "Not Sure Yet" }]);
     expect(schema().questions.find(question => question.field === "serviceType")?.options).toEqual(DEFAULT_LEAD_OPTIONS.enquiryTypes);
   });
-  it("keeps a required name and at least one required contact method when publishing", () => {
+  it("requires name, mobile, Emirate and enquiry type when publishing", () => {
     const form = schema();
     expect(() => parseLeadForm({ ...form, questions: form.questions.filter(q => q.field !== "displayName") }, true)).toThrow("customer name");
-    expect(() => parseLeadForm({ ...form, questions: form.questions.filter(q => !["email", "mobile"].includes(q.field)) }, true)).toThrow("email or mobile");
-    expect(() => parseLeadForm({ ...form, questions: form.questions.map(q => ["email", "mobile"].includes(q.field) ? { ...q, required: false } : q) }, true)).toThrow("Require at least one contact method");
-
-    const emailOnly = { ...form, questions: form.questions.filter(q => q.field !== "mobile").map(q => q.field === "email" ? { ...q, required: true } : q) };
-    expect(parseLeadForm(emailOnly, true).questions.find(q => q.field === "email")?.required).toBe(true);
+    for (const field of ["mobile", "emirate", "serviceType"]) expect(() => parseLeadForm({ ...form, questions: form.questions.filter(q => q.field !== field) }, true)).toThrow(field === "serviceType" ? "enquiry type" : field);
+    expect(parseLeadForm({ ...form, questions: form.questions.map(q => q.field === "mobile" ? { ...q, required: false } : q) }, true).questions.find(q => q.field === "mobile")?.required).toBe(true);
+  });
+  it("upgrades an older location question without duplicating an existing Area question", () => {
+    const form = schema();
+    form.questions.push({ id: "old_location", title: "Location", description: "", type: "text", field: "location", required: false, options: [] });
+    const upgraded = completeLeadForm(form, DEFAULT_LEAD_OPTIONS);
+    expect(upgraded.questions.filter(question => question.field === "area")).toHaveLength(1);
+    expect(upgraded.questions.some(question => question.field === "location")).toBe(false);
+    expect(parseLeadForm(upgraded, true).questions.filter(question => question.required).map(question => question.field)).toEqual(expect.arrayContaining(["displayName", "mobile", "emirate", "serviceType"]));
   });
   it("rejects duplicate question IDs and duplicate linked fields", () => {
     const form = schema();
@@ -29,7 +34,7 @@ describe("Customer enquiry forms", () => {
     expect(form.questions.find(q => q.field === "serviceType")?.required).toBe(true);
     delete values[form.questions.find(q => q.field === "budgetRange")!.id];
     delete values[form.questions.find(q => q.field === "email")!.id];
-    expect(validateFormAnswers(form, values).fields.location).toBe("Dubai");
+    expect(validateFormAnswers(form, values).fields.emirate).toBe("dubai");
     delete values[form.questions.find(q => q.field === "mobile")!.id];
     expect(() => validateFormAnswers(form, values)).toThrow("Mobile number is required");
   });
@@ -41,7 +46,7 @@ describe("Customer enquiry forms", () => {
   });
   it("validates custom checkbox answers and stores readable labels", () => {
     const form = schema(); form.questions.push({ id: "preferences", title: "Preferences", description: "", type: "checkboxes", field: "custom", required: true, options: [{ id: "oak", label: "Oak" }, { id: "stone", label: "Stone" }] });
-    expect(validateFormAnswers(form, { ...answers(form), preferences: ["oak", "stone"] }).responses.at(-1)?.value).toEqual(["Oak", "Stone"]);
+    expect(validateFormAnswers(form, { ...answers(form), preferences: ["oak", "stone"] }).responses.at(-1)).toMatchObject({ field: "custom", value: ["Oak", "Stone"] });
     expect(() => validateFormAnswers(form, { ...answers(form), preferences: ["other"] })).toThrow("Choose valid answers");
   });
   it("rejects invalid dates and non-finite custom numbers", () => {

@@ -1,0 +1,11 @@
+# Slice 2A — receiving and pending inspection
+
+Local implementation only. Procurement → order → Deliveries retains the existing grid and adds Pending QC and Inspect. Receiving records arrived, accepted, rejected and pending quantities; their sum must reconcile. Existing immediate inspection receipts remain supported.
+
+Pending goods do not create stock, satisfy material readiness or support invoice approval. Accepted plus pending, less dispatched supplier returns, cannot exceed the order. Rejections remain replaceable. An authorized reviewer other than the receiver may inspect part of a pending receipt, recording accepted/rejected quantities and mandatory evidence. The command carries the pending balance it reviewed; a stale submission fails before mutation. Each decision appends immutable history and adds only its incremental accepted quantity to stock. Old receipts default to zero pending.
+
+Fields: receipt id, date, receiver id, accepted/rejected/pending quantity, original evidence, timestamp; inspection id, reviewer id, timestamp, accepted/rejected increments and evidence. API uses existing project execution commands `receipt` and `receipt_inspect` with project permission and transaction controls.
+
+Material readiness counts accepted stock available to the linked task, including stock already issued to it, excluding stock reserved for another task. No conversion between material units and installed output is inferred. This slice does not complete partial installation entitlements, receiving location transfers, named inspection scheduling, client acceptance or the full purchased-item acceptance scenario.
+
+Validation: 15 focused backend tests and 10 UI tests pass. Two synthetic browser checks pass (desktop/mobile), covering the pending grid, full cell borders, keyboard inspection action and RTL overflow; screenshots inspected. Backend and web typechecks pass. Targeted lint passes for order detail, procurement ledger, its updated detail test and browser test. The wider workspace component still reports two existing set-state-in-effect lint errors at lines 145–146 and four warnings outside this change. No live database integration or production data was exercised. Existing immediate accepted receipts remain a buyer-controlled workflow; mandatory independent QC for every receipt is not introduced here.

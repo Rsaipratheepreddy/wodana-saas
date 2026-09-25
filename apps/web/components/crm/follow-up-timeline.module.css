@@ -1,0 +1,86 @@
+.timeline { position: relative; background: var(--wd-color-surface); border-radius: 16px; overflow: hidden; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 24px; }
+.toolbar h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.toolbar p, .legend { margin: 6px 0 0; font-size: 12px; color: var(--wd-color-text-secondary); }
+.dates { display: flex; align-items: center; gap: 6px; }
+.dates input { font: inherit; font-size: 12px; border: 1px solid var(--wd-color-border-control); background: var(--wd-color-surface); color: var(--wd-color-text); border-radius: 8px; padding: 8px; }
+.scroller { overflow-x: auto; scrollbar-width: thin; }
+.canvas { position: relative; inline-size: 3072px; min-block-size: 390px; }
+.hours { display: grid; grid-template-columns: repeat(24, 120px); border-block: 1px solid var(--wd-color-border); }
+.hours button { text-align: start; padding: 14px 0 14px 10px; background: none; border: none; color: var(--wd-color-text-secondary); cursor: pointer; font: inherit; font-size: 12px; }
+.hours button:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.rows { padding-block: 16px; }
+.lane { position: relative; block-size: 118px; border-block-end: 1px dashed var(--wd-color-border); }
+.card { position: absolute; inset-block-start: 10px; inline-size: 292px; block-size: 90px; padding: 15px; display: flex; gap: 10px; align-items: center; border: 0; border-radius: 15px; text-align: start; background: color-mix(in srgb, #a991dc 20%, var(--wd-color-surface)); color: var(--wd-color-text); font: inherit; cursor: pointer; animation: arrive 280ms ease-out both; transition: transform 180ms ease, background 180ms ease; }
+.card[data-kind="meeting"] { background: color-mix(in srgb, #df9faa 20%, var(--wd-color-surface)); }
+.card[data-kind="task"] { background: color-mix(in srgb, #d7b969 22%, var(--wd-color-surface)); }
+.card[data-completed="true"] { background: color-mix(in srgb, #6bab88 16%, var(--wd-color-surface)); }
+.card[data-completed="true"] strong { text-decoration: line-through; }
+.card:hover { transform: translateY(-3px); }
+.cardIcon { flex-shrink: 0; opacity: .8; }
+.cardText { display: grid; gap: 6px; min-inline-size: 0; flex: 1; }
+.cardText strong { font-size: 13px; font-weight: 600; }
+.cardText span, .cardText small { font-size: 11px; color: var(--wd-color-text-secondary); }
+.cardText > * { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.now { position: absolute; inset-block: 48px 0; border-inline-start: 1px solid var(--wd-color-brand, #477761); z-index: 1; pointer-events: none; }
+.now::before { content: ''; position: absolute; inset-inline-start: -5px; inline-size: 9px; block-size: 9px; border-radius: 50%; background: var(--wd-color-brand, #477761); }
+.now span { position: absolute; inset-inline-start: 8px; inset-block-start: 5px; font-size: 10px; color: var(--wd-color-text-secondary); }
+.blankLanes { block-size: 330px; background: repeating-linear-gradient(to bottom, transparent 0, transparent 109px, var(--wd-color-border) 110px, transparent 111px); opacity: .45; }
+.empty { position: relative; margin: -280px auto 0; padding: 32px 20px; min-block-size: 280px; box-sizing: border-box; text-align: center; inline-size: min(100%, 430px); color: var(--wd-color-text-secondary); }
+.empty h3 { font-size: 16px; color: var(--wd-color-text); margin: 15px 0 8px; }
+.empty p { font-size: 13px; line-height: 1.6; margin: 0 0 18px; }
+.legend { padding: 12px 24px 18px; }
+.timeline :focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
+@keyframes arrive { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (max-width: 700px) { .toolbar { align-items: start; flex-direction: column; padding: 16px; } .dates { flex-wrap: wrap; } }
+@media (prefers-reduced-motion: reduce) { .card { animation: none; transition: none; } }
+.timeline { border-radius: 0; }
+.toolbar { padding: 8px 28px 24px; }
+.viewChoice { inline-size: 125px; }
+.viewChoice :global(.wd-select-button) { min-block-size: 34px; block-size: 34px; font-size: 12px; border-radius: 8px; }
+.hoursLabel { padding-inline: 12px; font-size: 12px; color: var(--wd-color-text-secondary); }
+.previewNote { margin: 0; padding: 0 28px 14px; color: var(--wd-color-text-secondary); font-size: 11px; }
+.hours { border-block-color: color-mix(in srgb, var(--wd-color-border) 65%, transparent); }
+.lane { border-block-end-style: dotted; }
+.canvas { min-block-size: 530px; }
+.blankLanes { block-size: 480px; }
+.empty { margin-block-start: -340px; min-block-size: 340px; }
+.card { inline-size: 300px; block-size: 82px; border-radius: 16px; }
+.lane { block-size: 108px; }
+@media (max-width: 700px) { .toolbar { padding: 8px 16px 18px; } .hoursLabel { display: none; } .dates { gap: 4px; } }
+.canvas { inline-size: 3096px; min-block-size: max(550px, calc(100dvh - 255px)); }
+.hours { padding-inline: 24px 0; }
+.hours button { padding-inline: 0; }
+.hourLabel { display: block; inline-size: 42px; text-align: center; transform: translateX(-50%); }
+:global([dir="rtl"]) .hourLabel { transform: translateX(50%); }
+.now { inset-block-start: 48px; inset-block-end: 0; }
+.now span { white-space: nowrap; }
+.empty { position: absolute; inset-inline: 0; inset-block-start: 300px; margin: 0 auto; min-block-size: 0; }
+.dates :global(.wd-date-group) { min-block-size: 34px; block-size: 34px; border-radius: 8px; }
+.dates :global(.wd-date-input) { font-size: 12px; }
+.dates :global(.wd-field) { gap: 0; }
+@media (max-width: 700px) { .canvas { min-block-size: max(500px, calc(100dvh - 280px)); } .empty { inset-block-start: 310px; } }
+.card { inline-size: 248px; block-size: 72px; padding: 10px 12px; gap: 8px; border-radius: 12px; }
+.lane { block-size: 88px; }
+.cardText { gap: 4px; }
+.cardText strong { font-size: 12px; }
+.cardText .timeRange { color: var(--wd-color-text); font-size: 11px; font-weight: 650; }
+.cardText small { font-size: 10px; }
+.hourLabel { font-size: 11px; }
+.scroller { scrollbar-width: none; }
+.scroller::-webkit-scrollbar { display: none; }
+
+/* Shared time coordinates: hour labels, half-hour grid, cards and current time. */
+.hours { grid-template-columns: repeat(24, 240px); }
+.rows { position: relative; padding: 0; }
+.grid { position: absolute; inset-block: 0; inset-inline-start: 24px; inline-size: 5760px; display: grid; grid-template-columns: repeat(48, 120px); pointer-events: none; }
+.grid span { border-inline-start: 1px dotted color-mix(in srgb, var(--wd-color-border) 65%, transparent); }
+.grid span[data-hour="true"] { border-inline-start: 1px solid var(--wd-color-border); }
+.rows { background: repeating-linear-gradient(to bottom, transparent 0, transparent 87px, color-mix(in srgb, var(--wd-color-border) 45%, transparent) 87px, color-mix(in srgb, var(--wd-color-border) 45%, transparent) 88px); }
+.card { box-sizing: border-box; overflow: hidden; }
+.card[data-narrow="true"] { padding: 8px; }
+.card[data-narrow="true"] .cardIcon, .card[data-narrow="true"] > :last-child:not(.cardText) { display: none; }
+.card[data-narrow="true"] .timeRange { white-space: normal; font-size: 10px; line-height: 1.3; }
+.card[data-point="true"] { border: 0; }
+.canvas { display: flex; flex-direction: column; }
+.rows { flex: 1; }

@@ -37,36 +37,31 @@ describe("WorkspaceSidebar", () => {
     expect(within(chooser).getByText("Studio Group · Suspended")).toBeVisible();
     expect(within(chooser).queryByRole("button", { name: /Paused Studio/ })).not.toBeInTheDocument();
   });
-  it.each(["desktop", "mobile"] as const)("shows requirement sections in the sidebar on %s", async (mode) => {
-    const interaction=userEvent.setup();
-    const navigation=preProjectModule.navigation.filter(g=>['pre-project-requirements','pre-project-case-sections'].includes(g.id));
-    render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={navigation} pathname="/workspace/pre-projects/requirements" workspaces={workspaces}/>);
-    const nav=screen.getByRole('navigation',{name:'Main navigation'});
-    expect(within(nav).getAllByRole('link').map(l=>l.textContent)).toEqual(['Case overview','Requirements','Client inspirations','Design','Scope confirmation','Quotations','Agreement & payments','Change requests','Approvals & release','Client portal']);
-    expect(screen.queryByRole('button',{name:'Commercial & approvals'})).not.toBeInTheDocument();
-    expect(screen.getByRole('link',{name:'Requirements'})).toHaveAttribute('aria-current','page');
-    const search=screen.getByRole('searchbox',{name:'Search workspace'});await interaction.type(search,'brief');
-    expect(screen.getByRole('link',{name:'Requirements'})).toBeVisible();
-    await interaction.keyboard('{Escape}');expect(within(nav).getAllByRole('link')).toHaveLength(10);
+  it.each(["desktop", "mobile"] as const)("keeps shared destinations accessible on %s", async (mode) => {
+    render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={preProjectModule.navigation} pathname="/workspace/pre-projects/requirements" workspaces={workspaces}/>);
+    const nav = within(screen.getByRole('navigation',{name:'Main navigation'}));
+    for (const name of ['Home','Inbox','Tasks','Calendar','Approvals','Sales','Clients','Projects','Purchasing','Inventory','Factory']) expect(nav.getByRole('link',{name})).toBeVisible();
+    expect(nav.queryByRole('link',{name:'Requirements'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox',{name:'Search workspace'})).not.toBeInTheDocument();
+    expect(nav.getByRole('link',{name:'Tasks'})).toHaveAttribute('href','/workspace/tasks');
+    expect(nav.getByRole('link',{name:'Home'})).toBeVisible();
   });
 
-  it("shows the CRM operating flow and marks the current destination", () => {
-    render(
-      <WorkspaceSidebar
-        activeModule={crmModule}
-        modules={workspaceModules}
-        navigation={crmModule.navigation}
-        pathname="/workspace/crm/leads"
-        workspaces={workspaces}
-      />,
-    );
+  it("marks Sales as the current workspace without duplicating its tabs", () => {
+    render(<WorkspaceSidebar activeModule={crmModule} modules={workspaceModules} navigation={crmModule.navigation} pathname="/workspace/crm/leads" workspaces={workspaces}/>);
+    expect(screen.getByRole('link',{name:'Sales'})).toHaveAttribute('aria-current','page');
+    expect(screen.queryByRole('link',{name:'Enquiries'})).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Tasks'})).toBeVisible();
+    expect(screen.getByRole('link',{name:'Calendar'})).toBeVisible();
+  });
 
-    const enquiries = screen.getByRole("link", { name: "Enquiries" });
-    expect(enquiries).toHaveAttribute("aria-current", "page");
-    const navigation = screen.getByRole("navigation", { name: "Main navigation" });
-    expect(within(navigation).getAllByRole("link").map((link) => link.textContent?.trim())).toEqual(["Today", "Jobs", "Enquiries", "Opportunities", "Customers", "Follow-ups", "Calendar", "Inbox", "Smart rules", "Reports"]);
-    for (const name of ["Sales flow", "Customer work", "Insights"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Automation" })).not.toBeInTheDocument();
+  it("opens the shared approval hub and keeps Sales selected for an unpaid Palm case", () => {
+    const {rerender}=render(<WorkspaceSidebar activeModule={crmModule} modules={workspaceModules} navigation={crmModule.navigation} pathname="/workspace/approvals" workspaces={workspaces}/>);
+    expect(screen.getByRole('link',{name:'Approvals'})).toHaveAttribute('href','/workspace/approvals');
+    expect(screen.getByRole('link',{name:'Approvals'})).toHaveAttribute('aria-current','page');
+    rerender(<WorkspaceSidebar activeModule={preProjectModule} activeItemId="sales" modules={workspaceModules} navigation={preProjectModule.navigation} pathname="/workspace/pre-projects/cases/00000000-0000-4000-8000-000000000001/requirements" workspaces={workspaces}/>);
+    expect(screen.getByRole('link',{name:'Sales'})).toHaveAttribute('aria-current','page');
+    expect(screen.getByRole('link',{name:'Projects'})).not.toHaveAttribute('aria-current');
   });
 
   it("keeps enquiry setup inside the enquiry workspace instead of the global sidebar", () => {
@@ -84,8 +79,7 @@ describe("WorkspaceSidebar", () => {
     expect(screen.queryByRole("link", { name: "Forms" })).not.toBeInTheDocument();
   });
 
-  it("filters destinations and clears search with Escape", async () => {
-    const interaction = userEvent.setup();
+  it("keeps navigation visible without a search row", () => {
     render(
       <WorkspaceSidebar
         activeModule={crmModule}
@@ -96,43 +90,20 @@ describe("WorkspaceSidebar", () => {
       />,
     );
 
-    const search = screen.getByRole("searchbox", { name: "Search workspace" });
-    await interaction.type(search, "follow");
-    expect(screen.getByRole("link", { name: "Follow-ups" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Companies" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Home" })).not.toBeInTheDocument();
-
-    await interaction.keyboard("{Escape}");
-    expect(search).toHaveValue("");
-    expect(screen.getByRole("link", { name: "Today" })).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search workspace" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
   });
 
-  it("shows permitted records with meaningful labels and opens their canonical routes", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        query: "villa",
-        searchedKinds: ["customer", "job"],
-        truncated: false,
-        items: [
-          { id: "customer-1", kind: "customer", title: "Amira Hassan", subtitle: "Person · active", reference: null, route: "/workspace/crm/customers?record=customer-1" },
-          { id: "job-1", kind: "job", title: "Jumeirah villa", subtitle: "Job · Amira Hassan", reference: "J-000102", route: "/workspace/crm/jobs/job-1" },
-        ],
-      }),
-    } as Response);
+  it("opens a canonical navigation route", async () => {
     const onNavigate = vi.fn();
     const interaction = userEvent.setup();
     render(<WorkspaceSidebar activeModule={crmModule} modules={workspaceModules} navigation={crmModule.navigation}
       onNavigate={onNavigate} pathname="/workspace/crm" workspaces={workspaces} />);
 
-    await interaction.type(screen.getByRole("searchbox", { name: "Search workspace" }), "villa");
-    const results = await screen.findByRole("region", { name: "Workspace search results" });
-    const customer = await within(results).findByRole("link", { name: /Amira Hassan.*Customer.*Person · active/ });
-    const job = within(results).getByRole("link", { name: /Jumeirah villa.*Job.*J-000102/ });
-    expect(customer).toHaveAttribute("href", "/workspace/crm/customers?record=customer-1");
-    expect(job).toHaveAttribute("href", "/workspace/crm/jobs/job-1");
-    expect(within(results).queryByText("Project")).not.toBeInTheDocument();
-    await interaction.click(job);
+    const tasks = screen.getByRole("link", { name: "Tasks" });
+    expect(tasks).toHaveAttribute("href", "/workspace/tasks");
+    await interaction.click(tasks);
     expect(onNavigate).toHaveBeenCalledOnce();
   });
 
@@ -171,25 +142,21 @@ describe("WorkspaceSidebar", () => {
       />,
     );
 
-    expect(screen.queryByRole("link", { name: "Inbox" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Today" })).not.toBeInTheDocument();
-    for (const destination of [
-      "Company profile",
-      "People",
-      "Roles & permissions",
-      "Integrations",
-      "Client portal",
-      "Business records",
-      "Sign-in security",
-      "Audit history",
-      "Billing",
-    ]) {
-      expect(screen.getByRole("link", { name: destination })).toBeInTheDocument();
-    }
-    for (const section of ["Company", "Team & access", "Connections", "Account & billing"]) expect(screen.getByRole("button", { name: section })).toBeInTheDocument();
+    for (const destination of ['Home','Inbox','Tasks','Calendar','Projects','Purchasing','Inventory','Factory','Connections','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
+    expect(screen.getByRole('link',{name:'Settings'})).toHaveAttribute('href','/workspace/company');
+    for (const section of ['Daily work','Business','Operations','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
     expect(screen.queryByRole("link", { name: "Manage workspaces" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Work groups" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "User Settings" })).not.toBeInTheDocument();
   });
 
+});
+
+it("marks the direct Catalog link active without selecting Settings", () => {
+  render(<WorkspaceSidebar activeModule={workspaceModules[0]} modules={workspaceModules} navigation={workspaceModules[0].navigation} pathname="/workspace/catalogs" workspaces={workspaces} />);
+  const catalog = screen.getByRole("link", { name: "Catalog" });
+  expect(screen.getByRole("link", { name: "Connections" })).toBeVisible();
+  expect(catalog).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByRole("button", { name: "Resources" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Settings" })).not.toHaveAttribute("aria-current");
 });

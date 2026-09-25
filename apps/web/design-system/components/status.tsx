@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type HTMLAttributes, type ReactNode } from "react";
-import { AlertCircle, CheckCircle2, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Inbox, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
 import { Button, IconButton } from "./actions";
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
@@ -21,7 +21,16 @@ export function Callout({ actions, children, title, tone = "info" }: { actions?:
   return <div className="wd-callout" data-tone={tone} role={tone === "danger" ? "alert" : "status"}><Icon aria-hidden="true" size={18} /><div><strong>{title}</strong><div>{children}</div></div>{actions ? <div className="wd-callout-actions">{actions}</div> : null}</div>;
 }
 
-export function EmptyState({ action, description, icon, title }: { action?: ReactNode; description: ReactNode; icon?: ReactNode; title: string }) {
+/** Compact feedback for form submission and service states. */
+export function InlineNotice({ className, message, title, tone = "info" }: { className?: string; message: ReactNode; title?: string; tone?: "error" | "info" | "success" }) {
+  const Icon = tone === "error" ? AlertCircle : tone === "success" ? CheckCircle2 : Info;
+  return <div aria-atomic="true" aria-live={tone === "error" ? "assertive" : "polite"} className={["wd-inline-notice", className].filter(Boolean).join(" ")} data-tone={tone} data-visible="true" role={tone === "error" ? "alert" : "status"}>
+    <Icon aria-hidden="true" size={16} />
+    <span>{title ? <strong>{title}</strong> : null}<span>{message}</span></span>
+  </div>;
+}
+
+export function EmptyState({ action, description, icon = <Inbox aria-hidden="true" size={22} />, title }: { action?: ReactNode; description: ReactNode; icon?: ReactNode; title: string }) {
   return <div className="wd-empty-state">{icon ? <div className="wd-empty-icon">{icon}</div> : null}<strong>{title}</strong><p>{description}</p>{action}</div>;
 }
 

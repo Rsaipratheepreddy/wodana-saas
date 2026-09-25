@@ -95,12 +95,12 @@ export function QuotationScopeComposer({ workspaceId, caseId, quoteId, revision,
     {notice ? <Callout title="Quotation updated" tone="success">{notice}</Callout> : null}
     {state?.definition ? <>
       {dirty && missing ? <p className={styles.muted}>Save the current sheet edits before adding the remaining scope.</p> : null}
-      {(missing || comparison.changed.length || comparison.added.length || comparison.removed.length || blockers.length) ? <details className={styles.diff}>
-        <summary>Review scope connection</summary>
+      {(missing || comparison.changed.length || comparison.added.length || comparison.removed.length || blockers.length) ? <section className={styles.diff}>
+        <h3>Review scope connection</h3>
         {missing ? <div><strong>Not yet quoted</strong><ul>{uncovered.map((item) => <li key={item.id}>{item.roomName ? `${item.roomName} · ` : ""}{item.title}</li>)}</ul></div> : null}
         {blockers.length ? <div><strong>Resolve before review</strong><ul>{blockers.map((issue) => <li key={issue.code}>{issue.message}</li>)}</ul></div> : null}
         {comparison.changed.length ? <div><strong>Changed since the previous quotation</strong><ul>{comparison.changed.map((item) => <li key={item.id}>{item.room} · {item.title} · {item.changes.join(", ")}</li>)}</ul></div> : null}
-      </details> : null}
+      </section> : null}
     </> : null}
   </section>;
 }

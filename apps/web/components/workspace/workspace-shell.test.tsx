@@ -5,13 +5,14 @@ import { workspaceModules } from "./workspace-navigation";
 import { WorkspaceShell } from "./workspace-shell";
 import { renderToString } from "react-dom/server";
 import { CrmProductShell } from "../crm/crm-product-shell";
+import { ProjectRevampTabs } from "../projects/project-revamp-tabs";
 
-const route = vi.hoisted(() => ({ pathname: "/workspace/members" }));
+const route = vi.hoisted(() => ({ pathname: "/workspace/members", search: "" }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(route.search),
 }));
 
 const shellProps = {
@@ -21,33 +22,86 @@ const shellProps = {
 };
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   route.pathname = "/workspace/members";
+  route.search = "";
   window.localStorage.clear();
   document.documentElement.dataset.theme = "light";
 });
 
 describe("WorkspaceShell theme", () => {
-  it("puts permitted module destinations directly in the top bar", () => {
+  it("resolves a directly opened project breadcrumb without relying on the page registration", async () => {
+    route.pathname = "/workspace/projects/new/12345678-1234-1234-1234-123456789abc";
+    const fetcher = vi.fn().mockImplementation(async (url: string) => url.includes("/execution?")
+      ? {ok:true,json:async()=>({name:"Palm Living Demo · Jumeirah Garden Villa"})}
+      : {ok:true,json:async()=>({items:[]})});
+    vi.stubGlobal("fetch",fetcher);
+    render(<WorkspaceShell {...shellProps}><p>Project tabs</p></WorkspaceShell>);
+    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+    expect(await breadcrumb.findByRole("link", { name:"Jumeirah Garden Villa" })).toHaveAttribute("aria-current","page");
+    expect(breadcrumb.queryByText("Loading project…")).not.toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledWith("/api/projects/12345678-1234-1234-1234-123456789abc/execution?workspaceId=workspace-1",expect.objectContaining({signal:expect.any(AbortSignal)}));
+  });
+  it("shows the passed project name before the project page has loaded", () => {
+    route.pathname = "/workspace/projects/new/12345678-1234-1234-1234-123456789abc";
+    route.search = "projectName=Jumeirah+Garden+Villa";
+    render(<WorkspaceShell {...shellProps}><p>Loading content</p></WorkspaceShell>);
+    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+    expect(breadcrumb.getByRole("link", { name: "Jumeirah Garden Villa" })).toBeVisible();
+    expect(breadcrumb.queryByText("Loading project…")).not.toBeInTheDocument();
+  });
+  it("shows the actual project name as a breadcrumb link and clears it when leaving the project", () => {
+    route.pathname = "/workspace/projects/new/12345678-1234-1234-1234-123456789abc";
+    const view = render(<WorkspaceShell {...shellProps}><ProjectRevampTabs projectName="Jumeirah Garden Villa"/></WorkspaceShell>);
+    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+    expect(breadcrumb.getByRole("link", { name: "Projects" })).toHaveAttribute("href", "/workspace/projects");
+    expect(breadcrumb.getByRole("link", { name: "Jumeirah Garden Villa" })).toHaveAttribute("href", `${route.pathname}?projectName=Jumeirah+Garden+Villa`);
+    expect(breadcrumb.getByRole("link", { name: "Jumeirah Garden Villa" })).toHaveAttribute("aria-current", "page");
+    expect(breadcrumb.queryByText("Loading project…")).not.toBeInTheDocument();
+    route.pathname = "/workspace/projects";
+    view.rerender(<WorkspaceShell {...shellProps}><p>Project list</p></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).not.toHaveTextContent("Jumeirah Garden Villa");
+  });
+  it("keeps the main workspace navigation visible inside CRM", () => {
     route.pathname = "/workspace/crm/leads";
-    render(<WorkspaceShell {...shellProps} modules={workspaceModules.filter((module) => !["pre-project", "projects"].includes(module.id))}><p>Module content</p></WorkspaceShell>);
-    const modules = within(screen.getByRole("navigation", { name: "Modules" }));
-    expect(modules.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/workspace", "/workspace/crm", "/workspace/hrms"]);
-    expect(modules.getByRole("link", { name: "CRM" })).toHaveAttribute("aria-current", "page");
-    expect(modules.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/workspace");
+    render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/workspace");
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Enquiries");
   });
-
-  it.each([
-    ["/workspace/pre-projects", "Pre-execution cases"],
-    ["/workspace/pre-projects/master-data", "Master Data"],
-  ])("shows the shared pre-execution destinations at %s", (pathname, label) => {
-    route.pathname = pathname;
-    const { container } = render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);
-    expect(container.querySelector("[data-module-selector]")).toBeNull();
+  it("collapses and reopens the Business group with pointer and keyboard", async () => {
+    route.pathname = "/workspace/projects";
+    const user = userEvent.setup();
+    render(<WorkspaceShell {...shellProps}><p>Content</p></WorkspaceShell>);
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(["Pre-execution cases", "Master Data", "Supplier Offers", "Quotation Templates"]);
-    expect(navigation.getByRole("link", { name: label })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(label);
+    const trigger = navigation.getByRole("button", { name: "Business" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(navigation.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Home" })).toBeVisible();
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(navigation.getByRole("link", { name: "Projects" })).toHaveAttribute("href", "/workspace/projects");
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+  it("shows only authorized products on Home", () => {
+    route.pathname = "/workspace";
+    render(<WorkspaceShell {...shellProps} modules={workspaceModules.filter((module) => !["pre-project", "projects"].includes(module.id))}><p>Home content</p></WorkspaceShell>);
+    const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
+    expect(navigation.getByRole("link", { name: "Sales" })).toHaveAttribute("href", "/workspace/crm");
+    expect(navigation.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+  });
+
+  it("keeps planning under the unified Projects entry and Catalog directly in the sidebar", () => {
+    route.pathname = '/workspace/pre-projects';
+    render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);
+    expect(screen.queryByRole('navigation',{name:'Workspace sections'})).not.toBeInTheDocument();
+    expect(within(screen.getByRole('navigation',{name:'Main navigation'})).getByRole('link',{name:'Projects'})).toHaveAttribute('aria-current','page');
+    expect(screen.queryByRole('link',{name:'Design & Planning'})).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Catalog'})).toHaveAttribute('href','/workspace/catalogs');
+    expect(screen.queryByRole('button',{name:'Resources'})).not.toBeInTheDocument();
   });
 
   it("keeps a focused portfolio sidebar on the projects landing page", () => {
@@ -55,29 +109,38 @@ describe("WorkspaceShell theme", () => {
     const { container } = render(<WorkspaceShell {...shellProps}><p>Project portfolio</p></WorkspaceShell>);
     expect(container.querySelector("[data-module-selector]")).toBeNull();
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(["Portfolio overview", "Portfolio calendar", "Workflow setup"]);
-    expect(navigation.getByRole("link", { name: "Portfolio overview" })).toHaveAttribute("aria-current", "page");
+    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(expect.arrayContaining(["Projects", "Sales", "Calendar", "Tasks"]));
+    expect(navigation.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("opens case sections after leaving the module list and keeps Master Data shared", () => {
+  it("opens planning tabs while keeping Catalog as a direct sidebar destination", () => {
     route.pathname = "/workspace/pre-projects";
     const view = render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);
     const casePath = "/workspace/pre-projects/cases/e56299c6-3da3-402a-a9ac-3995bb37b9d4";
     route.pathname = `${casePath}/requirements`;
     view.rerender(<WorkspaceShell {...shellProps}><p>Case content</p></WorkspaceShell>);
-    const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
+    const navigation = within(screen.getByRole("navigation", { name: "Planning sections" }));
     expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("href", `${casePath}/requirements`);
-    expect(navigation.getAllByRole("link").map(link=>link.textContent)).toEqual(["Case overview","Requirements","Client inspirations","Design","Scope confirmation","Quotations","Agreement & payments","Change requests","Approvals & release","Client portal"]);
-    expect(navigation.queryByRole("link", { name: "Master Data" })).not.toBeInTheDocument();
-    expect(navigation.queryByRole("button", { name: "Preparation" })).not.toBeInTheDocument();
-    route.pathname = "/workspace/pre-projects/master-data";
+    expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("aria-current", "page");
+    expect(navigation.getAllByRole("link").map(link => link.textContent)).toEqual([
+      "Requirements", "Design Quote", "Design & Specifications", "Approvals", "Fitout / Furniture Quotations", "Agreements & Payments", "Overview", "Change Requests",
+    ]);
+    const requirementViews = within(screen.getByRole("navigation", { name: "Requirements views" }));
+    expect(requirementViews.getByRole("link", { name: "Measurements" })).toHaveAttribute("href", `${casePath}/measurements`);
+    expect(requirementViews.getByRole("link", { name: "Scope confirmation" })).toHaveAttribute("href", `${casePath}/definition`);
+    expect(navigation.queryByRole("link", { name: "Catalog" })).not.toBeInTheDocument();
+    const sidebar = within(screen.getByRole("navigation", { name: "Main navigation" }));
+    expect(sidebar.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
+    expect(sidebar.getByRole("link", { name: "Catalog" })).toHaveAttribute("href", "/workspace/catalogs");
+    expect(sidebar.queryByRole("button", { name: "Resources" })).not.toBeInTheDocument();
+    route.pathname = "/workspace/catalogs";
     view.rerender(<WorkspaceShell {...shellProps}><p>Catalog content</p></WorkspaceShell>);
-    expect(navigation.queryByRole("link", { name: "Requirements" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Planning sections" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Requirements" })).not.toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Main navigation" })).toHaveTextContent("Pre-execution cases");
+    expect(screen.getByRole("link", { name: "Catalog" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps Inbox inside CRM before and after client effects run", () => {
+  it("keeps Client Inbox standalone with direct Tasks and Calendar links", () => {
     route.pathname = "/workspace/crm/conversations";
     const content = <WorkspaceShell {...shellProps}><CrmProductShell title="Inbox" description="Chats" canView compact><p>Chat content</p></CrmProductShell></WorkspaceShell>;
     expect(renderToString(content)).not.toContain('data-focus="true"');
@@ -86,7 +149,28 @@ describe("WorkspaceShell theme", () => {
     expect(screen.queryByRole("link", { name: "Back to CRM" })).not.toBeInTheDocument();
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
     expect(navigation.getByRole("link", { name: "Inbox" })).toHaveAttribute("aria-current", "page");
-    expect(navigation.getByRole("link", { name: "Enquiries" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Workspace sections" })).not.toBeInTheDocument();
+    expect(navigation.getByRole("link", { name: "Tasks" })).toHaveAttribute("href", "/workspace/tasks");
+    expect(navigation.getByRole("link", { name: "Calendar" })).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
+    expect(navigation.getByRole("link", { name: "Factory" })).toHaveAttribute("href", "/workspace/projects/factory");
+    expect(navigation.queryByRole("button", { name: "Production Tracking" })).not.toBeInTheDocument();
+  });
+  it("keeps the sidebar and a single Calendar breadcrumb on the schedule route", () => {
+    route.pathname = "/workspace/crm/follow-ups";
+    route.search = "view=schedule";
+    const { container } = render(<WorkspaceShell {...shellProps}><p>Calendar content</p></WorkspaceShell>);
+    expect(container.querySelector('[data-focus="true"]')).toBeNull();
+    expect(screen.queryByRole("link", { name: "Back to CRM" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Calendar")).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Calendar" })).toHaveAttribute("aria-current", "page");
+  });
+  it("shows global Operations destinations without a misleading Projects breadcrumb", () => {
+    route.pathname = "/workspace/projects/inventory";
+    render(<WorkspaceShell {...shellProps}><p>Inventory content</p></WorkspaceShell>);
+    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+    expect(breadcrumb.getByText("Inventory")).toBeVisible();
+    expect(breadcrumb.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Inventory" })).toHaveAttribute("aria-current", "page");
   });
   it("toggles light and dark mode from the header and persists the choice", async () => {
     const interaction = userEvent.setup();

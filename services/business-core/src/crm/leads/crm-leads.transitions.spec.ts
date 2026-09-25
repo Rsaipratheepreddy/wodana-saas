@@ -3,11 +3,11 @@ import { CrmLeadsService } from "./crm-leads.service";
 
 const statuses = ["new", "attempting_contact", "connected", "nurturing", "qualified", "paused", "disqualified"];
 
-function setup(status: string, options: { converted?: boolean; unassigned?: boolean; noAction?: boolean } = {}) {
+function setup(status: string, options: { converted?: boolean; unassigned?: boolean; noAction?: boolean; serviceType?: string | null } = {}) {
   const before = { id: "lead", party_id: "party", owner_membership_id: options.unassigned ? null : "owner", queue_id: null, status, version: 5, next_action_at: options.noAction ? null : "2026-09-20T09:30:00Z" };
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("SELECT lead.*")) return { rows: [before], rowCount: 1 };
-    if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: null }], rowCount: 1 };
+    if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: options.serviceType === undefined ? "interior_design" : options.serviceType }], rowCount: 1 };
     if (sql.includes("FROM crm_qualification_forms")) return { rows: [], rowCount: 0 };
     if (sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
     if (sql.includes("SELECT 1 FROM crm_opportunities")) return { rows: options.converted ? [{}] : [], rowCount: options.converted ? 1 : 0 };
@@ -58,6 +58,14 @@ describe("CRM lead status moves", () => {
   it.each(["paused", "disqualified"])("requires a reason for %s", async (status) => {
     const { service, events } = setup("connected");
     await expect(service.transition({} as never, "workspace", "lead", { version: 5, status })).rejects.toThrow("A reason is required");
+    expect(events.record).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "not_sure"])("does not qualify a lead with unresolved enquiry type %s", async serviceType => {
+    const { service, query, events } = setup("connected", { serviceType });
+    await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "qualified" }))
+      .rejects.toThrow("Choose a specific enquiry type");
+    expect(query.mock.calls.some(([sql]) => /^\s*UPDATE\b/.test(sql))).toBe(false);
     expect(events.record).not.toHaveBeenCalled();
   });
 

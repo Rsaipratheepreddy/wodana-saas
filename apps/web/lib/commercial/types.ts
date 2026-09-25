@@ -2,6 +2,7 @@ export type {
   QuotationMaterial,
   QuotationMaterialRow,
   QuoteCanvasElement,
+  QuoteRichTextNode,
   QuoteCanvasPage,
   QuotePresentation,
   QuotationTemplate,

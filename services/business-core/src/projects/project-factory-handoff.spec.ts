@@ -208,6 +208,7 @@ describe("factory-to-site hand-off", () => {
     );
 
     data.snags[0].status = "closed";
+    data.dispatches[0].returnedToFactory = 2;
     expect(projectExecutionPulse(data, "2026-09-16").nextActions).toContainEqual(
       expect.objectContaining({ kind: "plan_factory_dispatch", taskId: factory.id }),
     );
@@ -215,6 +216,9 @@ describe("factory-to-site hand-off", () => {
 
   it("allows phased installation but never approves site output beyond accepted factory delivery", () => {
     const { data, site } = setup();
+    data.tasks[0].status = "in_progress";
+    data.tasks[0].approved = 1;
+    data.reports[0].entries[0].quantity = 1;
     const reviewer = { ...actor, id: "reviewer", name: "Reviewer" };
     data.dispatches = [{
       id: "dispatch-1",
@@ -239,6 +243,15 @@ describe("factory-to-site hand-off", () => {
       ready: true,
       acceptedQuantity: 1,
     });
+    for (const status of ["blocked", "on_hold", "cancelled"] as const) {
+      const held = structuredClone(data);
+      held.tasks[0].status = status;
+      expect(() => applyExecution(held, "task_status", { id: site.id, status: "in_progress" }, actor)).toThrow(/preceding/);
+    }
+    const unfinishedSite = structuredClone(data);
+    unfinishedSite.tasks.push(task({ id: "preparation", status: "in_progress" }));
+    unfinishedSite.tasks[1].predecessors.push("preparation");
+    expect(() => applyExecution(unfinishedSite, "task_status", { id: site.id, status: "in_progress" }, actor)).toThrow(/preceding/);
     applyExecution(data, "task_status", { id: site.id, status: "in_progress" }, actor);
     applyExecution(data, "report_submit", {
       report: {

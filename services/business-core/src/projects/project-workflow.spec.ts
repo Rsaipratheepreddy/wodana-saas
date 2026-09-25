@@ -6,6 +6,7 @@ import {
   builtInProjectWorkflow,
   completeProjectWorkflow,
   parseProjectWorkflowTemplate,
+  projectWorkflowGateResults,
   transitionProjectWorkflow,
 } from "./project-workflow";
 import {
@@ -41,6 +42,147 @@ function input() {
 }
 
 describe("project workflow templates", () => {
+  it("does not advance a project stage before commercial execution release", () => {
+    const data = emptyProject();
+    const actor: ExecutionActor = {
+      id: "member-1",
+      name: "Project Manager",
+      manage: true,
+      review: true,
+      report: true,
+      buy: true,
+      memberIds: ["member-1"],
+      resourceIds: [],
+      now: "2026-09-24T08:00:00.000Z",
+      released: false,
+    };
+    expect(() => applyExecution(data, "workflow_transition", { toStageKey: "delivery" }, actor)).toThrow(/release checklist/);
+  });
+
+  it("keeps each post-release Palm stage distinct within the supported limit", () => {
+    const stages = palmWorkflow().stages;
+    expect(stages.map((stage) => stage.visibleName)).toEqual([
+      "New Project",
+      "Concept & moodboard",
+      "Space planning",
+      "Renders",
+      "Awaiting Client Approval",
+      "Technical Drawings",
+      "Material Selection",
+      "Costing / BOQ",
+      "Procurement",
+      "Ready for Manufacturing",
+      "Manufacturing",
+      "Site works",
+      "Installation",
+      "Snagging",
+      "Complete / Handover",
+    ]);
+    expect(stages).toHaveLength(15);
+    expect(stages.filter((stage) => stage.releaseStart).map((stage) => stage.key)).toEqual(["procurement"]);
+    const maximumStages = [
+      stages[0],
+      ...Array.from({ length: 16 }, (_, index) => ({
+        ...stages[1],
+        key: `active_${index}`,
+      })),
+      stages.at(-1)!,
+    ];
+    expect(parseProjectWorkflowTemplate({ ...input(), stages: maximumStages }).stages).toHaveLength(18);
+    expect(() => parseProjectWorkflowTemplate({
+      ...input(),
+      stages: Array.from({ length: 19 }, (_, index) => ({
+        ...input().stages[0],
+        key: `stage_${index}`,
+      })),
+    })).toThrow("between 2 and 18 workflow stages");
+  });
+
+  it("starts a commercially released Palm project at procurement without replaying approved design", () => {
+    const template = {
+      ...palmWorkflow(),
+      id: "workflow-palm-1",
+      status: "active" as const,
+      source: "workspace" as const,
+      updatedAt: null,
+    };
+    const ordinary = adoptProjectWorkflow(template, "2026-09-24T08:00:00.000Z", "user-1", "Owner");
+    expect(ordinary.currentStageKey).toBe("project_setup");
+    const released = adoptProjectWorkflow(template, "2026-09-24T08:00:00.000Z", "user-1", "Owner", { commercialRelease: true });
+    expect(released.currentStageKey).toBe("procurement");
+    expect(released.history).toEqual([
+      expect.objectContaining({ action: "adopted", fromStageKey: null, toStageKey: "procurement" }),
+    ]);
+    const data = emptyProject();
+    data.workflow = released;
+    expect(() => completeProjectWorkflow(data, "", { id: "user-1", name: "Owner", now: "2026-09-24T09:00:00.000Z" }))
+      .toThrow("Move through the remaining project stages");
+    const duplicate = palmWorkflow();
+    duplicate.stages[0].releaseStart = true;
+    expect(() => parseProjectWorkflowTemplate(duplicate)).toThrow("one active stage");
+  });
+
+  it("blocks manufacturing readiness until production packages are actually ready", () => {
+    const template = {
+      ...palmWorkflow(),
+      id: "workflow-palm-1",
+      status: "active" as const,
+      source: "workspace" as const,
+      updatedAt: null,
+    };
+    const data = emptyProject();
+    data.phase = "active";
+    data.workflow = adoptProjectWorkflow(template, "2026-09-24T08:00:00.000Z", "user-1", "Owner", { commercialRelease: true });
+    data.roleAssignments = [{ role: "procurement_production", memberId: "member-1" }];
+    data.workPackages = [{
+      id: "package-1",
+      scopeLineIds: ["line-1"],
+      title: "Joinery",
+      area: "Living room",
+      deliveryRoute: "mixed",
+      status: "planning",
+      ownerId: "",
+      plannedStart: "",
+      plannedEnd: "",
+      blocker: "",
+      createdAt: "2026-09-24T08:00:00.000Z",
+      updatedAt: "2026-09-24T08:00:00.000Z",
+    }];
+    const actor = { id: "user-1", name: "Owner", now: "2026-09-24T09:00:00.000Z" };
+    expect(projectWorkflowGateResults(data, template.stages.find((stage) => stage.key === "procurement")!)).toEqual([
+      { key: "production_plan_ready", passed: false },
+    ]);
+    expect(() => transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor)).toThrow("production_plan_ready");
+    data.workPackages[0].status = "ready";
+    expect(() => transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor)).toThrow("production_plan_ready");
+    data.workPackages[0].deliveryRoute = "office";
+    data.workPackages[0].status = "completed";
+    expect(projectWorkflowGateResults(data, template.stages.find((stage) => stage.key === "procurement")!)).toEqual([
+      { key: "production_plan_ready", passed: false },
+    ]);
+    expect(() => transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor)).toThrow("production_plan_ready");
+    data.workPackages[0].deliveryRoute = "mixed";
+    data.workPackages[0].status = "completed";
+    expect(() => transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor)).toThrow("production_plan_ready");
+    const scopeLine = { id: "line-1", title: "Joinery", room: "Living room", material: "Oak", quantity: 1, unit: "nos" };
+    data.scope = { quoteId: "quote-1", quoteNumber: 1, currency: "AED", value: 100, lines: [scopeLine] };
+    data.workPackages[0].deliveryQuantities = {
+      version: 1, status: "confirmed",
+      rows: [{ id: "delivery-1", title: "Joinery", quantity: 1, unit: "nos", basis: "",
+        sources: [{ scopeLineId: "line-1", quantity: 1 }] }],
+      updatedAt: actor.now, updatedBy: actor.id, confirmedAt: actor.now, confirmedBy: actor.id,
+      sourceSnapshot: [scopeLine],
+    };
+    data.workPackages[0].deliveryQuantities.status = "draft";
+    expect(() => transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor)).toThrow("production_plan_ready");
+    data.workPackages[0].deliveryQuantities.status = "confirmed";
+    data.scope.lines[0] = { ...scopeLine, quantity: 2 };
+    expect(() => transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor)).toThrow("production_plan_ready");
+    data.scope.lines[0] = scopeLine;
+    transitionProjectWorkflow(data, "ready_for_manufacturing", "", actor);
+    expect(data.workflow.currentStageKey).toBe("ready_for_manufacturing");
+  });
+
   it("returns a fresh neutral default whose delivery work can overlap", () => {
     const first = builtInProjectWorkflow();
     const second = builtInProjectWorkflow();

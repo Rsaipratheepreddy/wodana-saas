@@ -162,8 +162,9 @@
   .listPanel, .avatar, .statusBadge { background: Canvas; color: CanvasText; }
 }
 /* Case work uses the same compact, full-width workspace rhythm as Leads. */
-.casePage { max-inline-size:none; margin:0; padding:.875rem 1.25rem 1.5rem; }
-.casePage .heading { margin-block-end:.65rem; }
+.casePage { max-inline-size:none; margin:0; padding: var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem); }
+.casePage .heading { margin-block-end: var(--wd-phi-3); }
+.casePage .sectionTitle { margin: 0; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); letter-spacing: -.02em; }
 .casePage .heading h1 { font-size:1.25rem; font-weight:600; letter-spacing:-.02em; }
 .casePage .heading .eyebrow { font-size:.7rem; letter-spacing:0; margin-block-end:.3rem; }
 .casePage .heading p { font-size:.75rem; margin-block-start:.3rem; }
@@ -184,9 +185,8 @@
   color: var(--wd-color-action-on-primary);
   box-shadow: none;
 }
-.casePage.compactCase { padding-block-start:.65rem; }
-.casePage.compactCase .heading { min-block-size:2rem; margin-block-end:.3rem; gap:.5rem; }
-.casePage.compactCase .heading h1 { font-size:1.05rem; }
+.casePage.compactCase .heading { min-block-size:2rem; margin-block-end: var(--wd-phi-2); gap:.5rem; }
+.casePage.compactCase .sectionTitle { font-size: var(--wd-text-md); }
 @media (max-width: 700px) {
   .preProjectPage, .casePage, .casePage.compactCase { padding: 1rem; }
 }
@@ -211,8 +211,19 @@ a.qualifiedName:hover { color: var(--pre-accent); text-decoration: underline; te
 .qualifiedName:focus-visible, .qualifiedOpen:focus-visible { outline: 2px solid var(--pre-accent); outline-offset: 3px; }
 .qualifiedOpen { display: inline-flex; align-items: center; gap: 4px; color: var(--pre-accent); text-decoration: underline; text-underline-offset: 3px; }
 .qualifiedMuted { color: var(--wd-color-text-secondary); }
-.qualifiedStatus { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 4px; background: var(--pre-tint); color: var(--pre-accent); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.qualifiedStatus { display: inline-flex; align-items: center; gap: .375rem; min-block-size: 1.375rem; padding-inline: .5rem; border-radius: var(--wd-radius-pill); background: var(--pre-tint); color: var(--pre-accent); font-size: var(--wd-text-2xs); font-weight: 500; line-height: 1; white-space: nowrap; }
 .qualifiedStatus[data-status="qualified"], .qualifiedStatus[data-status="released"] { background: var(--wd-color-success-subtle); color: var(--wd-color-success); }
 .qualifiedStatus[data-status="archived"] { background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
-.qualifiedPage :global(.wd-record-table td .wd-button) { min-block-size: 28px; block-size: 28px; padding-inline: 8px; border-radius: 4px; font-size: 11px; }
-@media (pointer: coarse) { .qualifiedPage :global(.wd-record-table td .wd-button) { min-block-size: 40px; block-size: 40px; } }
+
+/* Case table cells */
+.phaseCell { display: inline-flex; align-items: center; gap: .45rem; min-inline-size: 0; }
+.phaseCell > i { inline-size: 2.6rem; block-size: .3rem; border-radius: 999px; background: linear-gradient(to right, var(--wd-brand-500) 0 calc(var(--fill, 0) * 1%), var(--wd-color-surface-muted) calc(var(--fill, 0) * 1%) 100%); }
+.phaseCell > i[data-step="1"] { --fill: 16.6; } .phaseCell > i[data-step="2"] { --fill: 33.3; } .phaseCell > i[data-step="3"] { --fill: 50; } .phaseCell > i[data-step="4"] { --fill: 66.6; } .phaseCell > i[data-step="5"] { --fill: 83.3; } .phaseCell > i[data-step="6"] { --fill: 100; }
+.phaseCell > small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-variant-numeric: tabular-nums; }
+.money { font-variant-numeric: tabular-nums; }
+.capitalize { text-transform: capitalize; }
+.capitalize[data-priority="urgent"], .capitalize[data-priority="high"] { color: var(--wd-color-warning); font-weight: var(--wd-weight-medium); }
+
+.casePage.compactCase[data-requirements] { padding:12px 16px 20px 12px; }
+
+.casePage.compactCase[data-requirements] { padding:0; }

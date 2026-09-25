@@ -9,10 +9,11 @@ import { ConflictException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { ensureJobForSource } from "../jobs/job-identity.store";
 import type { CommercialData } from "../commercial/commercial.types";
+import { activeAcceptedBaseQuote } from "../commercial/palm-commercial-rounds";
 import { emptyProject } from "./execution.domain";
 import type { ProjectData, ProjectInitiation } from "./execution.types";
 import { releasedScopeLine } from "./released-scope-line";
-import { adoptProjectWorkflow } from "./project-workflow";
+import { adoptProjectWorkflow, enterCommercialReleaseStage } from "./project-workflow";
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { syncScopeWorkPackages } from "./project-work-packages";
 import {
@@ -69,9 +70,7 @@ export async function releaseDeliveryProject(
   userId: string,
   data: CommercialData,
 ) {
-  const quote = data.quotes.find(
-    (q) => q.kind === "quotation" && q.status === "accepted",
-  ), dealFile = data.dealFile;
+  const quote = activeAcceptedBaseQuote(data), dealFile = data.dealFile;
   if (!quote || !dealFile || !commercialReleaseReady(data))
     throw new ConflictException(
       "Complete the commercial release checklist before starting execution.",
@@ -97,6 +96,7 @@ export async function releaseDeliveryProject(
     })),
     data.release!.at,
     quote.definitionBaseline,
+    { includePackageDesigns: Boolean(data.palmFlow?.scope.design && quote.round === "main") },
   );
   if (
     !sameDesignEvidence(quote.designEvidence, designBaseline) ||
@@ -134,7 +134,9 @@ export async function releaseDeliveryProject(
       data.release!.at,
       userId,
       data.release!.by,
+      { commercialRelease: true },
     );
+    enterCommercialReleaseStage(execution.workflow, data.release!.at, userId, data.release!.by);
     execution.controls = {
       ...(execution.controls ?? emptyProject().controls!),
       reference: dealFile.reference.replace(/^DF-/, "PRJ-"),

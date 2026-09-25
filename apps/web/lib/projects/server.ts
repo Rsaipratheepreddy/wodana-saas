@@ -8,8 +8,9 @@ const e2ePortfolio = [{
   caseId: 'demo-case',
   name: 'Jumeirah villa interiors',
   customer: 'Amira Hassan',
-  phase: 'planning',
+  phase: 'active',
   manager: 'Omar Rahman',
+  team: ['Omar Rahman'],
   reference: 'PRJ-2026-001',
   priority: 'high',
   risk: 'on_track',
@@ -32,7 +33,7 @@ const e2eProject = (workspaceId: string): ProjectState => ({
   canReview: false,
   canReport: false,
   canBuy: false,
-  commercialReady: false,
+  commercialReady: true,
   members: [{ id: 'demo-manager', name: 'Omar Rahman' }],
   resources: [],
   bookings: [],
@@ -43,7 +44,7 @@ const e2eProject = (workspaceId: string): ProjectState => ({
   },
   data: {
     revision: 1,
-    phase: 'planning',
+    phase: 'active',
     scope: null,
     tasks: [],
     reports: [],
@@ -65,8 +66,13 @@ const e2eProject = (workspaceId: string): ProjectState => ({
 export async function projectRead<T>(path:string){
   const profile=await getAuthenticatedProfile(),w=profile.memberships[0]?.workspaceId;
   if(!w)throw Error('Workspace unavailable.');
+  if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path.startsWith('approvals?')) return {workspaceId:w,data:{rows:[],nextCursor:null,memberId:'demo-manager',canReview:false} as T};
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'portfolio') {
     return {workspaceId:w,data:e2ePortfolio as T};
+  }
+  if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path.startsWith('calendar?')) {
+    const query=new URLSearchParams(path.slice('calendar?'.length));
+    return {workspaceId:w,data:{range:{from:query.get('from')??'',to:query.get('to')??'',timezone:'Asia/Dubai'},departments:[],events:[],items:[],overlapCount:0,conflictCount:0} as T};
   }
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'demo/execution') {
     return {workspaceId:w,data:e2eProject(w) as T};

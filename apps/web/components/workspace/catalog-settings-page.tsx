@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useMemo, useCallback, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
-import { ChevronRight, Plus, Table2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ChevronRight, Plus, Table2, Upload, Download } from 'lucide-react';
 import { Button, ConfirmationDialog, DesignSystemProvider, IconMenuButton, InspectorSheet, SearchInput, SelectField, Checkbox, useDesignSystem } from '@/design-system';
 import { blankCatalogRecord, savePayload, type CatalogKind, type CatalogPageData, type CatalogRecord } from '@/lib/workspace/catalog';
 import { catalogAttribute, catalogHierarchy, catalogRecordName, defaultCatalog, isMaterialEntry, materialKinds } from '@/lib/workspace/catalog-hierarchy';
 import { recordCode } from '@/lib/workspace/catalog-navigation';
+import { catalogIssues } from '@/lib/workspace/catalog-review';
 import { priceableKinds } from '@/lib/workspace/catalog-prices';
 import { CatalogHierarchyTable, type CatalogView } from './catalog-hierarchy-table';
 import { CatalogRoomGrid } from './catalog-room-grid';
@@ -27,19 +29,19 @@ async function requestCatalog(workspaceId: string, path = '', method = 'GET', bo
   if (!response.ok) throw new Error(Array.isArray(payload?.message) ? payload.message.join('. ') : payload?.message ?? 'Could not save. Your changes are still available.');
   return payload;
 }
-export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageData }) {
+export function CatalogSettingsPage({ initialData, initialCatalogId, initialView = 'room' }: { initialData: CatalogPageData; initialCatalogId?: string; initialView?: 'room' | 'work' | 'products' }) {
   const inherited = useDesignSystem();
+  const router = useRouter();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [data, setData] = useState(initialData);
-  const [catalogId, setCatalogId] = useState(defaultCatalog(initialData.items)?.id ?? '');
+  const [catalogId, setCatalogId] = useState(() => initialData.items.some(row => row.kind === 'catalog_group' && !row.archived && row.id === initialCatalogId) ? initialCatalogId! : defaultCatalog(initialData.items)?.id ?? '');
   const [loadedCatalogs, setLoadedCatalogs] = useState(() => new Set(initialData.overview ? [] : initialData.items.filter(r => r.kind === 'catalog_group').map(r => r.id)));
-  const [allCatalogsLoaded, setAllCatalogsLoaded] = useState(!initialData.overview);
-  const [allCatalogsFailed, setAllCatalogsFailed] = useState(false);
   const [failedCatalog, setFailedCatalog] = useState('');
   const [loadRetry, setLoadRetry] = useState(0);
-  const [view, setView] = useState<CatalogView>('room');
+  const [view, setView] = useState<CatalogView>(initialView);
   const [roomId, setRoomId] = useState(''), [itemId, setItemId] = useState(''), [variantId, setVariantId] = useState('');
   const [archived, setArchived] = useState(false);
+  const [reviewOnly, setReviewOnly] = useState(false);
   const [search, setSearch] = useState(''), [category, setCategory] = useState('all'), [page, setPage] = useState(1);
   const [selected, setSelected] = useState<CatalogRecord | null>(null), [draft, setDraft] = useState<CatalogRecord | null>(null);
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
@@ -47,6 +49,7 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
   const [editingTable, setEditingTable] = useState(false), [sheetDirty, setSheetDirty] = useState(false);
   const [discard, setDiscard] = useState<(() => void) | null>(null), [importOpen, setImportOpen] = useState(false);
   const items = useMemo(() => data.items.filter(r => r.catalogId === catalogId), [data.items, catalogId]);
+  const catalogs = useMemo(() => data.items.filter(r => r.kind === 'catalog_group' && !r.archived), [data.items]);
   const graph = useMemo(() => catalogHierarchy(items, archived), [items, archived]);
   const activeCatalog = data.items.find(r => r.id === catalogId), room = graph.byId.get(roomId), item = graph.byId.get(itemId), variant = graph.byId.get(variantId);
   const dirty = Boolean(draft && JSON.stringify(draft) !== JSON.stringify(selected));
@@ -65,31 +68,15 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
     }).catch(e => { if (current) { setFailedCatalog(catalogId); setError(e instanceof Error ? e.message : 'Could not load master data.'); } });
     return () => { current = false; };
   }, [catalogId, data.workspaceId, loadRetry, loadedCatalogs]);
-  useEffect(() => {
-    if (view !== 'products' || allCatalogsLoaded) return;
-    let current = true;
-    setAllCatalogsFailed(false);
-    requestCatalog(data.workspaceId).then(next => {
-      if (!current) return;
-      setData(next);
-      setLoadedCatalogs(new Set(next.items.filter((r: CatalogRecord) => r.kind === 'catalog_group').map((r: CatalogRecord) => r.id)));
-      setAllCatalogsLoaded(true);
-    }).catch(e => {
-      if (!current) return;
-      setAllCatalogsFailed(true);
-      setError(e instanceof Error ? e.message : 'Could not load materials.');
-    });
-    return () => { current = false; };
-  }, [view, allCatalogsLoaded, data.workspaceId, loadRetry]);
   const selectedCatalogReady = !catalogId || loadedCatalogs.has(catalogId);
-  const catalogReady = view === 'products' ? allCatalogsLoaded : selectedCatalogReady;
+  const catalogReady = selectedCatalogReady;
   const loading = !catalogReady && failedCatalog !== catalogId;
   const report = (e: unknown) => setError(e instanceof Error ? e.message : 'The request could not be completed.');
   const upsert = (record: CatalogRecord) => setData(d => ({ ...d, items: [...d.items.filter(r => r.id !== record.id), record] }));
   const write = (record: CatalogRecord): Promise<CatalogRecord> => requestCatalog(data.workspaceId, '/records', 'PUT', savePayload(record));
-  const refresh = async () => { setError(''); try { const refreshAll = view === 'products'; const next = await requestCatalog(data.workspaceId, '', 'GET', undefined, refreshAll ? undefined : catalogId); if (refreshAll) { setData(next); setLoadedCatalogs(new Set(next.items.filter((r: CatalogRecord) => r.kind === 'catalog_group').map((r: CatalogRecord) => r.id))); setAllCatalogsLoaded(true); } else { setLoadedCatalogs(previous => new Set(previous).add(catalogId)); if (!catalogId) setCatalogId(defaultCatalog(next.items)?.id ?? ''); setData(previous => ({...next, items:[...previous.items.filter(r => r.catalogId !== catalogId && r.kind !== 'catalog_group'), ...next.items]})); } } catch (e) { report(e); } };
+  const refresh = async () => { setError(''); try { const next = await requestCatalog(data.workspaceId, '', 'GET', undefined, catalogId); setLoadedCatalogs(previous => new Set(previous).add(catalogId)); if (!catalogId) setCatalogId(defaultCatalog(next.items)?.id ?? ''); setData(previous => ({...next, items:[...previous.items.filter(r => r.catalogId !== catalogId && r.kind !== 'catalog_group'), ...next.items]})); } catch (e) { report(e); } };
   const changeView = (next: CatalogView, nextRoom = '', nextItem = '', nextVariant = '', nextCatalog = catalogId) => {
-    const action = () => { setFailedCatalog(''); setArchived(false); setView(next); setRoomId(nextRoom); setItemId(nextItem); setVariantId(nextVariant); setCatalogId(nextCatalog); setSearch(''); setCategory('all'); setPage(1); setEditingTable(false); setSheetDirty(false); setError(''); setMessage(''); };
+    const action = () => { setFailedCatalog(''); setArchived(false); setReviewOnly(false); setView(next); setRoomId(nextRoom); setItemId(nextItem); setVariantId(nextVariant); setCatalogId(nextCatalog); setSearch(''); setCategory('all'); setPage(1); setEditingTable(false); setSheetDirty(false); setError(''); setMessage(''); };
     if (sheetDirty) setDiscard(() => action); else action();
   };
   const open = (record: CatalogRecord) => {
@@ -116,8 +103,8 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
     };
     if (dirty) setDiscard(() => action); else action();
   };
-  const activeGraph = useMemo(() => view === 'products' ? catalogHierarchy(data.items, archived) : graph, [view, data.items, archived, graph]);
-  const viewItems = view === 'products' ? data.items : items;
+  const activeGraph = graph;
+  const viewItems = items;
   const sourceRows = useMemo(() => {
     if (view === 'work') return room ? graph.related('work', 'room', room.id) : graph.active.filter(r => r.kind === 'work');
     if (view === 'variant') return item ? graph.related('variant', 'work', item.id) : [];
@@ -127,8 +114,10 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
     return graph.active.filter(r => r.kind === view);
   }, [view, graph, activeGraph, room, item, variant]);
   const categoryOf = useCallback((record: CatalogRecord) => activeGraph.names(record, 'category') || catalogAttribute(record, 'category') || activeGraph.names(record, 'material') || '', [activeGraph]);
+  const reviewRows = useMemo(() => view === 'products' && catalogReady && !archived ? sourceRows.map(record => ({ record, issues: catalogIssues(record, data.items) })).filter(entry => entry.issues.length) : [], [view, catalogReady, archived, sourceRows, data.items]);
+  const reviewIds = useMemo(() => new Set(reviewRows.map(entry => entry.record.id)), [reviewRows]);
   const categories = [...new Set(sourceRows.map(categoryOf).filter(Boolean))].sort();
-  const filtered = useMemo(() => sourceRows.filter(r => (category === 'all' || categoryOf(r) === category) && (!search.trim() || [r.name, r.code, ...r.aliases, ...r.attributes.map(a => a.value), ...r.links.map(l => activeGraph.byId.get(l.targetId)?.name ?? '')].join(' ').toLowerCase().includes(search.trim().toLowerCase()))).sort((a, b) => catalogRecordName(a).localeCompare(catalogRecordName(b))), [sourceRows, category, search, activeGraph, categoryOf]);
+  const filtered = useMemo(() => sourceRows.filter(r => (!reviewOnly || view !== 'products' || archived || reviewIds.has(r.id)) && (category === 'all' || categoryOf(r) === category) && (!search.trim() || [r.name, r.code, ...r.aliases, ...r.attributes.map(a => a.value), ...r.links.map(l => activeGraph.byId.get(l.targetId)?.name ?? '')].join(' ').toLowerCase().includes(search.trim().toLowerCase()))).sort((a, b) => catalogRecordName(a).localeCompare(catalogRecordName(b))), [sourceRows, category, search, activeGraph, categoryOf, reviewOnly, reviewIds, view, archived]);
   const pages = Math.max(1, Math.ceil(filtered.length / 50)), currentPage = Math.min(page, pages), visible = filtered.slice((currentPage - 1) * 50, currentPage * 50);
   const recordKind: CatalogKind = view === 'products' ? 'sku' : view === 'components' ? 'construction' : view;
   const makeRecord = (): CatalogRecord => ({ ...blankCatalogRecord(recordKind), catalogId: catalogId || undefined, links: [
@@ -157,9 +146,19 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
     if (!selected || saving) return; setSaving(true); setError('');
     try { const saved = await requestCatalog(data.workspaceId, `/records/${selected.id}`, 'PATCH', { version: selected.version, archived: !selected.archived }); upsert(saved); setSelected(saved); setMessage(`${saved.name} ${saved.archived ? 'archived' : 'restored'}.`); } catch (e) { report(e); } finally { setSaving(false); }
   };
+  const [importCatalogId] = useState(() => crypto.randomUUID());
+  const openImport = async () => {
+    if (saving || sheetDirty) return;
+    if (catalogId) { setImportOpen(true); return; }
+    setSaving(true); setError('');
+    try {
+      const created = await requestCatalog(data.workspaceId, '/collections', 'POST', { id: importCatalogId, name: 'Workspace catalog', starter: false });
+      upsert(created); setCatalogId(created.id); setLoadedCatalogs(previous => new Set(previous).add(created.id)); setImportOpen(true);
+    } catch (error) { report(error); } finally { setSaving(false); }
+  };
   const exportRecords = () => { const url = URL.createObjectURL(new Blob([JSON.stringify({ schemaVersion: 2, catalog: activeCatalog, items }, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = 'master-data.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
-  const title = variant ? `${item ? catalogRecordName(item) : 'Item'} · ${variant.configuration?.specificationTier || variant.name}` : item ? catalogRecordName(item) : room ? room.name : 'Master Data';
-  const rootTabs: CatalogView[] = ['room', 'work', 'products'];
+  const title = variant ? `${item ? catalogRecordName(item) : 'Item'} · ${variant.configuration?.specificationTier || variant.name}` : item ? catalogRecordName(item) : room ? room.name : activeCatalog?.name ?? 'Catalog';
+  const rootTabs: CatalogView[] = ['room', 'work', 'products', 'brand', 'unit'];
   const tabs: CatalogView[] = item ? ['variant', 'components'] : rootTabs;
   const tableMode = view !== 'room' && !editingTable;
   const addButton = !data.error && data.canManage && <Button variant="primary" size="compact" isDisabled={saving || sheetDirty || archived || !catalogReady} onPress={() => void add()}><Plus size={15} />Add {singular[view]}</Button>;
@@ -167,29 +166,42 @@ export function CatalogSettingsPage({ initialData }: { initialData: CatalogPageD
   const archiveCheckbox = <Checkbox isSelected={archived} isDisabled={sheetDirty} onChange={value => { setArchived(value); setPage(1); }}>Archived</Checkbox>;
   return <DesignSystemProvider {...inherited} currency={data.currency ?? inherited.currency} portalContainer={portal}>
     <div ref={setPortal} className={`${styles.page} ${workspaceColors.theme}`} aria-label="Master Data workspace">
-      {(room || item) && <nav className={styles.breadcrumbs} aria-label="Master Data navigation"><button onClick={() => changeView('room')}>Master Data</button>{room && <><ChevronRight size={12} />{item ? <button onClick={() => changeView('work', room.id)}>{room.name}</button> : <span aria-current="page">{room.name}</span>}</>}{item && <><ChevronRight size={12} />{variant ? <button onClick={() => changeView('variant', roomId, item.id)}>{catalogRecordName(item)}</button> : <span aria-current="page">{catalogRecordName(item)}</span>}</>}{variant && <><ChevronRight size={12} /><span aria-current="page">{String(variant.configuration?.specificationTier || variant.name)}</span></>}</nav>}
-      <header className={styles.header}><h1>{title}</h1><div className={styles.actions}>
+      <nav className={styles.breadcrumbs} aria-label="Master Data navigation"><a href="/workspace/catalogs">Catalogs</a>{activeCatalog && <><ChevronRight size={12} />{room || item ? <button onClick={() => changeView('room')}>{activeCatalog.name}</button> : <span aria-current="page">{activeCatalog.name}</span>}</>}{room && <><ChevronRight size={12} />{item ? <button onClick={() => changeView('work', room.id)}>{room.name}</button> : <span aria-current="page">{room.name}</span>}</>}{item && <><ChevronRight size={12} />{variant ? <button onClick={() => changeView('variant', roomId, item.id)}>{catalogRecordName(item)}</button> : <span aria-current="page">{catalogRecordName(item)}</span>}</>}{variant && <><ChevronRight size={12} /><span aria-current="page">{String(variant.configuration?.specificationTier || variant.name)}</span></>}</nav>
+      <header className={styles.header}><div><h1>{title}</h1></div><div className={styles.actions}>
+        {catalogs.length > 1 && <div className={styles.catalogSelector}><SelectField label="Catalog" selectedKey={catalogId} isDisabled={saving || Boolean(draft)} onSelectionChange={key => { if (!key || String(key) === catalogId) return; const action = () => { const targetView = !room && !item && view === 'products' ? '&view=materials' : !room && !item && view === 'work' ? '&view=items' : ''; router.push(`/workspace/catalogs?catalogId=${encodeURIComponent(String(key))}${targetView}`); }; if (sheetDirty) setDiscard(() => action); else action(); }} items={catalogs.map(record => ({ id: record.id, label: record.name }))} /></div>}
+        <a className="wd-button" data-variant="secondary" data-size="compact" href="/templates/catalog-sample.xlsx" download><Download size={14} />Sample Excel</a>
+        {data.canManage && <Button size="compact" isDisabled={sheetDirty || !catalogReady || saving} onPress={() => void openImport()}><Upload size={14} />Import</Button>}
         {!tableMode && addButton}
         <IconMenuButton ariaLabel="Master Data actions" items={[
           { id: 'refresh', label: 'Refresh', isDisabled: saving || sheetDirty }, { id: 'export', label: 'Export master data', isDisabled: !activeCatalog },
-          ...(data.canManage ? [{ id: 'import', label: 'Import records', isDisabled: !activeCatalog || sheetDirty || !catalogReady }, ...(item || room ? [{ id: 'edit', label: item ? 'Edit item' : 'Edit room', isDisabled: sheetDirty || !catalogReady }] : [])] : []),
+          ...(data.canManage ? [{ id: 'import', label: 'Import records', isDisabled: saving || sheetDirty || !catalogReady }, ...(item || room ? [{ id: 'edit', label: item ? 'Edit item' : 'Edit room', isDisabled: sheetDirty || !catalogReady }] : [])] : []),
           { id: 'brand', label: 'Brands', isDisabled: !activeCatalog }, { id: 'unit', label: 'Units', isDisabled: !activeCatalog },
-        ]} onAction={key => { if (key === 'refresh') void refresh(); if (key === 'export') exportRecords(); if (key === 'brand' || key === 'unit') changeView(key); if (key === 'import') setImportOpen(true); if (key === 'edit') edit((item || room || activeCatalog)!); }} />
+        ]} onAction={key => { if (key === 'refresh') void refresh(); if (key === 'export') exportRecords(); if (key === 'brand' || key === 'unit') changeView(key); if (key === 'import') void openImport(); if (key === 'edit') edit((item || room || activeCatalog)!); }} />
       </div></header>
       {message && <p className={styles.success} role="status">{message}</p>}
       {(data.error || error) && !draft && !selected && <p className={styles.error} role="alert">{data.error || error}</p>}
       {!data.error && <>
-        {!catalogReady && <p role="status" className={styles.context}>{loading && !allCatalogsFailed ? 'Loading materials and prices…' : <><span>Materials could not be loaded. </span><Button size="compact" onPress={() => { setError(''); setFailedCatalog(''); setAllCatalogsFailed(false); setLoadRetry(n => n + 1); }}>Retry</Button></>}</p>}
+        {!catalogReady && <p role="status" className={styles.context}>{loading ? 'Loading catalog…' : <><span>Catalog could not be loaded. </span><Button size="compact" onPress={() => { setError(''); setFailedCatalog(''); setLoadRetry(n => n + 1); }}>Retry</Button></>}</p>}
         {!room || item ? <div className={styles.tabs} role="group" aria-label={item ? 'Item sections' : 'Master Data sections'}>{tabs.map(tab => <button key={tab} aria-pressed={view === tab} id={`catalog-tab-${tab}`} onClick={() => changeView(tab, item ? roomId : '', item?.id ?? '')}>{viewLabels[tab]}</button>)}</div> : null}
         {variant && <dl className={styles.summary}>{['board_choice', 'laminate_choice', 'hardware_choice', 'accessory_choice'].map(key => { const relation = ({board_choice:'material',laminate_choice:'sku',hardware_choice:'hardware',accessory_choice:'consumable'})[key]; const value = graph.names(variant, relation ?? '') || catalogAttribute(variant, key); return value ? <div key={key}><dt>{({ board_choice: 'Board', laminate_choice: 'Finish', hardware_choice: 'Hardware', accessory_choice: 'Accessories' })[key]}</dt><dd>{value}</dd></div> : null; })}</dl>}
         {view === 'components' && <p className={styles.context}>{variant ? 'Shared item materials and additions for this variant.' : 'Shared materials used by every variant of this item.'} Each row shows a component, its required specification and the selected material product.</p>}
+        {view === 'products' && catalogReady && !archived && <section className={styles.review} aria-label="Material review">
+          <div className={styles.reviewHeader}><div><h2>{reviewRows.length ? `${reviewRows.length} materials need review` : 'Material review'}</h2><p>Check units, specifications and saved selling prices before quoting.</p></div>
+            <Button size="compact" isDisabled={sheetDirty} aria-pressed={reviewOnly} onPress={() => { setReviewOnly(!reviewOnly); setPage(1); }}>{reviewOnly ? 'Show all materials' : 'Review missing details'}</Button>
+          </div>
+          {reviewOnly && (reviewRows.length ? <ul className={styles.reviewList}>{reviewRows.slice(0, 5).map(({ record, issues }) => <li key={record.id}><div><strong>{catalogRecordName(record)}</strong><small>{issues.map(issue => issue.label).join(' · ')}</small></div><div className={styles.actions}>
+            {issues.some(issue => issue.kind === 'details') && <Button size="compact" isDisabled={sheetDirty} onPress={() => data.canManage ? edit(record) : open(record)}>{data.canManage ? 'Review details' : 'View details'}</Button>}
+            {issues.some(issue => issue.kind === 'price') && <Button size="compact" isDisabled={sheetDirty} onPress={() => price(record)}>Review price</Button>}
+          </div></li>)}</ul> : <p className={styles.reviewEmpty}>No missing details found by these checks. Quote-specific price dates, currency and approvals still apply.</p>)}
+          {reviewOnly && reviewRows.length > 5 && <p className={styles.reviewEmpty}>Showing the first 5 to resolve. All matching materials are in the sheet below.</p>}
+        </section>}
         <section id="catalog-panel" aria-label={viewLabels[view]}>
           {!tableMode && <div className={styles.toolbar}><SearchInput label={`Search ${viewLabels[view].toLowerCase()}`} placeholder="Search names, codes or specifications…" value={search} isDisabled={sheetDirty} onChange={value => { setSearch(value); setPage(1); }} /><div className={styles.actions}>
             {categories.length > 1 && <div className={styles.selector}><SelectField label="Category" aria-label="Category" isDisabled={sheetDirty} selectedKey={category} onSelectionChange={key => { setCategory(String(key)); setPage(1); }} items={[{ id: 'all', label: 'All categories' }, ...categories.map(name => ({ id: name, label: name }))]} /></div>}
             {archiveCheckbox}
             {editTableButton}
           </div></div>}
-          {!catalogReady && !['room','work','variant','unit'].includes(view) ? <p role="status">{loading && !allCatalogsFailed ? 'Loading master data…' : 'Use Retry to load this section.'}</p> : editingTable ? <CatalogSheet key={`${catalogId}:${view}:${roomId}:${itemId}`} kind={view === 'products' ? 'all' : recordKind} items={viewItems} rows={visible} canManage={data.canManage && !saving && !archived && catalogReady} createRow={makeRecord} onDirtyChange={setSheetDirty} onSave={write} onSaved={upsert} onSaveComplete={(saved, failed) => setMessage(`${saved} saved.${failed ? ` ${failed} need attention.` : ''}`)} onOpen={open} /> : view === 'room' ? <CatalogRoomGrid rooms={visible} items={items} canManage={data.canManage && !saving && catalogReady} filtered={Boolean(search.trim()) || category !== 'all' || archived} onOpen={open} onEdit={edit} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }}/> : <CatalogHierarchyTable key={`${catalogId}:${view}:${roomId}:${itemId}:${variantId}:${archived}`} view={view} items={viewItems} rows={filtered} workspaceId={data.workspaceId} searchValue={search} onSearchChange={value => { setSearch(value); setPage(1); }} totalRowCount={sourceRows.length} toolbarActions={<>{editTableButton}{addButton}</>} footerActions={archiveCheckbox} canManage={data.canManage && !saving && !archived && catalogReady} componentCounts={data.componentCounts} pricesLoading={!catalogReady} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }} onRelated={related} onOpen={open} onEdit={edit} onPrice={price} />}
+          {!catalogReady && !['room','work','variant','unit'].includes(view) ? <p role="status">{loading ? 'Loading catalog…' : 'Use Retry to load this section.'}</p> : editingTable ? <CatalogSheet key={`${catalogId}:${view}:${roomId}:${itemId}`} kind={view === 'products' ? 'all' : recordKind} items={viewItems} rows={visible} canManage={data.canManage && !saving && !archived && catalogReady} createRow={makeRecord} onDirtyChange={setSheetDirty} onSave={write} onSaved={upsert} onSaveComplete={(saved, failed) => setMessage(`${saved} saved.${failed ? ` ${failed} need attention.` : ''}`)} onOpen={open} /> : view === 'room' ? <CatalogRoomGrid rooms={visible} items={items} canManage={data.canManage && !saving && catalogReady} filtered={Boolean(search.trim()) || category !== 'all' || archived} onOpen={open} onEdit={edit} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }}/> : <CatalogHierarchyTable key={`${catalogId}:${view}:${roomId}:${itemId}:${variantId}:${archived}`} view={view} items={viewItems} rows={filtered} workspaceId={data.workspaceId} searchValue={search} onSearchChange={value => { setSearch(value); setPage(1); }} totalRowCount={sourceRows.length} toolbarActions={<>{editTableButton}{addButton}</>} footerActions={archiveCheckbox} canManage={data.canManage && !saving && !archived && catalogReady} canViewCosts={data.canViewCosts === true} componentCounts={data.componentCounts} pricesLoading={!catalogReady} onDetails={record => { if(catalogReady) { setSelected(record); setDraft(null); setError(''); } }} onRelated={related} onOpen={open} onEdit={edit} onPrice={price} />}
           {!tableMode && <div className={styles.pager}><span>{filtered.length} {viewLabels[view].toLowerCase()} · Page {currentPage} of {pages}</span><div className={styles.actions}><Button size="compact" isDisabled={sheetDirty || currentPage === 1} onPress={() => setPage(currentPage - 1)}>Previous</Button><Button size="compact" isDisabled={sheetDirty || currentPage === pages} onPress={() => setPage(currentPage + 1)}>Next</Button></div></div>}
         </section>
       </>}

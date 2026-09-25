@@ -60,4 +60,19 @@ describe("CRM SLA reporting", () => {
     expect(groupedSql).toContain("THEN 'closed'");
     expect(access.withPermissions).toHaveBeenCalledWith({}, "workspace", ["crm.reports.view"], expect.any(Function));
   });
+
+  it("groups enquiry performance by the stored emirate", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("averageDaysSinceUpdate")) return { rows: [{ id: "outside_uae", label: "outside_uae", leads: 1 }], rowCount: 1 };
+      if (sql.includes("FROM crm_intake_events") && sql.includes("GROUP BY status")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT count(*)::int AS leads")) return { rows: [{ leads: 1 }], rowCount: 1 };
+      if (sql.includes("intake.channel='walk_in'")) return { rows: [], rowCount: 0 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const access = { withPermissions: vi.fn(async (_actor, _workspaceId, _permissions, work) => work({ query })) };
+    const service = new CrmReportingService(access as never);
+    const result = await service.report({} as never, "workspace", "lead-flow", { groupBy: "emirate" });
+    expect(result).toMatchObject({ groupBy: "emirate", reconciliation: { totalLeads: 1, groupedLeads: 1, matches: true } });
+    expect(query.mock.calls[0][0]).toContain("enquiry.details->>'emirate'");
+  });
 });

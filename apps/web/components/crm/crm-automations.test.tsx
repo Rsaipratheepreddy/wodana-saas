@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CrmAutomations } from "./crm-automations";
 
+vi.mock("next/font/google", () => ({ Caveat: () => ({ variable: "note-font" }) }));
 vi.mock("./crm-flow-canvas", () => ({ CrmFlowCanvas: () => null }));
 
 const workspaceId = "d004d45c-7140-4b0c-a68d-e87d012c2390";

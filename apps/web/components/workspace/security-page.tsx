@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
 import {
+  Badge,
   Button,
   Callout,
   Checkbox,
@@ -63,6 +64,17 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState("");
   const [failure, setFailure] = useState("");
+
+  const copySecurityText = async (text: string, success: string, fallback: string) => {
+    setFailure("");
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(text);
+      setStatus(success);
+    } catch {
+      setFailure(fallback);
+    }
+  };
 
   useEffect(() => {
     if (!mfaSetup?.otpauthUri) return;
@@ -163,6 +175,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
         setStatus("New recovery codes were generated. Your previous codes no longer work.");
       } else {
         setMfa((current) => ({ ...current, enabled: false, confirmedAt: null, recoveryCodesRemaining: 0 }));
+        setSessions((current) => current.filter((session) => session.current));
         setStatus("Two-step verification was turned off. Other sessions were signed out.");
         setMfaDialog(null);
         setMfaSetup(null);
@@ -208,7 +221,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
     { id: "device", accessorFn: sessionLabel, header: "Device", size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser}</strong><small>{details.device}</small></span>; } },
     { accessorKey: "ipAddress", header: "IP address", size: 145, cell: ({ row }) => row.original.ipAddress ?? "—" },
     { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: "Last active", size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" })}</time> },
-    { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <span className={styles.current}>This device</span> : <Button aria-label={`Sign out ${sessionLabel(row.original)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">Sign out</Button> },
+    { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <Badge tone="success">This device</Badge> : <Button aria-label={`Sign out ${sessionLabel(row.original)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">Sign out</Button> },
   ];
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
@@ -220,7 +233,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
         <div className={styles.mfaSummary}>
           <div className={styles.mfaTitleRow}>
             <h2 id="mfa-heading">Two-step verification</h2>
-            <span className={mfa.enabled ? styles.enabled : styles.disabled}>{mfa.enabled ? "On" : "Off"}</span>
+            <Badge tone={mfa.enabled ? "success" : "warning"}>{mfa.enabled ? "On" : "Off"}</Badge>
           </div>
           <p>{mfa.enabled
             ? "Your password and an authenticator-app code are required when you sign in."
@@ -242,7 +255,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       </section>
 
       <header className={styles.sessionsHeader}><h2>Active sessions</h2><p>Browsers and devices currently signed in to your account.</p></header>
-      <DataGrid ariaLabel="Active sessions" appearance="flush" columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle="No active sessions" emptyDescription="Signed-in browsers and devices will appear here." />
+      <DataGrid ariaLabel="Active sessions" gridLines columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle="No active sessions" emptyDescription="Signed-in browsers and devices will appear here." />
     </section>
 
     <ControlledModalDialog
@@ -251,7 +264,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
           : mfaDialog === "disable" ? "Confirm with a current code. Other signed-in devices will be signed out."
             : "Confirm with a current code. All previous recovery codes will stop working."}
       footer={mfaDialog === "codes" ? <>
-        <Button isDisabled={working} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.")).catch(() => setFailure("Select and copy the codes manually."))} variant="quiet"><Copy size={14} />Copy all</Button>
+        <Button isDisabled={working} onPress={() => void copySecurityText(recoveryCodes.join("\n"), "Recovery codes copied.", "Select and copy the codes manually.")} variant="quiet"><Copy size={14} />Copy all</Button>
         <Button isDisabled={!recoveryCodesSaved} onPress={closeMfaDialog} variant="primary">Done</Button>
       </> : <>
         <Button isDisabled={working} onPress={closeMfaDialog}>Cancel</Button>
@@ -268,7 +281,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
         {failure ? <Callout title="Could not continue" tone="danger">{failure}</Callout> : null}
         {mfaDialog === "setup" && mfaSetup ? <>
           <div className={styles.qrPanel}>{mfaQrCode ? <Image alt="Authenticator setup QR code" height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">Preparing QR code…</span>}</div>
-          <div className={styles.manualKey}><span>Manual setup key</span><code>{mfaSetup.secret}</code><Button onPress={() => void navigator.clipboard?.writeText(mfaSetup.secret).then(() => setStatus("Setup key copied.")).catch(() => setFailure("Select and copy the key manually."))} size="compact" variant="quiet"><Copy size={13} />Copy</Button></div>
+          <div className={styles.manualKey}><span>Manual setup key</span><code>{mfaSetup.secret}</code><Button onPress={() => void copySecurityText(mfaSetup.secret, "Setup key copied.", "Select and copy the key manually.")} size="compact" variant="quiet"><Copy size={13} />Copy</Button></div>
         </> : null}
         {mfaDialog === "setup" ? <label className={styles.otpField}>
           <span>Six-digit authenticator code</span>

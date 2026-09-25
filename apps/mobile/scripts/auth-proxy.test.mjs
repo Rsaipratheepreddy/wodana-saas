@@ -56,6 +56,29 @@ test('browser never receives development password reset tokens', async (t) => {
   const result = await request('/auth/password/forgot', { email: 'member@example.com' });
   assert.deepEqual(await result.json(), { accepted: true });
 });
+test('browser preview resolves organizations and serves their public logo', async (t) => {
+  const calls = [];
+  const proxy = createAuthProxy({ target: 'https://api.example.com/api/v1', fetcher: async (url, init) => {
+    calls.push({ url: String(url), method: init.method });
+    if (String(url).endsWith('/logo')) return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } });
+    return Response.json({ displayName: 'Palm Living', loginSlug: 'palm-living', logoUrl: '/logo' }, { status: 201 });
+  } });
+  const server = createServer((req, res) => { void proxy(req, res, () => { res.writeHead(404); res.end(); }); });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const lookup = await fetch(`${origin}/api/v1/auth/organization/resolve`, {
+    method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ identifier: 'Palm Living' }),
+  });
+  assert.equal(lookup.status, 201);
+  assert.equal((await lookup.json()).loginSlug, 'palm-living');
+  const logo = await fetch(`${origin}/api/v1/public/tenant-branding/palm-living/logo`);
+  assert.equal(logo.status, 200);
+  assert.equal(logo.headers.get('content-type'), 'image/png');
+  assert.deepEqual([...new Uint8Array(await logo.arrayBuffer())], [1, 2, 3]);
+  assert.equal(calls.length, 2);
+});
 test('expired refresh and unavailable logout clear the browser cookie', async (t) => {
   const request = await setup(t, async (url) => {
     if (url.endsWith('/logout')) throw new Error('offline');

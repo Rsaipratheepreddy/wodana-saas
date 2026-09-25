@@ -104,6 +104,37 @@ export class LocalAuthService {
     return result.rows[0];
   }
 
+  async resolveOrganization(identifier: string) {
+    const value = identifier.trim().toLowerCase();
+    if (!value || value.length > 160) throw new NotFoundException("Organization was not found");
+    const slug = value.replace(/\s+/g, "-");
+    // Public branding is readable without an actor; workspace rows are RLS-protected.
+    // The login flow independently enforces active workspace membership.
+    const fields = `SELECT branding.display_name AS "displayName", branding.login_slug AS "loginSlug",
+              CASE WHEN branding.logo_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-logo/' || branding.login_slug || '?v=' || branding.logo_asset_id::text
+                   ELSE branding.logo_url END AS "logoUrl",
+              branding.primary_color AS "primaryColor", branding.secondary_color AS "secondaryColor",
+              branding.heading_font AS "headingFont", branding.body_font AS "bodyFont"
+       FROM tenant_login_branding branding
+       WHERE `;
+    const direct = await this.database.query<{
+      displayName: string; loginSlug: string; logoUrl: string | null;
+      primaryColor: string | null; secondaryColor: string | null;
+      headingFont: string | null; bodyFont: string | null;
+    }>(`${fields}(branding.login_slug = $1 OR branding.workspace_id::text = $2)
+       ORDER BY CASE WHEN branding.login_slug = $1 THEN 0 ELSE 1 END LIMIT 1`, [slug, value]);
+    if (direct.rowCount) return direct.rows[0];
+    const byName = await this.database.query<{
+      displayName: string; loginSlug: string; logoUrl: string | null;
+      primaryColor: string | null; secondaryColor: string | null;
+      headingFont: string | null; bodyFont: string | null;
+    }>(`${fields}lower(branding.display_name) = $1 LIMIT 2`, [value]);
+    if (!byName.rowCount) throw new NotFoundException("Organization was not found");
+    if (byName.rowCount > 1) throw new ConflictException("More than one organization has this name. Use its slug or ID.");
+    return byName.rows[0];
+  }
+
   async getTenantBrandingForHost(hostname: string) {
     if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(hostname) || hostname.length > 253) {
       throw new NotFoundException("Tenant login was not found");

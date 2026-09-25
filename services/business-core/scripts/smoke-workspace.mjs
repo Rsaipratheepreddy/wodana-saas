@@ -294,6 +294,13 @@ const invitation = await request(`/workspaces/${workspaceId}/invitations`, {
   expected: 201,
   body: { email: member["x-wodana-user-email"], roleCodes: ["lead_designer"] },
 });
+const rolesWithPendingInvite = await request(`/workspaces/${workspaceId}/roles`, { actor: owner });
+assert.equal(rolesWithPendingInvite.find((role) => role.id === customRole.id)?.pendingInvitationCount, 1);
+await request(`/workspaces/${workspaceId}/roles/${customRole.id}?version=2`, {
+  actor: owner,
+  method: "DELETE",
+  expected: 409,
+});
 const concurrentInvitation = await request(`/workspaces/${workspaceId}/invitations`, {
   actor: owner,
   expected: 201,
@@ -325,6 +332,15 @@ await request(`/workspaces/invitations/${invitation.id}/accept`, {
   actor: member,
   expected: 201,
   method: "POST",
+});
+const rolesWithMember = await request(`/workspaces/${workspaceId}/roles`, { actor: owner });
+const assignedDesignerRole = rolesWithMember.find((role) => role.id === customRole.id);
+assert.equal(assignedDesignerRole?.memberCount, 1);
+assert.equal(assignedDesignerRole?.pendingInvitationCount, 0);
+await request(`/workspaces/${workspaceId}/roles/${customRole.id}?version=2`, {
+  actor: owner,
+  method: "DELETE",
+  expected: 409,
 });
 const concurrentAccepts = await Promise.all([
   rawRequest("/workspaces/invitations/accept", {

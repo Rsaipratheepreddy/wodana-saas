@@ -5,3 +5,6 @@
 .identity strong { color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
 .identity small, .muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .icon { display: grid; place-items: center; inline-size: 2rem; block-size: 2rem; flex: 0 0 auto; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
+.customerModal { block-size: min(36rem, calc(100dvh - 2rem)); }
+.customerModal :global(.wd-dialog) { block-size: 100%; }
+.customerModal :global(.wd-dialog-body) { flex: 1; scrollbar-gutter: stable; }

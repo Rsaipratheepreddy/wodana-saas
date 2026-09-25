@@ -7,6 +7,9 @@ export type LeadFormRecord = { id: string; token: string; draft: LeadFormSchema;
 export type PublicEnquiryForm = Pick<LeadFormSchema, "title" | "description" | "questions"> & {
   revision: string;
   consentLabel: string;
+  defaultLocale?: string | null;
+  defaultCountryCode?: string | null;
+  areas?: Record<string, { id: string; label: string }[]>;
   branding?: {
     displayName: string; primaryColor: string | null; secondaryColor: string | null;
     headingFont: string | null; bodyFont: string | null; logoUrl: string | null;

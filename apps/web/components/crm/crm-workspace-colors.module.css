@@ -12,3 +12,10 @@
   --crm-note-soft: var(--wd-color-warning-subtle);
   --crm-soft-gradient: var(--wd-color-surface-muted);
 }
+
+.theme :global(.wd-select-button) { min-block-size: 34px; border-radius: 6px; padding-inline: 10px 0; font-size: 12px; background: var(--wd-color-surface); color: var(--wd-color-text); border-color: var(--wd-color-border-strong); }
+.theme :global(.wd-picker-popover) { background: var(--wd-color-surface); color: var(--wd-color-text); border: 1px solid var(--wd-color-border-strong); border-radius: 7px; padding: 4px; }
+.theme :global(.wd-picker-item) { font-size: 12px; min-block-size: 32px; padding: 6px 9px; border-radius: 4px; }
+.theme :global(.wd-picker-item[data-focused]) { background: var(--wd-color-surface-hover); }
+.theme :global(.wd-picker-item[data-selected]) { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-text); font-weight: 600; }
+.theme :global(.wd-select-indicator) { inline-size: 28px; block-size: 28px; border-inline-start: 0; }

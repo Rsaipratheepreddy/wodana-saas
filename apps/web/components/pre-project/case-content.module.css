@@ -34,7 +34,7 @@
 .form legend,.form h3 { font-size:.82rem; font-weight:600; padding:0; margin:0 0 .8rem; }
 .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.9rem 1rem; }
 .full { grid-column:1/-1; }
-.form label { display:flex; flex-direction:column; gap:.4rem; color:var(--wd-color-text-secondary); font-size:.75rem; min-inline-size:0; }
+.form label:not(:global(.wd-field-label)) { display:flex; flex-direction:column; gap:.4rem; color:var(--wd-color-text-secondary); font-size:.75rem; min-inline-size:0; }
 .form input:not([type=file]):not([type=checkbox]):not(:global(.wd-input)),.form textarea { min-block-size:2.5rem; inline-size:100%; min-inline-size:0; box-sizing:border-box; border:1px solid var(--wd-color-border-control); border-radius:.5rem; background:var(--wd-color-surface); color:var(--wd-color-text); font:inherit; font-size:.8125rem; padding:.55rem .7rem; }
 .form textarea { min-block-size:5.5rem; resize:vertical; line-height:1.6; }
 .form :global(.wd-input-shell) input { border:0 !important; min-block-size:0 !important; padding:0 !important; }
@@ -61,7 +61,7 @@
 .file strong { font-weight:500; font-size:.8rem; }
 .file small { display:block; font-size:.7rem; color:var(--wd-color-text-secondary); margin-block-start:.25rem; }
 .fileAction { display:inline-grid; place-items:center; inline-size:2rem; block-size:2rem; color:var(--wd-color-text)!important; border-radius:.35rem; }
-.form .upload { display:flex; flex-direction:row; align-items:center; gap:.7rem; position:relative; padding:.8rem; border:1px dashed var(--wd-color-border-control); border-radius:.5rem; cursor:pointer; margin-block:.7rem; color:var(--wd-color-text); }
+.upload { display:flex; flex-direction:row; align-items:center; gap:.7rem; position:relative; padding:.8rem; border:1px dashed var(--wd-color-border-control); border-radius:.5rem; cursor:pointer; margin-block:.7rem; color:var(--wd-color-text); }
 .upload input { position:absolute; inset:0; opacity:0; inline-size:100%; cursor:pointer; }
 .upload small { display:block; margin-block-start:.25rem; color:var(--wd-color-text-secondary); }
 .upload:focus-within { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
@@ -85,7 +85,7 @@
 .component + .component { margin-block-start:.5rem; }
 .component h3 { display:flex; align-items:center; gap:.4rem; }
 .measurementEditor { padding-block:.8rem; }
-.measurementPrimary { display:grid; grid-template-columns:minmax(12rem,1.5fr) minmax(8rem,.8fr) minmax(7rem,.55fr); gap:.75rem; align-items:end; }
+.measurementPrimary { margin-block-end:.75rem; display:grid; grid-template-columns:minmax(12rem,1.5fr) minmax(8rem,.8fr) minmax(7rem,.55fr); gap:.75rem; align-items:end; }
 .measurementPrimary > label { display:flex; flex-direction:column; gap:.4rem; min-inline-size:0; color:var(--wd-color-text-secondary); font-size:.75rem; }
 .measurementPrimary input { inline-size:100%; min-block-size:2.5rem; padding:.5rem .65rem; border:1px solid var(--wd-color-border-control); border-radius:.5rem; background:var(--wd-color-surface); color:var(--wd-color-text); font:inherit; }
 .measurementMore { margin-block-start:.5rem; }
@@ -184,3 +184,19 @@
 @media (max-width: 560px) {
   .reviewContext { grid-template-columns: 1fr; }
 }
+
+.form .uploadFile { display:grid; gap:16px; margin-block-start:16px; }
+.uploadFields { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start; }
+.uploadFile textarea { min-block-size:76px; }
+@media(max-width:560px) { .uploadFields { grid-template-columns:minmax(0,1fr); } }
+
+.documentHeading > span { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); }
+.captureForm .documentHeading input { border:0; border-radius:0; background:transparent; box-shadow:none; padding-inline:10px; font-size:22px; font-weight:600; }
+.optionalDetails { border-block-start:1px solid var(--wd-color-structural-divider); padding-block-start:12px; }
+.optionalDetails > summary { color:var(--wd-color-text-secondary); font-size:12px; cursor:pointer; }
+.optionalDetails[open] > summary { margin-block-end:14px; }
+
+.editorTabs { display:flex; align-items:center; gap:6px; margin-block-end:12px; }
+.captureForm [hidden] { display:none; }
+.optionalDetails { border:0; padding:0; }
+.optionalDetails h3 { font-size:12px; font-weight:600; margin-block:16px 10px; }

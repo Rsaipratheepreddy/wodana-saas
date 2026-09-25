@@ -42,6 +42,7 @@ export class ListActivitiesQueryDto {
 }
 
 export class CreateActivityDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1440) durationMinutes?: number;
   @IsOptional() @ValidateNested() @Type(() => CreateAppointmentDto) appointment?: CreateAppointmentDto;
   @IsOptional() @IsUUID() partyId?: string;
   @IsOptional() @IsUUID() leadId?: string;
@@ -59,6 +60,7 @@ export class CreateActivityDto {
 }
 
 export class UpdateActivityDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1440) durationMinutes?: number;
   @IsInt() @Min(1) version!: number;
   @IsOptional() @IsString() @MaxLength(240) title?: string;
   @IsOptional() @IsString() @MaxLength(10_000) description?: string | null;

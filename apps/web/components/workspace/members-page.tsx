@@ -83,12 +83,25 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
   const [status, setStatus] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const defaultRole = initialData.roles.find((role) => role.code === "member")?.code
-    ?? initialData.roles.find((role) => role.code === "viewer")?.code
-    ?? initialData.roles[0]?.code
+  const canInvite = initialData.canInvite ?? initialData.canManage;
+  const canEdit = initialData.canEdit ?? initialData.canManage;
+  const canCancelInvitations = initialData.canCancelInvitations ?? initialData.canManage;
+  const scopedAssignments = initialData.assignableRoleCodes !== undefined && !initialData.canManage;
+  const assignableRoleCodes = new Set(initialData.assignableRoleCodes ?? initialData.roles.map((role) => role.code));
+  const assignableRoles = initialData.roles.filter((role) => assignableRoleCodes.has(role.code));
+  const assignableRoleIds = new Set(assignableRoles.map((role) => role.id));
+  const assignableTeams = initialData.teams.filter((team) => !scopedAssignments
+    || (team.roleIds !== undefined && team.roleIds.every((roleId) => assignableRoleIds.has(roleId))));
+  const canChangeAssignment = (roles: string[], teams: Array<{ id: string }>) => !scopedAssignments
+    || (roles.every((role) => assignableRoleCodes.has(role))
+      && teams.every((team) => assignableTeams.some((candidate) => candidate.id === team.id)));
+
+  const defaultRole = assignableRoles.find((role) => role.code === "member")?.code
+    ?? assignableRoles.find((role) => role.code === "viewer")?.code
+    ?? assignableRoles[0]?.code
     ?? "";
   const [quickEmail, setQuickEmail] = useState("");
-  const [quickAccess, setQuickAccess] = useState(initialData.teams[0] ? `team:${initialData.teams[0].id}` : `role:${defaultRole}`);
+  const [quickAccess, setQuickAccess] = useState(assignableTeams[0] ? `team:${assignableTeams[0].id}` : `role:${defaultRole}`);
   const [quickFailure, setQuickFailure] = useState("");
   const [isQuickInviting, setIsQuickInviting] = useState(false);
 
@@ -541,14 +554,16 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
       mobileWidth: "3rem",
       width: "3rem",
       render: (item) => {
-        if (!initialData.canManage) return null;
         if (item.kind === "member") {
+          if (!canEdit || !canChangeAssignment([...item.member.roles, ...(item.member.inheritedRoles ?? [])], item.member.teams ?? [])) return null;
           return <IconMenuButton ariaLabel={`Actions for ${item.member.displayName}`} items={[{ id: "edit", label: "Edit access" }]} onAction={() => openMemberEditor(item.member)} />;
         }
-        return <IconMenuButton ariaLabel={`Actions for invitation to ${item.invitation.email}`} items={[
-          { id: "resend", label: item.invitation.status === "expired" ? "Renew invitation" : "Create a new link", isDisabled: isResending },
-          { id: "cancel", label: "Cancel invitation", tone: "danger" },
-        ]} onAction={(action) => action === "resend" ? void resendInvitation(item.invitation) : setCancellingInvitation(item.invitation)} />;
+        if (!canChangeAssignment(item.invitation.roles, item.invitation.teams ?? [])) return null;
+        const actions = [
+          ...(canInvite ? [{ id: "resend", label: item.invitation.status === "expired" ? "Renew invitation" : "Create a new link", isDisabled: isResending }] : []),
+          ...(canCancelInvitations ? [{ id: "cancel", label: "Cancel invitation", tone: "danger" as const }] : []),
+        ];
+        return actions.length ? <IconMenuButton ariaLabel={`Actions for invitation to ${item.invitation.email}`} items={actions} onAction={(action) => action === "resend" ? void resendInvitation(item.invitation) : setCancellingInvitation(item.invitation)} /> : null;
       },
     },
   ];
@@ -566,17 +581,25 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
     .filter((item) => item.deliveryStatus !== "sent").length ?? 0;
   const hasInvitationOutcome = Boolean(invitationResult || bulkInvitationResult);
 
+  if (initialData.canView === false) {
+    return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
+      <section aria-label="People" className={styles.page}>
+        <Callout title="People access unavailable" tone="warning">Your role does not include permission to view or manage people. Ask a workspace administrator for access.</Callout>
+      </section>
+    </DesignSystemProvider>;
+  }
+
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
       <section aria-label="People" className={styles.page}>
 
-        {initialData.canManage ? <section aria-label="Invite people" className={styles.inviteComposer}>
+        {canInvite && (assignableRoles.length > 0 || assignableTeams.length > 0) ? <section aria-label="Invite people" className={styles.inviteComposer}>
           <Form className={styles.quickInviteForm} onSubmit={createQuickInvitation}>
             <TextInput autoComplete="off" label="Work emails" onChange={setQuickEmail} placeholder="name@company.com" value={quickEmail} />
             <SelectField
               items={[
-                ...initialData.teams.map((team) => ({ id: `team:${team.id}`, label: `${team.name} team` })),
-                ...initialData.roles.map((role) => ({ id: `role:${role.code}`, label: `${role.name} role` })),
+                ...assignableTeams.map((team) => ({ id: `team:${team.id}`, label: `${team.name} team` })),
+                ...assignableRoles.map((role) => ({ id: `role:${role.code}`, label: `${role.name} role` })),
               ]}
               label="Access"
               onSelectionChange={(key) => key && setQuickAccess(String(key))}
@@ -613,7 +636,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
             selectedIds={selectedIds}
           />
         </div>
-        {!initialData.canManage ? <p className={styles.permissionNote}>Only workspace owners and administrators can invite people or change access.</p> : null}
+        {!canInvite && !canEdit && !canCancelInvitations ? <p className={styles.permissionNote}>Your access is read-only. Ask a workspace administrator to change people or invitations.</p> : null}
       </section>
 
       <ControlledModalDialog
@@ -652,8 +675,8 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
           {inviteFailure ? <Callout title="Could not create invitation" tone="danger">{inviteFailure}</Callout> : null}
           <TextInput isRequired label="Full name" onChange={setInviteName} placeholder="e.g. Maya Thomas" value={inviteName} />
           <TextInput inputType="email" isRequired label="Work email" onChange={setInviteEmail} placeholder="maya@company.com" value={inviteEmail} />
-          <MultiSelectField items={initialData.teams.map((team) => ({ id: team.id, label: team.name }))} label="Teams" onSelectionChange={(keys) => setInviteTeamIds(new Set(Array.from(keys, String)))} selectedKeys={inviteTeamIds} />
-          <RoleChoices onChange={setInviteRoles} roles={initialData.roles} selected={inviteRoles} />
+          <MultiSelectField items={assignableTeams.map((team) => ({ id: team.id, label: team.name }))} label="Teams" onSelectionChange={(keys) => setInviteTeamIds(new Set(Array.from(keys, String)))} selectedKeys={inviteTeamIds} />
+          <RoleChoices onChange={setInviteRoles} roles={assignableRoles} selected={inviteRoles} />
         </Form>}
       </ControlledModalDialog>
 
@@ -668,7 +691,7 @@ export function MembersPage({ initialData }: { initialData: MembersPageData }) {
         {editingMember ? <Form className={styles.form} data-wd-density="compact" id="edit-member-form" noValidate onSubmit={reviewMember}>
           {editFailure ? <Callout title="Could not save member" tone="danger">{editFailure}</Callout> : null}
           <div className={styles.memberPreview}><Avatar name={editingMember.displayName} size="lg" /><span><strong>{editingMember.displayName}</strong><small>{editingMember.email}</small></span></div>
-          <RoleChoices onChange={setEditRoles} roles={initialData.roles} selected={editRoles} />
+          <RoleChoices onChange={setEditRoles} roles={assignableRoles} selected={editRoles} />
           <SelectField
             accent="neutral"
             description={editingMember.userId === initialData.currentUserId ? "You cannot suspend your own active session here." : "Suspended members cannot sign in to this workspace."}

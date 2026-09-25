@@ -5,7 +5,12 @@ const databaseUrl = process.env.DATABASE_URL;
 assert(databaseUrl, "Set DATABASE_URL to the local Palm review database.");
 const target = new URL(databaseUrl);
 assert(["127.0.0.1", "localhost"].includes(target.hostname), "Palm review seed is local-only.");
-assert(target.pathname.includes("palm_review"), "Use a dedicated palm_review database.");
+const sharedLocal = target.pathname === "/wodana";
+assert(
+  target.pathname.includes("palm_review") || target.pathname === "/wodana_palm_local_20260922" ||
+    (sharedLocal && process.env.PALM_ALLOW_SHARED_LOCAL_SEED === "palm-living-demo-only"),
+  "Use a dedicated local Palm review database, or explicitly opt in to the local wodana Palm demo seed.",
+);
 
 const ids = {
   pipeline: "d1000000-0000-4000-8000-000000000001",
@@ -30,12 +35,26 @@ const client = new pg.Client({ connectionString: databaseUrl });
 await client.connect();
 try {
   await client.query("BEGIN");
-  const workspace = (await client.query(`SELECT id FROM workspaces WHERE slug=$1`, [process.env.PALM_REVIEW_WORKSPACE_SLUG ?? "palm-living"])).rows[0];
+  const workspace = (await client.query(`SELECT workspace_id AS id FROM tenant_login_branding WHERE login_slug=$1`, [process.env.PALM_REVIEW_WORKSPACE_SLUG ?? "palm-living"])).rows[0];
   assert(workspace, "Palm Living workspace is not configured.");
   await client.query(`SELECT set_config('app.current_workspace_id',$1,true)`, [workspace.id]);
+  if (sharedLocal) {
+    assert(process.env.PALM_REVIEW_WORKSPACE_SLUG === "palm-living", "The shared local database may only receive the Palm Living demo.");
+    for (const [table, id] of [["crm_parties", ids.party], ["crm_opportunities", ids.opportunity], ["pre_project_cases", ids.case], ["delivery_projects", ids.project], ["project_resources", ids.factory], ["project_resources", ids.installCrew]]) {
+      const conflict = await client.query(`SELECT 1 FROM ${table} WHERE id=$1 LIMIT 1`, [id]);
+      assert(!conflict.rowCount, `Refusing to overwrite an existing ${table} record.`);
+    }
+    const configured = await client.query(`SELECT 1 FROM business_units WHERE workspace_id=$1 AND code IN ('PRODUCTION','SITE')
+      UNION ALL SELECT 1 FROM crm_pipelines WHERE workspace_id=$1 AND code='palm_projects' LIMIT 1`, [workspace.id]);
+    assert(!configured.rowCount, "Refusing to replace existing Palm business units or pipeline.");
+  }
+  const existingProject = (await client.query(`SELECT id FROM delivery_projects WHERE workspace_id=$1 AND id=$2`, [workspace.id, ids.project])).rows[0];
+  assert(!existingProject, "Palm Living demo project already exists; seed is intentionally one-time and will not overwrite it.");
   const actor = (await client.query(`SELECT membership.id AS "membershipId",app_user.id AS "userId",app_user.display_name AS name
     FROM workspace_memberships membership JOIN users app_user ON app_user.id=membership.user_id
     WHERE membership.workspace_id=$1 AND membership.status='active' ORDER BY membership.joined_at LIMIT 1`, [workspace.id])).rows[0];
+  const demoMember = sharedLocal ? (await client.query(`SELECT membership.id FROM workspace_memberships membership JOIN users app_user ON app_user.id=membership.user_id
+    WHERE membership.workspace_id=$1 AND membership.status='active' AND app_user.primary_email='palm-demo@wodana.invalid'`, [workspace.id])).rows[0] : null;
   const legalEntity = (await client.query(`SELECT id FROM legal_entities WHERE workspace_id=$1 AND status='active' ORDER BY created_at LIMIT 1`, [workspace.id])).rows[0];
   assert(actor && legalEntity, "Palm Living needs an active member and legal entity.");
 
@@ -78,13 +97,20 @@ try {
   await client.query(`INSERT INTO project_assignments(id,workspace_id,project_id,membership_id,is_manager,active)
     VALUES($1,$2,$3,$4,true,true) ON CONFLICT(workspace_id,project_id,membership_id) WHERE project_id IS NOT NULL DO UPDATE SET is_manager=true,active=true`,
     [ids.assignment, workspace.id, ids.project, actor.membershipId]);
+  if (sharedLocal) {
+    await client.query(`INSERT INTO project_assignments(id,workspace_id,project_id,membership_id,is_manager,active)
+      SELECT gen_random_uuid(),$1,$2,id,false,true FROM workspace_memberships
+      WHERE workspace_id=$1 AND status='active' AND id<>$3
+      ON CONFLICT(workspace_id,project_id,membership_id) WHERE project_id IS NOT NULL DO NOTHING`,
+      [workspace.id, ids.project, actor.membershipId]);
+  }
   await client.query(`INSERT INTO work_locations(id,workspace_id,name,kind,project_id,address,latitude,longitude,radius_m,active)
     VALUES($1,$2,'Jumeirah Garden Villa','site',$3,'District One, Mohammed Bin Rashid City, Dubai',25.1751,55.2874,180,true)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name,address=excluded.address,active=true`, [ids.site, workspace.id, ids.project]);
 
   const task = (id, title, area, location, resourceId, start, end, status, approved, quantity, unit, predecessor = [], blocker = "") => ({
     id, parentId: "", packageId: area === "Dining & Living" ? "pkg-joinery" : "pkg-site", package: area === "Dining & Living" ? "Custom furniture production" : "Site installation & styling",
-    title, description: `${title} with inspection evidence and controlled release.`, area, location, ownerId: actor.membershipId, assigneeIds: [actor.membershipId], resourceId,
+    title, description: `${title} with inspection evidence and controlled release.`, area, location, ownerId: actor.membershipId, assigneeIds: demoMember && status !== "completed" ? [...new Set([actor.membershipId, demoMember.id])] : [actor.membershipId], resourceId,
     start, end, baselineStart: start, baselineEnd: end, predecessors: predecessor, quantity, unit, weight: quantity, approved, status, priority: blocker ? "high" : "normal",
     inspectionRequired: true, scopeIds: [area === "Dining & Living" ? "scope-dining" : "scope-bedroom"], drawingId: "doc-joinery-r2",
     readiness: { scope: true, access: true, materials: !blocker }, blocker,
@@ -120,7 +146,7 @@ try {
     ],
     milestones: [{ id: "milestone-factory", title: "Factory completion", dueDate: "2026-09-27", baselineDate: "2026-09-25", ownerId: actor.membershipId, taskIds: ["task-dining-production", "task-tv-unit"], visibleToClient: true, evidence: "Factory QA and packing photographs" }, { id: "milestone-handover", title: "Client handover", dueDate: "2026-10-12", baselineDate: "2026-10-12", ownerId: actor.membershipId, taskIds: ["task-styling"], visibleToClient: true, evidence: "Signed room handover packs" }],
     scope, tasks,
-    reports: [{ id: "report-2026-09-18", date: "2026-09-18", shift: "Day", location: "factory", authorId: actor.membershipId, author: actor.name, status: "approved", entries: [{ taskId: "task-dining-production", quantity: 4 }, { taskId: "task-tv-unit", quantity: 2.5 }], hours: 72, people: 9, materials: "Veneer pressing complete; marble template approved.", issues: "One veneer batch requires colour confirmation.", tomorrow: "Complete chair upholstery and media-wall dry fit.", evidence: "Factory progress photo set FP-18", note: "Overall sequence remains recoverable.", summary: "Dining package 57% complete; media wall 50% complete.", weather: "Indoor factory work", safety: "Toolbox talk completed", safetyStatus: "none", scheduleImpact: "watch", impactReason: "Veneer colour approval", recoveryPlan: "Hold matching reserve stock", nextUpdateOwnerId: actor.membershipId, nextUpdateDate: "2026-09-22", workforce: [{ trade: "Joinery", people: 6, hours: 8 }, { trade: "Upholstery", people: 3, hours: 8 }], reviewedBy: actor.membershipId, reviewedAt: "2026-09-18T16:00:00.000Z", publishedAt: "2026-09-18T16:10:00.000Z" }],
+    reports: [{ id: "report-2026-09-18", date: "2026-09-18", shift: "Day", location: "factory", authorId: actor.membershipId, author: actor.name, status: "approved", entries: [{ taskId: "task-dining-production", quantity: 4 }, { taskId: "task-tv-unit", quantity: 2.5 }], hours: 8, people: 9, materials: "Veneer pressing complete; marble template approved.", issues: "One veneer batch requires colour confirmation.", tomorrow: "Complete chair upholstery and media-wall dry fit.", evidence: "Factory progress photo set FP-18", note: "Overall sequence remains recoverable.", summary: "Dining package 57% complete; media wall 50% complete.", weather: "Indoor factory work", safety: "Toolbox talk completed", safetyStatus: "none", scheduleImpact: "watch", impactReason: "Veneer colour approval", recoveryPlan: "Hold matching reserve stock", nextUpdateOwnerId: actor.membershipId, nextUpdateDate: "2026-09-22", workforce: [{ trade: "Joinery", people: 6, hours: 8 }, { trade: "Upholstery", people: 3, hours: 8 }], reviewedBy: actor.membershipId, reviewedAt: "2026-09-18T16:00:00.000Z", publishedAt: "2026-09-18T16:10:00.000Z" }],
     materials: [
       { id: "mat-veneer", title: "Natural oak veneer", specification: "A-grade crown cut, client-approved warm tone", catalogId: "", catalogVersion: 1, unit: "sheet", required: 42, supply: "vendor", taskId: "task-tv-unit", needBy: "2026-09-21", movements: [{ id: "move-v1", kind: "receive", quantity: 30, reference: "GRN-221", at: "2026-09-15" }], reservations: [{ taskId: "task-tv-unit", quantity: 24, reference: "RES-TV-01", at: "2026-09-16" }] },
       { id: "mat-marble", title: "Taj Mahal quartzite", specification: "20 mm polished slab; approved bookmatch", catalogId: "", catalogVersion: 1, unit: "slab", required: 2, supply: "vendor", taskId: "task-dining-production", needBy: "2026-09-22", movements: [{ id: "move-m1", kind: "receive", quantity: 2, reference: "GRN-225", at: "2026-09-17" }], reservations: [] },

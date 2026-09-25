@@ -124,7 +124,7 @@ export function DesignFileDetails({
         <Button
           variant="quiet"
           size="compact"
-          aria-label="Back to files"
+          aria-label={`Back to ${backLabel.toLowerCase()}`}
           onPress={() => leave(onClose)}
         >
           <ArrowLeft size={15} />

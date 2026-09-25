@@ -200,27 +200,8 @@ export function definitionIssues(
         detail: `Decide whether ${item.title} is included or excluded.`,
         scopeItemId: item.id,
       });
-    if (item.scopeStatus !== "undecided" && item.reviewStatus !== "reviewed")
-      issues.push({
-        code: "REVIEW_REQUIREMENT",
-        detail: `Review ${item.title} before publishing the definition.`,
-        scopeItemId: item.id,
-      });
     if (item.scopeStatus !== "included") continue;
-    if (!item.specification) {
-      issues.push({
-        code: "CREATE_SPECIFICATION",
-        detail: `Complete the item specification for ${item.title}.`,
-        scopeItemId: item.id,
-      });
-      continue;
-    }
-    if (!item.specification.refinedRequirement.trim())
-      issues.push({
-        code: "COMPLETE_REFINED_REQUIREMENT",
-        detail: `Add the agreed requirement wording for ${item.title}.`,
-        scopeItemId: item.id,
-      });
+    if (!item.specification) continue;
     if (
       item.specification.materials.some(
         (material) => material.status === "change_requested",

@@ -1,3 +1,4 @@
+import { factoryQcQuantity, recoveredFactoryQuantity } from "./project-inventory";
 import {
   BadRequestException,
   ConflictException,
@@ -37,6 +38,7 @@ export function applyControls(
   const supported = [
     "dispatch",
     "dispatch_status",
+    "dispatch_return",
     "commissioning",
     "commissioning_status",
     "technical_query",
@@ -127,6 +129,7 @@ export function applyControls(
     const receivingTaskId = str(v.receivingTaskId, 80);
     assertFactoryDispatchReceiver(d, task, receivingTaskId);
     const value: Dispatch = {
+      factoryLotId: str(v.factoryLotId,80) || undefined,
       id,
       title: str(v.title, 240, true),
       taskId: task.id,
@@ -147,6 +150,16 @@ export function applyControls(
       throw new BadRequestException("Enter the dispatch quantity.");
     if (old) Object.assign(old, value);
     else d.dispatches.push(value);
+  } else if (action === "dispatch_return") {
+    manage();
+    released();
+    const r=get(d.dispatches??[],id), quantity=num(b.quantity);
+    if(r.status!=="received" || !r.rejected) throw new ConflictException("Choose a rejected site receipt.");
+    if(quantity<=(r.returnedToFactory??0) || quantity>r.rejected) throw new ConflictException("Record the total returned quantity, no more than the rejected quantity.");
+    r.returnedToFactory=quantity;
+    r.factoryReturnEvidence=str(b.evidence,3000,true);
+    r.factoryReturnedBy=a.id;
+    r.factoryReturnedAt=a.now;
   } else if (action === "dispatch_status") {
     const r = get(d.dispatches ?? [], id),
       status = choice(b.status, [
@@ -160,6 +173,13 @@ export function applyControls(
       independent(r.preparedBy);
       stage(r.status, "draft");
       const t = get(d.tasks, r.taskId);
+      const lots=(t.factoryLots??[]).filter(lot=>lot.status!=="cancelled");
+      if(lots.length || r.factoryLotId){
+        const lot=lots.find(item=>item.id===r.factoryLotId);
+        if(!lot||lot.status!=="passed") throw new ConflictException("Select a passed production lot for this factory task.");
+        const used=(d.dispatches??[]).filter(item=>item.id!==r.id&&item.taskId===t.id&&item.factoryLotId===lot.id&&["ready","dispatched","received"].includes(item.status)).reduce((total,item)=>total+item.quantity-recoveredFactoryQuantity(d,item),0);
+        if(used+r.quantity>lot.quantity+0.000001) throw new ConflictException("Dispatch quantity exceeds the remaining passed production lot.");
+      }
       assertFactoryDispatchReceiver(d, t, r.receivingTaskId);
       if (unresolvedFactoryDispatchRejections(d, t.id).length)
         throw new ConflictException(
@@ -172,8 +192,8 @@ export function applyControls(
             ["ready", "dispatched", "received"].includes(x.status) &&
             x.taskId === r.taskId,
         )
-        .reduce((s, x) => s + x.quantity - x.rejected, 0);
-      if (["blocked","on_hold","cancelled"].includes(t.status) || allocated + r.quantity > t.approved)
+        .reduce((s, x) => s + x.quantity - recoveredFactoryQuantity(d,x), 0);
+      if (["blocked","on_hold","cancelled"].includes(t.status) || allocated + r.quantity > factoryQcQuantity(t))
         throw new ConflictException(
           "Inspect the factory work and dispatch only its remaining approved output.",
         );

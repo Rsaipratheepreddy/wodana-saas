@@ -2,6 +2,11 @@
   min-block-size: 100%;
   background: var(--wd-color-surface);
 }
+.provider[data-wd-theme="light"] {
+  --wd-color-surface: #fff;
+  --wd-color-surface-subtle: #fff;
+  --wd-color-surface-muted: #f4f4f5;
+}
 .provider :global(.wd-button) {
   min-block-size: 2.25rem;
   border-radius: 0.5rem;
@@ -73,6 +78,10 @@
 .provider :global(.wd-table-scroll) {
   border: 0;
   border-radius: 0;
+  scrollbar-width: none;
+}
+.provider :global(.wd-table-scroll::-webkit-scrollbar) {
+  display: none;
 }
 .provider :global(.wd-table-frame) {
   overflow: hidden;
@@ -81,16 +90,22 @@
   background: var(--wd-color-surface);
 }
 .provider :global(.wd-table) {
+  border-collapse: separate;
+  border-spacing: 0;
   inline-size: 100%;
   min-inline-size: 40rem;
   font-size: 0.75rem;
 }
 .provider :global(.wd-table th) {
+  border: 0;
+  border-block-end: 1px solid var(--wd-color-border);
   block-size: 2.75rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.6875rem;
 }
 .provider :global(.wd-table td) {
+  border: 0;
+  border-block-end: 1px solid var(--wd-color-border);
   block-size: 3.25rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
@@ -99,7 +114,10 @@
   border-inline-start: 1px solid var(--wd-color-structural-divider);
 }
 .provider :global(.wd-table tbody tr:nth-child(even)) {
-  background: var(--wd-color-surface-subtle);
+  background: var(--wd-color-surface);
+}
+.provider :global(.wd-table tbody tr:last-child td) {
+  border-block-end: 0;
 }
 .provider :global(.wd-table tbody tr:hover) {
   background: var(--wd-color-surface-muted);
@@ -381,7 +399,7 @@ a.setupStep:focus-visible {
   font-size: 16px;
 }
 .attendanceHero {
-  background: var(--crm-soft-gradient);
+  background: var(--wd-color-surface);
   border-radius: 14px;
   padding: 24px;
   display: flex;
@@ -487,6 +505,9 @@ a.setupStep:focus-visible {
   white-space: nowrap;
 }
 .status {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
   background: var(--wd-color-surface-muted);
   color: var(--wd-color-text-secondary);
   border-radius: 7px;
@@ -500,6 +521,7 @@ a.setupStep:focus-visible {
   color: var(--wd-color-success);
 }
 .status[data-status="pending"],
+.status[data-status="cancellation_pending"],
 .status[data-status="needs_review"] {
   background: var(--wd-color-warning-subtle);
   color: var(--wd-color-warning);
@@ -540,14 +562,11 @@ a.setupStep:focus-visible {
   margin: 16px 0 20px;
 }
 .balanceCard {
-  --card-color: var(--wd-brand-lilac);
-  background: color-mix(
-    in srgb,
-    var(--wd-color-surface-muted) 80%,
-    var(--card-color)
-  );
+  --ring-color: var(--wd-color-info);
+  background: var(--wd-color-surface);
+  border-block-end: 1px solid var(--wd-color-border);
   padding: 18px;
-  border-radius: 12px;
+  border-radius: 0;
 }
 .balanceCard > span {
   font-size: 13px;
@@ -602,12 +621,10 @@ a.setupStep:focus-visible {
   margin-top: 2px;
 }
 .balanceCard:nth-child(3n + 2) {
-  --ring-color: var(--wd-brand-rose);
-  --card-color: var(--wd-brand-rose);
+  --ring-color: var(--wd-color-danger);
 }
 .balanceCard:nth-child(3n + 3) {
-  --ring-color: var(--wd-brand-peach);
-  --card-color: var(--wd-brand-peach);
+  --ring-color: var(--wd-color-warning);
 }
 .leaveOverview {
   display: grid;

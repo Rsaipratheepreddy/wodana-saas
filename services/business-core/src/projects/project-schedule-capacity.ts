@@ -121,6 +121,11 @@ function segmentsForDay(
   };
   return boundaries.slice(0, -1).map((start, index) => {
     const end = boundaries[index + 1];
+    const dateAt = (minutes: number) => new Date(
+      Date.parse(working.date) + Math.floor(minutes / 1440) * 86400000,
+    ).toISOString().slice(0, 10);
+    const date = dateAt(start);
+    const endDate = dateAt(end);
     const active = relevant.filter((slot) => slot.start < end && start < slot.end);
     const confirmed = active
       .filter(({ booking }) => booking.status === "confirmed")
@@ -129,8 +134,8 @@ function segmentsForDay(
       .filter(({ booking }) => booking.status === "tentative")
       .reduce((total, { booking }) => total + booking.units, 0);
     return {
-      date: working.date,
-      ...(end > 1440 ? { endDate: working.endDate } : {}),
+      date,
+      ...(endDate !== date ? { endDate } : {}),
       startTime: clock(start),
       endTime: clock(end),
       durationMinutes: end - start,

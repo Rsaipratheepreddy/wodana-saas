@@ -209,6 +209,8 @@ describe("delivery closeout controls", () => {
     expect(() => applyExecution(d, "snag_status", { id: d.snags[0].id, status: "closed", note: "Self-verified" }, actor))
       .toThrow(/Another reviewer/);
     applyExecution(d, "snag_status", { id: d.snags[0].id, status: "closed", note: "Replacement finish verified" }, reviewer);
+    expect(() => applyControls(d, "dispatch_status", { id: "d2", status: "ready" }, reviewer)).toThrow(/remaining approved output/);
+    applyControls(d, "dispatch_return", {id:"d1",quantity:1,evidence:"Returned to factory after correction"},actor);
     expect(() => applyControls(d, "dispatch_status", { id: "d2", status: "ready" }, reviewer))
       .not.toThrow();
     expect(() =>

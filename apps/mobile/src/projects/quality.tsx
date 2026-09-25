@@ -197,6 +197,11 @@ export function ReportProgressSheet({
   const requestId = useState(() => Crypto.randomUUID())[0];
   const submitRequestId = useState(() => Crypto.randomUUID())[0];
   const [quantity, setQuantity] = useState<number | null>(null);
+  const [reportDate,setReportDate]=useState(localDay());
+  const [shift,setShift]=useState('Day');
+  const [people,setPeople]=useState<number|null>(null),[hours,setHours]=useState<number|null>(null);
+  const [materials,setMaterials]=useState(''),[tomorrow,setTomorrow]=useState(''),[weather,setWeather]=useState('');
+  const [safetyStatus,setSafetyStatus]=useState<'none'|'observation'|'incident'>('none'),[safety,setSafety]=useState('');
   const [summary, setSummary] = useState('');
   const [evidence, setEvidence] = useState('');
   const [issues, setIssues] = useState('');
@@ -210,10 +215,15 @@ export function ReportProgressSheet({
   const queued = useQueuedSave(workspaceId, project, onSaved, onClose);
 
   async function submit() {
-    if (!quantity || quantity <= 0) {
-      setValidation('Enter the completed quantity.');
+    if (quantity === null || quantity < 0) {
+      setValidation('Enter the completed quantity, or 0 for a no-work update.');
       return;
     }
+    if(quantity>0&&!['in_progress','awaiting_inspection'].includes(task.status)){setValidation("Start this task before reporting completed work. Use 0 to report a blocker.");return;}
+    if(safetyStatus==='incident'&&impact==='none'){setValidation("Select a schedule impact and recovery action for the incident.");return;}
+    if(quantity>task.remaining){setValidation("Quantity exceeds the remaining work. Refresh the project quantities.");return;}
+    if(!reportDate||!summary.trim()){setValidation("Add the report date and a short update.");return;}
+    if(safetyStatus!=="none"&&!safety.trim()){setValidation("Describe the safety observation or incident.");return;}
     if (!evidence.trim() && !photos.length) {
       setValidation('Add a photo or a site evidence reference.');
       return;
@@ -239,7 +249,8 @@ export function ReportProgressSheet({
           {
             recordId,
             taskId: task.id,
-            date: localDay(),
+            date: reportDate,
+            shift,people:people??0,hours:hours??0,materials,tomorrow,weather,safetyStatus,safety,
             quantity,
             summary,
             evidence,
@@ -261,8 +272,18 @@ export function ReportProgressSheet({
 
   return (
     <Sheet title={`Report ${task.title}`} onClose={onClose}>
+      <DateField label="Report date" value={reportDate} onChange={setReportDate}/>
+      <TextField label="Shift" value={shift} onChangeText={setShift}/>
+      <Notice>Save work quantities for review. Approval updates progress; sharing with the client is a separate review action.</Notice>
       <NumberField label={`Completed ${task.unit}`} value={quantity} onChange={setQuantity} />
-      <TextField label="Short update" value={summary} onChangeText={setSummary} placeholder="What was completed?" />
+      <TextField label="Short update" value={summary} onChangeText={setSummary} placeholder="Work completed, or reason no work could take place" />
+      <NumberField label="People on this task" value={people} onChange={setPeople}/>
+      <NumberField label="Hours worked" value={hours} onChange={setHours}/>
+      <TextField label="Materials used" value={materials} onChangeText={setMaterials} multiline/>
+      <TextField label="Next shift plan" value={tomorrow} onChangeText={setTomorrow} multiline/>
+      {task.location==='site'&&<TextField label="Weather" value={weather} onChangeText={setWeather}/>}
+      <Choice label="Safety" value={safetyStatus} options={[{value:'none',label:'No issue'},{value:'observation',label:'Observation'},{value:'incident',label:'Incident'}]} onChange={value=>setSafetyStatus(value as typeof safetyStatus)}/>
+      {safetyStatus!=='none'&&<TextField label="Safety details" value={safety} onChangeText={setSafety} multiline/>}
       <TextField label="Issues or blockers" value={issues} onChangeText={setIssues} multiline placeholder="Leave blank when work is clear" />
       <Choice
         label="Schedule impact"

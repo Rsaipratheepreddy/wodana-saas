@@ -1,0 +1,17 @@
+.page { min-inline-size: 0; padding: 1rem 1.5rem 2rem; color: var(--wd-color-text); }
+.views { display: flex; flex-wrap: wrap; gap: .25rem; margin-block-end: .85rem; }
+.views a { display: inline-flex; align-items: center; gap: .45rem; min-block-size: 2rem; padding: .35rem .7rem; border-radius: var(--wd-radius-control, .5rem); color: var(--wd-color-text-secondary); font-size: .8125rem; font-weight: 550; text-decoration: none; }
+.views a[aria-current="page"] { background: var(--wd-color-surface-muted, #f3f5f5); color: var(--wd-color-text); }
+.views a:hover { color: var(--wd-color-text); }
+.views span { color: var(--wd-color-text-secondary); font-size: .7rem; font-variant-numeric: tabular-nums; }
+.toolbar { display: flex; justify-content: flex-end; align-items: center; gap: .5rem; margin-block-end: .75rem; }
+.toolbar :global(.wd-search-field) { inline-size: 20rem; max-inline-size: 100%; }
+.record { color: inherit; font-weight: 600; text-decoration: none; }
+.itemCell { display: grid; gap: .125rem; }
+.itemCell small { color: var(--wd-color-text-secondary); font-size: .6875rem; font-weight: 400; }
+.attentionQty { color: var(--wd-color-warning); font-weight: 600; }
+.record:hover, .action:hover { color: var(--wd-color-action-primary); }
+.action { color: var(--wd-color-text-secondary); font-size: .75rem; text-decoration: none; overflow-wrap: break-word; white-space: normal; }
+.error { display: flex; align-items: center; gap: .75rem; }
+.notice { color: var(--wd-color-text-secondary); font-size: .8125rem; }
+@media (max-width: 48rem) { .page { padding: 1rem; }.toolbar { justify-content: stretch; }.toolbar :global(.wd-search-field) { flex: 1 1 auto; inline-size: auto; } }

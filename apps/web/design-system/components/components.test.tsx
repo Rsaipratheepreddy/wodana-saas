@@ -6,7 +6,7 @@ import { DesignSystemProvider } from "../foundations/provider";
 import { Button } from "./actions";
 import { Checkbox, TextInput } from "./forms";
 import { AppShell } from "./navigation";
-import { SideSheet } from "./overlays";
+import { SideSheet, ControlledModalDialog, InspectorSheet } from "./overlays";
 
 describe("universal components", () => {
   it("applies locale, direction, density, and theme", () => {
@@ -55,4 +55,9 @@ describe("universal components", () => {
     await user.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.getByRole("dialog", { name: "Edit project" })).toBeInTheDocument();
   });
+  it.each(['modal','sheet'])('preserves RTL in the portaled %s',kind=>{
+    render(<DesignSystemProvider direction="rtl" locale="ar-AE">{kind==='modal'?<ControlledModalDialog isOpen onOpenChange={()=>{}} title="Review"><TextInput label="Name" /></ControlledModalDialog>:<InspectorSheet isOpen onOpenChange={()=>{}} title="Review"><TextInput label="Name" /></InspectorSheet>}</DesignSystemProvider>);
+    expect(screen.getByRole('dialog',{name:'Review'}).closest('[dir]')).toHaveAttribute('dir','rtl');
+  });
+
 });

@@ -4,7 +4,7 @@ import {BriefService} from './brief.service';
 import {plainToInstance} from 'class-transformer';
 import {validate} from 'class-validator';
 import {SaveBriefEntryDto} from './brief.dto';
-import {AddDesignVersionDto,SaveDesignFolderDto,UploadDesignFilesDto} from './design.dto';
+import {CreateDesignThreadDto,AddDesignVersionDto,SaveDesignFolderDto,UploadDesignFilesDto} from './design.dto';
 import type {WorkspaceAccessService} from '../workspaces/workspace-access.service';
 import type {CrmEventsService} from '../crm/shared/crm-events.service';
 import type {BrandAssetStorageService} from '../workspaces/brand-asset-storage.service';
@@ -78,7 +78,7 @@ describe('design revision round policy',()=>{
  });
 });
 describe('case write safeguards',()=>{
- it('requires both viewing and editing permissions, and rejects released cases',async()=>{const query=vi.fn(async()=>({rowCount:1,rows:[{status:'released'}]}));const withPermissions=vi.fn(async(_a,_w,_p,work)=>work({query},{userId:'user'}));const service=new BriefService({withPermissions} as unknown as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);const write=vi.fn();await expect(service.edit(actor,'workspace','case',write)).rejects.toThrow('read-only');expect(withPermissions).toHaveBeenCalledWith(actor,'workspace',['pre_projects.view','pre_projects.edit'],expect.any(Function));expect(write).not.toHaveBeenCalled();});
+ it.each(['active','on_hold','released','cancelled'])('requires permissions while keeping %s working records editable',async(status)=>{const query=vi.fn(async()=>({rowCount:1,rows:[{status}]}));const withPermissions=vi.fn(async(_a,_w,_p,work)=>work({query},{userId:'user'}));const service=new BriefService({withPermissions} as unknown as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);const write=vi.fn();await service.edit(actor,'workspace','case',write);expect(withPermissions).toHaveBeenCalledWith(actor,'workspace',['pre_projects.view','pre_projects.edit'],expect.any(Function));expect(write).toHaveBeenCalled();});
  it('rejects a stale revision instead of overwriting',()=>{const service=new BriefService({} as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);expect(()=>service.version(3,2)).toThrow('Someone updated');});
  it('validates duplicate catalog roles',async()=>{const dto=plainToInstance(SaveBriefEntryDto,{catalogLinks:[{role:'work',recordId:'e56299c6-3da3-402a-a9ac-3995bb37b9d4'},{role:'work',recordId:'11911234-8004-4d49-b101-a9743f5ac28e'}]});const errors=await validate(dto);expect(errors.some(e=>e.property==='catalogLinks'&&e.constraints?.arrayUnique)).toBe(true);});
  it('prevents reviewing an older file version',async()=>{const oldId='old';const design={id:'design',version:4,versions:[{id:'current',status:'draft'},{id:oldId,status:'draft'}],activity:[]};const query=vi.fn(async()=>({rowCount:1,rows:[design]}));const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{} as CrmEventsService);await expect(service.activity(actor,'workspace','case','design',{id:'new',version:4,versionId:oldId,action:'internal_review',note:'',decisionBy:'',contextConfirmed:true})).rejects.toThrow('latest version');expect(query.mock.calls.some(([sql])=>String(sql).startsWith('UPDATE'))).toBe(false);});
@@ -146,4 +146,38 @@ describe('client portal handoff readiness',()=>{
   await service.activity(actor,'w','c','design',{...input,id:'exception',note:'Client approved one additional review round.',reviewExpiresAt});
   expect(query).toHaveBeenCalledWith(expect.stringContaining('client_review_expires_at'),['w','design','current','client_review',reviewExpiresAt]);
  });
+});
+
+describe('design comment pins',()=>{
+ const base={id:'e56299c6-3da3-402a-a9ac-3995bb37b9d4',versionId:'e56299c6-3da3-402a-a9ac-3995bb37b9d4',title:'Change finish',body:'Use oak',blocking:false};
+ it('accepts normalized pin coordinates and member tags',async()=>{expect(await validate(plainToInstance(CreateDesignThreadDto,{...base,anchor:{x:.25,y:.75},mentions:[base.id]}))).toHaveLength(0);});
+ it('rejects out of bounds pins and invalid member IDs',async()=>{expect((await validate(plainToInstance(CreateDesignThreadDto,{...base,anchor:{x:2,y:-1},mentions:['invalid']}))).length).toBeGreaterThan(0);});
+});
+
+describe('comment pin persistence',()=>{
+ it.each([undefined,{x:.25,y:.75}])('stores an optional anchor correctly: %j',async anchor=>{
+  const design={id:'design',threads:[],versions:[{id:'revision',status:'draft'}],activity:[]};
+  const query=vi.fn(async(_sql:string,_params?:unknown[])=>({rowCount:1,rows:[design]}));
+  const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user')};
+  const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
+  vi.spyOn(service as any,'commentAccess').mockImplementation((_a:any,_w:any,_c:any,_id:any,work:any)=>work({query},'user'));
+  await service.createThread(actor,'w','c','design',{id:'thread',versionId:'revision',title:'Comment',body:'Comment',blocking:false,anchor});
+  const insert=query.mock.calls.find(([sql])=>sql.startsWith('INSERT INTO pre_project_design_threads'));
+  expect(insert?.[1]?.[8]).toEqual(anchor?JSON.stringify(anchor):null);
+ });
+});
+
+describe('folder approval',()=>{
+ const setup=(reviewer='user',status='active',versions=['revision'])=>{
+  const folder={id:'folder',version:1,reviewerId:reviewer};
+  const files=versions.map(id=>({id:'design',versions:[{id,status:'draft'}],threads:[]}));
+  const query=vi.fn(async(sql:string,_values?:unknown[])=>({rows:sql.includes('FROM pre_project_design_folders f')?[folder]:sql.includes('FROM pre_project_designs d')?files:[],rowCount:1}));
+  const access={withPermissions:async(_a:any,_w:any,_p:any,work:any)=>work({query},{userId:'user'})};
+  const brief={case:async()=>({status}),version:(actual:number,expected:number)=>{if(actual!==expected)throw Error('stale');}};
+  const service=new DesignService(access as any,brief as any,{record:vi.fn()} as any);return {service,query};
+ };
+ it('rejects a different reviewer',async()=>{const {service}=setup('other');await expect(service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['revision']})).rejects.toThrow('Only the assigned');});
+ it('rejects changed file revisions',async()=>{const {service}=setup();await expect(service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['old']})).rejects.toThrow('Files changed');});
+ it('rejects empty folders but allows review after release',async()=>{await expect(setup('user','active',[]).service.approveFolder(actor,'w','c','folder',{version:1,versionIds:[]})).rejects.toThrow('Add files');await expect(setup('user','released').service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['revision']})).resolves.toBeDefined();});
+ it('approves only the reviewed revisions and stores the snapshot',async()=>{const {service,query}=setup();await service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['revision']});expect(query).toHaveBeenCalledWith(expect.stringContaining("SET status='internal_approved'"),['w','design','revision','user']);expect(query).toHaveBeenCalledWith(expect.stringContaining('SET approved_versions='),['w','c','folder','["revision"]']);});
 });

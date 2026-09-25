@@ -56,6 +56,7 @@ export function DailyReportView({
   const hours = r.workforce?.length
     ? r.workforce.reduce((n, w) => n + w.people * w.hours, 0)
     : r.people * r.hours;
+  const riskOwner = state.members.find(member => member.id === r.nextUpdateOwnerId)?.name;
   const history = state.data.audit
     .filter((a) => a.recordId === r.id)
     .slice(-5)
@@ -68,7 +69,7 @@ export function DailyReportView({
       <header className={d.documentHeader}>
         <div>
           <span className={v.eyebrow}>DAILY REPORT · {label(r.location)}</span>
-          <h2>{r.summary || `${label(r.location)} progress`}</h2>
+          <h2>{label(r.location)} daily progress</h2>
           <p>
             {shortDate(r.date)} · {r.shift}
           </p>
@@ -123,6 +124,18 @@ export function DailyReportView({
           <strong>{r.weather || "Not recorded"}</strong>Weather
         </span>
       </div>
+      <section className={d.reportNarrative}>
+        <h3>Shift summary</h3>
+        <p>{r.summary || "No shift summary recorded."}</p>
+      </section>
+      {Boolean(r.workforce?.length) && <section>
+        <h3>Crew & labour <small>{r.workforce!.length} trades · {hours} labour hours</small></h3>
+        <div className={s.scroll}><table data-record-table="" className={s.table}><thead><tr><th>Trade / role</th><th>People</th><th>Hours each</th><th>Labour hours</th></tr></thead><tbody>{r.workforce!.map((crew, index) => <tr key={`${crew.trade}-${index}`}><td>{crew.trade}</td><td>{crew.people}</td><td>{crew.hours}</td><td>{crew.people * crew.hours}</td></tr>)}</tbody></table></div>
+      </section>}
+      {r.scheduleImpact && r.scheduleImpact !== "none" && <section className={d.impactSummary} data-impact={r.scheduleImpact}>
+        <h3><TriangleAlert size={17}/> Programme {r.scheduleImpact === "blocked" ? "blocked" : "at risk"}</h3>
+        <dl><div><dt>Cause</dt><dd>{r.impactReason || "Not recorded"}</dd></div><div><dt>Recovery action</dt><dd>{r.recoveryPlan || "Not recorded"}</dd></div><div><dt>Next update</dt><dd>{riskOwner || "Owner not recorded"}{r.nextUpdateDate ? ` · ${shortDate(r.nextUpdateDate)}` : ""}</dd></div></dl>
+      </section>}
       {images.length > 0 && (
         <section>
           <h3>
@@ -158,6 +171,7 @@ export function DailyReportView({
                 <tr>
                   <th>Activity / area</th>
                   <th>Reported quantity</th>
+                  <th>Approved to date / plan</th>
                   <th>Assigned team</th>
                 </tr>
               </thead>
@@ -180,6 +194,7 @@ export function DailyReportView({
                           {e.quantity} {t?.unit}
                         </strong>
                       </td>
+                      <td>{t ? `${t.approved} / ${t.quantity} ${t.unit}` : "—"}</td>
                       <td>
                         {state.resources.find((x) => x.id === t?.resourceId)
                           ?.name || "No team assigned"}
@@ -206,7 +221,7 @@ export function DailyReportView({
       <div className={d.documentColumns}>
         {[
           ["Issues & blockers", r.issues, TriangleAlert],
-          ["Safety observations", r.safety, ShieldCheck],
+          [r.safetyStatus === "incident" ? "Safety incident" : r.safetyStatus === "observation" ? "Safety observation" : "Safety & inspections", r.safety, ShieldCheck],
           ["Materials & deliveries", r.materials, ClipboardCheck],
           ["Next shift", r.tomorrow, ArrowUpRight],
         ].map(([title, body, Icon]) => {

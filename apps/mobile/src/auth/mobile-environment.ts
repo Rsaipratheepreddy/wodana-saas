@@ -14,7 +14,6 @@ export function mobileEnvironment(input: {
   const local = ['localhost', '127.0.0.1', '10.0.2.2', '[::1]'].includes(url.hostname);
   if (environment !== 'development' && (url.protocol !== 'https:' || local))
     throw new Error(`${environment.toUpperCase()} builds require a reachable HTTPS API.`);
-  if (environment === 'production' && !input.tenantSlug)
-    throw new Error('Production builds must be locked to one tenant.');
+  // The public organization lookup selects an explicit tenant before credentials.
   return environment as MobileEnvironment;
 }

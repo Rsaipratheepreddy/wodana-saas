@@ -69,10 +69,11 @@ async function read(workspaceId: string, token: string | undefined, path: string
   if (response?.status === 401) redirect("/login");
   return response;
 }
-export async function getPreProjects(query: URLSearchParams): Promise<PreProjectList> {
+export async function getPreProjects(query: URLSearchParams, pendingDeal = false): Promise<PreProjectList> {
   const { workspaceId, token } = await context();
   const filters = listSearch(query);
   filters.delete("view"); filters.delete("section");
+  if (pendingDeal) filters.set("pendingDeal", "true");
   if (isE2eBypass()) {
     const search = filters.get("search")?.toLowerCase() ?? "";
     const items = !search || `${e2eCase.title} ${e2eCase.customerName}`.toLowerCase().includes(search)

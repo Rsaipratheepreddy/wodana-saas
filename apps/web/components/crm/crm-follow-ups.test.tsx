@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { crmScreenFixture } from "@/lib/crm/screens";
 import { crmRequest, CrmRequestError, type RecordData } from "@/lib/crm/client";
 import { CrmFollowUps, followUpGroup } from "./crm-follow-ups";
-import { FollowUpSheet, reminderTimestamp } from "./follow-up-editor";
+import { FollowUpSheet, NewFollowUpDialog, reminderTimestamp } from "./follow-up-editor";
 
 vi.mock("@/lib/crm/client", async (original) => ({ ...await original<object>(), crmRequest: vi.fn() }));
 const workspaceId = "workspace";
@@ -29,9 +29,16 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 function fixture(items = [initial]) { return { ...structuredClone(crmScreenFixture("follow-ups")), workspaceId, items }; }
 function sheet() { const onSaved = vi.fn(), onClose = vi.fn(); render(<FollowUpSheet workspaceId={workspaceId} recordId={initial.id} summary={initial} onSaved={onSaved} onClose={onClose} />); return { onSaved, onClose }; }
 
+async function setReminderDate(user: ReturnType<typeof userEvent.setup>) {
+  for (const [segment, value] of [["year", "2026"], ["month", "9"], ["day", "8"]]) {
+    await user.click(screen.getByRole("spinbutton", { name: new RegExp(`${segment},.*Reminder date`, "i") }));
+    await user.keyboard(value);
+  }
+}
+
 describe("Follow-up list", () => {
   it("shows overdue and unscheduled reminders by default without mixing in completed records", () => {
-    render(<CrmFollowUps initialData={fixture([initial, { ...initial, id: "no-date", title: "Choose next step", dueAt: null }, { ...initial, id: "done", title: "Already finished", status: "completed" }])} />);
+    render(<CrmFollowUps initialLayout="list" initialData={fixture([initial, { ...initial, id: "no-date", title: "Choose next step", dueAt: null }, { ...initial, id: "done", title: "Already finished", status: "completed" }])} />);
     expect(screen.getByRole("table", { name: "Follow-ups" })).toBeInTheDocument();
     expect(screen.getByRole("row", { name: /Discuss quotation/ })).toHaveTextContent("Overdue");
     expect(screen.getByRole("button", { name: /Choose next step/ })).toBeInTheDocument();
@@ -41,7 +48,7 @@ describe("Follow-up list", () => {
 
   it("searches notes and clients, and separates completed reminders", async () => {
     const user = userEvent.setup();
-    render(<CrmFollowUps initialData={fixture([initial, { ...initial, id: "done", status: "completed", title: "Already finished" }])} />);
+    render(<CrmFollowUps initialLayout="list" initialData={fixture([initial, { ...initial, id: "done", status: "completed", title: "Already finished" }])} />);
     const search = screen.getByRole("searchbox", { name: "Search follow-ups" });
     await user.type(search, "revised quote");
     expect(screen.getByRole("button", { name: /Discuss quotation/ })).toBeInTheDocument();
@@ -54,15 +61,15 @@ describe("Follow-up list", () => {
   });
 
   it("opens the dedicated editor when any part of a reminder is clicked", async () => {
-    const user = userEvent.setup(); render(<CrmFollowUps initialData={fixture()} />);
+    const user = userEvent.setup(); render(<CrmFollowUps initialLayout="list" initialData={fixture()} />);
     await user.click(screen.getByRole("button", { name: /Discuss quotation/ }));
     expect(await screen.findByRole("textbox", { name: "Notes" })).toHaveValue(String(initial.description));
     expect(api).toHaveBeenCalledWith(workspaceId, "activities/reminder", "GET", undefined, expect.any(AbortSignal));
   });
 
   it("supports opening reminders by keyboard and links to the correct calendar route", async () => {
-    const user = userEvent.setup(); render(<CrmFollowUps initialData={fixture()} />);
-    expect(screen.getByRole("link", { name: "Open calendar" })).toHaveAttribute("href", "/workspace/crm/calendar");
+    const user = userEvent.setup(); render(<CrmFollowUps initialLayout="list" initialData={fixture()} />);
+    expect(screen.getByRole("link", { name: "Open schedule" })).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
     screen.getByRole("button", { name: /Discuss quotation/ }).focus();
     await user.keyboard("{Enter}");
     expect(await screen.findByRole("textbox", { name: "Notes" })).toBeInTheDocument();
@@ -72,7 +79,7 @@ describe("Follow-up list", () => {
 
   it("loads older follow-ups, preserves the first page, and removes the exhausted cursor", async () => {
     api.mockResolvedValueOnce({ data: [initial, { ...initial, id: "older", title: "Older reminder" }], nextCursor: null });
-    const user = userEvent.setup(); render(<CrmFollowUps initialData={{ ...fixture(), nextCursor: "older-page" }} />);
+    const user = userEvent.setup(); render(<CrmFollowUps initialLayout="list" initialData={{ ...fixture(), nextCursor: "older-page" }} />);
     await user.click(screen.getByRole("button", { name: "Load more follow-ups" }));
     expect(await screen.findByRole("button", { name: /Older reminder/ })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Discuss quotation/ })).toHaveLength(1);
@@ -84,8 +91,26 @@ describe("Follow-up list", () => {
     const now = Date.parse("2026-09-07T17:00:00Z");
     expect(followUpGroup({ ...initial, dueAt: "2026-09-07T18:00:00Z" }, now, "Asia/Kolkata")).toBe("Today");
     expect(followUpGroup({ ...initial, dueAt: "2026-09-07T19:00:00Z" }, now, "Asia/Kolkata")).toBe("Upcoming");
-    expect(followUpGroup({ ...initial, dueAt: null }, now, "Asia/Kolkata")).toBe("No date yet");
+    expect(followUpGroup({ ...initial, dueAt: null }, now, "Asia/Kolkata")).toBe("In progress");
   });
+});
+
+it("filters Sales Kanban by the first five owners and searches the rest beside Filter", async () => {
+  const user = userEvent.setup();
+  const tasks = Array.from({ length: 6 }, (_, index) => ({ ...initial, id: `task-${index + 1}`, title: `Sales task ${index + 1}`, type: "task", ownerMembershipId: `owner-${index + 1}`, ownerName: `Owner ${index + 1}` }));
+  render(<CrmFollowUps initialLayout="kanban" tasksOnly initialData={fixture(tasks)} />);
+  const owners = screen.getByRole("group", { name: "Filter sales tasks by assignee" });
+  expect(owners.querySelectorAll("button")).toHaveLength(5);
+  expect(owners.parentElement?.previousElementSibling?.querySelector("summary")).toHaveTextContent("Filter");
+  await user.click(screen.getByRole("button", { name: "Show tasks assigned to Owner 1" }));
+  expect(screen.getByText("Sales task 1")).toBeInTheDocument();
+  expect(screen.queryByText("Sales task 2")).not.toBeInTheDocument();
+  await user.click(screen.getByLabelText("Choose sales assignee"));
+  await user.type(screen.getByRole("searchbox", { name: "Search sales assignees" }), "Owner 6");
+  await user.click(screen.getByRole("button", { name: "Owner 6" }));
+  expect(screen.getByText("Sales task 6")).toBeInTheDocument();
+  expect(screen.queryByText("Sales task 1")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Approvals" })).not.toBeInTheDocument();
 });
 
 describe("Notes and rescheduling", () => {
@@ -93,8 +118,10 @@ describe("Notes and rescheduling", () => {
     const user = userEvent.setup(); const { onSaved } = sheet();
     const notes = await screen.findByRole("textbox", { name: "Notes" });
     await user.clear(notes); await user.type(notes, "Client asked me to call tomorrow.");
-    fireEvent.change(screen.getByLabelText("Reminder date"), { target: { value: "2026-09-08" } });
-    fireEvent.change(screen.getByLabelText("Reminder time"), { target: { value: "10:30" } });
+    await setReminderDate(user);
+    await user.click(screen.getByRole("spinbutton", { name: "hour, Reminder time" })); await user.keyboard("10");
+    await user.click(screen.getByRole("spinbutton", { name: "minute, Reminder time" })); await user.keyboard("30");
+    await user.click(screen.getByRole("spinbutton", { name: /am\/pm, Reminder time/i })); await user.keyboard("a");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Saved. Your reminder is updated in Today and Calendar.");
     expect(api).toHaveBeenCalledWith(workspaceId, "activities/reminder", "PATCH", { version: 3, title: initial.title, description: "Client asked me to call tomorrow.", dueAt: new Date("2026-09-08T10:30").toISOString() });
@@ -170,7 +197,7 @@ describe("Create a follow-up", () => {
       if (path.startsWith("leads?")) return { data: [{ ...lead, status }], nextCursor: null };
       return { data: [], nextCursor: null };
     });
-    const user = userEvent.setup(); render(<CrmFollowUps initialData={fixture()} />);
+    const user = userEvent.setup(); render(<CrmFollowUps initialLayout="list" initialData={fixture()} />);
     await user.click(screen.getByRole("button", { name: "Add follow-up" }));
     const dialog = await screen.findByRole("dialog", { name: "Add follow-up" });
     const combo = within(dialog).getByRole("combobox", { name: /Enquiry or customer/ });
@@ -178,11 +205,26 @@ describe("Create a follow-up", () => {
     await user.type(combo, "Maya");
     await user.click(await screen.findByRole("option", { name: "Maya Nair · Clinic design" }));
     await user.type(within(dialog).getByRole("textbox", { name: "Notes" }), "Client asked me to call tomorrow.");
-    fireEvent.change(within(dialog).getByLabelText("Reminder date"), { target: { value: "2026-09-08" } });
-    fireEvent.change(within(dialog).getByLabelText("Reminder time"), { target: { value: "10:30" } });
+    await setReminderDate(user);
+    await user.click(screen.getByRole("spinbutton", { name: "hour, Reminder time" })); await user.keyboard("10");
+    await user.click(screen.getByRole("spinbutton", { name: "minute, Reminder time" })); await user.keyboard("30");
+    await user.click(screen.getByRole("spinbutton", { name: /am\/pm, Reminder time/i })); await user.keyboard("a");
     await user.click(within(dialog).getByRole("button", { name: "Save reminder" }));
     await waitFor(() => expect(api.mock.calls.some((item) => item[2] === "POST")).toBe(true));
     expect(api.mock.calls.find((item) => item[2] === "POST")?.[3]).toMatchObject({ leadId: lead.id, type: "call", title: "Call follow-up · Maya Nair", description: "Client asked me to call tomorrow.", isNextAction: status === "connected", customerVisible: false });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+});
+
+it("uses the shared reminder editor with a preselected enquiry and keeps a saved reminder after refresh failure", async () => {
+  const onCreated = vi.fn().mockRejectedValue(new Error("Refresh failed"));
+  render(<NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...lead, ownerMembershipId: "owner-1" }} initialSchedule={{ date: "2026-09-23", time: "09:30" }} onClose={vi.fn()} onCreated={onCreated} />);
+  const user = userEvent.setup();
+  expect(screen.getByRole("combobox", { name: /Enquiry or customer/ })).toHaveValue("Maya Nair · Clinic design");
+  await user.click(screen.getByRole("button", { name: "Save reminder" }));
+  await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
+  const post = api.mock.calls.find(call => call[2] === "POST");
+  expect(post?.[3]).toMatchObject({ leadId: "lead-1", ownerMembershipId: "owner-1", type: "call", durationMinutes: 30, isNextAction: true, dueAt: new Date("2026-09-23T09:30").toISOString() });
+  expect(await screen.findByText("Follow-up saved. Close and refresh to see it. Do not create it again.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save reminder" })).toBeDisabled();
 });

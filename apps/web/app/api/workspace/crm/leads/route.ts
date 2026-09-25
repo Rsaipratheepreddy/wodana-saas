@@ -33,6 +33,9 @@ export async function POST(request: Request) {
   const source = typeof body?.source === "string" ? body.source : "";
   const channel = typeof body?.channel === "string" ? body.channel : "";
   const serviceType = typeof body?.serviceType === "string" ? body.serviceType : "";
+  const mobile = typeof body?.mobile === "string" ? body.mobile.trim() : "";
+  const details = body?.details && typeof body.details === "object" && !Array.isArray(body.details) ? body.details as Record<string, unknown> : {};
+  const emirate = typeof details.emirate === "string" ? details.emirate.trim() : "";
 
   if (!UUID.test(workspaceId) || !UUID.test(requestId)) {
     return invalidRequest("A valid workspace and request identifier are required.");
@@ -47,7 +50,8 @@ export async function POST(request: Request) {
     return invalidRequest("The phone number or enquiry notes are too long.");
   }
   if (!source || !channel || !serviceType) return invalidRequest("Select a source, channel and enquiry type.");
-  const extraContact = Object.fromEntries(["mobile", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
+  if (!mobile || !emirate) return invalidRequest("Enter a mobile number and select an emirate.");
+  const extraContact = Object.fromEntries(["mobile", "mobileCountryCode", "phoneCountryCode", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
 
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/crm/intake-events`,
@@ -66,12 +70,11 @@ export async function POST(request: Request) {
           ...extraContact,
           ...(email ? { email } : {}),
           ...(phone ? { phone } : {}),
-          preferredTimezone: "Asia/Dubai",
         },
         title,
         ...(summary ? { summary } : {}),
         serviceType,
-        details: body?.details ?? {},
+        details,
         assignment: body?.assignment ?? { mode: "unassigned" },
         originalPayload: { origin: "wodana_leads_ui" },
       }),

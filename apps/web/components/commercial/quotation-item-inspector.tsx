@@ -1,5 +1,4 @@
 "use client";
-import { useState } from "react";
 import { Copy, Trash2 } from "lucide-react";
 import type { Quote, QuoteLine } from "@/lib/commercial/types";
 import { money, roundMoney } from "@/lib/commercial/client";
@@ -27,7 +26,6 @@ export function QuotationItemInspector({
   workspaceId: string;
   caseId: string;
 }) {
-  const [catalogOpen, setCatalogOpen] = useState(item.title === "New item");
   const patch = (value: Partial<QuoteLine>) => onChange({ ...item, ...value });
   const rooms = [
     ...new Set([
@@ -48,14 +46,12 @@ export function QuotationItemInspector({
     <div className={d.itemEditor} aria-label={`Item editor for ${item.title}`}>
       <div className={d.fields}>
         {quote.direction !== "deduction" && (
-          <details
+          <section
             className={d.optionalFields}
-            open={catalogOpen}
-            onToggle={(e) => setCatalogOpen(e.currentTarget.open)}
           >
-            <summary>
+            <h3>
               {work ? "Change catalog item" : "Choose item from catalog"}
-            </summary>
+            </h3>
             <CommercialCatalogPicker
               workspaceId={workspaceId}
               caseId={caseId}
@@ -90,10 +86,9 @@ export function QuotationItemInspector({
                     });
                 }
                 onChange(next);
-                if (value) setCatalogOpen(false);
               }}
             />
-          </details>
+          </section>
         )}
         <label>
           Item name
@@ -148,8 +143,8 @@ export function QuotationItemInspector({
           library={library}
           compact
         />
-        <details className={d.optionalFields}>
-          <summary>More item details</summary>
+        <section className={d.optionalFields}>
+          <h3>More item details</h3>
           <label>
             Description / specification
             <textarea
@@ -229,7 +224,7 @@ export function QuotationItemInspector({
               ))}
             </select>
           </label>
-        </details>
+        </section>
         <div className={d.itemActions}>
           <button type="button" onClick={onDuplicate}>
             <Copy size={14} />

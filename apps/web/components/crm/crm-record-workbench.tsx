@@ -1,6 +1,10 @@
 "use client";
 import { useState } from "react";
+import { ArrowRightLeft, BadgeCheck, CircleX, Pencil } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { caseHref } from "@/lib/pre-project/types";
+import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
 import { Badge, Button, Callout, Tabs } from "@/design-system";
@@ -39,6 +43,19 @@ export function CrmRecordWorkbench({ id, row, workspaceId, onChanged }: { id: Cr
 
 function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: string; row: RecordData; onChanged: () => Promise<void> }) {
   useWoddyRecord("opportunity", row.id, String(row.title ?? "Opportunity"));
+  const router = useRouter();
+  const [openingCase, setOpeningCase] = useState(false);
+  const [caseError, setCaseError] = useState("");
+  const openCase = async () => {
+    if (openingCase) return;
+    setOpeningCase(true); setCaseError("");
+    try {
+      const response = await fetch(`/api/workspace/pre-projects?workspaceId=${encodeURIComponent(workspaceId)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId: row.id }), signal: AbortSignal.timeout(20000) });
+      const result = await response.json();
+      if (!response.ok || !result.id) throw new Error(result.message ?? "Could not open Design & Planning.");
+      router.push(caseHref(result.id, new URLSearchParams(), "overview"));
+    } catch (error) { setCaseError(error instanceof Error ? error.message : "Could not open the case."); setOpeningCase(false); }
+  };
   const resource = useCrmResource<RecordData>(workspaceId, `opportunities/${row.id}`);
   const pipelines = useCrmResource<unknown>(workspaceId, "pipelines");
   const members = useCrmResource<unknown>(workspaceId, "members");
@@ -47,28 +64,91 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const live = { ...row, ...resource.data };
   const pipeline = rows(pipelines.data).find((p) => p.id === (live.pipelineId ?? live.pipeline_id));
   const stages = (pipeline?.stages ?? []) as RecordData[];
+  const activeStages = stages.filter(stage => stage.status === "active");
+  const activeWorkingStages = activeStages.filter(stage => !["won", "lost"].includes(String(stage.code)));
+  const previousStageId = ((live.stageHistory ?? []) as RecordData[])
+    .map(entry => String(entry.fromStageId ?? ""))
+    .find(stageId => activeWorkingStages.some(stage => stage.id === stageId));
+  const selectedMoveStageId = live.status === "open"
+    ? String(live.stageId ?? live.stage_id ?? activeStages[0]?.id ?? "")
+    : previousStageId ?? String(activeWorkingStages[0]?.id ?? "");
   const partyId = String(live.partyId ?? live.party_id ?? "");
   const ownerId = String(live.ownerMembershipId ?? live.owner_membership_id ?? "");
   const qualificationEvidence = qualificationEvidenceSnapshot(live.qualificationEvidence ?? live.qualification_evidence);
   const qualificationRows = qualificationEvidenceRows(qualificationEvidence);
+  const status = String(live.status ?? "open");
+  const currentStage = stages.find(stage => stage.id === (live.stageId ?? live.stage_id));
+  const outcomeMismatch = (currentStage?.code === "won" || currentStage?.code === "lost") && status !== currentStage.code;
+  const amount = Number(live.amount);
+  const currency = String(live.currencyCode ?? live.currency_code ?? "");
+  const value = live.amount !== null && live.amount !== undefined && Number.isFinite(amount) && /^[A-Z]{3}$/.test(currency)
+    ? new Intl.NumberFormat("en-AE", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount)
+    : "Not set";
+  const workingStageId = activeWorkingStages.some(stage => stage.id === selectedMoveStageId)
+    ? selectedMoveStageId : String(activeWorkingStages[0]?.id ?? "");
+  const startStageChange = () => setAction({
+    title: status === "open" ? "Change stage" : "Reopen opportunity",
+    description: status === "open" ? "Move this opportunity to the next working stage. Mark Won or Lost separately when there is an outcome." : "Choose a working stage and schedule the next follow-up.",
+    path: `opportunities/${row.id}/transition`,
+    initial: { version: live.version, stageId: workingStageId },
+    fields: [{ key: "stageId", label: "Stage", options: options(activeWorkingStages), required: true }, { key: "reason", label: "Reason", required: true }, ...(status !== "open" ? [{ key: "nextActionAt", label: "Next follow-up", type: "datetime-local" as const, required: true }] : [])],
+    transform: values => ({ ...values, status: "open" }),
+    submit: status === "open" ? "Change stage" : "Reopen opportunity",
+  });
+  const startOutcome = (outcome: "won" | "lost") => {
+    const outcomeStage = activeStages.find(stage => stage.code === outcome);
+    setAction({
+      title: outcome === "won" ? "Mark opportunity Won" : "Mark opportunity Lost",
+      description: outcome === "won"
+        ? "Record what confirms the win: a signed agreement, downpayment, or full payment. Deal submission and Finance verification are separate steps."
+        : "Record why this opportunity was lost so the history and reports remain useful.",
+      path: `opportunities/${row.id}/transition`,
+      initial: { version: live.version, stageId: outcomeStage?.id ?? live.stageId ?? live.stage_id, status: outcome },
+      fields: [{ key: "reason", label: outcome === "won" ? "Win evidence and reference" : "Loss reason", required: true }, ...(outcome === "lost" ? [{ key: "competitor", label: "Competitor (optional)" }] : [])],
+      submit: outcome === "won" ? "Confirm win" : "Confirm loss",
+    });
+  };
   const saved = async () => { resource.refresh(); await onChanged(); };
-  return <div className={styles.workbench}><ResourceState {...resource} retry={resource.refresh} /><h3>{String(live.title)}</h3><Tabs items={[
-    { id: "deal", label: "Opportunity", panel: <div className={styles.stack}><FactList facts={[["Customer", String(live.partyName ?? "Not set")], ["Pipeline", String(live.pipelineName ?? pipeline?.name ?? "Not set")], ["Stage", String(live.stageName ?? "Not set")], ["Status", label(live.status)], ["Value", live.amount === null || live.amount === undefined ? "Not available" : `${Number(live.amount).toLocaleString()} ${live.currencyCode ?? live.currency_code ?? ""}`], ["Sales owner", String(live.ownerName ?? "Unassigned")], ["Expected close", dateText(live.expectedCloseAt ?? live.expected_close_at)], ["Next action", dateText(live.nextActionAt ?? live.next_action_at)]]} />
-      <div className={styles.actions}><Button size="compact" isDisabled={!resource.data} onPress={() => setAction({ title: "Edit opportunity", path: `opportunities/${row.id}`, method: "PATCH", initial: { version: live.version, title: live.title, ownerMembershipId: ownerId, ...(live.amount !== undefined ? { amount: live.amount, currencyCode: live.currencyCode ?? live.currency_code } : {}) }, fields: [{ key: "title", label: "Title", required: true }, { key: "ownerMembershipId", label: "Sales owner", options: options(rows(members.data), "displayName") }, ...(live.amount !== undefined ? [{ key: "amount", label: "Value", type: "number", min: 0 }, { key: "currencyCode", label: "Currency" }] as FieldSpec[] : []), { key: "expectedCloseAt", label: "Expected close", type: "datetime-local" }, { key: "nextActionAt", label: "Next action", type: "datetime-local" }] })}>Edit opportunity</Button>
-      <Button size="compact" variant="primary" isDisabled={!resource.data || !stages.length} onPress={() => setAction({ title: "Move opportunity", path: `opportunities/${row.id}/transition`, initial: { version: live.version, stageId: live.stageId ?? live.stage_id, status: "open" }, fields: [{ key: "stageId", label: "Stage", options: options(stages.filter((s) => s.status === "active")), required: true }, { key: "status", label: "Outcome", options: choice(live.status === "open" ? ["open", "won", "lost", "abandoned"] : ["open"]), required: true }, { key: "reason", label: "Reason", required: true }, { key: "competitor", label: "Competitor (if lost)" }, ...(live.status !== "open" ? [{ key: "nextActionAt", label: "Next action", type: "datetime-local" as const, required: true }] : [])], submit: live.status === "open" ? "Move opportunity" : "Reopen opportunity" })}>{live.status === "open" ? "Move stage / close" : "Reopen"}</Button></div>
-      {live.leadId || live.lead_id ? <a className={styles.link} href={`/workspace/crm/leads?lead=${live.leadId ?? live.lead_id}`}>View original enquiry</a> : null}
+  return <div className={`${styles.workbench} ${styles.opportunityDetail}`}><ResourceState {...resource} retry={resource.refresh} />
+    <header className={styles.opportunityHeader}>
+      <div className={styles.opportunityIdentity}><div className={styles.opportunityReferences}>{live.reference ? <span className={styles.opportunityReference}>Opportunity {String(live.reference)}</span> : null}{live.enquiryReference ? <span className={styles.opportunitySourceReference}>Enquiry {String(live.enquiryReference)}</span> : null}</div><h2>{String(live.title ?? "Opportunity")}</h2><p>{String(live.partyName ?? "Customer not set")}</p></div>
+      <div className={styles.opportunityValue} data-empty={value === "Not set" || undefined}><small>Opportunity value</small><strong>{value}</strong></div>
+    </header>
+    <section className={styles.opportunityOverview} aria-label="Opportunity summary">
+      <dl className={styles.opportunitySummary}>
+        <div><dt>Stage</dt><dd>{String(live.stageName ?? "Not set")}</dd></div>
+        <div><dt>Status</dt><dd>{label(status)}</dd></div>
+        <div><dt>Sales owner</dt><dd>{String(live.ownerName ?? "Unassigned")}</dd></div>
+        <div><dt>Next follow-up</dt><dd>{dateText(live.nextActionAt ?? live.next_action_at)}</dd></div>
+        <div><dt>Expected close</dt><dd>{dateText(live.expectedCloseAt ?? live.expected_close_at)}</dd></div>
+      </dl>
+      {outcomeMismatch ? <p className={styles.opportunityWarning} role="status">This record is in the {String(currentStage?.name)} stage but its status is {label(status)}. Review and confirm the outcome.</p> : null}
+      <div className={styles.opportunityActions}>
+        <Button size="compact" isDisabled={!resource.data} onPress={() => setAction({ title: "Edit opportunity", path: `opportunities/${row.id}`, method: "PATCH", initial: { version: live.version, title: live.title, ownerMembershipId: ownerId, expectedCloseAt: live.expectedCloseAt ?? live.expected_close_at, nextActionAt: live.nextActionAt ?? live.next_action_at, ...(live.amount !== undefined ? { amount: live.amount, currencyCode: live.currencyCode ?? live.currency_code } : {}) }, fields: [{ key: "title", label: "Title", required: true }, { key: "ownerMembershipId", label: "Sales owner", options: options(rows(members.data), "displayName") }, ...(live.amount !== undefined ? [{ key: "amount", label: `Value (${live.currencyCode ?? live.currency_code ?? ""})`, type: "number", min: 0 }] as FieldSpec[] : []), { key: "expectedCloseAt", label: "Expected close", type: "datetime-local" }, { key: "nextActionAt", label: "Next follow-up", type: "datetime-local" }] })}><Pencil aria-hidden="true" size={14} />Edit details</Button>
+        <Button size="compact" variant={status === "open" ? "primary" : undefined} isDisabled={!resource.data || !workingStageId} onPress={startStageChange}><ArrowRightLeft aria-hidden="true" size={14} />{status === "open" ? "Change stage" : "Reopen"}</Button>
+        {status === "open" ? <><Button size="compact" className={styles.opportunityWinAction} isDisabled={!resource.data} onPress={() => startOutcome("won")}><BadgeCheck aria-hidden="true" size={14} />Mark Won</Button><Button size="compact" className={styles.opportunityLostAction} isDisabled={!resource.data} onPress={() => startOutcome("lost")}><CircleX aria-hidden="true" size={14} />Mark Lost</Button></> : null}
+      </div>
+    </section>
+    <Tabs items={[
+    { id: "overview", label: "Details", panel: <div className={styles.opportunityNextStep}>
+      <div><h3>{status === "won" ? "Next step: Deal submission" : status === "open" ? "Next step: Design & Planning" : "Opportunity closed"}</h3><p>{status === "won" ? "Complete the Deal File and Finance review before handing work to production." : status === "open" ? "Capture requirements, prepare the design and quotation, then confirm the customer’s decision." : "Review the activity and stage history, or reopen with a scheduled follow-up."}</p></div>
+      {["open", "won"].includes(status) ? <Button size="compact" isLoading={openingCase} isDisabled={!resource.data} onPress={() => void openCase()}>Open Design &amp; Planning</Button> : null}
+      {caseError ? <Callout title="Could not open case" tone="warning">{caseError}</Callout> : null}
+      {live.leadId || live.lead_id ? <Link className={styles.link} href={`/workspace/crm/leads?lead=${live.leadId ?? live.lead_id}`}>View original enquiry</Link> : null}
+      {live.preProjectCaseId && live.dealFileReference ? <Link className={styles.link} href={`/workspace/pre-projects/cases/${live.preProjectCaseId}/approvals`}>Open Deal File {String(live.dealFileReference)}</Link> : null}
+      <p className={styles.opportunityPipeline}>Pipeline: {String(live.pipelineName ?? pipeline?.name ?? "Not set")}</p>
     </div> },
-    { id: "qualification", label: "Qualification", panel: qualificationEvidence ? <div className={styles.stack}>
-      <Callout title="Qualification handoff is frozen">This is the exact enquiry decision snapshot used to create the opportunity. Later form changes do not rewrite it.</Callout>
+    ...(qualificationEvidence ? [{ id: "qualification", label: "Qualification", panel: <div className={styles.stack}>
+      <p>This is the enquiry information captured when this opportunity was created. Later enquiry edits do not change this snapshot.</p>
       <FactList facts={[["Form", qualificationEvidence.form?.name ?? "No configured form"], ["Selection", label(qualificationEvidence.selection)], ["Evaluated", dateText(qualificationEvidence.evaluatedAt)], ["Conversion", label(live.conversionOrigin ?? live.conversion_origin ?? "lead_qualification")]]} />
       <h4>Confirmed needs</h4>
       {qualificationRows.length ? qualificationRows.map(answer => <div className={styles.row} key={answer.key}><div><strong>{answer.label}</strong><small>{answer.value}</small></div></div>) : <p>No qualification answers were required.</p>}
-    </div> : <Callout title="No linked enquiry snapshot" tone="info">This opportunity was created directly. Add discovery requirements in Pre-execution rather than inventing enquiry history.</Callout> },
+    </div> }] : []),
     { id: "activity", label: "Activity", panel: <ActivityPanel workspaceId={workspaceId} opportunityId={row.id} partyId={partyId || undefined} ownerMembershipId={ownerId || undefined} onChanged={saved} /> },
+    { id: "attachments", label: "Attachments", panel: live.leadId || live.lead_id ? <RecordAttachments workspaceId={workspaceId} leadId={String(live.leadId ?? live.lead_id)} /> : <p>This opportunity has no originating enquiry. Project files are available in Design &amp; Planning.</p> },
     { id: "customer", label: "Customer", panel: partyId ? <CustomerPanel workspaceId={workspaceId} partyId={partyId} onChanged={saved} /> : <p>No customer is linked.</p> },
     { id: "team", label: "Stakeholders & team", panel: <div className={styles.stack}><div className={styles.toolbar}><h3>Customer stakeholders</h3><Button size="compact" onPress={() => setAction({ title: "Add stakeholder", path: `opportunities/${row.id}/stakeholders`, fields: [{ key: "partyId", label: "Customer or organization", options: options(rows(customers.data), "displayName"), required: true }, { key: "role", label: "Role", options: choice(["decision_maker", "influencer", "billing_contact", "consultant"]), required: true }, { key: "isPrimary", label: "Primary stakeholder", type: "checkbox" }] })}>Add stakeholder</Button></div>{((live.stakeholders ?? []) as RecordData[]).map((person, i) => <div className={styles.row} key={String(person.partyId) + i}><div><strong>{String(person.partyName)}</strong><small>{label(person.role)}{person.isPrimary ? " · Primary" : ""}</small></div><Button size="compact" onPress={() => setAction({ title: "Remove stakeholder", description: `Remove ${String(person.partyName)} from this opportunity.`, path: `opportunities/${row.id}/stakeholders/${person.partyId}?role=${encodeURIComponent(String(person.role))}`, method: "DELETE", fields: [], submit: "Remove" })}>Remove</Button></div>)}<div className={styles.toolbar}><h3>Internal opportunity team</h3><Button size="compact" onPress={() => setAction({ title: "Add team member", path: (values) => `opportunities/${row.id}/team/${encodeURIComponent(String(values.membershipId))}`, method: "PUT", fields: [{ key: "membershipId", label: "Workspace member", options: options(rows(members.data), "displayName"), required: true }, { key: "role", label: "Role", options: choice(["owner", "sales", "estimator", "designer", "reviewer"]), required: true }], transform: withoutMembershipId })}>Add team member</Button></div>{((live.team ?? []) as RecordData[]).map((person, i) => <div className={styles.row} key={String(person.membershipId) + i}><div><strong>{String(person.name)}</strong><small>{label(person.role)}</small></div><Button size="compact" onPress={() => setAction({ title: "Remove team member", description: `Remove ${String(person.name)} from this opportunity.`, path: `opportunities/${row.id}/team/${person.membershipId}?role=${encodeURIComponent(String(person.role))}`, method: "DELETE", fields: [], submit: "Remove" })}>Remove</Button></div>)}</div> },
     { id: "history", label: "History", panel: <ol className={styles.history}>{((live.stageHistory ?? []) as RecordData[]).map((entry) => <li key={entry.id}><strong>{String(entry.toStageName)} · {label(entry.toStatus)}</strong><small>{dateText(entry.changedAt)}</small><p>{String(entry.reason ?? "Stage changed")}</p></li>)}</ol> },
-    { id: "handoff", label: "Next stage", panel: <div className={styles.stack}><h3>Continue the case</h3>{live.projectLink ? <FactList facts={[["Project", String((live.projectLink as RecordData).projectId)], ["Mode", label((live.projectLink as RecordData).mode)]]} /> : <p>This opportunity came from a qualified enquiry. Continue its requirements, design and quotation in Pre-execution. A project only begins after an accepted quotation is released.</p>}<Link className={styles.link} href={`/workspace/pre-projects?search=${encodeURIComponent(String(live.title ?? ""))}`}>Open Pre-execution</Link></div> },
   ]} />{action ? <ActionDialog workspaceId={workspaceId} action={action} onClose={() => setAction(null)} onSaved={saved} /> : null}</div>;
 }
 
@@ -103,7 +183,7 @@ function AutomationWorkbench({ kind, workspaceId, row, onChanged }: { kind: "seq
   </div>;
 }
 
-export function CrmCreateDialog({ id, workspaceId, onClose, onSaved }: { id: CrmScreenId; workspaceId: string; onClose: () => void; onSaved: (result?: RecordData) => Promise<void> }) {
+export function CrmCreateDialog({ id, workspaceId, onClose, onSaved, initialValues, defaultCurrency }: { defaultCurrency?: string; initialValues?: Record<string, unknown>; id: CrmScreenId; workspaceId: string; onClose: () => void; onSaved: (result?: RecordData) => Promise<void> }) {
   const customers = useCrmResource<unknown>(workspaceId, ["opportunities", "activities", "conversations"].includes(id) ? "parties?limit=100" : null);
   const pipelines = useCrmResource<unknown>(workspaceId, id === "opportunities" ? "pipelines" : null);
   const members = useCrmResource<unknown>(workspaceId, ["opportunities", "activities"].includes(id) ? "members" : null);
@@ -111,7 +191,7 @@ export function CrmCreateDialog({ id, workspaceId, onClose, onSaved }: { id: Crm
   const ownerField: FieldSpec = { key: "ownerMembershipId", label: "Sales owner", options: options(rows(members.data), "displayName"), required: true };
   let action: ActionSpec;
   if (id === "customers" || id === "organizations") action = { title: id === "customers" ? "Add customer" : "Create company", path: "parties", initial: { type: id === "customers" ? "person" : "organization" }, fields: [...(id === "customers" ? [{ key: "type", label: "Record type", options: choice(["person", "organization"]), required: true }] : []), { key: "displayName", label: "Name", required: true }, { key: "email", label: "Email", type: "email" }, { key: "phone", label: "Phone", type: "tel" }], transform: ({ email, phone, ...v }) => ({ ...v, contacts: [...(email ? [{ type: "email", value: email, isPrimary: true }] : []), ...(phone ? [{ type: "phone", value: phone, isPrimary: true }] : [])] }) };
-  else if (id === "opportunities") action = { title: "Create opportunity", path: "opportunities", fields: [partyField, { key: "title", label: "Title", required: true }, ownerField, { key: "pipelineId", label: "Pipeline", options: options(rows(pipelines.data).filter((p) => p.status === "active")), required: true }, { key: "amount", label: "Value", type: "number", min: 0 }, { key: "currencyCode", label: "Currency" }, { key: "nextActionAt", label: "Next action", type: "datetime-local", required: true }], transform: (v) => ({ ...v, ...(v.currencyCode ? { currencyCode: String(v.currencyCode).toUpperCase() } : {}) }) };
+  else if (id === "opportunities") action = { title: "Create opportunity", path: "opportunities", initial: initialValues, fields: [partyField, { key: "title", label: "Title", required: true }, ownerField, { key: "pipelineId", label: "Pipeline", options: options(rows(pipelines.data).filter((p) => p.status === "active")), required: true }, { key: "amount", label: `Value${defaultCurrency ? ` (${defaultCurrency})` : ""}`, type: "number", min: 0 }, { key: "nextActionAt", label: "Next follow-up", type: "datetime-local", required: true }], transform: (v) => ({ ...v, ...(initialValues?.stageId && v.pipelineId !== initialValues.pipelineId ? { stageId: undefined } : {}), ...(v.amount !== undefined && v.amount !== "" ? { currencyCode: defaultCurrency } : {}) }) };
   else if (id === "activities") action = { title: "Create activity", path: "activities", fields: [partyField, { key: "type", label: "Type", options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: "Title", required: true }, ownerField, { key: "dueAt", label: "Due", type: "datetime-local" }, { key: "description", label: "Notes", type: "textarea" }] };
   else if (id === "conversations") action = { title: "Start conversation", path: "conversations", fields: [partyField, { key: "channel", label: "Channel", options: choice(["whatsapp", "email", "phone", "internal"]), required: true }, { key: "subject", label: "Subject", required: true }] };
   else if (id === "sequences") action = { title: "Create follow-up sequence", description: "Start with a task reminder. Customer replies stop outreach.", path: "sequences", fields: [{ key: "name", label: "Name", required: true }, { key: "taskTitle", label: "Follow-up task", required: true }, { key: "delayMinutes", label: "Wait (minutes)", type: "number", min: 0, required: true }], transform: (v) => ({ name: v.name, exitConditions: { customerReply: true, opportunityClosed: true }, steps: [{ type: "task", delayMinutes: v.delayMinutes, configuration: { title: v.taskTitle } }] }) };

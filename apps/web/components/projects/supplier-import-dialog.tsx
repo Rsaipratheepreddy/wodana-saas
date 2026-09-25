@@ -1,0 +1,22 @@
+"use client";
+import {useRef,useState} from 'react';
+import {Button,ControlledModalDialog,DataGrid,SelectField} from '@/design-system';
+import {jsonRequest} from '@/lib/commercial/client';
+import {readCatalogImportFile} from '@/lib/workspace/catalog-import-file';
+import type {ImportTable} from '@/lib/workspace/catalog-import';
+import {parseSupplierImport,type SupplierImportRow,type SupplierImportReview} from '@/lib/suppliers/import';
+import styles from './project-suppliers.module.css';
+export function SupplierImportDialog({workspaceId,onClose,onImported}:{workspaceId:string;onClose:()=>void;onImported:(created:number,skipped:number)=>void}){
+ const input=useRef<HTMLInputElement>(null),[tables,setTables]=useState<ImportTable[]>([]),[sheet,setSheet]=useState(0),[fileName,setFileName]=useState(''),[records,setRecords]=useState<SupplierImportRow[]>([]),[review,setReview]=useState<SupplierImportReview|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const endpoint=`/api/workspace/vendors/import?workspaceId=${workspaceId}`;
+ async function preview(table:ImportTable){setError('');setReview(null);setRecords([]);try{const plan=parseSupplierImport(table.rows);setRecords(plan.records);if(plan.errors.length){setReview({rows:plan.errors,newCount:0,skipped:0});return;}setReview(await jsonRequest<SupplierImportReview>(endpoint,'POST',{mode:'preview',rows:plan.records}));}catch(e){setError((e as Error).message);}}
+ const ready=!!review&&review.newCount>0&&!review.rows.some(r=>r.status==='error');
+ return <ControlledModalDialog isOpen size="lg" title="Import suppliers" isDismissable={!busy} onOpenChange={v=>{if(!v&&!busy)onClose();}} footer={<div className={styles.actions}><Button isDisabled={busy} onPress={onClose}>Cancel</Button><Button variant="primary" isDisabled={!ready||busy} isLoading={busy} onPress={()=>void(async()=>{setBusy(true);setError('');try{const result=await jsonRequest<SupplierImportReview>(endpoint,'POST',{mode:'commit',rows:records});onImported(result.created??0,result.skipped);onClose();}catch(e){setError((e as Error).message);}finally{setBusy(false);}})()}>Import {review?.newCount||''} suppliers</Button></div>}><div className={styles.form}>
+ <div className={styles.actions}><Button isDisabled={busy} onPress={()=>input.current?.click()}>Choose Excel / CSV</Button><a href="/templates/suppliers-sample.xlsx" download>Download sample Excel</a></div>
+ <input ref={input} type="file" aria-label="Supplier import file" accept=".xlsx,.csv,.tsv" className={styles.hiddenInput} onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(!file)return;setBusy(true);setError('');setReview(null);setRecords([]);setTables([]);void(async()=>{try{const next=await readCatalogImportFile(file);if(!next.length)throw new Error('No worksheets found.');setFileName(file.name);setTables(next);const index=Math.max(0,next.findIndex(t=>t.name.toLowerCase()==='suppliers'));setSheet(index);await preview(next[index]);}catch(e){setError((e as Error).message);}finally{setBusy(false);}})();}}/>
+ <p className={styles.note}>Up to 500 suppliers · 2 MB · .xlsx, CSV or TSV. New suppliers are saved as drafts. Existing matches are kept unchanged. Replace the sample rows with your suppliers.</p>
+ {fileName&&<p className={styles.note}>{fileName}</p>}{tables.length>1&&<SelectField label="Worksheet" isDisabled={busy} items={tables.map((t,i)=>({id:String(i),label:t.name}))} selectedKey={String(sheet)} onSelectionChange={key=>{const index=Number(key);setSheet(index);setBusy(true);void preview(tables[index]).finally(()=>setBusy(false));}}/>}
+ {error&&<p role="alert" className={styles.error}>{error}</p>}{busy&&!review&&<p role="status">Checking suppliers…</p>}
+ {review&&<><p role="status" className={styles.note}>{review.newCount} new · {review.skipped} existing · {review.rows.filter(r=>r.status==='error').length} rows to fix</p><DataGrid gridLines ariaLabel="Supplier import preview" showToolbar={false} selectable={false} rowNumbers={false} pageSize={20} data={review.rows} getRowId={r=>String(r.sourceRow)} columns={[{accessorKey:'sourceRow',header:'Excel row',size:80},{accessorKey:'name',header:'Supplier',size:200},{accessorKey:'detail',header:'Result',size:400,meta:{renderCell:r=><span className={r.status==='error'?styles.error:undefined}>{r.detail}</span>}}]}/>{review.rows.some(r=>r.status==='error')&&<p className={styles.error}>Fix the marked rows in Excel and choose the file again. Nothing has been imported.</p>}</>}
+ </div></ControlledModalDialog>;
+}

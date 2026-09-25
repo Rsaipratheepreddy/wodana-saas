@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-funnel.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: POST /workspaces/e6ff705a-abf2-49c0-a35d-61b48cf243f9/commercial/cases/75c533e5-fe52-48b3-af4a-47246d191392: expected 201, got 409: {"message":"Refresh the catalog selling price for Built-in wardrobe after changing its quantity, currency or tax.","error":"Conflict","statusCode":409}
+
+409 !== 201
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-funnel.mjs:91:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-funnel.mjs:1336:28 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 409,
+  expected: 201,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

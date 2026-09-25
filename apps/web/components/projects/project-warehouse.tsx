@@ -17,9 +17,11 @@ type Values = Record<string, string>;
 export function ProjectWarehouse({
   state,
   onRefresh,
+  materialId,
 }: {
   state: ProjectState;
   onRefresh: () => Promise<void>;
+  materialId?: string;
 }) {
   const [data, setData] = useState<StockState | null>(null),
     [busy, setBusy] = useState(false),
@@ -41,13 +43,15 @@ export function ProjectWarehouse({
       alive = false;
     };
   }, [path]);
+  const selectedMaterial=state.data.materials.find(m=>m.id===materialId);
+  const matches=(item:{catalogId:string;catalogVersion:number;unit:string})=>!selectedMaterial||(Boolean(selectedMaterial.catalogId)&&item.catalogId===selectedMaterial.catalogId&&item.catalogVersion===selectedMaterial.catalogVersion&&item.unit===selectedMaterial.unit);
   const locations = [
-    ...(data?.stock ?? []).map((s) => ({
+    ...(data?.stock ?? []).filter(matches).map((s) => ({
       key: `warehouse:${s.id}`,
       label: `${s.location} · ${s.title} (${s.quantity - s.reserved} ${s.unit} available)`,
       endpoint: { kind: "warehouse", id: s.id } as StockEndpoint,
     })),
-    ...(data?.projectMaterials ?? []).map((m) => ({
+    ...(data?.projectMaterials ?? []).filter(matches).map((m) => ({
       key: `project:${m.projectId}:${m.id}`,
       label: `${m.projectName} · ${m.title} (${m.available} ${m.unit} available)`,
       endpoint: {
@@ -66,7 +70,7 @@ export function ProjectWarehouse({
             rejected: "0",
             disposition: "return_to_source",
           }
-        : {},
+        : action==='request_transfer'&&selectedMaterial ? {title:`${selectedMaterial.title} · transfer`,destination:`project:${state.id}:${selectedMaterial.id}`,dueDate:selectedMaterial.needBy} : {},
     );
     setEditor({ action, title, record });
   }
@@ -168,7 +172,7 @@ export function ProjectWarehouse({
       )}
       <div className={s.row}>
         <div>
-          <h2>Warehouse & transfers</h2>
+          <h2>{selectedMaterial?selectedMaterial.title:"Warehouse & transfers"}</h2>
           <p className={s.muted}>
             Reserve stock before dispatch. Only accepted receipts become
             available at the destination.
@@ -189,7 +193,7 @@ export function ProjectWarehouse({
           {state.canBuy && (
             <button
               className={s.primary}
-              disabled={!data || busy}
+              disabled={!data || busy || Boolean(selectedMaterial&&!selectedMaterial.catalogId)}
               onClick={() => open("request_transfer", "Request stock transfer")}
             >
               Request transfer
@@ -197,6 +201,7 @@ export function ProjectWarehouse({
           )}
         </div>
       </div>
+      {selectedMaterial&&!selectedMaterial.catalogId&&<p role="status">Link this material to a catalog item before transferring matching stock.</p>}
       {!data && !error && <p className={s.muted}>Loading stock…</p>}
       <div className={s.scroll}>
         <table data-record-table="" className={s.table}>
@@ -209,7 +214,7 @@ export function ProjectWarehouse({
             </tr>
           </thead>
           <tbody>
-            {data?.stock.map((item) => (
+            {data?.stock.filter(matches).map((item) => (
               <tr key={item.id}>
                 <td>
                   <strong>{item.title}</strong>
@@ -250,7 +255,7 @@ export function ProjectWarehouse({
             </tr>
           </thead>
           <tbody>
-            {data?.transfers.map((t) => {
+            {data?.transfers.filter(t=>!selectedMaterial||(t.destination.kind==="project"&&t.destination.id===state.id&&t.destination.materialId===selectedMaterial.id)||(t.source.kind==="project"&&t.source.id===state.id&&t.source.materialId===selectedMaterial.id)).map((t) => {
               const name = (e: StockEndpoint) =>
                 locations
                   .find((l) => JSON.stringify(l.endpoint) === JSON.stringify(e))

@@ -34,6 +34,8 @@ import {
 
 import { CrmLeadsService } from "../leads/crm-leads.service";
 import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
+import { enquiryTitle, refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
+import { countryFromLocale, needsWorkspacePhoneCountry, normalizeIntakePartyPhones } from "./intake-phone";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -53,6 +55,11 @@ export class CrmIntakeService {
   updateDetails(actor: RequestActor, workspaceId: string, leadId: string, input: UpdateLeadDetailsDto) {
     return this.access.withPermission(actor, workspaceId, "crm.leads.manage", async (client, actorUser) => {
       if (!input.party?.displayName?.trim()) throw new UnprocessableEntityException("Enter a customer name");
+      if (!input.party.mobile?.trim()) throw new UnprocessableEntityException("Enter a mobile number");
+      const workspaceCountry = needsWorkspacePhoneCountry(input.party)
+        ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
+        : undefined;
+      const party = normalizeIntakePartyPhones(input.party, workspaceCountry);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${workspaceId}:crm-identity`]);
       const found = await client.query(`SELECT lead.version, lead.party_id, lead.enquiry_id, enquiry.title,
         enquiry.reference, enquiry.summary, enquiry.service_type, enquiry.details FROM crm_leads lead
@@ -62,14 +69,15 @@ export class CrmIntakeService {
       const before = found.rows[0];
       if (Number(before.version) !== input.version) throw new ConflictException("Lead changed; reload before saving");
       await validateLeadOptions(client, workspaceId, input, { serviceType: before.service_type, details: before.details });
-      const details = { ...before.details, ...input.details, contact: input.party };
-      await client.query(`UPDATE crm_enquiries SET title=$3, summary=$4, service_type=$5, details=$6,
+      const details = { ...before.details, ...input.details, contact: party };
+      await client.query(`UPDATE crm_enquiries SET summary=$3, service_type=$4, details=$5,
         version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2`,
-        [workspaceId, before.enquiry_id, input.title?.trim() || before.reference, input.summary ?? null, input.serviceType, details]);
+        [workspaceId, before.enquiry_id, input.summary ?? null, input.serviceType, details]);
       await client.query(`UPDATE crm_parties SET display_name=$3, normalized_name=$4, version=version+1,
-        updated_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, before.party_id, input.party.displayName.trim(), normalizeName(input.party.displayName)]);
-      await client.query(`UPDATE crm_person_profiles SET job_title=$3 WHERE workspace_id=$1 AND party_id=$2`, [workspaceId, before.party_id, input.party.jobPosition ?? null]);
-      for (const [label, raw] of [["email", input.party.email], ["mobile", input.party.mobile], ["phone", input.party.phone]]) {
+        updated_at=now() WHERE workspace_id=$1 AND id=$2`, [workspaceId, before.party_id, party.displayName.trim(), normalizeName(party.displayName)]);
+      await refreshEnquiryTitlesForParty(client, workspaceId, before.party_id, party.displayName);
+      await client.query(`UPDATE crm_person_profiles SET job_title=$3 WHERE workspace_id=$1 AND party_id=$2`, [workspaceId, before.party_id, party.jobPosition ?? null]);
+      for (const [label, raw] of [["email", party.email], ["mobile", party.mobile], ["phone", party.phone]]) {
         const type = label === "email" ? "email" : "phone";
         const value = raw?.trim() || null;
         const normalized = value ? type === "email" ? normalizeEmail(value) : normalizeLoosePhone(value) : null;
@@ -84,13 +92,13 @@ export class CrmIntakeService {
           if (duplicate.rowCount) throw new ConflictException("This contact belongs to another customer. Review the existing customer before changing it here.");
         }
         if (prior.rowCount) await client.query(`UPDATE crm_contact_points SET status='archived', is_primary=false, version=version+1 WHERE workspace_id=$1 AND id=$2`, [workspaceId, prior.rows[0].id]);
-        if (value) await client.query(`INSERT INTO crm_contact_points (workspace_id,party_id,type,label,raw_value,normalized_value,is_primary,invalid_reason)
-          VALUES ($1,$2,$3::crm_contact_point_type,$4,$5,$6,false,$7)`, [workspaceId, before.party_id, type, label, value, normalized, normalized ? null : "unresolved_phone"]);
+        if (value) await client.query(`INSERT INTO crm_contact_points (workspace_id,party_id,type,label,raw_value,normalized_value,country_code,is_primary,invalid_reason)
+          VALUES ($1,$2,$3::crm_contact_point_type,$4,$5,$6,$7,false,$8)`, [workspaceId, before.party_id, type, label, value, normalized, label === "mobile" ? party.mobileCountryCode ?? null : label === "phone" ? party.phoneCountryCode ?? null : null, normalized ? null : "unresolved_phone"]);
       }
       const result = await client.query(`UPDATE crm_leads SET version=version+1, updated_at=now() WHERE workspace_id=$1 AND id=$2 RETURNING version`, [workspaceId, leadId]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user",
         action: "crm.lead.details_updated.v1", entityType: "crm_lead", entityId: leadId,
-        before, after: { title: input.title, serviceType: input.serviceType, summary: input.summary, details } });
+        before, after: { serviceType: input.serviceType, summary: input.summary, details } });
       return { id: leadId, version: result.rows[0].version };
     });
   }
@@ -274,7 +282,7 @@ export class CrmIntakeService {
     input: CreateIntakeEventDto,
   ) {
     return this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async client => {
-      const controlled = { ...input, serviceType: input.serviceType || "not_sure" };
+      const controlled = { ...input, assignment: input.assignment ?? { mode: "automatic" } };
       await validateLeadOptions(client, workspaceId, controlled);
       return this.ingest(client, workspaceId, null, "integration", idempotencyKey, requestedCorrelationId, controlled);
     });
@@ -448,6 +456,15 @@ export class CrmIntakeService {
       }
       return this.intakeResult(client, workspaceId, existing.rows[0].id);
     }
+    if (!input.party.mobile?.trim()) throw new UnprocessableEntityException("Enter a mobile number");
+    if (!input.serviceType?.trim()) throw new UnprocessableEntityException("Select an enquiry type");
+    if (!input.details?.emirate?.trim()) throw new UnprocessableEntityException("Select an emirate");
+    await validateLeadOptions(client, workspaceId, input);
+    const submittedParty = input.party;
+    const workspaceCountry = needsWorkspacePhoneCountry(input.party)
+      ? countryFromLocale((await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.defaultLocale)
+      : undefined;
+    input = { ...input, party: normalizeIntakePartyPhones(input.party, workspaceCountry) };
     await this.assertScope(client, workspaceId, input.legalEntityId, input.businessUnitId);
     const receivedAt = input.receivedAt ? new Date(input.receivedAt) : new Date();
     if (Number.isNaN(receivedAt.getTime())) throw new BadRequestException("receivedAt is invalid");
@@ -459,6 +476,7 @@ export class CrmIntakeService {
     const externalEventId = input.externalEventId?.trim() || null;
     const originalPayload = {
       ...input.originalPayload,
+      submittedParty,
       party: input.party,
       title: input.title?.trim() ?? "",
       summary: input.summary,
@@ -671,7 +689,7 @@ export class CrmIntakeService {
       await client.query(`INSERT INTO crm_contact_points
         (workspace_id, party_id, type, label, raw_value, normalized_value, country_code, is_primary, invalid_reason)
         VALUES ($1, $2, 'phone', $3, $4, $5, upper($6), $7, $8)`,
-        [workspaceId, partyId, contact.label, contact.value!.trim(), phone, party.phoneCountryCode ?? null, index === 0, phone ? null : "unresolved_phone"]);
+        [workspaceId, partyId, contact.label, contact.value!.trim(), phone, contact.label === "mobile" ? party.mobileCountryCode ?? party.phoneCountryCode ?? null : party.phoneCountryCode ?? null, index === 0, phone ? null : "unresolved_phone"]);
     }
     await this.events.record(client, {
       workspaceId, actorUserId, source: actorUserId ? "user" : "integration",
@@ -704,13 +722,15 @@ export class CrmIntakeService {
     const intake = await client.query(`SELECT original_payload FROM crm_intake_events WHERE workspace_id=$1 AND id=$2`, [workspaceId, input.intakeEventId]);
     const original = intake.rows[0].original_payload;
     const details = { ...(original.details ?? {}), contact: original.party ?? {}, ...(original.formAnswers ? { formAnswers: original.formAnswers } : {}) };
+    const choices = await loadLeadOptions(client, workspaceId);
+    const title = enquiryTitle(String(original.party?.displayName ?? ""), details, choices);
     const enquiry = await client.query(
       `INSERT INTO crm_enquiries
         (id, workspace_id, intake_event_id, party_id, title, summary,
          service_type, source, channel, received_at, details)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING reference`,
       [
-        enquiryId, workspaceId, input.intakeEventId, input.partyId, input.title,
+        enquiryId, workspaceId, input.intakeEventId, input.partyId, title,
         input.summary, input.serviceType, input.source, input.channel, input.receivedAt, details,
       ],
     );

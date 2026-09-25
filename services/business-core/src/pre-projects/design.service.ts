@@ -4,7 +4,7 @@ import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { BriefService } from "./brief.service";
-import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
+import { FolderReviewerDto, ApproveFolderDto, AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
 
 export function validateDesignTransition(status:string,action:string,note:string,decisionBy:string) {
  if(action==='comment') { if(!note.trim()) throw new BadRequestException('Enter a comment.'); return; }
@@ -30,7 +30,7 @@ const designSelect=`SELECT d.id,d.title,d.folder_id AS "folderId",d.document_typ
  FROM pre_project_design_versions v JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.case_id=v.case_id AND a.id=v.asset_id JOIN users u ON u.id=v.created_by WHERE v.workspace_id=d.workspace_id AND v.design_id=d.id),'[]'::jsonb) AS versions,
  COALESCE((SELECT count(DISTINCT h.version_id)::int FROM pre_project_design_activity h WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id AND h.action='client_review'),0) AS "clientRoundsUsed",
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',h.id,'versionId',h.version_id,'action',h.action,'note',h.note,'decisionBy',h.decision_by,'reviewerId',h.reviewer_id,'decisionSource',h.decision_source,'decisionAt',h.decision_at,'createdAt',h.created_at,'createdByName',COALESCE(u.display_name,'Client portal')) ORDER BY h.created_at,h.id) FROM pre_project_design_activity h LEFT JOIN users u ON u.id=h.created_by WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id),'[]'::jsonb) AS activity,
- COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'versionId',t.version_id,'title',t.title,'blocking',t.blocking,'status',t.status,'version',t.version,'createdBy',t.created_by,'createdByName',tu.display_name,'createdAt',t.created_at,'resolvedAt',t.resolved_at,'resolvedByName',ru.display_name,'messages',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'body',m.body,'createdBy',m.created_by,'createdByName',mu.display_name,'createdAt',m.created_at) ORDER BY m.created_at,m.id) FROM pre_project_design_messages m JOIN users mu ON mu.id=m.created_by WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.id),'[]'::jsonb)) ORDER BY t.created_at,t.id) FROM pre_project_design_threads t JOIN users tu ON tu.id=t.created_by LEFT JOIN users ru ON ru.id=t.resolved_by WHERE t.workspace_id=d.workspace_id AND t.case_id=d.case_id AND t.design_id=d.id),'[]'::jsonb) AS threads
+ COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'versionId',t.version_id,'title',t.title,'anchor',t.anchor,'mentions',t.mentions,'blocking',t.blocking,'status',t.status,'version',t.version,'createdBy',t.created_by,'createdByName',tu.display_name,'createdAt',t.created_at,'resolvedAt',t.resolved_at,'resolvedByName',ru.display_name,'messages',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',m.id,'body',m.body,'createdBy',m.created_by,'createdByName',mu.display_name,'createdAt',m.created_at) ORDER BY m.created_at,m.id) FROM pre_project_design_messages m JOIN users mu ON mu.id=m.created_by WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.id),'[]'::jsonb)) ORDER BY t.created_at,t.id) FROM pre_project_design_threads t JOIN users tu ON tu.id=t.created_by LEFT JOIN users ru ON ru.id=t.resolved_by WHERE t.workspace_id=d.workspace_id AND t.case_id=d.case_id AND t.design_id=d.id),'[]'::jsonb) AS threads
  FROM pre_project_designs d LEFT JOIN pre_project_rooms r ON r.workspace_id=d.workspace_id AND r.case_id=d.case_id AND r.id=d.room_id LEFT JOIN pre_project_brief_entries e ON e.workspace_id=d.workspace_id AND e.case_id=d.case_id AND e.id=d.scope_entry_id`;
 
 @Injectable()
@@ -39,14 +39,15 @@ export class DesignService {
  list(actor:RequestActor,workspaceId:string,caseId:string) {
   return this.access.withPermission(actor,workspaceId,'pre_projects.view',async(client,user)=>{
    const context=await this.brief.case(client,workspaceId,caseId);
-   const folders=await client.query(`SELECT f.id,f.name,f.description,f.room_id AS "roomId",r.name AS "roomName",f.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",f.version
+   const folders=await client.query(`SELECT f.id,f.name,f.description,f.room_id AS "roomId",r.name AS "roomName",f.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",f.version,f.reviewer_id AS "reviewerId",f.approved_versions AS "approvedVersions",f.approved_at AS "approvedAt"
     FROM pre_project_design_folders f
     LEFT JOIN pre_project_rooms r ON r.workspace_id=f.workspace_id AND r.case_id=f.case_id AND r.id=f.room_id
     LEFT JOIN pre_project_brief_entries e ON e.workspace_id=f.workspace_id AND e.case_id=f.case_id AND e.id=f.scope_entry_id
     WHERE f.workspace_id=$1 AND f.case_id=$2 ORDER BY lower(f.name),f.id`,[workspaceId,caseId]);
    const reviewers=await client.query(`SELECT DISTINCT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id JOIN effective_member_roles mr ON mr.membership_id=m.id JOIN role_permissions rp ON rp.role_id=mr.role_id JOIN permissions p ON p.id=rp.permission_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' AND p.code='pre_projects.review_designs' ORDER BY name`,[workspaceId]);
    const portal=await this.portalReadiness(client,workspaceId,caseId);
-   return {folders:folders.rows,reviewers:reviewers.rows,portal,actorId:user.userId,canReview:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),canRecordClient:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions'),items:(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 ORDER BY d.updated_at DESC,d.id`,[workspaceId,caseId])).rows};
+   const members=await client.query(`SELECT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' ORDER BY u.display_name`,[workspaceId]);
+   return {members:members.rows,folders:folders.rows,reviewers:reviewers.rows,portal,actorId:user.userId,canReview:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),canRecordClient:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions'),items:(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 ORDER BY d.updated_at DESC,d.id`,[workspaceId,caseId])).rows};
   });
  }
  save(actor:RequestActor,workspaceId:string,caseId:string,input:SaveDesignDto) {
@@ -177,20 +178,46 @@ export class DesignService {
    return {items};
   });
  }
- createThread(actor:RequestActor,w:string,c:string,id:string,input:CreateDesignThreadDto){
+ assignFolderReviewer(actor:RequestActor,w:string,c:string,id:string,input:FolderReviewerDto){
   return this.brief.edit(actor,w,c,async(client,userId)=>{
+   const folder=await this.readFolder(client,w,c,id);this.brief.version(folder.version,input.version);
+   const member=await client.query(`SELECT u.id FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND u.status='active'`,[w,input.reviewerId]);
+   if(!member.rowCount||!await this.access.hasPermission(client,w,input.reviewerId,'pre_projects.review_designs'))throw new BadRequestException('Choose an active design reviewer.');
+   await client.query(`UPDATE pre_project_design_folders SET reviewer_id=$4,approved_versions=NULL,approved_at=NULL,version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,id,input.reviewerId]);
+   await this.event(client,w,c,userId,id,'folder_reviewer_assigned',input);return this.readFolder(client,w,c,id);
+  });
+ }
+ approveFolder(actor:RequestActor,w:string,c:string,id:string,input:ApproveFolderDto){
+  return this.access.withPermissions(actor,w,['pre_projects.view','pre_projects.review_designs'],async(client,user)=>{
+   await this.brief.case(client,w,c,true);
+   const folder=await this.readFolder(client,w,c,id);this.brief.version(folder.version,input.version);
+   if(folder.reviewerId!==user.userId)throw new ForbiddenException('Only the assigned reviewer can approve this folder.');
+   const files=(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 AND d.folder_id=$3 AND d.archived_at IS NULL`,[w,c,id])).rows;
+   const ids=files.map(d=>d.versions[0]?.id).filter(Boolean).sort();
+   if(!ids.length||ids.length!==files.length)throw new ConflictException('Add files before approving.');
+   if(JSON.stringify(ids)!==JSON.stringify([...input.versionIds].sort()))throw new ConflictException('Files changed. Review the latest files before approving.');
+   if(files.some(d=>d.threads.some((t:any)=>t.versionId===d.versions[0].id&&t.blocking&&t.status==='open')))throw new ConflictException('Resolve blocking comments before approving.');
+   if(files.some(d=>!['draft','internal_review','internal_approved'].includes(d.versions[0].status)))throw new ConflictException('Upload a new revision for files requiring changes before approving.');
+   for(const d of files){await client.query(`UPDATE pre_project_design_versions SET status='internal_approved',reviewer_id=$4 WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[w,d.id,d.versions[0].id,user.userId]);await this.event(client,w,c,user.userId,d.id,'folder_file_approved',{folderId:id,versionId:d.versions[0].id});}
+   await client.query(`UPDATE pre_project_design_folders SET approved_versions=$4::jsonb,approved_at=now(),version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,id,JSON.stringify(ids)]);
+   return this.readFolder(client,w,c,id);
+  });
+ }
+ createThread(actor:RequestActor,w:string,c:string,id:string,input:CreateDesignThreadDto){
+  return this.commentAccess(actor,w,c,id,async(client,userId)=>{
    const design=await this.read(client,w,c,id);if(design.archivedAt)throw new ConflictException('Restore the design before adding discussions.');
    const retry=design.threads.find((t:{id:string})=>t.id===input.id);
-   if(retry){if(retry.versionId!==input.versionId||retry.title!==input.title||retry.blocking!==input.blocking||retry.messages[0]?.body!==input.body)throw new ConflictException('This discussion ID is already in use.');return design;}
+   if(retry){if(retry.versionId!==input.versionId||retry.title!==input.title||retry.blocking!==input.blocking||retry.messages[0]?.body!==input.body||JSON.stringify(retry.anchor??null)!==JSON.stringify(input.anchor??null)||JSON.stringify(retry.mentions??[])!==JSON.stringify(input.mentions??[]))throw new ConflictException('This discussion ID is already in use.');return design;}
    if(!design.versions.some((v:{id:string})=>v.id===input.versionId))throw new BadRequestException('Choose a file revision from this design.');
    if(input.blocking&&design.versions.find((v:{id:string})=>v.id===input.versionId)?.status==='approved')throw new ConflictException('This revision is already approved. Start a new draft revision for blocking changes.');
-   await client.query(`INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[input.id,w,c,id,input.versionId,input.title,input.blocking,userId]);
+   if(input.mentions?.length){const members=await client.query(`SELECT DISTINCT user_id FROM workspace_memberships WHERE workspace_id=$1 AND status='active' AND user_id=ANY($2::uuid[])`,[w,input.mentions]);if(members.rows.length!==input.mentions.length)throw new BadRequestException('Choose active workspace members.');}
+   await client.query(`INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by,anchor,mentions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)`,[input.id,w,c,id,input.versionId,input.title,input.blocking,userId,input.anchor == null ? null : JSON.stringify(input.anchor),JSON.stringify(input.mentions??[])]);
    await client.query(`INSERT INTO pre_project_design_messages(id,workspace_id,case_id,design_id,thread_id,body,created_by) VALUES($1,$2,$3,$4,$1,$5,$6)`,[input.id,w,c,id,input.body,userId]);
    await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_started',input);return this.read(client,w,c,id);
   });
  }
  replyThread(actor:RequestActor,w:string,c:string,id:string,threadId:string,input:ReplyDesignThreadDto){
-  return this.brief.edit(actor,w,c,async(client,userId)=>{
+  return this.commentAccess(actor,w,c,id,async(client,userId)=>{
    const design=await this.read(client,w,c,id);if(design.archivedAt)throw new ConflictException('Restore the design before replying.');
    const thread=design.threads.find((t:{id:string})=>t.id===threadId);if(!thread)throw new NotFoundException('Discussion not found.');
    const retry=thread.messages.find((m:{id:string})=>m.id===input.id);if(retry){if(retry.body!==input.body||retry.createdBy!==userId)throw new ConflictException('This reply ID is already in use.');return design;}
@@ -223,7 +250,7 @@ export class DesignService {
   if(folder.scope_entry_id&&(folder.scope_entry_id!==scopeEntryId))throw new BadRequestException('Files in this folder must use the folder requirement item.');
  }
  private async readFolder(client:PoolClient,w:string,c:string,id:string){
-  const result=await client.query(`SELECT f.id,f.name,f.description,f.room_id AS "roomId",r.name AS "roomName",f.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",f.version
+  const result=await client.query(`SELECT f.id,f.name,f.description,f.room_id AS "roomId",r.name AS "roomName",f.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",f.version,f.reviewer_id AS "reviewerId",f.approved_versions AS "approvedVersions",f.approved_at AS "approvedAt"
    FROM pre_project_design_folders f
    LEFT JOIN pre_project_rooms r ON r.workspace_id=f.workspace_id AND r.case_id=f.case_id AND r.id=f.room_id
    LEFT JOIN pre_project_brief_entries e ON e.workspace_id=f.workspace_id AND e.case_id=f.case_id AND e.id=f.scope_entry_id
@@ -234,6 +261,14 @@ export class DesignService {
  private async belongs(client:PoolClient,table:'pre_project_rooms'|'pre_project_brief_assets',workspaceId:string,caseId:string,id:string,label:string) {
   const result=await client.query(`SELECT id FROM ${table} WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,id]);
   if(!result.rowCount)throw new BadRequestException(`Choose a ${label} from this pre-execution.`);
+ }
+ private commentAccess<T>(actor:RequestActor,w:string,c:string,id:string,work:(client:PoolClient,userId:string)=>Promise<T>){
+  return this.access.withPermission(actor,w,'pre_projects.view',async(client,user)=>{
+   await this.brief.case(client,w,c,true);
+   const editable=await this.access.hasPermission(client,w,user.userId,'pre_projects.edit');
+   if(!editable){const assigned=await client.query(`SELECT f.id FROM pre_project_design_folders f JOIN pre_project_designs d ON d.folder_id=f.id AND d.workspace_id=f.workspace_id AND d.case_id=f.case_id WHERE d.workspace_id=$1 AND d.case_id=$2 AND d.id=$3 AND f.reviewer_id=$4`,[w,c,id,user.userId]);if(!assigned.rowCount||!await this.access.hasPermission(client,w,user.userId,'pre_projects.review_designs'))throw new ForbiddenException('Only editors or the assigned reviewer can comment.');}
+   return work(client,user.userId);
+  });
  }
  private touch(client:PoolClient,workspaceId:string,caseId:string,id:string) {return client.query(`UPDATE pre_project_designs SET version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,id]);}
  private async read(client:PoolClient,workspaceId:string,caseId:string,id:string) {const result=await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 AND d.id=$3`,[workspaceId,caseId,id]);if(!result.rowCount)throw new NotFoundException('Design not found.');return result.rows[0];}

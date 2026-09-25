@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, Copy, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Copy, Eye, EyeOff, Monitor, ShieldCheck } from "lucide-react";
 import { WodanaLogo } from "@/components/brand";
 import {
   Button,
   Checkbox,
   ControlledModalDialog,
   DesignSystemProvider,
+  InlineNotice,
   InputAction,
   OtpInput,
   TextInput,
@@ -33,31 +34,36 @@ type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
 type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
 
 export function LoginScreen({
-  demoCredentials,
   invitationToken,
   passwordResetToken,
   nextPath,
   initialStatus,
+  initialStatusTone = "error",
   tenant,
 }: {
-  demoCredentials?: { email: string; password: string };
   invitationToken?: string;
   passwordResetToken?: string;
   nextPath: string;
   initialStatus?: string;
+  initialStatusTone?: "error" | "info";
   tenant: TenantBranding;
 }) {
   const router = useRouter();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const settingPassword = Boolean(invitationToken || passwordResetToken);
-  const [email, setEmail] = useState(demoCredentials?.email ?? "");
-  const [password, setPassword] = useState(settingPassword ? "" : demoCredentials?.password ?? "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [confirmPasswordError, setConfirmPasswordError] = useState("");
-  const [status, setStatus] = useState(initialStatus ?? "");
+  const [status, setStatusText] = useState(initialStatus ?? "");
+  const [statusTone, setStatusTone] = useState<"error" | "info">(initialStatusTone);
+  function setStatus(message: string, tone: "error" | "info" = "error") {
+    setStatusText(message);
+    setStatusTone(tone);
+  }
   const [deviceFailure, setDeviceFailure] = useState("");
   const [limitedSessions, setLimitedSessions] = useState<SecuritySession[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -90,12 +96,12 @@ export function LoginScreen({
     setIsOpening(true);
     setIsSubmitting(true);
     setLimitedSessions(null);
-    setStatus("Signed in. Opening your workspace…");
+    setStatus("Signed in. Opening your workspace…", "info");
     if (navigationTimer.current) clearTimeout(navigationTimer.current);
     navigationTimer.current = setTimeout(() => {
       requestInFlight.current = false;
       setIsSubmitting(false);
-      setStatus("You are signed in. Select Open workspace to continue.");
+      setStatus("You are signed in. Select Open workspace to continue.", "info");
     }, 12_000);
     openAuthenticatedWorkspace(path);
   };
@@ -117,10 +123,10 @@ export function LoginScreen({
       setMfaStage("enrollment");
       setMfaCode("");
       setPassword("");
-      setStatus("Secure your account with an authenticator app.");
+      setStatus("");
       return false;
     }
-    setStatus("Confirming your browser session…");
+    setStatus("Confirming your browser session…", "info");
     await confirmBrowserSession();
     setPassword("");
     openWorkspace(destination);
@@ -141,6 +147,30 @@ export function LoginScreen({
     setStatus("");
   };
 
+  const backFromMfa = async () => {
+    if (isSubmitting) return;
+    if (mfaSetup) {
+      setMfaSetup(null);
+      setMfaQrCode("");
+      setMfaCode("");
+      setStatus("");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { ok, payload } = await authRequest("/api/auth/logout", { method: "POST" });
+      if (!ok) {
+        setStatus(typeof payload.message === "string" ? payload.message : "Could not return to sign in. Please try again.");
+        return;
+      }
+      resetMfaFlow();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not return to sign in. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const verifyMfaChallenge = async () => {
     if (mfaCode.trim().length < 6) {
       setStatus(mfaRecoveryMode ? "Enter one of your recovery codes." : "Enter the six-digit code from your authenticator app.");
@@ -148,7 +178,7 @@ export function LoginScreen({
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
-    setStatus("Verifying your code…");
+    setStatus("Verifying your code…", "info");
     let navigating = false;
     try {
       const { ok, payload } = await authRequest("/api/auth/mfa/verify", {
@@ -184,7 +214,7 @@ export function LoginScreen({
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
-    setStatus("Creating your authenticator setup…");
+    setStatus("Creating your authenticator setup…", "info");
     try {
       const { ok, payload } = await authRequest("/api/auth/mfa/setup", {
         method: "POST",
@@ -202,7 +232,7 @@ export function LoginScreen({
       });
       setMfaQrCode("");
       setMfaCode("");
-      setStatus("Scan the QR code, then enter the six-digit code from your app.");
+      setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Authenticator setup could not be started.");
     } finally {
@@ -218,7 +248,7 @@ export function LoginScreen({
     }
     requestInFlight.current = true;
     setIsSubmitting(true);
-    setStatus("Confirming your authenticator…");
+    setStatus("Confirming your authenticator…", "info");
     try {
       const { ok, payload } = await authRequest("/api/auth/mfa/confirm", {
         method: "POST",
@@ -235,7 +265,7 @@ export function LoginScreen({
       setMfaStage("recovery");
       setMfaQrCode("");
       setMfaCode("");
-      setStatus("Your authenticator is active. Save these recovery codes now.");
+      setStatus("Your authenticator is active. Save these recovery codes now.", "info");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Authenticator setup could not be confirmed.");
     } finally {
@@ -249,7 +279,7 @@ export function LoginScreen({
     requestInFlight.current = true;
     setIsSubmitting(true);
     try {
-      setStatus("Confirming your browser session…");
+      setStatus("Confirming your browser session…", "info");
       await confirmBrowserSession();
       openWorkspace(authenticatedDestination);
     } catch (error) {
@@ -267,7 +297,7 @@ export function LoginScreen({
     requestInFlight.current = true;
     setIsSubmitting(true);
     try {
-      setStatus("Confirming your secure session…");
+      setStatus("Confirming your secure session…", "info");
       await confirmBrowserSession();
       openWorkspace(authenticatedDestination);
     } catch (error) {
@@ -300,13 +330,14 @@ export function LoginScreen({
       setPasswordError(nextPasswordError);
       setConfirmPasswordError(nextConfirmError);
       if (nextPasswordError || nextConfirmError) {
-        setStatus("Check the highlighted fields and try again.");
+        setStatus("");
+        (event.currentTarget.elements.namedItem(nextPasswordError ? "password" : "confirm-password") as HTMLInputElement | null)?.focus();
         return;
       }
       requestInFlight.current = true;
       let navigating = false;
       setIsSubmitting(true);
-      setStatus(passwordResetToken ? "Saving your new password…" : "Activating your account…");
+      setStatus(passwordResetToken ? "Saving your new password…" : "Activating your account…", "info");
       try {
         const { ok, payload } = await authRequest(passwordResetToken ? "/api/auth/reset-password" : "/api/auth/invitations/activate", {
           method: "POST",
@@ -320,7 +351,7 @@ export function LoginScreen({
         if (passwordResetToken) {
           setPassword("");
           setConfirmPassword("");
-          setStatus("Password updated. Sign in with your new password.");
+          setStatus("Password updated. Sign in with your new password.", "info");
           router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}&reason=password-reset`);
         } else {
           if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
@@ -335,15 +366,16 @@ export function LoginScreen({
     }
     const nextEmailError = /^\S+@\S+\.\S+$/.test(email)
       ? ""
-      : "Enter a valid work email address.";
+      : email.trim() ? "This doesn’t look like a valid email address." : "Enter your email address.";
     const nextPasswordError = password.length >= 8
       ? ""
-      : "Password must contain at least 8 characters.";
+      : password ? "Use at least 8 characters." : "Enter your password.";
 
     setEmailError(nextEmailError);
     setPasswordError(nextPasswordError);
     if (nextEmailError || nextPasswordError) {
-      setStatus("Check the highlighted fields and try again.");
+      setStatus("");
+      (event.currentTarget.elements.namedItem(nextEmailError ? "email" : "password") as HTMLInputElement | null)?.focus();
       return;
     }
 
@@ -356,7 +388,7 @@ export function LoginScreen({
     let navigating = false;
     setDeviceFailure("");
     setIsSubmitting(true);
-    setStatus(revokeFamilyId ? "Logging out the selected device…" : "Signing you in…");
+    setStatus(revokeFamilyId ? "Logging out the selected device…" : "Signing you in…", "info");
     try {
       const { ok, status: responseStatus, payload } = await authRequest("/api/auth/login", {
         method: "POST",
@@ -379,7 +411,7 @@ export function LoginScreen({
         setMfaCode("");
         setMfaRecoveryMode(false);
         setLimitedSessions(null);
-        setStatus("Enter the code from your authenticator app.");
+        setStatus("Enter the code from your authenticator app.", "info");
         return;
       }
       if (payload.authenticated !== true) throw new Error("Sign-in could not be completed. Please try again.");
@@ -403,7 +435,7 @@ export function LoginScreen({
       setEmailError("Enter your work email to reset the password.");
       return;
     }
-    setStatus("Sending password recovery instructions…");
+    setStatus("Sending password recovery instructions…", "info");
     const response = await fetch("/api/auth/forgot-password", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -411,7 +443,7 @@ export function LoginScreen({
     }).catch(() => null);
     setStatus(response?.ok
       ? "If this account exists, password recovery instructions are ready."
-      : "Password recovery is unavailable. Please try again.");
+      : "Password recovery is unavailable. Please try again.", response?.ok ? "info" : "error");
   };
 
   const canSkipEnrollment = canDeferMfaEnrollment;
@@ -431,7 +463,7 @@ export function LoginScreen({
     : mfaStage === "enrollment"
       ? mfaSetup
         ? "Scan this code with your authenticator app, then confirm the six-digit code."
-        : "Add a second verification step so a password alone cannot access your work."
+        : "Use an authenticator app for an extra sign-in check."
       : mfaStage === "recovery"
         ? "Each code works once if you lose access to your authenticator app."
         : passwordResetToken
@@ -460,44 +492,21 @@ export function LoginScreen({
   return (
     <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} locale="en-AE" portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
       <main className={styles.loginLayout}>
-        <section aria-labelledby="welcome-heading" className={styles.brandPanel}>
-          <div className={styles.brandStory}>
-            <div aria-label={`${tenant.displayName} workspace`} className={styles.tenantBrand}>
-              <span className={styles.tenantEyebrow}>Your workspace</span>
-              {tenant.logoUrl ? (
-                <span className={styles.tenantLogo}>
-                  <Image alt={tenant.displayName} fill priority sizes="224px" src={tenant.logoUrl} />
-                </span>
-              ) : (
-                <strong className={styles.tenantName}>{tenant.displayName}</strong>
-              )}
-            </div>
-            <h2 id="welcome-heading">From vision to handover.</h2>
-            <p className={styles.brandLead}>
-              One workspace for the whole customer journey.
-            </p>
-            <p className={styles.brandDescription}>
-              Bring your team, CRM, pre-execution planning, and delivery into one clear operating view.
-            </p>
-          </div>
-          <div aria-label="Powered by Wodana" className={`${styles.poweredBy} ${styles.desktopPoweredBy}`}>
-            <span>Powered by</span>
-            <WodanaLogo className={styles.poweredLogo} />
-          </div>
-        </section>
+        <div aria-hidden="true" className={styles.brandPanel} />
 
         <section aria-labelledby="login-heading" className={styles.loginPanel}>
-          <div className={styles.formArea}>
+          <div className={styles.loginCard}>
+            <header className={styles.tenantBrand} aria-label={`${tenant.displayName} workspace`}>
+              {tenant.logoUrl ? (
+                <span className={styles.tenantLogo}>
+                  <Image alt={tenant.displayName} fill preload sizes="88px" src={tenant.logoUrl} />
+                </span>
+              ) : null}
+              <div className={styles.brandIdentity}><strong className={styles.tenantName}>{tenant.displayName}</strong><span>Internal workspace</span></div>
+            </header>
+            <div className={styles.formArea} data-security={mfaStage !== "credentials"}>
             <div className={styles.formIntro}>
-              <div aria-label={`${tenant.displayName} workspace`} className={styles.mobileTenantBrand}>
-                {tenant.logoUrl ? (
-                  <span className={styles.mobileTenantLogo}>
-                    <Image alt={tenant.displayName} fill priority sizes="176px" src={tenant.logoUrl} />
-                  </span>
-                ) : (
-                  <strong>{tenant.displayName}</strong>
-                )}
-              </div>
+              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft aria-hidden="true" size={14} />{mfaSetup ? "Back" : "Back to sign in"}</Button> : null}
               <h1 id="login-heading">{heading}</h1>
               <p>{intro}</p>
             </div>
@@ -505,22 +514,25 @@ export function LoginScreen({
             <form className={styles.loginForm} noValidate onSubmit={submit}>
               {mfaStage === "credentials" ? <>
                 {!settingPassword ? <TextInput
+                  autoComplete="username"
                   errorMessage={emailError}
                   inputType="email"
                   isInvalid={Boolean(emailError)}
                   isRequired
-                  label="Work email"
+                  label="Email"
                   name="email"
                   onChange={(value) => {
                     setEmail(value);
                     setLimitedSessions(null);
                     if (emailError) setEmailError("");
                   }}
-                  placeholder="you@company.com"
+                  placeholder="Email"
                   value={email}
                 /> : null}
 
+                <div className={styles.passwordField}>
                 <TextInput
+                  autoComplete={settingPassword ? "new-password" : "current-password"}
                   errorMessage={passwordError}
                   inputType={showPassword ? "text" : "password"}
                   isInvalid={Boolean(passwordError)}
@@ -532,7 +544,7 @@ export function LoginScreen({
                     setLimitedSessions(null);
                     if (passwordError) setPasswordError("");
                   }}
-                  placeholder="Enter your password"
+                  placeholder={settingPassword ? "Create a password" : "Password"}
                   suffix={
                     <InputAction
                       aria-label={showPassword ? "Hide password" : "Show password"}
@@ -544,6 +556,18 @@ export function LoginScreen({
                   }
                   value={password}
                 />
+
+                </div>
+
+                {!settingPassword ? <div className={styles.formOptions}>
+                  <button
+                    className={styles.textButton}
+                    disabled={isSubmitting} onClick={startRecovery}
+                    type="button"
+                  >
+                    Forgot password?
+                  </button>
+                </div> : <p className={styles.passwordHint}>Use 10 or more characters with uppercase, lowercase, a number and a symbol.</p>}
 
                 {settingPassword ? <TextInput
                   errorMessage={confirmPasswordError}
@@ -560,15 +584,7 @@ export function LoginScreen({
                   value={confirmPassword}
                 /> : null}
 
-                {!settingPassword ? <div className={styles.formOptions}>
-                  <button
-                    className={styles.textButton}
-                    disabled={isSubmitting} onClick={startRecovery}
-                    type="button"
-                  >
-                    Forgot password?
-                  </button>
-                </div> : null}
+
               </> : null}
 
               {mfaStage === "challenge" ? <div className={styles.mfaForm}>
@@ -588,72 +604,71 @@ export function LoginScreen({
                   <button className={styles.textButton} disabled={isSubmitting} onClick={() => { setMfaRecoveryMode((value) => !value); setMfaCode(""); setStatus(""); }} type="button">
                     {mfaRecoveryMode ? "Use authenticator code" : "Use a recovery code"}
                   </button>
-                  <button className={styles.textButton} disabled={isSubmitting} onClick={resetMfaFlow} type="button"><ArrowLeft size={13} />Back to sign in</button>
                 </div>
               </div> : null}
 
               {mfaStage === "enrollment" ? <div className={styles.mfaForm}>
                 {!mfaSetup ? <>
-                  <span className={styles.securityMark}><ShieldCheck aria-hidden="true" size={22} /></span>
-                  <ul className={styles.securityBenefits}>
-                    <li>Use any standard authenticator app.</li>
-                    <li>Recovery codes keep access available if your phone is lost.</li>
-                    <li>Your projects and client information get an extra sign-in check.</li>
-                  </ul>
                   {mfaEnrollmentDeadline ? <p className={styles.deadlineNotice}>
                     {canSkipEnrollment
-                      ? `Complete setup by ${new Date(mfaEnrollmentDeadline).toLocaleDateString()}.`
-                      : "Setup is required before you can enter the workspace."}
+                      ? `Set up by ${new Date(mfaEnrollmentDeadline).toLocaleDateString()}.`
+                      : "Required before entering the workspace."}
                   </p> : null}
                 </> : <>
                   <div className={styles.qrPanel}>
                     {mfaQrCode ? <Image alt="Authenticator setup QR code" height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">Preparing QR code…</span>}
                   </div>
-                  <div className={styles.manualKey}>
-                    <span>Can’t scan it? Enter this setup key</span>
-                    <code>{mfaSetup.secret}</code>
-                    <button className={styles.textButton} onClick={() => void navigator.clipboard?.writeText(mfaSetup.secret).then(() => setStatus("Setup key copied.")).catch(() => setStatus("Select and copy the setup key manually."))} type="button"><Copy size={13} />Copy key</button>
+                  <div aria-label="Authenticator setup key" className={styles.manualKey}>
+                    <span>Setup key</span>
+                    <code title={mfaSetup.secret}>{mfaSetup.secret}</code>
+                    <button aria-label="Copy setup key" className={styles.copySetupKey} onClick={() => {
+                      if (!navigator.clipboard?.writeText) {
+                        setStatus("Select and copy the setup key manually.");
+                        return;
+                      }
+                      void navigator.clipboard.writeText(mfaSetup.secret)
+                        .then(() => setStatus("Setup key copied.", "info"))
+                        .catch(() => setStatus("Select and copy the setup key manually."));
+                    }} title="Copy setup key" type="button"><Copy aria-hidden="true" size={14} /></button>
                   </div>
                   <div className={styles.otpField}>
                     <span>Six-digit code <i aria-hidden="true">*</i></span>
                     <OtpInput onChange={(value) => { setMfaCode(value); setStatus(""); }} value={mfaCode} />
                   </div>
                 </>}
-                {!mfaSetup && canSkipEnrollment ? <button className={styles.textButton} disabled={isSubmitting} onClick={() => void skipMfaEnrollment()} type="button">Set up later</button> : null}
+
               </div> : null}
 
               {mfaStage === "recovery" ? <div className={styles.mfaForm}>
                 <div className={styles.recoveryHeader}><ShieldCheck aria-hidden="true" size={18} /><span>Store these somewhere safe. They will not be shown again.</span></div>
                 <ol aria-label="Recovery codes" className={styles.recoveryCodes}>{recoveryCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ol>
-                <Button className={styles.copyCodes} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.")).catch(() => setStatus("Select and copy the recovery codes manually."))} size="compact" variant="quiet"><Copy size={14} />Copy all codes</Button>
+                <Button className={styles.copyCodes} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.", "info")).catch(() => setStatus("Select and copy the recovery codes manually."))} size="compact" variant="quiet"><Copy size={14} />Copy all codes</Button>
                 <Checkbox isSelected={recoveryCodesSaved} onChange={setRecoveryCodesSaved}>I saved these recovery codes</Checkbox>
               </div> : null}
 
-              <Button className={styles.submitButton} isLoading={isSubmitting} size="large" type="submit">
+              <Button className={styles.submitButton} isLoading={isSubmitting} size="large" type="submit" variant="primary">
                 {submitLabel}
-                <ArrowUpRight aria-hidden="true" size={15} />
+
               </Button>
+              {mfaStage === "enrollment" && !mfaSetup && canSkipEnrollment ? <Button className={styles.skipSetup} isDisabled={isSubmitting} onPress={() => void skipMfaEnrollment()} size="compact" type="button" variant="secondary">Set up later</Button> : null}
             </form>
 
-            <p role={isSubmitting || isOpening ? "status" : "alert"} aria-live="polite" className={styles.statusMessage} data-visible={Boolean(status) && !limitedSessions}>
-              {limitedSessions ? "" : status || "Ready"}
-            </p>
+            {status && !limitedSessions ? <InlineNotice className={styles.statusMessage} message={status} title={statusTone === "error" ? "Sign-in needs attention" : undefined} tone={statusTone} /> : null}
 
             {isOpening ? <a className={styles.continueLink} href={authenticatedDestination}>{authenticatedDestination === "/onboarding" ? "Continue setup" : "Open workspace"}</a> : null}
 
-            <p className={styles.supportCopy}>
-              {mfaStage !== "credentials" ? null : settingPassword ? (
+            {mfaStage === "credentials" ? <p className={styles.supportCopy}>
+              {settingPassword ? (
                 <button onClick={() => router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}`)} type="button">Back to sign in</button>
-              ) : demoCredentials ? (
-                <>Demo tenant: <strong>{tenant.displayName}</strong></>
               ) : (
-                <>New to Wodana? Ask your administrator for an invitation.</>
+                <>Need access? Ask your administrator for an invitation.</>
               )}
-            </p>
-            <div aria-label="Powered by Wodana" className={`${styles.poweredBy} ${styles.mobilePoweredBy}`}>
-              <span>Powered by</span>
-              <WodanaLogo className={styles.poweredLogo} />
+            </p> : null}
             </div>
+            <footer aria-label="Powered by Wodana" className={styles.poweredBy}>
+              <span>Powered by</span>
+              <WodanaLogo size="small" className={styles.poweredLogo} />
+            </footer>
           </div>
         </section>
       </main>
@@ -663,22 +678,23 @@ export function LoginScreen({
         isOpen={Boolean(limitedSessions)}
         isDismissable={!isSubmitting}
         onOpenChange={(open) => { if (!open && !isSubmitting) { setLimitedSessions(null); setStatus(""); } }}
-        footer={<Button className={styles.deviceLogoutButton} isDisabled={isSubmitting} onPress={() => { setLimitedSessions(null); setStatus(""); }}>Back to sign in</Button>}
+        footer={<Button className={styles.deviceCancelButton} isDisabled={isSubmitting} onPress={() => { setLimitedSessions(null); setStatus(""); }}>Back to sign in</Button>}
       >
         <section className={styles.deviceLimit} aria-label="Logged-in devices">
-          <p aria-live="polite">You are signed in on {limitedSessions?.length ?? 0} devices. Your account allows a maximum of 2 devices.</p>
+          <p aria-live="polite">{limitedSessions?.length ?? 0} of 2 devices in use. Choose a session to log out.</p>
           {deviceFailure ? <p role="alert" className={styles.deviceFailure}>{deviceFailure}</p> : null}
           <ul>{limitedSessions?.map((session) => {
             const device = deviceDetails(session.userAgent);
             return <li key={session.familyId}>
-              <div><strong>{device.browser} on {device.device}</strong>
+              <span className={styles.deviceIcon}><Monitor aria-hidden="true" size={21} strokeWidth={1.5} /></span>
+              <div><strong>{device.browser === "Unknown browser" && device.device === "Unknown device" ? "Unrecognized device" : `${device.browser} on ${device.device}`}</strong>
                 <small>{session.ipAddress ?? "IP not recorded"}</small>
                 <small>Last active {new Date(session.lastActiveAt).toLocaleString()}</small>
               </div>
               <Button isDisabled={isSubmitting} onPress={() => void signIn(session.familyId)} className={styles.deviceLogoutButton}>Log out device</Button>
             </li>;
           })}</ul>
-          <p>Logging out expires that device’s session immediately. You will continue here once a slot is free.</p>
+          <p>The selected device will be signed out immediately. You’ll continue signing in here.</p>
           {isSubmitting ? <p role="status">Logging out device…</p> : null}
         </section>
       </ControlledModalDialog>

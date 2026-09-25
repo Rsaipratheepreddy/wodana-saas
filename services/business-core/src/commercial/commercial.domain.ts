@@ -1,3 +1,4 @@
+import {parseQuotationRichText} from "./quotation-rich-text";
 import { quotationLineVariant, quotationMaterialText } from "./quotation-presentation";
 import { materialsRate } from "./quotation-pricing";
 import { BadRequestException, ConflictException } from "@nestjs/common";
@@ -269,6 +270,7 @@ export function freezeHash(q: Quote): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
+        round: q.round,
         direction: q.direction,
         familyId: q.familyId,
         definitionBaseline: q.definitionBaseline,
@@ -627,6 +629,7 @@ export function parseQuotePresentation(input: unknown): QuotePresentation {
             ...common,
             type: "text" as const,
             text: text(element.text ?? "", 4000),
+            ...(element.richText !== undefined ? { richText: parseQuotationRichText(element.richText) } : {}),
             color: canvasHex(element.color, "#000000"),
             fontSize: number(element.fontSize ?? 24, 96, 8),
             align: (element.align === "center" || element.align === "right"
@@ -648,8 +651,42 @@ export function parseQuotePresentation(input: unknown): QuotePresentation {
   });
   if (new Set(pages.map((page) => page.id)).size !== pages.length)
     throw new BadRequestException("Give every quotation page a unique ID.");
+  let pageOrder: string[] | undefined;
+  if (value.pageOrder !== undefined) {
+    const allowed = new Set(["cover", "scope", "summary", "payments", "terms", "acceptance", ...pages.filter(page => page.kind === "custom").map(page => page.id)]);
+    if (!Array.isArray(value.pageOrder) || !value.pageOrder.length || value.pageOrder.length > 40 ||
+      value.pageOrder.some(id => typeof id !== "string" || !allowed.has(id)) ||
+      new Set(value.pageOrder).size !== value.pageOrder.length || !value.pageOrder.includes("scope"))
+      throw new BadRequestException("Choose unique quotation pages and keep the scope section.");
+    pageOrder = value.pageOrder as string[];
+  }
+  let hiddenPages: string[] | undefined;
+  if (value.hiddenPages !== undefined) {
+    const allowed = new Set(["cover","scope","summary","payments","terms","acceptance",...pages.map(page=>page.id)]);
+    if (!Array.isArray(value.hiddenPages) || value.hiddenPages.length>40 || value.hiddenPages.some(id=>typeof id!=="string" || !allowed.has(id))) throw new BadRequestException("Choose valid pages to hide.");
+    hiddenPages=[...new Set(value.hiddenPages as string[])];
+  }
+  let scopeColumns: QuotePresentation["scopeColumns"];
+  if (value.scopeColumns !== undefined) {
+    const config = object(value.scopeColumns);
+    const allowed = ['index','image','item','description','dimensions','quantity','unit','rate','amount','actions'];
+    if (!Array.isArray(config.hidden) || config.hidden.some(id => !allowed.includes(String(id))) || !Array.isArray(config.custom) || config.custom.length > 20)
+      throw new BadRequestException("Use valid columns and up to 20 custom columns.");
+    const custom = config.custom.map(raw => {
+      const column = object(raw), values = object(column.values);
+      if (Object.keys(values).length > 300) throw new BadRequestException("Use up to 300 custom cells per column.");
+      return { id: text(column.id, 80, true), name: text(column.name, 80, true), values: Object.fromEntries(Object.entries(values).map(([id, content]) => [text(id, 80, true), text(content, 2000)])) };
+    });
+    if (new Set(custom.map(column => column.id)).size !== custom.length) throw new BadRequestException("Use unique column IDs.");
+    scopeColumns = { hidden: [...new Set(config.hidden as string[])], custom };
+  }
   return {
     version: 1,
+    ...(value.template === 'palm-reference-v1' ? {template: 'palm-reference-v1' as const} : {}),
+    ...(value.details !== undefined ? {details: Object.fromEntries(Object.entries(object(value.details)).filter(([key]) => ['companyName','clientName','clientPhone','clientEmail','projectName','location','reference','date','preparedBy','estimator','manager','clientLogo'].includes(key)).map(([key, content]) => [key, key === 'clientLogo' ? image(content) : text(content, 500)]))} : {}),
+    ...(pageOrder ? { pageOrder } : {}),
+    ...(hiddenPages ? { hiddenPages } : {}),
+    ...(scopeColumns ? { scopeColumns } : {}),
     pageBackground: canvasHex(value.pageBackground, "#E4E3DE"),
     textColor: canvasHex(value.textColor, "#000000"),
     accentColor: canvasHex(value.accentColor, "#000000"),

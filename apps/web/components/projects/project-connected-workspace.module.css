@@ -1,0 +1,5 @@
+.page { min-inline-size:0; inline-size:100%; display:grid; align-content:start; }
+.navigation,.subnav { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 20px; border-block-end:1px solid var(--wd-color-structural-divider); }
+.tools { margin-inline-start:auto; }.context { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:12px 20px; font-size:13px; color:var(--wd-color-text-secondary); }
+.context a { margin-inline-start:auto; color:var(--wd-color-action-primary); }.context strong { color:var(--wd-color-text-primary);font-weight:600; }
+@media(max-width:640px){.navigation,.subnav,.context { padding:12px; }.tools { margin-inline-start:0; }}

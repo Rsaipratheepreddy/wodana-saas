@@ -1,4 +1,11 @@
 .provider, .page { min-inline-size: 0; background: var(--wd-color-surface); }
+:global([data-workspace-theme="light"]) .provider {
+  --wd-color-surface: #fff;
+  --wd-color-surface-muted: #fff;
+  --wd-color-surface-subtle: #fff;
+  --wd-color-surface-hover: #f7f7f8;
+  background: #fff;
+}
 .page { inline-size: min(100%, var(--wd-workspace-page-width, 76rem)); min-block-size: 100%; margin-inline: auto; padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem); }
 .visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; padding: 0; border: 0; margin: -1px; clip: rect(0 0 0 0); white-space: nowrap; }
 .filters { padding: .75rem 0; border-block-end: 1px solid var(--wd-color-structural-divider); }

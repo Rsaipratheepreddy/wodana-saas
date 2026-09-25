@@ -57,11 +57,11 @@ describe("CRM lead qualification presentation", () => {
     expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
   });
 
-  it("preserves a frozen no-form decision instead of dereferencing absent live state", async () => {
+  it("preserves a frozen no-form decision for a resolved enquiry type", async () => {
     const evidence = {
       version: 1,
       leadId: "lead",
-      serviceType: null,
+      serviceType: "interior_design",
       selection: "none",
       form: null,
       answers: [],
@@ -71,7 +71,7 @@ describe("CRM lead qualification presentation", () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("SELECT lead.*")) return { rows: [{
         id: "lead", enquiry_id: "enquiry", party_id: "party", owner_membership_id: null, queue_id: null,
-        status: "qualified", version: 2, source: "shared_link", channel: "website", service_type: null,
+        status: "qualified", version: 2, source: "shared_link", channel: "website", service_type: "interior_design",
         business_unit_id: null, preferred_locale: "en-AE", party_owner_membership_id: null,
         qualification_evidence: evidence, qualification_evidence_hash: "b".repeat(64),
       }], rowCount: 1 };

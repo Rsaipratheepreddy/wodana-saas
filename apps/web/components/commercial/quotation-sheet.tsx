@@ -74,6 +74,8 @@ type Props = {
   canOverridePrice?: boolean;
   canViewCosts?: boolean;
   search?: string;
+  /** Pulse filter: when set, rooms show only matching lines and empty rooms are hidden. */
+  lineFilter?: (line: QuoteLine) => boolean;
   brand?: Pick<PortalBrand, "primaryColor" | "accentColor">;
 };
 export function QuotationSheet({
@@ -85,6 +87,7 @@ export function QuotationSheet({
   canOverridePrice = false,
   canViewCosts = false,
   search = "",
+  lineFilter,
 }: Props) {
   const [materialDraft, setMaterialDraft] = useState<QuoteLine | null>(null);
   const [roomDraft, setRoomDraft] = useState<{
@@ -245,9 +248,10 @@ export function QuotationSheet({
       ),
     });
   };
-  const visible = rooms.filter((room) =>
+  const matchesFilter = (line: QuoteLine) => !lineFilter || lineFilter(line);
+  const visible = rooms.filter((room) => (!lineFilter || quote.lines.some((l) => l.room === room && lineFilter(l))) &&
     `${room} ${quote.lines
-      .filter((l) => l.room === room)
+      .filter((l) => l.room === room && matchesFilter(l))
       .map((l) =>
         [
           l.title,
@@ -334,7 +338,7 @@ export function QuotationSheet({
           </thead>
           {visible.map((room) => {
             const index = rooms.indexOf(room),
-              lines = quote.lines.filter((l) => l.room === room),
+              lines = quote.lines.filter((l) => l.room === room && matchesFilter(l)),
               expanded = Boolean(search.trim()) || !collapsedRooms.has(room),
               areaTotal = roundMoney(
                 lines.reduce(

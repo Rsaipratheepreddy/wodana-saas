@@ -22,6 +22,7 @@ export class CrmNotificationsController {
   @Post("device-endpoints") registerDevice(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() input:RegisterDeviceEndpointDto){return this.notifications.registerDevice(actor,workspaceId,input);}
   @Post("device-endpoints/:id/revoke") revokeDevice(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string,@Body() input:RevokeDeviceEndpointDto){return this.notifications.revokeDevice(actor,workspaceId,id,input);}
   @Get("notifications") inbox(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.inbox(actor,workspaceId);}
+  @Post("notifications/read-all") readAll(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.readAll(actor,workspaceId);}
   @Post("notifications/:id/read") read(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string){return this.notifications.read(actor,workspaceId,id);}
   @Post("notifications/:id/open") open(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string){return this.notifications.open(actor,workspaceId,id);}
 }

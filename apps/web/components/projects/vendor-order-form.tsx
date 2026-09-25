@@ -172,7 +172,7 @@ export function VendorOrderForm() {
         </div>
         <span>
           <ShieldCheck size={14} />
-          Private vendor workspace
+          Private supplier workspace
         </span>
       </header>
       {error && (

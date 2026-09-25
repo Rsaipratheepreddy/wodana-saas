@@ -144,6 +144,12 @@ export class CrmNotificationsService {
       return result.rows;
     });
   }
+  readAll(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+      const result = await client.query(`UPDATE notifications SET read_at=now(),version=version+1 WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' AND read_at IS NULL RETURNING id`, [workspaceId, actorUser.userId]);
+      return { updated: result.rowCount };
+    });
+  }
   read(actor: RequestActor, workspaceId: string, notificationId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
       const result = await client.query(`UPDATE notifications SET read_at=COALESCE(read_at,now()),version=version+1 WHERE workspace_id=$1 AND id=$2 AND recipient_type='user' AND recipient_id=$3 RETURNING id,read_at AS "readAt",version`, [workspaceId, notificationId, actorUser.userId]);

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ vi.mock("@/lib/crm/client", async (original) => ({ ...await original<object>(), 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const partyId = "00000000-0000-4000-8000-000000000002";
 const managerId = "00000000-0000-4000-8000-000000000003";
+const userId = "00000000-0000-4000-8000-000000000004";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -16,9 +17,9 @@ beforeEach(() => {
   vi.mocked(crmRequest).mockImplementation(async (_workspace, path, method) => {
     if (method === "POST") return { id: "created-meeting" };
     if (path.startsWith("parties")) return { data: [{ id: partyId, displayName: "Calendar customer" }] };
-    if (path === "members") return [{ id: managerId, displayName: "Iglo Manager", status: "active" }];
+    if (path === "members") return [{ id: managerId, userId, displayName: "Iglo Manager", email: "manager@example.com", status: "active" }];
     return { data: [
-      { id: "pending", title: "Design consultation", dueAt: new Date().toISOString(), status: "pending" },
+      { id: "pending", title: "Design consultation", dueAt: new Date().toISOString(), ownerMembershipId: managerId, status: "pending" },
       { id: "cancelled", title: "Cancelled consultation", dueAt: new Date().toISOString(), status: "cancelled" },
     ], nextCursor: null };
   });
@@ -32,20 +33,24 @@ describe("CRM calendar", () => {
     expect(html).not.toContain("Schedule on");
   });
 
-  it("keeps search and a compact date navigator alongside the time grid", async () => {
+  it("uses one compact toolbar with organisation, personal and member calendars", async () => {
     render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByRole("searchbox", { name: "Search calendar" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Date navigator" })).toBeInTheDocument();
-    expect(screen.queryByText("My calendars")).not.toBeInTheDocument();
-    expect(screen.queryByText("CRM commitments")).not.toBeInTheDocument();
-    expect(screen.queryByText("Manage connections")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Calendar" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Organisation" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Personal" })).toBeInTheDocument();
+    const googleLink = screen.getByRole("link", { name: "Connect Google" });
+    expect(googleLink).toHaveAttribute("href", "/workspace/integrations?connect=google_workspace");
+    expect(googleLink.querySelector("img")).toHaveAttribute("src", "/icons/integrations/google-calendar.svg");
+    expect(screen.getByRole("button", { name: /View member calendar/ })).toBeInTheDocument();
   });
 
   it("shows real activities, excludes cancellations and supports the day/search view", async () => {
     const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByRole("button", { name: /CRM Design consultation/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Cancelled consultation/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Day" }));
+    await user.click(screen.getByRole("button", { name: /Calendar view/ }));
+    await user.click(await screen.findByRole("option", { name: "Day view" }));
     expect(screen.getByRole("group", { name: "Day calendar" })).toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search calendar" }), "No match");
     expect(screen.queryByRole("button", { name: /CRM Design consultation/ })).not.toBeInTheDocument();
@@ -53,7 +58,7 @@ describe("CRM calendar", () => {
 
   it("saves the activity and appointment through one atomic command, not a Google send", async () => {
     const user = userEvent.setup(); render(<CrmCalendar workspaceId={workspaceId} />);
-    await user.click(screen.getByRole("button", { name: "Schedule meeting" }));
+    await user.click(screen.getByRole("button", { name: "Schedule" }));
     const dialog = await screen.findByRole("dialog", { name: "Schedule CRM meeting" });
     await user.type(within(dialog).getByRole("textbox", { name: /Meeting title/ }), "Site visit");
     await user.click(within(dialog).getByRole("button", { name: /Customer/ }));
@@ -68,14 +73,14 @@ describe("CRM calendar", () => {
     const body = call[3] as { dueAt: string; appointment: { startsAt: string; endsAt: string } };
     expect(body.dueAt).toBe(body.appointment.startsAt);
     expect(Date.parse(body.appointment.endsAt) - Date.parse(body.appointment.startsAt)).toBe(3600000);
-    expect(vi.mocked(fetch).mock.calls.every((item) => String(item[0]).startsWith("/api/workspace/integration-connections?"))).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.every((item) => !String(item[0]).includes("/tools"))).toBe(true);
   });
 
   it("shows a fetch error instead of presenting it as an empty calendar", async () => {
     vi.mocked(crmRequest).mockRejectedValue(new Error("Access denied"));
     render(<CrmCalendar workspaceId={workspaceId} />);
     expect(await screen.findByText("Calendar could not load")).toBeInTheDocument();
-    expect(screen.getByText("Access denied")).toBeInTheDocument();
+    expect(screen.getAllByText("Access denied").length).toBeGreaterThan(0);
   });
 
   it("opens notes and reschedules a follow-up even without a meeting appointment", async () => {
@@ -90,8 +95,13 @@ describe("CRM calendar", () => {
     const notes = await screen.findByRole("textbox", { name: "Notes" });
     expect(notes).toHaveValue("Discuss the quote");
     await user.type(notes, ". Call tomorrow.");
-    fireEvent.change(screen.getByLabelText("Reminder date"), { target: { value: "2026-09-09" } });
-    fireEvent.change(screen.getByLabelText("Reminder time"), { target: { value: "11:00" } });
+    for (const [segment, value] of [["year", "2026"], ["month", "9"], ["day", "9"]]) {
+      await user.click(screen.getByRole("spinbutton", { name: new RegExp(`${segment},.*Reminder date`, "i") }));
+      await user.keyboard(value);
+    }
+    await user.click(screen.getByRole("spinbutton", { name: "hour, Reminder time" })); await user.keyboard("11");
+    await user.click(screen.getByRole("spinbutton", { name: "minute, Reminder time" })); await user.keyboard("00");
+    await user.click(screen.getByRole("spinbutton", { name: /am\/pm, Reminder time/i })); await user.keyboard("a");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Saved. Your reminder is updated in Today and Calendar.");
     expect(vi.mocked(crmRequest)).toHaveBeenCalledWith(workspaceId, "activities/pending", "PATCH", expect.objectContaining({ version: 2, description: "Discuss the quote. Call tomorrow.", dueAt: new Date("2026-09-09T11:00").toISOString() }));

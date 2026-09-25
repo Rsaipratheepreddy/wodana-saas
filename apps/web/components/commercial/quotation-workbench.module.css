@@ -181,3 +181,5 @@
 @media(max-width:760px){.roomChoices{grid-template-columns:repeat(2,minmax(0,1fr))}.roomChoices button{padding:12px}.shopLayout{grid-template-columns:minmax(0,1fr);display:flex;flex-direction:column;max-block-size:none}.shopLayout .itemList{order:2;max-block-size:240px}.shopLayout .cartItems{max-block-size:180px}.shopLayout .itemConfiguration{padding:0;max-block-size:55dvh;min-block-size:200px}.shopSearch{gap:9px}.shopSearch>.textButton{font-size:11px}.shopProductHeading>strong{font-size:12px}.shopLayout .basketPrice{grid-template-columns:70px 1fr}}
 @media(min-width:761px){.configLayout.shopLayout{block-size:auto;min-block-size:320px;max-block-size:min(520px,58dvh)}}
 .shopLayout .recipeRow{padding-block:3px}
+
+section.notes > h3 {margin:0 0 10px;font-size:12px;font-weight:600;}

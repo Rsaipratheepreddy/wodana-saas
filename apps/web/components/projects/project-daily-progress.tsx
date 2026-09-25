@@ -88,15 +88,6 @@ export function DailyProgress({
   return (
     <div className={d.diary}>
       <div className={d.diarySummary}>
-        <div>
-          <span className={v.eyebrow}>
-            <Camera size={14} /> FIELD DIARY
-          </span>
-          <h2>Every shift. Every detail.</h2>
-          <p>
-            Site photos, completed work and the issues your team needs to see.
-          </p>
-        </div>
         <div className={d.diaryStats}>
           <span>
             <Camera size={16} />
@@ -206,8 +197,9 @@ export function DailyProgress({
                     className={d.reportTitle}
                     onClick={() => onOpen(structuredClone(r))}
                   >
-                    {r.summary ||
-                      `${label(r.location)} progress · ${shortDate(r.date)}`}
+                    {r.summary
+                      ? `${r.summary.slice(0, 120)}${r.summary.length > 120 ? "…" : ""}`
+                      : `${label(r.location)} progress · ${shortDate(r.date)}`}
                     <ArrowUpRight size={16} />
                   </button>
                   <div className={d.workLines}>
@@ -404,6 +396,10 @@ export function DailyReportEditor({
       ["draft", "returned"].includes(report.status),
     patch = (p: Partial<DailyReport>) => setReport({ ...report, ...p }),
     files = (state.data.files ?? []).filter((f) => f.recordId === report.id);
+  const crewPeople = report.workforce?.reduce((total, line) => total + line.people, 0) ?? 0;
+  const labourHours = report.workforce?.length
+    ? report.workforce.reduce((total, line) => total + line.people * line.hours, 0)
+    : report.people * report.hours;
   async function upload(list: File[]) {
     if (!list.length) return;
     if (list.some((f) => f.size > 10 * 1024 * 1024)) {
@@ -440,13 +436,10 @@ export function DailyReportEditor({
   return (
     <div className={`${theme.theme} ${s.form} ${d.editor}`}>
       <div className={d.editorIntro}>
-        <span className={s.status} data-state={report.status}>
-          {label(report.status)}
-        </span>
-        <span>
-          {report.author} · {shortDate(report.date)}
-        </span>
+        <div><span className={v.eyebrow}>DAILY PROGRESS · {label(report.location)}</span><h2>Record the day’s work</h2><p>{report.author} · {shortDate(report.date)} · {report.shift}</p></div>
+        <span className={s.status} data-state={report.status}>{label(report.status)}</span>
       </div>
+      <div className={d.editorSnapshot} aria-label="Report snapshot"><span><strong>{report.entries.length}</strong> work items</span><span><strong>{report.workforce?.length ? crewPeople : report.people}</strong> people</span><span><strong>{labourHours.toLocaleString()}</strong> labour hours</span><span><strong>{files.length}</strong> files</span></div>
       {(error || uploadError) && (
         <p role="alert" className={s.error}>
           {error || uploadError}
@@ -456,8 +449,8 @@ export function DailyReportEditor({
       <nav className={d.editorTabs} aria-label="Daily report sections">
         {[
           ["work", "Work & crew", ClipboardCheck],
-          ["photos", `Photos (${files.length})`, Camera],
-          ["issues", "Conditions & issues", TriangleAlert],
+          ["photos", `Evidence (${files.length})`, Camera],
+          ["issues", "Safety & next steps", TriangleAlert],
         ].map(([id, title, Icon]) => {
           const I = Icon as typeof Camera;
           return (
@@ -476,6 +469,7 @@ export function DailyReportEditor({
       <fieldset disabled={!editable || busy || uploading}>
         {tab === "work" && (
           <>
+            <div className={d.sectionHeading}><h3>Shift details</h3><p>Record when and where the work happened. Site and factory output use separate reports.</p></div>
             <div className={`${s.grid} ${s.reportContext}`}>
               <label>
                 Date
@@ -511,7 +505,8 @@ export function DailyReportEditor({
                   type="number"
                   min="0"
                   step="1"
-                  value={report.people}
+                  value={report.workforce?.length ? crewPeople : report.people}
+                  disabled={Boolean(report.workforce?.length)}
                   onChange={(e) => patch({ people: Number(e.target.value) })}
                 />
               </label>
@@ -522,20 +517,30 @@ export function DailyReportEditor({
                   min="0"
                   max="24"
                   step=".5"
-                  value={report.hours}
+                  value={report.workforce?.length ? Number((labourHours / crewPeople).toFixed(2)) : report.hours}
+                  disabled={Boolean(report.workforce?.length)}
                   onChange={(e) => patch({ hours: Number(e.target.value) })}
                 />
               </label>
             </div>
             <label>
               Shift summary
-              <input
+              <textarea
+                rows={2}
                 value={report.summary ?? ""}
-                placeholder="What changed on site today?"
+                placeholder="What was completed, what remains, and what changed today?"
                 onChange={(e) => patch({ summary: e.target.value })}
               />
             </label>
-            <h3>Today’s measured output</h3>
+            <div className={d.sectionHeading}><h3>Crew breakdown</h3><p>Optional trades and hours give reviewers a reliable labour record. Totals above update from these lines.</p></div>
+            {(report.workforce ?? []).map((line, index) => <div className={d.crewRow} key={index}>
+              <label>Trade / role<input value={line.trade} maxLength={120} placeholder="Joinery, installation, electrician…" onChange={e => patch({workforce: report.workforce!.map((item, i) => i === index ? {...item, trade:e.target.value} : item)})}/></label>
+              <label>People<input type="number" min="1" max="1000" step="1" value={line.people} onChange={e => patch({workforce: report.workforce!.map((item, i) => i === index ? {...item, people:Number(e.target.value)} : item)})}/></label>
+              <label>Hours each<input type="number" min="0.5" max="24" step="0.5" value={line.hours} onChange={e => patch({workforce: report.workforce!.map((item, i) => i === index ? {...item, hours:Number(e.target.value)} : item)})}/></label>
+              <button type="button" className={s.icon} aria-label={`Remove crew line ${index + 1}`} onClick={() => patch({workforce: report.workforce!.filter((_, i) => i !== index)})}><Trash2 size={16}/></button>
+            </div>)}
+            <button type="button" className={s.button} onClick={() => patch({workforce:[...(report.workforce ?? []),{trade:"",people:1,hours:8}]})} disabled={(report.workforce?.length ?? 0) >= 20}><Plus size={14}/> Add crew line</button>
+            <div className={d.sectionHeading}><h3>Measured output</h3><p>Choose assigned tasks and enter today’s completed quantity. Approval updates project progress.</p></div>
             {report.entries.map((entry, i) => {
               const task = state.data.tasks.find((t) => t.id === entry.taskId);
               return (
@@ -622,6 +627,7 @@ export function DailyReportEditor({
             >
               <Plus size={14} /> Add task output
             </button>
+            <div className={d.sectionHeading}><h3>Next shift</h3><p>Give the incoming team a clear plan and note dependencies.</p></div>
             <label>
               Next shift plan
               <textarea
@@ -634,6 +640,7 @@ export function DailyReportEditor({
         )}
         {tab === "photos" && (
           <>
+            <div className={d.sectionHeading}><h3>Evidence & records</h3><p>Attach dated photos, marked-up work, delivery records or a signed diary reference. Evidence is required before submission.</p></div>
             <div className={d.uploadZone}>
               <Upload size={24} />
               <strong>
@@ -666,6 +673,7 @@ export function DailyReportEditor({
         )}
         {tab === "issues" && (
           <>
+            <div className={d.sectionHeading}><h3>Conditions & safety</h3><p>Separate observations from incidents, and make schedule effects and next ownership explicit.</p></div>
             <label>
               Weather & site conditions
               <input
@@ -683,6 +691,10 @@ export function DailyReportEditor({
               />
             </label>
             <label>
+              Safety status
+              <select value={report.safetyStatus ?? "none"} onChange={e => patch({safetyStatus:e.target.value as DailyReport["safetyStatus"]})}><option value="none">No incident</option><option value="observation">Observation</option><option value="incident">Incident</option></select>
+            </label>
+            <label>
               Safety & inspections
               <textarea
                 placeholder="Toolbox talk, inspections, hazards or incidents…"
@@ -697,6 +709,13 @@ export function DailyReportEditor({
                 onChange={(e) => patch({ materials: e.target.value })}
               />
             </label>
+            <div className={d.sectionHeading}><h3>Schedule impact & recovery</h3><p>If today’s work affects the programme, record the cause, recovery action, and person responsible for the next update.</p></div>
+            <label>Schedule impact<select value={report.scheduleImpact ?? "none"} onChange={e => patch({scheduleImpact:e.target.value as DailyReport["scheduleImpact"]})}><option value="none">No known impact</option><option value="watch">At risk · watch</option><option value="blocked">Blocked</option></select></label>
+            {report.scheduleImpact && report.scheduleImpact !== "none" && <>
+              <label>Impact reason<textarea value={report.impactReason ?? ""} onChange={e => patch({impactReason:e.target.value})} placeholder="Affected task, area and cause…"/></label>
+              <label>Recovery plan<textarea value={report.recoveryPlan ?? ""} onChange={e => patch({recoveryPlan:e.target.value})} placeholder="Action required to recover the programme…"/></label>
+              <div className={d.riskOwnership}><label>Next update owner<select value={report.nextUpdateOwnerId ?? ""} onChange={e => patch({nextUpdateOwnerId:e.target.value})}><option value="">Choose a person</option>{state.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label><label>Next update date<input type="date" min={report.date} value={report.nextUpdateDate ?? ""} onChange={e => patch({nextUpdateDate:e.target.value})}/></label></div>
+            </>}
             <p className={s.muted}>
               Issues remain visible in the site diary. Use the linked task to
               assign follow-up or place work on hold.

@@ -5,7 +5,7 @@ import type { ReleasedScopeLine } from "./execution.types";
 
 /**
  * Creates the execution-safe snapshot of an accepted commercial line.
- * Internal cost and presentation-only photos intentionally stay in Commercial.
+ * Internal cost stays in Commercial; approved item photos follow their scope.
  */
 export function releasedScopeLine(line: QuoteLine): ReleasedScopeLine {
   return {
@@ -15,6 +15,7 @@ export function releasedScopeLine(line: QuoteLine): ReleasedScopeLine {
     sourceScopeVersion: line.scopeVersion,
     sourceSpecificationVersion: line.specificationVersion,
     title: line.title,
+    photo: line.photo,
     room: line.room,
     specification: line.specification,
     material: quotationMaterialText(line),

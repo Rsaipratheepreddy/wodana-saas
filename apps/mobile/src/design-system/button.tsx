@@ -17,11 +17,11 @@ export function Button({ label, variant = 'primary', pill = false, startIcon, en
   const [focused, setFocused] = useState(false);
   const unavailable = disabled || loading;
   const publicBrand = variant === 'brand' || variant === 'brand-secondary';
-  const foreground = variant === 'brand' ? tokens.colors.light.actionOnPrimary
+  const foreground = variant === 'brand' ? loginTheme.buttonInk
     : variant === 'brand-secondary' || variant === 'white' || variant === 'glass' ? loginTheme.ink
       : variant === 'primary' ? colors.actionOnPrimary : colors.text;
   const background = (pressed: boolean) => {
-    if (variant === 'brand') return pressed ? tokens.colors.light.actionPrimaryPressed : loginTheme.accent;
+    if (variant === 'brand') return pressed ? loginTheme.buttonHover : loginTheme.button;
     if (variant === 'brand-secondary') return pressed ? loginTheme.accentSoft : loginTheme.secondary;
     if (variant === 'white') return pressed ? 'rgba(255,255,255,0.72)' : '#ffffff';
     if (variant === 'glass') return pressed ? 'rgba(255,255,255,0.54)' : 'rgba(255,255,255,0.30)';

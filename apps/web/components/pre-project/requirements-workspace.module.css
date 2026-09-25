@@ -1,0 +1,212 @@
+.workspace { display:grid; grid-template-columns:180px minmax(0,1fr); gap:24px; min-block-size:60vh; }
+.rooms { display:flex; flex-direction:column; gap:5px; padding-inline-end:16px; border-inline-end:1px solid var(--wd-color-structural-divider); }
+.rooms strong { font-size:11px; color:var(--wd-color-text-secondary); margin:8px; text-transform:uppercase; letter-spacing:.08em; }
+.rooms button { display:flex; align-items:center; justify-content:space-between; gap:8px; border:0; border-radius:6px; padding:10px; background:transparent; color:var(--wd-color-text-secondary); text-align:start; font:inherit; font-size:12px; cursor:pointer; }
+.rooms button[aria-pressed=true] { background:var(--wd-color-action-primary-subtle); color:var(--wd-color-text); font-weight:600; }
+.rooms button:hover { background:var(--wd-color-surface-hover); }
+.rooms small { font-size:10px; }
+.main { min-inline-size:0; }
+.heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-block-end:14px; }
+.heading h2 { font-size:16px; margin:0; }
+.heading p { font-size:12px; color:var(--wd-color-text-secondary); margin:4px 0 0; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; }
+.cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; padding-block:14px; }
+.card { display:flex; flex-direction:column; background:var(--wd-color-surface-muted); border-radius:10px; overflow:hidden; min-inline-size:0; }
+.photo { position:relative; aspect-ratio:16/10; background:var(--wd-color-surface-hover); }
+.photo img { width:100%; height:100%; object-fit:cover; }
+.photo button { position:absolute; inset-inline-end:10px; bottom:10px; }
+.body { padding:14px; display:flex; flex-direction:column; gap:9px; flex:1; }
+.meta { display:flex; justify-content:space-between; gap:8px; font-size:10px; color:var(--wd-color-text-secondary); }
+.title { font:inherit; font-size:14px; font-weight:600; color:var(--wd-color-text); background:none; border:0; padding:0; text-align:start; cursor:pointer; }
+.note { font-size:12px; line-height:1.6; color:var(--wd-color-text-secondary); margin:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.footer { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-block-start:auto; font-size:11px; color:var(--wd-color-text-secondary); }
+.empty { padding:50px 20px; text-align:center; color:var(--wd-color-text-secondary); font-size:13px; }
+.workspace button:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
+@media(max-width:700px) { .workspace { grid-template-columns:1fr; gap:12px; } .rooms { flex-direction:row; overflow:auto; border:0; padding:0; } .rooms strong { display:none; } .rooms button { flex-shrink:0; } .heading { flex-wrap:wrap; } }
+
+/* Let real requirement content fill the workspace, even for a single item. */
+.workspace { grid-template-columns:160px minmax(0,1fr); gap:20px; min-block-size:0; }
+.heading { margin-block-end:8px; }
+.cards { grid-template-columns:minmax(0,1fr); gap:12px; padding-block:12px; }
+.card { display:grid; grid-template-columns:minmax(0,1fr); border-radius:8px; }
+.card:has(.photo) { grid-template-columns:minmax(220px,32%) minmax(0,1fr); }
+.photo { aspect-ratio:auto; min-block-size:220px; }
+.photo img { position:absolute; inset:0; object-fit:contain; }
+.body { padding:18px 20px; gap:12px; }
+.title { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:16px; }
+.title span { font-size:11px; font-weight:400; color:var(--wd-color-action-primary); white-space:nowrap; }
+.note { display:block; font-size:14px; line-height:1.7; white-space:pre-wrap; color:var(--wd-color-text); }
+.meta { font-size:12px; }
+.footer { padding-block-start:10px; border-block-start:1px solid var(--wd-color-structural-divider); font-size:12px; }
+.attachments { display:flex; gap:8px; flex-wrap:wrap; }
+.attachments a { display:inline-flex; align-items:center; gap:6px; padding:8px 10px; border-radius:5px; background:var(--wd-color-surface); color:var(--wd-color-text); font-size:12px; text-decoration:none; }
+@media(max-width:700px) { .workspace { grid-template-columns:1fr; } .card:has(.photo) { grid-template-columns:1fr; } .photo { min-block-size:200px; } .body { padding:14px; } .title { align-items:flex-start; } }
+
+/* Masonry columns keep each requirement at its natural content height. */
+.cards { display:block; columns:2 360px; column-gap:16px; }
+.card, .card:has(.photo) { display:flex; flex-direction:column; break-inside:avoid; margin-block-end:16px; inline-size:100%; }
+.photo { aspect-ratio:16/10; min-block-size:0; }
+.photo img { position:static; display:block; object-fit:contain; }
+.title { flex-wrap:wrap; }
+.empty { column-span:all; }
+@media(min-width:1700px) { .cards { column-count:3; } }
+@media(max-width:700px) { .cards { columns:1; } .photo { min-block-size:0; } }
+
+/* A single accessible card action opens the existing details dialog. */
+.card { position:relative; background:var(--wd-color-surface-muted); border:1px solid var(--wd-color-structural-divider); border-radius:10px; transition:border-color .15s ease; }
+.card:hover { border-color:var(--wd-color-action-primary); }
+.card:focus-within { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; }
+.body { padding:16px; gap:10px; }
+.meta { font-size:11px; align-items:center; }
+.meta > span:last-child { padding:3px 7px; border-radius:4px; background:var(--wd-color-surface); }
+.title { font-size:15px; line-height:1.45; font-weight:600; }
+.title::after { content:''; position:absolute; inset:0; z-index:1; cursor:pointer; }
+.title:focus-visible { outline:none !important; }
+.note { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; white-space:pre-line; font-size:13px; line-height:1.6; color:var(--wd-color-text-secondary); }
+.footer { border:0; padding-block-start:4px; font-size:11px; }
+.photo { max-block-size:220px; overflow:hidden; }
+.photo button { z-index:2; }
+@media(prefers-reduced-motion:reduce) { .card { transition:none; } }
+
+.card .title { font-size:17px; font-weight:650; line-height:1.4; color:var(--wd-color-text); letter-spacing:-.015em; }
+.meta > span:first-child { font-size:11px; font-weight:600; letter-spacing:.025em; }
+.meta > span:last-child { font-size:10px; font-weight:600; padding:4px 8px; }
+.meta > span[data-status="included"] { color:var(--wd-color-success); background:var(--wd-color-success-subtle); }
+.meta > span[data-status="undecided"] { color:var(--wd-color-warning); background:var(--wd-color-warning-subtle); }
+.card .note { font-size:13px; font-weight:400; line-height:1.65; }
+.footer > span:last-child { color:var(--wd-color-action-primary); font-weight:600; }
+
+/* Quiet, compact canvas without repeated page headings or region dividers. */
+.workspace { grid-template-columns:144px minmax(0,1fr); gap:16px; }
+.rooms { border:0; padding-inline-end:0; gap:3px; }
+.rooms button { padding:8px 10px; min-block-size:32px; }
+.heading { margin-block-end:4px; min-block-size:30px; }
+.readOnly { color:var(--wd-color-text-secondary); font-size:11px; }
+.cards { column-gap:12px; padding-block:8px; }
+.card, .card:has(.photo) { margin-block-end:12px; }
+.body { padding:14px; gap:8px; }
+.footer { border:0; padding-block-start:2px; }
+@media(max-width:700px) { .workspace { grid-template-columns:1fr; gap:8px; } }
+
+.rooms { border-inline-end:1px solid var(--wd-color-structural-divider); padding-inline-end:12px; }
+.toolbar { border-block-end:1px solid var(--wd-color-structural-divider); padding-block-end:12px; margin-block-end:4px; }
+@media(max-width:700px) { .rooms { border-inline-end:0; border-block-end:1px solid var(--wd-color-structural-divider); padding:0 0 8px; } }
+
+/* Structural lines reach the canvas edges; content keeps its own inset. */
+.workspace { gap:0; min-block-size:calc(100dvh - 112px); }
+.rooms { padding:12px 8px; border-inline-end:1px solid var(--wd-color-structural-divider); }
+.main { padding:0; }
+.heading { padding:8px 12px 0; margin:0; }
+.workspace .toolbar { padding:8px 12px; margin:0; border-block-end:1px solid var(--wd-color-structural-divider); }
+.cards { padding:12px; }
+@media(max-width:700px) { .workspace { min-block-size:0; } .rooms { padding:8px; border-inline-end:0; } }
+
+.rooms :global(.wd-button[data-variant="primary"]) { justify-content:center; margin-block-start:10px; background:var(--wd-color-action-primary); color:var(--wd-color-action-on-primary); font-weight:600; gap:6px; }
+.rooms :global(.wd-button[data-variant="primary"]:disabled) { opacity:.5; cursor:not-allowed; }
+
+/* Room filters sit above the full-width board. */
+.workspace { display:flex; flex-direction:column; gap:0; min-block-size:0; }
+.rooms { flex-direction:row; align-items:center; gap:4px; padding:0 12px; overflow-x:auto; border-inline-end:0; border-block-end:1px solid var(--wd-color-structural-divider); }
+.rooms button { flex-shrink:0; white-space:nowrap; min-block-size:42px; }
+.rooms button[aria-pressed] { position:relative; border-radius:0; padding:10px 12px; gap:8px; background:transparent; }
+.rooms button[aria-pressed=true] { color:var(--wd-color-action-primary); background:transparent; }
+.rooms button[aria-pressed=true]::after { content:''; position:absolute; inset-inline:10px; bottom:0; height:2px; background:var(--wd-color-action-primary); border-radius:2px; }
+.rooms small { padding:2px 5px; border-radius:4px; background:var(--wd-color-surface-muted); }
+.rooms :global(.wd-button[data-variant="primary"]) { margin-block:6px; margin-inline-start:auto; min-block-size:30px; }
+.main { inline-size:100%; }
+
+.blockedAction { position:relative; display:inline-flex; }
+.blockedAction:has(button:disabled) > button { pointer-events:none; }
+.blockedTip { display:none; position:absolute; inset-block-start:calc(100% + 6px); inset-inline-end:0; z-index:100; inline-size:220px; padding:9px 11px; border-radius:6px; background:var(--wd-color-text); color:var(--wd-color-surface); font-size:12px; font-weight:400; line-height:1.5; white-space:normal; box-shadow:0 4px 16px #0002; }
+.blockedAction:hover > .blockedTip, .blockedAction:focus-visible > .blockedTip { display:block; }
+.rooms .blockedAction { margin-inline-start:auto; flex-shrink:0; }
+.rooms { overflow:visible; flex-wrap:wrap; }
+@media(max-width:700px) { .blockedTip { inline-size:190px; } }
+
+/* Rooms use a compact vertical rail beside the requirements board. */
+.workspace { display:grid; grid-template-columns:160px minmax(0,1fr); gap:0; min-block-size:calc(100dvh - 112px); }
+.rooms { flex-direction:column; flex-wrap:nowrap; align-items:stretch; padding:10px 8px; border-block-end:0; border-inline-end:1px solid var(--wd-color-structural-divider); }
+.rooms button[aria-pressed] { min-block-size:34px; padding:8px 10px; border-radius:5px; }
+.rooms button[aria-pressed=true] { background:var(--wd-color-action-primary-subtle); font-weight:600; }
+.rooms button[aria-pressed=true]::after { display:none; }
+.rooms .blockedAction { margin-inline-start:0; margin-block-start:8px; display:flex; }
+.rooms .blockedAction > button { inline-size:100%; margin:0; }
+.rooms .blockedTip { inset-inline-start:0; inset-inline-end:auto; }
+.rooms > button { justify-content:flex-start; }
+.rooms > button[aria-pressed] { justify-content:space-between; }
+@media(max-width:700px) { .workspace { grid-template-columns:128px minmax(0,1fr); } .rooms { padding:8px 4px; } .rooms button[aria-pressed] { white-space:normal; text-align:start; font-size:11px; padding:8px; } .cards { columns:1; } }
+.detailFacts { display:flex; flex-wrap:wrap; gap:16px 32px; margin:0; }
+.detailFacts dt { font-size:11px; color:var(--wd-color-text-secondary); }
+.detailFacts dd { margin:4px 0 0; font-size:13px; font-weight:600; }
+.detailSection { margin-block:16px; }
+.detailSection h3 { font-size:12px; margin:0 0 8px; }
+.detailSection p { font-size:14px; line-height:1.6; white-space:pre-wrap; margin:0; }
+
+/* A single workspace: rooms filter the content instead of adding a second sidebar. */
+.workspace { display:block; }
+.heading { padding:18px 20px 12px; margin:0; }
+.roomFilter { flex:0 1 180px; min-inline-size:140px; }
+.roomFilter :global(.wd-field-label) { display:none; }
+@media(max-width:700px) { .heading { padding:14px 12px; }.roomFilter { flex:1 1 140px; } }
+
+.rowSummary { display:flex; flex-direction:column; gap:3px; min-inline-size:0; padding-block:5px; }
+.rowSummary strong { font-weight:600; }
+.rowSummary span { font-size:12px; color:var(--wd-color-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-inline-size:290px; }
+
+/* A notes board with stable, quiet colours and natural card heights. */
+.cards { display:block; columns:4 220px; column-gap:16px; padding:16px 20px; }
+.card { break-inside:avoid; margin-block-end:16px; background:color-mix(in srgb,#d9b347 15%,var(--wd-color-surface)); border-radius:12px; }
+.card[data-tone="1"] { background:color-mix(in srgb,#639884 15%,var(--wd-color-surface)); }
+.card[data-tone="2"] { background:color-mix(in srgb,#829cc7 15%,var(--wd-color-surface)); }
+.card[data-tone="3"] { background:color-mix(in srgb,#b38abd 15%,var(--wd-color-surface)); }
+.card[data-tone="4"] { background:color-mix(in srgb,#ce9271 15%,var(--wd-color-surface)); }
+.card .body { padding:18px; gap:12px; }
+.card .note { -webkit-line-clamp:8; font-size:13px; }
+.card .title { font-size:15px; line-height:1.45; }
+.card .footer { padding-block-start:8px; }
+.cards > .empty { column-span:all; }
+@media(max-width:700px) { .cards { columns:2 180px; padding:12px; column-gap:12px; } }
+@media(max-width:430px) { .cards { columns:1; } }
+
+.cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); columns:auto; gap:16px; }
+.card { block-size:260px; margin:0; }
+.card .body { min-block-size:0; overflow:hidden; gap:10px; }
+.card .title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; flex-shrink:0; }
+.card .note { -webkit-line-clamp:3; flex-shrink:1; min-block-size:0; }
+.card .footer { flex-shrink:0; margin-block-start:auto; }
+.attachmentStrip { display:flex; align-items:center; gap:5px; overflow:hidden; flex-shrink:0; }
+.attachmentStrip button { display:flex; align-items:center; gap:4px; min-inline-size:0; max-inline-size:76px; flex:1; border:0; border-radius:5px; padding:3px; background:color-mix(in srgb,var(--wd-color-surface) 60%,transparent); color:var(--wd-color-text-secondary); cursor:pointer; }
+.attachmentStrip img { border-radius:3px; object-fit:cover; flex-shrink:0; }
+.attachmentStrip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
+.moreAttachments { flex-shrink:0; }
+.cards > .empty { grid-column:1/-1; }
+@media(max-width:1150px) { .cards { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:850px) { .cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:430px) { .cards { grid-template-columns:minmax(0,1fr); } }
+
+.card .meta :global(.wd-button) { min-block-size:24px; block-size:24px; padding:2px 6px; font-size:10px; border:0; background:color-mix(in srgb,var(--wd-color-surface) 65%,transparent); }
+
+/* Keep card controls above its broad title target. */
+.card .meta, .card .attachmentStrip, .card .footer { position:relative; z-index:2; }
+.card .footer :global(.wd-button) { min-block-size:28px; padding:4px 6px; font-size:11px; }
+.measurementPreview { min-block-size:0; overflow:hidden; }
+.measurementPreview > div { margin-block:0; padding-block-start:6px; }
+
+.reviewState { font-size:10px; color:var(--wd-color-text-secondary); }
+.reviewState[data-reviewed=true] { color:var(--wd-color-success); }
+
+/* Compact project capture: one row, with matching control heights. */
+.compact .toolbar { padding:0; margin:0; border:0; gap:8px; flex-wrap:wrap; }
+.compact .toolbar > :global(.wd-search-field) { flex:0 1 220px; min-inline-size:140px; max-inline-size:220px; }
+.compact .roomFilter { flex:0 1 180px; min-inline-size:140px; }
+.compact .captureActions { margin-inline-start:auto; }
+.compact .toolbar :is(:global(.wd-search-field),:global(.wd-select-button),:global(.wd-button)) { block-size:32px; min-block-size:32px; border-radius:6px; font-size:12px; }
+.compact .toolbar :global(.wd-search-field) > button { block-size:30px; min-block-size:30px; inline-size:30px; }
+.compact .toolbar :global(.wd-input) { min-block-size:0; font-size:12px; }
+.compact .toolbar :global(.wd-search-field) { border:1px solid color-mix(in srgb,var(--wd-color-action-primary) 45%,var(--wd-color-surface)); }
+.compact .toolbar :global(.wd-search-field):hover { border-color:var(--wd-color-action-primary); }
+.compact .toolbar :global(.wd-search-field):focus-within { border-color:var(--wd-color-action-primary); outline:2px solid color-mix(in srgb,var(--wd-color-action-primary) 20%,transparent); outline-offset:1px; }
+.compact .roomFilter :global(.wd-field) { gap:0; }
+.compact .cards { padding-inline:0; }
+.srOnly { position:absolute; inline-size:1px; block-size:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+@media(pointer:coarse) { .compact .toolbar :is(:global(.wd-search-field),:global(.wd-select-button),:global(.wd-button)) { block-size:44px; min-block-size:44px; } }

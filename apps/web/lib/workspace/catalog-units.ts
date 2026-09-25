@@ -2,6 +2,7 @@ import type { CatalogRecord } from "./catalog";
 export const baseUnitNames:Record<string,string>={length:"metres",area:"square metres",volume:"cubic metres",mass:"kilograms",count:"each",time:"hours"};
 export function unitMeaning(unit:CatalogRecord) {
  if(unit.dimension==="pack")return "Product-specific pack · define its quantity in the material’s Sizes & packs.";
+ if(unit.dimension==="reference")return "Technical reference unit · no quantity conversion is defined.";
  return `1 ${unit.name||"unit"} = ${unit.baseFactor??"…"} ${baseUnitNames[unit.dimension]??unit.dimension}`;
 }
 /** Conversion is defined by dimension and factors, never by tenant-facing names. */

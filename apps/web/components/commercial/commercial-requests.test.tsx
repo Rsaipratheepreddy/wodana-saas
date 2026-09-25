@@ -19,14 +19,14 @@ it("creates a controlled replacement from remaining accepted scope", async () =>
   } as unknown as CommercialState;
   const run = vi.fn().mockResolvedValue(true);
   render(<CommercialRequests state={state} run={run} busy={false} />);
-  fireEvent.click(screen.getByRole("button", { name: "New change case" }));
-  const dialog = screen.getByRole("dialog", { name: "New change case" });
+  fireEvent.click(screen.getByRole("button", { name: "New change request" }));
+  const dialog = screen.getByRole("dialog", { name: "New change request" });
   fireEvent.change(dialog.querySelector("select")!, { target: { value: "replacement" } });
-  expect(screen.getByRole("button", { name: "Create change case" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Create change request" })).toBeDisabled();
   fireEvent.click(screen.getByLabelText(/V1 · Bedroom · Wardrobe/));
   fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Replace wardrobe" } });
   fireEvent.change(screen.getByLabelText("What needs to change or be clarified?"), { target: { value: "Use oak finish" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create change case" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create change request" }));
   await waitFor(() => expect(run).toHaveBeenCalledWith("create_change_case", expect.objectContaining({
     kind: "replacement", sourceLineIds: ["line"], title: "Replace wardrobe", detail: "Use oak finish",
   })));

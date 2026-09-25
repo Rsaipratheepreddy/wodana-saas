@@ -3,60 +3,47 @@ import { expect, test, type Page } from "@playwright/test";
 async function signIn(page: Page) {
   await page.goto("/workspace/projects");
   await page.context().addCookies([{ name: "wodana_access", value: "local-e2e-fixture", url: new URL(page.url()).origin }]);
-  await expect(page.getByRole("table", { name: "Projects" })).toBeVisible();
+  await page.goto("/workspace/projects");
+  await expect(page.getByRole("table", { name: "Client projects" })).toBeVisible();
 }
 
-test("project table opens the backend-guided workspace and its sections", async ({ page }, testInfo) => {
+test("production opens the project workspace and its delivery sections", async ({ page }) => {
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", error => errors.push(error.message));
   await signIn(page);
-  await page.goto("/workspace/projects");
-  await expect(page.getByRole("table", { name: "Projects" })).toBeVisible();
-  await page.getByRole("button", { name: "Jumeirah villa interiors" }).click();
-  await expect(page).toHaveURL("/workspace/projects/demo/overview");
-  await expect(page.getByRole("heading", { level: 1, name: "Jumeirah villa interiors" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Next actions/ })).toBeVisible();
+  await page.getByRole("navigation", { name: "Project sections" }).getByRole("link", { name: "Production" }).click();
+  await expect(page).toHaveURL("/workspace/projects?view=production");
+  await page.getByRole("table", { name: "Client projects" }).getByRole("link", { name: "Jumeirah villa interiors" }).click();
+  await expect(page).toHaveURL(/\/workspace\/projects\/demo\/overview(?:\?|$)/);
+  await expect(page.getByRole("region", { name: "Project items workspace" })).toBeVisible();
 
-  const mobile = testInfo.project.name === "mobile";
-  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  const root = "/workspace/projects/demo";
   for (const [name, section] of [
-    ["Scope & Design", "documents"], ["BOQ", "boq"], ["Material planning", "material-planning"],
-    ["Procurement", "procurement"], ["Schedules", "plan-teams"], ["Production", "production"],
-    ["Onsite execution", "site-work"], ["Daily progress", "daily-progress"],
-    ["Snagging & warranty", "snagging"], ["Handover", "handover"],
-    ["Budget", "commercial"], ["Dashboard", "overview"],
+    ["Supply", "material-planning"],
+    ["Work", "plan-teams"],
+    ["Quality & handover", "handover"],
+    ["Budget & payments", "commercial"],
+    ["Files", "documents"],
+    ["Project", "overview"],
   ] as const) {
-    if (mobile) await page.getByRole("button", { name: "Open navigation" }).click();
-    await navigation.getByRole("link", { name, exact: true }).click();
-    await expect(page).toHaveURL(`/workspace/projects/demo/${section}`);
-    await expect(page.getByRole("heading", { level: 1, name: "Jumeirah villa interiors" })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.getByRole("navigation", { name: "Project sections" }).getByRole("link", { name, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${root}/${section}(?:\\?|$)`));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   }
-
-  await page.getByRole("link", { name: "All projects" }).click();
-  await expect(page).toHaveURL("/workspace/projects");
-  await expect(page.getByRole("table", { name: "Projects" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("module switcher opens Projects and shared table search has a real empty state", async ({ page }, testInfo) => {
+test("planning and production lists preserve distinct projects and a useful empty search", async ({ page }) => {
   await signIn(page);
-  await page.goto("/workspace/pre-projects");
-  await expect(page.getByRole("table")).toBeVisible();
-  if (testInfo.project.name === "mobile") {
-    await page.getByRole("button", { name: "Switch module. Current: Pre-execution" }).click();
-    await page.getByRole("dialog", { name: "Choose module" }).getByRole("link", { name: /Projects/ }).click();
-  } else {
-    const modules = page.getByRole("navigation", { name: "Modules" });
-    await expect(modules.getByRole("link", { name: "Pre-execution" })).toHaveAttribute("aria-current", "page");
-    await modules.getByRole("link", { name: "Projects" }).click();
-  }
-  await expect(page).toHaveURL("/workspace/projects");
-  await expect(page.getByRole("table", { name: "Projects" })).toBeVisible();
+  const table = page.getByRole("table", { name: "Client projects" });
+  await expect(table.getByRole("link", { name: "Villa interiors", exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Project sections" }).getByRole("link", { name: "Production" }).click();
+  await expect(table.getByRole("link", { name: "Villa interiors", exact: true })).toHaveCount(0);
+  await expect(table.getByRole("link", { name: "Jumeirah villa interiors" })).toBeVisible();
   const search = page.getByRole("searchbox", { name: "Search projects" });
   await search.fill("__no_matching_project__");
-  await expect(page.getByText("No matching projects", { exact: true })).toBeVisible();
+  await expect(page.getByText("No matching production projects", { exact: true })).toBeVisible();
   await search.fill("");
-  await expect(page.getByRole("button", { name: "Jumeirah villa interiors" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  await expect(table.getByRole("link", { name: "Jumeirah villa interiors" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 });

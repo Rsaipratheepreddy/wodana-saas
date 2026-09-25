@@ -61,11 +61,12 @@ export function releasePaymentIsOperational(payment: Payment) {
 export function financeGatePaymentsReady(
   data: CommercialData,
   gate: "release" | "production",
+  quoteId?: string,
 ) {
   const required = data.payments.filter((payment) =>
-    gate === "release"
+    (!quoteId || payment.sourceQuoteId === quoteId) && (gate === "release"
       ? payment.requiredForRelease
-      : payment.requiredForProduction === true,
+      : payment.requiredForProduction === true),
   );
   // H2 exists for every released contract. H3 applies only when the accepted
   // schedule explicitly names a production-start milestone.
@@ -75,6 +76,18 @@ export function financeGatePaymentsReady(
       releasePaymentIsOperational(payment) &&
       paymentHasFinanceVerifiedReceipt(data, payment),
   );
+}
+
+/** Palm design starts only after at least AED 15,000 is actually received. */
+export function palmDesignDepositReady(data: CommercialData, quote: Quote) {
+  if (quote.round !== "design" || quote.currency !== "AED" ||
+      !financeGatePaymentsReady(data, "release", quote.id)) return false;
+  const paid = data.payments
+    .filter(payment => payment.sourceQuoteId === quote.id && payment.requiredForRelease &&
+      payment.currency === "AED" && releasePaymentIsOperational(payment) &&
+      paymentHasFinanceVerifiedReceipt(data, payment))
+    .reduce((total, payment) => total + payment.amount, 0);
+  return Math.round(paid * 100) >= 1_500_000;
 }
 
 export function variationReleasePaymentsReady(
@@ -189,6 +202,14 @@ export function ownerReviewInputsReady(data: CommercialData, quote: Quote) {
   );
 }
 
+/** A selected material-list stage needs a real client decision, not an empty vacuous pass. */
+export function palmMaterialListSignedOff(data: CommercialData, quote: Quote) {
+  if (!data.palmFlow?.scope.materialSelection)
+    return true;
+  return quotationApprovalSources(quote).length > 0 &&
+    materialApprovalsComplete(quote, data.materialApprovals);
+}
+
 /** Exact approved selection revisions that cross the commercial release boundary. */
 export function approvedMaterialEvidence(
   quote: Quote,
@@ -225,9 +246,9 @@ export function sameMaterialEvidence(
 }
 
 export function commercialReleaseInputsReady(data: CommercialData | null | undefined) {
-  const quote = data?.quotes.find(
-    (candidate) => candidate.kind === "quotation" && candidate.status === "accepted",
-  );
+  const quote = data?.palmFlow
+    ? data.quotes.find(candidate => candidate.kind === "quotation" && candidate.round === "main" && candidate.status === "accepted")
+    : data?.quotes.find(candidate => candidate.kind === "quotation" && candidate.status === "accepted");
   if (
     !data ||
     !quote ||
@@ -238,11 +259,14 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     data.dealFile.quoteId !== quote.id ||
     data.ownerReview?.status !== "approved" ||
     data.ownerReview.quoteId !== quote.id ||
-    !materialApprovalsComplete(quote, data.materialApprovals)
+    !data.ownerReview.financeReviewedById ||
+    !data.dealFile.paymentProofUrl ||
+    !data.dealFile.commissionLines?.length ||
+    !(data.palmFlow ? palmMaterialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;
   return (
-    financeGatePaymentsReady(data, "release") &&
+    financeGatePaymentsReady(data, "release", data.palmFlow ? quote.id : undefined) &&
     data.requests.every((request) =>
       ["resolved", "declined", "withdrawn"].includes(request.status),
     )

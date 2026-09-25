@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {projectMemberRecipientsSql} from './project-member-access';
 import { Injectable, Logger } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
@@ -127,7 +128,7 @@ export class ProjectNotificationsService {
       reviewers.rows.forEach((row) => people.add(row.membership_id));
     }
     const recipients = await ctx.client.query<{ id: string; user_id: string }>(
-      `SELECT m.id,m.user_id FROM workspace_memberships m JOIN project_assignments a ON a.membership_id=m.id AND a.workspace_id=m.workspace_id WHERE m.workspace_id=$1 AND a.project_id=$2 AND a.active AND m.status='active' AND m.id=ANY($3::uuid[])`,
+      projectMemberRecipientsSql,
       [
         ctx.workspaceId,
         projectId,

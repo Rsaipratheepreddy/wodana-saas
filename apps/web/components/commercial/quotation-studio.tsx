@@ -30,6 +30,7 @@ import { QuotationBaseSettings } from "./quotation-base-settings";
 import { QuotationSheet } from "./quotation-sheet";
 import { QuotationRoomDialog } from "./quotation-room-dialog";
 import { QuotationAiPanel } from "./quotation-ai-panel";
+import { QuotationPulse, QuotationQuickAdd, pulseFilterPredicate, type PulseFilter } from "./quotation-pulse";
 import { QuotationCanvas, QuotationCanvasPreview } from "./quotation-canvas";
 import { QuotationTextCell } from "./quotation-text-cell";
 import { applyQuoteCatalogMedia } from "@/lib/commercial/quotation-table";
@@ -72,6 +73,7 @@ function Studio({
     [requestDialog, setRequestDialog] = useState(false),
     [search, setSearch] = useState(""),
     [mode, setMode] = useState<"items" | "design">(initialMode),
+    [pulseFilter, setPulseFilter] = useState<PulseFilter>("all"),
     [itemDialog, setItemDialog] = useState(false);
   const [analysis, setAnalysis] = useState<QuotationAnalysis | null>(null);
   const [review, setReview] = useState(false);
@@ -235,6 +237,7 @@ function Studio({
         </div>
         <span>Build scope and pricing</span>
       </div> : null}
+      {mode === "items" ? <QuotationPulse canViewCosts={Boolean(costing)} filter={pulseFilter} onFilter={setPulseFilter} quote={quote} /> : null}
       {mode === "design" ? (
         <QuotationCanvas
           quote={quote}
@@ -431,6 +434,7 @@ function Studio({
                 />
               </div>
             )}
+            {!readOnly && quote.direction !== "deduction" ? <QuotationQuickAdd disabled={quote.lines.length >= 300} onAdd={(line) => patch({ lines: [...quote.lines, line] })} quote={quote} rooms={rooms} /> : null}
             <QuotationSheet
               quote={quote}
               onChange={change}
@@ -440,6 +444,7 @@ function Studio({
               canOverridePrice={Boolean(state.canOverridePrice)}
               canViewCosts={Boolean(costing)}
               search={search}
+              lineFilter={pulseFilterPredicate(pulseFilter)}
               brand={quote.brand ?? state.portalBrand}
             />
             {!readOnly && quote.direction !== "deduction" && (
@@ -451,7 +456,7 @@ function Studio({
           </div>
           <footer className={s.totalBar}>
             <span>
-              {rooms.length} areas · {quote.lines.length} items
+              {rooms.length} areas · {quote.lines.length} items{pulseFilter !== "all" ? " · filtered" : ""}
             </span>
             <div>
               <small>Quotation total</small>

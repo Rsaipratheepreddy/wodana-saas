@@ -294,8 +294,8 @@ export function QuotationEditor({
                   </select>
                 </label>
               </div>
-              <details>
-                <summary>Terms, exclusions & linked requests</summary>
+              <section>
+                <h3>Terms, exclusions & linked requests</h3>
                 <div className={`${colors.theme} ${s.form}`}>
                   <label>
                     Terms & payment expectations
@@ -339,7 +339,7 @@ export function QuotationEditor({
                       </label>
                     ))}
                 </div>
-              </details>
+              </section>
             </div>
             <dl className={s.summary}>
               <div>

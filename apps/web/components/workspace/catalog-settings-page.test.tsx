@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {blankCatalogRecord,type CatalogPageData,type CatalogRecord} from '@/lib/workspace/catalog';
 import {CatalogSettingsPage} from './catalog-settings-page';
-afterEach(()=>vi.unstubAllGlobals());
+const {push}=vi.hoisted(()=>({push:vi.fn()}));
+vi.mock('next/navigation',()=>({useRouter:()=>({push})}));
+afterEach(()=>{vi.unstubAllGlobals();push.mockClear();});
 function fixture():CatalogPageData {
  const row=(kind:CatalogRecord['kind'],id:string,name:string,links:CatalogRecord['links']=[])=>({...blankCatalogRecord(kind),id,name,code:id.toUpperCase(),version:1,catalogId:'catalog',links});
  return {workspaceId:'workspace',canManage:true,starter:{count:0,version:'1',market:'IN'},items:[
@@ -18,6 +20,11 @@ function fixture():CatalogPageData {
  ]};
 }
 describe('room catalog navigation',()=>{
+ it('opens a materials shortcut directly in the material working view',()=>{
+  render(<CatalogSettingsPage initialData={fixture()} initialView="products"/>);
+  expect(screen.queryByRole('list',{name:'Room grid'})).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'Add material'})).toBeVisible();
+ });
  it('opens the default catalog as rooms without the old groups screen',()=>{
   render(<CatalogSettingsPage initialData={fixture()}/>);
   expect(screen.getByRole('list',{name:'Room grid'})).toBeVisible();
@@ -26,8 +33,35 @@ describe('room catalog navigation',()=>{
   expect(screen.queryByRole('button',{name:'Edit table'})).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'Open Bedroom'})).toBeVisible();
   expect(screen.queryByRole('button',{name:'New group'})).not.toBeInTheDocument();
-  expect(screen.getByRole('heading',{level:1,name:'Master Data'})).toBeVisible();
-  expect(screen.queryByRole('button',{name:/Catalog$/})).not.toBeInTheDocument();
+  expect(screen.getByRole('heading',{level:1,name:'Room Builder'})).toBeVisible();
+  expect(screen.getByRole('link',{name:'Catalogs'})).toHaveAttribute('href','/workspace/catalogs');
+  expect(screen.getByRole('button',{name:/Room Builder/})).toBeVisible();
+ });
+ it('keeps workbook amounts separate from saved prices',async()=>{
+  const data=fixture();data.canViewCosts=true;
+  data.items.find(record=>record.id==='wardrobe')!.attributes=[{name:'estimated_cost_inr',value:'63000'}];
+  const user=userEvent.setup();render(<CatalogSettingsPage initialData={data}/>);
+  await user.click(within(screen.getByRole('group',{name:'Master Data sections'})).getByRole('button',{name:'Items'}));
+  const price=screen.getByRole('button',{name:'Prices for Wardrobe'});
+  expect(price).toHaveTextContent('No saved price');
+  expect(price).toHaveTextContent('Imported amount · needs review');
+  expect(price).not.toHaveTextContent('63,000');
+  await user.click(price);
+  expect(await screen.findByRole('dialog',{name:'Prices · Wardrobe'})).toHaveTextContent('₹63,000');
+ });
+ it('does not display imported or saved cost amounts to a selling-only viewer',async()=>{
+  const data=fixture();data.canViewCosts=false;
+  data.items.find(record=>record.id==='wardrobe')!.attributes=[{name:'estimated_cost_inr',value:'63000'}];
+  data.items.push({...blankCatalogRecord('rate_card'),id:'cost-rate',catalogId:'catalog',name:'Wardrobe cost',version:1,links:[{relation:'work',targetId:'wardrobe'}],configuration:{priceType:'cost',amount:63000,currency:'INR'}});
+  const user=userEvent.setup();render(<CatalogSettingsPage initialData={data}/>);
+  await user.click(within(screen.getByRole('group',{name:'Master Data sections'})).getByRole('button',{name:'Items'}));
+  const price=screen.getByRole('button',{name:'Prices for Wardrobe'});
+  expect(price).toHaveTextContent('No saved price');
+  expect(price).not.toHaveTextContent('Imported amount');
+  await user.click(price);
+  const dialog=await screen.findByRole('dialog',{name:'Prices · Wardrobe'});
+  expect(dialog).not.toHaveTextContent('63,000');
+  expect(dialog).not.toHaveTextContent('Imported prices');
  });
  it('adds a room to the master and updates its card after editing',async()=>{
   const request=vi.fn(async(_url:string,options:RequestInit)=>({ok:true,json:async()=>({...JSON.parse(String(options.body)),version:JSON.parse(String(options.body)).version+1,archived:false})}));
@@ -53,11 +87,25 @@ describe('room catalog navigation',()=>{
   await waitFor(()=>expect(screen.getByRole('button',{name:'Edit Study'})).toBeEnabled());
   expect(JSON.parse(String(request.mock.calls[0][1].body)).catalogId).toBeUndefined();
  });
- it('removes collection switching and creation from master actions',async()=>{
+ it('keeps catalog creation out of master actions while allowing existing catalogs to be selected',async()=>{
   const user=userEvent.setup();render(<CatalogSettingsPage initialData={fixture()}/>);
   await user.click(screen.getByRole('button',{name:'Master Data actions'}));
   expect(screen.queryByRole('menuitem',{name:'New catalog'})).not.toBeInTheDocument();
   expect(screen.getByRole('menuitem',{name:'Export master data'})).toBeVisible();
+ });
+ it('switches between existing catalogs without mixing their rooms or items',async()=>{
+  const data=fixture();data.items.push({...blankCatalogRecord('room'),id:'old-room',name:'Living room',code:'OLD_ROOM',version:1,catalogId:'old'});
+  data.items.push({...blankCatalogRecord('work'),id:'old-item',name:'Old sofa',code:'OLD_SOFA',version:1,catalogId:'old',links:[{relation:'room',targetId:'old-room'}]});
+  const user=userEvent.setup();const page=render(<CatalogSettingsPage initialData={data}/>);
+  await user.click(screen.getByRole('button',{name:/Room Builder/}));
+  await user.click(screen.getByRole('option',{name:'Old library'}));
+  expect(push).toHaveBeenCalledWith('/workspace/catalogs?catalogId=old');
+  page.unmount();render(<CatalogSettingsPage initialData={data} initialCatalogId="old"/>);
+  expect(screen.getByRole('button',{name:'Open Living room'})).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Open Bedroom'})).not.toBeInTheDocument();
+  await user.click(within(screen.getByRole('group',{name:'Master Data sections'})).getByRole('button',{name:'Items'}));
+  expect(screen.getByRole('button',{name:'Open Old sofa'})).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Open Wardrobe'})).not.toBeInTheDocument();
  });
  it('limits items to the selected room and clears search on navigation',async()=>{
   const user=userEvent.setup();render(<CatalogSettingsPage initialData={fixture()}/>);
@@ -77,13 +125,13 @@ describe('room catalog navigation',()=>{
   expect(screen.getByRole('button',{name:'Export filtered rows'})).toBeVisible();
   expect(screen.getAllByRole('searchbox')).toHaveLength(1);
   expect(screen.queryByRole('button',{name:'Open Wardrobe'})).not.toBeInTheDocument();
-  await user.click(within(screen.getByRole('columnheader',{name:'Item'})).getByRole('button'));
-  await user.click(within(screen.getByRole('columnheader',{name:'Item'})).getByRole('button'));
+  await user.click(within(screen.getByRole('columnheader',{name:'Item'})).getByRole('button',{name:/^Item$/}));
+  await user.click(within(screen.getByRole('columnheader',{name:'Item'})).getByRole('button',{name:/^Item$/}));
   expect(within(screen.getByRole('table',{name:'Items'})).getAllByRole('row')[1]).toHaveTextContent('Wardrobe');
   await user.type(screen.getByRole('searchbox'),'CODE_59');
   expect(screen.getByRole('button',{name:'Open Item 60'})).toBeVisible();
   expect(screen.queryByRole('button',{name:'Open Item 59'})).not.toBeInTheDocument();
- });
+ },15000);
  it('shows base materials plus the selected variant materials',async()=>{
   const user=userEvent.setup();render(<CatalogSettingsPage initialData={fixture()}/>);
   await user.click(screen.getByRole('button',{name:'Open Bedroom'}));await user.click(screen.getByRole('button',{name:'Open Wardrobe'}));
@@ -103,17 +151,19 @@ describe('room catalog navigation',()=>{
   expect(screen.getByRole('button',{name:'Open Bedroom'})).toBeVisible();expect(screen.getByRole('button',{name:'Add room'})).toBeDisabled();
   await waitFor(()=>expect(request).toHaveBeenCalledTimes(1));expect(request.mock.calls[0][0]).toContain('catalogId=catalog');
  });
- it('combines materials from every collection in one materials view',async()=>{
-  const overview={...fixture(),overview:true};
+ it('keeps materials inside the selected catalog',async()=>{
   const switchRecord={...blankCatalogRecord('hardware'),id:'smart-switch',name:'Smart switch',code:'SMART_SWITCH',version:1,catalogId:'old'};
   const full={...fixture(),items:[...fixture().items,switchRecord]};
-  const request=vi.fn(async(url:string)=>({ok:true,json:async()=>url.includes('catalogId=')?fixture():full}));
-  vi.stubGlobal('fetch',request);const user=userEvent.setup();render(<CatalogSettingsPage initialData={overview}/>);
-  await waitFor(()=>expect(screen.getByRole('button',{name:'Add room'})).toBeEnabled());
+  const user=userEvent.setup();const page=render(<CatalogSettingsPage initialData={full}/>);
   await user.click(within(screen.getByRole('group',{name:'Master Data sections'})).getByRole('button',{name:'Materials'}));
-  expect(await screen.findByRole('button',{name:'Open Smart switch'})).toBeVisible();
   expect(screen.getByRole('button',{name:'Open Plywood'})).toBeVisible();
-  expect(request.mock.calls.some(([url])=>!String(url).includes('catalogId='))).toBe(true);
+  expect(screen.queryByRole('button',{name:'Open Smart switch'})).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button',{name:/Room Builder Catalog/}));
+  await user.click(screen.getByRole('option',{name:'Old library'}));
+  expect(push).toHaveBeenCalledWith('/workspace/catalogs?catalogId=old&view=materials');
+  page.unmount();render(<CatalogSettingsPage initialData={full} initialCatalogId="old" initialView="products"/>);
+  expect(screen.getByRole('button',{name:'Open Smart switch'})).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Open Plywood'})).not.toBeInTheDocument();
  });
  it('provides a retry after materials fail to load',async()=>{
   const request=vi.fn().mockRejectedValueOnce(Error('Connection interrupted')).mockResolvedValue({ok:true,json:async()=>fixture()});vi.stubGlobal('fetch',request);

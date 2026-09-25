@@ -195,14 +195,15 @@ export function TodayJobsPage({ items, loadError }: { items: JobIdentityProjecti
     { id: "risk", label: "At risk", value: overview.risk, icon: ShieldCheck, tone: "warning" },
   ] as const;
 
-  return <Container as="section" className={styles.page} size="full">
+  return <Container as="section" className={`${styles.page} ${styles.todayPage}`} size="full">
     <Stack gap={5}>
-      <PageHeader
-        actions={<span className={styles.headerActions}><Button onPress={() => router.push("/workspace/crm/leads?create=true")} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Add enquiry</Button><Button onPress={() => router.push("/workspace/crm/jobs")} size="compact"><BriefcaseBusiness aria-hidden="true" size={14} />All Jobs<ArrowRight aria-hidden="true" size={14} /></Button></span>}
-        description={new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeZone: "Asia/Dubai" }).format(new Date())}
-        eyebrow="Your work"
-        title="Today"
-      />
+      <header className={styles.todayHeader}>
+        <p className={styles.todayDate}>{new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeZone: "Asia/Dubai" }).format(new Date())}</p>
+        <div className={styles.todayTitleRow}><div><h1>Today</h1><p>A little clarity for the day ahead.</p></div>
+          <Button onPress={() => router.push("/workspace/crm/leads?create=true")} size="compact" variant="primary"><Plus aria-hidden="true" size={15} />Add enquiry</Button>
+        </div>
+        <div className={styles.quickLinks}><Button onPress={() => router.push("/workspace/crm/jobs")} size="compact" variant="quiet"><BriefcaseBusiness aria-hidden="true" size={15} />All Jobs<ArrowRight aria-hidden="true" size={14} /></Button><Button onPress={() => router.push("/workspace/crm/follow-ups?view=schedule")} size="compact" variant="quiet"><CalendarClock aria-hidden="true" size={15} />Calendar</Button></div>
+      </header>
       {loadError ? <Callout title="Jobs could not be refreshed" tone="warning">{loadError}</Callout> : null}
       <div aria-label="Today's work summary" className={styles.metricGrid} role="region">
         {metrics.map((metric) => {

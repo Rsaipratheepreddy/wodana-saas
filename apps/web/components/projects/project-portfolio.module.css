@@ -1,14 +1,16 @@
-.page { display: grid; gap: var(--wd-space-5); padding-block: var(--wd-space-5) var(--wd-space-8); color: var(--wd-color-text); }
+.page { min-inline-size: 0; inline-size: 100%; min-block-size: 100%; padding: var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem); color: var(--wd-color-text); }
 .back { display: inline-flex; inline-size: fit-content; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
 .back:hover { color: var(--wd-color-link); }
 .back:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
 .heading { display: flex; align-items: baseline; gap: var(--wd-space-2); }
 .heading h1 { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); }
 .heading span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
-.metrics { display: flex; flex-wrap: wrap; gap: var(--wd-space-4) var(--wd-space-8); padding-block-end: var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.metrics > div { display: inline-flex; align-items: baseline; gap: var(--wd-space-2); }
-.metrics strong { font-size: var(--wd-text-md); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
-.metrics span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.metrics { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-phi-5); margin: 0; }
+.metrics > div { display: grid; gap: .1rem; }
+.metrics dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); }
+.metrics dd { margin: 0; font-size: var(--wd-text-xl); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); line-height: 1.15; }
+.metrics > div[data-tone="danger"] dd { color: var(--wd-color-danger); }
+.metrics > div[data-tone="attention"] dd { color: var(--wd-color-warning); }
 .projectName { display: block; overflow: hidden; font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .client { display: inline-flex; align-items: center; gap: var(--wd-space-2); white-space: nowrap; }
 .action { display: grid; gap: 2px; min-inline-size: 0; }
@@ -19,3 +21,65 @@
 .error { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
 .empty { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 @media (max-width: 40rem) { .page { gap: var(--wd-space-4); padding-block: var(--wd-space-4); } .metrics { gap: var(--wd-space-2) var(--wd-space-4); } }
+.viewSwitch { display:flex; justify-content:flex-end; margin-block-end:16px; }
+.cardToolbar { display:flex; align-items:end; flex-wrap:wrap; gap:12px; margin-block-end:24px; }
+.cardToolbar > :first-child { width: min(100%, 300px); }
+.cardToolbar > :last-child { margin-inline-start:auto; }
+.cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:18px; }
+.card { display:block; min-inline-size:0; padding:20px; border:1px solid var(--wd-color-border); border-radius:12px; background:var(--wd-color-surface); color:var(--wd-color-text); text-decoration:none; transition:border-color 120ms ease; }
+.card:hover { border-color:var(--wd-color-action-primary); }
+.card:focus-visible { outline:2px solid var(--wd-color-focus); outline-offset:3px; }
+.cardTop,.cardMeta,.progressLabel,.deadline { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.reference,.customer,.progressLabel,.deadline,.next > span,.next time { font-size:12px; color:var(--wd-color-text-secondary); }
+.card h2 { margin:16px 0 6px; font-size:16px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
+.customer { margin:0 0 22px; }
+.cardMeta { margin-block-end:24px; font-size:12px; flex-wrap:wrap; }
+.progressLabel { margin-block-end:8px; }
+.card progress { display:block; width:100%; height:5px; border:0; border-radius:4px; overflow:hidden; background:var(--wd-color-surface-muted); accent-color:var(--wd-color-action-primary); }
+.card progress::-webkit-progress-bar { background:var(--wd-color-surface-muted); }
+.card progress::-webkit-progress-value { background:var(--wd-color-action-primary); border-radius:4px; }
+.card progress::-moz-progress-bar { background:var(--wd-color-action-primary); }
+.deadline { margin-block:16px; }
+.deadline[data-overdue] > :last-child { color:var(--wd-color-danger); }
+.next { border-block-start:1px solid var(--wd-color-border); padding-block-start:14px; }
+.next p { margin:6px 0 0; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.emptyCards { display:grid; justify-items:center; gap:12px; padding:60px 16px; color:var(--wd-color-text-secondary); font-size:13px; }
+.emptyCards p { margin:0; }
+@media(prefers-reduced-motion:reduce) { .card { transition:none; } }
+@media(max-width:600px) { .cardToolbar > :first-child { width:100%; } .card { padding:16px; } }
+/* Compact project cards and a single control row. */
+.compactPage { padding: 0 !important; }
+.viewSwitch { margin:0; margin-inline-start:auto; }
+.cardToolbar { align-items:center; gap:10px; margin-block-end:16px; }
+.cardToolbar > :last-child { margin-inline-start:0; }
+.cardToolbar > :first-child { width:min(100%,260px); }
+.cards { grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),300px)); gap:14px; }
+.card { padding:14px; border-radius:10px; }
+.card h2 { margin:10px 0 3px; font-size:14px; }
+.reference { font-size:10px; }
+.customer { margin:0 0 12px; font-size:11px; }
+.cardMeta { margin-block-end:12px; font-size:11px; gap:6px; }
+.cardMeta :global(.wd-avatar) { width:22px; height:22px; font-size:9px; }
+.progressLabel,.deadline { font-size:11px; }
+.progressLabel { margin-block-end:5px; }
+.deadline { margin:10px 0 0; }
+.next { margin-block-start:10px; padding-block-start:10px; }
+.next p { margin:3px 0 0; font-size:12px; }
+.card :global(.wd-badge) { font-size:10px; padding:3px 7px; min-height:20px; }
+@media(max-width:600px) { .cards { grid-template-columns:1fr; } .cardToolbar > :first-child { width:100%; } }
+.cardToolbar :global(.wd-field-label) { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+/* All portfolio toolbar controls share one baseline and height. */
+.cardToolbar { align-items:center; }
+.cardToolbar > :global(.wd-field) { gap:0; margin:0; }
+.cardToolbar :global(.wd-search-field),
+.cardToolbar :global(.wd-select-button),
+.cardToolbar > :global(.wd-button) { box-sizing:border-box; block-size:34px; min-block-size:34px; border-radius:6px; font-size:12px; }
+.cardToolbar :global(.wd-search-field .wd-input) { font-size:12px; block-size:32px; min-block-size:0; }
+.cardToolbar :global(.wd-select-indicator) { block-size:32px; inline-size:30px; }
+.cardToolbar .viewSwitch { display:flex; align-items:center; }
+.cardToolbar :global(.wd-segmented) { box-sizing:border-box; block-size:34px; padding:3px; border-radius:6px; }
+.cardToolbar :global(.wd-segmented button) { block-size:26px; min-block-size:26px; padding:0 10px; font-size:12px; border-radius:4px; }
+@media(pointer:coarse) {
+  .cardToolbar :global(.wd-search-field), .cardToolbar :global(.wd-select-button), .cardToolbar > :global(.wd-button), .cardToolbar :global(.wd-segmented) { block-size:44px; min-block-size:44px; }
+  .cardToolbar :global(.wd-segmented button) { block-size:36px; min-block-size:36px; }
+}

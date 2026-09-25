@@ -1,5 +1,5 @@
 .page {
-  padding: 1.25rem 1.5rem 2rem;
+  padding: var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem);
   color: var(--wd-color-text);
   font-size: 0.8125rem;
   min-inline-size: 0;
@@ -12,16 +12,26 @@
   margin-block-end: 0.5rem;
 }
 .header h1 {
-  font-size: 1.25rem;
+  font-size: 14px;
   font-weight: 600;
   margin: 0;
   letter-spacing: -0.03em;
 }
+.agreementReadout { display:grid; gap:16px; margin:0; }
+.agreementReadout > div { display:grid; gap:5px; }
+.agreementReadout dt { font-size:12px; color:var(--wd-color-text-secondary); }
+.agreementReadout dd { margin:0; font-size:13px; font-weight:500; white-space:pre-wrap; overflow-wrap:anywhere; }
+.agreementReadout > div:first-child dd { font-weight:650; }
 .header p {
   color: var(--wd-color-text-secondary);
   margin: 0.3rem 0 0;
   font-size: 0.75rem;
 }
+.flowChooser { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem 1.25rem; padding-block: .75rem; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.flowChooser h2 { margin: 0; font-size: .8125rem; font-weight: 650; }
+.flowChooser p { margin: .2rem 0 0; max-inline-size: 48rem; color: var(--wd-color-text-secondary); font-size: .75rem; line-height: 1.5; }
+.flowChoices { display: flex; flex-wrap: wrap; gap: .4rem; }
+.flowSelected { color: var(--wd-color-text); font-size: .75rem; font-weight: 600; }
 .actions {
   display: flex;
   align-items: center;
@@ -119,15 +129,19 @@
 }
 .status {
   display: inline-flex;
-  gap: 0.35rem;
   align-items: center;
-  border-radius: 0.3rem;
+  gap: 0.375rem;
+  min-block-size: 1.375rem;
+  border-radius: var(--wd-radius-pill);
+  padding-inline: 0.5rem;
   background: var(--wd-color-surface-muted);
   color: var(--wd-color-text-secondary);
-  padding: 0.3rem 0.5rem;
-  font-size: 0.7rem;
+  font-size: var(--wd-text-2xs);
+  font-weight: var(--wd-weight-medium);
+  line-height: 1;
   white-space: nowrap;
 }
+.status::before { content: ""; inline-size: .375rem; block-size: .375rem; border-radius: 50%; background: currentColor; opacity: .85; }
 .status[data-status="issued"],
 .status[data-status="internal_approved"],
 .status[data-status="accepted"],
@@ -284,6 +298,9 @@
   resize: vertical;
   line-height: 1.6;
 }
+/* Shared controls already own a border on their focus frame. */
+.form :global(.wd-input-group) > input,
+.form :global(.wd-textarea-frame) > textarea { border:0; border-radius:0; background:transparent; box-shadow:none; }
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -364,6 +381,10 @@
 .ownerForm > label, .decisionField, .approverField { display: flex; flex-direction: column; gap: .4rem; color: var(--wd-color-text-secondary); font-size: .75rem; }
 .ownerForm input, .ownerForm textarea, .decisionField textarea, .approverField select { padding: .65rem .7rem; border: 1px solid var(--wd-color-border-control); border-radius: .4rem; background: var(--wd-color-surface); color: var(--wd-color-text); }
 .ownerForm textarea, .decisionField textarea { min-block-size: 5rem; resize: vertical; }
+.commissionRows { display: grid; gap: .65rem; padding-block: .75rem; border-block: 1px solid var(--wd-color-structural-divider); }
+.commissionRow { display: grid; grid-template-columns: minmax(10rem, 2fr) minmax(7rem, 1fr) minmax(5rem, .7fr) minmax(6rem, .8fr) auto; gap: .5rem; align-items: center; }
+.commissionRow > input, .commissionRow > select { min-inline-size: 0; padding: .6rem .7rem; border: 1px solid var(--wd-color-border-control); border-radius: .6rem; background: var(--wd-color-surface); color: var(--wd-color-text); }
+.inlineCheck { display: flex; align-items: center; gap: .5rem; }
 .checkGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem 1rem; }
 .checkGrid label, .checkGrid > span { display: flex; align-items: center; gap: .5rem; min-block-size: 2.2rem; text-transform: capitalize; color: var(--wd-color-text-secondary); }
 .checkGrid > span[data-done="true"] { color: var(--wd-color-text); }
@@ -459,6 +480,7 @@
 @media (max-width: 760px) {
   .controlSummary, .dealBanner { grid-template-columns: 1fr 1fr; }
   .checkGrid { grid-template-columns: 1fr; }
+  .commissionRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .materialRow { grid-template-columns: 4rem minmax(0, 1fr) auto; }
   .materialRow > .button, .materialRow > .primary { grid-column: 2 / -1; }
   .flowIntro { align-items: start; flex-direction: column; }
@@ -1210,3 +1232,14 @@
 .editorTabs button[aria-pressed="true"] { background: var(--wd-color-surface-muted); color: var(--wd-color-action-primary); box-shadow: inset 0 -2px var(--wd-color-action-primary); }
 :global([data-theme="dark"]) .studioPage > .toolbar > .actions > strong { color: var(--wd-color-text); }
 .studioPage > .toolbar { padding-block: .35rem; }
+
+.quotationTablePage { padding:12px 16px; }
+
+.builderLink { color:var(--wd-color-action-primary); text-decoration:underline; text-underline-offset:3px; font-size:13px; white-space:nowrap; }
+
+.reviewPage { padding:0; }
+.reviewPage > .toolbar { position:static; margin:0 0 12px; }
+.reviewPage > a { margin-bottom:12px; }
+
+.paymentConditions { display:grid; gap:10px; padding-block:4px; }
+.modalActions { display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid var(--wd-color-border); }

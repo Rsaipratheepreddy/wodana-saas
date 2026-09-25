@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "scope": "factory batch persistence and authorization",
+  "workspaceId": "a48e9ae2-c986-41dc-a731-5ec0fea1bd00",
+  "projectId": "490bdf0f-73f3-48c4-8563-a313ff109d40",
+  "batchId": "092e3909-3054-4444-b0e8-300502f3224c",
+  "checks": [
+    "Declined unaccepted replacement restores original released scope through the commercial API",
+    "Concurrent identical create requests return one batch",
+    "Payload mismatch and duplicate active task allocation rejected",
+    "Persisted quantities, candidate exclusion and project-scoped projection",
+    "Nonmember cannot read factory batches",
+    "Source changes flag review while the batch snapshot stays frozen",
+    "Versioned cancellation is replay safe and preserves historical allocation",
+    "Booked factory work, independent measured output, lot rework and passed finished stock persist through the API",
+    "Database RLS hides batch, allocation and replay records from another workspace"
+  ]
+}

@@ -76,6 +76,28 @@ test.describe("design system reference", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
+  test("contained table stays centered and its floating controls follow dark mode", async ({ page }, testInfo) => {
+    if (testInfo.project.name !== "desktop") return;
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto("/design-system#data");
+    const grid = page.locator('.wd-data-grid[data-appearance="contained"]').first();
+    await expect(grid).toHaveAttribute("data-grid-lines", "true");
+    const geometry = await grid.evaluate((element) => {
+      const parent = element.parentElement!.getBoundingClientRect();
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return { leftGap: rect.left - parent.left, rightGap: parent.right - rect.right, border: style.borderTopWidth, radius: style.borderTopLeftRadius, width: rect.width };
+    });
+    expect(Math.abs(geometry.leftGap - geometry.rightGap)).toBeLessThanOrEqual(2);
+    expect(geometry.width).toBeLessThanOrEqual(1472);
+    expect(geometry.border).toBe("1px");
+    expect(geometry.radius).not.toBe("0px");
+    await page.getByRole("button", { name: "Use dark theme" }).click();
+    await grid.getByRole("button", { name: "Filter" }).click();
+    const panel = page.locator(".wd-record-panel");
+    await expect(panel).toHaveAttribute("data-wd-theme", "dark");
+    expect(await panel.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgb(255, 255, 255)");
+  });
   test("closed selects expose only the disclosure indicator", async ({ page }) => {
     await page.goto("/design-system#forms");
     const select = page.locator(".wd-select-button").first();

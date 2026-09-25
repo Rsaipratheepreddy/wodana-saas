@@ -4,6 +4,7 @@ import { ActorUser, RequestActor } from "./actor";
 import { DatabaseService } from "../database/database.service";
 import { allowedTenantModules } from "./module-access";
 import { deriveBillingAccessPolicy, effectiveEntitledModules } from "../workspaces/tenant-operations.domain";
+import { effectiveTenantPermissionCodes } from "../workspaces/tenant-access.domain";
 
 export type AuthBootstrapNextAction =
   | "accept_invitation"
@@ -238,6 +239,11 @@ export class IdentityService {
         isDefaultOrganization: membership.isDefaultOrganization,
         status: membership.status,
         roles: tenantAccess.roles.map((role) => role.code),
+        allowedPermissions: effectiveTenantPermissionCodes({
+          status: membership.status,
+          grantedPermissions: tenantAccess.permissions.map((permission) => permission.code),
+          entitlements: tenantAccess.entitlements,
+        }),
         allowedModules: effectiveEntitledModules(
           allowedTenantModules(tenantAccess.permissions.map((permission) => permission.code)),
           tenantAccess.entitlements,

@@ -162,6 +162,7 @@ export const oneTreeNodeRevisions = pgTable("one_tree_node_revisions", {
 ]);
 
 export const preProjectDesignFolders = pgTable("pre_project_design_folders",{
+ reviewerId:uuid("reviewer_id"),approvedVersions:jsonb("approved_versions"),approvedAt:timestamp("approved_at",{withTimezone:true}),
  id:uuid("id").primaryKey(),...caseColumns(),name:varchar("name",{length:160}).notNull(),description:text("description").notNull().default(""),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),version:integer("version").notNull().default(1),...createdColumns(),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[unique().on(t.workspaceId,t.caseId,t.id),uniqueIndex("pre_project_design_folders_name_key").on(t.workspaceId,t.caseId,sql`lower(${t.name})`),
  index("pre_project_design_folders_context_idx").on(t.workspaceId,t.caseId,t.roomId,t.scopeEntryId),
@@ -210,6 +211,7 @@ export const preProjectItemDesignRefs = pgTable("pre_project_item_design_refs",{
   foreignKey({columns:[t.workspaceId,t.caseId,t.designVersionId],foreignColumns:[preProjectDesignVersions.workspaceId,preProjectDesignVersions.caseId,preProjectDesignVersions.id]}),check("pre_project_item_design_refs_usage_check",sql`${t.usage} IN ('2d','3d','reference')`)]);
 
 export const preProjectDesignThreads=pgTable('pre_project_design_threads',{
+ anchor:jsonb('anchor'),mentions:jsonb('mentions').notNull().default([]),
  id:uuid('id').primaryKey(),...caseColumns(),designId:uuid('design_id').notNull(),versionId:uuid('version_id').notNull(),title:varchar('title',{length:240}).notNull(),blocking:boolean('blocking').notNull().default(false),status:varchar('status',{length:12}).notNull().default('open'),version:integer('version').notNull().default(1),...createdColumns(),resolvedBy:uuid('resolved_by').references(()=>users.id),resolvedAt:timestamp('resolved_at',{withTimezone:true}),
 },t=>[unique().on(t.workspaceId,t.caseId,t.designId,t.id),foreignKey({columns:[t.workspaceId,t.caseId,t.designId,t.versionId],foreignColumns:[preProjectDesignVersions.workspaceId,preProjectDesignVersions.caseId,preProjectDesignVersions.designId,preProjectDesignVersions.id]}),index('pre_project_design_threads_revision_idx').on(t.workspaceId,t.caseId,t.designId,t.versionId)]);
 export const preProjectDesignMessages=pgTable('pre_project_design_messages',{

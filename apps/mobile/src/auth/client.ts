@@ -14,6 +14,11 @@ export type Profile = {
   memberships: Membership[]; nextAction: string;
   unavailableOrganizations?: Array<{ workspaceId: string; workspaceName: string; workspaceStatus: string }>;
 };
+export type OrganizationBranding = {
+  displayName: string; loginSlug: string; logoUrl: string | null;
+  primaryColor: string | null; secondaryColor: string | null;
+  headingFont: string | null; bodyFont: string | null;
+};
 export type AuthState =
   | { status: 'checking' | 'authenticating' }
   | { status: 'mfa' }
@@ -95,6 +100,13 @@ export class AuthClient {
         credentials: this.options.credentials ?? 'omit', signal: controller.signal, redirect: 'error',
       });
       if (!response.ok) {
+        if (path === '/auth/organization/resolve' && (response.status === 404 || response.status === 409)) {
+          const payload = await response.json().catch(() => null);
+          throw new AuthError(
+            typeof payload?.message === 'string' ? payload.message : 'Organization not found. Check the name, slug, or ID.',
+            'configuration',
+          );
+        }
         if (response.status === 401) throw path === '/auth/login'
           ? new AuthError('Email or password is incorrect.', 'credentials')
           : path === '/auth/mfa/verify' ? new AuthError('Verification code is incorrect.', 'credentials') : expired();
@@ -177,6 +189,32 @@ export class AuthClient {
       if (this.accessRevalidation === operation) this.accessRevalidation = null;
     }).catch(() => {});
     return operation;
+  }
+  async resolveOrganization(identifier: string): Promise<OrganizationBranding> {
+    const value = identifier.trim();
+    if (value.length < 2 || value.length > 160) {
+      throw new AuthError('Enter your organization name, slug, or ID.', 'configuration');
+    }
+    const payload = await this.request('/auth/organization/resolve', { identifier: value });
+    if (!isRecord(payload) || typeof payload.displayName !== 'string'
+      || typeof payload.loginSlug !== 'string'
+      || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(payload.loginSlug)) {
+      throw new AuthError('The organization could not be verified. Try again.', 'server');
+    }
+    this.selectTenant(payload.loginSlug);
+    const slug = payload.loginSlug;
+    return {
+      displayName: payload.displayName,
+      loginSlug: slug,
+      logoUrl: typeof payload.logoUrl === 'string' && payload.logoUrl
+        ? /^https:\/\//i.test(payload.logoUrl) ? payload.logoUrl
+          : `${this.base}/public/tenant-branding/${slug}/logo`
+        : null,
+      primaryColor: typeof payload.primaryColor === 'string' ? payload.primaryColor : null,
+      secondaryColor: typeof payload.secondaryColor === 'string' ? payload.secondaryColor : null,
+      headingFont: typeof payload.headingFont === 'string' ? payload.headingFont : null,
+      bodyFont: typeof payload.bodyFont === 'string' ? payload.bodyFont : null,
+    };
   }
   async signIn(email: string, password: string, tenantSlug = this.tenant) {
     if (this.state.status === 'authenticating') return;

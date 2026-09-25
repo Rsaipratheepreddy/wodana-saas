@@ -14,6 +14,7 @@ import {
 } from "./supplier-offer.dto";
 import {
   CreateVendorDto,
+  ImportVendorsDto,
   CreateVendorSiteDto,
   ListVendorsQueryDto,
   UpdateVendorDto,
@@ -32,6 +33,12 @@ export class VendorDirectoryController {
   list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Query() query: ListVendorsQueryDto) {
     return this.vendors.list(actor, workspaceId, query);
+  }
+
+  @Post("import")
+  import(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Body() input: ImportVendorsDto) {
+    return this.vendors.import(actor, workspaceId, input);
   }
 
   @Post()

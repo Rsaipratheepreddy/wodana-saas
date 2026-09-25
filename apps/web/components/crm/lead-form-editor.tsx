@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { DropIndicator, GridList, GridListItem, useDragAndDrop, type DropItem } from "react-aria-components";
 import { AlignLeft, ArrowDown, ArrowUp, CalendarDays, CheckSquare, ChevronDown, CircleDot, Copy, GripVertical, Hash, LockKeyhole, Mail, Phone, Plus, Trash2, Type } from "lucide-react";
-import { Button, Checkbox, IconButton, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { Button, Checkbox, IconButton, SelectField, TextInput } from "@/design-system";
 import { formQuestionTypes, type LeadFormQuestion, type LeadFormSchema } from "@/lib/crm/lead-forms";
-import { PublicEnquiryFormView } from "./public-enquiry-form";
 import styles from "./lead-forms.module.css";
 
 const FIELD_TYPE = "application/x-wodana-form-field";
 const QUESTION_ID = "application/x-wodana-form-question";
-const requiredFields = new Set(["displayName", "email", "mobile", "location"]);
+const requiredFields = new Set(["displayName", "mobile", "emirate", "serviceType"]);
 const choiceTypes = new Set(["radio", "dropdown", "checkboxes"]);
 const fieldIcons = { text: Type, paragraph: AlignLeft, radio: CircleDot, checkboxes: CheckSquare, dropdown: ChevronDown, email: Mail, tel: Phone, number: Hash, date: CalendarDays };
-const linkedNames: Record<string, string> = { displayName: "Customer name", mobile: "Mobile number", email: "Email", location: "Property location", serviceType: "Enquiry type", budgetRange: "Budget", summary: "Project summary" };
+const linkedNames: Record<string, string> = { displayName: "Customer name", mobile: "Mobile number", email: "Email", emirate: "Emirate", area: "Area", serviceType: "Enquiry type", budgetRange: "Budget", summary: "Project summary" };
 
 export function reorderQuestions(questions: LeadFormQuestion[], keys: Set<string>, target: string, position: "before" | "after") {
   if (keys.has(target) || !questions.some(question => question.id === target)) return questions;
@@ -28,16 +27,6 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
   const [selected, setSelected] = useState(draft.questions[0]?.id ?? "");
   const [announcement, setAnnouncement] = useState("");
   const [newQuestion, setNewQuestion] = useState("");
-  const [previewVersion, setPreviewVersion] = useState(0);
-  const previewScroll = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const container = previewScroll.current;
-    const field = container?.querySelector<HTMLElement>(`[data-question-id="${CSS.escape(selected)}"]`);
-    if (!container || !field) return;
-    const bounds = container.getBoundingClientRect(), target = field.getBoundingClientRect();
-    if (target.bottom > bounds.bottom) container.scrollTop += target.bottom - bounds.bottom + 12;
-    else if (target.top < bounds.top) container.scrollTop += target.top - bounds.top - 12;
-  }, [selected]);
   const atLimit = draft.questions.length >= 50;
   const select = (id: string) => {
     setSelected(id);
@@ -56,7 +45,7 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
       return { ...previous, questions };
     });
     select(question.id);
-    setAnnouncement(`${question.title} added. Edit its label below.`);
+    setAnnouncement(`${question.title} added. Edit its label in Field settings.`);
   };
   const insert = async (items: DropItem[], target?: { id: string; position: string }) => {
     const item = items.find(item => item.kind === "text" && item.types.has(FIELD_TYPE));
@@ -92,9 +81,14 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
     setDraft(previous => previous && ({ ...previous, questions: reorderQuestions(previous.questions, new Set([question.id]), target.id, direction < 0 ? "before" : "after") }));
     setAnnouncement(`${question.title} moved ${direction < 0 ? "up" : "down"}.`);
   };
+  const remove = (question: LeadFormQuestion, index: number) => {
+    if (busy || requiredFields.has(question.field ?? "")) return;
+    setDraft(previous => previous && ({ ...previous, questions: previous.questions.filter(item => item.id !== question.id) }));
+    if (selected === question.id) setSelected(draft.questions[index - 1]?.id ?? draft.questions[index + 1]?.id ?? "");
+    setAnnouncement(`${question.title || "Field"} deleted.`);
+  };
   return <div className={styles.editorLayout}>
     <aside className={styles.fieldPalette} aria-label="Add fields">
-      <h3>Add fields</h3><p className={styles.hint}>Drag into your form, or click + to add.</p>
       <GridList aria-label="Field types" className={styles.paletteList} items={formQuestionTypes} dragAndDropHooks={paletteDrag} dependencies={[busy, atLimit]} keyboardNavigationBehavior="tab">
         {item => {
           const Icon = fieldIcons[item.id as keyof typeof fieldIcons];
@@ -104,21 +98,18 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
           </GridListItem>;
         }}
       </GridList>
-      <p className={styles.hint}>Name, mobile, email and location stay linked to each enquiry.</p>
       {atLimit && <p role="status" className={styles.hint}>50-field limit reached.</p>}
     </aside>
     <section className={styles.formCanvas} aria-label="Form fields">
-      <div className={styles.sectionHeading}><h3>Your form</h3><span>{draft.questions.length} / 50 fields</span></div>
-      <p className={styles.hint}>Click a field to edit. Drag to reorder, or use the arrows.</p>
       <div className={styles.formIntro}>
-        <TextInput label="Form title" value={draft.title} maxLength={160} isDisabled={busy} onChange={title => setDraft(previous => previous && ({ ...previous, title }))} />
-        <TextAreaField label="Form description" value={draft.description} maxLength={2000} isDisabled={busy} onChange={description => setDraft(previous => previous && ({ ...previous, description }))} />
+        <input className={styles.formTitle} aria-label="Form title" placeholder="Add a form title" value={draft.title} maxLength={160} disabled={busy} onChange={event => { const title = event.target.value; setDraft(previous => previous && ({ ...previous, title })); }} />
+        <textarea className={styles.formDescription} aria-label="Form description" placeholder="Add a description or instructions for your form" rows={2} value={draft.description} maxLength={2000} disabled={busy} onChange={event => { const description = event.target.value; setDraft(previous => previous && ({ ...previous, description })); }} />
       </div>
       <GridList aria-label="Reorder form fields" className={styles.questionList} items={draft.questions} dragAndDropHooks={questionDrag} dependencies={[selected, busy, newQuestion, draft.questions]} keyboardNavigationBehavior="tab" renderEmptyState={() => <p>Drop a field here or choose one from Add fields.</p>}>
         {question => {
           const index = draft.questions.findIndex(item => item.id === question.id);
-          const linked = Boolean(linkedNames[question.field ?? ""]);
           const required = requiredFields.has(question.field ?? "");
+          const linked = Boolean(linkedNames[question.field ?? ""]);
           return <GridListItem id={question.id} textValue={question.title || "Untitled field"} className={styles.questionCard} data-editing={selected === question.id || undefined}>
             <div className={styles.questionTop}>
               <IconButton slot="drag" className={styles.dragHandle} aria-label={`Drag ${question.title || "field"} to reorder`} isDisabled={busy}><GripVertical size={17} /></IconButton>
@@ -128,8 +119,13 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
               {required && <span title="Required enquiry detail" className={styles.lockedField}><LockKeyhole size={13} /><span className="wd-visually-hidden">Required enquiry detail</span></span>}
               <IconButton aria-label={`Move ${question.title || "field"} up`} size="compact" isDisabled={index === 0 || busy} onPress={() => move(question, -1)}><ArrowUp size={14} /></IconButton>
               <IconButton aria-label={`Move ${question.title || "field"} down`} size="compact" isDisabled={index === draft.questions.length - 1 || busy} onPress={() => move(question, 1)}><ArrowDown size={14} /></IconButton>
+              {!required && <Button size="compact" variant="quiet" className={styles.deleteField} aria-label={`Delete ${question.title || "field"}`} isDisabled={busy} onPress={() => remove(question, index)}><Trash2 size={15} /><span>Delete</span></Button>}
             </div>
-            {selected === question.id && <fieldset disabled={busy} className={styles.questionEditor}>
+            <div className={styles.fieldExample} aria-hidden="true">
+              <p>{question.description || "Add help text for this field"}</p>
+              <div data-type={question.type}>{choiceTypes.has(question.type) ? question.options.map(option => option.label).join(" · ") || "Select an option" : question.type === "date" ? "Select a date" : "Answer will be written here"}{question.type === "dropdown" && <ChevronDown size={14} />}</div>
+            </div>
+            {selected === question.id && <fieldset disabled={busy} className={styles.inlineQuestionEditor}>
               <div className={styles.questionFields}>
                 <TextInput label="Field label" value={question.title} maxLength={240} autoFocus={newQuestion === question.id} onChange={title => updateQuestion(question.id, { title })} />
                 {linked ? <div className={styles.linkedType}><span>Field type</span><strong>{formQuestionTypes.find(type => type.id === question.type)?.label}</strong></div> : <SelectField label="Field type" items={formQuestionTypes} selectedKey={question.type} onSelectionChange={key => { const type = String(key); updateQuestion(question.id, { type, options: choiceTypes.has(type) ? question.options.length ? question.options : [1, 2].map(number => ({ id: crypto.randomUUID(), label: `Option ${number}` })) : [] }); }} />}
@@ -144,9 +140,7 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
               {linked && <p className={styles.hint}>{required ? "Required for new enquiries" : "Linked to enquiry details"} · {linkedNames[question.field!]}. You can change the label and position.</p>}
               <footer className={styles.questionFooter}>
                 <Checkbox isSelected={question.required} isDisabled={required || busy} onChange={value => updateQuestion(question.id, { required: value })}>Required</Checkbox>
-                <div className={styles.actions}><Button size="compact" variant="quiet" isDisabled={atLimit || busy} onPress={() => add(question.type, { id: question.id, position: "after" }, question)}><Copy size={14} />Duplicate</Button>
-                  {!required && <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => { setDraft(previous => previous && ({ ...previous, questions: previous.questions.filter(item => item.id !== question.id) })); setSelected(draft.questions[index - 1]?.id ?? draft.questions[index + 1]?.id ?? ""); setAnnouncement(`${question.title} deleted.`); }}><Trash2 size={14} />Delete</Button>}
-                </div>
+                <Button size="compact" variant="quiet" isDisabled={atLimit || busy} onPress={() => add(question.type, { id: question.id, position: "after" }, question)}><Copy size={14} />Duplicate</Button>
               </footer>
             </fieldset>}
           </GridListItem>;
@@ -155,10 +149,5 @@ export function LeadFormEditor({ draft, setDraft, busy }: { draft: LeadFormSchem
       <Button className={styles.addQuestion} variant="quiet" isDisabled={busy || atLimit} onPress={() => add("text")}><Plus size={16} />Add field</Button>
       <p role="status" className="wd-visually-hidden">{announcement}</p>
     </section>
-    <aside className={styles.livePreview} aria-label="Live form preview">
-      <div className={styles.sectionHeading}><h3>Live preview</h3><Button size="compact" variant="quiet" onPress={() => setPreviewVersion(version => version + 1)}>Reset answers</Button></div>
-      <p className={styles.hint}>This is what your customer will see.</p>
-      <div className={styles.previewScroll} ref={previewScroll}><PublicEnquiryFormView key={previewVersion} preview form={{ ...draft, revision: "preview", consentLabel: "I agree to be contacted about this enquiry." }} /></div>
-    </aside>
   </div>;
 }

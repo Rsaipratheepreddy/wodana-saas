@@ -7,12 +7,12 @@ import styles from "./crm-product.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
 import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
 
-export function CrmProductShell({ title, description, canView, actions, children, compact = false, useWorkspaceColors = false, headerClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; useWorkspaceColors?: boolean; headerClassName?: string }) {
+export function CrmProductShell({ title, canView, actions, children, compact = false, useWorkspaceColors = false, headerClassName, pageClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; useWorkspaceColors?: boolean; headerClassName?: string; pageClassName?: string }) {
   useWorkspaceFocus(title === "Automations" ? title : undefined);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
-    <section className={compact ? styles.focusedPage : base.page} aria-label={`${title} workspace`}>
-      {!compact ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div><h1>{title}</h1>{description ? <p>{description}</p> : null}</div>{canView && actions ? <div className={styles.actions}>{actions}</div> : null}</header> : null}
+    <section className={[compact ? styles.focusedPage : base.page, pageClassName].filter(Boolean).join(" ")} aria-label={`${title} workspace`}>
+      {!compact && canView && actions ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div className={styles.actions}>{actions}</div></header> : null}
       {canView ? children : <Callout title={`${title} access is restricted`} tone="warning">Ask an administrator for the required CRM permission.</Callout>}
     </section>
   </DesignSystemProvider>;

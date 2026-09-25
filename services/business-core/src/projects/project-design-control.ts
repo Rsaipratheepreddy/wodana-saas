@@ -30,8 +30,56 @@ export async function captureApprovedDesignBaseline(
   references: DesignScopeReference[],
   capturedAt: string,
   definitionBaseline?: ProjectDesignBaseline["definitionBaseline"],
+  options: { includePackageDesigns?: boolean } = {},
 ): Promise<ProjectDesignBaseline> {
   const links: ProjectDesignLink[] = [];
+  const packageReferences = options.includePackageDesigns
+    ? references.filter((reference) => !reference.sourceScopeId)
+    : [];
+  if (packageReferences.length) {
+    const packageDesigns = (await client.query<DesignRow & { status: string; hasBlockingThread: boolean }>(
+      `SELECT version.id AS "designVersionId",version.design_id AS "designId",
+              design.title,design.document_type AS "documentType",
+              version.number AS revision,
+              asset.id AS "assetId",asset.original_name AS "fileName",
+              asset.mime_type AS "mimeType",asset.byte_size AS "byteSize",
+              asset.preview_key IS NOT NULL AS "hasPreview",
+              coalesce(decision.decision_at,version.created_at)::text AS "approvedAt",
+              version.status,
+              EXISTS(SELECT 1 FROM pre_project_design_threads thread
+                WHERE thread.workspace_id=version.workspace_id AND thread.version_id=version.id
+                  AND thread.blocking AND thread.status='open') AS "hasBlockingThread"
+       FROM pre_project_designs design
+       JOIN LATERAL (
+         SELECT * FROM pre_project_design_versions
+         WHERE workspace_id=design.workspace_id AND design_id=design.id
+         ORDER BY number DESC LIMIT 1
+       ) version ON true
+       JOIN pre_project_brief_assets asset ON asset.workspace_id=version.workspace_id
+         AND asset.case_id=version.case_id AND asset.id=version.asset_id
+       LEFT JOIN LATERAL (
+         SELECT activity.decision_at FROM pre_project_design_activity activity
+         WHERE activity.workspace_id=version.workspace_id AND activity.version_id=version.id
+           AND activity.action='approved'
+         ORDER BY activity.decision_at DESC NULLS LAST,activity.created_at DESC LIMIT 1
+       ) decision ON true
+       WHERE design.workspace_id=$1 AND design.case_id=$2
+         AND design.archived_at IS NULL AND design.scope_entry_id IS NULL
+       ORDER BY design.title,version.number`,
+      [workspaceId, caseId],
+    )).rows;
+    if (!packageDesigns.length || packageDesigns.some((design) =>
+      design.status !== "approved" || design.hasBlockingThread))
+      throw new ConflictException("Approve the latest package-level designs and resolve blocking comments before the main quotation.");
+    for (const reference of packageReferences)
+      links.push(...packageDesigns.map(({ status: _status, hasBlockingThread: _blocking, ...design }) => ({
+        ...design,
+        scopeLineId: reference.scopeLineId,
+        sourceScopeId: "",
+        sourceScopeVersion: 0,
+        sourceSpecificationVersion: 0,
+      })));
+  }
   for (const reference of references) {
     if (!reference.sourceScopeId) continue;
     const source = (

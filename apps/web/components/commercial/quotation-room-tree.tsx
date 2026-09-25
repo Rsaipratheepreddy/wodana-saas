@@ -59,7 +59,6 @@ export function QuotationRoomTree({
     old?: string;
     catalog: CommercialCatalogChoice | null;
   } | null>(null);
-  const [catalogOpen, setCatalogOpen] = useState(false);
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
   const selectedRoom = quote.lines.find((l) => l.id === selected)?.room;
   const patch = (value: Partial<Quote>) => onChange({ ...quote, ...value });
@@ -99,7 +98,7 @@ export function QuotationRoomTree({
             disabled={rooms.length >= 100}
             onClick={() => {
               setDraft({ name: "", catalog: null });
-              setCatalogOpen(false);
+
             }}
           >
             <Plus size={14} />
@@ -159,12 +158,8 @@ export function QuotationRoomTree({
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </label>
-          <details
-            className={d.optionalFields}
-            open={catalogOpen}
-            onToggle={(e) => setCatalogOpen(e.currentTarget.open)}
-          >
-            <summary>Choose from room catalog</summary>
+          <section className={d.optionalFields}>
+            <h3>Choose from room catalog</h3>
             <CommercialCatalogPicker
               workspaceId={workspaceId}
               caseId={caseId}
@@ -179,7 +174,7 @@ export function QuotationRoomTree({
                 })
               }
             />
-          </details>
+          </section>
           {duplicateName && (
             <p role="alert" className={s.error}>
               A room with this name already exists.

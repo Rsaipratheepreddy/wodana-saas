@@ -73,7 +73,23 @@
     ".next-onboarding-crm-smoke/types/**/*.ts",
     ".next-onboarding-crm-smoke/dev/types/**/*.ts",
     ".next-preexecution-uat/types/**/*.ts",
-    ".next-preexecution-uat/dev/types/**/*.ts"
+    ".next-preexecution-uat/dev/types/**/*.ts",
+    ".next-home-redesign/types/**/*.ts",
+    ".next-home-redesign/dev/types/**/*.ts",
+    ".next-project-qa/types/**/*.ts",
+    ".next-project-qa/dev/types/**/*.ts",
+    ".next-e2e-flow-qa/types/**/*.ts",
+    ".next-e2e-flow-qa/dev/types/**/*.ts",
+    ".next-e2e-palm-flow-20260924/types/**/*.ts",
+    ".next-e2e-palm-flow-20260924/dev/types/**/*.ts",
+    ".next-approval-qa/types/**/*.ts",
+    ".next-approval-qa/dev/types/**/*.ts",
+    ".next-palm-e2e/types/**/*.ts",
+    ".next-palm-e2e/dev/types/**/*.ts",
+    ".next-roles-e2e/types/**/*.ts",
+    ".next-roles-e2e/dev/types/**/*.ts",
+    ".next-goal-bookmarks/types/**/*.ts",
+    ".next-goal-bookmarks/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { RouteFade } from "@/components/route-fade";
 import { fontVariables } from "./fonts";
+import "flag-icons/css/flag-icons.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

@@ -3,7 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 export type NoteNode = { type: string; text?: string; attrs?: Record<string, unknown>; marks?: Array<{ type: string; attrs?: Record<string, unknown> }>; content?: NoteNode[] };
 export type NoteDocument = { version: 1; content: NoteNode };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const blocks = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'noteMedia']);
+const blocks = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock', 'horizontalRule', 'noteMedia', 'table', 'taskList']);
 const fail = (message = 'This note contains unsupported formatting. Update the editor and try again.'): never => { throw new BadRequestException(message); };
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : fail();
 const string = (v: unknown, max: number) => typeof v === 'string' && v.length <= max ? v : fail();
@@ -37,13 +37,18 @@ export function validateNoteDocument(value: unknown, assets: Map<string, { mimeT
   const visit = (input: unknown, parent: string, depth: number): NoteNode => {
     if (++count > 10000 || depth > 16) fail('This note is too complex. Split it into smaller notes.');
     const n = record(input), type = string(n.type, 40);
-    const permitted = parent === 'root' ? type === 'doc' : ['paragraph', 'heading'].includes(parent) ? ['text', 'hardBreak'].includes(type) : parent === 'codeBlock' ? type === 'text' : ['bulletList', 'orderedList'].includes(parent) ? type === 'listItem' : blocks.has(type);
+    const permitted = parent === 'taskList' ? type === 'taskItem' : parent === 'table' ? type === 'tableRow' : parent === 'tableRow' ? ['tableCell','tableHeader'].includes(type) : ['tableCell','tableHeader'].includes(parent) ? ['paragraph','heading','bulletList','orderedList','taskList'].includes(type) : parent === 'root' ? type === 'doc' : ['paragraph', 'heading'].includes(parent) ? ['text', 'hardBreak'].includes(type) : parent === 'codeBlock' ? type === 'text' : ['bulletList', 'orderedList'].includes(parent) ? type === 'listItem' : blocks.has(type);
     if (!permitted) fail();
     const result: NoteNode = { type };
     if (type === 'text') { result.text = string(n.text, 60000); if (!result.text) fail(); }
     const attrs = n.attrs == null ? {} : record(n.attrs);
+    if (type === 'taskItem') { if (attrs.checked != null && typeof attrs.checked !== 'boolean') fail(); result.attrs={checked:attrs.checked ?? false}; }
     if (type === 'heading') { if (![1, 2, 3].includes(Number(attrs.level))) fail(); result.attrs = { level: Number(attrs.level) }; }
     if (type === 'orderedList') { const start = attrs.start ?? 1; if (!Number.isInteger(start) || Number(start) < 1 || Number(start) > 10000) fail(); result.attrs = { start }; }
+    if (['tableCell','tableHeader'].includes(type)) {
+      if ((attrs.colspan ?? 1) !== 1 || (attrs.rowspan ?? 1) !== 1) fail('Use a table without merged cells.');
+      result.attrs = {colspan:1,rowspan:1,colwidth:null};
+    }
     if (type === 'codeBlock') result.attrs = { language: null };
     if (type === 'noteMedia') {
       const id = string(attrs.id, 36), kind = string(attrs.kind, 20);
@@ -70,8 +75,11 @@ export function validateNoteDocument(value: unknown, assets: Map<string, { mimeT
     if (!['text', 'hardBreak', 'horizontalRule', 'noteMedia'].includes(type)) {
       if (n.content != null && !Array.isArray(n.content)) fail();
       result.content = ((n.content ?? []) as unknown[]).map(child => visit(child, type, depth + 1));
-      if (['doc', 'blockquote', 'bulletList', 'orderedList', 'listItem'].includes(type) && !result.content.length) fail();
-      if (type === 'listItem' && result.content[0]?.type !== 'paragraph') fail();
+      if (['doc', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem'].includes(type) && !result.content.length) fail();
+      if (['table','tableRow','tableCell','tableHeader'].includes(type) && !result.content.length) fail();
+      if (type === 'tableRow' && result.content.length > 20) fail('Use at most 20 columns per table.');
+      if (type === 'table' && (result.content.length > 100 || result.content.some(row => row.content?.length !== result.content?.[0].content?.length))) fail('Use a rectangular table with at most 100 rows.');
+      if (['listItem','taskItem'].includes(type) && result.content[0]?.type !== 'paragraph') fail();
     } else if (n.content != null) fail();
     return result;
   };

@@ -34,6 +34,8 @@ export class MembershipSummaryResponseDto {
   @ApiProperty() isDefaultOrganization!: boolean;
   @ApiProperty() status!: string;
   @ApiProperty({ type: [String] }) roles!: string[];
+  @ApiProperty({ type: [String], description: "The signed-in member's effective permission codes after organization entitlements are applied" })
+  allowedPermissions!: string[];
   @ApiProperty({ type: [String], description: "Modules allowed by both the organization's commercial entitlements and the member's effective role grants" })
   allowedModules!: string[];
   @ApiProperty({ description: "Commercial entitlement state. Legacy organizations remain explicitly not configured until an operator assigns a versioned set." })

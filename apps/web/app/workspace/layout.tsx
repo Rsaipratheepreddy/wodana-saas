@@ -1,7 +1,7 @@
 import { SessionMonitor } from "@/components/workspace/session-monitor";
 import { WorkspaceShell, workspaceModules } from "@/components/workspace";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
-import { visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
+import { scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
 
 export default async function WorkspaceLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const profile = await getAuthenticatedProfile();
@@ -27,7 +27,11 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
   const user = { email: profile.primaryEmail, name: profile.displayName };
   return (
     <WorkspaceShell
-      modules={visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules)}
+      modules={scopeSupplyNavigation(scopePeopleNavigation(
+        visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
+        activeMembership?.allowedPermissions,
+        activeMembership?.roles ?? [],
+      ), activeMembership?.allowedPermissions, activeMembership?.roles ?? [])}
       unavailableOrganizations={profile.unavailableOrganizations ?? []}
       user={user}
       workspaces={workspaces}>

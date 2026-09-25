@@ -205,18 +205,18 @@ export function QuotationAiPanel({
               Review room suggestions
             </button>
             {Boolean(analysis.review?.length || analysis.notes?.length) && (
-              <details>
-                <summary>
+              <section>
+                <h3>
                   Details to review ·{" "}
                   {(analysis.review?.length ?? 0) +
                     (analysis.notes?.length ?? 0)}
-                </summary>
+                </h3>
                 {[...(analysis.review ?? []), ...(analysis.notes ?? [])].map(
                   (note, i) => (
                     <p key={i}>{note}</p>
                   ),
                 )}
-              </details>
+              </section>
             )}
             <small>Quantities and prices need your confirmation.</small>
           </div>

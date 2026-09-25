@@ -40,6 +40,13 @@
 .dimensionRow dd span { color:var(--wd-color-text-secondary); font-size:.62rem; }
 .dimensionHint { margin:.45rem 0 0; font-size:.6rem; color:var(--wd-color-text-secondary); line-height:1.5; }
 .noDimensions { margin:1rem 0; color:var(--wd-color-text-secondary); font-size:.75rem; }
+.dimensions[data-expanded] { margin-block:0; padding-block:12px; }
+.dimensions[data-expanded] .dimensionHeader { font-size:12px; margin-block-end:12px; }
+.dimensions[data-expanded] .dimensionLabels { font-size:11px; margin-block-end:8px; }
+.dimensions[data-expanded] .dimensionRow { padding-block:10px; font-size:13px; }
+.dimensions[data-expanded] .dimensionRow dt small,
+.dimensions[data-expanded] .dimensionRow dd span,
+.dimensions[data-expanded] .dimensionHint { font-size:11px; }
 .materials { display:flex; align-items:baseline; gap:.35rem; font-size:.67rem; line-height:1.6; margin:.6rem 0 0; }
 .materials svg { flex:none; }
 .boardFooter { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-block:.7rem; color:var(--wd-color-text-secondary); font-size:.7rem; }

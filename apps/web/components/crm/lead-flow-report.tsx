@@ -26,13 +26,14 @@ export function LeadFlowReport({ initialData }: { initialData: LeadsPageData }) 
       .finally(() => { if (!controller.signal.aborted) setLoadedKey(requestKey); });
     return () => controller.abort();
   }, [initialData.workspaceId, groupBy, period, requestKey]);
-  const groups = [{ id: "source", label: "Source & channel" }, { id: "mainSource", label: "Main source" }, { id: "channel", label: "Channel" }, { id: "enquiryType", label: "Enquiry type" }, { id: "customerType", label: "Customer type" }, { id: "budget", label: "Budget range" }, { id: "owner", label: "Salesperson" }, { id: "team", label: "Sales team" }, { id: "intake", label: "Intake method" }, { id: "day", label: "Daily volume" }, { id: "week", label: "Weekly volume" }, { id: "month", label: "Monthly volume" }];
+  const groups = [{ id: "source", label: "Source & channel" }, { id: "mainSource", label: "Main source" }, { id: "channel", label: "Channel" }, { id: "enquiryType", label: "Enquiry type" }, { id: "customerType", label: "Customer type" }, { id: "budget", label: "Budget range" }, { id: "emirate", label: "Emirate" }, { id: "owner", label: "Salesperson" }, { id: "team", label: "Sales team" }, { id: "intake", label: "Intake method" }, { id: "day", label: "Daily volume" }, { id: "week", label: "Weekly volume" }, { id: "month", label: "Monthly volume" }];
   const label = (value: string) => {
     if (groupBy === "mainSource") return leadOptionLabel(initialData.leadOptions?.sources, value);
     if (groupBy === "channel") return leadOptionLabel(Object.values(initialData.leadOptions?.channels ?? {}).flat(), value);
     if (groupBy === "enquiryType") return leadOptionLabel(initialData.leadOptions?.enquiryTypes, value);
     if (groupBy === "budget") return leadOptionLabel(initialData.leadOptions?.budgetRanges, value);
     if (groupBy === "customerType") return leadOptionLabel(initialData.leadOptions?.customerTypes, value);
+    if (groupBy === "emirate") return leadOptionLabel(initialData.leadOptions?.emirates, value);
     if (groupBy === "source") { const [source, channel] = value.split(" / "); return `${leadOptionLabel(initialData.leadOptions?.sources, source)} / ${leadOptionLabel(initialData.leadOptions?.channels[source], channel)}`; }
     return value.replaceAll("_", " ");
   };

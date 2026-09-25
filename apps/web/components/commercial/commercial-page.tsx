@@ -38,36 +38,61 @@ import {
   ApprovalRelease,
 } from "./commercial-workflows";
 import { PreExecutionFlow } from "./pre-execution-flow";
+import { QuotationBuilderPreview } from "./quotation-builder-preview";
+import { CaseSpine } from "@/components/pre-project/case-spine";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
 const QuotationStudio = dynamic(() => import('./quotation-studio').then(module => module.QuotationStudio), { loading: PreProjectSectionLoading });
 const labels: Record<string, string> = {
   "client-portal": "Client portal",
-  boq: "BOQ & costing",
+  boq: "Design Quote",
   quotations: "Quotations",
-  contracts: "Agreement & payments",
-  "payment-plan": "Agreement & payments",
+  contracts: "Agreements & Payments",
+  "payment-plan": "Agreements & Payments",
   variations: "Change requests",
   approvals: "Approvals & release",
-  "execution-release": "Approvals & release",
+  "execution-release": "Release readiness",
 };
+const palmServicePaths = [
+  { label: "Design + fitout / furniture", scope: { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true } },
+  { label: "Design / moodboards only", scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false } },
+  { label: "Made-to-order furniture", scope: { design: false, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: false, installation: true } },
+  { label: "Ready-made furniture", scope: { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: false, siteWorks: false, installation: true } },
+] as const;
 export function CommercialPage({
   initial,
   record,
   section,
   search,
   quotationId,
+  reviewOnly = false,
+  quotationPresentation = "table",
+  embedded = false,
+  projectId,
 }: {
   initial: CommercialState;
   record: PreProjectCase;
   section: string;
   search: string;
   quotationId?: string;
+  reviewOnly?: boolean;
+  quotationPresentation?: "cards" | "table";
+  embedded?: boolean;
+  projectId?: string;
 }) {
   const router = useRouter();
   const quotationList = section === "quotations" && !quotationId;
-  const rootHref = `/workspace/pre-projects/cases/${record.id}/quotations${search ? `?${search}` : ""}`;
+  const projectPlanningHref = (part: string, quote?: string) => {
+    if (!projectId) return "";
+    const query = new URLSearchParams({ tab: "planning", planningTab: part });
+    if (quote) query.set("quote", quote);
+    return `/workspace/projects/${projectId}?${query}`;
+  };
+  const rootHref = projectId
+    ? projectPlanningHref("quotations")
+    : `/workspace/pre-projects/cases/${record.id}/quotations${search ? `?${search}` : ""}`;
   const quoteHref = (id: string) => {
+    if (projectId) return projectPlanningHref("quotations", id);
     const query = new URLSearchParams(search);
     query.set("quote", id);
     return `/workspace/pre-projects/cases/${record.id}/quotations?${query}`;
@@ -78,7 +103,7 @@ export function CommercialPage({
       : initial.data.quotes.at(-1)) ?? null;
   useWoddyRecord("commercial", record.id, record.title);
   useWorkspaceFocus(
-    section === "quotations" && quotationId ? record.title : undefined,
+    !reviewOnly && section === "quotations" && quotationId ? record.title : undefined,
     rootHref,
   );
   const design = useDesignSystem(),
@@ -210,7 +235,7 @@ export function CommercialPage({
   }
   function choose(id: string) {
     const applyChoice = () => {
-      if (section === "quotations") router.push(quoteHref(id));
+      if (section === "quotations") router.push(reviewOnly ? `/workspace/pre-projects/cases/${record.id}/approvals?review=${encodeURIComponent(`quote:${id}`)}` : quoteHref(id));
       setSelectedQuote(id);
       setDraft(state.data.quotes.find((q) => q.id === id) ?? null);
     };
@@ -222,16 +247,17 @@ export function CommercialPage({
   }
   const quotePage = ["boq", "quotations"].includes(section),
     root = `/workspace/pre-projects/cases/${state.caseId}`,
-    showReadinessFlow = ["contracts", "payment-plan", "variations", "approvals", "execution-release"].includes(section);
+    showReadinessFlow = ["approvals", "execution-release"].includes(section);
   return (
     <DesignSystemProvider {...design} className={colors.theme}>
       <section
-        className={`${s.page} ${section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
+        className={`${s.page} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
       >
         {section === "quotations" && quotationId && draft && (
           <h1 className={s.visuallyHidden}>Quotations</h1>
         )}
-        {!(section === "quotations" && quotationId && draft) && (
+        {section !== "quotations" && section !== "contracts" && section !== "payment-plan" && (
+          <>{!embedded && <CaseSpine compact record={record} search={search} section={section} />}
           <header className={s.header}>
             <div>
               <h1>{labels[section]}</h1>
@@ -253,9 +279,9 @@ export function CommercialPage({
                 <RefreshCw size={16} />
               </IconButton>
             </div>
-          </header>
+          </header></>
         )}
-        {showReadinessFlow ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
+        {showReadinessFlow && !embedded && (!state.data.palmFlow || state.data.palmFlow.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
         {error && (
           <p role="alert" className={s.error}>
             {error}
@@ -266,8 +292,26 @@ export function CommercialPage({
             {notice}
           </p>
         )}
+        {quotationList && state.palmFlowEnabled && !state.data.quotes.length && (
+          <section className={s.flowChooser} aria-label="Enquiry service path">
+            <div>
+              <h2>Service path</h2>
+              <p>{state.data.palmFlow
+                ? "Confirmed for this enquiry. Create the quotation when its requirements are ready."
+                : "Choose what the client is buying before preparing the first quotation. This keeps inapplicable project stages out of the way."}</p>
+            </div>
+            {state.data.palmFlow
+              ? <span className={s.flowSelected}>{palmServicePaths.find(path => JSON.stringify(path.scope) === JSON.stringify(state.data.palmFlow?.scope))?.label ?? "Custom service path"}</span>
+              : <div className={s.flowChoices}>{palmServicePaths.map(path => (
+                  <Button key={path.label} size="compact" isDisabled={busy || !state.canEdit} onPress={() => void run("set_palm_flow", { scope: path.scope })}>
+                    {path.label}
+                  </Button>
+                ))}</div>}
+          </section>
+        )}
         {quotationList ? (
           <QuotationList
+            initialPresentation={quotationPresentation}
             state={state}
             busy={busy}
             create={() => void run("create")}
@@ -282,7 +326,7 @@ export function CommercialPage({
         ) : quotePage ? (
           draft ? (
             <>
-              <div className={s.toolbar} data-quotation-toolbar={section === "quotations" || undefined}>
+              <div className={s.toolbar} data-quotation-toolbar={!reviewOnly && section === "quotations" || undefined}>
                 <div className={s.actions}>
                   {section !== "quotations" ? <strong>
                     {draft.kind === "variation" ? "Variation" : "Quotation"}
@@ -297,6 +341,7 @@ export function CommercialPage({
                   {section !== "quotations" ? <span className={s.status} data-status={draft.status}>
                     {statusLabel[draft.status]}
                   </span> : null}
+                  {draft.qsEstimate && <span className={s.muted}>QS checked · {draft.qsEstimate.reviewedBy}</span>}
                   {dirty ? (
                     <span className={s.muted}>Unsaved edits</span>
                   ) : (
@@ -307,7 +352,7 @@ export function CommercialPage({
                     )
                   )}
                 </div>
-                {state.canEdit && draft.status === "draft" && draft.direction !== "deduction" && section === "quotations" ? <QuotationScopeComposer
+                {!reviewOnly && state.canEdit && draft.status === "draft" && draft.direction !== "deduction" && section === "quotations" ? <QuotationScopeComposer
                   key={draft.id}
                   compact
                   workspaceId={state.workspaceId}
@@ -349,6 +394,7 @@ export function CommercialPage({
                       <Button
                         size="compact"
                         isDisabled={busy || !dirty}
+                        hidden={reviewOnly}
                         onPress={() => void run("save")}
                       >
                         Save changes
@@ -375,7 +421,17 @@ export function CommercialPage({
                         Return to draft
                       </Button>
                     )}
-                  {state.canApprove && draft.status === "internal_review" && (
+                  {state.data.palmFlow && state.canEstimate && draft.status === "internal_review" && draft.kind === "quotation" && (
+                    <Button
+                      size="compact"
+                      variant="primary"
+                      isDisabled={busy}
+                      onPress={() => void run("qs_approve")}
+                    >
+                      Approve QS estimate
+                    </Button>
+                  )}
+                  {!state.data.palmFlow && state.canApprove && draft.status === "internal_review" && (
                     <Button
                       size="compact"
                       variant="primary"
@@ -392,7 +448,7 @@ export function CommercialPage({
                       isDisabled={busy}
                       onPress={() => setDialog("issue")}
                     >
-                      Issue quotation
+                      {reviewOnly ? "Send to client" : "Issue quotation"}
                     </Button>
                   )}
                   {state.canEdit && draft.status === "issued" && (
@@ -406,7 +462,7 @@ export function CommercialPage({
                   )}
                   {state.canEdit && draft.status === "accepted" && (
                     <Link className={s.primary} href={`${root}/variations`}>
-                      Start change case
+                      Request a change
                     </Link>
                   )}
                   {state.canEdit &&
@@ -424,7 +480,7 @@ export function CommercialPage({
                     )}
                 </div>
               </div>
-              {section==="boq"&&<div className={s.boqContext}><span>01 <strong>Scope & costing</strong></span><span>02 <Link href={quoteHref(draft.id)}>Quotation builder →</Link></span><span>03 <Link href={`${root}/contracts`}>Agreement & payments →</Link></span><small>One set of room items. Costs stay internal.</small></div>}
+              {section==="boq"&&<div className={s.boqContext}><span>01 <strong>Scope & costing</strong></span><span>02 <Link href={quoteHref(draft.id)}>Quotation builder →</Link></span><span>03 <Link href={`${root}/contracts`}>Agreements & Payments →</Link></span><small>One set of room items. Costs stay internal.</small></div>}
               {section === "boq" && <>
               <QuotationsChangeSummary
                 draft={draft}
@@ -436,7 +492,7 @@ export function CommercialPage({
               />
               <QuotationsReadonlyNote quote={draft} />
               </>}
-              <fieldset
+              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>Open quotation editor →</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={draft} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
                 disabled={busy}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               >
@@ -456,14 +512,14 @@ export function CommercialPage({
                   readOnly={!state.canEdit || draft.status !== "draft"}
                   requests={state.data.requests}
                 />
-              </fieldset>
+              </fieldset>}
             </>
           ) : (
             <div className={s.empty}>
               <FileText size={30} />
               <h2>
                 {section === "boq"
-                  ? "Build your BOQ"
+                  ? "Prepare quotation items"
                   : "Create your first quotation"}
               </h2>
               <p>
@@ -494,13 +550,14 @@ export function CommercialPage({
           />
         ) : ["contracts", "payment-plan"].includes(section) ? (
           <AgreementPayments
+            initialView={section === "payment-plan" ? "payments" : "agreement"}
             state={state}
             run={run}
             busy={busy}
             error={error}
           />
         ) : (
-          <ApprovalRelease state={state} run={run} busy={busy} root={root} />
+          <ApprovalRelease initialView={section === "approvals" ? "owner" : "release"} state={state} run={run} busy={busy} root={root} sectionHref={projectId ? part => projectPlanningHref(part === "contracts" || part === "payment-plan" ? "agreement" : part === "designs" ? "design" : part === "variations" ? "change-requests" : part === "execution-release" ? "approvals" : part) : undefined} />
         )}
         {draft&&<ScopeImport workspaceId={state.workspaceId} caseId={state.caseId} quote={draft} open={dialog==="scope"} onClose={()=>setDialog("")} busy={busy} run={run}/>}
         <ControlledModalDialog
@@ -622,16 +679,16 @@ function QuotationsChangeSummary({
 }) {
   const changes = changedLines(draft, previous);
   return previous && changes.length ? (
-    <details className={s.section}>
-      <summary>
+    <section className={s.section}>
+      <h3>
         {changes.length} item changes since V{previous.number}
-      </summary>
+      </h3>
       <ul>
         {changes.map((c, i) => (
           <li key={i}>{c}</li>
         ))}
       </ul>
-    </details>
+    </section>
   ) : null;
 }
 

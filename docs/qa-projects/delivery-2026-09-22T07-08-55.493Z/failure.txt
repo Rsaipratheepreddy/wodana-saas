@@ -1,0 +1,22 @@
+Error: node services/business-core/scripts/smoke-funnel.mjs failed (1)
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: PUT /workspaces/cf53a730-4a77-4e3c-8a70-219a73f0c2ed/pre-projects/8da680b0-aabe-4d7d-a0f4-8dcb02e50e98/rooms: expected 409, got 200: {"id":"6954add9-cfa1-4ec7-a11e-ecc154f7135e","name":"Blocked while held","version":1,"catalogRecordId":null,"catalogSnapshot":null}
+
+200 !== 409
+
+    at request (file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-funnel.mjs:91:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///Users/saipratheep/Downloads/sdui-portal/services/business-core/scripts/smoke-funnel.mjs:851:1 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 200,
+  expected: 409,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.6.0

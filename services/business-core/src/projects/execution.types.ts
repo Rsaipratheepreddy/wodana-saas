@@ -22,6 +22,8 @@ export type ReleasedCatalogSelection = {
   };
 };
 export type ReleasedScopeLine = {
+  /** Approved item photo, carried with the immutable quotation scope. */
+  photo?: string;
   id: string;
   deductsLineId?: string;
   sourceScopeId?: string;
@@ -65,7 +67,15 @@ export type ReleasedScopeLine = {
   }[];
   catalogSelections?: ReleasedCatalogSelection[];
 };
+export type DecisionEvidenceFile = {id:string;name:string;mimeType:string;bytes:number;sha256:string};
 export type Task = {
+  factoryLots?: Task['installationBatches'];
+  installationBatches?: {
+    id:string; title:string; quantity:number; unit:string; createdBy:string; at:string;
+    status:"pending_qc"|"passed"|"rework"|"cancelled";
+    reviews:{by:string;at:string;passed:boolean;evidence:string;evidenceFiles?:DecisionEvidenceFile[]}[];
+  }[];
+  inspections?: { id: string; by: string; at: string; passed: boolean; quantity: number; unit: string; evidence: string; evidenceFiles?:DecisionEvidenceFile[] }[];
   id: string;
   parentId: string;
   /** The released-scope work package this task belongs to, when it is delivery work. */
@@ -109,6 +119,7 @@ export type DailyReport = {
   nextUpdateDate?: string;
   workforce?: {trade:string;people:number;hours:number}[];
   clientFileIds?:string[];
+  clientSummary?:string;
   id: string;
   date: string;
   shift: string;
@@ -130,6 +141,7 @@ export type DailyReport = {
   supersedes?: string;
 };
 export type Material = {
+  outputBasis?: { perUnit: number; outputUnit: string; by: string; at: string; evidence: string };
   reservations?: {
     taskId: string;
     quantity: number;
@@ -143,8 +155,11 @@ export type Material = {
   catalogVersion: number;
   unit: string;
   required: number;
+  estimatedUnitCost?: number;
   supply: "company" | "vendor" | "client";
   taskId: string;
+  /** The released scope line this requirement was planned from, when it came from the BOQ. */
+  scopeLineId?: string;
   needBy: string;
   movements: {
     taskId?: string;
@@ -155,7 +170,56 @@ export type Material = {
     at: string;
   }[];
 };
+export type SupplierInvoice = {
+  id: string;
+  orderId: string;
+  number: string;
+  date: string;
+  dueDate: string;
+  quantity: number;
+  unitCost: number;
+  tax: number;
+  evidence: string;
+  status: "draft" | "approved";
+  approvedBy?: string;
+  payments: { id: string; amount: number; reference: string; date: string }[];
+};
 export type Order = {
+  amendments?: {
+    id: string; status: "submitted" | "approved" | "rejected" | "withdrawn";
+    createdBy: string; createdAt: string; reason: string; evidence: string;
+    reviewerId?: string; dueDate?: string;
+    assignments?: {fromReviewerId: string; toReviewerId: string; fromDueDate: string; toDueDate: string; by: string; at: string; reason: string}[];
+    before: { quantity: number; unitCost: number; promisedDate: string; currency: string };
+    after: { unitCost: number; promisedDate: string };
+    decidedBy?: string; decidedAt?: string; decisionNote?: string;
+  }[];
+  replacesRequestId?: string;
+  replacedByRequestId?: string;
+  replacementReason?: string;
+  replacementBy?: string;
+  replacementAt?: string;
+  selectedOffer?: {
+    offerId: string; selectedBy: string; selectedAt: string; reason: string;
+    quantity: number; quotedQuantity: number; unitCost: number; promisedDate: string;
+    evidence: string;
+  };
+  rfqSnapshot?: {
+    capturedAt: string; capturedBy: string; projectRevision: number;
+    materialId: string; taskId: string; scopeLineId: string;
+    catalogId: string; catalogVersion: number;
+    title: string; specification: string; workTitle: string; workArea: string;
+    quantity: number; unit: string; currency: string;
+    promisedDate: string; quoteDueDate: string;
+  };
+  baselinePromisedDate?: string;
+  notes?: string;
+  shipments?: { id: string; at: string; status: "preparing" | "dispatched" | "arrived"; carrier: string; reference: string; expectedDate: string; quantity: number; note: string }[];
+  vendorId?: string;
+  vendorSiteId?: string;
+  vendorPhone?: string;
+  quoteRequestId?: string;
+  quoteDueDate?: string;
   sourceEnquiry?: string;
   vendorUpdates?: {
     id: string;
@@ -192,6 +256,14 @@ export type Order = {
     | "cancelled";
   acknowledgement: string;
   receipts: {
+    /** Explicitly distinguish measured service certification from goods arrival. */
+    basis?: "goods" | "service";
+    serviceBasis?: { taskId: string; unit: string; approvedQuantity: number; capturedAt: string };
+    receivedOn?: string;
+    receivedBy?: string;
+    pending?: number;
+    inspections?: { id: string; by: string; at: string; accepted: number; rejected: number; evidence: string; evidenceFiles?:DecisionEvidenceFile[]; serviceBasis?: { taskId: string; unit: string; approvedQuantity: number; capturedAt: string } }[];
+    evidenceFiles?:DecisionEvidenceFile[];
     id: string;
     accepted: number;
     rejected: number;
@@ -223,6 +295,22 @@ export type ProjectDocument = {
   sourceDesignAssetId?: string;
   /** Released quotation scope covered by this document revision. */
   scopeLineIds?: string[];
+};
+export type ProjectRfa = {
+  id: string;
+  version: number;
+  documentId: string;
+  reviewerId: string;
+  dueDate: string;
+  instructions: string;
+  status: "draft" | "submitted" | "in_review" | "approved" | "returned" | "rejected" | "withdrawn";
+  createdBy: string;
+  createdAt: string;
+  submittedBy?: string;
+  submittedAt?: string;
+  revisionOf?: string;
+  snapshot?: { document: ProjectDocument; scope: ReleasedScopeLine[]; files?: {id:string;name:string;sha256:string;bytes:number}[] };
+  history: { action: string; actorId: string; at: string; note: string }[];
 };
 export type Snag = {
   handoverId?: string;
@@ -270,6 +358,7 @@ export type HandoverOutstandingItem = {
  * a pack the client has already reviewed.
  */
 export type HandoverPacket = {
+  installationBatchIds?:string[];
   id: string;
   version: number;
   createdAt: string;
@@ -291,6 +380,8 @@ export type HandoverPacket = {
 };
 
 export type Handover = {
+  installationBatchIds?:string[];
+  acceptanceFiles?:DecisionEvidenceFile[];
   id: string;
   area: string;
   title: string;
@@ -478,6 +569,25 @@ export type ProjectDesignBaseline = {
   definitionBaseline?: { id: string; number: number; hash: string };
   links: ProjectDesignLink[];
 };
+export type DeliveryQuantityRow = {
+  id: string;
+  title: string;
+  quantity: number;
+  unit: string;
+  basis: string;
+  sources: { scopeLineId: string; quantity: number }[];
+};
+export type DeliveryQuantityPlan = {
+  version: number;
+  status: "draft" | "confirmed";
+  rows: DeliveryQuantityRow[];
+  updatedAt: string;
+  updatedBy: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  sourceSnapshot?: ReleasedScopeLine[];
+  revisionReason?: string;
+};
 export type ProjectWorkPackage = {
   id: string;
   /** Immutable links to the released quotation scope that this package delivers. */
@@ -485,6 +595,12 @@ export type ProjectWorkPackage = {
   title: string;
   area: string;
   deliveryRoute: "site" | "factory" | "vendor" | "office" | "mixed";
+  supplyMethod?: "make" | "buy" | "subcontract" | "client";
+  /** Explicit performance location, independent of supply responsibility. Absent on legacy plans. */
+  workLocation?: "factory" | "supplier" | "site" | "office";
+  siteWork?: "none" | "delivery" | "install" | "site_work";
+  deliveryQuantities?: DeliveryQuantityPlan;
+  deliveryQuantityHistory?: DeliveryQuantityPlan[];
   status:
     | "planning"
     | "ready"
@@ -529,6 +645,7 @@ export type ProjectConnectedPlan = {
     nextActionOwnerId: string;
     nextActionDate: string;
     recoveryPlan: string;
+    readinessIssues?: { code: string; detail: string }[];
     supplierCommitments: {
       orderId: string;
       number: string;
@@ -561,7 +678,23 @@ export type ProjectConnectedPlan = {
     }[];
   }[];
 };
+export type ProjectClientSections = { progress: boolean; documents: boolean; handover: boolean; updates: boolean };
+export type ProjectClientUpdate = {
+  id: string; title: string; summary: string;
+  kind: "progress" | "delay" | "issue" | "delivery" | "general";
+  sourceType?: "task" | "report" | "order" | "dispatch" | "snag";
+  sourceId?: string;
+  status: "draft" | "submitted" | "published" | "withdrawn";
+  authorId: string; reviewerId?: string; at: string; publishedAt?: string; revision: number;
+};
+export type PublicProjectClientUpdate = Pick<ProjectClientUpdate, "id" | "title" | "summary" | "kind" | "sourceType" | "sourceId" | "revision"> & {status: "published"; publishedAt: string};
 export type ProjectData = import("./execution-controls.types").ExecutionControls & {
+  /** The post-payment visit fixes the design brief and flags any fee change for review. */
+  siteVisit?: { visitedOn: string; scopeSummary: string; feeReviewNote: string; evidenceReference: string; recordedAt: string; recordedBy: string };
+  clientSections?: ProjectClientSections;
+  clientUpdates?: ProjectClientUpdate[];
+  /** Private immutable wording snapshots; never returned by the client projection. */
+  clientUpdateHistory?: (ProjectClientUpdate & { archivedAt: string; archivedBy: string })[];
   controls?: ProjectControlSummary;
   holdHistory?: ProjectHoldHistoryEntry[];
   workflow?: import("./project-workflow").ProjectWorkflowState;
@@ -629,7 +762,9 @@ export type ProjectData = import("./execution-controls.types").ExecutionControls
   reports: DailyReport[];
   materials: Material[];
   orders: Order[];
+  supplierInvoices?: SupplierInvoice[];
   documents: ProjectDocument[];
+  rfas?: ProjectRfa[];
   snags: Snag[];
   handovers: Handover[];
   comments: ProjectComment[];
@@ -675,6 +810,8 @@ export type ProjectBooking = {
 export type ProjectExecutionAction = {
   id: string;
   kind:
+    | "review_rfa"
+    | "correct_rfa"
     | "prepare_package"
     | "resolve_package"
     | "recover_task"
@@ -707,7 +844,12 @@ export type ProjectExecutionAction = {
     | "recover_handover_commitment"
     | "resolve_warranty_claim"
     | "review_warranty_claim"
-    | "confirm_order";
+    | "source_material"
+    | "review_order"
+    | "confirm_order"
+    | "inspect_receipt"
+    | "recover_delivery"
+    | "close_order";
   priority: "critical" | "high" | "normal";
   title: string;
   detail: string;
@@ -729,6 +871,12 @@ export type ProjectExecutionPulse = {
   nextActions: ProjectExecutionAction[];
 };
 export type ProjectState = {
+  /** Rebuilt from authoritative linked records after every read/mutation. */
+  stockTransfers?: import("./project-stock.types").StockTransfer[];
+  inventory?: import("./project-inventory").ProjectInventory;
+  itemPipeline?: import("./project-item-pipeline").ItemPipeline[];
+  itemRegister?: import("./project-item-register").ItemRegisterRow[];
+  itemImages?: Record<string,string>;
   notifications?:{id:string;subject:string;body:string;deepLink:string;readAt:string|null;createdAt:string}[];
   timezone?:string;
   today?: string;
@@ -738,8 +886,17 @@ export type ProjectState = {
   name: string;
   customer: string;
   data: ProjectData;
+  workflowSummary?: {
+    currentStageKey: string;
+    currentStageName: string;
+    ownerRole: ProjectRole | null;
+    ownerId: string | null;
+    nextStage: { key: string; name: string } | null;
+    nextBlocker?: string;
+    exitGates: { key: string; passed: boolean }[];
+  };
   pulse: ProjectExecutionPulse;
-  members: { id: string; name: string }[];
+  members: { id: string; name: string; canReview?: boolean; canMention?:boolean }[];
   sites?: { id: string; name: string; address: string }[];
   /** Active client contacts permitted to make portal acceptance decisions. */
   clientApprovers?: { id: string; name: string }[];
@@ -755,6 +912,9 @@ export type ProjectState = {
   commercialReady: boolean;
 };
 export type PublicProject = {
+  clientSections?: ProjectClientSections;
+  clientUpdates?: PublicProjectClientUpdate[];
+  alerts?: import("./project-client-alerts").ClientProjectAlert[];
   id: string;
   name: string;
   phase: string;
@@ -770,10 +930,11 @@ export type PublicProject = {
     acceptedAt?: string;
     progress: number;
   }[];
+  tasks?: {id:string;title:string;area:string;location:string;quantity:number;reportedQuantity:number;unit:string;status:string}[];
   reports: (Pick<
     DailyReport,
-    "id" | "date" | "location" | "tomorrow" | "publishedAt"
-  > & { work: { title: string; quantity: number; unit: string }[]; files?:{id:string;name:string;mimeType:string}[] })[];
+    "id" | "date" | "location" | "tomorrow" | "publishedAt" | "clientSummary"
+  > & { work: { title: string; quantity: number; unit: string; status?:string }[]; files?:{id:string;name:string;mimeType:string}[] })[];
   documents: Pick<
     ProjectDocument,
     "id" | "title" | "kind" | "revision" | "url"

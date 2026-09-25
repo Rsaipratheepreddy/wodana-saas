@@ -26,6 +26,7 @@ export type AuthProfile = {
     workspaceBodyFont: string | null;
     accountName?: string | null;
     allowedModules: Array<"workspace" | "crm" | "pre-project" | "projects" | "hrms">;
+    allowedPermissions?: string[];
     roles: string[];
     onboarding: {
       status: "not_started" | "in_progress" | "completed";
@@ -85,6 +86,7 @@ export const getAuthenticatedProfile = cache(async (): Promise<AuthProfile> => {
         workspaceHeadingFont: null,
         workspaceBodyFont: null,
         allowedModules: ["workspace", "crm", "pre-project", "projects", "hrms"],
+        allowedPermissions: ["workspace.roles.manage"],
         roles: ["owner"],
         onboarding: {
           status: "completed",

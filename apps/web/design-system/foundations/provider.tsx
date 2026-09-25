@@ -8,6 +8,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import { languageDirection } from "@/lib/i18n/languages";
 import { I18nProvider } from "react-aria-components";
 
 export type DesignSystemTheme = "light" | "dark" | "high-contrast";
@@ -50,7 +51,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
       theme = DEFAULT_SETTINGS.theme,
       density = DEFAULT_SETTINGS.density,
       locale = DEFAULT_SETTINGS.locale,
-      direction = locale.startsWith("ar") ? "rtl" : DEFAULT_SETTINGS.direction,
+      direction = languageDirection(locale),
       currency = DEFAULT_SETTINGS.currency,
       timeZone = DEFAULT_SETTINGS.timeZone,
       portalContainer = null,
@@ -85,4 +86,10 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
 
 export function useDesignSystem(): DesignSystemSettings {
   return useContext(DesignSystemContext);
+}
+
+/** Portaled surfaces do not inherit theme and density from `.wd-root`. */
+export function usePortalThemeAttributes() {
+  const { theme, density } = useDesignSystem();
+  return { "data-wd-theme": theme, "data-wd-density": density } as const;
 }

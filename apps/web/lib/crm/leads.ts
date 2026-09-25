@@ -60,6 +60,8 @@ export type CrmLeadListItem = {
   reference?: string;
   details?: EnquiryDetails;
   intakeMethod?: string;
+  formId?: string | null;
+  formAnswers?: Array<{ questionId: string; title: string; type: string; field?: string; value: string | string[] }> | null;
   title: string;
   source: string;
   channel: string;
@@ -233,6 +235,9 @@ export type CrmActivity = {
 };
 
 export type LeadsPageData = {
+  defaultCurrency?: string;
+  defaultLocale?: string;
+  currentMembershipId?: string;
   leadOptions?: LeadOptions;
   canView: boolean;
   items: CrmLeadListItem[];
