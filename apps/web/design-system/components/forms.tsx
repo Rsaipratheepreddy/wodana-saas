@@ -109,7 +109,20 @@ export function RadioSet({ description, errorMessage, items, label, ...props }: 
 }
 
 export type SelectItem = { id: string; label: string; description?: string; icon?: ReactNode };
+/** Lists longer than this become type-to-filter: one dropdown, with search only where it helps. */
+const LONG_LIST = 10;
+
 export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder = "Select an option", ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+  if (items.length > LONG_LIST) {
+    const { selectedKey, defaultSelectedKey, onSelectionChange, isRequired, isDisabled, isInvalid, autoFocus, name, validate, ...rest } = props;
+    return <ComboboxField aria-label={rest["aria-label"]} autoFocus={autoFocus} defaultSelectedKey={defaultSelectedKey} description={description} errorMessage={errorMessage}
+      isDisabled={isDisabled} isInvalid={isInvalid} isRequired={isRequired} items={items} label={label} name={name}
+      onSelectionChange={onSelectionChange} prefix={prefix} selectedKey={selectedKey} validate={validate as never} />;
+  }
+  return <SelectList accent={accent} description={description} errorMessage={errorMessage} items={items} label={label} prefix={prefix} placeholder={placeholder} {...props} />;
+}
+
+function SelectList({ accent = "brand", description, errorMessage, items, label, prefix, placeholder = "Select an option", ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   return <Select {...props} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame">{prefix ? <span className="wd-select-prefix" aria-hidden="true">{prefix}</span> : null}<SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" data-accent={accent} dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
@@ -118,7 +131,9 @@ export function SelectField({ accent = "brand", description, errorMessage, items
 export function ComboboxField({ description, errorMessage, items, label, placeholder, prefix, ...props }: ComboBoxProps<object> & FieldChromeProps & { items: SelectItem[]; placeholder?: string; prefix?: ReactNode }) {
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
-  return <ComboBox {...props} className="wd-field wd-combobox"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" placeholder={placeholder} /><AriaButton aria-label="Show options" className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.icon ? <span className="wd-option-icon" aria-hidden="true">{item.icon}</span> : null}<span>{item.label}</span></ListBoxItem>}</ListBox></Popover></ComboBox>;
+  const t = useT();
+  // Opens on click with the whole list; typing filters. Focus selects the current text so typing replaces it.
+  return <ComboBox menuTrigger="focus" {...props} className="wd-field wd-combobox"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-input-group wd-focus-frame">{prefix ? <span className="wd-input-affix" data-side="start" aria-hidden="true">{prefix}</span> : null}<Input className="wd-input" onFocus={(event) => event.currentTarget.select()} placeholder={placeholder ?? t("Type to search")} /><AriaButton aria-label={t("Show options")} className="wd-input-icon-button"><ChevronDown size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction}><ListBox items={items} renderEmptyState={() => <p className="wd-picker-empty">{t("No matches")}</p>}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}>{item.icon ? <span className="wd-option-icon" aria-hidden="true">{item.icon}</span> : null}<span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></ComboBox>;
 }
 
 export function MultiSelectField({ label, items, selectedKeys, onSelectionChange }: { label: string; items: SelectItem[]; selectedKeys: Set<Key>; onSelectionChange: (keys: Set<Key>) => void }) {

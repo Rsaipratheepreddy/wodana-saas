@@ -33,3 +33,18 @@ for (const [language, direction] of [["en", "ltr"], ["ar", "rtl"]] as const) {
     }
   });
 }
+
+test("long dropdowns open the full list on click and filter as you type", async ({ page }, testInfo) => {
+  await page.goto("/workspace/company");
+  await page.getByRole("button", { name: "Edit profile" }).click();
+  const dialog = page.getByRole("dialog");
+  const currency = dialog.getByRole("combobox", { name: "Base currency" });
+  await currency.click();
+  const options = page.getByRole("option");
+  expect(await options.count()).toBeGreaterThan(20);
+  await currency.fill("dirham");
+  await expect(page.getByRole("option", { name: /United Arab Emirates Dirham/ })).toBeVisible();
+  await currency.fill("zzzz");
+  await expect(page.getByText("No matches")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("long-dropdown.png"), animations: "disabled" });
+});

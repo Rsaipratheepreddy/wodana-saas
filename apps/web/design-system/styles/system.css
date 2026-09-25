@@ -1094,3 +1094,4 @@
 .wd-phone-option span:first-child { min-inline-size: 5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .wd-phone-option span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wd-color-text-secondary); }
 .wd-phone-empty { margin: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.wd-picker-empty { margin: 0; padding: var(--wd-space-2) var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
