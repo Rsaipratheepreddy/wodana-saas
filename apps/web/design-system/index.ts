@@ -30,3 +30,4 @@ export * from "./patterns/ai";
 export * from "./patterns/ai-suggestion";
 export * from "./patterns/analytics";
 export * from "./patterns/activity";
+export * from "./components/phone-field";

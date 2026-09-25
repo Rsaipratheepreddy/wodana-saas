@@ -243,5 +243,17 @@
   "Not saved yet": "Not saved yet",
   "Complete the required fields:": "Complete the required fields:",
   "Check the highlighted fields.": "Check the highlighted fields.",
-  "Dismiss": "Dismiss"
+  "Dismiss": "Dismiss",
+  "Too short": "Too short",
+  "mobile numbers are": "mobile numbers are",
+  "digits after": "digits after",
+  "Too long": "Too long",
+  "Not a valid number for": "Not a valid number for",
+  "Not a mobile number for": "Not a mobile number for",
+  "Choose the country code": "Choose the country code",
+  "country code": "country code",
+  "Code": "Code",
+  "country codes": "country codes",
+  "Search country or code": "Search country or code",
+  "No matching country": "No matching country"
 }

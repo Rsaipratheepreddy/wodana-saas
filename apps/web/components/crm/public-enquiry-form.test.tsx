@@ -60,7 +60,7 @@ describe("PublicEnquiryFormView", () => {
     await interaction.click(screen.getByRole("checkbox", { name: form.consentLabel }));
     await interaction.click(screen.getByRole("button", { name: "Submit enquiry" }));
     expect(await screen.findByRole("heading", { name: "Thank you for your enquiry" })).toBeInTheDocument();
-    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({ phoneCountryCodes: { mobile: "AE" }, answers: { mobile: "050 123 4567" } });
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({ phoneCountryCodes: { mobile: "AE" }, answers: { mobile: "501234567" } });
   });
 
   it("uses city and country text for an Outside UAE public enquiry", async () => {

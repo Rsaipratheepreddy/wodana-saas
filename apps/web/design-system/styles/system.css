@@ -1079,3 +1079,18 @@
 .wd-blocked-save-close { display: inline-grid; place-items: center; flex: none; inline-size: var(--wd-control-xs); block-size: var(--wd-control-xs); border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: inherit; cursor: pointer; }
 .wd-blocked-save-close:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 .wd-blocked-save-close:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+
+/* Phone: country code inside the field. */
+.wd-input-affix:has(> .wd-phone-code) { padding: 0; }
+.wd-phone-code { display: inline-flex; align-items: center; gap: var(--wd-space-1); block-size: 100%; padding-inline: var(--wd-space-3) var(--wd-space-2); border: 0; border-inline-end: 1px solid var(--wd-color-structural-divider); background: transparent; color: var(--wd-color-text); font: inherit; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
+.wd-phone-code:hover { background: var(--wd-color-surface-hover); }
+.wd-phone-code[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.wd-phone-code svg { color: var(--wd-color-icon-subtle); }
+.wd-phone-popover { inline-size: min(22rem, calc(100vw - var(--wd-space-6))); padding: var(--wd-space-2); }
+.wd-phone-dialog { display: grid; gap: var(--wd-space-2); outline: 0; }
+.wd-phone-options { max-block-size: 17.5rem; overflow-y: auto; outline: 0; }
+.wd-phone-option { display: flex; align-items: center; gap: var(--wd-space-3); min-block-size: var(--wd-control-md); padding: var(--wd-space-1-5) var(--wd-space-2); border-radius: var(--wd-radius-xs); font-size: var(--wd-text-sm); cursor: pointer; }
+.wd-phone-option[data-focused], .wd-phone-option[data-selected] { background: var(--wd-color-surface-muted); }
+.wd-phone-option span:first-child { min-inline-size: 5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wd-phone-option span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wd-color-text-secondary); }
+.wd-phone-empty { margin: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

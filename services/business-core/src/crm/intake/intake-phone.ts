@@ -23,7 +23,12 @@ function normalizePhone(value: string | undefined, countryHint: string | undefin
   const country = countryHint?.trim().toUpperCase();
   if (country && !isSupportedCountry(country)) throw new UnprocessableEntityException(`Select a valid ${label} country code`);
   const parsed = parsePhoneNumberFromString(value.trim(), { defaultCountry: country as CountryCode | undefined, extract: false });
-  if (!parsed?.isPossible()) throw new UnprocessableEntityException(`Enter ${label} with a valid country code and number`);
+  if (!country && !value.trim().startsWith("+")) throw new UnprocessableEntityException(`Choose the ${label} country code`);
+  // Same rule as the form: a real number for that country, and a mobile where a mobile is asked for.
+  if (!parsed?.isValid()) throw new UnprocessableEntityException(`Enter a valid ${label} number for the selected country`);
+  const type = parsed.getType();
+  if (label === "mobile" && type && !["MOBILE", "FIXED_LINE_OR_MOBILE", "PERSONAL_NUMBER"].includes(type))
+    throw new UnprocessableEntityException("The mobile number is a landline. Enter a mobile number");
   return { number: parsed.number, country: parsed.country ?? country };
 }
 

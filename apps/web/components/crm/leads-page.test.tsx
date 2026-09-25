@@ -238,6 +238,7 @@ describe("LeadsPage", () => {
     const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => url === "/api/workspace/crm/leads" ? { status: "ready", leadId: createdLead.id, reference: createdLead.reference } : url.includes("/data/leads/") ? createdLead : { data: [createdLead, ...structuredClone(leadsPageFixture.items)], nextCursor: null } }));
     vi.stubGlobal("fetch", fetchMock);
     const fixture = structuredClone(leadsPageFixture);
+    fixture.defaultLocale = "en-AE";
     fixture.leadOptions = { sources: [{id:"company",label:"Company"}], channels: {company:[{id:"call",label:"Call"}]}, enquiryTypes: [{id:"not_sure",label:"Not Sure Yet"}], customerTypes: [], budgetRanges: [], emirates: [{id:"dubai",label:"Dubai"}], areas: {dubai:[]} };
     render(<LeadsPage initialData={fixture} />);
     await user.click(screen.getByRole("button", { name: "New enquiry" }));

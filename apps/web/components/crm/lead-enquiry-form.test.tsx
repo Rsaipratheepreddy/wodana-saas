@@ -52,7 +52,7 @@ it("passes the selected country with a locally entered mobile", async () => {
   await choose(user, /Assignment/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ mobile: "050 123 4567", mobileCountryCode: "AE" });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ mobile: "501234567", mobileCountryCode: "AE" });
 });
 it("captures an optional city and country when the location is Outside UAE", async () => {
   const { user, fetchMock, onSaved } = setup();
