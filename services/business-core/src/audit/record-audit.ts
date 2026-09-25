@@ -13,15 +13,17 @@ export async function recordAudit(db: Db, change: {
   const occurredAt = new Date().toISOString();
   await db.query(
     `INSERT INTO audit_events (id, workspace_id, actor_user_id, source, action, entity_type, entity_id, before, after, correlation_id, occurred_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11)`,
     [eventId, change.workspaceId, change.actorUserId, change.source ?? "user", change.action, change.entityType, change.entityId,
-      change.before ?? null, change.after ?? null, correlationId, occurredAt],
+      // Serialize explicitly: the driver would send a JS array as a Postgres array, not JSON.
+      change.before === undefined || change.before === null ? null : JSON.stringify(change.before),
+      change.after === undefined || change.after === null ? null : JSON.stringify(change.after), correlationId, occurredAt],
   );
   await db.query(
-    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [eventId, change.workspaceId, change.entityType, change.entityId, change.action, {
+    `INSERT INTO outbox_events (id, workspace_id, aggregate_type, aggregate_id, event_type, payload) VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [eventId, change.workspaceId, change.entityType, change.entityId, change.action, JSON.stringify({
       schemaVersion: 1, eventId, workspaceId: change.workspaceId, aggregateType: change.entityType, aggregateId: change.entityId,
       actorUserId: change.actorUserId, occurredAt, correlationId, causationId: null, data: change.after ?? {},
-    }],
+    })],
   );
 }
