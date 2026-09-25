@@ -8,6 +8,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import { UiLanguageContext } from "@/lib/i18n/i18n-provider";
 import { languageDirection } from "@/lib/i18n/languages";
 import { I18nProvider } from "react-aria-components";
 
@@ -51,7 +52,7 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
       theme = DEFAULT_SETTINGS.theme,
       density = DEFAULT_SETTINGS.density,
       locale = DEFAULT_SETTINGS.locale,
-      direction = languageDirection(locale),
+      direction: directionOverride,
       currency = DEFAULT_SETTINGS.currency,
       timeZone = DEFAULT_SETTINGS.timeZone,
       portalContainer = null,
@@ -59,6 +60,13 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     },
     ref,
   ) {
+    // Text direction follows the UI language the person chose; the workspace locale only formats
+    // numbers, dates and money. React Aria gets a locale in that language so keyboard and overlay
+    // placement mirror too.
+    const uiLanguage = useContext(UiLanguageContext);
+    const direction = directionOverride ?? languageDirection(uiLanguage ?? locale);
+    const region = locale.split("-")[1];
+    const ariaLocale = uiLanguage && languageDirection(locale) !== direction ? (region ? `${uiLanguage}-${region}` : uiLanguage) : locale;
     const value = useMemo(
       () => ({ theme, density, locale, direction, currency, timeZone, portalContainer }),
       [theme, density, locale, direction, currency, timeZone, portalContainer],
@@ -66,14 +74,14 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
 
     return (
       <DesignSystemContext.Provider value={value}>
-        <I18nProvider locale={locale}>
+        <I18nProvider locale={ariaLocale}>
           <div
             {...props}
             className={["wd-root", className].filter(Boolean).join(" ")}
             data-wd-density={density}
             data-wd-theme={theme}
             dir={direction}
-            lang={locale}
+            lang={uiLanguage ?? locale}
             ref={ref}
           >
             {children}

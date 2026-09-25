@@ -18,3 +18,18 @@ for (const [language, direction] of [["en", "ltr"], ["ar", "rtl"]] as const) {
     }
   });
 }
+
+for (const [language, direction] of [["en", "ltr"], ["ar", "rtl"]] as const) {
+  test(`company profile shows the brand colour ${direction}`, async ({ page, context, baseURL }, testInfo) => {
+    await context.addCookies([{ name: "wodana_language", value: language, url: baseURL! }]);
+    await page.goto("/workspace/company");
+    await expect(page.locator("html")).toHaveAttribute("dir", direction);
+    await expect(page.getByLabel("Brand colour")).toBeAttached();
+    await expect(page.getByText(/^#[0-9A-F]{6}/)).toBeVisible();
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await overflow(page)).toBeLessThanOrEqual(1);
+      await page.screenshot({ path: testInfo.outputPath(`company-${direction}-${width}.png`), animations: "disabled" });
+    }
+  });
+}

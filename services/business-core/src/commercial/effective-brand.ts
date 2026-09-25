@@ -1,4 +1,5 @@
 import type { QueryResult, QueryResultRow } from "pg";
+import { readableOnWhite } from "../email/readable-colour";
 import { defaultBrand } from "./commercial.domain";
 import type { PortalBrand } from "./commercial.types";
 
@@ -23,7 +24,8 @@ export async function effectivePortalBrand(db: Db, workspaceId: string, stored?:
   const logo = row?.logoAssetId
     ? `/api/auth/tenant-logo/${encodeURIComponent(row.slug)}?v=${row.logoAssetId}`
     : row?.logoUrl ?? "";
-  const primary = row?.primaryColor ?? fallback.primaryColor;
+  // Portal buttons and quote headers put white text on these colours.
+  const primary = readableOnWhite(row?.primaryColor, fallback.primaryColor);
   return {
     ...fallback,
     welcomeTitle: stored?.welcomeTitle ?? fallback.welcomeTitle,
@@ -33,7 +35,7 @@ export async function effectivePortalBrand(db: Db, workspaceId: string, stored?:
     name: row?.name ?? fallback.name,
     logo,
     primaryColor: primary,
-    accentColor: row?.secondaryColor ?? primary,
+    accentColor: readableOnWhite(row?.secondaryColor, primary),
   };
 }
 

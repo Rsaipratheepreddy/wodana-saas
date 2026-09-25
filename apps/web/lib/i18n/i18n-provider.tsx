@@ -4,10 +4,12 @@ import { languageDirection, type AppLanguage } from "./languages";
 import { translator } from "./messages";
 
 const I18nContext = createContext<AppLanguage>("en");
+/** The chosen UI language, or null outside an I18nProvider (the design system then follows its locale). */
+export const UiLanguageContext = createContext<AppLanguage | null>(null);
 
 /** Provides the chosen language to client components; the server resolves it from the language cookie. */
 export function I18nProvider({ language, children }: { language: AppLanguage; children: ReactNode }) {
-  return <I18nContext.Provider value={language}>{children}</I18nContext.Provider>;
+  return <UiLanguageContext.Provider value={language}><I18nContext.Provider value={language}>{children}</I18nContext.Provider></UiLanguageContext.Provider>;
 }
 
 /** Translator for the current language: `t("Label")`, with keys from en.json. */

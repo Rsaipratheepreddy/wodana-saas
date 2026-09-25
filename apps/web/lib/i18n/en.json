@@ -231,5 +231,11 @@
   "Save": "Save",
   "Preview": "Preview",
   "View project": "View project",
-  "Label": "Label"
+  "Label": "Label",
+  "The brand colour could not be saved.": "The brand colour could not be saved.",
+  "Brand colour": "Brand colour",
+  "Default": "Default",
+  "Save colour": "Save colour",
+  "Cancel": "Cancel",
+  "Use default": "Use default"
 }

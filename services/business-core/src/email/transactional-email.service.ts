@@ -1,3 +1,4 @@
+import { readableOnWhite } from "./readable-colour";
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../database/database.service";
@@ -78,7 +79,7 @@ export class TransactionalEmailService {
     return {
       name: row.displayName,
       logoUrl,
-      accentColor: row.primaryColor && /^#[0-9a-f]{6}$/i.test(row.primaryColor) ? row.primaryColor : WODANA_BRAND.accentColor,
+      accentColor: readableOnWhite(row.primaryColor, WODANA_BRAND.accentColor),
       loginSlug: row.loginSlug,
     };
   }

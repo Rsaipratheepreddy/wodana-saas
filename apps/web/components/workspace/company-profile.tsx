@@ -13,6 +13,7 @@ import {
 } from "@/lib/workspace/company-profile";
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions, type RegionalOption } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
+import { BrandColour } from "./brand-colour";
 import { identityInitials, identityStyle } from "@/lib/brand/identity";
 
 type ProfileForm = {
@@ -303,7 +304,7 @@ export function CompanyProfile({
       <section aria-label="Company profile" className={styles.page}>
         <h1 className="wd-visually-hidden">Company profile</h1>
         {status ? <div aria-live="polite" className={styles.liveStatus}><CheckCircle2 aria-hidden="true" size={15} />{status}</div> : null}
-        {logoError ? <Callout title="Could not update logo" tone="danger">{logoError}</Callout> : null}
+        {logoError ? <Callout title="Could not update brand" tone="danger">{logoError}</Callout> : null}
 
         {!entity ? <Callout title="Business details required" tone="warning">Add business details before editing company settings.</Callout> : <div className={styles.settingList}>
           <section aria-labelledby="identity-details-heading" className={`${styles.settingCard} ${styles.profileHeader}`} id="company-information">
@@ -319,6 +320,14 @@ export function CompanyProfile({
                   <ProfileField label="Company code" value={entity.code} />
                   <ProfileField label="Registered country" value={displayName(entity.countryCode, "region")} />
                 </dl>
+                <BrandColour
+                  canManage={canManage}
+                  onError={setLogoError}
+                  onSaved={({ primaryColor, workspaceVersion }) => { setData((current) => ({ ...current, workspace: { ...current.workspace, version: workspaceVersion }, branding: { ...current.branding, primaryColor } })); setStatus("Brand colour updated."); router.refresh(); }}
+                  primaryColor={data.branding.primaryColor}
+                  workspaceId={data.workspace.id}
+                  workspaceVersion={data.workspace.version}
+                />
               </div>
             </div>
             <input accept="image/png,image/jpeg,image/webp" aria-label="Choose company logo" className={styles.fileInput} onChange={uploadLogo} ref={fileInput} type="file" />
