@@ -32,6 +32,11 @@ export class CrmLeadsController {
     return this.leads.list(actor, workspaceId, query);
   }
 
+  @Get("leads/:leadId/history")
+  history(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string) {
+    return this.leads.history(actor, workspaceId, leadId);
+  }
+
   @Get("leads/:leadId")
   get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string) {
     return this.leads.get(actor, workspaceId, leadId);

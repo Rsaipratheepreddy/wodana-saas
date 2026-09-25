@@ -1,3 +1,4 @@
+import { fieldChanges } from "./change-history";
 import {
   BadRequestException,
   ConflictException,
@@ -357,6 +358,27 @@ export class CrmLeadsService {
           ? encodeCursor({ value: new Date(last.createdAt).toISOString(), id: last.id })
           : null,
       };
+    });
+  }
+
+  /** PLM-094: who changed what, from what, to what and when, for the enquiry, its lead and its client. Read-only. */
+  history(actor: RequestActor, workspaceId: string, leadId: string, limit = 200) {
+    return this.access.withPermission(actor, workspaceId, "crm.leads.view", async (client) => {
+      const lead = await client.query<{ enquiryId: string | null; partyId: string | null }>(
+        `SELECT enquiry_id AS "enquiryId", party_id AS "partyId" FROM crm_leads WHERE workspace_id = $1 AND id = $2`, [workspaceId, leadId]);
+      if (!lead.rowCount) throw new NotFoundException("Enquiry not found");
+      const ids = [leadId, lead.rows[0].enquiryId, lead.rows[0].partyId].filter(Boolean);
+      const events = await client.query<{ id: string; action: string; entityType: string; before: unknown; after: unknown; occurredAt: Date; actorName: string | null; source: string }>(
+        `SELECT event.id, event.action, event.entity_type AS "entityType", event.before, event.after, event.occurred_at AS "occurredAt",
+                person.display_name AS "actorName", event.source
+         FROM audit_events event LEFT JOIN users person ON person.id = event.actor_user_id
+         WHERE event.workspace_id = $1 AND event.entity_id = ANY($2::uuid[])
+           AND event.entity_type IN ('crm_lead', 'crm_enquiry', 'crm_party')
+         ORDER BY event.occurred_at DESC LIMIT $3`,
+        [workspaceId, ids, Math.min(Math.max(limit, 1), 500)]);
+      return events.rows
+        .map((event) => ({ id: event.id, action: event.action, entityType: event.entityType, at: event.occurredAt, by: event.actorName ?? (event.source === "user" ? null : "Wodana"), changes: fieldChanges(event.before, event.after) }))
+        .filter((event) => event.changes.length);
     });
   }
 

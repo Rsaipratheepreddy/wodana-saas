@@ -164,7 +164,8 @@ describe("LeadsPage", () => {
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
     expect(within(dialog).getByRole("tab", { name: "Activity" })).toBeInTheDocument();
     expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "Source & history" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("tab", { name: "Source" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("tab", { name: "History" })).toBeInTheDocument();
     expect(within(dialog).getByRole("tab", { name: "Requirements" })).toBeInTheDocument();
     expect(within(dialog).getByText("Next follow-up")).toBeInTheDocument();
     expect(within(dialog).queryByText("Owner & next step")).not.toBeInTheDocument();

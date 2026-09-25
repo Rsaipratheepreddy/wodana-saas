@@ -20,6 +20,7 @@ import { RequirementNotes } from "./requirement-notes";
 import { useWoddyRecord } from "./woddy-chat";
 import styles from "./crm-workbench.module.css";
 import { LogContactDialog } from "./log-contact-dialog";
+import { ChangeHistory } from "./change-history";
 import { useT } from "@/lib/i18n/i18n-provider";
 
 
@@ -120,7 +121,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
         <ActivityPanel key={activityRevision} workspaceId={workspaceId} leadId={lead.id} partyId={lead.partyId} ownerMembershipId={live.ownerMembershipId as string | null} onChanged={saved}
           assignments={((detail?.assignments ?? []) as RecordData[]).map((entry) => ({ id: String(entry.id), at: String(entry.assignedAt), ownerName: entry.ownerMembershipId ? initialData.members.find((member) => member.id === entry.ownerMembershipId)?.displayName ?? "A team member" : null, method: entry.explanation && (entry.explanation as RecordData).mode === "unassigned" ? "unassigned" : String(entry.assignmentMethod ?? "manual"), reason: entry.reason ? String(entry.reason) : null }))} />
       </div> },
-      { id: "history", label: "Source & history", panel: <div className={styles.stack}>
+      { id: "history", label: t("Source"), panel: <div className={styles.stack}>
         {live.duplicateOfLeadId ? <Callout title="Duplicate enquiry" tone="info">This contact already had an open enquiry. <a href={`/workspace/crm/leads?lead=${String(live.duplicateOfLeadId)}`}>Open the original</a></Callout> : null}
         <FactList facts={[
           ["Source", leadOptionLabel(initialData.leadOptions?.sources, String(enquiry?.source ?? lead.source))],
@@ -147,6 +148,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
         <p>{dateText(enquiry?.receivedAt)} · {label(String(enquiry?.intakeMethod ?? ""))}</p>
         <p style={{ whiteSpace: "pre-wrap" }}>{String((enquiry?.originalSubmission as RecordData | undefined)?.summary ?? "No project description provided")}</p>
       </div> },
+      { id: "changes", label: t("History"), panel: <ChangeHistory workspaceId={workspaceId} leadId={lead.id} members={initialData.members} /> },
       { id: "attachments", label: "Files", panel: <RecordAttachments workspaceId={workspaceId} leadId={lead.id} /> },
       { id: "notes", label: "Requirements", panel: <RequirementNotes workspaceId={workspaceId} leadId={lead.id} /> },
     ]} /></main></div>
