@@ -94,3 +94,21 @@ export class PricePreviewDto {
   @ApiPropertyOptional() @IsOptional() @IsObject() attributes?: Record<string, string>;
   @ApiPropertyOptional() @IsOptional() @IsObject() measurements?: Record<string, string>;
 }
+
+class ImportRowDto {
+  @ApiProperty() @IsInt() @Min(1) line!: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) sheet?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(160) category?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) code?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(400) name?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) itemType?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20) unit?: string;
+  @ApiPropertyOptional() @IsOptional() @IsObject() attributes?: Record<string, string>;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) supplier?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(40) cost?: string;
+  @ApiPropertyOptional() @IsOptional() @Matches(/^[A-Z]{3}$/) currency?: string;
+}
+export class ImportItemsDto {
+  @ApiProperty({ enum: ["preview", "commit"] }) @IsIn(["preview", "commit"]) mode!: "preview" | "commit";
+  @ApiProperty({ type: [ImportRowDto] }) @IsArray() @ArrayMaxSize(5000) @ValidateNested({ each: true }) @Type(() => ImportRowDto) rows!: ImportRowDto[];
+}

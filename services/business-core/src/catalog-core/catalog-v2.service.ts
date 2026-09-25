@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { PACK_UNITS, planCatalogImport, type ImportRow } from "./catalog-import";
 import { AttributeValueError, normalizeAttributeValues, type AttributeDefinition, type AttributeType } from "./attributes";
 import { assertNoCycle, BomError, checkFormulas, explode, type BomComponent } from "./bom";
 import { Dec } from "./decimal";
@@ -356,6 +357,70 @@ export class CatalogV2Service {
         return { quantity: quantity.toString(), unitCode: detail.unitCode, currency: book.rows[0].currency, status: entry?.status ?? null, result: { ...result, breakdown: [{ label: "Price", amount: result.total }] }, components };
       }
       return { quantity: quantity.toString(), unitCode: detail.unitCode, currency: book.rows[0].currency, status: entry?.status ?? null, result, components };
+    });
+  }
+
+  /** Spreadsheet import: preview explains every row; commit applies the same plan in one transaction. */
+  importItems(actor: RequestActor, workspaceId: string, catalogId: string, input: { mode: "preview" | "commit"; rows: ImportRow[] }) {
+    const permission = input.mode === "commit" ? MANAGE : VIEW;
+    return this.access.withPermission(actor, workspaceId, permission, async (client, user) => {
+      await this.catalog(client, workspaceId, catalogId);
+      if (!input.rows?.length) throw new UnprocessableEntityException("The file has no rows to import");
+      if (input.rows.length > 5000) throw new UnprocessableEntityException("Import at most 5,000 rows at a time");
+      const codes = await client.query<{ code: string }>(`SELECT code FROM catalog_items WHERE workspace_id = $1 AND catalog_id = $2`, [workspaceId, catalogId]);
+      const units = await client.query<{ code: string }>(`SELECT code FROM catalog_units WHERE workspace_id = $1`, [workspaceId]);
+      const vendors = await client.query<{ id: string; name: string }>(`SELECT id, display_name AS name FROM workspace_vendors WHERE workspace_id = $1 AND status = 'active'`, [workspaceId]);
+      const currency = await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId]);
+      const plan = planCatalogImport(input.rows, {
+        existingCodes: new Set(codes.rows.map((row) => row.code)), units: new Set(units.rows.map((row) => row.code)),
+        vendors: new Map(vendors.rows.map((row) => [row.name.trim().toLowerCase(), row.id])), defaultCurrency: currency.rows[0]?.currency ?? "USD",
+      });
+      if (input.mode === "preview") return plan;
+
+      for (const unit of plan.summary.newUnits) {
+        if (!PACK_UNITS[unit]) throw new UnprocessableEntityException(`Unknown unit ${unit}`);
+        await client.query(`INSERT INTO catalog_units (workspace_id, code, label, kind, to_base) VALUES ($1, $2, $3, 'count', 1) ON CONFLICT DO NOTHING`, [workspaceId, unit, PACK_UNITS[unit]]);
+      }
+      const categoryIds = new Map<string, string>();
+      for (const name of plan.summary.newCategories) {
+        const found = await client.query<{ id: string }>(`SELECT id FROM catalog_categories WHERE workspace_id = $1 AND catalog_id = $2 AND parent_id IS NULL AND lower(name) = lower($3) AND status = 'active'`, [workspaceId, catalogId, name]);
+        categoryIds.set(name, found.rows[0]?.id ?? (await client.query<{ id: string }>(
+          `INSERT INTO catalog_categories (workspace_id, catalog_id, code, name, sort_order) VALUES ($1, $2, $3, $4, (SELECT coalesce(max(sort_order), 0) + 1 FROM catalog_categories WHERE catalog_id = $2))
+           ON CONFLICT (catalog_id, code) DO UPDATE SET status = 'active' RETURNING id`, [workspaceId, catalogId, slug(name).replace(/_/g, "-") || "category", name])).rows[0].id);
+      }
+      const attributeIds = new Map<string, string>();
+      for (const label of plan.summary.newAttributes) {
+        const code = slug(label) || "attribute";
+        const found = await client.query<{ id: string }>(`SELECT id FROM catalog_attributes WHERE workspace_id = $1 AND catalog_id = $2 AND category_id IS NULL AND code = $3`, [workspaceId, catalogId, /^[a-z]/.test(code) ? code : `a_${code}`]);
+        attributeIds.set(label, found.rows[0]?.id ?? (await client.query<{ id: string }>(
+          `INSERT INTO catalog_attributes (workspace_id, catalog_id, code, label, value_type) VALUES ($1, $2, $3, $4, 'text') RETURNING id`,
+          [workspaceId, catalogId, /^[a-z]/.test(code) ? code : `a_${code}`, label])).rows[0].id);
+      }
+      const vendorIds = new Map(vendors.rows.map((row) => [row.name.trim().toLowerCase(), row.id]));
+      for (const row of plan.rows) {
+        if (row.action !== "create" && row.action !== "update") continue;
+        const categoryId = row.category ? categoryIds.get(row.category) ?? null : null;
+        const item = await client.query<{ id: string }>(
+          `INSERT INTO catalog_items (workspace_id, catalog_id, category_id, code, name, item_type, unit_code, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+           ON CONFLICT (catalog_id, code) DO UPDATE SET category_id = EXCLUDED.category_id, name = EXCLUDED.name, item_type = EXCLUDED.item_type,
+             unit_code = EXCLUDED.unit_code, status = CASE WHEN catalog_items.status = 'archived' THEN 'active' ELSE catalog_items.status END,
+             updated_by = EXCLUDED.updated_by, version = catalog_items.version + 1, updated_at = now()
+           RETURNING id`, [workspaceId, catalogId, categoryId, row.code, row.name, row.itemType, row.unit, user.userId]);
+        const itemId = item.rows[0].id;
+        for (const [label, value] of Object.entries(row.attributes)) {
+          await client.query(`INSERT INTO catalog_item_values (workspace_id, item_id, attribute_id, value) VALUES ($1, $2, $3, $4)
+            ON CONFLICT (item_id, attribute_id) DO UPDATE SET value = EXCLUDED.value`, [workspaceId, itemId, attributeIds.get(label), value]);
+        }
+        if (row.supplier) {
+          const vendorId = vendorIds.get(row.supplier.toLowerCase())!;
+          const link = await client.query<{ id: string }>(`SELECT id FROM catalog_supplier_links WHERE workspace_id = $1 AND item_id = $2 AND vendor_id = $3 AND variant_id IS NULL`, [workspaceId, itemId, vendorId]);
+          if (link.rowCount) await client.query(`UPDATE catalog_supplier_links SET cost = coalesce($2::numeric, cost), currency = coalesce($3, currency), updated_at = now() WHERE id = $1`, [link.rows[0].id, row.cost, row.currency]);
+          else await client.query(`INSERT INTO catalog_supplier_links (workspace_id, item_id, vendor_id, cost, currency) VALUES ($1, $2, $3, $4::numeric, $5)`, [workspaceId, itemId, vendorId, row.cost, row.currency]);
+        }
+      }
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "catalog.imported", entityType: "catalog", entityId: catalogId, after: plan.summary });
+      return plan;
     });
   }
 

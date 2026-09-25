@@ -99,4 +99,29 @@ integration("catalog v2 on PostgreSQL", () => {
       await refused(() => author.archiveItem(actor, workspaceId, catalogId, part.id, part.version), /Used in Kitchen run/);
     });
   });
+
+  it("imports a stock sheet, creating categories, units and attributes, and updates by code on re-import", async () => {
+    await scenario(async ({ as, workspaceId }) => {
+      const author = as("author");
+      const { id: catalogId } = await author.createCatalog(actor, workspaceId, { name: "Materials", purpose: "buy" });
+      const rows = [
+        { line: 3, category: "Woodstock", code: "W00129", name: "Commercial plywood WBP birch face", attributes: { Size: "4' X 8' X 12MM" } },
+        { line: 4, category: "Consumables", name: "Teflon tape", unit: "ROLL", attributes: { Colour: "WHITE" } },
+        { line: 5, category: "Paint", code: "CP 003", name: "CP 003 Catalyst @ 50%", unit: "LITER" },
+        { line: 6, category: "Paint", code: "CP 003", name: "CP 003 Catalyst @ 50% NY", unit: "LITER" },
+      ];
+      const preview = await author.importItems(actor, workspaceId, catalogId, { mode: "preview", rows });
+      expect(preview.summary).toMatchObject({ create: 3, error: 1, newUnits: ["roll"] });
+      const committed = await author.importItems(actor, workspaceId, catalogId, { mode: "commit", rows });
+      expect(committed.summary.create).toBe(3);
+      const structure = await author.structure(actor, workspaceId, catalogId);
+      expect(structure.categories.map((c: { name: string }) => c.name).sort()).toEqual(["Consumables", "Paint", "Woodstock"]);
+      expect(structure.units.some((u: { code: string }) => u.code === "roll")).toBe(true);
+      const again = await author.importItems(actor, workspaceId, catalogId, { mode: "commit", rows: [{ line: 3, category: "Woodstock", code: "W00129", name: "Birch plywood 12mm", attributes: { Size: "4' X 8' X 12MM" } }] });
+      expect(again.rows[0].action).toBe("update");
+      const listed = await author.listItems(actor, workspaceId, catalogId, { search: "birch" });
+      expect(listed.items).toHaveLength(1);
+      expect(listed.items[0]).toMatchObject({ code: "W00129", name: "Birch plywood 12mm", values: { size: "4' X 8' X 12MM" } });
+    });
+  });
 });
