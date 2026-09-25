@@ -106,7 +106,12 @@ a:hover {
   font-family: var(--wd-font-arabic);
 }
 
-[dir="rtl"] [data-directional="true"] {
+/* Directional icons mirror in right-to-left languages. Icons that point along the reading
+   direction (back/forward, previous/next) flip automatically; mark any other icon with
+   data-directional="true". */
+[dir="rtl"] [data-directional="true"],
+[dir="rtl"] :is(.lucide-arrow-left, .lucide-arrow-right, .lucide-chevron-left, .lucide-chevron-right,
+  .lucide-chevrons-left, .lucide-chevrons-right, .lucide-arrow-left-to-line, .lucide-arrow-right-to-line) {
   transform: scaleX(-1);
 }
 

@@ -81,6 +81,7 @@ export function OnboardingFlow({
   integrationData,
   oauthResult,
   seatCapacity = null,
+  seatsUnavailable = false,
   availableRoles = [{ id: "member", label: "Member" }],
   initialInvites = [],
   initialOnboarding,
@@ -94,6 +95,8 @@ export function OnboardingFlow({
   availableRoles?: Array<{ id: string; label: string }>;
   initialInvites?: Array<{ email: string; roles: string[] }>;
   seatCapacity?: { allocated: number; reserved: number; pending: number } | null;
+  /** Billing could not be read. A workspace without a seat plan is not an error. */
+  seatsUnavailable?: boolean;
   initialOnboarding: Onboarding;
   isPreview?: boolean;
   userName: string;
@@ -524,9 +527,9 @@ export function OnboardingFlow({
             </div> : null}
 
             {step === "team" ? <div className={styles.teamStep}>
-              <section className={styles.seats} aria-label={t("Seats")}>
+              {seatCapacity || seatsUnavailable ? <section className={styles.seats} aria-label={t("Seats")}>
                 {seatCapacity ? <dl><div><dt>{t("Available")}</dt><dd>{Math.max(0, seatCapacity.allocated - seatCapacity.reserved - newReservations)}</dd></div><div><dt>{t("Pending invitations")}</dt><dd>{seatCapacity.pending + newReservations}</dd></div></dl> : <p>{t("Seat availability could not be loaded. Capacity is checked when you invite someone.")}</p>}
-              </section>
+              </section> : null}
               <div className={styles.inviteFields}>
                 <SelectField label={t("Role")} items={availableRoles} selectedKey={inviteRole || null} onSelectionChange={key => key && setInviteRole(String(key))} isDisabled={!availableRoles.length} />
                 <TextInput inputType="email" dir="ltr" label={t("Work email")} onChange={(value) => { setInviteEmail(value); setFailure(""); }} placeholder="name@company.com" value={inviteEmail}

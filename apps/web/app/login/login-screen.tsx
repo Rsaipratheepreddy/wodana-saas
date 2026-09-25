@@ -525,8 +525,8 @@ export function LoginScreen({
             </header>
             <div className={styles.formArea} data-security={mfaStage !== "credentials"}>
             <div className={styles.formIntro}>
-              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="secondary"><ArrowLeft aria-hidden="true" size={14} />Back</Button> : null}
-              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft aria-hidden="true" size={14} />{mfaSetup ? "Back" : "Back to sign in"}</Button> : null}
+              {choosingWorkspace ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => { setWorkspaceChoices(null); chosenWorkspaceSlug.current = null; setStatus(""); }} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />Back</Button> : null}
+              {mfaStage === "enrollment" || mfaStage === "challenge" ? <Button className={styles.backButton} isDisabled={isSubmitting} onPress={() => void backFromMfa()} size="compact" type="button" variant="secondary"><ArrowLeft data-directional="true" aria-hidden="true" size={14} />{mfaSetup ? "Back" : "Back to sign in"}</Button> : null}
               <h1 id="login-heading">{heading}</h1>
               <p>{intro}</p>
             </div>

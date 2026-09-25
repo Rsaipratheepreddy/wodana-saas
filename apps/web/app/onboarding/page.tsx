@@ -42,6 +42,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       initialData={profile}
       initialLanguage={language}
       seatCapacity={seatCapacity}
+      seatsUnavailable={billing === null}
       availableRoles={people?.canManage ? people.roles.filter(role => role.code !== "owner").map(role => ({ id: role.code, label: role.name })) : []}
       initialInvites={people?.invitations.filter(invite => invite.status === "pending").map(invite => ({ email: invite.email, roles: invite.roles })) ?? []}
       initialOnboarding={onboarding}

@@ -58,8 +58,6 @@ try {
 
   stage = "onboarding";
   await page.waitForURL(/\/onboarding$/, { timeout: 30_000 });
-  await page.getByRole("button", { name: "Open your welcome" }).click();
-  await page.getByRole("button", { name: "Set up your workspace" }).click();
   await page.getByRole("heading", { name: "Tell us about your company" }).waitFor();
   if (process.env.PALM_LOGO_PNG) {
     await page.getByLabel("Choose company logo").setInputFiles(process.env.PALM_LOGO_PNG);
@@ -71,8 +69,10 @@ try {
   await page.getByRole("button", { name: /Save and continue/ }).click();
   await page.getByRole("heading", { name: "Set your workspace defaults" }).waitFor();
   await page.getByRole("button", { name: /Save and continue/ }).click();
-  await page.getByRole("heading", { name: "Bring your team with you" }).waitFor();
-  await page.getByRole("button", { name: /^Continue/ }).click();
+  await page.getByRole("heading", { name: "Seats & people" }).waitFor();
+  // A workspace without a seat plan shows no seat error; invitations are still checked on the server.
+  assert.equal(await page.getByText("Seat availability could not be loaded").count(), 0);
+  await page.getByRole("button", { name: /^(Continue|Skip for now)/ }).click();
   await page.getByRole("heading", { name: "Connect the tools you use" }).waitFor();
   await page.getByRole("button", { name: /Finish setup/ }).click();
   await page.getByRole("button", { name: "Enter workspace" }).click();
@@ -107,7 +107,7 @@ try {
   assert.ok(options.channels.company.some((channel) => channel.id === "instagram"));
 
   await page.goto(`${web}/workspace/crm/leads`);
-  await page.getByRole("button", { name: "Add enquiry" }).click();
+  await page.getByRole("button", { name: "New enquiry" }).click();
   await page.getByRole("textbox", { name: "Customer name" }).fill(customerName);
   await page.getByRole("textbox", { name: "Email" }).fill(`customer-${runId}@example.com`);
   await page.getByText("Assignment", { exact: true }).locator("..").getByRole("button").click();
