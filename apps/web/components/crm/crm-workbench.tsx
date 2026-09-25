@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs } from "@/design-system";
 import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { clientTimelineItems } from "@/lib/crm/client-timeline";
@@ -91,7 +91,10 @@ export function FactList({ facts }: { facts: Array<[string, ReactNode]> }) {
 export const choice = (values: string[]) => values.map((id) => ({ id, label: label(id) }));
 export const options = (items: RecordData[], name = "name") => items.map((row) => ({ id: row.id, label: String(row[name] ?? row.title ?? row.displayName ?? row.id) }));
 
-export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, ownerMembershipId, onChanged }: { workspaceId: string; leadId?: string; partyId?: string; opportunityId?: string; ownerMembershipId?: string | null; onChanged?: () => Promise<void> | void }) {
+export type AssignmentEntry = { id: string; at: string; ownerName: string | null; method: string; reason?: string | null };
+
+/** Activities and (for enquiries) assignments in one timeline, newest first (PLM-095). */
+export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, ownerMembershipId, onChanged, assignments = [] }: { workspaceId: string; leadId?: string; partyId?: string; opportunityId?: string; ownerMembershipId?: string | null; onChanged?: () => Promise<void> | void; assignments?: AssignmentEntry[] }) {
   const query = new URLSearchParams({ limit: "100", ...(leadId ? { leadId } : opportunityId ? { opportunityId } : partyId ? { partyId } : {}) });
   const resource = useCrmResource<unknown>(workspaceId, `activities?${query}`);
   const [action, setAction] = useState<ActionSpec | null>(null);
@@ -104,12 +107,23 @@ export function ActivityPanel({ workspaceId, leadId, partyId, opportunityId, own
   return <div className={`${styles.workbench} ${styles.activityPanel}`}>
     <div className={styles.toolbar}><Button size="compact" className={styles.activityAddAction} onPress={() => setAction({ title: "Add activity", description: "A saved note or scheduled call is an internal record. Complete an outbound call only after the customer interaction actually happened.", path: "activities", initial: { ...target, type: "task", isNextAction: true }, fields: [{ key: "type", label: "Activity", options: choice(["task", "call", "meeting", "note"]), required: true }, { key: "title", label: "Title", required: true }, { key: "dueAt", label: "Due (your local time)", type: "datetime-local" }, { key: "isNextAction", label: "Make this the next action", type: "checkbox" }, { key: "description", label: "Notes", type: "textarea" }], transform: (v) => { if (v.type === "note") { v.isNextAction = false; v.interactionDirection = "internal"; } if (v.type === "call") v.interactionDirection = "outbound"; if (v.isNextAction && !v.dueAt) throw new Error("Choose a due date for the next action."); return v; } })}><Plus aria-hidden="true" size={14} />Add activity</Button></div>
     <ResourceState {...resource} retry={resource.refresh} />
-    {!resource.loading && !resource.failure && !activities.length ? <p className={styles.empty}>No activities yet. Schedule a follow-up or record a note.</p> : null}
-    {activities.map((activity) => <div className={styles.row} key={activity.id}><div><strong>{String(activity.title)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt)}{activity.isNextAction ? " · Next action" : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction({ title: "Reschedule activity", path: `activities/${activity.id}`, method: "PATCH", initial: { version: activity.version }, fields: [{ key: "dueAt", label: "New due date", type: "datetime-local", required: true }] })}><CalendarClock aria-hidden="true" size={14} />Reschedule</Button><Button size="compact" variant="primary" onPress={() => setAction({ title: activity.type === "call" ? "Confirm completed call" : "Complete activity", description: activity.type === "call" ? "Confirm only after a real outbound customer call. This becomes first-response evidence." : undefined, path: `activities/${activity.id}/complete`, initial: { version: activity.version }, fields: [{ key: "outcome", label: "Outcome", required: true }], submit: "Complete" })}><Check aria-hidden="true" size={14} />Complete</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)}
+    {!resource.loading && !resource.failure && !activities.length && !assignments.length ? <p className={styles.empty}>No activities yet. Schedule a follow-up or record a note.</p> : null}
+    {timelineOf(activities, assignments).map((entry) => entry.kind === "assignment" ? <div className={styles.timelineAssignment} key={`assignment-${entry.item.id}`}>
+      <UserRound aria-hidden="true" size={14} />
+      <div><strong>{entry.item.ownerName ? `Assigned to ${entry.item.ownerName}` : "Returned to the queue"}</strong><small>{label(entry.item.method)} · {dateText(entry.item.at)}</small>{entry.item.reason ? <p>{entry.item.reason}</p> : null}</div>
+    </div> : (activity => <div className={styles.row} key={activity.id}><div><strong>{String(activity.title)}</strong><small>{label(activity.type)}{activity.interactionDirection ? ` · ${label(activity.interactionDirection)}` : ""} · {label(activity.status)} · {dateText(activity.dueAt)}{activity.isNextAction ? " · Next action" : ""}</small>{activity.description ? <p>{String(activity.description)}</p> : null}</div>{activity.status === "pending" ? <div className={`${styles.actions} ${styles.activityActions}`}><Button size="compact" onPress={() => setAction({ title: "Reschedule activity", path: `activities/${activity.id}`, method: "PATCH", initial: { version: activity.version }, fields: [{ key: "dueAt", label: "New due date", type: "datetime-local", required: true }] })}><CalendarClock aria-hidden="true" size={14} />Reschedule</Button><Button size="compact" variant="primary" onPress={() => setAction({ title: activity.type === "call" ? "Confirm completed call" : "Complete activity", description: activity.type === "call" ? "Confirm only after a real outbound customer call. This becomes first-response evidence." : undefined, path: `activities/${activity.id}/complete`, initial: { version: activity.version }, fields: [{ key: "outcome", label: "Outcome", required: true }], submit: "Complete" })}><Check aria-hidden="true" size={14} />Complete</Button></div> : <Badge tone="neutral">{label(activity.status)}</Badge>}</div>)(entry.item))}
     {nextCursor && cursor !== "done" ? <Button size="compact" onPress={async () => { try { const result = await crmRequest<{ data: RecordData[]; nextCursor: string | null }>(workspaceId, `activities?${query}&cursor=${encodeURIComponent(nextCursor)}`); setExtra((old) => [...old, ...result.data.filter((row) => !activities.some((a) => a.id === row.id))]); setCursor(result.nextCursor ?? "done"); } catch (error) { setPageError((error as Error).message); } }}>Load more activities</Button> : null}
     {pageError ? <p role="alert">{pageError}</p> : null}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={async () => { setExtra([]); setCursor(null); resource.refresh(); await onChanged?.(); }} /> : null}
   </div>;
+}
+
+function timelineOf(activities: RecordData[], assignments: AssignmentEntry[]) {
+  const when = (activity: RecordData) => Date.parse(String(activity.completedAt ?? activity.createdAt ?? activity.dueAt ?? "")) || 0;
+  return [
+    ...activities.map((item) => ({ kind: "activity" as const, at: when(item), item })),
+    ...assignments.map((item) => ({ kind: "assignment" as const, at: Date.parse(item.at) || 0, item })),
+  ].sort((a, b) => b.at - a.at);
 }
 
 function RelatedRecords({ workspaceId, partyId, collection }: { workspaceId: string; partyId: string; collection: "opportunities" | "conversations" }) {

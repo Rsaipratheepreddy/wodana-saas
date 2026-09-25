@@ -273,3 +273,8 @@
 .properties > div:has(dd > span, dd > .quietSelect) { align-items: center; }
 .quietSelect :global(.wd-field) { inline-size: auto; display: inline-grid; }
 .quietSelect :global(.wd-select-button) { inline-size: auto; gap: var(--wd-space-1); }
+.timelineAssignment { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-1); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text); }
+.timelineAssignment > svg { margin-block-start: var(--wd-space-0-5); color: var(--wd-color-text-tertiary); }
+.timelineAssignment strong { display: block; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.timelineAssignment small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.timelineAssignment p { margin: var(--wd-space-0-5) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

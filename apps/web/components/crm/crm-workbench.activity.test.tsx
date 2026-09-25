@@ -27,4 +27,20 @@ describe("CRM activity panel actions", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reschedule" }));
     expect(screen.getByRole("dialog", { name: "Reschedule activity" })).toBeInTheDocument();
   });
+
+  it("shows assignments and activities in one timeline with the reassignment reason (PLM-095)", async () => {
+    vi.mocked(crmRequest).mockResolvedValue({ data: [
+      { id: "a-call", title: "No answer", type: "call", status: "completed", version: 1, completedAt: "2026-09-24T10:30:00.000Z" },
+    ] });
+    render(<DesignSystemProvider><ActivityPanel workspaceId="workspace-1" leadId="lead-1" assignments={[
+      { id: "as-1", at: "2026-09-24T09:00:00.000Z", ownerName: "Sara", method: "round_robin" },
+      { id: "as-2", at: "2026-09-24T10:05:00.000Z", ownerName: "Omar", method: "automatic", reason: "No call or note was logged before the ownership deadline" },
+    ]} /></DesignSystemProvider>);
+    expect(await screen.findByText("No answer")).toBeInTheDocument();
+    const order = ["No answer", "Assigned to Omar", "Assigned to Sara"].map((text) => screen.getByText(text));
+    for (let index = 1; index < order.length; index += 1) {
+      expect(order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getByText("No call or note was logged before the ownership deadline")).toBeInTheDocument();
+  });
 });

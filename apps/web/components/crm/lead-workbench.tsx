@@ -117,7 +117,8 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           {primaryPhone && <Button size="compact" isDisabled={!whatsappLink} onPress={() => { if (whatsappLink) openContact(whatsappLink); }}><MessageCircle size={14} aria-hidden="true" />WhatsApp</Button>}
         </div> : <p className={styles.contactHint}>Add a phone number or email in Edit details to contact this client.</p>}
         {primaryPhone && !whatsappLink ? <p className={styles.contactHint}>This number needs a valid country code before WhatsApp can open. Correct it in Edit details.</p> : null}
-        <ActivityPanel key={activityRevision} workspaceId={workspaceId} leadId={lead.id} partyId={lead.partyId} ownerMembershipId={live.ownerMembershipId as string | null} onChanged={saved} />
+        <ActivityPanel key={activityRevision} workspaceId={workspaceId} leadId={lead.id} partyId={lead.partyId} ownerMembershipId={live.ownerMembershipId as string | null} onChanged={saved}
+          assignments={((detail?.assignments ?? []) as RecordData[]).map((entry) => ({ id: String(entry.id), at: String(entry.assignedAt), ownerName: entry.ownerMembershipId ? initialData.members.find((member) => member.id === entry.ownerMembershipId)?.displayName ?? "A team member" : null, method: entry.explanation && (entry.explanation as RecordData).mode === "unassigned" ? "unassigned" : String(entry.assignmentMethod ?? "manual"), reason: entry.reason ? String(entry.reason) : null }))} />
       </div> },
       { id: "history", label: "Source & history", panel: <div className={styles.stack}>
         {live.duplicateOfLeadId ? <Callout title="Duplicate enquiry" tone="info">This contact already had an open enquiry. <a href={`/workspace/crm/leads?lead=${String(live.duplicateOfLeadId)}`}>Open the original</a></Callout> : null}
