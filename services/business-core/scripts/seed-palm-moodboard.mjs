@@ -94,11 +94,7 @@ try {
       VALUES($1,$2,'room',$3,$4,$5,$6,$7,$7) ON CONFLICT(workspace_id,id) DO UPDATE SET name=excluded.name,archived=false`,
       [ws, recordId, `RM-${String(index + 1).padStart(3, "0")}`, name, roomContent(""), roomCatalogId, owner.userId]);
   }
-  for (const [key, name] of [["kitchen", "Kitchen"], ["living", "Living room"], ["master", "Master bedroom"]])
-    await client.query(`INSERT INTO pre_project_rooms(id,workspace_id,case_id,name,catalog_record_id,catalog_snapshot)
-      SELECT $1,$2,$3,$4,r.id,jsonb_build_object('id',r.id,'name',r.name,'code',r.code,'kind',r.kind,'version',r.version,'catalogId',r.catalog_id,'catalogName','Palm Living rooms','configuration','{}'::jsonb)
-      FROM workspace_catalog_records r WHERE r.workspace_id=$2 AND r.id=$5
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name,catalog_record_id=excluded.catalog_record_id,catalog_snapshot=excluded.catalog_snapshot`, [ids.rooms[key], ws, ids.case, name, roomRecord[name]]);
+  // No rooms are added to the demo project: people add them from the catalog as they work.
 
   const entry = async (entryId, fields) => {
     const f = { roomId: null, note: "", category: "General", priority: "preferred", scopeStatus: "included", reviewStatus: "captured", quantity: null, unit: "nos", referenceUrl: "", avoid: "", source: "team", ...fields };
@@ -107,9 +103,9 @@ try {
       ON CONFLICT(id) DO UPDATE SET title=excluded.title,room_id=excluded.room_id,note=excluded.note,reference_url=excluded.reference_url,source=excluded.source,archived_at=NULL`,
       [ws, ids.case, entryId, f.kind, f.title, f.roomId, f.note, f.category, f.priority, f.scopeStatus, f.reviewStatus, f.quantity, f.unit, f.referenceUrl, f.avoid, f.source, owner.userId]);
   };
-  await entry(ids.requirements.cabinets, { kind: "requirement", title: "Kitchen cabinets, full height", roomId: ids.rooms.kitchen, priority: "must_have", quantity: 1 });
-  await entry(ids.requirements.wardrobe, { kind: "requirement", title: "Walk-in wardrobe", roomId: ids.rooms.master, priority: "must_have", quantity: 1 });
-  await entry(ids.requirements.featureWall, { kind: "requirement", title: "Living room feature wall", roomId: ids.rooms.living });
+  await entry(ids.requirements.cabinets, { kind: "requirement", title: "Kitchen cabinets, full height", priority: "must_have", quantity: 1 });
+  await entry(ids.requirements.wardrobe, { kind: "requirement", title: "Walk-in wardrobe", priority: "must_have", quantity: 1 });
+  await entry(ids.requirements.featureWall, { kind: "requirement", title: "Living room feature wall", });
   await entry(ids.requirements.flooring, { kind: "requirement", title: "Ground floor flooring", note: "About 180 m²." });
 
   const pins = [
@@ -126,7 +122,7 @@ try {
   ];
   for (const pin of pins) {
     const entryId = id(200 + pin.n);
-    await entry(entryId, { kind: "inspiration", category: "Inspiration", title: pin.title, note: pin.note ?? "", roomId: pin.room ? ids.rooms[pin.room] : null, referenceUrl: pin.url ?? "", source: pin.source ?? "team" });
+    await entry(entryId, { kind: "inspiration", category: "Inspiration", title: pin.title, note: pin.note ?? "", roomId: null, referenceUrl: pin.url ?? "", source: pin.source ?? "team" });
     await client.query(`DELETE FROM pre_project_entry_assets WHERE workspace_id=$1 AND entry_id=$2`, [ws, entryId]);
     if (pin.kind === "photo") {
       const assetId = await renderAsset(client, ws, owner.userId, pin.n, `${pin.title}.jpg`, scenes[pin.scene]);
