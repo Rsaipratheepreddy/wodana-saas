@@ -121,6 +121,9 @@ export function preserveUnauthorizedCosts(lines: QuoteLine[], previous: Map<stri
   return lines;
 }
 
+const BUILDER_LINE_KEYS = ["kind", "description", "pricingMode", "note", "version", "areaId", "fromAreaId", "workPackageId", "catalogItemId", "catalogVariantId",
+  "catalogSnapshot", "formula", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "discountKind", "discountValue", "taxCode", "lineTaxRate", "optionGroup"];
+
 export function isManualQuotationLine(line: QuoteLine) {
   return !line.scopeId && !line.catalogLinks?.some((selection) => selection.role === "work");
 }
@@ -2006,6 +2009,11 @@ export class CommercialService {
           editable(q);
           const v = object(b.quote);
           const lines = parseLines(v.lines);
+          // Fields owned by the quotation builder are kept as they are; this save never clears them.
+          for (const line of lines) {
+            const stored = q.lines.find((item) => item.id === line.id) as Record<string, unknown> | undefined;
+            if (stored) for (const key of BUILDER_LINE_KEYS) if (stored[key] !== undefined) (line as Record<string, unknown>)[key] = stored[key];
+          }
           const rooms: NonNullable<Quote["rooms"]> = [];
           if (v.rooms !== undefined) {
             if (!Array.isArray(v.rooms) || v.rooms.length > 100)

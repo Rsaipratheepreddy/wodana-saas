@@ -1,0 +1,85 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DesignSystemProvider } from "@/design-system";
+import type { BuilderLine, BuilderState } from "@/lib/quotation/types";
+import { QuoteBuilder } from "./quote-builder";
+
+const KITCHEN = "11111111-1111-4111-8111-111111111111", JOINERY = "44444444-4444-4444-8444-444444444444";
+const line = (fields: Partial<BuilderLine>): BuilderLine => ({
+  id: "a", position: 0, version: 3, kind: "item", areaId: KITCHEN, fromAreaId: null, workPackageId: JOINERY, title: "Base cabinets", description: "", unit: "lm", quantity: "4", formula: null, formulaError: null,
+  length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "100", unitCost: "60", markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null,
+  taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], ...fields,
+});
+const state = (lines: BuilderLine[]): BuilderState => ({
+  quote: { id: "q1", number: 2, title: "Main quote", status: "draft", kind: "quotation", round: "main", currency: "AED", decimals: 2, validUntil: null, taxRate: "5", revision: 1 },
+  settings: { defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null, discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, version: 0 },
+  areas: [{ id: KITCHEN, name: "Kitchen" }], workPackages: [{ id: JOINERY, name: "Joinery" }], taxCodes: [], lines, discounts: [],
+  pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
+    areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",
+    discounts: { line: "0.00", section: "0.00", quote: "0.00", total: "0.00" }, net: "400.00", tax: "20.00", taxes: [{ rate: "5", base: "400.00", tax: "20.00" }], total: "420.00", cost: "240.00", margin: "40.00", optionalTotal: "0.00" },
+  canEdit: true, canEditCosts: true, canViewCosts: true,
+});
+const mount = (initial: BuilderState, respond: (url: string, body: unknown) => unknown = () => initial) => {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, init?.body ? JSON.parse(String(init.body)) : undefined) }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<DesignSystemProvider><QuoteBuilder workspaceId="w" caseId="c" quoteId="q1" backHref="/quotes" initial={initial} /></DesignSystemProvider>);
+  return fetcher;
+};
+const posted = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(String(init!.body)));
+
+describe("quotation builder", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("groups lines by area with totals, and regroups by trade", async () => {
+    mount(state([line({})]));
+    const grid = screen.getByRole("grid", { name: "Quote lines" });
+    expect(within(grid).getByText("Kitchen")).toBeInTheDocument();
+    expect(within(grid).getByText("General")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Totals" })).toHaveTextContent("Margin40%");
+    await userEvent.click(screen.getByRole("radio", { name: "By trade" }));
+    expect(within(grid).getByText("Joinery")).toBeInTheDocument();
+    expect(within(grid).getByRole("combobox", { name: "Area" })).toHaveValue(KITCHEN);
+  });
+
+  it("saves a cell with the line's version and moves down on Enter", async () => {
+    const fetcher = mount(state([line({})]));
+    const quantity = screen.getByRole("textbox", { name: "Quantity" });
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, "6{Enter}");
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: { id: "a", quantity: "6", version: 3 } }] }]));
+  });
+
+  it("finds a catalog item from the item cell and fills a new line with it", async () => {
+    const initial = state([line({})]);
+    const fetcher = mount(initial, (url) => url.includes("/catalog") ? { items: [{ id: "i1", code: "WRD", name: "Wardrobe", itemType: "assembly", unitCode: "nos", categoryName: "Joinery", description: null, rate: "7200", hasBuildUp: false }] } : initial);
+    await userEvent.click(screen.getAllByRole("button", { name: /Add (the first )?item/ })[0]);
+    await userEvent.type(screen.getAllByRole("combobox", { name: "Item" }).at(-1)!, "ward");
+    await userEvent.click(await screen.findByRole("option", { name: /Wardrobe/ }));
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "catalog", itemId: "i1", line: expect.objectContaining({ areaId: KITCHEN, workPackageId: null }) }] }]));
+  });
+
+  it("puts the cell back on Escape without saving", async () => {
+    const fetcher = mount(state([line({})]));
+    const rate = screen.getByRole("textbox", { name: "Rate" });
+    await userEvent.clear(rate);
+    await userEvent.type(rate, "999");
+    fireEvent.keyDown(rate, { key: "Escape" });
+    fireEvent.blur(rate);
+    expect(posted(fetcher)).toEqual([]);
+    expect(rate).toHaveValue("100");
+  });
+
+  it("shows formula quantities and build-up rates as chips that open the details", async () => {
+    mount(state([line({ formula: "area * 1.05", quantity: "2.52", pricingMode: "build_up", rate: "683.52", buildUpComplete: true })]));
+    await userEvent.click(screen.getByRole("button", { name: /ƒ 2.52/ }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Works out to 2.52");
+  });
+
+  it("is read-only once the quote is sent", () => {
+    mount({ ...state([line({})]), quote: { ...state([]).quote, status: "issued" }, canEdit: false });
+    expect(screen.getByText("This quote has been sent. Start a new revision to change it.")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Quantity" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Add item/ })).not.toBeInTheDocument();
+  });
+});

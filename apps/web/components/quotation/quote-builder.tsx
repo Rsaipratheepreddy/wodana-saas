@@ -1,0 +1,249 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Percent, Plus } from "lucide-react";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { quoteApi, QuotationRequestError } from "@/lib/quotation/client";
+import { groupLines, money, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
+import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteView } from "@/lib/quotation/types";
+import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
+import { LineDetails } from "./line-details";
+import { QuoteRow, type RowColumn } from "./quote-row";
+import { QuoteSummary } from "./quote-summary";
+import styles from "./quote-builder.module.css";
+
+type Draft = { id: string; areaId: string | null; workPackageId: string | null };
+const STATUS_LABEL: Record<string, string> = { draft: "Draft", internal_review: "In review", internal_approved: "Approved internally", issued: "Sent", accepted: "Accepted", changes_requested: "Changes requested", declined: "Declined", superseded: "Superseded", withdrawn: "Withdrawn" };
+
+/**
+ * The quotation builder (plan §6.8): one list of lines, read by area, by trade or both. Edit like a
+ * spreadsheet; every change is saved line by line as you go, priced on the server and shown back.
+ */
+export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; initial?: BuilderState }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
+  const api = useMemo(() => quoteApi(workspaceId, caseId, quoteId), [workspaceId, caseId, quoteId]);
+  const [state, setState] = useState<BuilderState | null>(initial ?? null);
+  const [loadError, setLoadError] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [view, setView] = useState<QuoteView>(initial?.settings.defaultView ?? "area");
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [dragged, setDragged] = useState<string | null>(null);
+  const [discountFor, setDiscountFor] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
+  const latest = useRef(state);
+  useEffect(() => { latest.current = state; }, [state]);
+  const queue = useRef<LineOp[]>([]);
+  const sending = useRef(false);
+
+  const load = useCallback(async () => {
+    try { const next = await api.load(); setState(next); setLoadError(""); return next; }
+    catch (cause) { setLoadError(cause instanceof Error ? cause.message : t("Could not load the quote.")); return null; }
+  }, [api, t]);
+  useEffect(() => {
+    if (initial) return;
+    let alive = true;
+    api.load().then((next) => { if (alive) { setState(next); setView(next.settings.defaultView); } }).catch((cause: Error) => { if (alive) setLoadError(cause.message); });
+    return () => { alive = false; };
+  }, [api, initial]);
+
+  // Changes are sent one batch at a time; each change carries the version of the line we last saw.
+  const flush = useCallback(async () => {
+    if (sending.current || !queue.current.length) return;
+    sending.current = true; setSaving(true);
+    while (queue.current.length) {
+      const batch = merge(queue.current.splice(0), latest.current);
+      try { const next = await api.apply(batch); setState(next); latest.current = next; setError(""); }
+      catch (cause) {
+        queue.current = [];
+        setError(cause instanceof Error ? cause.message : t("Could not save."));
+        if (cause instanceof QuotationRequestError && cause.status === 409) await load();
+      }
+    }
+    sending.current = false; setSaving(false);
+  }, [api, load, t]);
+  const send = useCallback((ops: LineOp[]) => { queue.current.push(...ops); void flush(); }, [flush]);
+
+  const changeLine = (line: BuilderLine, fields: Partial<BuilderLine>) => {
+    // Show the change straight away; the server's answer (with prices) replaces it.
+    setState((current) => current ? { ...current, lines: current.lines.map((item) => (item.id === line.id ? { ...item, ...fields } : item)) } : current);
+    send([{ op: "upsert", line: { id: line.id, ...fields } }]);
+  };
+  const createFromDraft = (draft: Draft, fields: Partial<BuilderLine>, hit?: CatalogHit) => {
+    setDrafts((current) => current.filter((item) => item.id !== draft.id));
+    const base = { id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId, ...fields };
+    send([hit ? { op: "catalog", itemId: hit.id, line: base } : { op: "upsert", line: base }]);
+  };
+  const addDraft = (group: { areaId: string | null; workPackageId: string | null }) => setDrafts((current) => [...current, { id: crypto.randomUUID(), ...group }]);
+
+  const search = useCallback(async (text: string, signal: AbortSignal) => (await api.search(text, signal)).items, [api]);
+
+  const newTrade = async (line?: BuilderLine) => {
+    const name = window.prompt(t("Name of the work package"))?.trim();
+    if (!name) return;
+    try {
+      const trade = await api.addTrade(crypto.randomUUID(), name);
+      const next = await load();
+      if (line && next) changeLine(next.lines.find((item) => item.id === line.id) ?? line, { workPackageId: trade.id });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+  };
+
+  const menu = (line: BuilderLine, action: string) => {
+    if (action === "details") setOpen(line.id);
+    else if (action === "optional") changeLine(line, { optional: !line.optional });
+    else if (action === "delete") {
+      setState((current) => current ? { ...current, lines: current.lines.filter((item) => item.id !== line.id) } : current);
+      send([{ op: "delete", id: line.id, version: line.version }]);
+    } else if (action === "duplicate") {
+      const skip = new Set(["id", "version", "position", "components", "updatedAt", "updatedByName", "formulaError", "buildUpComplete", "catalogSnapshot", "catalogItemId", "taxRate", ...(line.formula ? ["quantity"] : []), ...(state?.canEditCosts ? [] : ["unitCost", "markupPercent"])]);
+      const fields = Object.fromEntries(Object.entries(line).filter(([key, value]) => !skip.has(key) && value !== null));
+      const copy = { ...fields, id: crypto.randomUUID(), title: line.title, ...(line.components.length ? { components: line.components.map((part) => Object.fromEntries(Object.entries(part).filter(([key]) => key !== "worked" && key !== "id"))) } : {}) };
+      send([{ op: "upsert", line: copy }, { op: "reorder", ids: reordered(latest.current?.lines ?? [], copy.id, line.id, "after") }]);
+    }
+  };
+
+  // Drag a line onto another line (or a group's empty row): it moves there and takes that group's area/trade.
+  const dropBefore = (target: { lineId?: string; areaId: string | null; workPackageId: string | null }, groupView: QuoteView) => {
+    const current = latest.current;
+    if (!dragged || !current || dragged === target.lineId) return;
+    const line = current.lines.find((item) => item.id === dragged);
+    setDragged(null);
+    if (!line) return;
+    const fields: Partial<BuilderLine> = {};
+    if (groupView !== "trade" && (line.areaId ?? null) !== target.areaId) fields.areaId = target.areaId;
+    if (groupView !== "area" && (line.workPackageId ?? null) !== target.workPackageId) fields.workPackageId = target.workPackageId;
+    const ops: LineOp[] = [];
+    if (Object.keys(fields).length) ops.push({ op: "upsert", line: { id: line.id, ...fields } });
+    if (target.lineId) ops.push({ op: "reorder", ids: reordered(current.lines, line.id, target.lineId, "before") });
+    if (ops.length) send(ops);
+  };
+
+  if (loadError && !state) return <EmptyState illustration="error" title={t("The quote didn't load")} description={loadError} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (!state) return <Skeleton lines={8} />;
+
+  const { currency, decimals } = state.quote;
+  const groups = groupLines(state.lines, view, state.areas, state.workPackages, { general: t("General"), noTrade: t("No work package") });
+  const amountOf = new Map(state.pricing.lines.map((line) => [line.id, String(Number(line.gross) - Number(line.lineDiscount))]));
+  const sectionOf = new Map((view === "trade" ? state.pricing.trades : state.pricing.areas).map((section) => [section.key, section]));
+  const column: RowColumn = view === "area" ? "trade" : view === "trade" ? "area" : null;
+  const openLine = state.lines.find((line) => line.id === open) ?? null;
+
+  const renderGroup = (group: LineGroup, context: { areaId: string | null; workPackageId: string | null }, depth: number) => {
+    const groupDrafts = drafts.filter((draft) => draft.areaId === context.areaId && draft.workPackageId === context.workPackageId);
+    const section = depth === 0 ? sectionOf.get(group.key) : null;
+    const discount = depth === 0 && view !== "area_trade" ? state.discounts.find((item) => item.scope === (view === "trade" ? "trade" : "area") && item.target === group.key) : undefined;
+    const empty = !group.lines.length && !groupDrafts.length;
+    return <div key={`${depth}-${group.key}`} role="rowgroup" className={styles.group} data-depth={depth}>
+      <div role="row" className={styles.groupHead}
+        onDragOver={(event) => { if (state.canEdit && dragged) event.preventDefault(); }}
+        onDrop={(event) => { event.preventDefault(); dropBefore({ lineId: group.lines[0]?.id, ...context }, view); }}>
+        <span role="columnheader" className={styles.groupName}>{group.name}<small>{group.lines.length}</small></span>
+        <span className={styles.groupTotal}>
+          {discount ? <Badge tone="success">−{discount.kind === "percent" ? `${discount.value}%` : money(discount.value, currency, decimals, locale)}</Badge> : null}
+          {section ? money(section.net, currency, decimals, locale) : null}
+          {state.canEdit && depth === 0 && view !== "area_trade" && group.lines.length ? <IconButton aria-label={t("Discount on {name}", { name: group.name })} size="compact" variant="quiet"
+            onPress={() => setDiscountFor({ scope: view === "trade" ? "trade" : "area", target: group.key, name: group.name })}><Percent aria-hidden="true" size={13} /></IconButton> : null}
+        </span>
+      </div>
+      {group.children ? group.children.map((child) => renderGroup(child, { ...context, workPackageId: child.key === NO_TRADE ? null : child.key }, depth + 1)) : <>
+        {group.lines.map((line) => <QuoteRow key={line.id} line={line} column={column} areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
+          currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
+          onChange={(fields) => changeLine(line, fields)}
+          onCatalog={(hit) => send([{ op: "catalog", itemId: hit.id, line: { id: line.id } }])}
+          onOpen={() => setOpen(line.id)} onMenu={(action) => menu(line, action)} onDragStart={() => setDragged(line.id)}
+          onDropBefore={() => dropBefore({ lineId: line.id, areaId: line.areaId, workPackageId: line.workPackageId }, view)} onNewTrade={() => void newTrade(line)} />)}
+        {groupDrafts.map((draft) => <QuoteRow key={draft.id} draft line={{ ...EMPTY_LINE, id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId }} column={column} areas={state.areas} trades={state.workPackages}
+          amount={null} currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
+          onChange={(fields) => { if (fields.title) createFromDraft(draft, fields); }} onCatalog={(hit) => createFromDraft(draft, {}, hit)}
+          onOpen={() => undefined} onMenu={() => undefined} onDragStart={() => undefined} onDropBefore={() => undefined} onNewTrade={() => undefined} />)}
+        {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow} data-empty={empty || undefined}>
+          <button type="button" onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{empty ? t("Add the first item") : t("Add item")}</button>
+        </div> : null}
+      </>}
+    </div>;
+  };
+
+  return <section className={styles.builder} aria-label={t("Quotation builder")}>
+    <header className={styles.head}>
+      <Link href={backHref} className={styles.back} aria-label={t("All quotes")}><ArrowLeft aria-hidden="true" data-directional="true" size={16} /></Link>
+      <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
+      <Badge tone={state.quote.status === "accepted" ? "success" : state.quote.status === "draft" ? "neutral" : "info"}>{t((STATUS_LABEL[state.quote.status] ?? state.quote.status) as never)}</Badge>
+      <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
+      <span className={styles.spacer} />
+      <Link className={styles.docLink} href={`${backHref.split("?")[0]}?${new URLSearchParams({ quote: quoteId, view: "document" })}`}>{t("Document")}</Link>
+      <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
+    </header>
+
+    <div className={styles.toolbar}>
+      <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as QuoteView)} options={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
+      <span className={styles.spacer} />
+      {state.canEdit && view === "trade" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
+    </div>
+
+    {error ? <InlineNotice tone="error" message={error} /> : null}
+    {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
+
+    <div className={styles.body}>
+      <div role="grid" aria-label={t("Quote lines")} className={styles.grid} data-column={column ?? "none"}>
+        <div role="row" className={styles.columns}>
+          <span role="columnheader" />
+          <span role="columnheader">{t("Item")}</span>
+          {column ? <span role="columnheader" data-col="pick">{column === "area" ? t("Area") : t("Work package")}</span> : null}
+          <span role="columnheader" data-numeric>{t("Qty")}</span>
+          <span role="columnheader" data-col="unit">{t("Unit")}</span>
+          <span role="columnheader" data-numeric>{t("Rate")}</span>
+          <span role="columnheader" data-numeric>{t("Amount")}</span>
+          <span role="columnheader" />
+        </div>
+        {groups.filter((group) => group.lines.length || state.canEdit).map((group) => renderGroup(group, view === "trade"
+          ? { areaId: null, workPackageId: group.key === NO_TRADE ? null : group.key }
+          : { areaId: group.key === GENERAL ? null : group.key, workPackageId: null }, 0))}
+        {!state.lines.length && !state.canEdit ? <EmptyState title={t("No items yet")} /> : null}
+      </div>
+      <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor} />
+    </div>
+
+    {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}
+      onSave={async (fields) => {
+        try { const next = await api.apply([{ op: "upsert", line: { id: openLine.id, version: openLine.version, ...fields } }]); setState(next); setError(""); return true; }
+        catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); if (cause instanceof QuotationRequestError && cause.status === 409) await load(); return false; }
+      }} /> : null}
+  </section>;
+}
+
+const EMPTY_LINE: BuilderLine = {
+  id: "", position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "", quantity: "1",
+  formula: null, formulaError: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null, markupPercent: null,
+  pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null,
+  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [],
+};
+
+/** Combines queued changes: several edits to one line become one upsert with the version we last saw. */
+function merge(ops: LineOp[], state: BuilderState | null): LineOp[] {
+  const out: LineOp[] = [];
+  const upserts = new Map<string, Extract<LineOp, { op: "upsert" }>>();
+  const version = (id: string) => state?.lines.find((line) => line.id === id)?.version;
+  for (const op of ops) {
+    if (op.op === "upsert") {
+      const known = version(op.line.id);
+      const existing = upserts.get(op.line.id);
+      if (existing) { Object.assign(existing.line, op.line); continue; }
+      const next = { op: "upsert" as const, line: { ...op.line, ...(known !== undefined && op.line.version === undefined ? { version: known } : {}) } };
+      upserts.set(op.line.id, next);
+      out.push(next);
+    } else if (op.op === "delete") {
+      out.push({ ...op, version: version(op.id) ?? op.version });
+    } else out.push(op);
+  }
+  return out;
+}
+
+function reordered(lines: BuilderLine[], moving: string, target: string, where: "before" | "after") {
+  const ids = [...lines].sort((a, b) => a.position - b.position).map((line) => line.id).filter((id) => id !== moving);
+  const index = ids.indexOf(target);
+  ids.splice(index < 0 ? ids.length : where === "before" ? index : index + 1, 0, moving);
+  return ids;
+}
