@@ -690,7 +690,7 @@ export function ApprovalRelease({
   busy,
   root,
   sectionHref,
-  initialView = "release",
+  initialView = "owner",
 }: Props & { root: string; sectionHref?: (section: string) => string; initialView?: string }) {
   const [tab, setTab] = useState<string>(initialView),
     [note, setNote] = useState(""),
@@ -793,7 +793,6 @@ export function ApprovalRelease({
         {[
           ["owner", "Internal approval"],
           ["materials", "Material approvals"],
-          ["release", "Release checklist"],
           ["history", "History"],
         ].map(([id, label]) => (
           <button

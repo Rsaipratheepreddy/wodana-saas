@@ -42,14 +42,6 @@ it("shows the exact production evidence frozen in the Deal File", () => {
   expect(screen.getByText("2 files · 3 materials")).toBeVisible();
 });
 
-it("opens internal approval from the release checklist without a navigation loop",()=>{
- const state={caseId:"case",contacts:[],data:{quotes:[],payments:[],requests:[],audit:[],agreement:null,ownerReview:null,release:null},releaseReadiness:{designsRequired:0,designsApproved:0}} as unknown as CommercialState;
- render(<ApprovalRelease state={state} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case"/>);
- const check=screen.getByText(/Won opportunity, Finance verification and approved Deal File/).closest("div")!;
- fireEvent.click(within(check).getByRole("button",{name:"Review →"}));
- expect(screen.getByRole("button",{name:"Internal approval"})).toHaveAttribute("aria-current","page");
-});
-
 it("submits a Won opportunity Deal File with separate commission and payment evidence", async () => {
   const run = vi.fn().mockResolvedValue(true);
   const state = {
@@ -111,55 +103,3 @@ function readyMadePalmState(): CommercialState {
   } as unknown as CommercialState;
 }
 
-it("allows a paid ready-made furniture round to release without design approval", async () => {
-  const state = readyMadePalmState();
-  const run = vi.fn().mockResolvedValue(true);
-  render(<ApprovalRelease state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
-  expect(screen.getByText(/Linked design revisions approved/).closest("div")).toHaveTextContent("✓");
-  const release = screen.getByRole("button", { name: "Release to procurement" });
-  expect(release).toBeDisabled();
-  fireEvent.change(screen.getByRole("textbox", { name: /Technical approvals, released scope/ }), { target: { value: "Ready-made items checked" } });
-  expect(release).toBeEnabled();
-  fireEvent.click(release);
-  await waitFor(() => expect(run).toHaveBeenCalledWith("release", { note: "Ready-made items checked" }));
-});
-
-it("releases the paid main round even when the earlier design payment is not a release payment", async () => {
-  const state = readyMadePalmState();
-  state.data.palmFlow!.scope.design = true;
-  state.releaseReadiness = { designsRequired: 1, designsApproved: 1 };
-  state.data.quotes.unshift({
-    ...state.data.quotes[0], id: "design", number: 1, round: "design", title: "Design package",
-  });
-  state.data.payments.unshift({
-    ...state.data.payments[0], id: "design-payment", sourceQuoteId: "design",
-    status: "proof_submitted",
-  });
-  const run = vi.fn().mockResolvedValue(true);
-  render(<ApprovalRelease state={state} run={run} busy={false} root="/workspace/pre-projects/cases/case" />);
-  fireEvent.change(screen.getByRole("textbox", { name: /Technical approvals, released scope/ }), { target: { value: "Main scope approved" } });
-  const release = screen.getByRole("button", { name: "Release to procurement" });
-  expect(release).toBeEnabled();
-  fireEvent.click(release);
-  await waitFor(() => expect(run).toHaveBeenCalledWith("release", { note: "Main scope approved" }));
-});
-
-it("keeps delivery release unavailable until the linked opportunity is Won", () => {
-  const state = readyMadePalmState();
-  state.opportunityStatus = "open";
-  render(<ApprovalRelease state={state} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
-  fireEvent.change(screen.getByRole("textbox", { name: /Technical approvals, released scope/ }), { target: { value: "Scope checked" } });
-  expect(screen.getByRole("button", { name: "Release to procurement" })).toBeDisabled();
-});
-
-it("shows the active delivery round as ready and excludes design-only release", () => {
-  const state = readyMadePalmState();
-  const { unmount } = render(<PreExecutionFlow state={state} section="approvals" root="/workspace/pre-projects/cases/case" />);
-  expect(screen.getByText("7 of 7 checks complete")).toBeVisible();
-  unmount();
-  state.data.palmFlow!.scope.design = true;
-  state.data.palmFlow!.scope.mainQuotation = false;
-  render(<ApprovalRelease state={state} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
-  expect(screen.getByText(/This path ends with the approved design/)).toBeVisible();
-  expect(screen.queryByRole("button", { name: "Release to procurement" })).not.toBeInTheDocument();
-});

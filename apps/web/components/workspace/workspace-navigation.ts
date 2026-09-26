@@ -118,6 +118,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: "Workspace language" },
           { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: "Design packages" },
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: "Quotations" },
+          { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: "Projects" },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },
@@ -296,44 +297,16 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     ],
   },
   {
-    description: "Delivery, procurement and handover",
+    description: "Delivery from the accepted quotation to handover",
     href: "/workspace/projects",
     icon: "projects",
     id: "projects",
     label: "Projects",
     navigation: [
       {
-        id: "projects-plan",
-        label: "Plan",
+        id: "projects-primary",
         items: [
-          { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "All projects", description: "Live delivery progress, milestones, blockers and decisions." },
-          { href: "/workspace/projects/calendar", icon: "calendar", id: "projects-calendar", label: "Calendar", description: "Projects, resources, site visits and confirmed work in one schedule." },
-          { href: "/workspace/projects/plan-teams", icon: "calendar", id: "plan-teams", label: "Plan & schedule", description: "Tasks, dates, milestones, teams and bookings." },
-          { href: "/workspace/projects/boq", icon: "boq", id: "project-boq", label: "Scope", description: "Released scope items, approved sizes and delivery coverage." },
-          { href: "/workspace/projects/documents", icon: "designs", id: "project-documents", label: "Drawings & documents", description: "Drawings, revisions and approved project documents." },
-        ],
-      },
-      {
-        id: "projects-build",
-        label: "Build",
-        items: [
-          { href: "/workspace/projects/purchasing", icon: "procurement", id: "global-purchasing", label: "Purchasing", description: "Material shortages, supplier requests and orders across authorized projects." },
-          { href: "/workspace/projects/inventory", icon: "materialPlan", id: "global-inventory", label: "Inventory", description: "Company warehouse stock, reservations and availability." },
-          { href: "/workspace/projects/material-planning", icon: "materialPlan", id: "material-planning", label: "Materials", description: "Requirements, stock, allocations and warehouse transfers." },
-          { href: "/workspace/projects/procurement", icon: "procurement", id: "procurement", label: "Purchasing", description: "Supplier enquiries, purchase orders, receipts and returns." },
-          { href: "/workspace/projects/production", icon: "production", id: "production", label: "Factory", description: "Workshop jobs, approvals, output and dispatch." },
-          { href: "/workspace/projects/site-work", icon: "installation", id: "site-work", label: "Site", description: "Site readiness, installation, commissioning and technical queries." },
-          { href: "/workspace/projects/daily-progress", icon: "reports", id: "daily-progress", label: "Daily progress", description: "Field reports, evidence, workforce, blockers and review." },
-        ],
-      },
-      {
-        id: "projects-close",
-        label: "Close",
-        items: [
-          { href: "/workspace/projects/snagging", icon: "snagging", id: "snagging", label: "Snags & warranty", description: "Defects, verification, closure and aftercare." },
-          { href: "/workspace/projects/handover", icon: "handover", id: "handover", label: "Handover", description: "Client acceptance, completion records and warranties." },
-          { href: "/workspace/projects/commercial", icon: "commercial", id: "project-commercial", label: "Budget & payments", description: "Contract value, budget, committed orders and payments." },
-          { href: "/workspace/projects/workflow-templates", icon: "settings", id: "project-workflow-templates", label: "Workflow setup", description: "Reusable project stages, owners and release checks." },
+          { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Projects", description: "Every project: stage, next step and handover date." },
         ],
       },
     ],
@@ -422,9 +395,6 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/crm")) return exists("sales");
   if (under("/workspace/pre-projects")) return exists("planning") ?? exists("projects");
   if (under("/workspace/projects/clients")) return exists("clients");
-  if (under("/workspace/projects/purchasing")) return exists("purchasing");
-  if (under("/workspace/projects/inventory")) return exists("inventory");
-  if (under("/workspace/projects/factory")) return exists("factory");
   if (under("/workspace/projects")) return exists("projects");
   if (under("/workspace/hrms")) return exists("team");
   if (under("/workspace/integrations")) return exists("integrations");

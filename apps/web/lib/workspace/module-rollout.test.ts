@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { workspaceModules } from "@/components/workspace/workspace-navigation";
-import { moduleForWorkspacePath, scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "./module-rollout";
+import { moduleForWorkspacePath, scopePeopleNavigation, visibleWorkspaceModules } from "./module-rollout";
 
 describe("effective workspace module navigation", () => {
   it("shows only the selected organization's granted modules", () => {
@@ -26,15 +26,5 @@ describe("effective workspace module navigation", () => {
     expect(items(["module.members.write"]).some((item) => item.id === "members")).toBe(true);
     expect(scopePeopleNavigation(workspaceModules, [], ["owner"])[0].navigation.flatMap((section) => section.items)
       .some((item) => item.id === "members")).toBe(true);
-  });
-  it('shows purchasing to project viewers and inventory only to buyers or managers', () => {
-    const items = (permissions: string[]) => scopeSupplyNavigation(workspaceModules, permissions, ['role_viewer'])
-      .find(module => module.id === 'projects')?.navigation.flatMap(section => section.items).map(item => item.id) ?? [];
-    expect(items(['projects.view'])).toContain('global-purchasing');
-    expect(items(['projects.view'])).not.toContain('global-inventory');
-    expect(items(['projects.view','projects.buy'])).toContain('global-inventory');
-    expect(items(['projects.buy'])).toContain('global-inventory');
-    expect(items(['projects.manage'])).toContain('global-inventory');
-    expect(items([])).not.toContain('global-purchasing');
   });
 });

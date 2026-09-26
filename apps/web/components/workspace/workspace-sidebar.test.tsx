@@ -40,7 +40,7 @@ describe("WorkspaceSidebar", () => {
   it.each(["desktop", "mobile"] as const)("keeps shared destinations accessible on %s", async (mode) => {
     render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={preProjectModule.navigation} pathname="/workspace/pre-projects/requirements" workspaces={workspaces}/>);
     const nav = within(screen.getByRole('navigation',{name:'Main navigation'}));
-    for (const name of ['Home','Calendar','Inbox','Sales','Clients','Projects','Purchasing','Inventory','Factory']) expect(nav.getByRole('link',{name})).toBeVisible();
+    for (const name of ['Home','Calendar','Inbox','Sales','Clients','Projects']) expect(nav.getByRole('link',{name})).toBeVisible();
     expect(nav.queryByRole('link',{name:'Requirements'})).not.toBeInTheDocument();
     expect(screen.queryByRole('searchbox',{name:'Search workspace'})).not.toBeInTheDocument();
     expect(nav.queryByRole('link',{name:'Tasks'})).not.toBeInTheDocument();
@@ -143,9 +143,9 @@ describe("WorkspaceSidebar", () => {
       />,
     );
 
-    for (const destination of ['Home','Calendar','Inbox','Projects','Purchasing','Inventory','Factory','Connections','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
+    for (const destination of ['Home','Calendar','Inbox','Projects','Connections','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
     expect(screen.getByRole('link',{name:'Settings'})).toHaveAttribute('href','/workspace/company');
-    for (const section of ['Daily work','Business','Operations','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
+    for (const section of ['Daily work','Business','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
     expect(screen.queryByRole("link", { name: "Manage workspaces" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Teams" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "User Settings" })).not.toBeInTheDocument();

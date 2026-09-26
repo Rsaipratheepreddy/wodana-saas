@@ -47,4 +47,4 @@ The parent directory's `CLAUDE.md` describes the legacy FastAPI "IntDesignERP" a
 - Web: `npm test --workspace @wodana/web` and typecheck.
 - Mobile: `npm --prefix apps/mobile test`.
 - Real database: `PROJECT_REPOSITORY_TEST_DATABASE_URL=postgresql://<superuser>@localhost:5432/wodana npx vitest run src/**/*.integration.spec.ts` in `services/business-core`.
-- End to end: `npm run test:smoke:palm-flow` and `node scripts/smoke-delivery-isolated.mjs` (set `LC_ALL=en_US.UTF-8` on macOS).
+- End to end: `npm run test:smoke:palm-flow` and `npm run test:smoke:funnel` (set `LC_ALL=en_US.UTF-8` on macOS).

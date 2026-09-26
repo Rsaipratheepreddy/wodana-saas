@@ -2,10 +2,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { workspaceModules } from "./workspace-navigation";
+import { useWorkspaceBreadcrumb } from "./workspace-breadcrumb";
 import { WorkspaceShell } from "./workspace-shell";
 import { renderToString } from "react-dom/server";
 import { CrmProductShell } from "../crm/crm-product-shell";
-import { ProjectRevampTabs } from "../projects/project-revamp-tabs";
 
 const route = vi.hoisted(() => ({ pathname: "/workspace/members", search: "" }));
 
@@ -30,34 +30,13 @@ afterEach(() => {
 });
 
 describe("WorkspaceShell theme", () => {
-  it("resolves a directly opened project breadcrumb without relying on the page registration", async () => {
-    route.pathname = "/workspace/projects/new/12345678-1234-1234-1234-123456789abc";
-    const fetcher = vi.fn().mockImplementation(async (url: string) => url.includes("/execution?")
-      ? {ok:true,json:async()=>({name:"Palm Living Demo · Jumeirah Garden Villa"})}
-      : {ok:true,json:async()=>({items:[]})});
-    vi.stubGlobal("fetch",fetcher);
-    render(<WorkspaceShell {...shellProps}><p>Project tabs</p></WorkspaceShell>);
-    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
-    expect(await breadcrumb.findByRole("link", { name:"Jumeirah Garden Villa" })).toHaveAttribute("aria-current","page");
-    expect(breadcrumb.queryByText("Loading project…")).not.toBeInTheDocument();
-    expect(fetcher).toHaveBeenCalledWith("/api/projects/12345678-1234-1234-1234-123456789abc/execution?workspaceId=workspace-1",expect.objectContaining({signal:expect.any(AbortSignal)}));
-  });
-  it("shows the passed project name before the project page has loaded", () => {
-    route.pathname = "/workspace/projects/new/12345678-1234-1234-1234-123456789abc";
-    route.search = "projectName=Jumeirah+Garden+Villa";
-    render(<WorkspaceShell {...shellProps}><p>Loading content</p></WorkspaceShell>);
-    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
-    expect(breadcrumb.getByRole("link", { name: "Jumeirah Garden Villa" })).toBeVisible();
-    expect(breadcrumb.queryByText("Loading project…")).not.toBeInTheDocument();
-  });
-  it("shows the actual project name as a breadcrumb link and clears it when leaving the project", () => {
-    route.pathname = "/workspace/projects/new/12345678-1234-1234-1234-123456789abc";
-    const view = render(<WorkspaceShell {...shellProps}><ProjectRevampTabs projectName="Jumeirah Garden Villa"/></WorkspaceShell>);
+  it("names a project page in the breadcrumb once the page registers it, and clears it when leaving", () => {
+    route.pathname = "/workspace/projects/12345678-1234-4234-8234-123456789abc";
+    function Page() { useWorkspaceBreadcrumb("Jumeirah Garden Villa"); return <p>Project</p>; }
+    const view = render(<WorkspaceShell {...shellProps}><Page /></WorkspaceShell>);
     const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
     expect(breadcrumb.getByRole("link", { name: "Projects" })).toHaveAttribute("href", "/workspace/projects");
-    expect(breadcrumb.getByRole("link", { name: "Jumeirah Garden Villa" })).toHaveAttribute("href", `${route.pathname}?projectName=Jumeirah+Garden+Villa`);
-    expect(breadcrumb.getByRole("link", { name: "Jumeirah Garden Villa" })).toHaveAttribute("aria-current", "page");
-    expect(breadcrumb.queryByText("Loading project…")).not.toBeInTheDocument();
+    expect(breadcrumb.getByText("Jumeirah Garden Villa")).toBeVisible();
     route.pathname = "/workspace/projects";
     view.rerender(<WorkspaceShell {...shellProps}><p>Project list</p></WorkspaceShell>);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).not.toHaveTextContent("Jumeirah Garden Villa");
@@ -151,7 +130,6 @@ describe("WorkspaceShell theme", () => {
     expect(screen.queryByRole("navigation", { name: "Workspace sections" })).not.toBeInTheDocument();
     expect(navigation.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/workspace");
     expect(navigation.getByRole("link", { name: "Calendar" })).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
-    expect(navigation.getByRole("link", { name: "Factory" })).toHaveAttribute("href", "/workspace/projects/factory");
     expect(navigation.queryByRole("button", { name: "Production Tracking" })).not.toBeInTheDocument();
   });
   it("keeps the sidebar and a single Calendar breadcrumb on the schedule route", () => {
@@ -162,14 +140,6 @@ describe("WorkspaceShell theme", () => {
     expect(screen.queryByRole("link", { name: "Back to CRM" })).not.toBeInTheDocument();
     expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Calendar")).toBeVisible();
     expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Calendar" })).toHaveAttribute("aria-current", "page");
-  });
-  it("shows global Operations destinations without a misleading Projects breadcrumb", () => {
-    route.pathname = "/workspace/projects/inventory";
-    render(<WorkspaceShell {...shellProps}><p>Inventory content</p></WorkspaceShell>);
-    const breadcrumb = within(screen.getByRole("navigation", { name: "Breadcrumb" }));
-    expect(breadcrumb.getByText("Inventory")).toBeVisible();
-    expect(breadcrumb.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Inventory" })).toHaveAttribute("aria-current", "page");
   });
   it("toggles light and dark mode from the header and persists the choice", async () => {
     const interaction = userEvent.setup();

@@ -1770,45 +1770,4 @@ export class ExecutionService {
       return { data: d };
     });
   }
-  planning(actor: RequestActor, w: string, input: unknown) {
-    return this.access.run(actor, w, async (ctx) => {
-      this.access.require(ctx, "projects.manage");
-      const caseId = str(obj(input).caseId, 80, true);
-      const r = await ctx.client.query(
-        `SELECT c.id,c.status,o.title,(SELECT display_name FROM users WHERE id=$3) AS planner FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id WHERE c.workspace_id=$1 AND c.id=$2 FOR UPDATE OF c`,
-        [w, caseId, ctx.userId],
-      );
-      if (!r.rowCount) throw new NotFoundException("Pre-execution not found.");
-      const existing = await ctx.client.query(
-        "SELECT id FROM delivery_projects WHERE workspace_id=$1 AND case_id=$2",
-        [w, caseId],
-      );
-      if (existing.rowCount) return existing.rows[0];
-      const template = await resolvedProjectWorkflowTemplate(ctx.client, w);
-      if (template.code === DEAL_FIRST_WORKFLOW_CODE)
-        throw new ConflictException("This project opens automatically after the first paid, Owner-approved Deal File. Continue the enquiry in CRM.");
-      if (r.rows[0].status !== "active")
-        throw new ConflictException("Choose an active pre-execution.");
-      const p = (
-        await ctx.client.query(
-          "INSERT INTO delivery_projects(workspace_id,case_id,name,created_by) VALUES($1,$2,$3,$4) RETURNING id",
-          [w, caseId, r.rows[0].title, ctx.userId],
-        )
-      ).rows[0];
-      await ctx.client.query(
-        "INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager) VALUES($1,$2,$3,true)",
-        [w, p.id, ctx.membershipId],
-      );
-      const project = emptyProject();
-      project.controls!.reference = `PRJ-PLAN-${new Date().getUTCFullYear()}-${p.id.slice(0, 8).toUpperCase()}`;
-      project.workflow = adoptProjectWorkflow(
-        template,
-        new Date().toISOString(),
-        ctx.userId,
-        r.rows[0].planner ?? "Project planner",
-      );
-      await this.store(ctx, p.id, project);
-      return p;
-    });
-  }
 }

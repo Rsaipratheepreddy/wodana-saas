@@ -22,8 +22,7 @@ import {
   sourceLinesForChange,
   validateControlledChangeSources,
 } from "./change-control";
-import { releaseDeliveryProject } from "../projects/project-release";
-import { openPalmProjectAtDealFile } from "../projects/palm-deal-project";
+import { startJourney } from "../design/design-journey.store";
 import { palmFlowRoute, palmQuotationRequiresSitePlan, type PalmFlowScope } from "../projects/palm-flow-route";
 import { resolvedProjectWorkflowTemplate } from "../projects/project-workflow.repository";
 import { qsEstimateCurrent, qsEstimateHash } from "./qs-estimate";
@@ -2823,8 +2822,8 @@ export class CommercialService {
               approvedAt: now,
               approvedBy: user.displayName,
             };
-            if (data.palmFlow)
-              await openPalmProjectAtDealFile(client, workspaceId, caseId, user.userId, user.displayName, data);
+            // A paid design round opens design work in Planning; the project itself starts from the accepted main quotation.
+            if (data.palmFlow?.scope.design && accepted.round === "design") await startJourney(client, workspaceId, caseId, user.userId);
           } else {
             review.status = decision === "return" ? "returned" : "rejected";
             review.decisionNote = decisionNote;
@@ -3309,93 +3308,8 @@ export class CommercialService {
               "Only operational receipt evidence can verify a live milestone.",
             );
         } else if (action === "release") {
-          if (data.release)
-            throw new ConflictException(
-              "Execution readiness already recorded.",
-            );
-          if (data.palmFlow && !data.palmFlow.scope.mainQuotation)
-            throw new ConflictException("This design-only enquiry ends after Design & Specifications; it has no delivery release.");
-          if (record.opportunityStatus !== "won")
-            throw new ConflictException("The linked opportunity must be Won before production release.");
-          const accepted = activeAcceptedBaseQuote(data);
-          if (data.palmFlow && accepted?.round !== "main")
-            throw new ConflictException("Complete the main quotation and its paid Owner-approved agreement before delivery release.");
-          const designReadiness = await this.designReadiness(
-            client,
-            workspaceId,
-            caseId,
-            accepted,
-          );
-          if (
-            accepted &&
-            (!data.palmFlow || data.palmFlow.scope.design) &&
-            (designReadiness.designsRequired === 0 ||
-              designReadiness.designsApproved !== designReadiness.designsRequired)
-          )
-            throw new ConflictException(
-              "Approve every linked design revision before execution release.",
-            );
-          if (
-            !accepted ||
-            !agreementIsOperational(data.agreement) ||
-            !agreementMatchesAcceptedQuote(data.agreement, accepted) ||
-            !agreementMatchesFinanceContext(data) ||
-            data.agreement?.quoteId !== accepted.id
-          )
-            throw new ConflictException(
-              "Accept the quotation and verify the signed agreement first.",
-            );
-          if (
-            !data.dealFile ||
-            data.dealFile.quoteId !== accepted.id ||
-            data.ownerReview?.status !== "approved" ||
-            !data.ownerReview.financeReviewedById ||
-            !data.dealFile.paymentProofUrl ||
-            !data.dealFile.commissionLines?.length
-          )
-            throw new ConflictException(
-              "Finance verification, Owner approval and an active Deal File are required before release.",
-            );
-          if (!(data.palmFlow
-            ? palmMaterialListSignedOff(data, accepted)
-            : materialApprovalsComplete(accepted, data.materialApprovals)))
-            throw new ConflictException(
-              "Complete the client material approvals before release.",
-            );
-          if (!financeGatePaymentsReady(data, "release", data.palmFlow ? accepted.id : undefined))
-            throw new ConflictException(
-              "The contract needs at least one finance-verified release milestone before execution release.",
-            );
-          if (
-            data.requests.some(
-              (r) => !["resolved", "declined", "withdrawn"].includes(r.status),
-            )
-          )
-            throw new ConflictException(
-              "Resolve or explicitly decline pending change requests.",
-            );
-          if (data.palmFlow && data.dealFile) {
-            // The material meeting follows the paid agreement, so its client
-            // sign-off is captured at procurement release, not Owner approval.
-            data.dealFile.materialEvidence = approvedMaterialEvidence(accepted, data.materialApprovals);
-            data.dealFile.revision++;
-          }
-          data.release = {
-            id: randomUUID(),
-            at: now,
-            by: user.displayName,
-            quoteId: accepted.id,
-            dealFileId: data.dealFile.id,
-            note: text(b.note, 3000, true),
-          };
-          const project = await releaseDeliveryProject(
-            client,
-            workspaceId,
-            caseId,
-            user.userId,
-            data,
-          );
-          data.release.projectId = project.id;
+          // Projects start from the accepted quotation (Start project), never from this old release step.
+          throw new ConflictException("Start the project from the accepted quotation.");
         } else if (action === "record_decision") {
           // Staff record the client's decision on the sent quote (a signed copy, an email, in person).
           if (!q) throw new NotFoundException("Quotation not found.");

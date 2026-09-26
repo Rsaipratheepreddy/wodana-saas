@@ -28,7 +28,6 @@ import { HrmsAccessService } from "../hrms/hrms-access.service";
 import {
   AssignmentDto,
   PortfolioCalendarQueryDto,
-  ReleaseProjectDto,
   ScheduleAvailabilityQueryDto,
   WorkLocationDto,
 } from "./projects.dto";
@@ -250,13 +249,6 @@ export class ProjectsController {
   ) {
     return this.execution.fieldCommand(actor, w, id, body);
   }
-  @Post("planning") planning(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) w: string,
-    @Body() body: unknown,
-  ) {
-    return this.execution.planning(actor, w, body);
-  }
   @Get(":projectId/execution") executionState(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
@@ -284,13 +276,6 @@ export class ProjectsController {
     @Query() query: ProjectAttendanceDto,
   ) {
     return this.service.siteAttendance(actor, workspaceId, query);
-  }
-  @Post("from-pre-project") release(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
-    @Body() body: ReleaseProjectDto,
-  ) {
-    return this.service.release(actor, workspaceId, body.caseId);
   }
   @Get("assignments") assignments(
     @CurrentActor() actor: RequestActor,

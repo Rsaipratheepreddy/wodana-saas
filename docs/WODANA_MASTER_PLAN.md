@@ -136,12 +136,10 @@ A separation rule is configured per approval step (`approval_policies.separation
 - A QS approval is bound to the quote's `content_hash`. Any edit invalidates it.
 - The client accepts through the portal (OTP-verified) or staff record acceptance with evidence (signed PDF or email). Acceptance is bound to the issued hash plus the chosen options.
 
-### 4.4 Deal submission → Deal File + Project
-- After acceptance, Sales submits the **deal round**: agreement (file), payment proof (receipt), and a commission split (1–3 lines, provisional).
-- **Finance** verifies the receipt amount and allocation (design route: first verified receipt ≥ AED 15,000, tenant config) and finalizes commission, or returns it with a reason.
-- **Owner/Operations** approves (a different person from the submitter and Finance).
-- **First approved round** → exactly one **Deal File** (`DEAL-YYYY-####`) + **Project Ref** + **Project**, created by one idempotent command. Later rounds attach to the same Deal and Project.
-- Finance approval alone never opens a project. A missing or corrupt approval blocks stage movement (fail closed).
+### 4.4 Deal submission → Deal File → Start project
+- After acceptance, Sales submits the **deal round**: agreement (file), payment proof (receipt), and a commission split (1–3 lines, provisional). Finance verifies the receipt and finalizes commission; Owner/Operations approves (a different person from the submitter and Finance). The first approved round creates the **Deal File** (`DEAL-YYYY-####`).
+- **A project starts only from an accepted quotation** (*Start project* on the accepted quote, or *Start project* on the Projects page). The firm's **start rules** (Settings → Projects) decide what must be true first: signed agreement, verified payment(s) marked "before the project starts", owner approval — each can be switched off. A design-fee quotation never starts a project; design stays in Planning.
+- Starting is one idempotent command per planning record: it seals the scope (§6.10), numbers the project, names the team, copies the route's stages, carries the planning record's people and site locations over, links the opportunity and Job, and makes Planning read-only. Later accepted quotations (variations) attach to the same project.
 
 ### 4.5 Delivery → Handover → Aftercare
 Project stages come from the route (§5). Work is done through packages and tasks (§6.11), materials and purchasing (§6.12–6.15), factory (§6.16) and site (§6.17). **Complete** requires the client's handover acceptance and the final account being closed. **Aftercare:** warranty period from the handover date (in the tenant's timezone); claims become snags and tasks.
@@ -437,26 +435,32 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 - **Tests:** H2 floor; separation of duties; exactly one project under concurrent approvals; webhook replay.
 
 ### 6.10 Projects
-- **Records:** projects (from `delivery_projects`), project_stages, project_holds, project_members, milestones (optionally linked to payment requests), schedule baselines, client updates/publications, project files (attachments).
-- **Rules:**
-  - A project never copies commercial facts; it references deal, quote lines and spaces.
-  - The project overview answers five questions: *Who is the client? What was agreed? Where are we? Who owns the next action? What needs a decision?*
-  - Manager and members control access to the project (plus role scope).
-- **Edge cases:**
-  - Project on hold: tasks can't start and reminders pause, except hold review.
-  - PM changes: tasks remain, approvals are re-routed.
-  - Project cancelled mid-production: open POs and WOs get a guided close-out (short-close, return to stock, supplier cancellation cost), then final account.
-  - Two sites in one deal: spaces under two sites, one project.
-  - Client wants a second property: a new deal and a new project.
-- **Screens:** Projects list (grid: ref, client, stage, promise date, risk, next action, owner). Project workspace tabs:
-  - **Overview** (the five answers + stage bar + blockers)
-  - **Plan** (Gantt)
-  - **Board** (tasks)
-  - **Scope** (packages ↔ quote lines ↔ spaces)
-  - **Materials**
-  - **Money** (wallet: agreed / received / committed / spent)
-  - **Files**
-  - **Timeline**
+**Delivery spine (all modules hang off it).** One reference from Deal File to warranty; the accepted quotation becomes the **sealed scope**, then the live BOQ (baseline + approved variations). Every material, order, production order, delivery, installation, snag and warranty claim links to a BOQ line, so each line has a history ("line passport"): agreed → signed off → ordered/in production → received → delivered → installed → handed over → under warranty.
+
+**Locked scope (the answer to "I already told you").**
+- At start the accepted revision is sealed: lines (chosen options included), options not chosen, discounts, price from the one pricing engine, payment terms, terms and exclusions, the client's acceptance (who, when, how) and the agreement reference. It is canonical-JSON hashed (SHA-256); the row can never be updated; every read re-verifies the fingerprint and shows *Unchanged* or *Changed since it was sealed*. A scope certificate PDF comes with the document builder.
+- After the seal nothing changes silently: every change is a variation with its own price, time impact and client acceptance; each live-BOQ line shows its origin (Baseline R3, VO-2).
+- Planned with the Scope phase: requirement trace (each Planning requirement marked Included → lines / Excluded / Later / Not possible before a quote is sent), client-confirmed meeting notes (optional auto-confirm after N days), and "Ask the scope" answers with links to the requirement, line, exclusion and signature.
+
+**Records (built):** `delivery_projects` (reference with the firm's prefix, quote, route, priority, health, start and handover dates, hold), `project_scope_seals` (immutable), `project_stages` + `project_stage_confirmations`, `project_status_updates`, `project_assignments.role_keys` (one team model), `workspace_project_settings` (start rules, numbering, team roles), `project_templates` + `project_template_stages` (routes).
+
+**Stages and checks.** Routes are configuration (stages, owner role, checks). A stage finishes only when its checks pass. Checks are read from records wherever the record exists (project manager named, a role named, production payment verified) and otherwise confirmed by a person (e.g. "Client approved the drawings") until the module that records it lands — then the check reads the record. A stage that checks a payment can't be skipped; other stages can be skipped with a reason; the project manager can go back a stage with a reason. Finishing the last stage completes the project. On hold (reason + review date) stops all stage work until resumed.
+
+**Team.** The firm's role list (Settings → Projects; default: project manager, account manager, designer, technical designer, quantity surveyor, procurement, site supervisor, factory lead, installation lead). One named person per role; the project manager leads. The stage owner or the project manager works a stage; only the project manager (or `projects.manage`) holds, renames, re-dates, names people and posts status.
+
+**Status.** The project manager's update: On track / At risk / Off track plus one line (required when not on track); the latest is the project's status. Priority: Normal / High / Critical. Handover date shows "in N days" / "N days late" in the workspace time zone.
+
+**Screens (Notion-clean, one thing per view).**
+- Projects: one table — project + number, client, stage (n of m), next step + who holds it, handover, status; Running / On hold / Closed; *Start project* lists accepted quotations waiting to start.
+- Project page: the name, properties (client, number, stage, status, priority, project manager, team, handover, agreed value · sealed R#), then tabs — **Overview** (the stages; the current one lists what it needs), **Scope** (the sealed scope: items / payments / terms), **Updates**. Later phases add Plan, Site, Money and Files as their own tabs.
+
+**Notifications.** Started (team: in-app + email), named for a role (in-app + email), stage finished (lead and the next stage's owner), on hold / resumed / off track (team). The actor is never told about their own step.
+
+**End-to-end build order (agreed 26 Sept):** 1 project core ✔ → 2 scope (live BOQ, packages, line history, requirement trace, material-list sign-off, variations through the quotation builder) → 3 plan and tasks (one task system, Gantt, global Tasks, Calendar) → 4 suppliers and purchasing (supplier register with approval status, buying company, payment terms, discount/commission deals; requests → optional price comparison → orders → confirmations; subcontract orders) → 5 receiving, stock and logistics (three-way bill match, bank-statement matching, reservations, deliveries with proof) → 6 factory (§6.16) → 7 site, installation, snags and handover → 8 warranty and aftercare → 9 money (client and cost ledgers, milestones, cash forecast, reconciliation) → 10 client portal and the automations switchboard. Each phase ships with its notifications, labels, RTL, real-database tests and smoke.
+
+**Calculations never drift.** Exact decimals only; one pricing engine for quotes, variations, invoices and orders; totals are always derived (agreed = baseline + approved variations; milestones sum to 100 %; balance = invoiced − verified receipts); quantities guarded by ledgers (ordered ≤ required unless a reason, received ≤ ordered + tolerance, no negative stock); every figure opens to its lines; a nightly reconciliation flags mismatches.
+
+**Edge cases:** start twice (same project); accepted total no longer matching the lines (refused, re-issue); start rules missing (listed with a link to where each is done); a planning record on hold or cancelled (no start); a role removed while a route uses it (refused); the lead can't be un-named; two people changing the project (version check, reload); project on hold (no stage work); PM changes (tasks remain, approvals re-routed — phase 3); cancellation mid-production (guided close-out — phases 4–9); two sites in one deal (one project, sites as locations); a second property (new deal, new project).
 
 ### 6.11 Planning and tasks — the core
 - **Records:** work_packages (space, source quote lines, supply `make|buy|buy_finished|subcontract|client`, work location, owner, planned dates, status), tasks, task_dependencies (FS/SS/FF + lag), task_assignees, task_checklist_items, task_progress_entries, task_watchers, comments, attachments, work_calendars, resources, bookings.

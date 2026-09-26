@@ -22,7 +22,6 @@ export function allowedProjectsRoute(method: string, path: string) {
       (["locations", "assignments"].includes(path) ||
         new RegExp(`^workflow-templates/${id}$`).test(path))) ||
     (method === "POST" &&
-      (path === "from-pre-project" ||
-        new RegExp(`^workflow-templates/${id}/(archive|rollback)$`).test(path)))
+      (new RegExp(`^workflow-templates/${id}/(archive|rollback)$`).test(path)))
   );
 }

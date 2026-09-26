@@ -258,7 +258,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <PeopleHere people={people} />
       <span className={styles.spacer} />
       <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
-      <FlowActions state={state} api={api} caseHref={(section) => backHref.replace(/\/quotations(\?.*)?$/, `/${section}`)} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
+      <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
     </header>
     {state.quote.clientDecision ? <InlineNotice tone={state.quote.status === "accepted" ? "success" : "info"} message={t("{decision} by {name} on {date}{how}", {
       decision: t((state.quote.clientDecision.decision === "accept" ? "Accepted" : state.quote.clientDecision.decision === "changes" ? "Changes requested" : "Declined") as never),

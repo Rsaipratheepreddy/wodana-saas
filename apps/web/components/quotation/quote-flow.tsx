@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Button, Checkbox, ControlledModalDialog, IconButton, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
+import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
 import { money, plain } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, PaymentMilestone } from "@/lib/quotation/types";
 import styles from "./quote-builder.module.css";
@@ -14,15 +14,16 @@ type Api = ReturnType<typeof quoteApi>;
 
 /**
  * The one next step for this quote, by its state: send for review → approve → send to the client →
- * record the client's decision → agreement. Returned, declined or changed quotes start a new revision.
+ * record the client's decision → start the project. Returned, declined or changed quotes start a new revision.
  */
-export function FlowActions({ state, api, caseHref, onDone, onError, onRevision }: {
-  state: BuilderState; api: Api; caseHref: (section: string, query?: Record<string, string>) => string;
+export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, onRevision }: {
+  state: BuilderState; api: Api; workspaceId: string; caseId: string;
   onDone: () => Promise<unknown>; onError: (message: string) => void; onRevision: (quoteId: string) => void;
 }) {
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const [starting, setStarting] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
   const run = async (label: string, steps: Array<[string, Record<string, unknown>?]>) => {
@@ -62,11 +63,13 @@ export function FlowActions({ state, api, caseHref, onDone, onError, onRevision 
     </>;
   } else if (["changes_requested", "declined", "withdrawn", "superseded"].includes(status)) {
     actions = newRevision;
-  } else if (status === "accepted") {
-    actions = <Link className={styles.nextLink} href={caseHref("contracts")}>{t("Continue to agreement")}</Link>;
+  } else if (status === "accepted" && state.quote.kind === "quotation" && state.quote.round !== "design") {
+    // The accepted quotation starts the project; the dialog shows what the firm's start rules still need.
+    actions = <Button size="compact" variant="primary" onPress={() => setStarting(true)}>{t("Start project")}</Button>;
   }
   return <>
     {actions}
+    {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
     {deciding ? <DecisionDialog state={state} onClose={() => setDeciding(false)}
       onSave={async (input) => { await run("decide", [["record_decision", input]]); setDeciding(false); }} busy={busy === "decide"} /> : null}
   </>;

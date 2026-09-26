@@ -29,12 +29,10 @@ import { WorkspaceNotifications } from "./workspace-notifications";
 import { PreProjectProvider, usePreProject } from "@/components/pre-project/pre-project-context";
 import { caseRoute } from "@/lib/pre-project/types";
 import { preProjectNavigation } from "@/lib/pre-project/navigation";
-import { projectNavigation, projectPortfolioNavigation, realProjectRoute } from "@/lib/projects/routing";
 import styles from "./workspace.module.css";
 import { WorkspaceFocusProvider, useWorkspaceFocus } from "./workspace-focus";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 import { WorkspaceBreadcrumbProvider, useWorkspaceBreadcrumb } from "./workspace-breadcrumb";
-import { projectDisplayName } from "@/lib/projects/format";
 
 export type WorkspaceShellProps = {
   children: ReactNode;
@@ -51,16 +49,10 @@ export function WorkspaceShell({ children, modules, user, workspaces, unavailabl
 function WorkspaceShellContent({ children, modules, user, workspaces, unavailableOrganizations = [] }: WorkspaceShellProps) {
   const pathname = usePathname();
   const breadcrumb = useWorkspaceBreadcrumb();
-  const revampedProject = pathname.startsWith("/workspace/projects/new/");
+  // A project page names itself in the breadcrumb (Projects › its name) once it has loaded.
+  const projectPage = /^\/workspace\/projects\/[0-9a-f-]{36}(\/|$)/i.test(pathname);
   const builderSearch = useSearchParams();
-  const projectId = revampedProject ? pathname.split("/")[4] : null;
-  const [loadedProjectName, setLoadedProjectName] = useState<{id:string;name:string;error?:boolean}|null>(null);
-  const projectBreadcrumbTitle = breadcrumb?.title || builderSearch.get("projectName")?.trim() || (loadedProjectName?.id === projectId ? loadedProjectName.name : "");
   const preProjectRoute = caseRoute(pathname);
-  const projectRoute = realProjectRoute(pathname);
-  const projectSection = projectRoute?.section ?? null;
-  const projectPortfolio = pathname === "/workspace/projects/clients" || pathname === "/workspace/projects" || pathname === "/workspace/projects/calendar" || pathname === "/workspace/projects/workflow-templates";
-  const operationsScreen = ["/workspace/projects/purchasing", "/workspace/projects/inventory", "/workspace/projects/factory"].includes(pathname);
   const moduleSelector = false;
   const { selected } = usePreProject();
   const selectedCase = selected?.record.id === preProjectRoute?.id ? selected : null;
@@ -69,30 +61,16 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const baseModule = findWorkspaceModule(pathname, modules);
   const [hrmsAccess,setHrmsAccess]=useState<{workspaceId:string;permissions:HrmsBootstrap['permissions']}|null>(null);
   const hrmsActive=baseModule.id==='hrms',workspaceId=workspaces[0]?.id??'';
-  useEffect(() => {
-    if (!projectId || !workspaceId || projectBreadcrumbTitle) return;
-    const controller = new AbortController();
-    fetch(`/api/projects/${encodeURIComponent(projectId)}/execution?workspaceId=${encodeURIComponent(workspaceId)}`, { signal: controller.signal })
-      .then(async response => {
-        if (!response.ok) throw new Error("Project unavailable");
-        const project = await response.json();
-        if (typeof project.name !== "string" || !project.name.trim()) throw new Error("Project name unavailable");
-        if (!controller.signal.aborted) setLoadedProjectName({id:projectId,name:projectDisplayName(project.name)});
-      })
-      .catch(() => { if (!controller.signal.aborted) setLoadedProjectName({id:projectId,name:"",error:true}); });
-    return () => controller.abort();
-  }, [projectId, workspaceId, projectBreadcrumbTitle]);
   useEffect(()=>{if(!hrmsActive||!workspaceId)return;let active=true;hrmsRequest<HrmsBootstrap>(workspaceId,'bootstrap').then(boot=>{if(active)setHrmsAccess({workspaceId,permissions:boot.permissions});}).catch(()=>{});return()=>{active=false;};},[hrmsActive,workspaceId]);
   const activeModule = hrmsActive ? scopedHrmsNavigation(baseModule,hrmsAccess?.workspaceId===workspaceId?hrmsAccess.permissions:undefined) : baseModule.id === "pre-project"
     ? { ...baseModule, navigation: preProjectNavigation(baseModule.navigation, pathname, selectedCase?.search) }
-    : projectRoute ? { ...baseModule, navigation: projectNavigation(baseModule.navigation, projectRoute.root) }
-    : projectPortfolio ? { ...baseModule, navigation: projectPortfolioNavigation(baseModule.navigation) } : baseModule;
+    : baseModule;
   // The Settings menu belongs to settings pages only, not to every page without a module of its own (Tasks, Approvals…).
   const settingsPage = activeModule.id === "workspace" && activeModule.navigation.some((group) => group.items.some((item) => item.href !== "/workspace" && (pathname === item.href || pathname.startsWith(`${item.href}/`))));
   // Sales sub-sections share /workspace/crm/leads; name the breadcrumb after the tab the person is on.
   const salesSection = pathname === "/workspace/crm/leads" ? builderSearch.get("section") : null;
   const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? "Campaigns" : salesSection && ["assignment", "sla", "options", "automations"].includes(salesSection) ? "Settings" : salesSection === "reports" ? "Reports" : null;
-  const currentScreen = salesSectionLabel ? { label: salesSectionLabel } : pathname === "/workspace/crm/follow-ups" && ["schedule", "calendar"].includes(builderSearch.get("view") ?? "") ? { label: "Calendar" } : pathname === "/workspace/crm/preparation" ? { label: "Preparation" } : pathname === "/workspace/projects/clients" ? { label: "Clients" } : pathname === "/workspace/tasks" || pathname === "/workspace/approvals" ? { label: "Home" } : pathname === "/workspace/projects/factory" ? { label: "Factory" } : preProjectRoute || projectSection ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
+  const currentScreen = salesSectionLabel ? { label: salesSectionLabel } : pathname === "/workspace/crm/follow-ups" && ["schedule", "calendar"].includes(builderSearch.get("view") ?? "") ? { label: "Calendar" } : pathname === "/workspace/crm/preparation" ? { label: "Preparation" } : pathname === "/workspace/projects/clients" ? { label: "Clients" } : pathname === "/workspace/tasks" || pathname === "/workspace/approvals" ? { label: "Home" } : pathname.startsWith("/workspace/projects/") ? { label: "Project" } : preProjectRoute ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
   const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
   const woddy = useWoddy();
   const { theme, toggleTheme } = useWorkspaceTheme();
@@ -114,7 +92,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   }
 
   return (
-    <div className={styles.shell} data-workspace-theme={theme} data-account-flow={activeModule.id === "workspace" && pathname !== "/workspace" || undefined} data-task-flow={pathname === "/workspace/tasks" || undefined} data-project-flow={pathname.startsWith("/workspace/pre-projects") || pathname.startsWith("/workspace/projects") || undefined} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || !!projectSection || undefined} style={workspacePrimaryColorStyle(workspaces[0])}>
+    <div className={styles.shell} data-workspace-theme={theme} data-account-flow={activeModule.id === "workspace" && pathname !== "/workspace" || undefined} data-task-flow={pathname === "/workspace/tasks" || undefined} data-project-flow={pathname.startsWith("/workspace/pre-projects") || pathname.startsWith("/workspace/projects") || undefined} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || undefined} style={workspacePrimaryColorStyle(workspaces[0])}>
       {!moduleSelector ? <div className={styles.desktopSidebar}>
         <WorkspaceSidebar
           activeModule={activeModule}
@@ -151,7 +129,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
         </Modal>
       </ModalOverlay> : null}
 
-      <div className={styles.workspaceArea} data-project-revamp={revampedProject || undefined}>
+      <div className={styles.workspaceArea}>
         <header className={styles.topbar}>
           <button
             aria-expanded={mobileOpen}
@@ -163,12 +141,11 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <Menu size={19} />
           </button>
           {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="All planning" className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>Planning</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
-          {projectRoute ? <div className={styles.caseHeader}><Link aria-label="All projects" className={styles.focusBack} href="/workspace/projects"><ArrowLeft size={16} data-directional="true" /><span>All projects</span></Link><div><strong>Project workspace</strong><small>Plan · deliver · hand over</small></div></div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to planning") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
-          <nav aria-label="Breadcrumb" className={styles.breadcrumbs} data-project={revampedProject || undefined}>
+          <nav aria-label="Breadcrumb" className={styles.breadcrumbs}>
             <ol>
-              {revampedProject ? <li><Link href="/workspace/projects">Projects</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : !operationsScreen && pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
-              <li aria-current="page" title={revampedProject ? projectBreadcrumbTitle : undefined}>{revampedProject ? projectBreadcrumbTitle ? <Link href={`${pathname}?${new URLSearchParams({projectName:projectBreadcrumbTitle})}`} aria-current="page">{projectBreadcrumbTitle}</Link> : loadedProjectName?.id === projectId && loadedProjectName.error ? <span>Project unavailable</span> : <span aria-busy="true">Loading project…</span> : pathname === "/workspace" ? "Home" : currentScreen.label}</li>
+              {projectPage ? <li><Link href="/workspace/projects">Projects</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
+              <li aria-current="page">{projectPage ? breadcrumb?.title ?? <span aria-busy="true">{currentScreen.label}</span> : pathname === "/workspace" ? "Home" : currentScreen.label}</li>
             </ol>
           </nav>
           {HOME_ROUTES.includes(pathname) ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
@@ -214,7 +191,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && settingsPage ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && settingsPage ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );

@@ -47,9 +47,7 @@ export function WorkplacesPanel({
     [assigning, setAssigning] = useState<
       ProjectAssignment | null | undefined
     >(),
-    [release, setRelease] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    error = "";
   return (
     <>
       <div className={styles.sectionHeading}>
@@ -191,58 +189,6 @@ export function WorkplacesPanel({
           project.
         </p>
       )}
-      {boot.permissions.manageProjects ? (
-        <form
-          className={styles.settingsForm}
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError("");
-            try {
-              await hrmsRequest(
-                workspaceId,
-                "from-pre-project",
-                "POST",
-                { caseId: release },
-                "projects",
-              );
-              setRelease("");
-              onSaved();
-            } catch (e) {
-              setError((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <h3>Start project attendance</h3>
-          <p>
-            Release a won planning into delivery. Its sites and employee
-            assignments move with it.
-          </p>
-          <div className={styles.filters}>
-            <SelectField
-              id="release-case"
-              label="Won planning"
-              required
-              value={release}
-              onChange={(e) => setRelease(e)}
-            >
-              <option value="">Select a planning</option>
-              {contexts.data
-                ?.filter((c) => c.kind === "pre_project")
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-            </SelectField>
-            <Button type="submit" loading={busy} disabled={!release}>
-              Create delivery project
-            </Button>
-          </div>
-        </form>
-      ) : null}
       {editing !== undefined ? (
         <LocationForm
           workspaceId={workspaceId}

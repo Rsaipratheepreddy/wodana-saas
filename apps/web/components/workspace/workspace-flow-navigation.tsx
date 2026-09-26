@@ -95,6 +95,8 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   const order = ["crm-overview", "leads", "opportunities", "follow-ups", "customers", "forms", "sales-settings", "crm-attachments"];
   const flow = items.filter((item) => !resources.includes(item));
   if (String(module.id) === "crm" && resources.length) flow.push({ id: "sales-settings", label: "Settings", href: "/workspace/crm/leads?section=assignment", icon: "settings" });
+  // One tab says nothing the page title doesn't: show the bar only when there's a choice.
+  if (flow.length <= 1 && !resources.length) return null;
   const settingsActive = String(module.id) === "crm" && ["assignment", "sla", "options", "automations"].includes(section ?? "");
   if (String(module.id) === "crm") flow.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const activeHref = (section ? items.find((item) => item.href === `${pathname}?section=${section}`)?.href : undefined) ?? [...items].sort((a, b) => b.href.length - a.href.length).find((item) => !item.href.includes("?") && (pathname === item.href.split("?")[0] || pathname.startsWith(`${item.href.split("?")[0]}/`)))?.href;

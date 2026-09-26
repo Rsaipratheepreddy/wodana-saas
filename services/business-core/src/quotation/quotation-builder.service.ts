@@ -833,3 +833,50 @@ async function toBuffer(body: unknown): Promise<Buffer> {
   for await (const chunk of body as AsyncIterable<Buffer | string>) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   return Buffer.concat(chunks);
 }
+
+/**
+ * The client-facing scope of an accepted quote, for sealing into its project: every line the client
+ * accepted (chosen options included), the options they didn't choose, the discounts, the price from
+ * the one pricing engine, the payment terms and the document's terms and exclusions. Costs and
+ * internal notes are not part of it.
+ */
+export async function acceptedScope(db: Db, workspaceId: string, caseId: string, quoteId: string) {
+  const quote = await readQuote(db, workspaceId, caseId, quoteId);
+  const settings = await readSettings(db, workspaceId);
+  const decimals = currencyDecimals(quote.currency);
+  const decision = quote.detail.clientDecision as { selectedOptionLineIds?: string[] } | undefined;
+  const chosen = new Set(decision?.selectedOptionLineIds ?? []);
+  const lines = (await readLines(db, workspaceId, caseId, quoteId)).map((line) => (line.optional && chosen.has(line.id) ? { ...line, optional: false } : line));
+  const discounts = await readDiscounts(db, workspaceId, caseId, quoteId);
+  const pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)),
+    discounts, { currencyDecimals: decimals, pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding });
+  const priced = new Map(pricing.lines.map((line) => [line.id, line]));
+  const areas = await caseAreas(db, workspaceId, caseId);
+  const trades = await workPackages(db, workspaceId, true);
+  const document = documentOf(quote, settings);
+  const pick = (line: LineRow) => ({
+    id: line.id, position: line.position, kind: line.kind, areaId: line.areaId, fromAreaId: line.fromAreaId, workPackageId: line.workPackageId,
+    title: line.title, description: line.description, unit: line.unit, quantity: line.quantity, formula: line.formula,
+    length: line.length, width: line.width, height: line.height, count: line.count, dimensionUnit: line.dimensionUnit,
+    rate: line.rate, discountKind: line.discountKind, discountValue: line.discountValue, taxRate: line.taxRate ?? quote.taxRate,
+    catalogItemId: line.catalogItemId, imageAssetId: line.imageAssetId, catalogImageId: line.catalogImageId,
+    net: priced.get(line.id)?.net ?? "0", total: priced.get(line.id)?.total ?? "0",
+  });
+  const included = lines.filter((line) => !line.optional);
+  const used = (ids: Array<string | null>) => new Set(ids.filter((id): id is string => Boolean(id)));
+  const usedAreas = used(included.flatMap((line) => [line.areaId, line.fromAreaId]));
+  const usedTrades = used(included.map((line) => line.workPackageId));
+  return {
+    quote: { id: quote.id, number: quote.number, title: quote.title, currency: quote.currency, decimals, taxRate: quote.taxRate, validUntil: quote.validUntil,
+      pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding },
+    lines: included.map(pick),
+    declinedOptions: lines.filter((line) => line.optional).map((line) => ({ id: line.id, title: line.title, total: priced.get(line.id)?.total ?? "0" })),
+    areas: areas.filter((area) => usedAreas.has(area.id)),
+    trades: trades.filter((trade) => usedTrades.has(trade.id)).map(({ id, name }) => ({ id, name })),
+    discounts: discounts.map(({ scope, target, kind, value, reason }) => ({ scope, target, kind, value, reason })),
+    pricing: { subtotal: pricing.subtotal, discounts: pricing.discounts.total, net: pricing.net, tax: pricing.tax, taxes: pricing.taxes, total: pricing.total, areas: pricing.areas, trades: pricing.trades },
+    paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [],
+    terms: document.terms, exclusions: document.exclusions,
+  };
+}
+export type AcceptedScope = Awaited<ReturnType<typeof acceptedScope>>;

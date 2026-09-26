@@ -132,8 +132,6 @@
 /* Flow, payments and revision changes. */
 .meta { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .waiting { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.nextLink { padding: var(--wd-space-1-5) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; }
-.nextLink:hover { background: var(--wd-color-action-primary-hover); }
 .dialogForm { display: flex; flex-direction: column; gap: var(--wd-space-3); }
 .options { display: flex; flex-direction: column; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; }
 .options legend { margin-block-end: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }

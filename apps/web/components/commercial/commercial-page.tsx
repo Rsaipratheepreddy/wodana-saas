@@ -510,7 +510,7 @@ export function CommercialPage({
             error={error}
           />
         ) : (
-          <ApprovalRelease initialView={section === "approvals" ? "owner" : "release"} state={state} run={run} busy={busy} root={root} sectionHref={projectId ? part => projectPlanningHref(part === "contracts" || part === "payment-plan" ? "agreement" : part === "designs" ? "design" : part === "variations" ? "change-requests" : part === "execution-release" ? "approvals" : part) : undefined} />
+          <ApprovalRelease initialView="owner" state={state} run={run} busy={busy} root={root} sectionHref={projectId ? part => projectPlanningHref(part === "contracts" || part === "payment-plan" ? "agreement" : part === "designs" ? "design" : part === "variations" ? "change-requests" : part === "execution-release" ? "approvals" : part) : undefined} />
         )}
         {draft&&<ScopeImport workspaceId={state.workspaceId} caseId={state.caseId} quote={draft} open={dialog==="scope"} onClose={()=>setDialog("")} busy={busy} run={run}/>}
         <ControlledModalDialog

@@ -34,6 +34,7 @@ import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
 import { DesignModule } from "./design/design.module";
 import { QuotationModule } from "./quotation/quotation.module";
 import { GalleryModule } from "./gallery/gallery.module";
+import { ProjectCoreModule } from "./project-core/project-core.module";
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { GalleryModule } from "./gallery/gallery.module";
     DesignModule,
     QuotationModule,
     GalleryModule,
+    ProjectCoreModule,
     HrmsModule,
   ],
   controllers: [AppController],

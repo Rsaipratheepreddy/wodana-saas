@@ -15,7 +15,7 @@ describe("HRMS web boundary", () => {
     ])
       expect(allowedHrmsRoute("POST", path)).toBe(false);
     expect(allowedHrmsRoute("DELETE", "settings")).toBe(false);
-    expect(allowedProjectsRoute("POST", "from-pre-project")).toBe(true);
+    expect(allowedProjectsRoute("POST", "from-pre-project")).toBe(false);
     expect(allowedProjectsRoute("GET", "workflow-templates")).toBe(true);
     expect(
       allowedProjectsRoute(

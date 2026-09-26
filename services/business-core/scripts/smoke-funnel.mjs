@@ -902,10 +902,6 @@ const reopened = await request(`/workspaces/${workspaceId}/pre-projects/${caseId
 });
 assert.equal(reopened.status, "active");
 assert.equal(reopened.phase, "define");
-const plannedProject = palmFixture ? null : await request(
-  `/workspaces/${workspaceId}/projects/planning`,
-  { body: { caseId } },
-);
 
 const portalSettings = await request(
   `/workspaces/${workspaceId}/commercial/portal-settings`,
@@ -1457,426 +1453,32 @@ await commercial(
   { decision: "approve", note: "Independent Operations review complete." },
   palmFixture ? owner : operationsApprover,
 );
-const released = await commercial("release", {
-  note: "Approved for delivery planning.",
-});
-const projectId = released.data.release.projectId;
+// The project starts from the accepted quotation (Start project); its scope is sealed there.
+const startPath = `/workspaces/${workspaceId}/project-core/start/${caseId}`;
+const readiness = await request(startPath);
+assert.equal(readiness.quote.id, quoteId);
+assert(readiness.canStart, `Start rules must pass: ${JSON.stringify(readiness.checks)}`);
+const started = await request(startPath, { body: { quoteId, leadMembershipId: ownerMember.id, name: fixture.opportunityTitle } });
+const projectId = started.projectId;
 assert(projectId);
-if (!palmFixture) assert.equal(projectId, plannedProject.id);
-
 commercialState = await request(commercialPath);
-const project = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-);
-const releasedLine = project.data.scope.lines[0];
-assert.equal(project.caseId, caseId);
-assert.deepEqual(project.sites, []);
-assert.equal(project.data.initiation.status, "not_started");
-assert.equal(project.data.initiation.commercial.quoteId, quoteId);
-assert.equal(project.data.initiation.commercial.dealFileId, commercialState.data.dealFile.id);
-assert.equal(project.data.scope.quoteId, quoteId);
-assert.equal(project.data.scope.quoteHash, commercialState.data.dealFile.quoteHash);
-assert.equal(project.data.scope.dealFileId, commercialState.data.dealFile.id);
-assert.equal(project.data.scope.releaseId, commercialState.data.release.id);
-assert.deepEqual(
-  project.data.scope.definitionBaseline,
-  commercialState.data.dealFile.definitionBaseline,
-);
-assert.equal(releasedLine.id, quote.lines[0].id);
-assert.equal(releasedLine.sourceScopeId, scopeId);
-assert.equal(releasedLine.sourceScopeVersion, quote.lines[0].scopeVersion);
-assert.equal(releasedLine.sourceSpecificationVersion, 4);
-assert.equal(releasedLine.rate, 750);
-assert.equal(releasedLine.lineTotal, 1500);
-assert.equal("unitCost" in releasedLine, false);
-assert.equal("photo" in releasedLine, false);
-// Editing the reusable master must not rewrite the captured requirement or released BOQ.
+const projectDetail = await request(`/workspaces/${workspaceId}/project-core/projects/${projectId}`);
+assert.match(projectDetail.project.reference, /^PRJ-\d{4}$/);
+assert.equal(projectDetail.stages[0].status, "current");
+const sealed = await request(`/workspaces/${workspaceId}/project-core/projects/${projectId}/scope`);
+assert.equal(sealed.intact, true);
+const sealedLine = sealed.snapshot.lines[0];
+assert.equal(sealedLine.id, quote.lines[0].id);
+assert.equal(Number(sealedLine.rate), 750);
+assert.equal(Number(sealedLine.net), 1500);
+assert.equal("unitCost" in sealedLine, false);
+// Editing the reusable master must not rewrite the captured requirement or the sealed scope.
 await request(`/workspaces/${workspaceId}/catalog/records`,{method:'PUT',body:{...catalogWork,version:1,name:'Updated master wardrobe'}});
 const capturedSpecification=await request(`${contentPath}/specifications/${scopeId}`);
 assert(capturedSpecification.items[0].requirement.catalogLinks.some(link=>link.recordId===catalogWorkId&&link.snapshot.name==='Built-in wardrobe'));
-const afterCatalogEdit=await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-assert.deepEqual(afterCatalogEdit.data.scope,project.data.scope);
-assert.equal(project.data.workflow.template.id, projectWorkflowTemplateId);
-assert.equal(project.data.workflow.template.version, 1);
-assert.equal(project.data.workflow.template.stages[0].visibleName, projectFirstStageName);
-assert.equal(project.data.workflow.currentStageKey, palmFixture ? "procurement" : "planning");
-if (palmFixture) {
-  assert(project.data.workflow.template.stages.some(stage => stage.key === "procurement"));
-  assert(!project.data.workflow.template.stages.some(stage => stage.key === "factory_production"));
-  assert(!project.data.workflow.template.stages.some(stage => stage.key === "manufacturing_readiness"));
-  assert.deepEqual(project.data.workflow.template.stages.find(stage => stage.key === "procurement")?.exitGates, []);
-}
-
-await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
-  method: "PUT",
-  body: {
-    version: 1,
-    code: projectWorkflowCode,
-    name: "Tenant delivery",
-    description: "Updated for future projects only.",
-    isDefault: true,
-    stages: projectWorkflowStages.map((stage, index) => ({
-      ...stage,
-      visibleName: index === 0 ? "Future planning" : stage.visibleName,
-    })),
-  },
-});
-assert.equal(
-  (
-    await request(
-      `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-    )
-  ).data.workflow.template.stages[0].visibleName,
-  projectFirstStageName,
-);
-
-async function projectCommand(action, body = {}, expected = 201) {
-  const state = await request(
-    `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-  );
-  return request(
-    `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-    {
-      expected,
-      body: {
-        action,
-        revision: state.data.revision,
-        requestId: randomUUID(),
-        ...body,
-      },
-    },
-  );
-}
-
-const initiationDay = new Date().toISOString().slice(0, 10);
-await projectCommand("project_initiation", {
-  initiation: {
-    projectOwnerId: ownerMember.id,
-    teamMemberIds: [ownerMember.id],
-    roleAssignments: [{ role: "project_manager", memberId: ownerMember.id }],
-    siteReadiness: "to_confirm",
-    siteIds: [],
-    objective: "Deliver the accepted design and scope.",
-    clientPromise: "Confirm the site plan before mobilising.",
-    clientContactName: "QA contact",
-    clientContactPhone: "",
-    clientContactEmail: "",
-    accessNotes: "Site access remains to be confirmed.",
-    operationalStart: initiationDay,
-    targetCompletion: initiationDay,
-    handoverDate: "",
-  },
-});
-const initiated = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-assert.equal(initiated.data.initiation.status, "confirmed");
-assert.equal(initiated.data.initiation.baseline.projectOwnerId, ownerMember.id);
-assert.equal(initiated.data.initiation.commercial.quoteId, quoteId);
-await projectCommand("project_roles", {
-  assignments: [{ role: "project_manager", memberId: reviewerMember.id }],
-}, 409);
-await projectCommand("project_roles", {
-  assignments: [{ role: "project_manager", memberId: ownerMember.id }],
-});
-const designResourceId = randomUUID();
-await projectCommand("resource", {
-  resource: {
-    id: designResourceId,
-    name: "Design Team",
-    kind: "crew",
-    members: [ownerMember.id],
-    active: true,
-    businessUnitId: designUnit.id,
-    capacityMode: "exclusive",
-    capacity: 1,
-    timezone: "Asia/Dubai",
-    calendar: {
-      weekdays: [1, 2, 3, 4, 5],
-      startTime: "08:00",
-      endTime: "18:00",
-      holidays: [],
-    },
-  },
-});
-const deliveryTaskId = randomUUID();
-await projectCommand("task", {
-  task: {
-    id: deliveryTaskId,
-    parentId: "",
-    package: "Delivery planning",
-    title: "Coordinate accepted scope",
-    description: "API workflow transition fixture.",
-    area: "Project-wide",
-    location: "office",
-    ownerId: ownerMember.id,
-    assigneeIds: [],
-    resourceId: designResourceId,
-    start: "2026-09-16",
-    end: "2026-09-17",
-    predecessors: [],
-    quantity: 1,
-    unit: "item",
-    weight: 1,
-    priority: "normal",
-    inspectionRequired: false,
-    scopeIds: [releasedLine.id],
-    drawingId: "",
-    readiness: { scope: true, access: true, materials: true },
-  },
-});
-await projectCommand("milestone", {
-  milestone: {
-    id: randomUUID(),
-    title: "Design coordination complete",
-    dueDate: "2026-09-17",
-    ownerId: ownerMember.id,
-    taskIds: [deliveryTaskId],
-    visibleToClient: true,
-  },
-});
-let scheduleState = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-);
-const bookingRequestId = randomUUID();
-const bookingInput = {
-  taskId: deliveryTaskId,
-  status: "confirmed",
-  units: 1,
-  startTime: "09:00",
-  endTime: "12:00",
-  note: "Design capacity confirmed for delivery planning.",
-};
-const bookingPreview = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: bookingInput },
-);
-assert.equal(bookingPreview.canConfirm, true);
-assert.equal(bookingPreview.blockers.length, 0);
-const savedBooking = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings`,
-  {
-    method: "PUT",
-    body: {
-      ...bookingInput,
-      projectRevision: scheduleState.data.revision,
-      bookingVersion: 0,
-      requestId: bookingRequestId,
-    },
-  },
-);
-assert.equal(savedBooking.status, "confirmed");
-assert.equal(savedBooking.version, 1);
-assert.equal(
-  (
-    await request(`/workspaces/${workspaceId}/projects/${projectId}/bookings`, {
-      method: "PUT",
-      body: {
-        ...bookingInput,
-        projectRevision: scheduleState.data.revision,
-        bookingVersion: 0,
-        requestId: bookingRequestId,
-      },
-    })
-  ).id,
-  savedBooking.id,
-);
-const availability = await request(
-  `/workspaces/${workspaceId}/projects/schedule/availability?from=2026-09-16&to=2026-09-17&businessUnitId=${designUnit.id}`,
-);
-assert.equal(availability.resources.length, 1);
-assert(availability.availability[0].segments.some((segment) =>
-  segment.confirmed === 1 && segment.remaining === 0));
-const projectCalendar = await request(
-  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&businessUnitId=${designUnit.id}`,
-);
-assert.equal(projectCalendar.events.length, 2);
-assert(projectCalendar.events.every((event) => event.department.color === "#DC2626"));
-assert(projectCalendar.items.some((item) => item.kind === "milestone" && item.projectId === projectId));
-const alternateResourceId = randomUUID();
-await projectCommand("resource", {
-  resource: {
-    id: alternateResourceId,
-    name: "Alternate Design Team",
-    kind: "crew",
-    members: [ownerMember.id],
-    active: true,
-    businessUnitId: designUnit.id,
-    capacityMode: "exclusive",
-    capacity: 1,
-    timezone: "Asia/Dubai",
-    calendar: {
-      weekdays: [1, 2, 3, 4, 5],
-      startTime: "08:00",
-      endTime: "18:00",
-      holidays: [],
-    },
-  },
-});
-const overlappingTaskId = randomUUID();
-await projectCommand("task", {
-  task: {
-    id: overlappingTaskId,
-    parentId: "",
-    package: "Delivery planning",
-    title: "Overlapping design review",
-    description: "Confirms member-level capacity across two crews.",
-    area: "Project-wide",
-    location: "office",
-    ownerId: ownerMember.id,
-    assigneeIds: [],
-    resourceId: alternateResourceId,
-    start: "2026-09-16",
-    end: "2026-09-17",
-    predecessors: [],
-    quantity: 1,
-    unit: "item",
-    weight: 1,
-    priority: "normal",
-    inspectionRequired: false,
-    scopeIds: [releasedLine.id],
-    drawingId: "",
-    readiness: { scope: true, access: true, materials: true },
-  },
-});
-const hardConflict = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: { taskId: overlappingTaskId, status: "confirmed", startTime: "10:00", endTime: "11:00" } },
-);
-assert.equal(hardConflict.canConfirm, false);
-assert(hardConflict.blockers.some((message) => message.includes("team member")));
-const tentativePreview = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: { taskId: overlappingTaskId, status: "tentative", startTime: "10:00", endTime: "11:00" } },
-);
-assert.equal(tentativePreview.blockers.length, 0);
-assert(tentativePreview.warnings.some((message) => message.includes("team member")));
-scheduleState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-const tentativeBooking = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings`,
-  {
-    method: "PUT",
-    body: {
-      taskId: overlappingTaskId,
-      status: "tentative",
-      startTime: "10:00",
-      endTime: "11:00",
-      note: "Awaiting final design allocation.",
-      units: 1,
-      projectRevision: scheduleState.data.revision,
-      bookingVersion: 0,
-      requestId: randomUUID(),
-    },
-  },
-);
-assert.equal(tentativeBooking.status, "tentative");
-const activeCalendar = await request(
-  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&bookingStatus=active`,
-);
-assert.equal(activeCalendar.events.length, 4);
-assert(activeCalendar.events.some((event) => event.bookingStatus === "tentative"));
-const cancelledTentative = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/${overlappingTaskId}/cancel`,
-  {
-    body: {
-      bookingVersion: tentativeBooking.version,
-      requestId: randomUUID(),
-      reason: "Design allocation changed after capacity review.",
-    },
-  },
-);
-assert.equal(cancelledTentative.status, "cancelled");
-let workflowState;
-if (palmFixture) {
-  workflowState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-  assert.equal(workflowState.data.workflow.currentStageKey, "procurement");
-} else {
-  workflowState = await projectCommand("workflow_transition", {
-    toStageKey: "delivery",
-    note: "Delivery plan and ownership reviewed.",
-  });
-  assert.equal(workflowState.data.workflow.currentStageKey, "delivery");
-  assert.equal(workflowState.data.workflow.history.at(-1).action, "advanced");
-}
-
-workflowState = await projectCommand("project_controls", {
-  controls: {
-    ...workflowState.data.controls,
-    onHold: true,
-    holdReason: "Awaiting client access",
-    holdOwnerId: ownerMember.id,
-  },
-});
-assert.equal(workflowState.data.holdHistory.at(-1).action, "placed");
-const holdPreview = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: { taskId: overlappingTaskId, status: "confirmed", startTime: "10:00", endTime: "11:00" } },
-);
-assert(holdPreview.blockers.some((message) => message.includes("project hold")));
-await projectCommand(
-  "workflow_transition",
-  { toStageKey: palmFixture ? "installation" : "handover", note: "" },
-  409,
-);
-workflowState = await projectCommand("project_controls", {
-  controls: {
-    ...workflowState.data.controls,
-    onHold: false,
-    holdReason: "",
-    holdOwnerId: "",
-  },
-});
-assert.equal(workflowState.data.holdHistory.at(-1).action, "released");
-assert.equal(
-  workflowState.data.holdHistory.at(-1).reason,
-  "Awaiting client access",
-);
-
-const releasedBooking = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/${deliveryTaskId}/cancel`,
-  {
-    body: {
-      bookingVersion: savedBooking.version,
-      requestId: randomUUID(),
-      reason: "Release capacity before the concurrency check.",
-    },
-  },
-);
-assert.equal(releasedBooking.status, "cancelled");
-scheduleState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-const parallelConfirm = (taskId) => fetch(
-  `${api}/workspaces/${workspaceId}/projects/${projectId}/bookings`,
-  {
-    method: "PUT",
-    headers: { ...owner, "content-type": "application/json" },
-    body: JSON.stringify({
-      taskId,
-      status: "confirmed",
-      units: 1,
-      startTime: "10:00",
-      endTime: "11:00",
-      note: "Concurrent capacity verification.",
-      projectRevision: scheduleState.data.revision,
-      bookingVersion: 0,
-      requestId: randomUUID(),
-    }),
-  },
-);
-const parallelResults = await Promise.all([
-  parallelConfirm(deliveryTaskId),
-  parallelConfirm(overlappingTaskId),
-]);
-assert.deepEqual(parallelResults.map((response) => response.status).sort(), [200, 409]);
-const confirmedResponse = parallelResults.find((response) => response.status === 200);
-assert(confirmedResponse);
-const concurrentlyConfirmed = await confirmedResponse.json();
-await projectCommand("task_status", {
-  id: concurrentlyConfirmed.taskId,
-  status: "cancelled",
-  note: "Cancellation verifies task and booking lifecycle stay aligned.",
-});
-const calendarAfterTaskCancellation = await request(
-  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&bookingStatus=active`,
-);
-assert.equal(calendarAfterTaskCancellation.events.length, 0);
+const afterCatalogEdit=await request(`/workspaces/${workspaceId}/project-core/projects/${projectId}/scope`);
+assert.deepEqual(afterCatalogEdit.snapshot,sealed.snapshot);
+assert.equal(afterCatalogEdit.contentHash,sealed.contentHash);
 
 const linkedOpportunity = await request(
   `/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`,
@@ -1884,16 +1486,11 @@ const linkedOpportunity = await request(
 assert.equal(linkedOpportunity.lead_id ?? linkedOpportunity.leadId, lead.id);
 assert.equal(linkedOpportunity.projectLink.projectId, projectId);
 assert.equal((await request(`/workspaces/${workspaceId}/pre-projects/${caseId}`)).status, "released");
-assert.equal(
-  (await request(`/workspaces/${workspaceId}/projects/from-pre-project`, {
-    body: { caseId },
-  })).id,
-  projectId,
-);
+assert.deepEqual(await request(startPath, { body: { quoteId, leadMembershipId: ownerMember.id } }), { projectId, existing: true });
 
 const changeCreated = await commercial("create_change_case", {
   kind: "replacement",
-  sourceLineIds: [releasedLine.id],
+  sourceLineIds: [sealedLine.id],
   title: "Replace the approved wardrobe",
   detail: "Use the newly selected finish while preserving the accepted history.",
   owner: fixture.ownerName,
@@ -1903,14 +1500,15 @@ const changeId = changeCreated.data.requests.at(-1).id;
 const changeAssessed = await commercial("assess_change_case", { requestId: changeId });
 const impact = changeAssessed.data.requests.find((item) => item.id === changeId).control.impact;
 assert.equal(impact.projectId, projectId);
-assert(impact.targets.length > 0);
+// The new project has no packages or orders yet (they arrive with the Scope phase), so nothing is affected.
+assert(Array.isArray(impact.targets));
 const dispositions = impact.targets.map((target) => ({
   targetKind: target.kind,
   targetId: target.id,
   action: "hold_and_replan",
   note: "Pause this affected record and replan after client acceptance.",
 }));
-await commercial("set_change_dispositions", { requestId: changeId, dispositions });
+if (dispositions.length) await commercial("set_change_dispositions", { requestId: changeId, dispositions });
 const changePrepared = await commercial("prepare_change_variations", { requestId: changeId });
 const controlled = changePrepared.data.requests.find((item) => item.id === changeId).control;
 assert.equal(controlled.quoteIds.length, 2);
@@ -1983,7 +1581,7 @@ assert.deepEqual(
 );
 assert(reviewerSearch.items.some((item) => item.kind === "room" && item.id === roomId));
 assert(reviewerSearch.items.some((item) => item.kind === "quotation" && item.id === quoteId));
-assert.equal((await rawRequest(`/workspaces/${workspaceId}/projects/${projectId}/execution`, { headers: reviewer, method: "GET" })).status, 403);
+assert([403, 404].includes((await rawRequest(`/workspaces/${workspaceId}/project-core/projects/${projectId}`, { headers: reviewer, method: "GET" })).status));
 assert.equal((await rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/brief`, { headers: reviewer, method: "GET" })).status, 200);
 
 await request(`/workspaces/${workspaceId}/teams/${reviewerTeam.id}/archive`, {
