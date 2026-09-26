@@ -9,6 +9,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectWorkService } from "./project-work.service";
+import { processWorkDeadlines } from "./work-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -634,6 +635,33 @@ integration("projects core (plan §6.10)", () => {
       expect(quarter.total).toMatchObject({ done: 3, doneWithDue: 2, cycleDays: 2.5 });
       expect(quarter.people.find((row) => row.membershipId === null)).toMatchObject({ done: 1, open: 0 });
       await expect(w.work(w.designer, ["projects.view"]).insights(actor, w.workspaceId, "30")).rejects.toThrow(/oversee all projects/);
+    });
+  });
+
+  it("reminds the assignee the day before work is due, and the assignee and project manager once when it's late", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const lead = w.work(w.manager);
+      const [soon, late, old, done] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+      for (const [id, title] of [[soon, "Order hinges"], [late, "Shop drawings"], [old, "Site measure"], [done, "Samples"]] as const)
+        await lead.command(actor, w.workspaceId, projectId, { action: "create", id, title, assigneeId: w.designerMembership });
+      const today = "(now() AT TIME ZONE 'Asia/Dubai')::date";
+      await w.client.query(`UPDATE work_items SET due_date = ${today} + 1 WHERE id = $1`, [soon]);
+      await w.client.query(`UPDATE work_items SET due_date = ${today} - 2 WHERE id = $1`, [late]);
+      await w.client.query(`UPDATE work_items SET due_date = ${today} - 10 WHERE id = $1`, [old]);
+      await w.client.query(`UPDATE work_items SET due_date = ${today} - 1, status = 'done', completed_at = now() WHERE id = $1`, [done]);
+      await processWorkDeadlines(w.client, w.workspaceId);
+      await processWorkDeadlines(w.client, w.workspaceId);
+      const sent = (await w.client.query<{ event: string; channel: string; recipient: string; subject: string }>(
+        `SELECT event_type AS event, channel, recipient_id AS recipient, subject FROM notifications WHERE workspace_id = $1 AND event_type IN ('work.due_soon', 'work.overdue') ORDER BY event_type, channel, recipient_id`,
+        [w.workspaceId])).rows;
+      expect(sent.map(({ event, channel, recipient, subject }) => [event, channel, recipient === w.designer ? "designer" : "manager", subject]).sort()).toEqual([
+        ["work.due_soon", "in_app", "designer", "#1 Order hinges is due tomorrow"],
+        ["work.overdue", "email", "designer", "#2 Shop drawings is late · PRJ-0001 · Villa 12"],
+        ["work.overdue", "in_app", "designer", "#2 Shop drawings is late"],
+        ["work.overdue", "in_app", "manager", "#2 Shop drawings is late"],
+      ].sort());
     });
   });
 

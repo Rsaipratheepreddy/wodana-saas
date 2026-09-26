@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
 import { processDesignDeadlines } from "../design/design-journey.store";
+import { processWorkDeadlines } from "../project-core/work-reminders";
 import { ProjectNotificationsService } from "./project-notifications";
 
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
@@ -26,7 +27,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, failedWorkspaces: 0 };
+    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
@@ -34,6 +35,7 @@ export class ProjectRemindersService {
           decisions: await this.createDecisionReminders(client),
           weekly: projectId ? null : await this.createWeeklyProgress(client),
           design: projectId ? null : await processDesignDeadlines(client, workspaceId),
+          work: projectId ? null : await processWorkDeadlines(client, workspaceId),
         }));
         await this.queueDueEmails(run.due);
         if (run.weekly) await this.queueWeeklyEmails(run.weekly.rows, run.weekly.emailWorkspaces);
@@ -41,6 +43,7 @@ export class ProjectRemindersService {
         totals.decisionReminders += run.decisions;
         totals.weeklySummaries += run.weekly?.rows.length ?? 0;
         totals.designAlerts += (run.design?.alerted ?? 0) + (run.design?.closed ?? 0);
+        totals.workReminders += run.work?.sent ?? 0;
       } catch (error) {
         totals.failedWorkspaces += 1;
         this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);
