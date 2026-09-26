@@ -2,21 +2,21 @@
 .muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .spacer { flex: 1 1 auto; }
 
-/* Stages: the same compact, clickable timeline as the opportunity's progress. */
-.timeline { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; margin: 0; padding: 0; list-style: none; }
-.timeline li { position: relative; min-inline-size: 0; }
-.timeline li + li::before { content: ""; position: absolute; inset-block-start: calc(var(--wd-space-2) + var(--wd-space-1)); inset-inline: calc(-50% + var(--wd-space-2)) calc(50% + var(--wd-space-2)); block-size: 2px; background: var(--wd-color-structural-divider); }
+/* Stages: a compact stepper that hugs its content; the dot sits beside each stage's name. */
+.timeline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) 0; margin: 0; padding: 0; list-style: none; }
+.timeline li { display: flex; align-items: center; min-inline-size: 0; }
+.timeline li + li::before { content: ""; flex: none; inline-size: var(--wd-space-8); block-size: 2px; margin-inline: var(--wd-space-1); background: var(--wd-color-structural-divider); }
 .timeline li[data-state="done"] + li::before { background: var(--wd-color-success); }
-.timeline button { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: var(--wd-space-1); inline-size: 100%; padding: var(--wd-space-1-5) var(--wd-space-1); border: 1px solid transparent; border-radius: var(--wd-radius-md); background: none; color: inherit; font: inherit; text-align: center; cursor: pointer; }
-.timeline button:hover { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-hover); }
+.timeline button { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-1-5) var(--wd-space-3); border: 1px solid transparent; border-radius: var(--wd-radius-pill); background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.timeline button:hover { background: var(--wd-color-surface-hover); }
 .timeline button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .timeline li[data-selected] button { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-muted); }
-.dot { display: grid; place-items: center; inline-size: var(--wd-space-3); block-size: var(--wd-space-3); border: 2px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-surface); }
+.dot { flex: none; display: grid; place-items: center; inline-size: var(--wd-space-3); block-size: var(--wd-space-3); border: 2px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-surface); }
 .timeline li[data-state="done"] .dot { border-color: var(--wd-color-success); background: var(--wd-color-success); }
 .timeline li[data-state="active"] .dot { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary); }
 .stageText { display: grid; min-inline-size: 0; line-height: 1.25; }
-.stageText strong { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
-.stageText small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.stageText strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); white-space: nowrap; }
+.stageText small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); white-space: nowrap; }
 .stageText small[data-overdue] { color: var(--wd-color-danger); }
 .timeline li[data-state="locked"] .stageText strong { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }
 
@@ -65,7 +65,6 @@
 .pending input { flex: 1 1 auto; min-inline-size: 0; min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-3); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); }
 
 @media (max-width: 48rem) {
-  .timeline { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--wd-space-1); }
-  .timeline li + li::before { display: none; }
+  .timeline li + li::before { inline-size: var(--wd-space-3); }
   .actionPair { grid-template-columns: 1fr; }
 }
