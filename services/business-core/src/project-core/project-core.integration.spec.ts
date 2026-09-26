@@ -559,6 +559,55 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("runs sprints: commit at start, work added or taken out, every miss explained at close, unfinished work carried on", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const lead = w.work(w.manager);
+      const [a, b, c, d, sub] = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+      for (const [id, title] of [[a, "Shop drawings"], [b, "Order hinges"], [c, "Site measure"], [d, "Paint samples"]] as const)
+        await lead.command(actor, w.workspaceId, projectId, { action: "create", id, title });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: sub, parentId: a, title: "Elevations" });
+      const one = randomUUID(), two = randomUUID();
+      let state = await lead.command(actor, w.workspaceId, projectId, { action: "create_sprint", id: one, startDate: "2026-10-05", endDate: "2026-10-16", goal: "Drawings out" });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "create_sprint", id: two, startDate: "2026-10-19", endDate: "2026-10-30" });
+      expect(state.sprints.map((sprint) => [sprint.name, sprint.status])).toEqual([["Sprint 1", "planned"], ["Sprint 2", "planned"]]);
+      await expect(w.work(w.designer, ["projects.view"]).command(actor, w.workspaceId, projectId, { action: "create_sprint", id: randomUUID(), startDate: "2026-11-02", endDate: "2026-11-06" }))
+        .rejects.toThrow(/project manager/);
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "set_sprint", itemIds: [sub], sprintId: one })).rejects.toThrow(/goes with its task/);
+      let sprint = state.sprints[0];
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "start_sprint", sprintId: one, version: sprint.version })).rejects.toThrow(/Add work/);
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "set_sprint", itemIds: [a, b, c], sprintId: one });
+      sprint = state.sprints[0];
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "start_sprint", sprintId: one, version: sprint.version });
+      expect(state.sprints[0]).toMatchObject({ status: "active", committed: 3, committedDone: 0, items: 3 });
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "start_sprint", sprintId: two, version: state.sprints[1].version })).rejects.toThrow(/Close the running sprint/);
+
+      // Mid-sprint: one is done, one is taken out, one is added.
+      const byId = (id: string) => state.items.find((item) => item.id === id)!;
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: b, version: byId(b).version, status: "done" });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "set_sprint", itemIds: [c], sprintId: null });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "set_sprint", itemIds: [d], sprintId: one });
+      expect(state.sprints[0]).toMatchObject({ committed: 2, committedDone: 1, items: 3, itemsDone: 1 });
+      const running = await lead.sprint(actor, w.workspaceId, projectId, one);
+      expect([running.added, running.removed]).toEqual([1, 1]);
+      expect(running.unfinished.map((item) => item.number)).toEqual([1]);
+
+      sprint = state.sprints[0];
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "close_sprint", sprintId: one, version: sprint.version, moveTo: two })).rejects.toThrow(/Say why #1/);
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "close_sprint", sprintId: one, version: sprint.version, moveTo: two,
+        reasons: { [a]: { reason: "waiting_on_client", note: "Client away until the 20th" } } });
+      expect(state.sprints.map((item) => [item.name, item.status])).toEqual([["Sprint 1", "closed"], ["Sprint 2", "planned"]]);
+      expect([byId(a), byId(d)].map((item) => state.items.find((entry) => entry.id === item.id)!.sprintId)).toEqual([two, two]);
+      const closed = await lead.sprint(actor, w.workspaceId, projectId, one);
+      expect(closed.missed).toEqual([expect.objectContaining({ number: 1, reason: "waiting_on_client", note: "Client away until the 20th" })]);
+      expect(closed.sprint).toMatchObject({ committed: 2, committedDone: 1 });
+      const told = (await w.client.query<{ subject: string; body: string }>(`SELECT subject, body FROM notifications WHERE workspace_id = $1 AND event_type = 'work.sprint_closed' AND recipient_id = $2`,
+        [w.workspaceId, w.designer])).rows;
+      expect(told).toEqual([{ subject: "Sprint 1 closed on PRJ-0001 · Villa 12", body: "1 of 2 committed items done." }]);
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

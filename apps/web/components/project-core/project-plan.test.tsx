@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { OpenWork as OpenWorkState, PackagePlan, SettingsState, WorkBoard, WorkDetail, WorkItem } from "@/lib/project-core/types";
+import type { OpenWork as OpenWorkState, PackagePlan, SettingsState, Sprint, SprintDetail, WorkBoard, WorkDetail, WorkItem } from "@/lib/project-core/types";
 import { OpenWork } from "./open-work";
 import { ProjectPlan } from "./project-plan";
 import { ProjectSettingsPage } from "./project-settings";
@@ -28,7 +28,7 @@ vi.mock("next/navigation", async () => {
 
 const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const item = (patch: Partial<WorkItem> & Pick<WorkItem, "id" | "number" | "title">): WorkItem => ({
-  projectId: PID, type: "task", parentId: null, packageId: null, boqLineId: null, stageId: null, status: "todo", priority: "normal",
+  projectId: PID, type: "task", parentId: null, packageId: null, boqLineId: null, stageId: null, sprintId: null, status: "todo", priority: "normal",
   assigneeId: null, assigneeName: null, startDate: null, dueDate: null, baselineStart: null, baselineDue: null, completedAt: null, createdBy: "u1", version: 1,
   subtasks: 0, subtasksDone: 0, comments: 0, blockedBy: [], ...patch,
 });
@@ -40,7 +40,7 @@ const handles = item({ id: "i4", number: 4, title: "Order handles", status: "don
 const board = (items: WorkItem[] = [drawings, sheet, marble, handles], extra: Partial<WorkBoard> = {}): WorkBoard => ({
   items, packages: [{ id: "k1", name: "Kitchen joinery", supply: "make", planned: true }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
   people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, canManage: true, item: null,
-  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, ...extra,
+  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], ...extra,
 });
 const detail = (base: WorkItem, patch: Partial<WorkDetail> = {}): WorkDetail => ({
   ...base, description: "", createdByName: "Omar Haddad", createdAt: "2026-09-22T09:00:00Z", startedAt: null, subtaskIds: base.id === "i1" ? ["i2"] : [],
@@ -198,6 +198,51 @@ describe("project plan", () => {
     expect(dialog).toHaveTextContent("Dana Karim");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher)).toEqual([{ action: "plan_package", packageId: "k2", startDate: "2099-10-01" }]));
+  });
+
+  it("plans sprints: moves backlog work into a sprint and closes the running one with a reason for each miss", async () => {
+    nav.set("view=sprints");
+    const sprint = (patch: Partial<Sprint>): Sprint => ({ id: "sp1", number: 1, name: "Sprint 1", goal: "Drawings out", startDate: "2099-10-05", endDate: "2099-10-16", status: "active",
+      version: 2, items: 2, itemsDone: 1, committed: 2, committedDone: 1, closedAt: null, ...patch });
+    const sprints = [sprint({}), sprint({ id: "sp2", number: 2, name: "Sprint 2", goal: "", startDate: "2099-10-19", endDate: "2099-10-30", status: "planned", version: 1, items: 0, itemsDone: 0, committed: 0, committedDone: 0 })];
+    const items = [{ ...drawings, sprintId: "sp1", blockedBy: [] }, { ...handles, sprintId: "sp1" }, marble];
+    const detail: SprintDetail = { sprint: sprints[0], days: [{ date: "2099-10-05", remaining: 2, ideal: 2 }, { date: "2099-10-06", remaining: 1, ideal: 1.8 }], added: 0, removed: 0, missed: [],
+      unfinished: [{ itemId: "i1", number: 1, title: "Kitchen shop drawings" }] };
+    const fetcher = mount((url, body) => (url.includes("/work/sprints/sp1") ? detail : board(items, { sprints })));
+    plan();
+    const running = await screen.findByRole("region", { name: "Sprint 1" });
+    expect(running).toHaveTextContent("Drawings out");
+    expect(await within(running).findByRole("img", { name: "Burndown" })).toBeInTheDocument();
+    expect(running).toHaveTextContent("1 of 2 committed done");
+
+    const backlog = screen.getByRole("region", { name: "Backlog" });
+    await userEvent.click(within(backlog).getByRole("checkbox", { name: "Select #3 Marble thickness" }));
+    await userEvent.click(screen.getByRole("button", { name: "Move to" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Sprint 2" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "set_sprint", itemIds: ["i3"], sprintId: "sp2" }));
+
+    await userEvent.click(within(running).getByRole("button", { name: "Close sprint" }));
+    const dialog = await screen.findByRole("dialog", { name: "Close Sprint 1" });
+    const close = within(dialog).getByRole("button", { name: "Close sprint" });
+    expect(close).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole("button", { name: /Why #1 wasn't finished/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Waiting on the client" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Note for #1" }), "Away until the 20th");
+    await userEvent.click(close);
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "close_sprint", sprintId: "sp1", version: 2, moveTo: "sp2",
+      reasons: { i1: { reason: "waiting_on_client", note: "Away until the 20th" } } }));
+  });
+
+  it("creates the next sprint two weeks after the last one", async () => {
+    nav.set("view=sprints");
+    const fetcher = mount(() => board(undefined, { sprints: [{ id: "sp1", number: 1, name: "Sprint 1", goal: "", startDate: "2099-10-05", endDate: "2099-10-16", status: "planned",
+      version: 1, items: 0, itemsDone: 0, committed: 0, committedDone: 0, closedAt: null }] }));
+    plan();
+    await userEvent.click(await screen.findByRole("button", { name: "New sprint" }));
+    const dialog = await screen.findByRole("dialog", { name: "New sprint" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Goal" }), "Site ready");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "create_sprint", name: "", goal: "Site ready", startDate: "2099-10-17", endDate: "2099-10-30" }));
   });
 
   it("shows an empty plan with the first action", async () => {

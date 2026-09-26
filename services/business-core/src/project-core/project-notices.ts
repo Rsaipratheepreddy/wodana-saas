@@ -60,7 +60,7 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
 export type WorkNotice =
   | { code: "work.assigned" | "work.done"; item: { id: string; number: number; title: string; dueDate?: string | null }; memberships: string[] }
   | { code: "work.commented" | "work.blocked"; item: { id: string; number: number; title: string }; note: string; memberships: string[] }
-  | { code: "work.moved" | "work.planned"; item: { id: string; number: number; title: string; dueDate?: string | null }; note: string; memberships: string[] };
+  | { code: "work.moved" | "work.planned" | "work.sprint_started" | "work.sprint_closed"; item: { id: string; number: number; title: string; dueDate?: string | null }; note: string; memberships: string[] };
 
 /**
  * Who hears about project work: the person it's given to (also by email), the assignee and the person
@@ -83,7 +83,7 @@ export async function noticeWork(db: Db, input: { workspaceId: string; projectId
     `SELECT DISTINCT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`,
     [input.workspaceId, [...new Set(notice.memberships)]])).rows.filter((row) => row.userId !== input.actorUserId);
   // A planned package is named as itself; one item is "#n title".
-  const task = notice.code === "work.planned" ? notice.item.title : `#${notice.item.number} ${notice.item.title}`;
+  const task = notice.code === "work.planned" || notice.code === "work.sprint_started" || notice.code === "work.sprint_closed" ? notice.item.title : `#${notice.item.number} ${notice.item.title}`;
   // Dates read the way the workspace writes them.
   const locale = (await db.query<{ locale: string | null }>(`SELECT default_locale AS locale FROM workspaces WHERE id = $1`, [input.workspaceId])).rows[0]?.locale ?? "en";
   const day = (value: string) => { try { return new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)); } catch { return value; } };
@@ -92,7 +92,8 @@ export async function noticeWork(db: Db, input: { workspaceId: string; projectId
     due: notice.code === "work.moved" ? (notice.item.dueDate ? day(notice.item.dueDate) : "")
       : notice.code === "work.planned" ? (notice.item.dueDate ? `First due ${day(notice.item.dueDate)}.` : "")
       : notice.code === "work.assigned" && notice.item.dueDate ? `Due ${day(notice.item.dueDate)}.` : "" };
-  const deepLink = `/workspace/projects/${input.projectId}/plan?item=${notice.item.id}`;
+  const sprint = notice.code === "work.sprint_started" || notice.code === "work.sprint_closed";
+  const deepLink = sprint ? `/workspace/projects/${input.projectId}/plan?view=sprints` : `/workspace/projects/${input.projectId}/plan?item=${notice.item.id}`;
   for (const person of people) {
     const message = { workspaceId: input.workspaceId, recipientUserId: person.userId, code: notice.code, eventType: notice.code, variables, deepLink };
     await notifyUserInApp(db, { ...message, idempotencyKey: `${notice.code}:${input.key}:${person.userId}` });

@@ -11,7 +11,7 @@ export const OPEN = (status: WorkStatus) => status !== "done" && status !== "can
 
 export type WorkRef = { id: string; number: number; title: string; type: WorkType; status: WorkStatus };
 export type WorkItem = {
-  id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null;
+  id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null; sprintId: string | null;
   title: string; status: WorkStatus; priority: (typeof WORK_PRIORITIES)[number]; assigneeId: string | null; assigneeName: string | null;
   startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   subtasks: number; subtasksDone: number; comments: number;
@@ -20,7 +20,7 @@ export type WorkItem = {
 };
 
 const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number, item.type, item.parent_id AS "parentId", item.package_id AS "packageId",
-  item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
+  item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.sprint_id AS "sprintId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
   coalesce(assignee.display_name, assignee.primary_email) AS "assigneeName", item.start_date::text AS "startDate", item.due_date::text AS "dueDate",
   item.baseline_start::text AS "baselineStart", item.baseline_due::text AS "baselineDue", item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status <> 'cancelled') AS subtasks,

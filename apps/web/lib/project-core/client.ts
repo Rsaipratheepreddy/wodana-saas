@@ -1,4 +1,4 @@
-import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, PackagePlan, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -39,6 +39,7 @@ export function projectApi(workspaceId: string) {
     workCommand: (projectId: string, action: string, input: Record<string, unknown> = {}) => request<WorkBoard>(path(`projects/${projectId}/work`), "POST", { ...input, action }),
     packagePlan: (projectId: string, packageId: string, startDate?: string | null) =>
       request<PackagePlan>(`${path(`projects/${projectId}/work/packages/${packageId}/plan`)}${startDate ? `&${new URLSearchParams({ startDate })}` : ""}`),
+    sprint: (projectId: string, sprintId: string) => request<SprintDetail>(path(`projects/${projectId}/work/sprints/${sprintId}`)),
     openWork: (view: "mine" | "all") => request<OpenWork>(`${path("work")}&${new URLSearchParams({ view })}`),
     startState: (caseId: string) => request<StartState>(path(`start/${caseId}`)),
     start: (caseId: string, input: { quoteId: string; templateId?: string; name: string; leadMembershipId: string; startDate?: string | null; promiseDate?: string | null }) =>

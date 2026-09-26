@@ -124,6 +124,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "work.blocked", channel: "in_app", subject: "{{task}} is blocked", body: "{{actor}} reported a blocker on {{title}}: {{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
   { code: "work.moved", channel: "in_app", subject: "{{task}} moved to {{due}}", body: "{{actor}} pushed it later because {{note}} moved.", variables: ["title", "clientName", "actor", "task", "due", "note"] },
   { code: "work.planned", channel: "in_app", subject: "{{task}} is planned", body: "{{actor}} gave you {{note}} on {{title}}. {{due}}", variables: ["title", "clientName", "actor", "task", "note", "due"] },
+  { code: "work.sprint_started", channel: "in_app", subject: "{{task}} started on {{title}}", body: "{{actor}} started it: {{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
+  { code: "work.sprint_closed", channel: "in_app", subject: "{{task}} closed on {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
   { code: "work.done", channel: "in_app", subject: "{{task}} is done", body: "{{actor}} finished {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },

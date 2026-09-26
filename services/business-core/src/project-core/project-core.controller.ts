@@ -72,6 +72,11 @@ export class ProjectCoreController {
   packagePlan(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("packageId", ParseUUIDPipe) packageId: string,
     @Query("startDate") startDate?: string) { return this.work.packagePlan(actor, workspaceId, projectId, packageId, startDate); }
 
+  @Get("projects/:projectId/work/sprints/:sprintId")
+  workSprint(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("sprintId", ParseUUIDPipe) sprintId: string) {
+    return this.work.sprint(actor, workspaceId, projectId, sprintId);
+  }
+
   @Get("projects/:projectId/work/:itemId/ripple")
   workRipple(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("itemId", ParseUUIDPipe) itemId: string,
     @Query("startDate") startDate?: string, @Query("dueDate") dueDate?: string) { return this.work.preview(actor, workspaceId, projectId, itemId, { startDate, dueDate }); }

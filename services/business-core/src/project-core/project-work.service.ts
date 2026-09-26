@@ -12,6 +12,7 @@ import {
 } from "./project-work";
 import { readCalendar, ripple, type PlanMove } from "./work-calendar";
 import { ensureWorkTemplates, schedulePackage } from "./work-templates";
+import { MISS_REASONS, readSprintDetail, readSprints, type MissReason } from "./project-sprints";
 
 type Db = PoolClient;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -60,6 +61,16 @@ export class ProjectWorkService {
     });
   }
 
+  /** A sprint's burndown and what was missed and why. */
+  sprint(actor: RequestActor, workspaceId: string, projectId: string, sprintId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.context(client, workspaceId, projectId, user);
+      const detail = await readSprintDetail(client, workspaceId, projectId, sprintId, await readCalendar(client, workspaceId));
+      if (!detail) throw new NotFoundException("Sprint not found.");
+      return detail;
+    });
+  }
+
   /** Open work across projects: the person's own, or (for someone who sees every project) everyone's. */
   open(actor: RequestActor, workspaceId: string, view: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
@@ -87,6 +98,13 @@ export class ProjectWorkService {
         await client.query(`UPDATE delivery_projects SET plan_baseline_at = now(), plan_baseline_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, user.userId]);
         itemId = null;
         audit = { items: saved };
+      } else if (["create_sprint", "update_sprint", "delete_sprint", "start_sprint", "close_sprint"].includes(action)) {
+        if (!context.manager) throw new ForbiddenException("Only the project manager can plan sprints.");
+        audit = await this.sprintCommand(client, workspaceId, projectId, action, body, user.userId, notices);
+        itemId = null;
+      } else if (action === "set_sprint") {
+        audit = await this.setSprint(client, workspaceId, projectId, body, user.userId);
+        itemId = null;
       } else if (action === "plan_package") {
         const packageId = uuid(body.packageId, "Package");
         await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, projectId]);
@@ -316,6 +334,7 @@ export class ProjectWorkService {
     return {
       items, packages: packages.rows, stages: stages.rows, lines: lines.rows,
       people: context.canEdit ? await activeMembers(client, workspaceId) : [],
+      sprints: await readSprints(client, workspaceId, project.id),
       me: context.membershipId, canEdit: context.canEdit, canManage: context.manager && context.canEdit,
       calendar: await readCalendar(client, workspaceId), promiseDate: project.promiseDate, startDate: project.startDate,
       baseline: baseline?.at ? baseline : null,
@@ -346,6 +365,122 @@ export class ProjectWorkService {
     const lead = all || Boolean((await client.query(
       `SELECT 1 FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active AND is_manager`, [workspaceId, projectId, membershipId])).rowCount);
     return { project, membershipId, canEdit: EDITABLE.includes(project.status), manager: lead };
+  }
+
+  private async sprintCommand(client: Db, workspaceId: string, projectId: string, action: string, body: Record<string, unknown>, userId: string, notices: Array<{ key: string; notice: WorkNotice }>) {
+    if (action === "create_sprint") {
+      const id = uuid(body.id, "Sprint");
+      if ((await client.query(`SELECT 1 FROM work_sprints WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return { sprintId: id };
+      const startDate = date(body.startDate, "Start date");
+      const endDate = date(body.endDate, "End date");
+      if (!startDate || !endDate) throw new BadRequestException("Give the sprint a start and an end.");
+      if (endDate < startDate) throw new BadRequestException("The sprint can't end before it starts.");
+      await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, projectId]);
+      const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_sprints WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
+      const name = text(body.name, 120, "Name") || `Sprint ${number}`;
+      await client.query(`INSERT INTO work_sprints (id, workspace_id, project_id, number, name, goal, start_date, end_date, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, workspaceId, projectId, number, name, text(body.goal, 500, "Goal"), startDate, endDate, userId]);
+      return { sprintId: id, name, startDate, endDate };
+    }
+    const sprintId = uuid(body.sprintId, "Sprint");
+    const sprint = (await client.query<{ name: string; goal: string; status: string; version: number; startDate: string; endDate: string }>(
+      `SELECT name, goal, status, version, start_date::text AS "startDate", end_date::text AS "endDate" FROM work_sprints WHERE workspace_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+      [workspaceId, projectId, sprintId])).rows[0];
+    if (!sprint) throw new NotFoundException("Sprint not found.");
+    if (body.version !== sprint.version) throw new ConflictException("Someone else changed this sprint. Reload to see their changes.");
+    const bump = () => client.query(`UPDATE work_sprints SET version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, sprintId]);
+    if (action === "update_sprint") {
+      if (sprint.status === "closed") throw new ConflictException("The sprint is closed.");
+      const name = body.name === undefined ? sprint.name : text(body.name, 120, "Name");
+      if (!name) throw new BadRequestException("Name the sprint.");
+      const startDate = body.startDate === undefined ? sprint.startDate : date(body.startDate, "Start date");
+      const endDate = body.endDate === undefined ? sprint.endDate : date(body.endDate, "End date");
+      if (!startDate || !endDate) throw new BadRequestException("Give the sprint a start and an end.");
+      if (sprint.status === "active" && startDate !== sprint.startDate) throw new ConflictException("A running sprint keeps its start date.");
+      if (endDate < startDate) throw new BadRequestException("The sprint can't end before it starts.");
+      const goal = body.goal === undefined ? sprint.goal : text(body.goal, 500, "Goal");
+      await client.query(`UPDATE work_sprints SET name = $3, goal = $4, start_date = $5, end_date = $6 WHERE workspace_id = $1 AND id = $2`, [workspaceId, sprintId, name, goal, startDate, endDate]);
+      await bump();
+      return { sprintId, name, goal, startDate, endDate };
+    }
+    if (action === "delete_sprint") {
+      if (sprint.status !== "planned") throw new ConflictException("Only a sprint that hasn't started can be deleted.");
+      const moved = (await client.query(`UPDATE work_items SET sprint_id = NULL, updated_at = now() WHERE workspace_id = $1 AND sprint_id = $2`, [workspaceId, sprintId])).rowCount;
+      await client.query(`DELETE FROM work_sprints WHERE workspace_id = $1 AND id = $2`, [workspaceId, sprintId]);
+      return { sprintId, name: sprint.name, backToBacklog: moved };
+    }
+    const team = ((await readTeam(client, workspaceId, [projectId])).get(projectId) ?? []).map((member) => member.membershipId);
+    if (action === "start_sprint") {
+      if (sprint.status !== "planned") throw new ConflictException("This sprint has already started.");
+      if ((await client.query(`SELECT 1 FROM work_sprints WHERE workspace_id = $1 AND project_id = $2 AND status = 'active'`, [workspaceId, projectId])).rowCount)
+        throw new ConflictException("Close the running sprint first.");
+      const committed = (await client.query(
+        `INSERT INTO work_sprint_commitments (workspace_id, sprint_id, item_id)
+         SELECT workspace_id, $2, id FROM work_items WHERE workspace_id = $1 AND sprint_id = $2 AND status NOT IN ('done', 'cancelled')`, [workspaceId, sprintId])).rowCount ?? 0;
+      if (!committed) throw new ConflictException("Add work to the sprint first.");
+      await client.query(`UPDATE work_sprints SET status = 'active', started_at = now(), started_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, sprintId, userId]);
+      await bump();
+      notices.push({ key: `start:${sprintId}`, notice: { code: "work.sprint_started", item: { id: sprintId, number: 0, title: sprint.name },
+        note: sprint.goal || (committed === 1 ? "1 committed item" : `${committed} committed items`), memberships: team } });
+      return { sprintId, committed };
+    }
+    // close_sprint: every unfinished commitment says why; unfinished work moves on.
+    if (sprint.status !== "active") throw new ConflictException("Only a running sprint can be closed.");
+    const moveTo = body.moveTo === null || body.moveTo === undefined || body.moveTo === "" ? null : uuid(body.moveTo, "Sprint");
+    if (moveTo) {
+      const target = (await client.query<{ status: string }>(`SELECT status FROM work_sprints WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, moveTo])).rows[0];
+      if (!target || target.status !== "planned") throw new BadRequestException("Move unfinished work to a sprint that hasn't started, or to the backlog.");
+    }
+    const reasons = (body.reasons ?? {}) as Record<string, { reason?: unknown; note?: unknown }>;
+    const open = (await client.query<{ itemId: string; number: number; done: boolean }>(
+      `SELECT commitment.item_id AS "itemId", item.number, item.status = 'done' AS done FROM work_sprint_commitments commitment
+         JOIN work_items item ON item.workspace_id = commitment.workspace_id AND item.id = commitment.item_id
+        WHERE commitment.workspace_id = $1 AND commitment.sprint_id = $2 AND commitment.outcome = 'open'`, [workspaceId, sprintId])).rows;
+    // Every reason is checked before anything is written.
+    const missed = open.filter((row) => !row.done).map((row) => {
+      const given = reasons[row.itemId];
+      if (!given || !MISS_REASONS.includes(given.reason as MissReason)) throw new BadRequestException(`Say why #${row.number} wasn't finished.`);
+      return { itemId: row.itemId, reason: given.reason as MissReason, note: text(given.note, 500, "Note") };
+    });
+    const done = open.length - missed.length;
+    await client.query(`UPDATE work_sprint_commitments SET outcome = 'done', decided_at = now() WHERE workspace_id = $1 AND sprint_id = $2 AND item_id = ANY($3::uuid[])`,
+      [workspaceId, sprintId, open.filter((row) => row.done).map((row) => row.itemId)]);
+    for (const row of missed)
+      await client.query(`UPDATE work_sprint_commitments SET outcome = 'missed', reason = $4, note = $5, decided_at = now() WHERE workspace_id = $1 AND sprint_id = $2 AND item_id = $3`,
+        [workspaceId, sprintId, row.itemId, row.reason, row.note]);
+    const carried = (await client.query(`UPDATE work_items SET sprint_id = $3, updated_at = now() WHERE workspace_id = $1 AND sprint_id = $2 AND status NOT IN ('done', 'cancelled')`,
+      [workspaceId, sprintId, moveTo])).rowCount ?? 0;
+    await client.query(`UPDATE work_sprints SET status = 'closed', closed_at = now(), closed_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, sprintId, userId]);
+    await bump();
+    notices.push({ key: `close:${sprintId}`, notice: { code: "work.sprint_closed", item: { id: sprintId, number: 0, title: sprint.name },
+      note: `${done} of ${open.length} committed items done.`, memberships: team } });
+    return { sprintId, done, missed: open.length - done, carried, moveTo };
+  }
+
+  /** Puts tasks and issues in a sprint (or back in the backlog); taking one out of a running sprint marks its commitment removed. */
+  private async setSprint(client: Db, workspaceId: string, projectId: string, body: Record<string, unknown>, userId: string) {
+    const ids = Array.isArray(body.itemIds) ? [...new Set(body.itemIds.map((id) => uuid(id, "Item")))] : [];
+    if (!ids.length || ids.length > 200) throw new BadRequestException("Choose up to 200 items.");
+    const sprintId = body.sprintId === null || body.sprintId === "" || body.sprintId === undefined ? null : uuid(body.sprintId, "Sprint");
+    const target = sprintId ? (await client.query<{ name: string; status: string }>(`SELECT name, status FROM work_sprints WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+      [workspaceId, projectId, sprintId])).rows[0] : null;
+    if (sprintId && (!target || target.status === "closed")) throw new BadRequestException("Choose a sprint that isn't closed.");
+    const items = (await client.query<{ id: string; number: number; parentId: string | null; sprintId: string | null }>(
+      `SELECT id, number, parent_id AS "parentId", sprint_id AS "sprintId" FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = ANY($3::uuid[]) FOR UPDATE`,
+      [workspaceId, projectId, ids])).rows;
+    if (items.length !== ids.length) throw new NotFoundException("Item not found.");
+    const subtask = items.find((item) => item.parentId);
+    if (subtask) throw new BadRequestException(`#${subtask.number} is a subtask; it goes with its task.`);
+    let moved = 0;
+    for (const item of items) {
+      if (item.sprintId === sprintId) continue;
+      if (item.sprintId) await client.query(`UPDATE work_sprint_commitments SET outcome = 'removed', decided_at = now() WHERE workspace_id = $1 AND sprint_id = $2 AND item_id = $3 AND outcome = 'open'`,
+        [workspaceId, item.sprintId, item.id]);
+      await client.query(`UPDATE work_items SET sprint_id = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, item.id, sprintId]);
+      await workEvent(client, workspaceId, item.id, "sprint", { name: target?.name ?? null }, userId);
+      moved++;
+    }
+    return { sprintId, moved };
   }
 
   /** The package's template scheduled on working days, with who does each task and its stage. */

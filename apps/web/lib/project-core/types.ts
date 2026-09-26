@@ -120,7 +120,7 @@ export type WorkPriority = "low" | "normal" | "high" | "urgent";
 export type WorkRef = { id: string; number: number; title: string; type: WorkType; status: WorkStatus };
 export type WorkItem = {
   id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null;
-  title: string; status: WorkStatus; priority: WorkPriority; assigneeId: string | null; assigneeName: string | null;
+  sprintId: string | null; title: string; status: WorkStatus; priority: WorkPriority; assigneeId: string | null; assigneeName: string | null;
   startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   subtasks: number; subtasksDone: number; comments: number; blockedBy: WorkRef[];
 };
@@ -135,7 +135,7 @@ export type WorkDetail = WorkItem & {
 export type WorkBoard = {
   items: WorkItem[]; packages: Array<{ id: string; name: string; supply: Supply; planned: boolean }>; stages: Array<{ id: string; name: string; status: string }>;
   lines: Array<{ id: string; title: string; areaName: string | null; packageId: string | null }>;
-  people: Member[]; me: string | null; canEdit: boolean; canManage: boolean; item: WorkDetail | null;
+  people: Member[]; me: string | null; canEdit: boolean; canManage: boolean; item: WorkDetail | null; sprints: Sprint[];
   /** The working week (0 = Sunday) and days off, for scheduling. */
   calendar: { workingDays: number[]; holidays: string[] };
   promiseDate: string | null; startDate: string | null; baseline: { at: string; byName: string | null } | null;
@@ -149,4 +149,15 @@ export type PackagePlan = {
   package: { id: string; name: string; supply: Supply }; startDate: string; planned: boolean;
   tasks: Array<{ title: string; days: number; withPrevious: boolean; startDate: string; dueDate: string; role: string | null; roleLabel: string | null;
     assigneeId: string | null; assigneeName: string | null; stageId: string | null; stageName: string | null }>;
+};
+export type MissReason = "blocked" | "waiting_on_client" | "materials_late" | "underestimated" | "people_unavailable" | "reprioritised" | "other";
+export type Sprint = {
+  id: string; number: number; name: string; goal: string; startDate: string; endDate: string; status: "planned" | "active" | "closed"; version: number;
+  items: number; itemsDone: number; committed: number; committedDone: number; closedAt: string | null;
+};
+export type SprintDetail = {
+  sprint: Sprint; days: Array<{ date: string; remaining: number | null; ideal: number }>; added: number; removed: number;
+  missed: Array<{ itemId: string; number: number; title: string; reason: MissReason; note: string }>;
+  /** Committed and not done yet, while the sprint runs. */
+  unfinished: Array<{ itemId: string; number: number; title: string }>;
 };
