@@ -23,7 +23,7 @@ const state = (lines: BuilderLine[]): BuilderState => ({
   pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
     areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",
     discounts: { line: "0.00", section: "0.00", quote: "0.00", total: "0.00" }, net: "400.00", tax: "20.00", taxes: [{ rate: "5", base: "400.00", tax: "20.00" }], total: "420.00", cost: "240.00", margin: "40.00", optionalTotal: "0.00" },
-  canEdit: true, canEditCosts: true, canViewCosts: true,
+  checks: [], canEdit: true, canEditCosts: true, canViewCosts: true,
 });
 const mount = (initial: BuilderState, respond: (url: string, body: unknown) => unknown = () => initial) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, init?.body ? JSON.parse(String(init.body)) : undefined) }));
@@ -121,5 +121,30 @@ describe("quotation builder", () => {
     await userEvent.clear(percent); await userEvent.type(percent, "100");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes("/payment-terms") && init?.method === "PUT")).toBe(true));
+  });
+
+  it("drafts an empty quote with the assistant and applies only the ticked changes", async () => {
+    const initial = state([]);
+    const proposal = { summary: "From the brief", changes: [
+      { key: "0", action: "add", lineId: null, lineVersion: null, lineTitle: null, catalogItemId: "i1", catalogName: "Wardrobe · hinged", priced: true, fields: { areaId: KITCHEN, quantity: "2" }, areaName: "Kitchen", unknownArea: null, why: "Brief asks for wardrobes" },
+      { key: "1", action: "add", lineId: null, lineVersion: null, lineTitle: null, catalogItemId: null, catalogName: null, priced: false, fields: { title: "Paint walls", quantity: "40", unit: "sqm" }, areaName: null, unknownArea: "Study", why: "" },
+    ] };
+    const fetcher = mount(initial, (url) => url.includes("/ai/draft") ? proposal : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Draft the quote" }));
+    const panel = await screen.findByRole("region", { name: "Suggested changes" });
+    expect(panel).toHaveTextContent("“Study” isn't an area of this project yet; it goes to General.");
+    await userEvent.click(within(panel).getByRole("checkbox", { name: /Paint walls/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Apply 1 change" }));
+    await waitFor(() => {
+      const ops = posted(fetcher).find((body) => body.ops)?.ops;
+      expect(ops).toEqual([{ op: "catalog", itemId: "i1", line: expect.objectContaining({ areaId: KITCHEN, quantity: "2" }) }]);
+    });
+  });
+
+  it("lists what to fix before sending", () => {
+    mount({ ...state([line({ rate: "0" })]), checks: [{ code: "{name} has no price", values: { name: "Base cabinets" }, lineId: "a", tone: "danger" }, { code: "Add the payment milestones", tone: "warning" }] });
+    const checks = screen.getByRole("region", { name: "To fix before sending" });
+    expect(checks).toHaveTextContent("Base cabinets has no price");
+    expect(checks).toHaveTextContent("Add the payment milestones");
   });
 });

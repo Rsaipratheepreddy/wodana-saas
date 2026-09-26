@@ -372,6 +372,7 @@ export class QuotationBuilderService {
     const can = async (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
     const decision = quote.detail.clientDecision as { decision: string; decidedBy: string; decidedAt: string; note?: string; method?: string; recordedBy?: string } | undefined;
     const hideCost = <T extends { unitCost: string | null }>(row: T) => (canViewCosts ? row : { ...row, unitCost: null });
+    const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft" });
     return {
       quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
@@ -397,6 +398,7 @@ export class QuotationBuilderService {
       }),
       discounts,
       pricing: canViewCosts ? pricing : { ...pricing, cost: null, margin: null, lines: pricing.lines.map((line) => ({ ...line, cost: null })) },
+      checks,
       canEdit, canEditCosts, canViewCosts,
     };
   }
@@ -624,4 +626,38 @@ function decimal(value: unknown, label: string, options: { max: string; nullable
   const parsed = Dec.of(raw.trim());
   if (parsed.cmp(options.max) > 0) throw new BadRequestException(`${label} is too large.`);
   return parsed.toString();
+}
+
+export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; tone: "danger" | "warning" };
+
+/**
+ * What to fix before sending: lines without a price or quantity, formulas and build-ups that don't
+ * work out, rooms with approved designs but no items, margin under the firm's floor, and a missing
+ * payment schedule. Messages are translation keys with their values.
+ */
+async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
+  lines: LineRow[]; components: ComponentRow[]; decimals: number; pricing: ReturnType<typeof priceQuote>; settings: QuotationSettings; canViewCosts: boolean; paymentTerms: unknown[]; draft: boolean;
+}): Promise<QuoteCheck[]> {
+  const checks: QuoteCheck[] = [];
+  for (const line of input.lines) {
+    const name = { name: line.title };
+    if (line.kind !== "client_supplied" && Dec.of(line.rate).isZero()) checks.push({ code: "{name} has no price", values: name, lineId: line.id, tone: "danger" });
+    if (Dec.of(line.quantity).isZero()) checks.push({ code: "{name} has no quantity", values: name, lineId: line.id, tone: "danger" });
+    const measurements = { length: line.length, width: line.width, height: line.height, count: line.count };
+    if (line.formula && lineQuantity({ ...measurements, formula: line.formula, quantity: line.quantity }).error) checks.push({ code: "{name}: the formula doesn't work out", values: name, lineId: line.id, tone: "danger" });
+    if (line.pricingMode === "build_up" && !buildUp(input.components.filter((part) => part.lineId === line.id), measurements, line.markupPercent, input.decimals).complete)
+      checks.push({ code: "{name}: some parts have no price", values: name, lineId: line.id, tone: "warning" });
+  }
+  const designed = (await db.query<{ name: string }>(
+    `SELECT DISTINCT room.name FROM pre_project_designs design JOIN pre_project_rooms room ON room.workspace_id = design.workspace_id AND room.id = design.room_id
+      WHERE design.workspace_id = $1 AND design.case_id = $2 AND design.archived_at IS NULL
+        AND (SELECT version.status FROM pre_project_design_versions version WHERE version.workspace_id = design.workspace_id AND version.design_id = design.id ORDER BY number DESC LIMIT 1) = 'approved'
+        AND NOT EXISTS (SELECT 1 FROM unnest($3::uuid[]) AS used(id) WHERE used.id = room.id)`,
+    [workspaceId, caseId, [...new Set(input.lines.map((line) => line.areaId).filter(Boolean))]])).rows;
+  for (const room of designed) checks.push({ code: "{name} has approved designs but no items", values: { name: room.name }, tone: "warning" });
+  const floor = input.settings.marginFloorPercent;
+  if (input.canViewCosts && floor !== null && input.pricing.margin !== null && Dec.of(input.pricing.margin).cmp(floor) < 0)
+    checks.push({ code: "Margin is below the {floor}% floor", values: { floor }, tone: "warning" });
+  if (input.draft && input.lines.length && !input.paymentTerms.length) checks.push({ code: "Add the payment milestones", tone: "warning" });
+  return checks;
 }

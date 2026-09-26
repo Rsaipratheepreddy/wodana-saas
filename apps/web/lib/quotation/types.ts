@@ -55,8 +55,19 @@ export type BuilderState = {
   lines: BuilderLine[];
   discounts: QuoteDiscount[];
   pricing: Pricing;
+  checks: QuoteCheck[];
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
 };
+
+export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; tone: "danger" | "warning" };
+
+export type AiChange = {
+  key: string; action: "add" | "update" | "move" | "remove"; lineId: string | null; lineVersion: number | null; lineTitle: string | null;
+  catalogItemId: string | null; catalogName: string | null; priced: boolean;
+  fields: { title?: string; areaId?: string | null; fromAreaId?: string | null; workPackageId?: string | null; kind?: LineKind; quantity?: string; unit?: string; formula?: string | null; length?: string | null; width?: string | null; height?: string | null; count?: string | null };
+  areaName: string | null; unknownArea: string | null; why: string;
+};
+export type AiProposal = { summary: string; changes: AiChange[] };
 
 export type CatalogHit = { id: string; code: string; name: string; itemType: string; unitCode: string; categoryName: string | null; description: string | null; rate: string | null; hasBuildUp: boolean };
 

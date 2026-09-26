@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } 
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { QuotationAiService } from "./quotation-ai.service";
 import { QuotationBuilderService } from "./quotation-builder.service";
 
 /** The quotation builder, its settings and the firm's work packages (plan §6.8). Bodies are validated in the service. */
@@ -9,7 +10,7 @@ import { QuotationBuilderService } from "./quotation-builder.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/quotation")
 export class QuotationController {
-  constructor(private readonly builder: QuotationBuilderService) {}
+  constructor(private readonly builder: QuotationBuilderService, private readonly assistant: QuotationAiService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.builder.settings(actor, workspaceId); }
@@ -37,6 +38,12 @@ export class QuotationController {
 
   @Put("cases/:caseId/quotes/:quoteId/payment-terms")
   paymentTerms(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { terms?: unknown }) { return this.builder.setPaymentTerms(actor, workspaceId, caseId, quoteId, input ?? {}); }
+
+  @Post("cases/:caseId/quotes/:quoteId/ai/draft")
+  aiDraft(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.assistant.draft(actor, workspaceId, caseId, quoteId); }
+
+  @Post("cases/:caseId/quotes/:quoteId/ai/edit")
+  aiEdit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { request?: unknown }) { return this.assistant.edit(actor, workspaceId, caseId, quoteId, input ?? {}); }
 
   @Put("cases/:caseId/quotes/:quoteId/tax")
   tax(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { taxRate?: unknown }) { return this.builder.setQuoteTax(actor, workspaceId, caseId, quoteId, input ?? {}); }

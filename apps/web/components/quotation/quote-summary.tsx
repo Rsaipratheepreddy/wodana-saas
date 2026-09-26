@@ -46,6 +46,10 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
       </> : null}
     </dl>
     <PaymentsPanel state={state} api={api} onState={onState} onError={onError} />
+    {state.checks.length && state.quote.status === "draft" ? <section className={styles.checks} aria-label={t("To fix before sending")}>
+      <h3>{t("To fix before sending")}<small>{state.checks.length}</small></h3>
+      <ul>{state.checks.map((check, index) => <li key={`${check.code}-${check.lineId ?? index}`} data-tone={check.tone}>{t(check.code as never, check.values)}</li>)}</ul>
+    </section> : null}
     {belowFloor ? <p className={styles.alert} role="status">{t("Margin is below the {floor}% floor.", { floor: plain(floor!, locale) })}</p> : null}
     {discountFor ? <DiscountForm key={`${discountFor.scope}-${discountFor.target}`} target={discountFor} state={state} onClose={() => onDiscountFor(null)}
       onSave={async (input) => {

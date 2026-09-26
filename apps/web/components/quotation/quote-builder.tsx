@@ -15,6 +15,7 @@ import { LineDetails } from "./line-details";
 import { QuoteRow, type RowColumn } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, RevisionChanges } from "./quote-flow";
+import { QuoteAssistant } from "./quote-assistant";
 import { useRouter } from "next/navigation";
 import styles from "./quote-builder.module.css";
 
@@ -202,6 +203,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
       {state.canEdit && view !== "area" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
     </div>
 
+    {state.canEdit ? <QuoteAssistant state={state} api={api} starting={!state.lines.length} onApply={(ops) => send(ops)} onError={setError} /> : null}
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
