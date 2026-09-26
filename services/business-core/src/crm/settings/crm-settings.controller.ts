@@ -1,13 +1,16 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { CrmSettingsService } from "./crm-settings.service";
-import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
+import { EnquiryFieldsService } from "./enquiry-fields.service";
+import { ArchiveSettingDto, CreateCustomFieldDto, EnquiryFieldVisibilityDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
 import { RestoreConfigurationRevisionDto } from "../../workspaces/dto/restore-configuration-revision.dto";
 @ApiTags("crm-settings") @ApiBearerAuth() @Controller("workspaces/:workspaceId/crm")
 export class CrmSettingsController {
-  constructor(private readonly settings: CrmSettingsService) {}
+  constructor(private readonly settings: CrmSettingsService, private readonly enquiryFields: EnquiryFieldsService) {}
+  @Get("enquiry-fields") fields(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.enquiryFields.list(actor, workspaceId); }
+  @Put("enquiry-fields/system/:key") systemField(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("key") key: string, @Body() input: EnquiryFieldVisibilityDto) { return this.enquiryFields.setSystemVisibility(actor, workspaceId, key, input); }
   @Get("settings") list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.settings.list(actor, workspaceId); }
   @Post("taxonomies") taxonomy(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateTaxonomyDto) { return this.settings.createTaxonomy(actor, workspaceId, input); }
   @Patch("taxonomies/:taxonomyId") updateTaxonomy(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("taxonomyId", ParseUUIDPipe) taxonomyId: string, @Body() input: UpdateTaxonomyDto) { return this.settings.updateTaxonomy(actor, workspaceId, taxonomyId, input); }

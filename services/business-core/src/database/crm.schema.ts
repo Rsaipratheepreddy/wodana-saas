@@ -1165,10 +1165,26 @@ export const crmCustomFieldDefinitions = pgTable(
     searchable: boolean("searchable").notNull().default(false),
     configuration: jsonb("configuration").$type<Record<string, unknown>>().notNull().default({}),
     status: varchar("status", { length: 30 }).notNull().default("active"),
+    visible: boolean("visible").notNull().default(true),
+    position: integer("position").notNull().default(0),
     ...versionColumn,
     ...auditColumns,
   },
   (table) => [uniqueIndex("crm_custom_field_definitions_key_uidx").on(table.workspaceId, table.entityType, table.key)],
+);
+
+/** Show or hide the optional fixed enquiry fields; the required ones are always shown. */
+export const crmEnquiryFieldSettings = pgTable(
+  "crm_enquiry_field_settings",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    fieldKey: varchar("field_key", { length: 40 }).notNull(),
+    visible: boolean("visible").notNull().default(true),
+    version: integer("version").notNull().default(1),
+    updatedBy: uuid("updated_by"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.fieldKey] })],
 );
 
 export const crmCustomFieldValues = pgTable(

@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { loadLeadOptions } from "../leads/lead-options";
+import { customFieldId } from "../settings/enquiry-fields";
 
 export type FormQuestion = {
   id: string; title: string; description: string; type: string; required: boolean;
@@ -50,7 +51,8 @@ export function parseLeadForm(value: unknown, publishing = false): LeadFormSchem
   if (!Array.isArray(input.questions) || input.questions.length > 50) throw new BadRequestException("A form can contain up to 50 questions");
   const questions: FormQuestion[] = input.questions.map((raw: any) => {
     if (!raw || !/^[a-zA-Z0-9_-]{1,64}$/.test(raw.id) || !QUESTION_TYPES.includes(raw.type)) throw new BadRequestException("Invalid question");
-    const field = CORE_FIELDS.includes(raw.field) ? raw.field : "custom";
+    // A question fills a fixed enquiry field, a custom enquiry field ("cf:<id>"), or (older forms) only the response.
+    const field = CORE_FIELDS.includes(raw.field) || (typeof raw.field === "string" && customFieldId(raw.field)) ? raw.field : "custom";
     const options = Array.isArray(raw.options) ? raw.options.slice(0, 50).map((option: any) => ({ id: text(option?.id, 80), label: text(option?.label, 160) })) : [];
     if (new Set(options.map((option: { id: string }) => option.id)).size !== options.length || options.some((option: { id: string; label: string }) => !option.id || !option.label)) throw new BadRequestException("Each answer choice needs a unique value and label");
     const type = field === "email" ? "email" : field === "mobile" ? "tel" : field === "summary" ? "paragraph" : ["serviceType", "budgetRange", "emirate", "area"].includes(field) ? "dropdown" : ["displayName", "location"].includes(field) ? "text" : raw.type;
@@ -75,6 +77,7 @@ export function validateFormAnswers(schema: LeadFormSchema, answers: unknown) {
   const input = answers as Record<string, unknown>;
   if (Object.keys(input).some(id => !schema.questions.some(q => q.id === id))) throw new BadRequestException("The form changed. Reload and try again");
   const fields: Record<string, string> = {};
+  const custom: Record<string, string | string[]> = {};
   const responses = schema.questions.map(q => {
     const value = input[q.id];
     const blank = value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length);
@@ -93,8 +96,10 @@ export function validateFormAnswers(schema: LeadFormSchema, answers: unknown) {
       if (q.type === "number" && !Number.isFinite(Number(normalized))) throw new BadRequestException(`Enter a number for ${q.title}`);
       if (q.type === "date" && (!/^\d{4}-\d{2}-\d{2}$/.test(normalized) || Number.isNaN(Date.parse(normalized)) || new Date(normalized).toISOString().slice(0,10) !== normalized)) throw new BadRequestException(`Enter a valid date for ${q.title}`);
     }
-    if (q.field !== "custom") fields[q.field] = String(normalized);
+    const definitionId = customFieldId(q.field);
+    if (definitionId) custom[definitionId] = Array.isArray(normalized) ? normalized.map(id => q.options.find(o => o.id === id)!.label) : normalized;
+    else if (q.field !== "custom") fields[q.field] = String(normalized);
     return { questionId: q.id, title: q.title, type: q.type, field: q.field, value: Array.isArray(normalized) ? normalized.map(id => q.options.find(o => o.id === id)!.label) : q.options.find(o => o.id === normalized)?.label ?? normalized };
   });
-  return { fields, responses };
+  return { fields, responses, custom };
 }

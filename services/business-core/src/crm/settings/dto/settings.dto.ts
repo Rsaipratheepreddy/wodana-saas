@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from "class-validator";
+import { Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateNested } from "class-validator";
 
 export class TaxonomyOptionDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
@@ -27,6 +27,8 @@ export class CreateCustomFieldDto {
   @IsOptional() @IsBoolean() required?: boolean;
   @IsOptional() @IsBoolean() searchable?: boolean;
   @IsOptional() @IsObject() configuration?: Record<string, unknown>;
+  @IsOptional() @IsBoolean() visible?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(10000) position?: number;
 }
 export class UpdateCustomFieldDto {
   @IsInt() @Min(1) version!: number;
@@ -35,6 +37,8 @@ export class UpdateCustomFieldDto {
   @IsOptional() @IsBoolean() searchable?: boolean;
   @IsOptional() @IsObject() configuration?: Record<string, unknown>;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
+  @IsOptional() @IsBoolean() visible?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(10000) position?: number;
 }
 export class SetCustomFieldValueDto {
   @IsString() entityType!: string;
@@ -78,3 +82,7 @@ export class UpdateSavedViewDto {
   @IsOptional() @IsObject() definition?: Record<string, unknown>;
 }
 export class ArchiveSettingDto { @IsInt() @Min(1) version!: number; }
+export class EnquiryFieldVisibilityDto {
+  @IsBoolean() visible!: boolean;
+  @IsInt() @Min(0) version!: number;
+}

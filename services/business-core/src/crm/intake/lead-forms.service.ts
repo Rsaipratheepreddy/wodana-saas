@@ -12,6 +12,8 @@ import { CrmIntakeService } from "./crm-intake.service";
 import { completeLeadForm, defaultLeadForm, parseLeadForm, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
 import { countryFromLocale, normalizeIntakePartyPhones } from "./intake-phone";
 import { resolveFormLink } from "./form-link";
+import { PoolClient } from "pg";
+import { customFieldId, enquiryFieldDefinitions, questionShape, writeEnquiryCustomValues } from "../settings/enquiry-fields";
 
 @Injectable()
 export class LeadFormsService {
@@ -74,6 +76,7 @@ export class LeadFormsService {
         if (question.field === "budgetRange") question.options = choices.budgetRanges;
         if (question.field === "emirate") question.options = choices.emirates;
       }
+      await linkCustomFields(client, workspaceId, draft);
       if (publishing) {
         // Publishing defines the questions; an emirate is supplied by each eventual respondent.
         await validateLeadOptions(client, workspaceId, { source: draft.source, channel: draft.channel, serviceType: choices.enquiryTypes[0]?.id }, undefined, { requireEmirate: false });
@@ -153,7 +156,7 @@ export class LeadFormsService {
       const schema = completeLeadForm(published, choices);
       const link = resolveFormLink(choices, input.link);
       if (input.serviceConsent !== true) throw new BadRequestException("Consent is required before submitting an enquiry");
-      const { fields, responses } = validateFormAnswers(schema, input.answers);
+      const { fields, responses, custom } = validateFormAnswers(schema, input.answers);
       const mobileQuestion = schema.questions.find(question => question.field === "mobile");
       const suppliedCountry = mobileQuestion ? input.phoneCountryCodes?.[mobileQuestion.id] : undefined;
       const workspace = await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [form.workspace_id]);
@@ -202,7 +205,26 @@ export class LeadFormsService {
           consent: consent.evidence,
         },
       });
+      if (Object.keys(custom).length) {
+        const enquiry = await client.query<{ id: string }>(`SELECT enquiry.id FROM crm_enquiries enquiry JOIN crm_intake_events intake ON intake.id=enquiry.intake_event_id AND intake.workspace_id=enquiry.workspace_id
+          WHERE intake.workspace_id=$1 AND intake.idempotency_key=$2`, [form.workspace_id, key]);
+        if (enquiry.rows[0]) await writeEnquiryCustomValues(client, form.workspace_id, enquiry.rows[0].id, custom);
+      }
       return { received: true };
     });
+  }
+}
+
+/** Questions linked to custom enquiry fields take the field's current type and choices. */
+async function linkCustomFields(client: PoolClient, workspaceId: string, draft: LeadFormSchema) {
+  const ids = draft.questions.map(question => customFieldId(question.field)).filter((id): id is string => Boolean(id));
+  if (!ids.length) return;
+  const definitions = new Map((await enquiryFieldDefinitions(client, workspaceId, ids)).map(definition => [definition.id, definition]));
+  for (const question of draft.questions) {
+    const id = customFieldId(question.field);
+    if (!id) continue;
+    const definition = definitions.get(id);
+    if (!definition) throw new BadRequestException(`“${question.title || "A question"}” is linked to an enquiry field that was removed. Choose another field`);
+    Object.assign(question, questionShape(definition));
   }
 }

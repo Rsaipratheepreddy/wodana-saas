@@ -7,6 +7,9 @@ import { Badge, Button, Callout, ControlledModalDialog, DataGrid, IconButton, Se
 import type { LeadsPageData } from "@/lib/crm/leads";
 import { type LeadFormRecord } from "@/lib/crm/lead-forms";
 import { crmRequest } from "@/lib/crm/client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { enquiryFields } from "@/lib/crm/enquiry-fields";
+import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import { PublicEnquiryFormView } from "./public-enquiry-form";
 import { LeadFormEditor } from "./lead-form-editor";
 import styles from "./lead-forms.module.css";
@@ -16,6 +19,7 @@ export type LeadFormBranding = { logoUrl: string | null; primaryColor: string | 
 type FormResponse = { id: string; reference: string | null; leadId: string | null; name: string; status: string; receivedAt: string; answers: Array<{ title: string; value: unknown }>; consentStatus: string; candidateCount: number };
 
 export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, onEditingChange }: { initialData: LeadsPageData; initialBranding?: LeadFormBranding; onDirtyChange?: (dirty: boolean) => void; onEditingChange?: (editing: boolean) => void }) {
+  const t = useT();
   const [forms, setForms] = useState<LeadFormRecord[]>([]);
   const [record, setRecord] = useState<LeadFormRecord>();
   const [draft, setDraft] = useState<LeadFormRecord["draft"]>();
@@ -48,6 +52,8 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
   const linkParams = new URLSearchParams({ ...(shareSource && shareChannel ? { source: shareSource, channel: shareChannel } : {}), ...(placementSlug ? { placement: placementSlug } : {}) }).toString();
   const url = record && typeof window !== "undefined" ? `${window.location.origin}/enquiry/${record.token}${linkParams ? `?${linkParams}` : ""}` : "";
   const options = initialData.leadOptions;
+  const [fieldState, setFieldState] = useState(initialData.enquiryFields);
+  const fields = enquiryFields(fieldState, administrativeAreaLabel(countryFromLocale(initialData.defaultLocale))).map(field => field.kind === "fixed" && field.key !== "region" ? { ...field, label: t(field.label as never) } : field);
   useEffect(() => {
     const controller = new AbortController();
     crmRequest<{ data: LeadFormRecord[] }>(initialData.workspaceId, "lead-forms", "GET", undefined, controller.signal)
@@ -162,7 +168,7 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
       </header>
       {brandOpen && <aside className={styles.brandPanel} aria-label="Form branding"><div className={styles.brandIdentity}>{branding?.logoUrl ? <Image src={branding.logoUrl} alt={`${branding.workspaceName} logo`} width={104} height={52} unoptimized /> : <span>{branding?.workspaceName ?? "Company"}</span>}<div><strong>Workspace brand</strong><small>This logo and your brand colours appear on all published enquiry forms.</small></div></div><input ref={logoInput} className={styles.visuallyHidden} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose brand logo" onChange={event => void uploadLogo(event)} /><Button size="compact" isDisabled={!branding?.canManage || uploadingLogo} isLoading={uploadingLogo} onPress={() => logoInput.current?.click()}><Upload size={15} />{branding?.logoUrl ? "Replace logo" : "Upload logo"}</Button>{!branding?.canManage && <small>Ask a workspace administrator to update the brand logo.</small>}</aside>}
       <fieldset disabled={busy} className={styles.editorFieldset}><Tabs selectedKey={tab} onSelectionChange={key => { setTab(key); if (key === "responses") void loadResponses(); }} items={[
-        { id: "questions", label: "Questions", panel: <LeadFormEditor key={record.id} draft={draft} setDraft={setDraft} busy={busy} /> },
+        { id: "questions", label: "Questions", panel: <LeadFormEditor key={record.id} draft={draft} setDraft={setDraft} busy={busy} fields={fields} workspaceId={initialData.workspaceId} onFieldCreated={saved => setFieldState(current => current && ({ ...current, custom: [...current.custom, saved] }))} /> },
         { id: "responses", label: `Responses${responses.length ? ` (${responses.length}${responseCursor ? "+" : ""})` : ""}`, panel: <div className={styles.responsesPanel}><div className={styles.responsesHeading}><p>Each submitted response is linked to an enquiry, or held for duplicate review.</p><Button size="compact" variant="quiet" isDisabled={loadingResponses} onPress={() => void loadResponses()}>Refresh</Button></div>{loadingResponses && <p role="status">Loading responses…</p>}<DataGrid ariaLabel="Form responses" data={responses} columns={[{ accessorKey: "reference", header: "Enquiry ID", size: 140, cell: ({ row }) => row.original.reference ?? "Pending review" }, { accessorKey: "name", header: "Customer", size: 240 }, { accessorKey: "status", header: "Status", size: 180, cell: ({ row }) => row.original.status === "duplicate_candidate" ? `Duplicate review · ${row.original.candidateCount}` : row.original.status.replaceAll("_", " ") }, { accessorKey: "receivedAt", header: "Received", size: 180, cell: ({ getValue }) => new Date(String(getValue())).toLocaleString() }]} getRowId={entry => entry.id} onRowAction={setResponse} pageSize={25} hasMoreRows={Boolean(responseCursor)} footerActions={responseCursor ? <Button size="compact" isLoading={loadingResponses} onPress={() => void loadResponses(responseCursor)}>Load more responses</Button> : undefined} emptyTitle={loadingResponses ? "Loading responses…" : "No responses yet"} emptyDescription="Responses from the published form appear here and in Enquiries." /></div> },
         { id: "settings", label: "Settings", panel: <div className={styles.settings}><h3>Enquiry destination</h3><p>Every submission creates an intake record and an enquiry. Routing rules assign it to the sales team; possible duplicates wait for review.</p><div className={styles.questionFields}><SelectField label="Source" items={options?.sources ?? []} selectedKey={draft.source} onSelectionChange={key => { const source = String(key); setDraft({ ...draft, source, channel: options?.channels[source]?.[0]?.id ?? "" }); }} /><SelectField label="Channel" items={options?.channels[draft.source] ?? []} selectedKey={draft.channel} onSelectionChange={key => setDraft({ ...draft, channel: String(key) })} /></div><p>These attribution settings are internal. Choosing a social channel records where you shared the link; it does not import social lead ads.</p>{record.status === "published" && <Button isDisabled={busy} onPress={() => void save("pause")}>Pause submissions</Button>}</div> },
       ]} /></fieldset>

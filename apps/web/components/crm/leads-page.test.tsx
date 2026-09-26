@@ -84,13 +84,16 @@ describe("LeadsPage", () => {
     expect(within(table).getByText("E-0042")).toBeInTheDocument();
   });
 
-  it("opens workspace enquiry-type configuration from the enquiry submenu", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ taxonomies: [] }) }));
-    const data = structuredClone(leadsPageFixture);
-    render(<LeadsPage initialData={data} initialSection="options" />);
-
+  it("lists enquiry fields in settings and opens a field's choices", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => String(url).includes("enquiry-fields") ? { system: { email: { visible: true, version: 0 }, customerType: { visible: false, version: 1 }, area: { visible: true, version: 0 }, budgetRange: { visible: true, version: 0 }, summary: { visible: true, version: 0 } }, custom: [] } : { taxonomies: [] } })));
+    const user = userEvent.setup();
+    render(<LeadsPage initialData={structuredClone(leadsPageFixture)} initialSection="options" />);
+    const table = await screen.findByRole("table", { name: "Enquiry fields" });
+    expect(within(table).getByRole("switch", { name: "Show Customer type" })).not.toBeChecked();
+    expect(within(table).getByRole("switch", { name: "Show Customer name" })).toBeDisabled();
+    await user.click(within(table).getByText("Enquiry type"));
     expect(await screen.findByRole("region", { name: "Enquiry options" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enquiry types List" })).toHaveTextContent("Enquiry types");
+    expect(screen.queryByRole("button", { name: /List$/ })).not.toBeInTheDocument();
   });
 
   it("puts each enquiry in the list for its status with counts", async () => {

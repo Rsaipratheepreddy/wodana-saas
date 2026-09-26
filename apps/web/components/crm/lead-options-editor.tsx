@@ -9,11 +9,13 @@ import type { WorkspaceConfigurationRevision } from "@/lib/workspace/company-pro
 import styles from "./lead-forms.module.css";
 
 type Taxonomy = { id: string; code: string; version: number; status: string };
-export function LeadOptionsEditor({ workspaceId, initialOptions, onSaved, onDirtyChange }: { workspaceId: string; initialOptions?: LeadOptions; onSaved: (options: LeadOptions) => void; onDirtyChange?: (dirty: boolean) => void }) {
+const inLists = (lists: string[] | undefined, id: string) => !lists || lists.some(list => list.endsWith("_") ? id.startsWith(list) : id === list);
+/** Option lists for enquiry fields; `lists` limits it to one field's lists (ids, or prefixes ending in "_"). */
+export function LeadOptionsEditor({ workspaceId, initialOptions, onSaved, onDirtyChange, lists, regionLabel = "Regions" }: { workspaceId: string; initialOptions?: LeadOptions; onSaved: (options: LeadOptions) => void; onDirtyChange?: (dirty: boolean) => void; lists?: string[]; regionLabel?: string }) {
   const [options, setOptions] = useState(initialOptions);
   const [taxonomies, setTaxonomies] = useState<Taxonomy[]>();
-  const [group, setGroup] = useState("enquiry_type");
-  const [entries, setEntries] = useState<LeadOption[]>(initialOptions?.enquiryTypes ?? []);
+  const [group, setGroup] = useState(() => lists?.[0]?.endsWith("_") ? `${lists[0]}${lists[0] === "lead_area_" ? initialOptions?.emirates.find(item => item.id !== "outside_uae")?.id ?? "" : initialOptions?.sources[0]?.id ?? ""}` : lists?.[0] ?? "enquiry_type");
+  const [entries, setEntries] = useState<LeadOption[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -23,7 +25,10 @@ export function LeadOptionsEditor({ workspaceId, initialOptions, onSaved, onDirt
   const [revisionTarget, setRevisionTarget] = useState<WorkspaceConfigurationRevision>();
   const [groupTarget, setGroupTarget] = useState("");
   useEffect(() => { crmRequest<{ taxonomies: Taxonomy[] }>(workspaceId, "settings").then(result => setTaxonomies(result.taxonomies)).catch(failure => setError(failure.message)); }, [workspaceId]);
-  const groups = [{ id: "customer_type", label: "Customer types", values: options?.customerTypes ?? [] }, { id: "enquiry_type", label: "Enquiry types", values: options?.enquiryTypes ?? [] }, { id: "emirate", label: "Emirates", values: options?.emirates ?? [] }, ...(options?.emirates ?? []).filter(emirate => emirate.id !== "outside_uae").map(emirate => ({ id: `lead_area_${emirate.id}`, label: `${emirate.label} areas`, values: options?.areas?.[emirate.id] ?? [] })), { id: "budget_range", label: "Budget ranges", values: options?.budgetRanges ?? [] }, { id: "referral_broker", label: "Brokers", values: options?.referralBrokers ?? [] }, { id: "referral_partner", label: "Referral partners", values: options?.referralPartners ?? [] }, { id: "lead_source", label: "Sources", values: options?.sources ?? [] }, ...(options?.sources ?? []).map(source => ({ id: `lead_channel_${source.id}`, label: `${source.label} channels`, values: options?.channels[source.id] ?? [] }))];
+  const groups = [{ id: "customer_type", label: "Customer types", values: options?.customerTypes ?? [] }, { id: "enquiry_type", label: "Enquiry types", values: options?.enquiryTypes ?? [] }, { id: "emirate", label: regionLabel, values: options?.emirates ?? [] }, ...(options?.emirates ?? []).filter(emirate => emirate.id !== "outside_uae").map(emirate => ({ id: `lead_area_${emirate.id}`, label: `${emirate.label} areas`, values: options?.areas?.[emirate.id] ?? [] })), { id: "budget_range", label: "Budget ranges", values: options?.budgetRanges ?? [] }, { id: "referral_broker", label: "Brokers", values: options?.referralBrokers ?? [] }, { id: "referral_partner", label: "Referral partners", values: options?.referralPartners ?? [] }, { id: "lead_source", label: "Sources", values: options?.sources ?? [] }, ...(options?.sources ?? []).map(source => ({ id: `lead_channel_${source.id}`, label: `${source.label} channels`, values: options?.channels[source.id] ?? [] }))];
+  const shownGroups = groups.filter(item => inLists(lists, item.id));
+  const [loadedGroup, setLoadedGroup] = useState("");
+  if (loadedGroup !== group && options) { setLoadedGroup(group); setEntries(structuredClone(groups.find(item => item.id === group)?.values ?? [])); }
   const dirty = JSON.stringify(entries) !== JSON.stringify(groups.find(item => item.id === group)?.values ?? []);
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
   useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn); }, [dirty]);
@@ -66,7 +71,7 @@ export function LeadOptionsEditor({ workspaceId, initialOptions, onSaved, onDirt
   const changeGroup = (id: string) => { setGroup(id); setEntries(structuredClone(groups.find(item => item.id === id)?.values ?? [])); setNotice(""); };
   return <section className={styles.settings} aria-label="Enquiry options">
     {error && <Callout title="Options not saved" tone="warning">{error}</Callout>}{notice && <p role="status">{notice}</p>}
-    <SelectField label="List" items={groups.map(({ id, label }) => ({ id, label }))} selectedKey={group} isDisabled={busy} onSelectionChange={key => { const id = String(key); if (dirty) { setGroupTarget(id); return; } changeGroup(id); }} />
+    {shownGroups.length > 1 && <SelectField label="List" items={shownGroups.map(({ id, label }) => ({ id, label }))} selectedKey={group} isDisabled={busy} onSelectionChange={key => { const id = String(key); if (dirty) { setGroupTarget(id); return; } changeGroup(id); }} />}
     <div className={styles.optionList}>{entries.map((option, index) => <div key={option.id} className={styles.optionRow}><TextInput label={`Option ${index + 1}`} value={option.label} isDisabled={busy || (group === "emirate" && option.id === "outside_uae")} onChange={label => setEntries(previous => previous.map(item => item.id === option.id ? { ...item, label } : item))} /><IconButton aria-label={`Remove ${option.label || "option"}`} isDisabled={busy || (["enquiry_type", "budget_range"].includes(group) && option.id === "not_sure") || (group === "emirate" && option.id === "outside_uae")} onPress={() => setEntries(previous => previous.filter(item => item.id !== option.id))}><Trash2 size={15} /></IconButton></div>)}</div>
     {!entries.length && <p>No choices configured yet. Add the options approved for this workspace.</p>}
     <div className={styles.actions}><Button size="compact" isDisabled={busy || !taxonomies?.some(item => item.code === group)} onPress={() => void openHistory()} variant="quiet"><History size={15} />History</Button><Button size="compact" isDisabled={busy || !taxonomies || entries.length >= 100} onPress={() => setEntries(previous => [...previous, { id: `option_${crypto.randomUUID().replaceAll("-", "")}`, label: "" }])}><Plus size={15} />Add option</Button><Button variant="primary" size="compact" isDisabled={!taxonomies} isLoading={busy} onPress={() => void save()}>Save options</Button></div>

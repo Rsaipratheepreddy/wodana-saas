@@ -1,4 +1,5 @@
 import { fieldChanges } from "./change-history";
+import { enquiryCustomValuesSql } from "../settings/enquiry-fields";
 import {
   BadRequestException,
   ConflictException,
@@ -328,6 +329,7 @@ export class CrmLeadsService {
                 intake.intake_method AS "intakeMethod",
                 intake.original_payload->>'formId' AS "formId",
                 intake.original_payload->'formAnswers' AS "formAnswers",
+                ${enquiryCustomValuesSql("lead.workspace_id", "enquiry.id")} AS "customFields",
                 enquiry.service_type AS "serviceType",
                 user_account.display_name AS "ownerName", queue.name AS "queueName",
                 sla.status AS "slaStatus", sla.warning_at AS "slaWarningAt", sla.due_at AS "slaDueAt"

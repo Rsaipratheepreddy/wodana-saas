@@ -36,12 +36,12 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
   if (!response.ok) throw new Error("Leads could not be loaded.");
 
   const page = await response.json() as Pick<LeadsPageData, "items" | "nextCursor"> & { data?: LeadsPageData["items"] };
-  const supporting = await Promise.all(["crm/queues", "crm/assignment-policies", "crm/sla-policies", "crm/intake-inbox?limit=100", "crm/pipelines", "members", "crm/lead-options"].map(async (path) => {
+  const supporting = await Promise.all(["crm/queues", "crm/assignment-policies", "crm/sla-policies", "crm/intake-inbox?limit=100", "crm/pipelines", "members", "crm/lead-options", "crm/enquiry-fields"].map(async (path) => {
     const result = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/${path}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
-    if (result.status === 403) return [];
+    if (result.status === 403) return path === "crm/enquiry-fields" ? undefined : [];
     if (!result.ok) throw new Error("CRM configuration could not be loaded.");
     const payload = await result.json();
-    return path === "crm/lead-options" ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
+    return path === "crm/lead-options" || path === "crm/enquiry-fields" ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
   }));
   const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
   const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
@@ -52,6 +52,7 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     currentRoles: authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId)?.roles ?? [],
     currentMembershipId: (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
     leadOptions: supporting[6],
+    enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
     items: page.data ?? page.items ?? [],
     queues: supporting[0], assignmentPolicies: supporting[1], slaPolicies: supporting[2], intake: supporting[3], pipelines: supporting[4], members: supporting[5],
     nextCursor: page.nextCursor,

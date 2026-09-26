@@ -26,7 +26,7 @@ export class CrmSettingsService {
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client) => {
       const taxonomies = await client.query(`SELECT taxonomy.id, taxonomy.code, taxonomy.name, taxonomy.status, taxonomy.version, COALESCE(jsonb_agg(jsonb_build_object('id', option.id, 'code', option.code, 'label', option.label, 'position', option.position, 'status', option.status, 'version', option.version) ORDER BY option.position) FILTER (WHERE option.id IS NOT NULL), '[]'::jsonb) AS options FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options option ON option.taxonomy_id = taxonomy.id AND option.workspace_id = taxonomy.workspace_id WHERE taxonomy.workspace_id = $1 GROUP BY taxonomy.id ORDER BY taxonomy.name`, [workspaceId]);
-      const fields = await client.query(`SELECT id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version FROM crm_custom_field_definitions WHERE workspace_id = $1 ORDER BY entity_type, label`, [workspaceId]);
+      const fields = await client.query(`SELECT id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version FROM crm_custom_field_definitions WHERE workspace_id = $1 ORDER BY entity_type, label`, [workspaceId]);
       const forms = await client.query(`SELECT form.id, form.code, form.name, form.status, form.service_type AS "serviceType", form.version, COALESCE(jsonb_agg(jsonb_build_object('id', question.id, 'key', question.key, 'label', question.label, 'dataType', question.data_type, 'required', question.required, 'position', question.position, 'scoring', question.scoring, 'configuration', question.configuration) ORDER BY question.position) FILTER (WHERE question.id IS NOT NULL), '[]'::jsonb) AS questions FROM crm_qualification_forms form LEFT JOIN crm_qualification_questions question ON question.form_id = form.id AND question.workspace_id = form.workspace_id WHERE form.workspace_id = $1 GROUP BY form.id ORDER BY form.name`, [workspaceId]);
       const views = await client.query(`SELECT id, entity_type AS "entityType", name, owner_membership_id AS "ownerMembershipId", is_shared AS "isShared", definition, version FROM crm_saved_views WHERE workspace_id = $1 ORDER BY entity_type, name`, [workspaceId]);
       return { taxonomies: taxonomies.rows, customFields: fields.rows, qualificationForms: forms.rows, savedViews: views.rows };
@@ -102,7 +102,7 @@ export class CrmSettingsService {
   createField(actor: RequestActor, workspaceId: string, input: CreateCustomFieldDto) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       this.validateFieldConfiguration(input);
-      const result = await client.query(`INSERT INTO crm_custom_field_definitions (workspace_id, entity_type, key, label, data_type, required, searchable, configuration) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version`, [workspaceId, input.entityType, input.key, input.label, input.dataType, input.required ?? false, input.searchable ?? false, input.configuration ?? {}]);
+      const result = await client.query(`INSERT INTO crm_custom_field_definitions (workspace_id, entity_type, key, label, data_type, required, searchable, configuration, visible, position) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version`, [workspaceId, input.entityType, input.key, input.label.trim(), input.dataType, input.required ?? false, input.searchable ?? false, input.configuration ?? {}, input.visible ?? true, input.position ?? 0]);
       const response = result.rows[0] as Row;
       await this.revisions.record(client, {
         workspaceId, resourceType: "crm_custom_field", resourceId: String(response.id),
@@ -122,10 +122,10 @@ export class CrmSettingsService {
       if (Number(before.version) !== input.version) throw new ConflictException("Custom field changed; reload and try again");
       if (input.configuration) this.validateFieldConfiguration({ dataType: String(before.data_type), configuration: input.configuration });
       const result = await client.query(
-        `UPDATE crm_custom_field_definitions SET label = COALESCE($1, label), required = COALESCE($2, required), searchable = COALESCE($3, searchable), configuration = COALESCE($4, configuration), status = COALESCE($5, status), version = version + 1, updated_at = now()
+        `UPDATE crm_custom_field_definitions SET label = COALESCE($1, label), required = COALESCE($2, required), searchable = COALESCE($3, searchable), configuration = COALESCE($4, configuration), status = COALESCE($5, status), visible = COALESCE($9, visible), position = COALESCE($10, position), version = version + 1, updated_at = now()
          WHERE workspace_id = $6 AND id = $7 AND version = $8
-         RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version`,
-        [input.label?.trim() ?? null, input.required ?? null, input.searchable ?? null, input.configuration ?? null, input.status ?? null, workspaceId, definitionId, input.version],
+         RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version`,
+        [input.label?.trim() ?? null, input.required ?? null, input.searchable ?? null, input.configuration ?? null, input.status ?? null, workspaceId, definitionId, input.version, input.visible ?? null, input.position ?? null],
       );
       if (!result.rowCount) throw new ConflictException("Custom field changed; reload and try again");
       await this.revisions.ensureBaseline(client, {
@@ -403,6 +403,7 @@ export class CrmSettingsService {
       searchable: row.searchable,
       configuration: row.configuration ?? {},
       status: row.status,
+      visible: row.visible ?? true,
       version: row.version,
     };
   }
@@ -468,9 +469,9 @@ export class CrmSettingsService {
     this.validateFieldConfiguration({ dataType: String(target.dataType), configuration: target.configuration as Record<string, unknown> });
     const result = await client.query(
       `UPDATE crm_custom_field_definitions
-       SET label=$1,required=$2,searchable=$3,configuration=$4,status=$5,version=version+1,updated_at=now()
+       SET label=$1,required=$2,searchable=$3,configuration=$4,status=$5,visible=COALESCE($9,visible),version=version+1,updated_at=now()
        WHERE workspace_id=$6 AND id=$7 AND version=$8 RETURNING id`,
-      [target.label, target.required, target.searchable, target.configuration, target.status, workspaceId, id, version],
+      [target.label, target.required, target.searchable, target.configuration, target.status, workspaceId, id, version, typeof target.visible === "boolean" ? target.visible : null],
     );
     if (!result.rowCount) throw new ConflictException("Custom field changed; reload and try again");
   }

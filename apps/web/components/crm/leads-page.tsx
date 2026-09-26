@@ -23,7 +23,7 @@ import {
 import { CRM_LEAD_TRANSITIONS, leadStage, leadStageLabel, type CrmLeadListItem, type CrmLeadStatus, type LeadsPageData } from "@/lib/crm/leads";
 import styles from "./leads-page.module.css";
 import theme from "./crm-workspace-colors.module.css";
-import { LeadOptionsEditor } from "./lead-options-editor";
+import { EnquiryFieldsSettings } from "./enquiry-fields-settings";
 import { LeadFlowReport } from "./lead-flow-report";
 import { LeadFormBuilder, type LeadFormBranding } from "./lead-form-builder";
 import { LeadEnquiryForm } from "./lead-enquiry-form";
@@ -40,6 +40,7 @@ import { SourceChip } from "./source-chip";
 import { autoAssignLeads, type AutoAssignmentProgress } from "@/lib/crm/auto-assign-leads";
 import { customerDisplayName } from "@/lib/crm/customer-name";
 import { formAnswerColumns, formAnswerValue } from "@/lib/crm/form-answer-columns";
+import { customValueText, enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 import type { IntegrationsPageData } from "@/lib/workspace/integrations";
 import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import { LogContactDialog } from "./log-contact-dialog";
@@ -254,6 +255,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
   const busy = Boolean(savingLeadId || refreshing || loadingMore || pendingMove || qualificationLead || autoBusy);
   const sourceLabel = (source: string) => initialData.leadOptions?.sources.find(option => option.id === source)?.label ?? humanize(source);
   const customFormColumns = useMemo(() => formAnswerColumns(items), [items]);
+  // Hidden enquiry fields leave the list; the workspace's own fields become columns.
+  const fieldList = useMemo(() => enquiryFields(serverData.enquiryFields, ""), [serverData.enquiryFields]);
+  const shown = (key: string) => isShown(fieldList, key);
+  const customColumns = fieldList.filter((field) => field.custom && field.visible);
   const statusText = (lead: CrmLeadListItem) => lead.isConverted ? t("Converted") : lead.status === "duplicate" ? t("Duplicate") : lead.status === "qualified" ? t("Qualified") : lead.status === "disqualified" ? t("Not interested") : listOf(lead.status) === "come_back" ? t("Come back later") : listOf(lead.status) === "contacted" ? t("Contacted") : t("New");
   const statusTone = (lead: CrmLeadListItem): "success" | "info" | "warning" | "neutral" | "danger" => lead.isConverted || lead.status === "qualified" ? "success" : lead.status === "disqualified" ? "neutral" : listOf(lead.status) === "come_back" ? "warning" : listOf(lead.status) === "new" ? "info" : "neutral";
   const columns: DataGridColumn<CrmLeadListItem>[] = [
@@ -277,11 +282,12 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
     } },
     { id: "contact", header: t("Action"), size: 150, meta: { headerIcon: <PhoneCall size={14}/> }, enableSorting: false, cell: ({row:{original:lead}}) => ACTIVE_STATUSES.has(lead.status) && !lead.isConverted ? <Button size="compact" variant="secondary" isDisabled={busy} aria-label={`${t("Log contact")} · ${customerDisplayName(lead.partyName)}`} onPress={() => setContactLead(lead)}><PhoneCall size={14} aria-hidden="true" />{t("Log contact")}</Button> : null },
     { id: "priority", header: "Priority", size: 120, accessorFn: lead => humanize(lead.priority), meta: { headerIcon: <ListFilter size={14}/> } },
-    { id: "budgetRange", header: "Budget range", size: 180, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.budgetRanges, lead.details?.budgetRange) },
-    { id: "customerType", header: "Customer type", size: 140, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.customerTypes, lead.details?.customerType) },
+    ...(shown("budgetRange") ? [{ id: "budgetRange", header: "Budget range", size: 180, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.budgetRanges, lead.details?.budgetRange) } as DataGridColumn<CrmLeadListItem>] : []),
+    ...(shown("customerType") ? [{ id: "customerType", header: "Customer type", size: 140, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.customerTypes, lead.details?.customerType) } as DataGridColumn<CrmLeadListItem>] : []),
     { id: "emirate", header: administrativeAreaLabel(countryFromLocale(serverData.defaultLocale)), size: 160, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.emirates, lead.details?.emirate), filterFn: "equalsString", meta: { filterOptions: (initialData.leadOptions?.emirates ?? []).map(option => ({ id: option.label, label: option.label })) } },
-    { id: "area", header: "Area / city", size: 190, accessorFn: lead => lead.details?.area ?? lead.details?.location ?? "" },
+    ...(shown("area") ? [{ id: "area", header: "Area / city", size: 190, accessorFn: lead => lead.details?.area ?? lead.details?.location ?? "" } as DataGridColumn<CrmLeadListItem>] : []),
     { id: "campaign", header: "Campaign", size: 160, accessorFn: lead => lead.details?.campaign ?? "" },
+    ...customColumns.map((field) => ({ id: field.key, header: field.label, size: 190, accessorFn: (lead: CrmLeadListItem) => customValueText(lead.customFields?.[field.custom!.id]), cell: ({ getValue }: { getValue: () => unknown }) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> })),
     ...customFormColumns.map(column => ({ id: column.id, header: column.title, size: 190, accessorFn: (lead: CrmLeadListItem) => formAnswerValue(lead, column), cell: ({ getValue }: { getValue: () => unknown }) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> })),
     { accessorKey: "updatedAt", header: "Last updated", size: 120, cell: ({row:{original:lead}}) => formatDate(new Date(lead.updatedAt), LOCAL_FORMAT, {day:'numeric',month:'short',year:'numeric'}) },
     { accessorKey: "createdAt", header: "Created", size: 150, meta: { headerIcon: <CalendarDays size={14}/> }, cell: ({row:{original:lead}}) => formatDate(new Date(lead.createdAt), LOCAL_FORMAT, {day:'numeric',month:'short',year:'numeric'}) },
@@ -342,8 +348,8 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
         </section>
           </> : null}
           {activeSection === "forms" ? <LeadFormBuilder initialData={initialData} initialBranding={formBranding} onDirtyChange={setFormDirty} onEditingChange={setFormEditing} /> : null}
-          {activeSection === "sources" ? <section aria-label="Sales lead source connections"><div className={styles.sourceIntro}><div><h2>Connect lead sources</h2><p>Connect messaging here without leaving Sales. Published Wodana forms already create enquiries from their shared link or QR code.</p></div><Button size="compact" onPress={() => openSection("forms")}>Open forms</Button></div>{integrationsData ? <IntegrationsPage embedded initialData={integrationsData} onlyIds={["whatsapp", "meta_lead_ads"]} /> : <Callout title="Connections unavailable" tone="warning">Reload this page to see available lead-source connections.</Callout>}</section> : null}
-          {activeSection === "options" ? <LeadOptionsEditor workspaceId={initialData.workspaceId} initialOptions={leadOptions} onSaved={setLeadOptions} onDirtyChange={setFormDirty} /> : null}
+          {activeSection === "sources" ? <section aria-label="Sales lead source connections">{integrationsData ? <IntegrationsPage embedded initialData={integrationsData} onlyIds={["whatsapp", "meta_lead_ads"]} /> : <Callout title="Connections unavailable" tone="warning">Reload this page to see available lead-source connections.</Callout>}</section> : null}
+          {activeSection === "options" ? <EnquiryFieldsSettings workspaceId={initialData.workspaceId} leadOptions={leadOptions} regionLabel={administrativeAreaLabel(countryFromLocale(serverData.defaultLocale))} onOptionsSaved={setLeadOptions} /> : null}
           {activeSection === "reports" ? <LeadFlowReport initialData={initialData} /> : null}
           {activeSection === "sla" ? <LeadResponseSla initialData={initialData} /> : null}
           {activeSection === "assignment" ? <LeadRouting initialData={initialData} /> : null}

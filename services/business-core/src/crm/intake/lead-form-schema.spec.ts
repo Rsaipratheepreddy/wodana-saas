@@ -55,4 +55,16 @@ describe("Customer enquiry forms", () => {
     form.questions.at(-1)!.type = "number";
     expect(() => validateFormAnswers(form, { ...answers(form), visit: "Infinity" })).toThrow("Enter a number");
   });
+  it("links questions to custom enquiry fields and returns their answers apart from the fixed fields", () => {
+    const form = schema(), fieldId = "7d1b6c1e-2f0a-4c55-9d7e-0a1b2c3d4e5f", roomsId = "8e2c7d2f-3a1b-4d66-8e8f-1b2c3d4e5f60";
+    form.questions.push({ id: "floor", title: "Which floor?", description: "", type: "text", field: `cf:${fieldId}`, required: false, options: [] });
+    form.questions.push({ id: "rooms", title: "Rooms", description: "", type: "checkboxes", field: `cf:${roomsId}`, required: false, options: [{ id: "Kitchen", label: "Kitchen" }, { id: "Bath", label: "Bath" }] });
+    const parsed = parseLeadForm(form, true);
+    expect(parsed.questions.find(q => q.id === "floor")?.field).toBe(`cf:${fieldId}`);
+    const result = validateFormAnswers(parsed, { ...answers(parsed), floor: "3rd", rooms: ["Kitchen", "Bath"] });
+    expect(result.custom).toEqual({ [fieldId]: "3rd", [roomsId]: ["Kitchen", "Bath"] });
+    expect(result.fields).not.toHaveProperty(`cf:${fieldId}`);
+    expect(() => parseLeadForm({ ...parsed, questions: [...parsed.questions, { ...parsed.questions.at(-1)!, id: "again" }] })).toThrow("Each lead field");
+    expect(parseLeadForm({ ...form, questions: [{ ...form.questions[0], field: "cf:not-a-uuid" }, ...form.questions.slice(1)] }).questions[0].field).toBe("custom");
+  });
 });

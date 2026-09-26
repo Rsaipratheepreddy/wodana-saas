@@ -1,3 +1,4 @@
+import type { EnquiryFieldsState } from "./enquiry-fields";
 import type { LeadOptions, EnquiryDetails } from "./lead-options";
 
 export const CRM_LEAD_STATUSES = [
@@ -67,6 +68,8 @@ export type CrmLeadListItem = {
   intakeMethod?: string;
   formId?: string | null;
   formAnswers?: Array<{ questionId: string; title: string; type: string; field?: string; value: string | string[] }> | null;
+  /** The workspace's own enquiry fields, by field id. */
+  customFields?: Record<string, unknown> | null;
   title: string;
   source: string;
   channel: string;
@@ -246,6 +249,7 @@ export type LeadsPageData = {
   /** Role codes of the signed-in member; sources limited to roles are hidden from others. */
   currentRoles?: string[];
   leadOptions?: LeadOptions;
+  enquiryFields?: EnquiryFieldsState;
   canView: boolean;
   items: CrmLeadListItem[];
   queues: CrmQueue[];
