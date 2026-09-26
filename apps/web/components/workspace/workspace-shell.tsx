@@ -84,6 +84,8 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
     ? { ...baseModule, navigation: preProjectNavigation(baseModule.navigation, pathname, selectedCase?.search) }
     : projectRoute ? { ...baseModule, navigation: projectNavigation(baseModule.navigation, projectRoute.root) }
     : projectPortfolio ? { ...baseModule, navigation: projectPortfolioNavigation(baseModule.navigation) } : baseModule;
+  // The Settings menu belongs to settings pages only, not to every page without a module of its own (Tasks, Approvals…).
+  const settingsPage = activeModule.id === "workspace" && activeModule.navigation.some((group) => group.items.some((item) => item.href !== "/workspace" && (pathname === item.href || pathname.startsWith(`${item.href}/`))));
   // Sales sub-sections share /workspace/crm/leads; name the breadcrumb after the tab the person is on.
   const salesSection = pathname === "/workspace/crm/leads" ? builderSearch.get("section") : null;
   const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? "Campaigns" : salesSection && ["assignment", "sla", "options", "design"].includes(salesSection) ? "Settings" : salesSection === "reports" ? "Reports" : null;
@@ -208,7 +210,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && pathname !== "/workspace" ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && settingsPage ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );
