@@ -30,22 +30,27 @@ describe("workspace lead options", () => {
     ]);
   });
 
-  it("includes Outside UAE for default and older configured emirate taxonomies", async () => {
-    const fallback = await loadLeadOptions({ query: vi.fn().mockResolvedValue({ rows: [] }) } as never, "workspace-1");
-    expect(fallback.emirates).toContainEqual({ id: "outside_uae", label: "Outside UAE" });
+  it("takes regions from the workspace's country when none are configured, and always offers Other", async () => {
+    const empty = await loadLeadOptions({ query: vi.fn().mockResolvedValue({ rows: [] }) } as never, "workspace-1");
+    expect(empty.emirates).toEqual([]);
+    const pack = vi.fn(async (sql: string) => sql.includes("tenant_setup_profiles") ? { rows: [{ options: ["Abu Dhabi", "Dubai"] }] } : { rows: [] });
+    expect((await loadLeadOptions({ query: pack } as never, "workspace-1")).emirates).toEqual([{ id: "abu_dhabi", label: "Abu Dhabi" }, { id: "dubai", label: "Dubai" }, { id: "other", label: "Other" }]);
     const client = { query: vi.fn().mockResolvedValue({ rows: [{ code: "emirate", options: [{ id: "dubai", label: "Dubai" }] }] }) };
     const configured = await loadLeadOptions(client as never, "workspace-2");
-    expect(configured.emirates).toEqual([{ id: "dubai", label: "Dubai" }, { id: "outside_uae", label: "Outside UAE" }]);
-    await expect(validateLeadOptions(client as never, "workspace-2", { serviceType: "not_sure", details: { emirate: "outside_uae" } })).resolves.toBeUndefined();
+    expect(configured.emirates).toEqual([{ id: "dubai", label: "Dubai" }, { id: "other", label: "Other" }]);
+    await expect(validateLeadOptions(client as never, "workspace-2", { serviceType: "not_sure", details: { emirate: "other" } })).resolves.toBeUndefined();
   });
+
 });
 
 describe("lead option validation", () => {
   const client = () => ({ query: vi.fn().mockResolvedValue({ rows: [] }) });
-  it("requires emirate for enquiries but not when validating a form's source before publication", async () => {
+  it("requires a region only when the workspace lists regions, and not for a form's source check", async () => {
     const source = { source: "company", channel: "website", serviceType: "not_sure" };
-    await expect(validateLeadOptions(client() as never, "workspace", source)).rejects.toThrow("emirate");
-    await expect(validateLeadOptions(client() as never, "workspace", source, undefined, { requireEmirate: false })).resolves.toBeUndefined();
+    const listed = () => ({ query: vi.fn().mockResolvedValue({ rows: [{ code: "emirate", options: [{ id: "dubai", label: "Dubai" }] }] }) });
+    await expect(validateLeadOptions(listed() as never, "workspace", source)).rejects.toThrow("region");
+    await expect(validateLeadOptions(listed() as never, "workspace", source, undefined, { requireEmirate: false })).resolves.toBeUndefined();
+    await expect(validateLeadOptions(client() as never, "workspace", source)).resolves.toBeUndefined();
   });
   it("rejects a channel from another source", async () => {
     await expect(validateLeadOptions(client() as never, "workspace", { source: "referral", channel: "call", serviceType: "not_sure" })).rejects.toThrow("channel for this source");

@@ -5,7 +5,7 @@ import { WorkspaceHome } from "@/components/workspace/workspace-home";
 import { AuditLogPage, BillingPage, CompanyProfile, IntegrationsPage, MembersPage, OrganizationStructurePage, RolesPermissionsPage, SecurityPage, WorkspaceConfigurationPage, workspaceModules, workspaceScreens } from "@/components/workspace";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
-import { CrmCustomers, CrmOpportunities, CrmReports, CrmScreenPage, LeadsPage, type EnquirySection } from "@/components/crm";
+import { CrmCustomers, CrmOpportunities, CrmScreenPage, LeadsPage, type EnquirySection } from "@/components/crm";
 import { PRE_PROJECT_ROOT, listSearch } from "@/lib/pre-project/types";
 import { getPreProjectRedirect } from "@/lib/pre-project/routes";
 import { getLeadsPageData } from "@/lib/crm/leads.server";
@@ -65,6 +65,8 @@ export default async function WorkspaceScreen({
   // Tenant teams use the resulting SLA, routing and follow-up controls in their
   // normal CRM flow instead of maintaining technical automations themselves.
   if (pathname === "/workspace/crm/sequences") redirect("/workspace/crm");
+  if (pathname === "/workspace/crm/automations") redirect("/workspace/crm/leads?section=automations");
+  if (pathname === "/workspace/crm/leads" && (await searchParams).section === "design") redirect("/workspace/settings/design-packages");
   if (getPreProjectRedirect(pathname)) {
     redirect(getPreProjectRedirect(pathname, await searchParams)!);
   }
@@ -150,7 +152,7 @@ export default async function WorkspaceScreen({
 
   if (screen.id === "leads") {
     const query = await searchParams;
-    const enquirySection = typeof query.section === "string" && ["forms", "sources", "options", "reports", "sla", "assignment", "design"].includes(query.section)
+    const enquirySection = typeof query.section === "string" && ["forms", "sources", "options", "reports", "sla", "assignment", "automations"].includes(query.section)
       ? query.section as Exclude<EnquirySection, "leads">
       : undefined;
     const [leadsData, integrationsData, companyData] = await Promise.all([getLeadsPageData(), enquirySection === "sources" ? getIntegrationsPageData() : Promise.resolve(undefined), enquirySection === "forms" ? getCompanyProfilePageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined)]);
@@ -181,9 +183,7 @@ export default async function WorkspaceScreen({
 
   if (screen.id === "organizations") redirect("/workspace/crm/customers?type=company");
   if (screen.id === "activities") redirect("/workspace/crm/follow-ups");
-  if (screen.id === "crm-reports") {
-    return <CrmReports initialData={await getCrmScreenPageData("crm-reports")} />;
-  }
+  if (screen.id === "crm-reports") redirect("/workspace/crm/leads?section=reports");
 
   const crmScreens = new Set<CrmScreenId>([
     "follow-ups",
@@ -194,7 +194,6 @@ export default async function WorkspaceScreen({
     "activities",
     "conversations",
     "automations",
-    "crm-reports",
   ]);
 
   if (crmScreens.has(screen.id as CrmScreenId)) {

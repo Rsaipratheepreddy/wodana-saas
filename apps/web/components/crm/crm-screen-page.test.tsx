@@ -11,7 +11,6 @@ const screens: Array<[CrmScreenId, string, string]> = [
   ["opportunities", "Opportunities", "CRM opportunities"],
   ["activities", "Activities", "CRM activities"],
   ["sequences", "Sequences", "CRM sequences"],
-  ["crm-reports", "CRM reports", "CRM report rows"],
 ];
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -19,7 +18,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("CrmScreenPage", () => {
-  it.each([["crm-overview", "Sales", "Needs attention"], ["conversations", "Inbox", "Customer conversations"], ["automations", "Smart rules", "Rules"]] as const)("renders %s as a purpose-built workspace, not a table", (id, title, region) => {
+  it.each([["crm-overview", "Sales", "Needs attention"], ["conversations", "Inbox", "Customer conversations"], ["automations", "Automations", "Rules"]] as const)("renders %s as a purpose-built workspace, not a table", (id, title, region) => {
     render(<CrmScreenPage initialData={structuredClone(crmScreenFixture(id))} />);
     expect(screen.getByRole("region", { name: `${title} workspace` })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: region })).toBeInTheDocument();

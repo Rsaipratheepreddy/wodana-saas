@@ -50,7 +50,9 @@
 .wd-text[data-size="md"] { font-size: var(--wd-text-md); }
 .wd-text[data-tone="muted"] { color: var(--wd-muted); }
 .wd-text[data-tone="danger"] { color: var(--wd-danger); }
-.wd-root :is(h1, h2, h3, h4, h5, h6) { font-family: var(--wd-font-display); letter-spacing: var(--wd-workspace-heading-tracking, inherit); text-transform: var(--wd-workspace-heading-transform, none); }
+/* The tenant's brand heading style marks page and section titles only; card and row titles stay in the body face. */
+.wd-root :is(h1, h2) { font-family: var(--wd-font-display); letter-spacing: var(--wd-workspace-heading-tracking, inherit); text-transform: var(--wd-workspace-heading-transform, none); }
+.wd-root :is(h3, h4, h5, h6) { font-family: var(--wd-font-sans); letter-spacing: normal; text-transform: none; }
 .wd-heading { margin: 0; color: var(--wd-ink); font-family: var(--wd-font-display); font-weight: 600; letter-spacing: var(--wd-workspace-heading-tracking, var(--wd-tracking-tight)); line-height: 1.25; text-transform: var(--wd-workspace-heading-transform, none); }
 .wd-heading[data-size="sm"] { font-size: var(--wd-text-sm); }
 .wd-heading[data-size="md"] { font-size: var(--wd-text-lg); }

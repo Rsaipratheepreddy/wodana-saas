@@ -9,7 +9,7 @@ import { stableHash, decodeCursor, encodeCursor } from "../shared/crm-types";
 import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
 import { ListIntakeQueryDto } from "./dto/intake.dto";
 import { CrmIntakeService } from "./crm-intake.service";
-import { completeLeadForm, defaultLeadForm, parseLeadForm, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
+import { completeLeadForm, defaultLeadForm, parseLeadForm, requiredFormFields, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
 import { countryFromLocale, normalizeIntakePartyPhones } from "./intake-phone";
 import { resolveFormLink } from "./form-link";
 import { PoolClient } from "pg";
@@ -70,7 +70,7 @@ export class LeadFormsService {
       if (before.version !== input.version) throw new ConflictException("This form changed. Reload before saving");
       const publishing = input.action === "publish";
       const choices = await loadLeadOptions(client, workspaceId);
-      const draft = parseLeadForm(completeLeadForm((input.draft ?? before.draft) as LeadFormSchema, choices), publishing);
+      const draft = parseLeadForm(completeLeadForm((input.draft ?? before.draft) as LeadFormSchema, choices), publishing, requiredFormFields(choices));
       for (const question of draft.questions) {
         if (question.field === "serviceType") question.options = choices.enquiryTypes;
         if (question.field === "budgetRange") question.options = choices.budgetRanges;

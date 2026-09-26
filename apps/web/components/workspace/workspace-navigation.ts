@@ -116,6 +116,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/company", icon: "company", id: "company", label: "Company profile" },
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: "Workspace language" },
+          { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: "Design packages" },
         ],
       },
       {
@@ -146,6 +147,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         items: [
           { href: "/workspace/integrations", icon: "integrations", id: "integrations", label: "Integrations" },
           { href: "/workspace/settings/client-portal", icon: "settings", id: "client-portal-settings", label: "Client portal" },
+          { href: "/workspace/settings/reminders", icon: "settings", id: "reminder-settings", label: "Reminders" },
         ],
       },
     ],

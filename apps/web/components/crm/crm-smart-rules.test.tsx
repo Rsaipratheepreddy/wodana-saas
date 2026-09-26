@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CrmSmartRules } from "./crm-smart-rules";
+import { CrmSmartRules, DELIVERY_RULES } from "./crm-smart-rules";
 
 const data = {
   canView: true,
@@ -24,19 +24,21 @@ const data = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("CRM smart rules", () => {
-  it("shows plain-language rules and honest provider receipt state", () => {
-    render(<CrmSmartRules initialData={data} />);
-    expect(screen.getByRole("region", { name: "Smart rules workspace" })).toBeInTheDocument();
+  it("shows only the Sales rules in Sales, and the delivery reminders in Settings", () => {
+    const { unmount } = render(<CrmSmartRules initialData={data} />);
     expect(screen.getByRole("switch", { name: "Turn off New enquiry ownership" })).toBeChecked();
-    expect(screen.getByText("Needs delivery test")).toBeInTheDocument();
-    expect(screen.getByText("No successful provider receipt recorded yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Weekly project progress")).not.toBeInTheDocument();
+    unmount();
+    render(<CrmSmartRules initialData={data} codes={DELIVERY_RULES} title="Reminders" />);
+    expect(screen.getByText("Weekly project progress")).toBeInTheDocument();
+    expect(screen.queryByText("New enquiry ownership")).not.toBeInTheDocument();
   });
 
   it("saves a weekly rule without exposing workflow internals", async () => {
     const user = userEvent.setup();
     const fetcher = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: "active" }) });
     vi.stubGlobal("fetch", fetcher);
-    render(<CrmSmartRules initialData={data} />);
+    render(<CrmSmartRules initialData={data} codes={DELIVERY_RULES} />);
 
     await user.click(screen.getByRole("switch", { name: "Turn on Weekly project progress" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalled());

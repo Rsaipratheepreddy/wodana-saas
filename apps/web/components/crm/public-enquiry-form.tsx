@@ -45,8 +45,8 @@ export function PublicEnquiryFormView({ form, token, preview = false, link }: { 
       {preview && <p className={styles.previewNotice}>Preview · answers here are not submitted</p>}
     </header>
     {form.questions.map(question => <section key={question.id} data-question-id={question.id} className={styles.customerQuestion}>
-      {question.field === "area" ? emirate === "outside_uae"
-        ? <TextInput label="City / country · optional" description={question.description} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />
+      {question.field === "area" ? emirate === "other" || !(form.areas?.[emirate]?.length)
+        ? <TextInput label={question.title} description={question.description} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />
         : <><SelectField label={question.title} description={question.description} items={[{ id: "", label: "Not specified" }, ...(form.areas?.[emirate] ?? []), { id: "other", label: "Other area" }]} selectedKey={customAreas[question.id] ? "other" : String(answers[question.id] ?? "")} onSelectionChange={key => { const custom = key === "other"; setCustomAreas(previous => ({ ...previous, [question.id]: custom })); update(question.id, custom ? "" : String(key ?? "")); }} />{customAreas[question.id] ? <TextInput label="Area name" isRequired value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} /> : null}</>
         : question.type === "paragraph" ? <TextAreaField label={question.title} description={question.description} isRequired={question.required} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />
         : question.type === "dropdown" ? <SelectField label={question.title} description={question.description} isRequired={question.required} items={question.options} selectedKey={String(answers[question.id] ?? "") || null} onSelectionChange={key => update(question.id, String(key ?? ""))} />

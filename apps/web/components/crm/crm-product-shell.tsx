@@ -5,10 +5,8 @@ import { Callout, DesignSystemProvider } from "@/design-system";
 import base from "./crm-screen-page.module.css";
 import styles from "./crm-product.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
-import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
 
 export function CrmProductShell({ title, canView, actions, children, compact = false, useWorkspaceColors = false, headerClassName, pageClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; useWorkspaceColors?: boolean; headerClassName?: string; pageClassName?: string }) {
-  useWorkspaceFocus(title === "Automations" ? title : undefined);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
     <section className={[compact ? styles.focusedPage : base.page, pageClassName].filter(Boolean).join(" ")} aria-label={`${title} workspace`}>

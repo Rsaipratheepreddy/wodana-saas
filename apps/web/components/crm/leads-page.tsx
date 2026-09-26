@@ -24,7 +24,8 @@ import { CRM_LEAD_TRANSITIONS, leadStage, leadStageLabel, type CrmLeadListItem, 
 import styles from "./leads-page.module.css";
 import theme from "./crm-workspace-colors.module.css";
 import { EnquiryFieldsSettings } from "./enquiry-fields-settings";
-import { LeadFlowReport } from "./lead-flow-report";
+import { SalesReports } from "./sales-reports";
+import { SalesAutomations } from "./crm-smart-rules";
 import { LeadFormBuilder, type LeadFormBranding } from "./lead-form-builder";
 import { LeadEnquiryForm } from "./lead-enquiry-form";
 import { hasResolvedEnquiryType, leadOptionLabel } from "@/lib/crm/lead-options";
@@ -39,12 +40,10 @@ import { NewFollowUpDialog } from "./follow-up-editor";
 import { SourceChip } from "./source-chip";
 import { autoAssignLeads, type AutoAssignmentProgress } from "@/lib/crm/auto-assign-leads";
 import { customerDisplayName } from "@/lib/crm/customer-name";
-import { formAnswerColumns, formAnswerValue } from "@/lib/crm/form-answer-columns";
 import { customValueText, enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 import type { IntegrationsPageData } from "@/lib/workspace/integrations";
 import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import { LogContactDialog } from "./log-contact-dialog";
-import { DesignPackagesSettings } from "./design-packages-settings";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 
@@ -52,7 +51,7 @@ const LOCAL_FORMAT = { locale: "en-GB", timeZone: Intl.DateTimeFormat().resolved
 const ACTIVE_STATUSES = new Set<CrmLeadStatus>(["new", "attempting_contact", "connected", "nurturing", "paused"]);
 const stageLabel = leadStageLabel;
 type LeadMove = { leadId: string; status: CrmLeadStatus };
-export type EnquirySection = "leads" | "forms" | "sources" | "options" | "reports" | "sla" | "assignment" | "design";
+export type EnquirySection = "leads" | "forms" | "sources" | "options" | "reports" | "sla" | "assignment" | "automations";
 function humanize(value: string | null) {
   if (!value) return "Not set";
   return value
@@ -254,7 +253,6 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
   const scheduleFollowUp = (lead: CrmLeadListItem) => setFollowUp(lead);
   const busy = Boolean(savingLeadId || refreshing || loadingMore || pendingMove || qualificationLead || autoBusy);
   const sourceLabel = (source: string) => initialData.leadOptions?.sources.find(option => option.id === source)?.label ?? humanize(source);
-  const customFormColumns = useMemo(() => formAnswerColumns(items), [items]);
   // Hidden enquiry fields leave the list; the workspace's own fields become columns.
   const fieldList = useMemo(() => enquiryFields(serverData.enquiryFields, ""), [serverData.enquiryFields]);
   const shown = (key: string) => isShown(fieldList, key);
@@ -284,11 +282,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
     { id: "priority", header: "Priority", size: 120, accessorFn: lead => humanize(lead.priority), meta: { headerIcon: <ListFilter size={14}/> } },
     ...(shown("budgetRange") ? [{ id: "budgetRange", header: "Budget range", size: 180, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.budgetRanges, lead.details?.budgetRange) } as DataGridColumn<CrmLeadListItem>] : []),
     ...(shown("customerType") ? [{ id: "customerType", header: "Customer type", size: 140, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.customerTypes, lead.details?.customerType) } as DataGridColumn<CrmLeadListItem>] : []),
-    { id: "emirate", header: administrativeAreaLabel(countryFromLocale(serverData.defaultLocale)), size: 160, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.emirates, lead.details?.emirate), filterFn: "equalsString", meta: { filterOptions: (initialData.leadOptions?.emirates ?? []).map(option => ({ id: option.label, label: option.label })) } },
+    ...(initialData.leadOptions?.emirates.length ? [{ id: "emirate", header: administrativeAreaLabel(countryFromLocale(serverData.defaultLocale)), size: 160, accessorFn: lead => leadOptionLabel(initialData.leadOptions?.emirates, lead.details?.emirate), filterFn: "equalsString", meta: { filterOptions: (initialData.leadOptions?.emirates ?? []).map(option => ({ id: option.label, label: option.label })) } } as DataGridColumn<CrmLeadListItem>] : []),
     ...(shown("area") ? [{ id: "area", header: "Area / city", size: 190, accessorFn: lead => lead.details?.area ?? lead.details?.location ?? "" } as DataGridColumn<CrmLeadListItem>] : []),
     { id: "campaign", header: "Campaign", size: 160, accessorFn: lead => lead.details?.campaign ?? "" },
     ...customColumns.map((field) => ({ id: field.key, header: field.label, size: 190, accessorFn: (lead: CrmLeadListItem) => customValueText(lead.customFields?.[field.custom!.id]), cell: ({ getValue }: { getValue: () => unknown }) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> })),
-    ...customFormColumns.map(column => ({ id: column.id, header: column.title, size: 190, accessorFn: (lead: CrmLeadListItem) => formAnswerValue(lead, column), cell: ({ getValue }: { getValue: () => unknown }) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> })),
     { accessorKey: "updatedAt", header: "Last updated", size: 120, cell: ({row:{original:lead}}) => formatDate(new Date(lead.updatedAt), LOCAL_FORMAT, {day:'numeric',month:'short',year:'numeric'}) },
     { accessorKey: "createdAt", header: "Created", size: 150, meta: { headerIcon: <CalendarDays size={14}/> }, cell: ({row:{original:lead}}) => formatDate(new Date(lead.createdAt), LOCAL_FORMAT, {day:'numeric',month:'short',year:'numeric'}) },
     { id: "dealAction", header: "Opportunity", size: 190, enableSorting: false, cell: ({ row: { original: lead } }) => lead.isConverted
@@ -350,10 +347,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
           {activeSection === "forms" ? <LeadFormBuilder initialData={initialData} initialBranding={formBranding} onDirtyChange={setFormDirty} onEditingChange={setFormEditing} /> : null}
           {activeSection === "sources" ? <section aria-label="Sales lead source connections">{integrationsData ? <IntegrationsPage embedded initialData={integrationsData} onlyIds={["whatsapp", "meta_lead_ads"]} /> : <Callout title="Connections unavailable" tone="warning">Reload this page to see available lead-source connections.</Callout>}</section> : null}
           {activeSection === "options" ? <EnquiryFieldsSettings workspaceId={initialData.workspaceId} leadOptions={leadOptions} regionLabel={administrativeAreaLabel(countryFromLocale(serverData.defaultLocale))} onOptionsSaved={setLeadOptions} /> : null}
-          {activeSection === "reports" ? <LeadFlowReport initialData={initialData} /> : null}
+          {activeSection === "reports" ? <SalesReports initialData={initialData} regionLabel={administrativeAreaLabel(countryFromLocale(serverData.defaultLocale))} /> : null}
           {activeSection === "sla" ? <LeadResponseSla initialData={initialData} /> : null}
           {activeSection === "assignment" ? <LeadRouting initialData={initialData} /> : null}
-          {activeSection === "design" ? <DesignPackagesSettings workspaceId={initialData.workspaceId} currency={initialData.defaultCurrency ?? ""} locale={initialData.defaultLocale} canManage={seesTeam} /> : null}
+          {activeSection === "automations" ? <SalesAutomations workspaceId={initialData.workspaceId} /> : null}
         </div>
 
         {cardLead ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setCardLead(null); }} size="md" hideTitle title="Enquiry details"><LeadWorkbench initialData={initialData} key={cardLead.id} lead={items.find((item) => item.id === cardLead.id) ?? cardLead} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}

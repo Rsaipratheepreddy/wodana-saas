@@ -63,25 +63,25 @@ describe("PublicEnquiryFormView", () => {
     expect(JSON.parse(String(request.mock.calls[0][1]?.body))).toMatchObject({ phoneCountryCodes: { mobile: "AE" }, answers: { mobile: "501234567" } });
   });
 
-  it("uses city and country text for an Outside UAE public enquiry", async () => {
+  it("asks for the place as text when the region is Other", async () => {
     const request = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ received: true }) });
     vi.stubGlobal("fetch", request);
     const interaction = userEvent.setup();
     const internationalForm: PublicEnquiryForm = { ...form, questions: [
       ...form.questions,
-      { id: "emirate", field: "emirate", title: "Emirate", description: "", type: "dropdown", required: true, options: [{ id: "dubai", label: "Dubai" }, { id: "outside_uae", label: "Outside UAE" }] },
+      { id: "emirate", field: "emirate", title: "Emirate", description: "", type: "dropdown", required: true, options: [{ id: "dubai", label: "Dubai" }, { id: "other", label: "Other" }] },
       { id: "area", field: "area", title: "Area", description: "", type: "dropdown", required: false, options: [] },
     ], areas: { dubai: [{ id: "marina", label: "Dubai Marina" }] } };
     render(<DesignSystemProvider><PublicEnquiryFormView form={internationalForm} token="token" /></DesignSystemProvider>);
     await interaction.type(screen.getByRole("textbox", { name: "Your name" }), "Noor Al Mansoori");
     await interaction.click(screen.getByRole("radio", { name: "Renovation / Fit-Out" }));
     await interaction.click(screen.getByRole("button", { name: /Emirate/ }));
-    await interaction.click(screen.getByRole("option", { name: "Outside UAE" }));
+    await interaction.click(screen.getByRole("option", { name: "Other" }));
     expect(screen.queryByRole("button", { name: "Area" })).not.toBeInTheDocument();
-    await interaction.type(screen.getByRole("textbox", { name: /City \/ country/ }), "Muscat, Oman");
+    await interaction.type(screen.getByRole("textbox", { name: "Area" }), "Muscat, Oman");
     await interaction.click(screen.getByRole("checkbox", { name: form.consentLabel }));
     await interaction.click(screen.getByRole("button", { name: "Submit enquiry" }));
     expect(await screen.findByRole("heading", { name: "Thank you for your enquiry" })).toBeInTheDocument();
-    expect(JSON.parse(String(request.mock.calls[0][1]?.body)).answers).toMatchObject({ emirate: "outside_uae", area: "Muscat, Oman" });
+    expect(JSON.parse(String(request.mock.calls[0][1]?.body)).answers).toMatchObject({ emirate: "other", area: "Muscat, Oman" });
   });
 });

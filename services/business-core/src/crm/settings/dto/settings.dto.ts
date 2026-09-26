@@ -86,3 +86,6 @@ export class EnquiryFieldVisibilityDto {
   @IsBoolean() visible!: boolean;
   @IsInt() @Min(0) version!: number;
 }
+export class EnquiryFieldValuesDto {
+  @IsObject() values!: Record<string, unknown>;
+}

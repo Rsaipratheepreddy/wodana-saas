@@ -1,3 +1,4 @@
+import { UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 
 /** Fixed enquiry fields that can be hidden. Name, mobile, region, enquiry type and source always show. */
@@ -57,3 +58,27 @@ export async function writeEnquiryCustomValues(client: PoolClient, workspaceId: 
 export const enquiryCustomValuesSql = (workspace: string, enquiry: string) => `(SELECT COALESCE(jsonb_object_agg(value.definition_id,
     COALESCE(to_jsonb(value.value_text), to_jsonb(value.value_number), to_jsonb(to_char(value.value_timestamp AT TIME ZONE 'UTC', 'YYYY-MM-DD')), value.value_json, to_jsonb(value.value_boolean))), '{}'::jsonb)
   FROM crm_custom_field_values value WHERE value.workspace_id=${workspace} AND value.entity_type='enquiry' AND value.entity_id=${enquiry})`;
+
+/**
+ * Checks staff-entered values for the workspace's own enquiry fields against each field's type and
+ * choices. Blank values clear the field. Unknown or removed fields are rejected.
+ */
+export function normalizeCustomValues(definitions: EnquiryFieldDefinition[], input: Record<string, unknown>) {
+  const byId = new Map(definitions.map(definition => [definition.id, definition]));
+  const set: Record<string, string | string[]> = {};
+  const clear: string[] = [];
+  for (const [id, raw] of Object.entries(input)) {
+    const definition = byId.get(id);
+    if (!definition) throw new UnprocessableEntityException("One of these fields no longer exists. Reload and try again");
+    const blank = raw === null || raw === undefined || raw === "" || (Array.isArray(raw) && !raw.length);
+    if (blank) { clear.push(id); continue; }
+    const choices = fieldOptions(definition);
+    const fail = () => { throw new UnprocessableEntityException(`Enter a valid value for ${definition.label}`); };
+    if (definition.dataType === "multi_select") { if (!Array.isArray(raw) || raw.some(item => typeof item !== "string" || !choices.includes(item))) fail(); set[id] = [...new Set(raw as string[])]; }
+    else if (definition.dataType === "select") { if (typeof raw !== "string" || !choices.includes(raw)) fail(); set[id] = raw as string; }
+    else if (definition.dataType === "number") { const value = typeof raw === "number" ? raw : Number(raw); if (!Number.isFinite(value) || Math.abs(value) > 1e15) fail(); set[id] = String(value); }
+    else if (definition.dataType === "date") { if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw) || new Date(`${raw}T00:00:00Z`).toISOString().slice(0, 10) !== raw) fail(); set[id] = raw as string; }
+    else { if (typeof raw !== "string" || raw.trim().length > 10000) fail(); set[id] = (raw as string).trim(); }
+  }
+  return { set, clear };
+}

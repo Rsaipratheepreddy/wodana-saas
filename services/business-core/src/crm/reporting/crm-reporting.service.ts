@@ -18,6 +18,7 @@ export class CrmReportingService {
           source: "enquiry.source || ' / ' || enquiry.channel", enquiryType: "enquiry.service_type",
           customerType: "enquiry.details->>'customerType'", budget: "enquiry.details->>'budgetRange'",
           emirate: "enquiry.details->>'emirate'",
+          area: "COALESCE(NULLIF(enquiry.details->>'area',''), enquiry.details->>'location')",
           owner: "account.display_name", team: "queue.name", intake: "intake.intake_method",
           freshness: `CASE
             WHEN lead.status IN ('qualified','disqualified') THEN 'closed'
@@ -27,6 +28,14 @@ export class CrmReportingService {
           week: "to_char(date_trunc('week', lead.created_at AT TIME ZONE workspace.default_timezone), 'YYYY-MM-DD')",
           month: "to_char(date_trunc('month', lead.created_at AT TIME ZONE workspace.default_timezone), 'YYYY-MM')",
         };
+        // One of the workspace's own dropdown fields: group by its stored answer (lists by their joined text).
+        const customField = query.groupBy?.startsWith("cf:") ? query.groupBy.slice(3) : null;
+        if (customField) {
+          const field = await client.query(`SELECT 1 FROM crm_custom_field_definitions WHERE workspace_id=$1 AND id=$2 AND entity_type='enquiry' AND status='active' AND data_type IN ('select','multi_select','text')`, [workspaceId, customField]);
+          if (!field.rowCount) throw new BadRequestException("Invalid report grouping");
+          dimensions[query.groupBy!] = `(SELECT COALESCE(value.value_text, (SELECT string_agg(item, ', ') FROM jsonb_array_elements_text(value.value_json) item)) FROM crm_custom_field_values value
+            WHERE value.workspace_id=lead.workspace_id AND value.entity_type='enquiry' AND value.entity_id=enquiry.id AND value.definition_id=$4::uuid)`;
+        }
         const dimension = dimensions[query.groupBy ?? "source"];
         if (!dimension) throw new BadRequestException("Invalid report grouping");
         const groupId = query.groupBy === "owner" ? "lead.owner_membership_id::text" : query.groupBy === "team" ? "lead.queue_id::text" : dimension;
@@ -47,7 +56,7 @@ export class CrmReportingService {
           LEFT JOIN users account ON account.id=membership.user_id
           LEFT JOIN crm_queues queue ON queue.id=lead.queue_id AND queue.workspace_id=lead.workspace_id
           WHERE lead.workspace_id=$1 AND lead.created_at >= $2 AND lead.created_at < $3
-          GROUP BY ${dimension}, ${groupId} ORDER BY label`, [workspaceId, from, to]);
+          GROUP BY ${dimension}, ${groupId} ORDER BY label`, customField ? [workspaceId, from, to, customField] : [workspaceId, from, to]);
         const processing = await client.query(`SELECT status,count(*)::int AS count FROM crm_intake_events
           WHERE workspace_id=$1 AND received_at >= $2 AND received_at < $3 GROUP BY status`, [workspaceId, from, to]);
         const summary = await client.query(`SELECT count(*)::int AS leads,

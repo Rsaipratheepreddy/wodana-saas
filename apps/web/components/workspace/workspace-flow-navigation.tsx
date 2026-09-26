@@ -73,7 +73,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   if (activityActive || pathname === "/workspace/crm/conversations" || pathname.startsWith("/workspace/crm/customers") || pathname.startsWith("/workspace/crm/organizations")) return null;
   if (String(module.id) === "crm") {
     const allowed = new Set(module.navigation.flatMap(group => group.items).map(item => item.id));
-    const settings = ["assignment", "sla", "options", "design"].includes(section ?? "") || pathname.endsWith("/automations");
+    const settings = ["assignment", "sla", "options", "automations"].includes(section ?? "");
     const tabs = [
       { id: "leads", icon: "enquiries", label: "Enquiries", href: "/workspace/crm/leads", active: !section && (pathname === "/workspace/crm" || pathname.endsWith("/leads")) },
       { id: "opportunities", icon: "deals", label: "Pipeline", href: "/workspace/crm/opportunities", active: pathname.includes("/opportunities") },
@@ -81,7 +81,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
       { id: "leads", icon: "reports", label: "Reports", href: "/workspace/crm/leads?section=reports", active: section === "reports" || pathname.endsWith("/reports") },
       { id: "leads", icon: "settings", label: "Settings", href: "/workspace/crm/leads?section=assignment", active: settings },
     ].filter(tab => allowed.has(tab.id));
-    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips"><nav aria-label="Sales sections" className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} aria-current={tab.active ? "page" : undefined}><span>{tab.label}</span></Link>)}</div></nav>{settings && <nav aria-label="Sales settings" className={styles.commercialTabs}>{[{ key: "assignment", label: "Assignment" }, { key: "sla", label: "Response targets" }, { key: "options", label: "Fields" }, { key: "design", label: "Design packages" }].map(tab => <Link key={tab.key} href={`/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={section === tab.key ? "page" : undefined}>{tab.label}</Link>)}{allowed.has("automations") && <Link href="/workspace/crm/automations" className={styles.commercialSegment} aria-current={pathname.endsWith("/automations") ? "page" : undefined}>Automations</Link>}</nav>}</div>;
+    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips"><nav aria-label="Sales sections" className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} aria-current={tab.active ? "page" : undefined}><span>{tab.label}</span></Link>)}</div></nav>{settings && <nav aria-label="Sales settings" className={styles.commercialTabs}>{[{ key: "assignment", label: "Assignment" }, { key: "sla", label: "Response targets" }, { key: "options", label: "Fields" }].map(tab => <Link key={tab.key} href={`/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={section === tab.key ? "page" : undefined}>{tab.label}</Link>)}{allowed.has("automations") && <Link href="/workspace/crm/leads?section=automations" className={styles.commercialSegment} aria-current={section === "automations" ? "page" : undefined}>Automations</Link>}</nav>}</div>;
   }
   const items = module.navigation.flatMap((section) => section.items).filter((item) => item.showInSidebar !== false && item.id !== "integrations" && item.id !== "crm-attachments" && (String(module.id) !== "crm" || ["crm-overview", "leads", "opportunities", "follow-ups", "automations", "crm-attachments"].includes(item.id)));
   if (String(module.id) === "crm") items.push(
@@ -95,7 +95,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   const order = ["crm-overview", "leads", "opportunities", "follow-ups", "customers", "forms", "sales-settings", "crm-attachments"];
   const flow = items.filter((item) => !resources.includes(item));
   if (String(module.id) === "crm" && resources.length) flow.push({ id: "sales-settings", label: "Settings", href: "/workspace/crm/leads?section=assignment", icon: "settings" });
-  const settingsActive = String(module.id) === "crm" && (["assignment", "sla", "options"].includes(section ?? "") || pathname === "/workspace/crm/automations");
+  const settingsActive = String(module.id) === "crm" && ["assignment", "sla", "options", "automations"].includes(section ?? "");
   if (String(module.id) === "crm") flow.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const activeHref = (section ? items.find((item) => item.href === `${pathname}?section=${section}`)?.href : undefined) ?? [...items].sort((a, b) => b.href.length - a.href.length).find((item) => !item.href.includes("?") && (pathname === item.href.split("?")[0] || pathname.startsWith(`${item.href.split("?")[0]}/`)))?.href;
   return <div className={styles.flowHeader} data-module={module.id}>

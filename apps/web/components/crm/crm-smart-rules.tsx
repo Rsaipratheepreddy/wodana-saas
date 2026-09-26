@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { BellRing, CheckCircle2, Mail, MessageCircle, MonitorSmartphone, Route, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import { Badge, Callout, Checkbox, SelectField, Surface, Switch } from "@/design-system";
-import { crmRequest } from "@/lib/crm/client";
+import { Route } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button, Callout, Checkbox, EmptyState, SelectField, Skeleton, Surface, Switch } from "@/design-system";
+import { crmRequest, rows } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell } from "./crm-product-shell";
 import styles from "./crm-smart-rules.module.css";
@@ -22,31 +22,9 @@ type Rule = {
   channels: Channel[];
   weekday: string;
 };
-type Provider = {
-  channel: Channel;
-  connected: boolean;
-  delivered: number;
-  failed: number;
-  lastDeliveredAt: string | null;
-  pricing: string;
-  receiptState: "built_in" | "verified" | "awaiting_test_receipt" | "not_connected";
-};
 
 const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
   .map((id) => ({ id, label: `${id[0].toUpperCase()}${id.slice(1)}` }));
-const providerCopy: Record<Channel, { label: string; Icon: typeof BellRing }> = {
-  in_app: { label: "In-app", Icon: BellRing },
-  email: { label: "Email", Icon: Mail },
-  whatsapp: { label: "WhatsApp", Icon: MessageCircle },
-  push: { label: "Mobile push", Icon: MonitorSmartphone },
-};
-
-function providerStatus(provider: Provider) {
-  if (provider.receiptState === "built_in") return { label: "Built in", tone: "success" as const };
-  if (provider.receiptState === "verified") return { label: "Delivery verified", tone: "success" as const };
-  if (provider.receiptState === "awaiting_test_receipt") return { label: "Needs delivery test", tone: "warning" as const };
-  return { label: "Not connected", tone: "neutral" as const };
-}
 
 function safeSetupHref(value: unknown) {
   return typeof value === "string" && value.startsWith("/workspace/")
@@ -54,9 +32,12 @@ function safeSetupHref(value: unknown) {
     : "/workspace/crm";
 }
 
-export function CrmSmartRules({ initialData }: { initialData: CrmScreenPageData }) {
-  const [rules, setRules] = useState(initialData.items as unknown as Rule[]);
-  const providers = (initialData.supporting.providers ?? []) as Provider[];
+/** Rules that belong to Sales; the rest (client decisions, project progress) live in Settings → Reminders. */
+export const SALES_RULES = ["enquiry_ownership", "response_escalation"];
+export const DELIVERY_RULES = ["decision_reminders", "weekly_progress"];
+
+export function CrmSmartRules({ initialData, codes = SALES_RULES, title = "Automations", embedded = false }: { initialData: CrmScreenPageData; codes?: string[]; title?: string; embedded?: boolean }) {
+  const [rules, setRules] = useState(() => (initialData.items as unknown as Rule[]).filter((rule) => codes.includes(rule.code)));
   const [saving, setSaving] = useState<string | null>(null);
   const [failure, setFailure] = useState("");
 
@@ -79,66 +60,40 @@ export function CrmSmartRules({ initialData }: { initialData: CrmScreenPageData 
     }
   };
 
-  return <CrmProductShell
-    title="Smart rules"
-    description="Turn on the everyday follow-through your team needs. Wodana keeps the technical workflow details out of the way."
-    canView={initialData.canView}
-    useWorkspaceColors
-  >
-    <div className={styles.page}>
+  const body = <div className={styles.page}>
       {failure ? <Callout title="Could not save the rule" tone="danger">{failure}</Callout> : null}
-      <section aria-labelledby="smart-rules-heading" className={styles.section}>
-        <div className={styles.sectionHeading}>
-          <div><h2 id="smart-rules-heading">Rules</h2><p>Each rule uses the settings already defined in its linked workspace area.</p></div>
-          <Badge tone="info"><ShieldCheck size={13} /> Permission controlled</Badge>
-        </div>
-        <div className={styles.ruleList}>
-          {rules.map((rule) => <Surface as="article" className={styles.rule} key={rule.code}>
-            <div className={styles.ruleCopy}>
-              <span className={styles.ruleIcon}><Route aria-hidden="true" size={17} /></span>
-              <div><h3>{rule.name}</h3><p>{rule.description}</p><Link href={safeSetupHref(rule.setupHref)}>Review settings</Link></div>
-            </div>
-            <div className={styles.ruleControls}>
-              {rule.code === "weekly_progress" ? <>
-                <SelectField
-                  aria-label="Weekly progress day"
-                  isDisabled={saving === rule.code}
-                  items={weekdays}
-                  label="Send on"
-                  onSelectionChange={(key) => key && void save(rule, { weekday: String(key) })}
-                  selectedKey={rule.weekday}
-                />
-                <Checkbox
-                  isDisabled={saving === rule.code}
-                  isSelected={rule.channels.includes("email")}
-                  onChange={(selected) => void save(rule, { channels: selected ? ["in_app", "email"] : ["in_app"] })}
-                >Email opted-in team members</Checkbox>
-              </> : null}
-              <Switch
-                aria-label={`${rule.enabled ? "Turn off" : "Turn on"} ${rule.name}`}
-                isDisabled={saving === rule.code}
-                isSelected={rule.enabled}
-                onChange={(enabled) => void save(rule, { enabled })}
-              >{saving === rule.code ? "Saving" : rule.enabled ? "On" : "Off"}</Switch>
-            </div>
-          </Surface>)}
-        </div>
+      <section aria-label="Rules" className={styles.ruleList}>
+        {rules.map((rule) => <Surface as="article" className={styles.rule} key={rule.code}>
+          <div className={styles.ruleCopy}>
+            <span className={styles.ruleIcon}><Route aria-hidden="true" size={17} /></span>
+            <div><h3>{rule.name}</h3><p>{rule.description}</p><Link href={safeSetupHref(rule.setupHref)}>Review settings</Link></div>
+          </div>
+          <div className={styles.ruleControls}>
+            {rule.code === "weekly_progress" ? <>
+              <SelectField aria-label="Weekly progress day" isDisabled={saving === rule.code} items={weekdays} label="Send on" onSelectionChange={(key) => key && void save(rule, { weekday: String(key) })} selectedKey={rule.weekday} />
+              <Checkbox isDisabled={saving === rule.code} isSelected={rule.channels.includes("email")} onChange={(selected) => void save(rule, { channels: selected ? ["in_app", "email"] : ["in_app"] })}>Email opted-in team members</Checkbox>
+            </> : null}
+            <Switch aria-label={`${rule.enabled ? "Turn off" : "Turn on"} ${rule.name}`} isDisabled={saving === rule.code} isSelected={rule.enabled} onChange={(enabled) => void save(rule, { enabled })}>{saving === rule.code ? "Saving" : rule.enabled ? "On" : "Off"}</Switch>
+          </div>
+        </Surface>)}
       </section>
+    </div>;
+  return embedded ? body : <CrmProductShell title={title} description="" canView={initialData.canView} useWorkspaceColors>{body}</CrmProductShell>;
+}
 
-      <section aria-labelledby="delivery-heading" className={styles.section}>
-        <div className={styles.sectionHeading}><div><h2 id="delivery-heading">Delivery channels</h2><p>A connection is not marked verified until Wodana records a successful delivery receipt.</p></div></div>
-        <div className={styles.providerGrid}>
-          {providers.map((provider) => {
-            const { Icon, label } = providerCopy[provider.channel];
-            const status = providerStatus(provider);
-            return <Surface as="article" className={styles.provider} key={provider.channel} tone="subtle">
-              <div className={styles.providerTitle}><span><Icon aria-hidden="true" size={16} />{label}</span><Badge tone={status.tone}>{status.label}</Badge></div>
-              <p>{provider.pricing}</p>
-              {provider.receiptState === "built_in" ? <small><CheckCircle2 aria-hidden="true" size={13} /> Delivered inside the workspace.</small> : provider.lastDeliveredAt ? <small><CheckCircle2 aria-hidden="true" size={13} /> Last verified {new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(provider.lastDeliveredAt))}</small> : <small>No successful provider receipt recorded yet.</small>}
-            </Surface>;
-          })}
-        </div>
-      </section>
-    </div>
-  </CrmProductShell>;
+/** Sales → Settings → Automations, inside the Sales page like the other settings tabs. */
+export function SalesAutomations({ workspaceId }: { workspaceId: string }) {
+  const [data, setData] = useState<CrmScreenPageData | null>(null);
+  const [failure, setFailure] = useState("");
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    crmRequest<unknown>(workspaceId, "automation-presets", "GET", undefined, controller.signal)
+      .then((payload) => { setData({ canView: true, id: "automations", items: rows(payload) as CrmScreenPageData["items"], nextCursor: null, referenceTime: new Date().toISOString(), supporting: {}, workspaceId }); setFailure(""); })
+      .catch((cause: Error) => { if (!controller.signal.aborted) setFailure(cause.message); });
+    return () => controller.abort();
+  }, [workspaceId, reload]);
+  if (failure) return <EmptyState illustration="error" title="Automations didn't load" description={failure} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>Retry</Button>} />;
+  if (!data) return <Skeleton lines={3} />;
+  return <CrmSmartRules initialData={data} embedded />;
 }

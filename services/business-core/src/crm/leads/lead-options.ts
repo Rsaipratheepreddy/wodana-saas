@@ -4,6 +4,8 @@ import { PoolClient } from "pg";
 type Option = { id: string; label: string };
 const options = (entries: [string, string][]): Option[] => entries.map(([id, label]) => ({ id, label }));
 export const UNRESOLVED_ENQUIRY_TYPE = "not_sure";
+/** The region choice for anywhere outside the workspace's listed regions. */
+export const REGION_OTHER = "other";
 export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
   return Boolean(value?.trim() && value.trim() !== UNRESOLVED_ENQUIRY_TYPE);
 }
@@ -21,7 +23,8 @@ export const DEFAULT_LEAD_OPTIONS = {
   enquiryTypes: options([[UNRESOLVED_ENQUIRY_TYPE, "Not Sure Yet"]]),
   budgetRanges: options([["not_sure", "Not sure yet"]]),
   customerTypes: [] as Option[],
-  emirates: options([["abu_dhabi", "Abu Dhabi"], ["ajman", "Ajman"], ["dubai", "Dubai"], ["fujairah", "Fujairah"], ["ras_al_khaimah", "Ras Al Khaimah"], ["sharjah", "Sharjah"], ["umm_al_quwain", "Umm Al Quwain"], ["outside_uae", "Outside UAE"]]),
+  // Regions are each workspace's own (Settings → Fields → Region); none are assumed.
+  emirates: [] as Option[],
 };
 
 export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
@@ -35,9 +38,9 @@ export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
   const configured = new Map(result.rows.map(row => [row.code, row.options]));
   const pick = (key: string, fallback: Option[]) => configured.get(key) ?? fallback;
   const sources = pick("lead_source", DEFAULT_LEAD_OPTIONS.sources);
-  // Keep the required international choice available to workspaces with an older emirate taxonomy.
-  const emirates = pick("emirate", DEFAULT_LEAD_OPTIONS.emirates);
-  const locationChoices = emirates.some(option => option.id === "outside_uae") ? emirates : [...emirates, { id: "outside_uae", label: "Outside UAE" }];
+  // Once a workspace lists its regions, "Other" is always offered for anywhere else (area is then typed).
+  const emirates = configured.get("emirate") ?? await regionPackRegions(client, workspaceId);
+  const locationChoices = !emirates.length || emirates.some(option => option.id === REGION_OTHER) ? emirates : [...emirates, { id: REGION_OTHER, label: "Other" }];
   return {
     sources,
     channels: Object.fromEntries(sources.map(source => [source.id, pick(`lead_channel_${source.id}`, DEFAULT_LEAD_OPTIONS.channels[source.id] ?? [])])),
@@ -65,6 +68,16 @@ export async function validateLeadOptions(client: PoolClient, workspaceId: strin
   if (!previous || previous.serviceType !== input.serviceType) check(input.serviceType, choices.enquiryTypes, "enquiry type", true);
   if (!previous || previous.details?.budgetRange !== input.details?.budgetRange) check(input.details?.budgetRange, choices.budgetRanges, "budget range");
   if (!previous || previous.details?.customerType !== input.details?.customerType) check(input.details?.customerType, choices.customerTypes, "customer type");
-  if (options.requireEmirate !== false)
-    check(input.details?.emirate, choices.emirates, "emirate", true);
+  // Regions are checked against the workspace's list (its own, or its country's); with no list the value is kept as typed.
+  if (choices.emirates.length) check(input.details?.emirate, choices.emirates, "region", options.requireEmirate !== false);
+}
+
+/** The first address level of the workspace's country (region pack), e.g. a country's states or emirates. */
+async function regionPackRegions(client: PoolClient, workspaceId: string): Promise<Option[]> {
+  const result = await client.query<{ options: unknown }>(`SELECT profile.configuration->'address'->'levels'->0->'options' AS options
+    FROM workspaces workspace JOIN tenant_setup_profiles profile ON profile.kind='region' AND profile.code=upper(split_part(workspace.default_locale, '-', 2))
+    WHERE workspace.id=$1 ORDER BY profile.version DESC LIMIT 1`, [workspaceId]);
+  const names = result.rows[0]?.options;
+  return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string" && Boolean(name.trim()))
+    .map(label => ({ id: label.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""), label: label.trim() })) : [];
 }

@@ -5,13 +5,14 @@ import { Button, Callout, ControlledModalDialog, SelectField } from "@/design-sy
 import type { LeadsPageData } from "@/lib/crm/leads";
 import type { LeadOption } from "@/lib/crm/lead-options";
 import { matchCsvHeader, parseLeadCsv, type CsvTable } from "@/lib/crm/import-csv";
+import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 import styles from "./lead-import-dialog.module.css";
 
 type Field = "displayName" | "mobile" | "emirate" | "serviceType" | "area" | "email" | "source" | "channel" | "mobileCountryCode";
-const fields: Array<{ id: Field; label: string; names: string[]; required?: boolean }> = [
+const baseFields: Array<{ id: Field; label: string; names: string[]; required?: boolean }> = [
   { id: "displayName", label: "Customer name", names: ["customer name", "name", "client name", "full name"], required: true },
   { id: "mobile", label: "Mobile", names: ["mobile", "mobile number", "phone number", "phone"], required: true },
-  { id: "emirate", label: "Emirate", names: ["emirate", "emirates"], required: true },
+  { id: "emirate", label: "Region", names: ["emirate", "emirates", "region", "state", "province", "county"], required: true },
   { id: "serviceType", label: "Enquiry type", names: ["enquiry type", "service type", "service required"], required: true },
   { id: "area", label: "Area", names: ["area", "community", "neighbourhood"] },
   { id: "email", label: "Email", names: ["email", "email address"] },
@@ -37,17 +38,21 @@ export function LeadImportDialog({ initialData, onClose, onImported }: { initial
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
   const options = initialData.leadOptions;
+  // The region column takes the country's own word and is needed only when the workspace lists regions.
+  const regionLabel = administrativeAreaLabel(countryFromLocale(initialData.defaultLocale));
+  const hasRegions = Boolean(options?.emirates.length);
+  const fields = baseFields.map(field => field.id === "emirate" ? { ...field, label: regionLabel, names: [...field.names, regionLabel.toLowerCase()], required: hasRegions } : field);
   const value = (row: string[], field: Field) => row[table?.headers.indexOf(mapping[field]) ?? -1]?.trim() ?? "";
   const prepare = (row: string[], index: number) => {
     if (!options) throw new Error("Enquiry options are unavailable. Refresh and try again.");
     const displayName = value(row, "displayName"), mobile = value(row, "mobile");
-    const emirate = findOption(value(row, "emirate"), options.emirates);
+    const emirate = hasRegions ? findOption(value(row, "emirate"), options.emirates) : value(row, "emirate");
     const serviceType = findOption(value(row, "serviceType"), options.enquiryTypes);
     const rowSource = value(row, "source") ? findOption(value(row, "source"), options.sources) : source;
     const rowChannel = value(row, "channel") ? findOption(value(row, "channel"), options.channels[rowSource ?? ""]) : options.channels[rowSource ?? ""]?.some(item => item.id === channel) ? channel : options.channels[rowSource ?? ""]?.[0]?.id;
-    if (!displayName || !mobile || !emirate || !serviceType || !rowSource || !rowChannel || !options.channels[rowSource]?.some(item => item.id === rowChannel)) throw new Error(`Row ${index + 2}: check customer name, mobile, Emirate, Enquiry Type, source and channel.`);
+    if (!displayName || !mobile || (hasRegions && !emirate) || !serviceType || !rowSource || !rowChannel || !options.channels[rowSource]?.some(item => item.id === rowChannel)) throw new Error(`Row ${index + 2}: check customer name, mobile, ${hasRegions ? `${regionLabel}, ` : ""}enquiry type, source and channel.`);
     const areaText = value(row, "area");
-    const area = areaText ? findOption(areaText, options.areas[emirate]) ?? areaText : "";
+    const area = areaText ? findOption(areaText, options.areas[emirate ?? ""]) ?? areaText : "";
     const country = value(row, "mobileCountryCode").toUpperCase();
     if (country && !/^[A-Z]{2}$/.test(country)) throw new Error(`Row ${index + 2}: use a two-letter country code, such as AE.`);
     return {

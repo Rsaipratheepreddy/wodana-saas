@@ -37,7 +37,6 @@ import styles from "./crm-screen-page.module.css";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { CrmRecordWorkbench, CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
 import { PipelineSettings } from "./pipeline-settings";
-import { AutomationApprovals } from "./automation-approvals";
 import { CrmOverview } from "./crm-overview";
 import { CrmInbox } from "./crm-inbox";
 import { CrmSmartRules } from "./crm-smart-rules";
@@ -57,7 +56,6 @@ const screenCopy: Record<CrmScreenId, { title: string; description: string; noun
   conversations: { title: "Inbox", description: "Customer conversations and messages awaiting a response.", noun: "conversations" },
   sequences: { title: "Sequences", description: "Organize consistent, respectful follow-up across email, WhatsApp, and team tasks.", noun: "sequences" },
   automations: { title: "Automations", description: "Monitor CRM workflows, their publishing state, and recent execution health.", noun: "automations" },
-  "crm-reports": { title: "CRM reports", description: "Review acquisition, response time, pipeline, assignment, and forecast performance.", noun: "report rows" },
 };
 
 function value(row: CrmRecord, key: string): unknown { return row[key]; }
@@ -232,7 +230,7 @@ function viewsFor(id: CrmScreenId, items: CrmRecord[], referenceTime: number): S
   if (id === "activities") return ["all", "pending", "overdue", "completed"].map((view) => ({ id: view, label: `${humanize(view)} (${count(view)})` }));
   if (id === "conversations") return ["all", "unread", "open", "closed"].map((view) => ({ id: view, label: `${humanize(view)} (${count(view)})` }));
   if (id === "sequences" || id === "automations") return ["all", "active", "draft", "paused"].map((view) => ({ id: view, label: `${humanize(view)} (${count(view)})` }));
-  return ["sources", "pipeline", "funnel", "sla", "assignment", "forecast"].map((view) => ({ id: view, label: `${humanize(view)} (${count(view)})` }));
+  return [];
 }
 
 function filterFor(id: CrmScreenId, items: CrmRecord[], view: string, referenceTime: number) {
@@ -244,7 +242,6 @@ function filterFor(id: CrmScreenId, items: CrmRecord[], view: string, referenceT
   }
   if (id === "activities" && view === "overdue") return items.filter((item) => value(item, "status") === "pending" && typeof value(item, "dueAt") === "string" && Date.parse(String(value(item, "dueAt"))) < referenceTime);
   if (id === "conversations" && view === "unread") return items.filter((item) => numeric(item, "unreadCount") > 0);
-  if (id === "crm-reports") return items.filter((item) => value(item, "report") === view);
   return items.filter((item) => value(item, "status") === view);
 }
 
@@ -300,12 +297,7 @@ function summaryFor(data: CrmScreenPageData, referenceTime: number): SummaryItem
       { icon: <Clock3 size={14} />, value: runs.filter((run) => value(run, "status") === "failed").length, label: "failed", attention: true },
     ];
   }
-  return [
-    { icon: <CircleDollarSign size={14} />, value: items.length, label: "report rows" },
-    { icon: <Inbox size={14} />, value: items.filter((item) => value(item, "report") === "sources").length, label: "sources" },
-    { icon: <Activity size={14} />, value: items.filter((item) => value(item, "report") === "pipeline").length, label: "pipeline groups" },
-    { icon: <BadgeCheck size={14} />, value: items.filter((item) => value(item, "report") === "sla").reduce((total, item) => total + numeric(item, "count"), 0), label: "SLA records" },
-  ];
+  return [];
 }
 
 function inspectorTitle(id: CrmScreenId, row: CrmRecord) {
@@ -313,7 +305,6 @@ function inspectorTitle(id: CrmScreenId, row: CrmRecord) {
   if (["sequences", "automations"].includes(id)) return text(row, "name");
   if (id === "opportunities" || id === "activities") return text(row, "title");
   if (id === "conversations") return text(row, "subject", text(row, "partyName"));
-  if (id === "crm-reports") return reportDimension(row);
   return text(row, "title");
 }
 
@@ -335,9 +326,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
-  const [view, setView] = useState(initialData.id === "crm-reports" ? "sources" : "all");
-  const [reportFrom, setReportFrom] = useState(() => new Date(Date.parse(initialData.referenceTime) - 90 * 86_400_000).toISOString().slice(0, 10));
-  const [reportTo, setReportTo] = useState(() => initialData.referenceTime.slice(0, 10));
+  const [view, setView] = useState("all");
   const referenceTime = Date.parse(initialData.referenceTime);
   const copy = screenCopy[initialData.id];
   const views = useMemo(() => viewsFor(initialData.id, data.items, referenceTime), [initialData.id, data.items, referenceTime]);
@@ -346,20 +335,6 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
   const summary = useMemo(() => summaryFor(data, referenceTime), [data, referenceTime]);
 
   const reload = async (more = false) => {
-    if (initialData.id === "crm-reports") {
-      setBusy(true); setFailure("");
-      try {
-        const from = new Date(`${reportFrom}T00:00:00`).toISOString();
-        const to = new Date(`${reportTo}T23:59:59.999`).toISOString();
-        if (Date.parse(from) >= Date.parse(to)) throw new Error("Choose an end date after the start date.");
-        const reports = ["sources", "pipeline", "funnel", "sla", "assignment", "forecast"];
-        const payloads = await Promise.all(reports.map((report) => crmRequest<unknown>(initialData.workspaceId, `reports/${report}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)));
-        const items = payloads.flatMap((payload, reportIndex) => rows(payload).map((row, rowIndex) => ({ ...row, id: `${reports[reportIndex]}-${rowIndex}`, report: reports[reportIndex] })));
-        setData((current) => ({ ...current, items, nextCursor: null, supporting: { ...current.supporting, reportRange: { from, to } } }));
-      } catch (error) { setFailure(error instanceof Error ? error.message : "CRM reports could not be refreshed."); }
-      finally { setBusy(false); }
-      return;
-    }
     const endpoints: Partial<Record<CrmScreenId, string>> = { customers: "parties?limit=100", organizations: "parties?type=organization&limit=100", opportunities: "opportunities?limit=100", activities: "activities?limit=100", conversations: "conversations?limit=100", sequences: "sequences", automations: "automations", "crm-overview": "today" };
     const endpoint = endpoints[initialData.id];
     if (!endpoint) return;
@@ -373,7 +348,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
   };
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label={`${copy.title} workspace`} className={styles.page}>
-      <header className={styles.pageHeading}><div><h1>{copy.title}</h1><p>{copy.description}</p></div>{initialData.canView && initialData.id === "crm-reports" ? <div className={styles.reportRange}><label>From<input type="date" value={reportFrom} max={reportTo} onChange={(event) => setReportFrom(event.target.value)} /></label><label>To<input type="date" value={reportTo} min={reportFrom} onChange={(event) => setReportTo(event.target.value)} /></label><Button size="compact" isLoading={busy} onPress={() => void reload()}>Apply</Button></div> : initialData.canView && initialData.id !== "crm-overview" ? <div className={styles.pageActions}><Button size="compact" isLoading={busy} onPress={() => void reload()}>Refresh</Button><Button size="compact" variant="primary" onPress={() => setCreating(true)}>Create {initialData.id === "customers" ? "customer" : initialData.id === "organizations" ? "organization" : initialData.id === "opportunities" ? "opportunity" : initialData.id === "activities" ? "activity" : initialData.id === "conversations" ? "conversation" : initialData.id === "sequences" ? "sequence" : "automation"}</Button></div> : null}</header>
+      <header className={styles.pageHeading}><div><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
       {!initialData.canView ? <Callout title={`${copy.title} access is restricted`} tone="warning">Ask a workspace owner or administrator for the required CRM permission.</Callout> : <>
         <section aria-label={`${copy.title} summary`} className={styles.summary}>
           {summary.map((item) => <span data-attention={item.attention && Number(item.value) > 0 || undefined} key={item.label}>{item.icon}<strong>{item.value}</strong>{item.label}</span>)}
@@ -382,7 +357,6 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
         {creating ? <CrmCreateDialog workspaceId={initialData.workspaceId} id={initialData.id} onClose={() => setCreating(false)} onSaved={() => reload()} /> : null}
         {linkedRecord ? <InspectorSheet isOpen title="Record details" size="md" onOpenChange={(open) => { if (!open) setLinkedRecord(undefined); }}><LinkedRecordWorkbench workspaceId={initialData.workspaceId} id={initialData.id} recordId={linkedRecord} onChanged={() => reload()} /></InspectorSheet> : null}
         {initialData.id === "opportunities" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: "Opportunities", panel: null }, { id: "pipeline", label: "Pipelines & rules", panel: <PipelineSettings workspaceId={initialData.workspaceId} /> }]} /> : null}
-        {initialData.id === "automations" ? <Tabs selectedKey={section} onSelectionChange={setSection} items={[{ id: "records", label: "Workflows", panel: null }, { id: "approvals", label: "Approvals", panel: <AutomationApprovals workspaceId={initialData.workspaceId} /> }]} /> : null}
         {initialData.id === "activities" ? <Link href="/workspace/crm/follow-ups?view=schedule">Open schedule</Link> : null}
         {section === "records" ? <><div className={styles.gridRegion}>
           <DataGrid

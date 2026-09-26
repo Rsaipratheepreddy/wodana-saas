@@ -4,7 +4,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import { DropIndicator, GridList, GridListItem, useDragAndDrop, type DropItem } from "react-aria-components";
 import { AlignLeft, ArrowDown, ArrowUp, CalendarDays, CheckSquare, ChevronDown, CircleDot, Copy, GripVertical, Hash, LockKeyhole, Mail, Phone, Plus, Trash2, Type } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { customEnquiryField, fieldQuestion, type CustomEnquiryField, type EnquiryField } from "@/lib/crm/enquiry-fields";
+import { createCustomField, customEnquiryField, customFieldRef, fieldQuestion, type CustomEnquiryField, type EnquiryField, type EnquiryFieldType } from "@/lib/crm/enquiry-fields";
 import { CustomFieldSheet } from "./enquiry-fields-settings";
 import { Button, Checkbox, IconButton, SelectField, TextInput } from "@/design-system";
 import { formQuestionTypes, type LeadFormQuestion, type LeadFormSchema } from "@/lib/crm/lead-forms";
@@ -34,6 +34,21 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
   const [creating, setCreating] = useState(false);
   const available = fields.filter(field => field.visible && field.formField && !draft.questions.some(question => question.field === field.formField));
   const linkedName = (field?: string) => fields.find(item => item.formField === field)?.label;
+  const [linking, setLinking] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState("");
+  /** An older free question becomes one of the workspace's own enquiry fields, keeping its wording and choices. */
+  const makeField = async (question: LeadFormQuestion) => {
+    const type: EnquiryFieldType = question.type === "paragraph" ? "paragraph" : question.type === "number" ? "number" : question.type === "date" ? "date" : ["dropdown", "radio"].includes(question.type) ? "select" : question.type === "checkboxes" ? "multi_select" : "text";
+    const options = [...new Set(question.options.map(option => option.label.trim()).filter(Boolean))];
+    setLinking(question.id); setLinkError("");
+    try {
+      const saved = await createCustomField(workspaceId, { label: question.title.trim() || t("Untitled field"), type, options, position: fields.filter(field => field.custom).length + 1 });
+      onFieldCreated(saved);
+      const shaped = fieldQuestion(customEnquiryField(saved));
+      updateQuestion(question.id, { field: customFieldRef(saved.id), type: shaped.type, options: shaped.options });
+    } catch (cause) { setLinkError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setLinking(null); }
+  };
   const [selected, setSelected] = useState(draft.questions[0]?.id ?? "");
   const [announcement, setAnnouncement] = useState("");
   const [newQuestion, setNewQuestion] = useState("");
@@ -150,7 +165,7 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
                   <Button size="compact" variant="quiet" isDisabled={question.options.length >= 50} onPress={() => updateQuestion(question.id, { options: [...question.options, { id: crypto.randomUUID(), label: `Option ${question.options.length + 1}` }] })}><Plus size={14} />Add option</Button>
                 </>}
               </div>}
-              {linked ? <p className={styles.hint}>{t("Saves to")} · {linkedName(question.field) ?? t("A removed field")}{required ? ` · ${t("Required")}` : ""}</p> : <p className={styles.hint}>{t("Answers stay on the response only.")}</p>}
+              {linked ? <p className={styles.hint}>{t("Saves to")} · {linkedName(question.field) ?? t("A removed field")}{required ? ` · ${t("Required")}` : ""}</p> : <div className={styles.hint}>{t("Not saved to the enquiry yet.")} <Button size="compact" isLoading={linking === question.id} isDisabled={busy || (choiceTypes.has(question.type) && !question.options.some(option => option.label.trim()))} onPress={() => void makeField(question)}>{t("Make it a field")}</Button>{linkError && linking === null ? <span role="alert"> {linkError}</span> : null}</div>}
               <footer className={styles.questionFooter}>
                 <Checkbox isSelected={question.required} isDisabled={required || busy} onChange={value => updateQuestion(question.id, { required: value })}>Required</Checkbox>
                 {!linked && <Button size="compact" variant="quiet" isDisabled={atLimit || busy} onPress={() => add(question.type, { id: question.id, position: "after" }, question)}><Copy size={14} />Duplicate</Button>}

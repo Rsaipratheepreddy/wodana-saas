@@ -23,6 +23,7 @@ import { LogContactDialog } from "./log-contact-dialog";
 import { ChangeHistory } from "./change-history";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
+import { customValueText, enquiryFields, isShown } from "@/lib/crm/enquiry-fields";
 
 
 export function LinkedLeadWorkbench({ leadId, initialData, onChanged, onQualify }: { leadId: string; initialData: LeadsPageData; onChanged: () => Promise<void>; onQualify?: (lead: CrmLeadListItem) => void }) {
@@ -59,6 +60,9 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
   const needsEnquiryType = !hasResolvedEnquiryType(String(enquiry?.serviceType ?? lead.serviceType ?? ""));
   const attribution = (enquiry?.attribution ?? []) as RecordData[];
   const enquiryDetails = (enquiry?.details ?? lead.details ?? {}) as EnquiryDetails;
+  const fieldList = enquiryFields(initialData.enquiryFields, "");
+  const shownField = (key: string) => isShown(fieldList, key);
+  const ownFields = fieldList.filter((field) => field.custom && field.visible);
   const contact = enquiryDetails.contact ?? { displayName: lead.partyName };
   const owner = live.ownerMembershipId ? initialData.members.find((m) => m.id === live.ownerMembershipId)?.displayName ?? live.ownerName ?? "Assigned owner" : null;
   const saved = async () => { resource.refresh(); setActivityRevision(value => value + 1); await onChanged(); };
@@ -99,17 +103,18 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
           ["Sales team", initialData.queues.find(q => q.id === live.queueId)?.name ?? "Not assigned"],
           ...(live.ownershipDueAt ? [["Reassign if no call or note", dateText(live.ownershipDueAt)] as [string, string]] : []),
           ["Mobile", formatPhoneForDisplay(String(enquiry?.primaryMobile ?? contact.mobile ?? ""), phoneCountry(contact.mobileCountryCode ?? contact.phoneCountryCode, initialData.defaultLocale))],
-          ["Phone", formatPhoneForDisplay(String(enquiry?.primaryPhone ?? contact.phone ?? ""), defaultCountry)], ["Email", String(enquiry?.primaryEmail ?? contact.email ?? "Not provided")],
-          [administrativeAreaLabel(countryFromLocale(initialData.defaultLocale)), leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)],
-          ["Area", initialData.leadOptions?.areas?.[enquiryDetails.emirate ?? ""]?.find(item => item.id === enquiryDetails.area)?.label ?? enquiryDetails.area ?? enquiryDetails.location ?? "Not provided"],
-          ["Budget range", leadOptionLabel(initialData.leadOptions?.budgetRanges, enquiryDetails.budgetRange)],
-          ...(enquiryDetails.customerType ? [["Customer type", leadOptionLabel(initialData.leadOptions?.customerTypes, enquiryDetails.customerType)] as [string,string]] : []),
+          ["Phone", formatPhoneForDisplay(String(enquiry?.primaryPhone ?? contact.phone ?? ""), defaultCountry)],
+          ...(shownField("email") ? [["Email", String(enquiry?.primaryEmail ?? contact.email ?? "Not provided")] as [string, string]] : []),
+          ...(initialData.leadOptions?.emirates.length || enquiryDetails.emirate ? [[administrativeAreaLabel(countryFromLocale(initialData.defaultLocale)), leadOptionLabel(initialData.leadOptions?.emirates, enquiryDetails.emirate)] as [string, string]] : []),
+          ...(shownField("area") ? [["Area", initialData.leadOptions?.areas?.[enquiryDetails.emirate ?? ""]?.find(item => item.id === enquiryDetails.area)?.label ?? enquiryDetails.area ?? enquiryDetails.location ?? "Not provided"] as [string, string]] : []),
+          ...(shownField("budgetRange") ? [["Budget range", leadOptionLabel(initialData.leadOptions?.budgetRanges, enquiryDetails.budgetRange)] as [string, string]] : []),
+          ...(shownField("customerType") && enquiryDetails.customerType ? [["Customer type", leadOptionLabel(initialData.leadOptions?.customerTypes, enquiryDetails.customerType)] as [string,string]] : []),
+          ...ownFields.map((field) => [field.label, customValueText(lead.customFields?.[field.custom!.id])] as [string, string]),
           ...([['Company', contact.company], ['Job position', contact.jobPosition], ['Website', contact.website], ['Address', contact.address], ['Campaign', enquiryDetails.campaign]] as [string,string | undefined][]).filter((pair): pair is [string,string] => Boolean(pair[1])),
           ["Created", dateText(live.createdAt)], ["Last updated", dateText(live.updatedAt)],
           ...configuredFields.filter(field => answers[field.key] !== undefined).map(field => [field.label, qualificationAnswerText(answers[field.key])] as [string,string]),
         ]} />
         {enquiryDetails.internalNotes ? <div><h4>Internal notes</h4><p style={{ whiteSpace: "pre-wrap" }}>{enquiryDetails.internalNotes}</p></div> : null}
-        {enquiryDetails.formAnswers?.length ? <details><summary>Form responses</summary><div className={styles.stack}>{enquiryDetails.formAnswers.map(answer => <div key={answer.questionId}><h4>{answer.title}</h4><p>{Array.isArray(answer.value) ? answer.value.join(", ") : answer.value || "Not provided"}</p></div>)}</div></details> : null}
         {live.disqualificationReason ? <p className={styles.notice}>{String(live.disqualificationReason)}</p> : null}
       </div> },
       { id: "response", label: "Activity", panel: <div className={styles.stack}>
@@ -161,7 +166,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
       </>}
     </section>}
 
-    {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") } }} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
+    {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields }} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
     {scheduling && <NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...live }} onClose={() => setScheduling(false)} onCreated={async () => { await saved(); setScheduling(false); }} />}
     {contacting && <LogContactDialog workspaceId={workspaceId} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
     {assigning && <LeadAssignmentDialog lead={live} members={initialData.members} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}

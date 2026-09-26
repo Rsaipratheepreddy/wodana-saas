@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const filename = typeof body?.filename === "string" ? body.filename.slice(0, 200) : "";
   const title = typeof body?.title === "string" ? body.title.trim().slice(0, 240) : "";
   if (!UUID.test(workspaceId) || !UUID.test(requestId) || !Number.isInteger(rowIndex) || Number(rowIndex) < 1 || Number(rowIndex) > 5000) return invalidRequest("A valid workspace, import request, and row number are required.");
-  if (!party || !String(party.displayName ?? "").trim() || !String(party.mobile ?? "").trim() || !details || !String(details.emirate ?? "").trim() || !serviceType || !source || !channel) return invalidRequest("Customer name, mobile, Emirate, Enquiry Type, source, and channel are required.");
+  if (!party || !String(party.displayName ?? "").trim() || !String(party.mobile ?? "").trim() || !details || !serviceType || !source || !channel) return invalidRequest("Customer name, mobile, enquiry type, source and channel are required.");
   return workspaceJsonResponse(`/workspaces/${workspaceId}/crm/intake-events`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": `lead-import:${requestId}:${rowIndex}` },

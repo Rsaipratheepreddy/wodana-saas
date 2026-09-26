@@ -85,30 +85,7 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
     return page;
   }
 
-  if (id === "crm-reports") {
-    // Keep the server responses intact. Each report has a different contract
-    // (for example SLA has a summary and owner breakdown), so flattening them
-    // into one generic table loses meaning and produces a misleading UI.
-    const reportNames = ["sources", "lead-flow", "funnel", "pipeline", "sla", "assignment", "forecast"] as const;
-    const responses = await Promise.all(reportNames.map((report) => backend(token, membership.workspaceId, `reports/${report}${report === "lead-flow" ? "?groupBy=mainSource" : ""}`)));
-    if (responses.every((response) => response.forbidden)) return { ...page, canView: false };
-    page.items = responses.flatMap((response, reportIndex) => {
-      if (response.forbidden || !response.payload || typeof response.payload !== "object") return [];
-      const payload = response.payload as { rows?: Array<Record<string, unknown>> };
-      return (payload.rows ?? []).map((row, rowIndex) => ({
-        ...row,
-        id: `${reportNames[reportIndex]}-${rowIndex}`,
-        report: reportNames[reportIndex],
-      }));
-    });
-    page.supporting = {
-      reports: reportNames,
-      results: Object.fromEntries(reportNames.map((report, index) => [report, responses[index]?.forbidden ? null : responses[index]?.payload])),
-    };
-    return page;
-  }
-
-  const endpoints: Record<Exclude<CrmScreenId, "crm-overview" | "crm-reports">, string> = {
+  const endpoints: Record<Exclude<CrmScreenId, "crm-overview">, string> = {
     "follow-ups": "activities?limit=100",
     calendar: "activities?limit=100",
     // Customer work is one relationship graph. Do not split people and companies

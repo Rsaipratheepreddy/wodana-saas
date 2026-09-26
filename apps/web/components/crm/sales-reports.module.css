@@ -1,0 +1,9 @@
+.page { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.toolbar :global(.wd-field) { inline-size: auto; min-inline-size: 11rem; gap: 0; }
+.spacer { flex: 1 1 auto; }
+.metrics { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-8); margin: 0; }
+.metrics > div { display: grid; gap: var(--wd-space-1); min-inline-size: 7rem; }
+.metrics dt { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.metrics dd { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-xl); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
+@media (max-width: 40rem) { .spacer { display: none; } .toolbar :global(.wd-field) { flex: 1 1 10rem; } .metrics > div { min-inline-size: calc(50% - var(--wd-space-4)); } }

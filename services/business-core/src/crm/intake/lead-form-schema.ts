@@ -10,13 +10,15 @@ export type FormQuestion = {
 export type LeadFormSchema = { title: string; description: string; source: string; channel: string; questions: FormQuestion[] };
 export const QUESTION_TYPES = ["text", "paragraph", "email", "tel", "radio", "checkboxes", "dropdown", "number", "date"];
 export const CORE_FIELDS = ["displayName", "email", "mobile", "emirate", "area", "location", "serviceType", "budgetRange", "summary"];
-const REQUIRED_FIELDS = ["displayName", "mobile", "emirate", "serviceType"];
+type Choices = Awaited<ReturnType<typeof loadLeadOptions>>;
+/** Fields every enquiry needs; the region only once the workspace has listed its regions. */
+export const requiredFormFields = (choices: Pick<Choices, "emirates">) => ["displayName", "mobile", ...(choices.emirates.length ? ["emirate"] : []), "serviceType"];
 
 export function defaultLeadForm(choices: Awaited<ReturnType<typeof loadLeadOptions>>): LeadFormSchema {
   const question = (field: string, title: string, type: string, required: boolean, options: FormQuestion["options"] = []): FormQuestion => ({ id: randomUUID(), title, type, required, field, options, description: "" });
   return { title: "Tell us about your project", description: "Share a few details and our team will get in touch.", source: "company", channel: "website", questions: [
     question("displayName", "Your name", "text", true), question("mobile", "Mobile number", "tel", true),
-    question("email", "Email address", "email", false), question("emirate", "Emirate", "dropdown", true, choices.emirates),
+    question("email", "Email address", "email", false), ...(choices.emirates.length ? [question("emirate", "Location", "dropdown", true, choices.emirates)] : []),
     question("area", "Area", "dropdown", false),
     question("serviceType", "What can we help with?", "dropdown", true, choices.enquiryTypes),
     question("budgetRange", "Estimated budget", "dropdown", false, choices.budgetRanges),
@@ -33,18 +35,20 @@ export function completeLeadForm(schema: LeadFormSchema, choices: Awaited<Return
     : { ...question });
   const required: Array<[string, string, string, FormQuestion["options"]]> = [
     ["displayName", "Your name", "text", []], ["mobile", "Mobile number", "tel", []],
-    ["emirate", "Emirate", "dropdown", choices.emirates], ["serviceType", "What can we help with?", "dropdown", choices.enquiryTypes],
+    ...(choices.emirates.length ? [["emirate", "Location", "dropdown", choices.emirates] as [string, string, string, FormQuestion["options"]]] : []), ["serviceType", "What can we help with?", "dropdown", choices.enquiryTypes],
   ];
   for (const [field, title, type, options] of required) {
     const existing = questions.find(question => question.field === field);
     if (existing) { existing.required = true; existing.type = type; if (type === "dropdown") existing.options = options; }
     else questions.push({ id: nextId(field), field, title, description: "", type, required: true, options });
   }
+  // No listed regions: an older region question stays, but nobody can be made to pick from an empty list.
+  if (!choices.emirates.length) for (const question of questions) if (question.field === "emirate") { question.required = false; question.options = []; }
   if (!questions.some(question => question.field === "area")) questions.push({ id: nextId("area"), field: "area", title: "Area", description: "", type: "dropdown", required: false, options: [] });
   return { ...schema, questions };
 }
 
-export function parseLeadForm(value: unknown, publishing = false): LeadFormSchema {
+export function parseLeadForm(value: unknown, publishing = false, required: string[] = ["displayName", "mobile", "serviceType"]): LeadFormSchema {
   if (!value || typeof value !== "object" || JSON.stringify(value).length > 100000) throw new BadRequestException("Invalid form");
   const input = value as Record<string, any>;
   const text = (value: unknown, max: number) => typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -56,8 +60,9 @@ export function parseLeadForm(value: unknown, publishing = false): LeadFormSchem
     const options = Array.isArray(raw.options) ? raw.options.slice(0, 50).map((option: any) => ({ id: text(option?.id, 80), label: text(option?.label, 160) })) : [];
     if (new Set(options.map((option: { id: string }) => option.id)).size !== options.length || options.some((option: { id: string; label: string }) => !option.id || !option.label)) throw new BadRequestException("Each answer choice needs a unique value and label");
     const type = field === "email" ? "email" : field === "mobile" ? "tel" : field === "summary" ? "paragraph" : ["serviceType", "budgetRange", "emirate", "area"].includes(field) ? "dropdown" : ["displayName", "location"].includes(field) ? "text" : raw.type;
-    const question = { id: raw.id, title: text(raw.title, 240), description: text(raw.description, 1000), type, required: REQUIRED_FIELDS.includes(field) || raw.required === true, field, options };
+    const question = { id: raw.id, title: text(raw.title, 240), description: text(raw.description, 1000), type, required: required.includes(field) || raw.required === true, field, options };
     if (publishing && !question.title) throw new BadRequestException("Give every question a title before publishing");
+    if (publishing && field === "custom") throw new BadRequestException(`Link “${question.title || "each question"}” to an enquiry field before publishing`);
     if (publishing && ["radio", "checkboxes", "dropdown"].includes(type) && !options.length && field !== "area") throw new BadRequestException("Add answer choices before publishing");
     return question;
   });
@@ -65,7 +70,7 @@ export function parseLeadForm(value: unknown, publishing = false): LeadFormSchem
   const fields = questions.filter(q => q.field !== "custom").map(q => q.field);
   if (new Set(fields).size !== fields.length) throw new BadRequestException("Each lead field can be linked to one question");
   if (publishing) {
-    for (const field of REQUIRED_FIELDS) if (!questions.some(question => question.field === field && question.required)) throw new BadRequestException(`Keep ${field === "displayName" ? "customer name" : field === "serviceType" ? "enquiry type" : field} as a required question`);
+    for (const field of required) if (!questions.some(question => question.field === field && question.required)) throw new BadRequestException(`Keep ${field === "displayName" ? "customer name" : field === "serviceType" ? "enquiry type" : field} as a required question`);
   }
   const schema = { title: text(input.title, 160), description: text(input.description, 2000), source: text(input.source, 100), channel: text(input.channel, 60), questions };
   if (!schema.title) throw new BadRequestException("Enter a form title");

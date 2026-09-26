@@ -35,6 +35,7 @@ function setup() {
     if (sql.includes("SELECT payload_hash, original_payload")) return { rows: [], rowCount: 0 };
     if (sql.includes("SELECT default_locale")) return { rows: [{ defaultLocale: "en-AE" }], rowCount: 1 };
     if (sql.includes("FROM crm_taxonomies taxonomy")) return { rows: [{ code: "enquiry_type", options: [{ id: "renovation_fit_out", label: "Renovation / Fit-Out" }] }], rowCount: 1 };
+    if (sql.includes("tenant_setup_profiles")) return { rows: [{ options: ["Dubai", "Sharjah"] }], rowCount: 1 };
     if (sql.includes("SELECT count(*)::int AS total")) return { rows: [{ total: 0, contact: 0 }], rowCount: 1 };
     throw new Error(`Unexpected query: ${sql}`);
   });

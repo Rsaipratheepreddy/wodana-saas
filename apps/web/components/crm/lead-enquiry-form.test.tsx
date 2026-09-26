@@ -6,17 +6,18 @@ import { leadsPageFixture } from "@/lib/crm/leads";
 import { LeadEnquiryForm, type EditableEnquiry } from "./lead-enquiry-form";
 
 afterEach(() => vi.unstubAllGlobals());
-function setup(existing?: EditableEnquiry) {
+function setup(existing?: EditableEnquiry, tweak?: (data: ReturnType<typeof structuredClone<typeof leadsPageFixture>>) => void) {
   const data = structuredClone(leadsPageFixture);
   data.defaultLocale = "en-AE";
   data.leadOptions = {
     enquiryTypes: [{ id: "design", label: "Design consultation" }],
     budgetRanges: [{ id: "small", label: "Small budget" }], customerTypes: [],
-    emirates: [{ id: "dubai", label: "Dubai" }, { id: "outside_uae", label: "Outside UAE" }], areas: { dubai: [{ id: "marina", label: "Dubai Marina" }] },
+    emirates: [{ id: "dubai", label: "Dubai" }, { id: "other", label: "Other" }], areas: { dubai: [{ id: "marina", label: "Dubai Marina" }] },
     sources: [{ id: "company", label: "Company" }, { id: "referral", label: "Referral" }, { id: "self_generated", label: "Self Generated", allowedRoles: ["SALES"] }],
     channels: { company: [{ id: "call", label: "Call" }], referral: [{ id: "external", label: "External" }, { id: "partner", label: "Partner" }], self_generated: [{ id: "whatsapp", label: "WhatsApp" }] },
     referralPartners: [{ id: "odg", label: "ODG" }],
   };
+  tweak?.(data);
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ leadId: "saved" }) });
   vi.stubGlobal("fetch", fetchMock);
   const onSaved = vi.fn().mockResolvedValue(undefined);
@@ -56,17 +57,17 @@ it("passes the selected country with a locally entered mobile", async () => {
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ mobile: "501234567", mobileCountryCode: "AE" });
 });
-it("captures an optional city and country when the location is Outside UAE", async () => {
+it("types the place when the region is Other", async () => {
   const { user, fetchMock, onSaved } = setup();
   await user.type(screen.getByLabelText(/Customer name/), "International customer");
   await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
-  await choose(user, /Emirate/, "Outside UAE");
+  await choose(user, /Emirate/, "Other");
   expect(screen.queryByRole("button", { name: /Area · optional/ })).not.toBeInTheDocument();
-  await user.type(screen.getByRole("textbox", { name: /City \/ country/ }), "Muscat, Oman");
+  await user.type(screen.getByRole("textbox", { name: /Area \/ city/ }), "Muscat, Oman");
   await choose(user, /Assignment/, "Leave unassigned");
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
-  expect(JSON.parse(fetchMock.mock.calls[0][1].body).details).toMatchObject({ emirate: "outside_uae", area: "Muscat, Oman" });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).details).toMatchObject({ emirate: "other", area: "Muscat, Oman" });
 });
 it("shows retired values while editing and allows clearing an optional selection", async () => {
   const { user, fetchMock, onSaved } = setup({ id: "old", version: 3, serviceType: "legacy_service", party: { displayName: "Test customer" }, details: { budgetRange: "legacy_budget", customerType: "legacy_customer" } });
@@ -141,3 +142,34 @@ it("asks who referred a referral enquiry and sends it, and hides role-limited so
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ source: "referral", channel: "external", referral: { name: "Omar Haddad" } });
 }, 15_000);
+
+const FLOOR = "7d1b6c1e-2f0a-4c55-9d7e-0a1b2c3d4e5f";
+it("saves the workspace's own fields with the enquiry and hides hidden fixed fields", async () => {
+  const { user, fetchMock, onSaved } = setup(undefined, (data) => {
+    data.enquiryFields = { system: { email: { visible: false, version: 1 }, customerType: { visible: true, version: 0 }, area: { visible: true, version: 0 }, budgetRange: { visible: false, version: 1 }, summary: { visible: true, version: 0 } },
+      custom: [{ id: FLOOR, key: "floor", label: "Floor", dataType: "text", configuration: {}, visible: true, position: 1, version: 1 }] };
+  });
+  expect(screen.queryByRole("textbox", { name: "Email" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Budget range/ })).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText(/Customer name/), "Field customer");
+  await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  await choose(user, /Emirate/, "Dubai");
+  await user.type(screen.getByRole("textbox", { name: "Floor" }), "3rd");
+  await choose(user, /Assignment/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
+  const fieldsCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/leads/saved/fields"));
+  expect(fieldsCall?.[1].method).toBe("PUT");
+  expect(JSON.parse(fieldsCall?.[1].body)).toEqual({ values: { [FLOOR]: "3rd" } });
+});
+
+it("doesn't ask for a region when the workspace lists none", async () => {
+  const { user, onSaved } = setup(undefined, (data) => { data.leadOptions = { ...data.leadOptions!, emirates: [], areas: {} }; });
+  expect(screen.queryByRole("button", { name: /Emirate/ })).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText(/Customer name/), "No region");
+  await user.type(screen.getByRole("textbox", { name: "Mobile" }), "050 123 4567");
+  await user.type(screen.getByRole("textbox", { name: /Area \/ city/ }), "Anywhere");
+  await choose(user, /Assignment/, "Leave unassigned");
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
+});

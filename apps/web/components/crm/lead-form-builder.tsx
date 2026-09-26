@@ -195,7 +195,9 @@ export function validateDraft(draft: LeadFormRecord["draft"], publishing: boolea
     const name = question.title.trim() || `Field ${index + 1}`;
     if (publishing && !question.title.trim()) return `Give field ${index + 1} a label before publishing.`;
     if (question.options.some(option => !option.label.trim())) return `${name}: enter a label for every option, or remove the empty option.`;
-    if (publishing && ["radio", "dropdown", "checkboxes"].includes(question.type) && question.field !== "area" && !question.options.length) return `${name}: add at least one answer choice${question.field && question.field !== "custom" ? " in Enquiries → Field options" : ""} before publishing.`;
+    if (publishing && (!question.field || question.field === "custom")) return `${name}: make it an enquiry field before publishing.`;
+    // Fixed-field choices are filled in on save; the workspace's own fields carry their choices.
+    if (publishing && ["radio", "dropdown", "checkboxes"].includes(question.type) && question.field?.startsWith("cf:") && !question.options.length) return `${name}: add choices to this field in Settings → Fields.`;
   }
   return "";
 }

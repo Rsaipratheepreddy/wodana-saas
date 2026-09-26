@@ -26,7 +26,7 @@ it("keeps source, channel and import method separate with a stable per-row reque
 });
 
 it("rejects missing core fields and cross-origin imports", async () => {
-  expect((await POST(request({ ...body, details: {} }))).status).toBe(400);
+  expect((await POST(request({ ...body, serviceType: "" }))).status).toBe(400);
   expect((await POST(request(body, "https://elsewhere.example"))).status).toBe(403);
   expect(workspaceJsonResponse).not.toHaveBeenCalled();
 });

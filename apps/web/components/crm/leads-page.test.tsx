@@ -31,20 +31,25 @@ describe("LeadsPage", () => {
     expect(within(table).getByRole("img", { name: "Your enquiries will appear here" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New enquiry" })).toBeEnabled();
   });
-  it("shows custom form answers as enquiry columns and leaves other rows blank with a dash", () => {
+  it("shows the workspace's own shown fields as columns and hides hidden fixed fields", () => {
     const data = structuredClone(leadsPageFixture);
-    data.items[0].formId = "form-a";
-    data.items[0].formAnswers = [
-      { questionId: "name", title: "Your name", type: "text", field: "displayName", value: "Maya" },
-      { questionId: "rooms", title: "Rooms needed", type: "number", field: "custom", value: "3" },
-    ];
+    const rooms = "7d1b6c1e-2f0a-4c55-9d7e-0a1b2c3d4e5f";
+    data.enquiryFields = {
+      system: { email: { visible: true, version: 0 }, customerType: { visible: false, version: 1 }, area: { visible: true, version: 0 }, budgetRange: { visible: false, version: 1 }, summary: { visible: true, version: 0 } },
+      custom: [
+        { id: rooms, key: "rooms", label: "Rooms needed", dataType: "number", configuration: {}, visible: true, position: 1, version: 1 },
+        { id: "8e2c7d2f-3a1b-4d66-8e8f-1b2c3d4e5f60", key: "secret", label: "Hidden field", dataType: "text", configuration: {}, visible: false, position: 2, version: 1 },
+      ],
+    };
+    data.items[0].customFields = { [rooms]: 3 };
     render(<LeadsPage initialData={data} />);
     const table = screen.getByRole("table", { name: "CRM enquiries" });
     expect(within(table).getByRole("columnheader", { name: /Rooms needed/ })).toBeInTheDocument();
-    expect(within(table).queryByRole("columnheader", { name: /Your name/ })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: /Hidden field/ })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: /Budget range/ })).not.toBeInTheDocument();
     const rows = within(table).getAllByRole("row");
     expect(within(rows[1]).getByText("3")).toBeInTheDocument();
-    expect(rows[2].querySelector('[data-column="form:form-a:rooms"]')).toHaveTextContent("—");
+    expect(rows[2].querySelector(`[data-column="cf:${rooms}"]`)).toHaveTextContent("—");
   });
   it("uses the shared record grid with avatars, source chips and search", () => {
     render(<LeadsPage initialData={structuredClone(leadsPageFixture)} />);

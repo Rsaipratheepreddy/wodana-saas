@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_LEAD_OPTIONS } from "./lead-options";
 import { enquiryTitle, refreshEnquiryTitlesForParty } from "./enquiry-title";
 
-const choices = { emirates: DEFAULT_LEAD_OPTIONS.emirates, areas: { dubai: [{ id: "al_barsha", label: "Al Barsha" }] } };
+const choices = { emirates: [{ id: "dubai", label: "Dubai" }, { id: "other", label: "Other" }], areas: { dubai: [{ id: "al_barsha", label: "Al Barsha" }] } };
 
 describe("enquiry title", () => {
   it("uses the customer name, area and emirate", () => {
@@ -11,15 +10,15 @@ describe("enquiry title", () => {
   it("omits an empty area", () => {
     expect(enquiryTitle("Cece Serna", { emirate: "dubai" }, choices)).toBe("Cece Serna — Dubai");
   });
-  it("uses free-text city and country for Outside UAE", () => {
-    expect(enquiryTitle("Cece Serna", { emirate: "outside_uae", area: "London, UK" }, choices)).toBe("Cece Serna — London, UK");
+  it("uses the typed place for a region outside the list", () => {
+    expect(enquiryTitle("Cece Serna", { emirate: "other", area: "London, UK" }, choices)).toBe("Cece Serna — London, UK");
   });
   it("refreshes every linked enquiry after a customer name changes", async () => {
     const query = vi.fn(async (sql: string) => {
-      if (sql.includes("FROM crm_taxonomies")) return { rows: [] };
+      if (sql.includes("FROM crm_taxonomies")) return { rows: [{ code: "emirate", options: [{ id: "dubai", label: "Dubai" }] }] };
       if (sql.includes("SELECT id, details FROM crm_enquiries")) return { rows: [
         { id: "enquiry-1", details: { emirate: "dubai" } },
-        { id: "enquiry-2", details: { emirate: "outside_uae", area: "London, UK" } },
+        { id: "enquiry-2", details: { emirate: "other", area: "London, UK" } },
       ] };
       return { rows: [] };
     });
