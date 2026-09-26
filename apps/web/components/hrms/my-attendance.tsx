@@ -565,7 +565,7 @@ function CaptureDialog({
                   {contexts.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
-                      {c.kind === "pre_project" ? " · pre-execution" : ""}
+                      {c.kind === "pre_project" ? " · planning" : ""}
                     </option>
                   ))}
                 </SelectField>

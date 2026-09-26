@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getPreProjects = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/pre-project/server", () => ({ getPreProjects }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); } }));
+const loadProjectsBoard = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/projects/board.server", () => ({ loadProjectsBoard }));
 
 import Page from "./page";
 
@@ -12,9 +14,11 @@ const data = { workspaceId: "workspace", items: [], total: 0, canCreate: false }
 describe("Planning entry and saved selectors", () => {
   beforeEach(() => { getPreProjects.mockReset().mockResolvedValue(data); });
 
-  it("keeps the unified Projects board as the default", async () => {
-    await expect(Page({ searchParams: Promise.resolve({}) })).rejects.toThrow("redirect:/workspace/projects");
-    expect(getPreProjects).not.toHaveBeenCalled();
+  it("opens the Planning board by default", async () => {
+    loadProjectsBoard.mockResolvedValue({ projects: [], planning: data, palmFlowEnabled: false });
+    const element = await Page({ searchParams: Promise.resolve({}) });
+    expect(element.props.mode).toBe("planning");
+    expect(element.props.planning).toBe(data);
   });
 
   it("opens a saved section in the case selector", async () => {

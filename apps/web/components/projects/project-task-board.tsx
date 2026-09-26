@@ -181,7 +181,7 @@ export function ProjectTaskBoard({
                           <MessageSquare size={13} /> {comments || "Comments"}
                         </button>
                         {state.canManage && task.status !== "in_progress" && !["awaiting_inspection", "completed"].includes(task.status) && (
-                          <button disabled={busy || !state.commercialReady} title={!state.commercialReady ? "Complete the Pre-execution release checklist before starting work." : undefined} onClick={() => gaps.length ? onOpen(task) : onMove(task, "in_progress")}>
+                          <button disabled={busy || !state.commercialReady} title={!state.commercialReady ? "Complete the Planning release checklist before starting work." : undefined} onClick={() => gaps.length ? onOpen(task) : onMove(task, "in_progress")}>
                             <Play size={13} /> {gaps.length ? "Review readiness" : "Start task"}
                           </button>
                         )}

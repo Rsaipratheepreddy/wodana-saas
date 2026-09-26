@@ -103,7 +103,7 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
           </Link>;
         })}
       </div>
-      {!visible.length && <div className={styles.emptyCards}><FolderKanban size={26} aria-hidden="true" /><strong>{rows.length ? "No matching projects" : "No projects yet"}</strong><p>{rows.length ? "Try another status or search." : "Start a project from an active Pre-execution case."}</p></div>}
+      {!visible.length && <div className={styles.emptyCards}><FolderKanban size={26} aria-hidden="true" /><strong>{rows.length ? "No matching projects" : "No projects yet"}</strong><p>{rows.length ? "Try another status or search." : "Start a project from an active Planning case."}</p></div>}
     </> : <>
       <div className={styles.viewSwitch}><SegmentedControl label="Project view" options={[{id:"cards",label:"Cards"},{id:"table",label:"Table"}]} value={layout} onChange={setLayout} /></div>
       <DataGrid gridLines
@@ -113,7 +113,7 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
       columns={columns}
       data={visible}
       emptyTitle={rows.length ? "No matching projects" : "No projects yet"}
-      emptyDescription={rows.length ? "Try another view or search." : "Start a project from an active Pre-execution case."}
+      emptyDescription={rows.length ? "Try another view or search." : "Start a project from an active Planning case."}
       exportFileName="projects.csv"
       getRowId={(row) => row.id}
       onRowAction={(row) => router.push(`/workspace/projects/${row.id}/overview`)}
@@ -133,7 +133,7 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
           isDisabled={busy || !cases.length}
           isRequired
           items={cases.map((item) => ({ id: item.id, label: `${item.title} · ${item.customer}` }))}
-          label="Pre-execution case"
+          label="Planning case"
           onSelectionChange={(key) => setCaseId(String(key ?? ""))}
           placeholder="Choose a case"
           selectedKey={caseId || null}

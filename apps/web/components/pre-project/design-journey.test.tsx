@@ -14,7 +14,7 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     stub(view({ journey: null, canStart: true }));
     renderJourney();
     expect(await screen.findByRole("button", { name: "Start design" })).toBeInTheDocument();
-    expect(screen.getByText("Not started")).toBeInTheDocument();
+    expect(screen.getByText("Design starts once the design deposit is paid.")).toBeInTheDocument();
   });
 
   it("shows each stage with its state, and the inspiration timer waiting for the first inspiration", async () => {
@@ -22,7 +22,9 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
     renderJourney();
     expect(await screen.findByText("Timer starts with the first inspiration")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close inspiration" })).toBeInTheDocument();
-    expect(screen.getAllByText("Waiting")).toHaveLength(2);
+    const steps = screen.getAllByRole("listitem");
+    expect(steps.map((step) => step.getAttribute("data-status"))).toEqual(["active", "locked", "locked"]);
+    expect(screen.getByLabelText("0 of 3 stages done")).toHaveTextContent("0/3");
     expect(screen.getByText("Bespoke Interior Design")).toBeInTheDocument();
   });
 
@@ -31,7 +33,8 @@ describe("design journey on the case (PLM-047, PLM-048)", () => {
       siteEvidenceProblem: "Add a photo for Kitchen wall", measurements: [{ title: "Kitchen wall", status: "measured", files: 0 }] }));
     renderJourney();
     expect(await screen.findByText("Overdue")).toBeInTheDocument();
-    expect(screen.getByText("Done · 1 Apr")).toBeInTheDocument();
+    expect(screen.getByText("1 Apr")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")[1]).toHaveAttribute("data-overdue", "true");
     fireEvent.click(screen.getByRole("button", { name: "Complete" }));
     expect(await screen.findByText(/Add a photo for Kitchen wall/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Complete site visit" })).toBeDisabled();

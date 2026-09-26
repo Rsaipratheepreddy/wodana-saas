@@ -245,7 +245,7 @@ export function DocumentsTable({ state, search, onAction }: { state: ProjectStat
     } } },
   ];
   return <DataGrid gridLines {...grid} ariaLabel="Project documents" columns={columns} data={rows} getRowId={(x) => x.id}
-    emptyTitle="No documents yet" emptyDescription="Approved drawings arrive from Pre-execution when the project is released. Add specifications, permits and closeout records here." />;
+    emptyTitle="No documents yet" emptyDescription="Approved drawings arrive from Planning when the project is released. Add specifications, permits and closeout records here." />;
 }
 
 /* ------------------------------------------------------------------ */

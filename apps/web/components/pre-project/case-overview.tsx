@@ -12,7 +12,7 @@ import { DesignJourney } from "./design-journey";
 type Action = "hold" | "resume" | "cancel" | "reopen" | "set_phase";
 const phases = ["discover", "define", "design", "price", "agree", "release"] as const;
 const phaseLabel: Record<(typeof phases)[number], string> = { discover: "Discovery", define: "Define scope", design: "Design", price: "Price", agree: "Agreement", release: "Release" };
-const actionLabel: Record<Action, string> = { hold: "Put on hold", resume: "Resume", cancel: "Cancel project planning", reopen: "Reopen project planning", set_phase: "Change stage" };
+const actionLabel: Record<Action, string> = { hold: "Put on hold", resume: "Resume", cancel: "Cancel planning", reopen: "Reopen planning", set_phase: "Change stage" };
 
 export function CaseOverview({ record: initial, workspaceId, members, onUpdated }: {
   record: PreProjectCase;
@@ -44,7 +44,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
     ...(active ? [{ id: "set_phase", label: "Change stage" }, { id: "hold", label: "Put on hold" }] : []),
     ...(record.status === "on_hold" ? [{ id: "resume", label: "Resume" }] : []),
     ...(record.status === "cancelled" ? [{ id: "reopen", label: "Reopen" }] : []),
-    ...(["draft", "active", "on_hold"].includes(record.status) ? [{ id: "cancel", label: "Cancel project planning", tone: "danger" as const }] : []),
+    ...(["draft", "active", "on_hold"].includes(record.status) ? [{ id: "cancel", label: "Cancel planning", tone: "danger" as const }] : []),
   ] : [];
 
   function update(next: PreProjectCase) {

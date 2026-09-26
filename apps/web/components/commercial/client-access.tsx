@@ -166,7 +166,7 @@ export function ClientAccess({
           <h2>Add the people involved in this project</h2>
           <p>
             Give each client contact their own login. Access is limited to this
-            Pre-execution.
+            Planning.
           </p>
         </div>
       )}

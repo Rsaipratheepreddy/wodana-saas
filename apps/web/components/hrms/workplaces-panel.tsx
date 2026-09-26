@@ -56,7 +56,7 @@ export function WorkplacesPanel({
         <div>
           <h3>Offices & project sites</h3>
           <p>
-            A site belongs to a pre-execution or delivery project. Its location is
+            A site belongs to a planning or delivery project. Its location is
             checked at attendance capture.
           </p>
         </div>
@@ -217,18 +217,18 @@ export function WorkplacesPanel({
         >
           <h3>Start project attendance</h3>
           <p>
-            Release a won pre-execution into delivery. Its sites and employee
+            Release a won planning into delivery. Its sites and employee
             assignments move with it.
           </p>
           <div className={styles.filters}>
             <SelectField
               id="release-case"
-              label="Won pre-execution"
+              label="Won planning"
               required
               value={release}
               onChange={(e) => setRelease(e)}
             >
-              <option value="">Select a pre-execution</option>
+              <option value="">Select a planning</option>
               {contexts.data
                 ?.filter((c) => c.kind === "pre_project")
                 .map((c) => (
@@ -368,7 +368,7 @@ function LocationForm({
         {kind === "site" ? (
           <SelectField
             id="site-context"
-            label="Project / pre-execution"
+            label="Project / planning"
             required
             value={context}
             onChange={(e) => setContext(e)}
@@ -376,7 +376,7 @@ function LocationForm({
             <option value="">Select project</option>
             {contexts.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} · {c.kind === "project" ? "Delivery" : "Pre-execution"}
+                {c.name} · {c.kind === "project" ? "Delivery" : "Planning"}
               </option>
             ))}
           </SelectField>

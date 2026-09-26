@@ -12,7 +12,7 @@ beforeEach(()=>vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON
 afterEach(()=>vi.unstubAllGlobals());
 const initial: Quote = { id:'q',number:1,kind:'quotation',status:'draft',title:'Villa proposal',currency:'AED',validUntil:'2099-01-01',discount:0,taxRate:0,terms:'',exclusions:'',createdAt:'2026-09-08',requestIds:[],total:100,rooms:[{id:'room',name:'Living room'}],lines:[{id:'line',room:'Living room',title:'Wardrobe',quantity:1,unit:'nos',rate:100,unitCost:60,material:'Oak',finish:'Matte',specification:'Soft close'}],paymentTerms:[{id:'advance',title:'Advance',trigger:'On acceptance',percent:40,requiredForRelease:true},{id:'completion',title:'Completion',trigger:'On completion',percent:60,requiredForRelease:false}] };
 function Harness({payment=false}:{payment?:boolean}) { const [quote,setQuote]=useState(initial);return <DesignSystemProvider>{payment?<PaymentScheduleEditor quote={quote} onChange={setQuote} workspaceId="w" readOnly={false}/>:<QuotationEditor quote={quote} onChange={setQuote} workspaceId="w" caseId="c" costing readOnly={false} requests={[]} itemsOnly/>}</DesignSystemProvider>; }
-describe('Pre-execution shared tables',()=>{
+describe('Planning shared tables',()=>{
  it('keeps controlled payment fields focused and reorders the correct milestone after sorting',async()=>{
   const user=userEvent.setup();render(<Harness payment/>);
   const table=screen.getByRole('table',{name:'Payment schedule'});

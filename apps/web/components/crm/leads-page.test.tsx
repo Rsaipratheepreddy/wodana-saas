@@ -120,7 +120,7 @@ describe("LeadsPage", () => {
     expect(screen.queryByRole("button", { name: /Unassigned/ })).not.toBeInTheDocument();
   });
 
-  it.each(["table action"])("qualifies a lead through %s and keeps the pre-execution handoff", async (entry) => {
+  it.each(["table action"])("qualifies a lead through %s and keeps the planning handoff", async (entry) => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture), lead = data.items[0];
     const converted = { ...lead, status: "qualified" as const, isConverted: true, version: lead.version + 1, nextActionAt: null };
     const fetchMock = vi.fn(async (url: string) => {
@@ -148,7 +148,7 @@ describe("LeadsPage", () => {
     });
     const row = screen.getByRole("button", { name: /Open Dr Maya Nair/ }).closest("tr")!;
     expect(screen.queryByRole("dialog", { name: "Convert to opportunity" })).not.toBeInTheDocument();
-    expect(within(row).queryByRole("link", { name: /Design & Planning/ })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("link", { name: /Planning/ })).not.toBeInTheDocument();
   }, 10_000);
 
   it("opens the existing lead inspector from the table", async () => {

@@ -17,7 +17,7 @@ import styles from "./tenant-operations.module.css";
 const MODULES = [
   { id: "workspace", label: "Workspace" },
   { id: "crm", label: "CRM" },
-  { id: "pre-project", label: "Pre-execution" },
+  { id: "pre-project", label: "Planning" },
   { id: "projects", label: "Projects" },
   { id: "hrms", label: "HRMS" },
 ];

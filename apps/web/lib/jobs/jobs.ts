@@ -64,7 +64,7 @@ export function sourceLabel(type: JobSourceLink["type"]) {
     enquiry: "Enquiry",
     lead: "Qualified enquiry",
     opportunity: "Opportunity",
-    case: "Pre-execution case",
+    case: "Planning case",
     quote: "Quotation",
     project: "Project",
   } as const)[type];

@@ -60,9 +60,9 @@ export function PreProjectListPage({ initialData, search, basePath = PRE_PROJECT
     try {
       const response = await fetch(`/api/workspace/pre-projects?workspaceId=${initialData.workspaceId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId: record.opportunityId }), signal: AbortSignal.timeout(20_000) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? "Pre-execution could not be started.");
+      if (!response.ok) throw new Error(data.message ?? "Planning could not be started.");
       router.push(destination(data.id));
-    } catch (error) { setStartError(error instanceof Error ? error.message : "Pre-execution could not be started."); setOpeningId(null); }
+    } catch (error) { setStartError(error instanceof Error ? error.message : "Planning could not be started."); setOpeningId(null); }
   };
   const columns: DataGridColumn<PreProjectListItem>[] = [
     { accessorKey: "customerName", header: "Client", size: 200, meta: { primary: true, headerIcon: <ContactRound size={14}/> }, cell: ({ row: { original: record } }) => <div className={styles.qualifiedIdentity}><Avatar name={record.customerName} size="sm"/><span title={record.customerName}>{record.customerName}</span></div> },
@@ -86,16 +86,16 @@ export function PreProjectListPage({ initialData, search, basePath = PRE_PROJECT
     || (!record.qualifiedLead && record.phase === view && !["on_hold", "released", "cancelled"].includes(record.status)));
   const inTab = (id: string) => initialData.items.filter((record) => id === "all" || (id === "qualified" && record.qualifiedLead) || (id === "on_hold" && record.status === "on_hold") || (id === "released" && record.status === "released") || (id === "active" && !record.qualifiedLead && Boolean(record.phase) && !["on_hold", "released", "cancelled"].includes(record.status))).length;
   return <DesignSystemProvider className={styles.qualifiedProvider} portalContainer={portal} ref={setPortal}>
-    <section className={`${styles.page} ${styles.preProjectPage} ${styles.qualifiedPage}`} aria-label={salesPreparation ? "Sales preparation workspace" : "Pre-execution cases workspace"} aria-busy={pending}>
+    <section className={`${styles.page} ${styles.preProjectPage} ${styles.qualifiedPage}`} aria-label={salesPreparation ? "Sales preparation workspace" : "Planning cases workspace"} aria-busy={pending}>
       {startError ? <p role="alert" className={styles.hint}>{startError}</p> : null}
-      {params.has("section") ? <p className={styles.hint}>Select a pre-execution to open this section.</p> : null}
-      <div data-sales-grid>{initialData.error ? <Callout tone="danger" title="Preparation cases could not be loaded" actions={<Button size="compact" onPress={() => router.refresh()}>Try again</Button>}>{initialData.error}</Callout> : <DataGrid ariaLabel={salesPreparation ? "Sales preparation cases" : "Pre-execution cases"} columns={columns} data={visibleItems} getRowId={record => record.id} rowNumbers={false} selectable={false} toolbarLeading={<ListTabs label={t("Case lists")} value={view} onChange={setView} items={[{ id: "all", label: t("All") }, { id: "qualified", label: t("Ready to start"), count: inTab("qualified") }, { id: "active", label: t("In progress"), count: inTab("active") }, { id: "on_hold", label: t("On hold"), count: inTab("on_hold") }, { id: "released", label: t("Released"), count: inTab("released") }]} />} persistKey={salesPreparation ? "sales-preparation-cases" : "pre-project-cases"}
+      {params.has("section") ? <p className={styles.hint}>Select a planning to open this section.</p> : null}
+      <div data-sales-grid>{initialData.error ? <Callout tone="danger" title="Preparation cases could not be loaded" actions={<Button size="compact" onPress={() => router.refresh()}>Try again</Button>}>{initialData.error}</Callout> : <DataGrid ariaLabel={salesPreparation ? "Sales preparation cases" : "Planning cases"} columns={columns} data={visibleItems} getRowId={record => record.id} rowNumbers={false} selectable={false} toolbarLeading={<ListTabs label={t("Case lists")} value={view} onChange={setView} items={[{ id: "all", label: t("All") }, { id: "qualified", label: t("Ready to start"), count: inTab("qualified") }, { id: "active", label: t("In progress"), count: inTab("active") }, { id: "on_hold", label: t("On hold"), count: inTab("on_hold") }, { id: "released", label: t("Released"), count: inTab("released") }]} />} persistKey={salesPreparation ? "sales-preparation-cases" : "pre-project-cases"}
         searchLabel="Search cases" searchValue={term} onSearchChange={value => setTerm(value.slice(0, 200))}
-        exportFileName="pre-execution-cases.csv" manualPagination page={page} pageSize={24} pageCount={Math.ceil(initialData.total / 24)}
+        exportFileName="planning-cases.csv" manualPagination page={page} pageSize={24} pageCount={Math.ceil(initialData.total / 24)}
         onPageChange={next => update({ page: next > 1 ? String(next) : "" })} totalRowCount={initialData.error ? undefined : initialData.total} hasMoreRows={initialData.total > initialData.items.length}
         error={initialData.error} isLoading={pending}
         onRowAction={record => record.qualifiedLead ? void startQualified(record) : router.push(destination(record.id))}
-        emptyTitle={appliedSearch || page > 1 || view !== "all" ? "No matching cases" : salesPreparation ? "No deals in preparation" : "No pre-execution cases yet"}
+        emptyTitle={appliedSearch || page > 1 || view !== "all" ? "No matching cases" : salesPreparation ? "No deals in preparation" : "No planning cases yet"}
         emptyDescription={appliedSearch || page > 1 || view !== "all" ? "Try another view or clear the search." : salesPreparation ? "Qualify an enquiry, then prepare its quotation and first approval here. The project opens after the paid Deal File is approved." : "Qualify an enquiry in CRM and it appears here, ready to start."}
         footerActions={<>{initialData.error ? <Button size="compact" onPress={() => router.refresh()}>Try again</Button> : appliedSearch || page > 1 ? <Button size="compact" variant="quiet" onPress={() => { setTerm(""); update({ search: "", page: "" }); }}>Clear search</Button> : !initialData.items.length ? <Link className={styles.qualifiedOpen} href="/workspace/crm/leads">Open Leads <ArrowUpRight size={14}/></Link> : null}<IconButton size="compact" aria-label="Refresh cases" onPress={() => router.refresh()}><RefreshCw size={14}/></IconButton></>}
       />}</div>

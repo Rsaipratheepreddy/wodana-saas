@@ -33,7 +33,7 @@ export default async function CasePage({ params, searchParams }: {
     ["definition", "overview", "approvals"].includes(route.section) ? getDefinitionPageData(caseId) : undefined,
     route.section === "overview" ? getCaseOverviewData() : undefined,
   ]);
-  if ("error" in record) return <section style={{ padding: "2rem" }}><h1>Pre-execution unavailable</h1><p role="alert">{record.error}</p><Link href={PRE_PROJECT_ROOT}>Back to all pre-execution records</Link></section>;
+  if ("error" in record) return <section style={{ padding: "2rem" }}><h1>Planning unavailable</h1><p role="alert">{record.error}</p><Link href={PRE_PROJECT_ROOT}>Back to all planning records</Link></section>;
   if (route.section === "quotations" && query.has("quote") && commercialState && !("error" in commercialState)) {
     if (!commercialState.data.quotes.some(quote => quote.id === query.get("quote"))) notFound();
     return <QuotationBuilderShell key={query.get("quote")!} initial={commercialState} quoteId={query.get("quote")!} backHref={caseHref(caseId, new URLSearchParams(listSearch(query).toString()), "quotations")} />;

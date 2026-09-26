@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { ProjectPipelineNavigation } from "../projects/project-pipeline-navigation";
 import { caseRoute, caseHref } from "@/lib/pre-project/types";
 import { planningAreas, planningArea } from "@/lib/pre-project/sections";
@@ -9,9 +8,10 @@ import { realProjectRoute } from "@/lib/projects/routing";
 import { useState } from "react";
 import { Button as AriaButton, Tooltip, TooltipTrigger } from "react-aria-components";
 import { useSearchParams } from "next/navigation";
-import { Info, Factory, ClipboardCheck, Wallet, Palette, ChevronDown, Paperclip, Columns3, Home, FolderKanban, Inbox, Users, BellRing, CalendarDays, MessagesSquare, Workflow, ChartNoAxesCombined, FileText } from "lucide-react";
+import { Info, ChevronDown, Paperclip, Columns3, Home, FolderKanban, Inbox, Users, BellRing, CalendarDays, MessagesSquare, Workflow, ChartNoAxesCombined, FileText } from "lucide-react";
 import type { WorkspaceModuleDefinition } from "./workspace-navigation";
 import styles from "./workspace.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 const tabIcons = { home: Home, projects: FolderKanban, leads: Inbox, opportunities: Columns3, customers: Users, followUps: BellRing, calendar: CalendarDays, conversations: MessagesSquare, automations: Workflow, reports: ChartNoAxesCombined };
 
@@ -28,18 +28,13 @@ const crmTabHelp: Record<string, string> = {
 /** The existing scoped routes remain the source of truth for access and destinations. */
 export function WorkspaceFlowNavigation({ module, pathname, canPreExecution = false }: { module: WorkspaceModuleDefinition; pathname: string; canPreExecution?: boolean }) {
   const searchParams = useSearchParams();
+  const t = useT();
   const section = searchParams.get("section");
   if (pathname === "/workspace/tasks" || pathname === "/workspace/approvals") return null;
   if (["/workspace/projects/purchasing", "/workspace/projects/inventory", "/workspace/projects/factory"].includes(pathname)) return null;
   if (pathname.startsWith("/workspace/projects/new/")) return null;
   if (pathname === "/workspace/integrations" || pathname.startsWith("/workspace/integrations/")) return null;
-  if (pathname === "/workspace/projects") {
-    const production = searchParams.get("view") === "production";
-    return <div className={styles.flowHeader} data-module="crm"><nav aria-label="Project sections" className={styles.flowTabs}><div className={styles.flowTabScroll}>
-      <Link className={styles.salesTab} href="/workspace/projects?view=planning" aria-current={!production ? "page" : undefined}><Image src="/icons/projects/planning.svg" alt="" width={20} height={20} unoptimized/><span>Planning</span></Link>
-      <Link className={styles.salesTab} href="/workspace/projects?view=production" aria-current={production ? "page" : undefined}><Factory size={20} aria-hidden="true"/><span>Production</span></Link>
-    </div></nav></div>;
-  }
+  if (pathname === "/workspace/projects") return null;
   const projectRoute = realProjectRoute(pathname);
   if (module.id === "projects" && projectRoute) {
     const available = new Set(module.navigation.flatMap(group => group.items).map(item => item.href.split("/").at(-1) ?? ""));
@@ -57,16 +52,19 @@ export function WorkspaceFlowNavigation({ module, pathname, canPreExecution = fa
       query.delete("review");
       return caseHref(recordRoute.id, query, section);
     };
-    const icons: Record<string, typeof Home> = { overview: Home, approvals: ClipboardCheck, requirements: FileText, boq: Wallet, designs: Palette, quotations: FileText, contracts: Wallet, variations: Workflow };
-    return <div className={styles.flowHeader} data-module="crm">
-      <nav aria-label="Planning sections" className={styles.flowTabs}>
-        <div className={styles.flowTabScroll}>{planningAreas.map(item => {
-          const Icon = icons[item.section];
-          return <Link key={item.section} href={href(item.section)} className={styles.salesTab} aria-current={item === area ? "page" : undefined}><Icon size={16} strokeWidth={1.8} aria-hidden="true"/><span>{item.label}</span></Link>;
-        })}</div>
+    const areaLabels: Record<string, string> = { overview: t("Overview"), brief: t("Brief"), design: t("Design"), quotes: t("Quotes"), agreement: t("Agreement") };
+    const viewLabels: Record<string, string> = {
+      "client-portal": t("Client access"), "execution-release": t("Release readiness"), requirements: t("Requirements"), measurements: t("Measurements"),
+      "site-layouts": t("Site plans"), inspiration: t("Inspiration"), definition: t("Scope confirmation"), boq: t("Design quote"), quotations: t("Fit-out quote"),
+      contracts: t("Agreement"), "payment-plan": t("Payments"), approvals: t("Approvals"), variations: t("Change requests"),
+    };
+    const views = area.id === "overview" ? [] : area.sections;
+    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">
+      <nav aria-label={t("Planning sections")} className={styles.flowTabs}>
+        <div className={styles.flowTabScroll}>{planningAreas.map(item => <Link key={item.id} href={href(item.section)} className={styles.salesTab} aria-current={item === area ? "page" : undefined}><span>{areaLabels[item.id]}</span></Link>)}</div>
       </nav>
-      {area.section === "requirements" && <nav aria-label={`${area.label} views`} className={styles.commercialTabs}>
-        {area.sections.map(tab => <Link key={tab.id} href={href(tab.id)} className={styles.commercialSegment} aria-current={tab.id === activeSection ? "page" : undefined}>{tab.label}</Link>)}
+      {views.length > 1 && <nav aria-label={t("{area} views", { area: areaLabels[area.id] })} className={styles.commercialTabs}>
+        {views.map(tab => <Link key={tab.id} href={href(tab.id)} className={styles.commercialSegment} aria-current={tab.id === activeSection ? "page" : undefined}>{viewLabels[tab.id] ?? tab.label}</Link>)}
       </nav>}
     </div>;
   }

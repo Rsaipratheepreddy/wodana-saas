@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getPreProjectRedirect } from "./routes";
 
-describe("Pre-execution bookmarks", () => {
+describe("Planning bookmarks", () => {
   it.each([
     ["site-visits", "requirements"],
     ["measurements", "measurements"],

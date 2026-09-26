@@ -82,7 +82,7 @@ export async function getPreProjects(query: URLSearchParams, pendingDeal = false
     return { workspaceId, items, total: items.length, canCreate: true, canStartLead: true };
   }
   const response = await read(workspaceId, token, `?${filters}`);
-  if (!response?.ok) return { workspaceId, items: [], total: 0, canCreate: false, error: response?.status === 403 ? "You don’t have permission to view pre-execution records. Ask your workspace administrator for access." : "Pre-execution could not be loaded. Please try again." };
+  if (!response?.ok) return { workspaceId, items: [], total: 0, canCreate: false, error: response?.status === 403 ? "You don’t have permission to view planning records. Ask your workspace administrator for access." : "Planning could not be loaded. Please try again." };
   return { ...await response.json(), workspaceId };
 }
 export async function getPreProject(id: string): Promise<PreProjectCase | { error: string }> {
@@ -93,7 +93,7 @@ export async function getPreProject(id: string): Promise<PreProjectCase | { erro
   }
   const response = await read(workspaceId, token, `/${id}`);
   if (response?.status === 404) notFound();
-  if (!response?.ok) return { error: response?.status === 403 ? "You don’t have permission to open this pre-execution." : "This pre-execution could not be loaded. Please try again." };
+  if (!response?.ok) return { error: response?.status === 403 ? "You don’t have permission to open this planning." : "This planning could not be loaded. Please try again." };
   return response.json();
 }
 

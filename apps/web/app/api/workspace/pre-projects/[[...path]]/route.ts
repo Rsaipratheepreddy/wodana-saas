@@ -7,7 +7,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
   const { path = [] } = await params;
   const query = new URL(request.url).searchParams;
   const workspaceId = query.get("workspaceId") ?? "";
-  if (!UUID.test(workspaceId)||!allowedCasePath(path,request.method)) return invalidRequest("Invalid pre-execution resource.");
+  if (!UUID.test(workspaceId)||!allowedCasePath(path,request.method)) return invalidRequest("Invalid planning resource.");
   query.delete("workspaceId");
   if (query.toString().length > 1500) return invalidRequest("Search is too long.");
   const mutation=request.method!=='GET';
@@ -36,6 +36,6 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
     const text=await request.text();if(text.length>1_000_000)return invalidRequest('Request is too large.');
     try{const input=JSON.parse(text);if(!input||typeof input!=='object'||Array.isArray(input))return invalidRequest('Invalid request.');body=JSON.stringify(input);}catch{return invalidRequest('Invalid JSON request.');}
   }
-  return workspaceJsonResponse(backendPath,{method:request.method,headers:{'content-type':'application/json'},body},'The pre-execution request could not be completed.');
+  return workspaceJsonResponse(backendPath,{method:request.method,headers:{'content-type':'application/json'},body},'The planning request could not be completed.');
 }
 export {handle as GET,handle as POST,handle as PUT,handle as PATCH};

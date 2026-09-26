@@ -163,7 +163,7 @@ export const companyProfileFixture: CompanyProfileData = {
     lead: { visibleName: "Lead", visibleNamePlural: "Leads" },
     opportunity: { visibleName: "Deal", visibleNamePlural: "Deals" },
     client: { visibleName: "Client", visibleNamePlural: "Clients" },
-    pre_execution: { visibleName: "Pre-execution", visibleNamePlural: "Pre-execution" },
+    pre_execution: { visibleName: "Planning", visibleNamePlural: "Planning" },
     quotation: { visibleName: "Quotation", visibleNamePlural: "Quotations" },
     catalog: { visibleName: "Catalog", visibleNamePlural: "Catalogs" },
     vendor: { visibleName: "Vendor", visibleNamePlural: "Vendors" },

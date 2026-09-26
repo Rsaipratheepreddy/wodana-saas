@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { CalendarPlus, CheckCircle2, Play } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { CalendarPlus, Check, CheckCircle2, Play } from "lucide-react";
+import { Badge, Button, ControlledModalDialog, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -51,33 +51,50 @@ export function DesignJourney({ workspaceId, caseId, locale }: { workspaceId: st
     finally { setStarting(false); }
   };
 
-  return <div className={styles.journey}>
+  const done = view.stages.filter((stage) => stage.status === "done").length;
+  return <section aria-labelledby="design-journey-title" className={styles.journey}>
+    <header className={styles.header}>
+      <div className={styles.heading}>
+        <h3 id="design-journey-title">{t("Design")}</h3>
+        {view.journey?.packageName ? <span className={styles.package}>{view.journey.packageName}</span> : null}
+      </div>
+      {view.journey ? <span className={styles.progress} aria-label={t("{done} of {total} stages done", { done, total: view.stages.length })}>
+        <span className={styles.progressTrack}><span style={{ inlineSize: `${Math.round((done / Math.max(view.stages.length, 1)) * 100)}%` }} /></span>
+        {done}/{view.stages.length}
+      </span> : view.canStart ? <Button isLoading={starting} size="compact" variant="primary" onPress={() => void start()}><Play aria-hidden="true" size={14} />{t("Start design")}</Button> : null}
+    </header>
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
-    <SettingsSection id="design-journey" title={t("Design")}
-      actions={!view.journey && view.canStart ? <Button isLoading={starting} size="compact" variant="primary" onPress={() => void start()}><Play aria-hidden="true" size={14} />{t("Start design")}</Button> : view.journey?.packageName ? <span className={styles.package}>{view.journey.packageName}</span> : null}>
-      {!view.journey ? <SettingsRow label={t("Stages")}><span className={styles.muted}>{t("Not started")}</span></SettingsRow> : view.stages.map((stage) => <SettingsRow key={stage.stage} label={<span className={styles.stageLabel} data-status={stage.status}><span aria-hidden="true" className={styles.dot} />{labels[stage.stage] ?? stage.label}</span>}>
-        <span className={styles.value}>
-          {stage.status === "done" ? <span className={styles.muted}>{t("Done")}{stage.completedAt ? ` · ${day(stage.completedAt)}` : ""}</span> : null}
-          {stage.status === "locked" ? <span className={styles.muted}>{t("Waiting")}</span> : null}
+    {!view.journey ? <p className={styles.empty}>{t("Design starts once the design deposit is paid.")}</p> : <ol className={styles.timeline}>
+      {view.stages.map((stage) => <li className={styles.step} data-status={stage.status} data-overdue={stage.overdue || undefined} key={stage.stage}>
+        <span aria-hidden="true" className={styles.marker}>{stage.status === "done" ? <Check size={12} strokeWidth={3} /> : null}</span>
+        <div className={styles.body}>
+          <div className={styles.titleRow}>
+            <span className={styles.title}>{labels[stage.stage] ?? stage.label}</span>
+            {stage.status === "done" && stage.completedAt ? <span className={styles.meta}>{day(stage.completedAt)}</span> : null}
+            {stage.status === "active" ? (stage.dueAt ? <Badge tone={stage.overdue ? "danger" : "neutral"}>{stage.overdue ? t("Overdue") : `${t("Due")} ${time(stage.dueAt)}`}</Badge> : <Badge tone="info">{t("Now")}</Badge>) : null}
+          </div>
           {stage.status === "active" ? <>
-            {stage.ownerName ? <span className={styles.owner}>{stage.ownerName}</span> : null}
-            {stage.scheduledAt ? <span>{time(stage.scheduledAt)}</span> : null}
-            {stage.dueAt ? <Badge tone={stage.overdue ? "danger" : "neutral"}>{stage.overdue ? t("Overdue") : `${t("Due")} ${time(stage.dueAt)}`}</Badge>
-              : stage.stage === "inspiration" ? <span className={styles.muted}>{t("Timer starts with the first inspiration")}</span> : <Badge tone="info">{t("In progress")}</Badge>}
-            {stage.stage === "inspiration" ? <Button size="compact" variant="secondary" onPress={() => setDialog({ kind: "close_inspiration", stage })}>{t("Close inspiration")}</Button> : null}
-            {stage.stage === "site_visit" ? <>
-              <Button size="compact" variant="secondary" onPress={() => setDialog({ kind: "schedule", stage })}><CalendarPlus aria-hidden="true" size={13} />{stage.scheduledAt ? t("Reschedule") : t("Book visit")}</Button>
-              <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "complete_visit", stage })}><CheckCircle2 aria-hidden="true" size={13} />{t("Complete")}</Button>
-            </> : null}
+            <p className={styles.meta}>
+              {stage.ownerName ? <span>{stage.ownerName}</span> : null}
+              {stage.scheduledAt ? <span>{t("Visit")} {time(stage.scheduledAt)}</span> : null}
+              {stage.stage === "inspiration" && !stage.dueAt ? <span>{t("Timer starts with the first inspiration")}</span> : null}
+            </p>
+            {stage.stage === "inspiration" || stage.stage === "site_visit" ? <div className={styles.actions}>
+              {stage.stage === "inspiration" ? <Button size="compact" variant="secondary" onPress={() => setDialog({ kind: "close_inspiration", stage })}>{t("Close inspiration")}</Button> : null}
+              {stage.stage === "site_visit" ? <>
+                <Button size="compact" variant="secondary" onPress={() => setDialog({ kind: "schedule", stage })}><CalendarPlus aria-hidden="true" size={13} />{stage.scheduledAt ? t("Reschedule") : t("Book visit")}</Button>
+                <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "complete_visit", stage })}><CheckCircle2 aria-hidden="true" size={13} />{t("Complete")}</Button>
+              </> : null}
+            </div> : null}
           </> : null}
-        </span>
-      </SettingsRow>)}
-    </SettingsSection>
+        </div>
+      </li>)}
+    </ol>}
     {dialog?.kind === "close_inspiration" ? <CloseInspirationDialog onClose={() => setDialog(null)} onSubmit={async (note) => saved(t("Inspiration closed. The site visit is next."), await caseRequest(workspaceId, caseId, "design-journey/inspiration/close", "POST", { version: dialog.stage.version, note: note || null }))} /> : null}
     {dialog?.kind === "schedule" ? <ScheduleVisitDialog timezone={view.timezone} onClose={() => setDialog(null)} onSubmit={async (value) => saved(t("Site visit booked. The Account Manager has been invited."), await caseRequest(workspaceId, caseId, "design-journey/site-visit/schedule", "POST", { version: dialog.stage.version, ...value }))} /> : null}
     {dialog?.kind === "complete_visit" ? <CompleteVisitDialog caseId={caseId} problem={view.siteEvidenceProblem} measurements={view.measurements} onClose={() => setDialog(null)} onSubmit={async (summary) => saved(t("Site visit completed."), await caseRequest(workspaceId, caseId, "design-journey/site-visit/complete", "POST", { version: dialog.stage.version, summary }))} /> : null}
-  </div>;
+  </section>;
 }
 
 function useSubmit<T>(submit: (value: T) => Promise<unknown>) {

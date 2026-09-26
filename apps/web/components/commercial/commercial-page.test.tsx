@@ -163,7 +163,7 @@ describe("Quotation entry flow", () => {
   });
   it("keeps change requests focused without a duplicate readiness navigation", () => {
     render(<CommercialPage initial={state} record={record} section="variations" search=""/>);
-    expect(screen.queryByRole("navigation",{name:"Pre-execution readiness timeline"})).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation",{name:"Planning readiness timeline"})).not.toBeInTheDocument();
   });
   it("keeps a successful quotation creation when its follow-up read fails", async () => {
     const empty = structuredClone(state);

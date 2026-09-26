@@ -5,7 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { QuotationList } from "./quotation-list";
-import { FileText, History, Plus, RefreshCw } from "lucide-react";
+import { FileText, History, Plus } from "lucide-react";
 import {
   Button,
   ControlledModalDialog,
@@ -39,7 +39,6 @@ import {
 } from "./commercial-workflows";
 import { PreExecutionFlow } from "./pre-execution-flow";
 import { QuotationBuilderPreview } from "./quotation-builder-preview";
-import { CaseSpine } from "@/components/pre-project/case-spine";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
 const QuotationStudio = dynamic(() => import('./quotation-studio').then(module => module.QuotationStudio), { loading: PreProjectSectionLoading });
@@ -257,29 +256,7 @@ export function CommercialPage({
           <h1 className={s.visuallyHidden}>Quotations</h1>
         )}
         {section !== "quotations" && section !== "contracts" && section !== "payment-plan" && (
-          <>{!embedded && <CaseSpine compact record={record} search={search} section={section} />}
-          <header className={s.header}>
-            <div>
-              <h1>{labels[section]}</h1>
-            </div>
-            <div className={s.actions}>
-              <IconButton
-                aria-label="Reload commercial"
-                size="compact"
-                isDisabled={busy}
-                onPress={() => {
-                  const reloadLatest = () => void reload().catch((e) => setError(e.message));
-                  if (dirty) {
-                    requestConfirmation({ title: "Discard edits and reload?", body: "Your unsaved quotation edits will be replaced by the latest saved version.", confirmLabel: "Reload saved version", onConfirm: reloadLatest });
-                    return;
-                  }
-                  reloadLatest();
-                }}
-              >
-                <RefreshCw size={16} />
-              </IconButton>
-            </div>
-          </header></>
+          <h1 className={s.visuallyHidden}>{labels[section]}</h1>
         )}
         {showReadinessFlow && !embedded && (!state.data.palmFlow || state.data.palmFlow.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
         {error && (
@@ -480,7 +457,7 @@ export function CommercialPage({
                     )}
                 </div>
               </div>
-              {section==="boq"&&<div className={s.boqContext}><span>01 <strong>Scope & costing</strong></span><span>02 <Link href={quoteHref(draft.id)}>Quotation builder →</Link></span><span>03 <Link href={`${root}/contracts`}>Agreements & Payments →</Link></span><small>One set of room items. Costs stay internal.</small></div>}
+              
               {section === "boq" && <>
               <QuotationsChangeSummary
                 draft={draft}

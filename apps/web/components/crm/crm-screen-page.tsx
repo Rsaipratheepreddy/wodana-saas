@@ -52,7 +52,7 @@ const screenCopy: Record<CrmScreenId, { title: string; description: string; noun
   calendar: { title: "Calendar", description: "See CRM commitments and connected Google events.", noun: "events" },
   customers: { title: "Customers", description: "People and companies linked to enquiries and opportunities.", noun: "customers" },
   organizations: { title: "Companies", description: "Companies connected to enquiries, stakeholders, and commercial work.", noun: "companies" },
-  opportunities: { title: "Opportunities", description: "Qualified enquiries moving to a commercial decision or pre-execution.", noun: "opportunities" },
+  opportunities: { title: "Opportunities", description: "Qualified enquiries moving to a commercial decision or planning.", noun: "opportunities" },
   activities: { title: "Activities", description: "Coordinate calls, meetings, tasks, notes, and the next customer commitment.", noun: "activities" },
   conversations: { title: "Inbox", description: "Customer conversations and messages awaiting a response.", noun: "conversations" },
   sequences: { title: "Sequences", description: "Organize consistent, respectful follow-up across email, WhatsApp, and team tasks.", noun: "sequences" },

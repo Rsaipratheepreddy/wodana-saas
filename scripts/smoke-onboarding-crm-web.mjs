@@ -82,7 +82,7 @@ try {
     stage = "CRM-first rollout";
     await page.goto(`${web}/workspace/pre-projects`);
     await page.waitForURL(/\/workspace\/coming-soon\?module=pre-project$/);
-    await page.getByRole("heading", { name: "Pre-execution is being prepared for your team." }).waitFor();
+    await page.getByRole("heading", { name: "Planning is being prepared for your team." }).waitFor();
     await page.goto(`${web}/workspace/projects`);
     await page.waitForURL(/\/workspace\/coming-soon\?module=projects$/);
   }

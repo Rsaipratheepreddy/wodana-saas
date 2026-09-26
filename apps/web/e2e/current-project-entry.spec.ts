@@ -8,23 +8,23 @@ test("project entry and client planning sequence stay usable on desktop and mobi
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.goto("/workspace/projects");
   await page.context().addCookies([{ name: "wodana_access", value: "local-e2e-fixture", url: new URL(page.url()).origin }]);
-  await page.goto("/workspace/projects");
+  await page.goto("/workspace/pre-projects");
   await expect(page.getByRole("table", { name: "Client projects" })).toBeVisible();
-  await page.getByRole("button", { name: "Start project" }).click();
-  await expect(page.getByRole("dialog", { name: "Start project planning" })).toBeVisible();
+  await page.getByRole("button", { name: "Start planning" }).click();
+  await expect(page.getByRole("dialog", { name: "Start planning" })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Search opportunities" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await page.goto(`${root}/requirements`);
   const navigation = page.getByRole("navigation", { name: "Planning sections" });
   const sequence = [
-    ["Requirements", "requirements"],
-    ["Design Quote", "boq"],
-    ["Design & Specifications", "designs"],
-    ["Approvals", "approvals"],
-    ["Fitout / Furniture Quotations", "quotations"],
+    ["Overview", "overview"],
+    ["Brief", "requirements"],
+    ["Design", "designs"],
+    ["Quotes", "boq"],
+    ["Agreement", "contracts"],
   ] as const;
-  await expect(navigation.getByRole("link")).toHaveCount(8);
+  await expect(navigation.getByRole("link")).toHaveCount(5);
   for (const [label, section] of sequence) {
     const link = navigation.getByRole("link", { name: label });
     await expect(link).toHaveAttribute("href", `${root}/${section}`);

@@ -120,7 +120,7 @@ export function PreExecutionFlow({
   ];
 
   return (
-    <nav className={s.preExecutionFlow} aria-label="Pre-execution readiness timeline" data-compact={compact || undefined}>
+    <nav className={s.preExecutionFlow} aria-label="Planning readiness timeline" data-compact={compact || undefined}>
       <div className={s.flowIntro}>
         <div>
           <span>Release readiness</span>

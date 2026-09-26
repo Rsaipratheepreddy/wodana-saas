@@ -5,7 +5,7 @@ import { isCrmFirstWorkspace, type DeferredModule } from "@/lib/workspace/module
 import styles from "./page.module.css";
 
 const labels: Record<DeferredModule, string> = {
-  "pre-project": "Pre-execution",
+  "pre-project": "Planning",
   projects: "Projects",
 };
 

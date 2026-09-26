@@ -395,6 +395,9 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
     [verify, setVerify] = useState(""),
     [reference, setReference] = useState(""),
     [receiptEvidence, setReceiptEvidence] = useState("");
+  // Agreement and Payments are separate routes; follow the route's view.
+  const [viewFor, setViewFor] = useState(initialView);
+  if (viewFor !== initialView) { setViewFor(initialView); setTab(initialView); }
   const receiptPayment = state.data.payments.find((item) => item.id === verify),
     activeReceipt = receiptPayment
       ? state.data.receipts?.find(
@@ -405,20 +408,6 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
       : undefined;
   return (
     <>
-      <nav className={s.tabs} aria-label="Agreement and payment views">
-        {[
-          ["agreement", "Agreement"],
-          ["payments", "Payment schedule"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            aria-current={tab === id ? "page" : undefined}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
       {!accepted ? (
         <div className={s.empty}>
           <h2>Accept the quotation first</h2>

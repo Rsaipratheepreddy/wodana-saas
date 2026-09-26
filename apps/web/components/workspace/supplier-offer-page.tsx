@@ -71,7 +71,7 @@ export function SupplierOfferPage({ workspaceId }: { workspaceId: string }) {
   ], []);
 
   return <Container as="main" size="full"><Stack gap={5}>
-    <PageHeader eyebrow="Pre-execution" title="Supplier offers" description="Compare permissioned purchase offers by item, entity, currency, source and validity. Selling-price users cannot see this data." />
+    <PageHeader eyebrow="Planning" title="Supplier offers" description="Compare permissioned purchase offers by item, entity, currency, source and validity. Selling-price users cannot see this data." />
     <Callout tone="info" title="Purchase evidence only">Currency conversion is never implied. Offers outside the legal entity&apos;s base currency remain marked for conversion before selection.</Callout>
     <DataGrid
       ariaLabel="Supplier offers"

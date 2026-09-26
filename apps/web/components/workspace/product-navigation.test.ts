@@ -14,7 +14,7 @@ describe('product navigation route ownership', () => {
     ['/workspace/crm/follow-ups', '', 'sales'],
     ['/workspace/catalogs', 'view=materials', 'resources'],
     ['/workspace/pre-projects/catalogs', '', 'resources'],
-    ['/workspace/pre-projects/cases/case-1/quotations', '', 'projects'],
+    ['/workspace/pre-projects/cases/case-1/quotations', '', 'planning'],
     ['/workspace/projects/project-1', '', 'projects'],
     ['/workspace/projects/purchasing', '', 'purchasing'],
     ['/workspace/projects/inventory', '', 'inventory'],

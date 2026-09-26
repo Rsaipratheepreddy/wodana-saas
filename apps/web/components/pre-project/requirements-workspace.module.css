@@ -210,3 +210,5 @@
 .compact .cards { padding-inline:0; }
 .srOnly { position:absolute; inline-size:1px; block-size:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 @media(pointer:coarse) { .compact .toolbar :is(:global(.wd-search-field),:global(.wd-select-button),:global(.wd-button)) { block-size:44px; min-block-size:44px; } }
+.visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.heading:has(> .visuallyHidden) { justify-content: flex-end; }

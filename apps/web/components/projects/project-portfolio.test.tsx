@@ -28,7 +28,7 @@ describe("project portfolio", () => {
     expect(push).toHaveBeenCalledWith("/workspace/projects/project-id/overview");
   });
 
-  it("loads eligible pre-execution cases before creating a project", async () => {
+  it("loads eligible planning cases before creating a project", async () => {
     const user = userEvent.setup();
     vi.mocked(jsonRequest)
       .mockResolvedValueOnce([{ id: "case-id", title: "Villa case", customer: "Amira Hassan" }])
@@ -36,7 +36,7 @@ describe("project portfolio", () => {
     render(<ProjectPortfolio rows={[]} today="2026-09-17" workspaceId="workspace" />);
     await user.click(screen.getByRole("button", { name: "Start project" }));
     await waitFor(() => expect(jsonRequest).toHaveBeenCalledWith("/api/projects/candidates?workspaceId=workspace"));
-    await user.click(screen.getByRole("button", { name: /Pre-execution case/ }));
+    await user.click(screen.getByRole("button", { name: /Planning case/ }));
     await user.click(screen.getByRole("option", { name: "Villa case · Amira Hassan" }));
     await user.click(screen.getByRole("button", { name: "Create planning workspace" }));
     await waitFor(() => expect(jsonRequest).toHaveBeenCalledWith("/api/projects/planning?workspaceId=workspace", "POST", { caseId: "case-id" }));

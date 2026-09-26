@@ -295,7 +295,7 @@ describe("project workspace", () => {
     expect(screen.getByRole("region", { name: "Project task timeline" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add milestone" })).toBeTruthy();
   });
-  it("opens the exact protected pre-execution file from a released design document", () => {
+  it("opens the exact protected planning file from a released design document", () => {
     const released = structuredClone(initial);
     released.data.documents = [{
       id: "document",

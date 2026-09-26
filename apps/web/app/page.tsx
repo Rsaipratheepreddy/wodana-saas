@@ -6,7 +6,7 @@ import { classifyTenantHost } from "@/lib/auth/tenant-host";
 
 export const metadata: Metadata = {
   title: "Wodana — One connected flow for interior businesses",
-  description: "Run enquiries, pre-execution, quotations, project delivery, people, and client handover in one connected Wodana workspace.",
+  description: "Run enquiries, planning, quotations, project delivery, people, and client handover in one connected Wodana workspace.",
 };
 
 export default async function Home() {

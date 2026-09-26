@@ -120,7 +120,7 @@ describe("CrmOpportunities", () => {
     expect(within(dialog).getByRole("button", { name: "Close dialog" })).toBeInTheDocument();
     expect(await within(dialog).findByRole("heading", { name: String(record.title) })).toBeInTheDocument();
     expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Open Design & Planning" }));
+    await user.click(within(dialog).getByRole("button", { name: "Open Planning" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith(expect.stringContaining("/cases/exact-case/overview")));
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ opportunityId: record.id });
     vi.unstubAllGlobals();

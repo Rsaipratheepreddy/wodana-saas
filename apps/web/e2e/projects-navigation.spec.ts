@@ -11,8 +11,6 @@ test("production opens the project workspace and its delivery sections", async (
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await signIn(page);
-  await page.getByRole("navigation", { name: "Project sections" }).getByRole("link", { name: "Production" }).click();
-  await expect(page).toHaveURL("/workspace/projects?view=production");
   await page.getByRole("table", { name: "Client projects" }).getByRole("link", { name: "Jumeirah villa interiors" }).click();
   await expect(page).toHaveURL(/\/workspace\/projects\/demo\/overview(?:\?|$)/);
   await expect(page.getByRole("region", { name: "Project items workspace" })).toBeVisible();

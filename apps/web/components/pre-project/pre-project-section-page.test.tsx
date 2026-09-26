@@ -6,7 +6,7 @@ import { PreProjectSectionPage } from "./pre-project-section-page";
 const preProjectModule = workspaceModules.find((item) => item.id === "pre-project")!;
 const sections = preProjectModule.navigation.flatMap((group) => group.items);
 
-describe("Pre-execution navigation", () => {
+describe("Planning navigation", () => {
   it("groups every agreed destination without execution operations or duplicate approval centers", () => {
     expect(preProjectModule.navigation.map((group) => [group.label ?? "Main", group.items.map((item) => item.label)])).toEqual([
       ["Main", ["Cases", "Catalog", "Supplier Offers", "Quotation Templates"]],
@@ -17,7 +17,7 @@ describe("Pre-execution navigation", () => {
     expect(new Set(workspaceScreens.map((item) => item.href)).size).toBe(workspaceScreens.length);
   });
 
-  it.each(sections)("resolves $label within Pre-execution and explains its planned scope", (section) => {
+  it.each(sections)("resolves $label within Planning and explains its planned scope", (section) => {
     expect(findWorkspaceModule(section.href).id).toBe(section.id === "pre-project-catalogs" ? "workspace" : "pre-project");
     expect(findWorkspaceScreen(section.href).id).toBe(section.id);
     expect(section.description).toBeTruthy();

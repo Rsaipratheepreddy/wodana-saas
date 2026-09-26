@@ -373,7 +373,8 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
     { id: "work", label: "Business", items: [
       ...(salesEntry ? [{ id: "sales", label: "Sales", href: salesEntry.href, icon: "opportunities" as const }] : []),
       ...(allowed.has("customers") || allowed.has("projects-overview") ? [{ id: "clients", label: "Clients", href: allowed.has("customers") ? "/workspace/crm/customers" : "/workspace/projects/clients", icon: "customers" as const }] : []),
-      ...((allowed.has("projects-overview") || allowed.has("pre-projects")) ? [{ id: "projects", label: "Projects", href: "/workspace/projects", icon: "projects" as const }] : []),
+      ...(allowed.has("pre-projects") ? [{ id: "planning", label: "Planning", href: "/workspace/pre-projects", icon: "preProjects" as const }] : []),
+      ...(allowed.has("projects-overview") ? [{ id: "projects", label: "Projects", href: "/workspace/projects", icon: "projects" as const }] : []),
     ] },
     { id: "operations", label: "Operations", items: [
       ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: "Purchasing", href: "/workspace/projects/purchasing", icon: "procurement" as const }] : []),
@@ -404,7 +405,7 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/approvals")) return exists("approvals");
   if (under("/workspace/crm/follow-ups") && query.get("view") === "activity") return exists("my-activity");
   if (under("/workspace/crm")) return exists("sales");
-  if (under("/workspace/pre-projects")) return exists("projects");
+  if (under("/workspace/pre-projects")) return exists("planning") ?? exists("projects");
   if (under("/workspace/projects/clients")) return exists("clients");
   if (under("/workspace/projects/purchasing")) return exists("purchasing");
   if (under("/workspace/projects/inventory")) return exists("inventory");

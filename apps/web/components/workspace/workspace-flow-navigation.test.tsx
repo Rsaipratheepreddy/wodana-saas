@@ -5,30 +5,25 @@ import { workspaceModules } from "./workspace-navigation";
 let query = "";
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(query) }));
 const root = "/workspace/pre-projects/cases/38b5a26d-0c2f-4608-8d4d-efe6024e7c3e";
-it('separates Planning and Production in the project portfolio header',()=>{
+it('shows no view switch on the Projects page; Planning has its own sidebar entry',()=>{
   query='';
   const view=render(<WorkspaceFlowNavigation module={workspaceModules[3]} pathname="/workspace/projects"/>);
-  expect(screen.getByRole('link',{name:'Planning'})).toHaveAttribute('aria-current','page');
-  expect(screen.getByRole('link',{name:'Production'})).toHaveAttribute('href','/workspace/projects?view=production');
-  query='view=production';
-  view.rerender(<WorkspaceFlowNavigation module={workspaceModules[3]} pathname="/workspace/projects"/>);
-  expect(screen.getByRole('link',{name:'Production'})).toHaveAttribute('aria-current','page');
-  expect(screen.getByRole('link',{name:'Planning'})).not.toHaveAttribute('aria-current');
+  expect(view.container).toBeEmptyDOMElement();
 });
 it("opens planning sections within the same project with one active destination", () => {
   query="";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/contracts`}/>);
   const nav=screen.getByRole("navigation",{name:"Planning sections"});
-  expect(within(nav).getAllByRole("link")).toHaveLength(8);
-  expect(within(nav).getByRole("link",{name:"Agreements & Payments"})).toHaveAttribute("aria-current","page");
-  expect(within(nav).getByRole("link",{name:"Change Requests"})).toHaveAttribute("href",`${root}/variations`);
+  expect(within(nav).getAllByRole("link")).toHaveLength(5);
+  expect(within(nav).getByRole("link",{name:"Agreement"})).toHaveAttribute("aria-current","page");
+  expect(screen.getByRole("link",{name:"Change requests"})).toHaveAttribute("href",`${root}/variations`);
   expect(screen.queryByRole("navigation",{name:"Commercial sections"})).not.toBeInTheDocument();
 });
 it("keeps redirected measurement views active and clears their query when leaving",()=>{
   query="tab=measurements";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/requirements`}/>);
   expect(screen.getByRole("link",{name:"Measurements"})).toHaveAttribute("aria-current","page");
-  expect(screen.getByRole("link",{name:"Design & Specifications"})).toHaveAttribute("href",`${root}/designs`);
+  expect(screen.getByRole("link",{name:"Design"})).toHaveAttribute("href",`${root}/designs`);
 });
 it("uses the same compact tab treatment for Sales",()=>{
   query="";
@@ -66,7 +61,8 @@ it("follows the client planning order and clears review selection when changing 
   query="review=scope";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/approvals`}/>);
   const links=within(screen.getByRole("navigation",{name:"Planning sections"})).getAllByRole("link");
-  expect(links.slice(0,5).map(link=>link.textContent)).toEqual(["Requirements","Design Quote","Design & Specifications","Approvals","Fitout / Furniture Quotations"]);
+  expect(links.map(link=>link.textContent)).toEqual(["Overview","Brief","Design","Quotes","Agreement"]);
   expect(screen.getByRole("link",{name:"Approvals"})).toHaveAttribute("aria-current","page");
-  expect(screen.getByRole("link",{name:"Requirements"})).toHaveAttribute("href",`${root}/requirements`);
+  expect(screen.getByRole("link",{name:"Brief"})).toHaveAttribute("href",`${root}/requirements`);
+  expect(screen.getByRole("link",{name:"Approvals"})).not.toHaveAttribute("href",expect.stringContaining("review="));
 });

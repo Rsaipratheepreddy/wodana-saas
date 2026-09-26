@@ -30,7 +30,6 @@
 .shell[data-case-workspace] .breadcrumbs,
 .shell[data-case-workspace] .topModuleNav,
 .shell[data-case-workspace] .topModuleMenu,
-.shell[data-case-workspace] .caseHeader > div,
 .shell[data-case-workspace] .globalUtilities { display: none; }
 .shell[data-case-workspace] .woddyControl { margin-inline-start: auto; }
 .shell[data-focus] .workspaceArea,
@@ -39,9 +38,9 @@
 .shell[data-case-workspace] .topbar { min-block-size: 2.25rem; padding-inline: var(--wd-space-4); }
 .shell[data-focus] .topbar { z-index: 0; }
 .caseHeader { display: flex; align-items: center; gap: var(--wd-space-5); min-inline-size: 0; }
-.caseHeader > div { min-inline-size: 0; }
+.caseHeader > div { min-inline-size: 0; display: flex; align-items: baseline; gap: var(--wd-space-2); }
 .caseHeader strong { display: block; font-size: var(--wd-text-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 32rem; }
-.caseHeader small { display: block; margin-block-start: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.caseHeader small { display: block; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .caseHeader .focusBack { flex-shrink: 0; }
 @media (max-width: 850px) {
   .caseHeader { gap: var(--wd-space-3); flex: 1; }

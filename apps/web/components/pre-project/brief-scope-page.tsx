@@ -158,7 +158,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     <div className={workspace.workspace}>
       <div className={workspace.main}>
         {!compact && <div className={workspace.heading}>
-          <div><h2>{view === 'requirement' ? 'Requirements' : view === 'measurements' ? 'Measurements' : view === 'file' ? 'Site plans' : 'Inspiration'}</h2><p>{view === 'requirement' ? 'What the client needs, with notes, photos and specifications in one place.' : 'Keep project information connected to the right room and requirement.'}</p></div>
+          <h2 className={workspace.visuallyHidden}>{view === 'requirement' ? 'Requirements' : view === 'measurements' ? 'Measurements' : view === 'file' ? 'Site plans' : 'Inspiration'}</h2>
           <div className={workspace.actions}><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}>Project brief</Button><Button size="compact" variant="quiet" onPress={() => { setAddingRoom(false); setRoomsOpen(true); }}>Manage rooms</Button></div>
         </div>}
         {!data.canEdit && <p className={workspace.readOnly} role="note">{blockedReason}</p>}

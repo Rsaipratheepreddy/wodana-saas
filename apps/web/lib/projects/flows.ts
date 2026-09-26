@@ -22,7 +22,7 @@ export const projectFlows: Record<ProjectSection, ProjectFlow> = {
   overview: {
     title: "Dashboard",
     summary: "Follow the approved scope, project dates, blockers and decisions in one place.",
-    receives: "The approved BOQ, drawings, contract and release conditions from Pre-execution.",
+    receives: "The approved BOQ, drawings, contract and release conditions from Planning.",
     steps: [
       { title: "Plan", detail: "Break the scope into tasks and book teams." },
       { title: "Deliver", detail: "Coordinate materials, factory jobs and site work." },
@@ -134,7 +134,7 @@ export const projectFlows: Record<ProjectSection, ProjectFlow> = {
   documents: {
     title: "Scope & Design",
     summary: "Keep drawings, specifications, decisions and delivery evidence linked to the work.",
-    receives: "Pre-execution references and documents created throughout project delivery.",
+    receives: "Planning references and documents created throughout project delivery.",
     steps: [
       { title: "Link the record", detail: "Attach each file to its scope item, task, order or inspection." },
       { title: "Review revisions", detail: "Identify the current version and its required reviewers." },
@@ -172,6 +172,6 @@ export const changeRequestFlow: ProjectFlow = {
     { title: "Apply the approved change", detail: "Record the variation and revise affected orders, drawings, bookings and releases." },
   ],
   outcome: "One linked change record, an approved scope revision and visible cost and schedule effects.",
-  note: "Keep the original approved BOQ. Pending requests do not automatically change the contract value. Link the same record to Pre-execution Variations; delays and defects have their own workflows.",
+  note: "Keep the original approved BOQ. Pending requests do not automatically change the contract value. Link the same record to Planning Variations; delays and defects have their own workflows.",
   related: ["plan-teams", "documents", "procurement"],
 };
