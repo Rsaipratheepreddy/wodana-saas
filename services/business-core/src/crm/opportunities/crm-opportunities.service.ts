@@ -1,4 +1,5 @@
 import { OpportunityDiscoveryService } from "./discovery.service";
+import { opportunityFunnel } from "./opportunity-funnel";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException, Optional } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -217,6 +218,7 @@ export class CrmOpportunitiesService {
         stageHistory: history.rows,
         forecastHistory: canViewSensitiveValues ? snapshots.rows : snapshots.rows.map((row) => this.presentOpportunity(row as Row, false)),
         projectLink: project.rows[0] ?? null,
+        funnel: await opportunityFunnel(client, workspaceId, opportunityId, this.discovery ? (await this.discovery.missing(client, workspaceId, opportunityId)).length : null),
       };
     });
   }

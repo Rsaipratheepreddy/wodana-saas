@@ -108,7 +108,7 @@ describe("CrmOpportunities", () => {
   it("opens card details in a modal and starts the exact opportunity case", async () => {
     const data = structuredClone(crmScreenFixture("opportunities"));
     const record = data.items[0];
-    vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}` ? { ...record, version: 1 } : path === "pipelines" ? data.supporting.pipelines : { data: [] });
+    vi.mocked(crmRequest).mockImplementation(async (_workspace, path) => path === `opportunities/${record.id}` ? { ...record, version: 1, funnel: [{ key: "enquiry", state: "done", detail: "E-1", at: null }, { key: "discovery", state: "current", detail: null, at: null }, { key: "intro", state: "upcoming", detail: null, at: null }, { key: "design", state: "upcoming", detail: null, at: null }, { key: "quote", state: "upcoming", detail: null, at: null }, { key: "deal", state: "upcoming", detail: null, at: null }] } : path === "pipelines" ? data.supporting.pipelines : { data: [] });
     const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "exact-case" }) });
     vi.stubGlobal("fetch", fetcher);
     const user = userEvent.setup();
@@ -119,10 +119,12 @@ describe("CrmOpportunities", () => {
     expect(within(dialog).queryByRole("heading", { name: "Opportunity details" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Close dialog" })).toBeInTheDocument();
     expect(await within(dialog).findByRole("heading", { name: String(record.title) })).toBeInTheDocument();
-    expect(within(dialog).getByRole("tab", { name: "Details" })).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Open Planning" }));
+    expect(within(dialog).getByRole("tab", { name: "Progress" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Design/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Start Planning" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith(expect.stringContaining("/cases/exact-case/overview")));
-    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ opportunityId: record.id });
+    const start = fetcher.mock.calls.find(([url, init]) => String(url).includes("/api/workspace/pre-projects") && init?.method === "POST");
+    expect(JSON.parse(start![1].body)).toEqual({ opportunityId: record.id });
     vi.unstubAllGlobals();
   });
 

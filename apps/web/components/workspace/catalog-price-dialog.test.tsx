@@ -25,7 +25,7 @@ it("saves a dated selling price against the material without changing its identi
  const unit={...blankCatalogRecord("unit"),id:"unit",catalogId:"catalog",name:"Square foot",code:"SQFT",version:1};
  const material={...blankCatalogRecord("material"),id:"material",catalogId:"catalog",name:"Plywood",code:"PLY",version:1,links:[{relation:"unit",targetId:unit.id}]};
  const onSave=vi.fn(async r=>({...r,version:1})),onSaved=vi.fn();
- render(<DesignSystemProvider><CatalogPriceDialog target={material} items={[material,unit]} canManage canViewCosts onClose={vi.fn()} onSave={onSave} onSaved={onSaved} onArchive={vi.fn()}/></DesignSystemProvider>);
+ render(<DesignSystemProvider locale="en-IN" currency="INR"><CatalogPriceDialog target={material} items={[material,unit]} canManage canViewCosts onClose={vi.fn()} onSave={onSave} onSaved={onSaved} onArchive={vi.fn()}/></DesignSystemProvider>);
  await user.type(screen.getByLabelText("Price per unit",{exact:false}),"150");
  await user.click(screen.getByRole("button",{name:/Internal cost Price type/}));
  await user.click(screen.getByRole("option",{name:"Selling price"}));

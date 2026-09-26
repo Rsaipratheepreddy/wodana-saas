@@ -43,7 +43,7 @@ describe("CrmScreenPage", () => {
 
     await interaction.click(screen.getByRole("button", { name: /DIFC executive office fit-out/ }));
     const dialog = await screen.findByRole("dialog", { name: "DIFC executive office fit-out" });
-    expect(within(dialog).getByText(/Pipeline: Design & build sales/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("tab", { name: "Progress" })).toBeInTheDocument();
   });
 
   it("shows a permission state without exposing a misleading empty grid", () => {

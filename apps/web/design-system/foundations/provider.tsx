@@ -35,10 +35,10 @@ export type DesignSystemProviderProps = Omit<HTMLAttributes<HTMLDivElement>, "di
 const DEFAULT_SETTINGS: DesignSystemSettings = {
   theme: "light",
   density: "comfortable",
-  locale: "en-IN",
+  locale: "en",
   direction: "ltr",
-  currency: "INR",
-  timeZone: "Asia/Kolkata",
+  currency: "USD",
+  timeZone: "UTC",
   portalContainer: null,
 };
 
@@ -51,10 +51,10 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
       className,
       theme = DEFAULT_SETTINGS.theme,
       density = DEFAULT_SETTINGS.density,
-      locale = DEFAULT_SETTINGS.locale,
+      locale: localeProp,
       direction: directionOverride,
-      currency = DEFAULT_SETTINGS.currency,
-      timeZone = DEFAULT_SETTINGS.timeZone,
+      currency: currencyProp,
+      timeZone: timeZoneProp,
       portalContainer = null,
       ...props
     },
@@ -63,6 +63,11 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     // Text direction follows the UI language the person chose; the workspace locale only formats
     // numbers, dates and money. React Aria gets a locale in that language so keyboard and overlay
     // placement mirror too.
+    // Money, dates and numbers follow the workspace's region: a nested provider inherits it unless told otherwise.
+    const parent = useContext(DesignSystemContext);
+    const locale = localeProp ?? parent.locale;
+    const currency = currencyProp ?? parent.currency;
+    const timeZone = timeZoneProp ?? parent.timeZone;
     const uiLanguage = useContext(UiLanguageContext);
     const direction = directionOverride ?? languageDirection(uiLanguage ?? locale);
     const region = locale.split("-")[1];
@@ -91,6 +96,13 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     );
   },
 );
+
+/** Sets the workspace region for every design-system provider below it. */
+export function WorkspaceRegionProvider({ locale, currency, timeZone, children }: { locale?: string; currency?: string; timeZone?: string; children: ReactNode }) {
+  const parent = useContext(DesignSystemContext);
+  const value = useMemo(() => ({ ...parent, locale: locale ?? parent.locale, currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone }), [parent, locale, currency, timeZone]);
+  return <DesignSystemContext.Provider value={value}>{children}</DesignSystemContext.Provider>;
+}
 
 export function useDesignSystem(): DesignSystemSettings {
   return useContext(DesignSystemContext);

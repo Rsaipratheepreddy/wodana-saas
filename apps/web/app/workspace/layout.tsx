@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { getMyProfile } from "@/lib/workspace/profile.server";
 import { I18nProvider } from "@/lib/i18n/i18n-provider";
+import { WorkspaceRegionProvider } from "@/design-system";
+import { getWorkspaceRegion } from "@/lib/workspace/region.server";
 import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
 import { scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
 
@@ -31,8 +33,10 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
   const appearance = await getMyProfile(activeMembership?.workspaceId);
   const user = { email: profile.primaryEmail, name: profile.displayName, id: profile.id, avatarUrl: appearance?.photoUrl ?? undefined, avatarPreset: appearance?.avatarPreset ?? "auto" };
   const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
+  const region = process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true" ? {} : await getWorkspaceRegion(activeMembership?.workspaceId);
   return (
     <I18nProvider language={language}>
+    <WorkspaceRegionProvider {...region}>
     <WorkspaceShell
       modules={scopeSupplyNavigation(scopePeopleNavigation(
         visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
@@ -45,6 +49,7 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       {!(process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") ? <SessionMonitor /> : null}
       {children}
     </WorkspaceShell>
+    </WorkspaceRegionProvider>
     </I18nProvider>
   );
 }

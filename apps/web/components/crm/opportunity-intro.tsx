@@ -29,7 +29,8 @@ export function OpportunityIntro({ workspaceId, opportunityId, locale, onSaved }
   const members = useCrmResource<unknown>(workspaceId, "members");
   const [dialog, setDialog] = useState<"book" | "designer" | null>(null);
   const [notice, setNotice] = useState("");
-  const view = resource.data;
+  // Only a well-formed intro view is used; anything else waits or shows the error.
+  const view = resource.data && typeof resource.data === "object" && Array.isArray((resource.data as { blockers?: unknown }).blockers) ? resource.data : undefined;
   if (resource.failure) return <InlineNotice message={resource.failure} tone="error" />;
   if (!view) return <Skeleton lines={4} />;
 

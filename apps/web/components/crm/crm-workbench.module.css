@@ -69,13 +69,8 @@
 .opportunitySummary dd { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
 .opportunityActions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-2); }
 .opportunityWarning { padding: var(--wd-space-3) var(--wd-space-3); border-inline-start: 3px solid #bc633a; border-radius: var(--wd-radius-2xs); background: var(--wd-color-warning-subtle); color: var(--wd-color-danger) !important; }
-.opportunityNextStep { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-space-3) var(--wd-space-4); padding-block: var(--wd-space-1); }
-.opportunityNextStep > div { flex: 1 1 18rem; }
-.opportunityNextStep h3 { margin-block-end: var(--wd-space-1-5); }
-.opportunityNextStep :global(.wd-button) { flex: 0 0 auto; }
-.opportunityPipeline { flex-basis: 100%; font-size: var(--wd-text-xs); }
 @media (max-width: 62rem) { .opportunitySummary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 40rem) { .opportunitySummary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .opportunityIdentity { flex-basis: 100%; } .opportunityNextStep :global(.wd-button) { inline-size: 100%; } }
+@media (max-width: 40rem) { .opportunitySummary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .opportunityIdentity { flex-basis: 100%; } }
 
 .enquiryDetail > .toolbar { align-items: flex-start; gap: var(--wd-space-4); }
 .enquiryDetail h2 { font-size: var(--wd-text-xl); line-height: 1.35; margin: 0 0 var(--wd-space-1-5); font-weight: 600; }
@@ -289,3 +284,46 @@
 .changeHistory dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
 .changeHistory dd svg { flex: none; color: var(--wd-color-text-tertiary); }
 .changeHistory [data-old] { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+
+/* Opportunity funnel: a compact timeline from enquiry to Deal File; each step opens its work below. */
+.opportunityDetail .opportunityIdentity h2 { font-family: var(--wd-font-sans); letter-spacing: normal; text-transform: none; }
+.opportunityClient { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); text-decoration: none; }
+.opportunityClient:hover { color: var(--wd-color-text); }
+.funnel { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.funnel li { position: relative; min-inline-size: 0; }
+.funnel li + li::before { content: ""; position: absolute; z-index: 0; inset-block-start: calc(var(--wd-space-2) + var(--wd-space-1)); inset-inline: calc(-50% + var(--wd-space-2)) calc(50% + var(--wd-space-2)); block-size: 2px; background: var(--wd-color-structural-divider); }
+.funnel li[data-state="done"] + li::before { background: var(--wd-color-success); }
+.funnel button { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: var(--wd-space-1); inline-size: 100%; padding: var(--wd-space-1-5) var(--wd-space-1); border: 1px solid transparent; border-radius: var(--wd-radius-md); background: none; color: inherit; font: inherit; text-align: center; cursor: pointer; }
+.funnel button:hover { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-hover); }
+.funnel button:hover .funnelText strong { text-decoration: none; color: var(--wd-color-text); }
+.funnel button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.funnel li[data-selected] button { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-muted); }
+.funnelDot { display: grid; place-items: center; inline-size: var(--wd-space-3); block-size: var(--wd-space-3); border: 2px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-surface); }
+.funnel li[data-state="done"] .funnelDot { border-color: var(--wd-color-success); background: var(--wd-color-success); }
+.funnel li[data-state="current"] .funnelDot { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary); }
+.funnel li[data-state="active"] .funnelDot { border-color: var(--wd-color-action-primary); }
+.funnelText { display: grid; min-inline-size: 0; line-height: 1.25; }
+.funnelText strong { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.funnelText small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); overflow-wrap: anywhere; }
+.funnel li[data-state="upcoming"] .funnelText strong { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }
+@media (max-width: 40rem) {
+  .funnel { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--wd-space-1); }
+  .funnel li + li::before { display: none; }
+}
+.progress { display: flex; flex-direction: column; gap: var(--wd-space-2); }
+.stepBody { padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.stepPanel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-4); padding-block: var(--wd-space-3); }
+.stepPanel p { display: grid; gap: var(--wd-space-0-5); margin: 0; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.stepPanel p small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-regular); }
+.stepLink { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-3); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; }
+.stepLink:hover { border-color: var(--wd-color-text-secondary); background: var(--wd-color-surface-hover); }
+.stepLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+@media (max-width: 40rem) {
+  .funnel { grid-template-columns: 1fr; gap: var(--wd-space-1); }
+  .funnel li + li::before { display: none; }
+  .funnel button { flex-direction: row; text-align: start; }
+}
+
+.editOpportunity { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.editRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); }
+@media (max-width: 40rem) { .editRow { grid-template-columns: 1fr; } }

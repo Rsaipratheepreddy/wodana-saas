@@ -19,7 +19,10 @@
 .schedule { display: grid; gap: var(--wd-space-3); }
 .schedule h3 { display: flex; align-items: center; gap: var(--wd-space-1-5); margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
 .schedule h3 svg { color: var(--crm-accent); }
-.dateFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items:end; gap: var(--wd-space-3); }
+.dateFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); align-items: start; gap: var(--wd-space-3); }
+/* Date and time controls share one height so their labels and boxes line up. */
+.dateFields :global(.wd-date-group) { box-sizing: border-box; block-size: var(--wd-control-lg); }
+.dateFields :global(.wd-date-group > button) { min-block-size: 0; block-size: 100%; }
 .dateFields label { display: grid; gap: var(--wd-space-1-5); font-size: var(--wd-text-xs); }
 .dateFields input { inline-size: 100%; min-inline-size: 0; box-sizing: border-box; block-size: 2.5rem; padding-inline: var(--wd-space-3); border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); }
 .shortcuts { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); }
