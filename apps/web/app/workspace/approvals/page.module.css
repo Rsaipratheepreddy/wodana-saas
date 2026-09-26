@@ -1,7 +1,7 @@
 .page { min-inline-size: 0; padding: var(--wd-space-5); color: var(--wd-color-text); }
 .header h1 { margin: 0; font-size: var(--wd-text-xl); font-weight: 650; }
 .header p { margin: var(--wd-space-1) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-.tabs { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-block: var(--wd-space-5) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.tabs { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-block: 0 var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .tabs a { min-block-size: 40px; display: inline-flex; align-items: center; padding-inline: var(--wd-space-3); border-block-end: 2px solid transparent; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: 550; text-decoration: none; }
 .tabs a[aria-current="page"] { border-color: var(--wd-color-action-primary); color: var(--wd-color-text); }
 .tabs a:focus-visible, .table a:focus-visible { outline: 2px solid var(--wd-color-action-primary); outline-offset: 2px; }
@@ -20,3 +20,4 @@
 .pagination a { color: var(--wd-color-link); text-underline-offset: 3px; }
 .pagination a:focus-visible { outline: 2px solid var(--wd-color-action-primary); outline-offset: 2px; }
 @media (max-width: 600px) { .page { padding: var(--wd-space-3); } }
+.visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

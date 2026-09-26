@@ -5,6 +5,7 @@ import { seedDefaultNotificationTemplates } from "../notifications/default-templ
 import { DesignJourneyService } from "./design-journey.service";
 import { processDesignDeadlines, startInspirationTimer, startJourney } from "./design-journey.store";
 import { syncDesignStages } from "./design-stage-sync";
+import { designQueue, noticeDesignStep } from "../pre-projects/design-notices";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -161,6 +162,47 @@ integration("design journey (PLM-047, PLM-048, PLM-044)", () => {
       expect(signed.stages.every((row) => row.status === "done")).toBe(true);
       const told = (await client.query(`SELECT recipient_id, subject, deep_link FROM notifications WHERE workspace_id=$1 AND event_type='design.signed_off' AND channel='in_app'`, [ids.workspaceId])).rows;
       expect(told).toEqual([{ recipient_id: ids.amUser, subject: "Design signed off · Maya Client", deep_link: `/workspace/pre-projects/cases/${ids.caseId}/quotations` }]);
+    });
+  });
+
+  it("queues what's waiting on each person and tells the right people at each review step", async () => {
+    await withCase({ spacePlanning: false, renders: false }, async (client, ids) => {
+      const asset = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO pre_project_brief_assets(id,workspace_id,case_id,original_name,mime_type,byte_size,object_key,sha256,created_by) VALUES($1,$2,$3,'a.pdf','application/pdf',1,'k',repeat('a',64),$4)", [asset, ids.workspaceId, ids.caseId, ids.designerUser]);
+      const make = async (title: string, status: string, reviewer: string | null, expires: string | null = null) => {
+        const id = randomUUID(), version = randomUUID();
+        await client.query("INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,stage,created_by) VALUES($1,$2,$3,$4,'concept','concepts',$5)", [id, ids.workspaceId, ids.caseId, title, ids.designerUser]);
+        await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status,reviewer_id,client_review_expires_at) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,$9)", [version, ids.workspaceId, ids.caseId, id, asset, ids.designerUser, status, reviewer, expires]);
+        return id;
+      };
+      await make("For the AM to review", "internal_review", ids.amUser);
+      await make("Unassigned review", "internal_review", null);
+      await make("With the client", "client_review", null, new Date(Date.now() + 86_400_000).toISOString());
+      await make("Expired with client", "client_review", null, new Date(Date.now() - 86_400_000).toISOString());
+      await make("Ready to present", "internal_approved", ids.amUser);
+      await make("Sent back", "changes_requested", ids.amUser);
+      await make("Still a draft", "draft", null);
+      await client.query("SET LOCAL session_replication_role = origin");
+      const titles = async (user: string, can: { review: boolean; recordClient: boolean }) => (await designQueue(client, ids.workspaceId, user, can)).map((item) => `${item.title}:${item.step}`).sort();
+      expect(await titles(ids.amUser, { review: true, recordClient: true })).toEqual(["For the AM to review:review", "Unassigned review:review", "With the client:record_client"].sort());
+      expect(await titles(ids.amUser, { review: false, recordClient: false })).toEqual(["For the AM to review:review"]);
+      expect(await titles(ids.designerUser, { review: false, recordClient: false })).toEqual(["Ready to present:present", "Sent back:revise"].sort());
+
+      const step = (action: string, fromStatus: string, actorUserId: string | null) => noticeDesignStep(client, { workspaceId: ids.workspaceId, caseId: ids.caseId, designId: randomUUID(), title: "Kitchen concept", action, fromStatus, actorUserId, reviewerUserId: ids.amUser, uploaderUserId: ids.designerUser, note: "Make the island longer", activityId: randomUUID() });
+      await step("internal_review", "draft", ids.designerUser);
+      await step("changes_requested", "internal_review", ids.amUser);
+      await step("approved", "client_review", null);
+      await step("internal_review", "draft", ids.amUser); // the reviewer sending their own file is told nothing
+      const inbox = (await client.query(`SELECT recipient_id, subject, channel FROM notifications WHERE workspace_id = $1 AND event_type LIKE 'design.%' AND event_type NOT LIKE 'design.stage%' ORDER BY subject, channel`, [ids.workspaceId])).rows;
+      expect(inbox).toEqual(expect.arrayContaining([
+        { recipient_id: ids.amUser, subject: "Review Kitchen concept · Maya Client", channel: "in_app" },
+        { recipient_id: ids.amUser, subject: "Please review: Kitchen concept (Maya Client)", channel: "email" },
+        { recipient_id: ids.designerUser, subject: "Changes needed: Kitchen concept", channel: "in_app" },
+        { recipient_id: ids.designerUser, subject: "Maya Client approved Kitchen concept", channel: "in_app" },
+        { recipient_id: ids.amUser, subject: "Maya Client approved Kitchen concept", channel: "in_app" },
+      ]));
+      expect(inbox.filter((row) => row.subject.startsWith("Review Kitchen")).length).toBe(1);
     });
   });
 });

@@ -155,3 +155,13 @@ export async function getDefinitionPageData(id: string): Promise<DefinitionPageD
   if (!definition?.ok || !readiness?.ok) return { error: definition?.status === 403 || readiness?.status === 403 ? "You don’t have access to this scope confirmation." : "Scope confirmation could not be loaded. Please try again." };
   return { workspaceId, caseId: id, definition: await definition.json() as DefinitionState, readiness: await readiness.json() as ReadinessState };
 }
+
+export type DesignQueueItem = { designId: string; caseId: string; title: string; stage: string | null; roomName: string | null; clientName: string; caseTitle: string; status: string; step: "review" | "record_client" | "present" | "revise"; since: string; dueAt: string | null };
+/** Designs waiting on the signed-in person across active planning cases. */
+export async function getDesignQueue(): Promise<{ items: DesignQueueItem[]; error?: string }> {
+  const { workspaceId, token } = await context();
+  if (isE2eBypass()) return { items: [] };
+  const response = await read(workspaceId, token, "/design-queue");
+  if (!response?.ok) return { items: [], error: "Design reviews could not be loaded." };
+  return await response.json() as { items: DesignQueueItem[] };
+}

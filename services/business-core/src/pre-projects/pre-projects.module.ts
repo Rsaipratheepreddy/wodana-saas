@@ -21,7 +21,8 @@ import { PreProjectDefinitionService } from "./pre-project-definition.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/pre-projects")
 export class PreProjectsController {
-  constructor(private readonly service: PreProjectsService, private readonly readiness: PreProjectReadinessService) {}
+  constructor(private readonly service: PreProjectsService, private readonly readiness: PreProjectReadinessService, private readonly designs: DesignService) {}
+  @Get("design-queue") designQueue(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.designs.queue(actor, workspaceId); }
   @Get() list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: ListPreProjectsDto) { return this.service.list(actor, workspaceId, query); }
   @Get("candidates") candidates(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: ListPreProjectsDto) { return this.service.candidates(actor, workspaceId, query); }
   @Get("start-options") startOptions(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.service.startOptions(actor, workspaceId); }

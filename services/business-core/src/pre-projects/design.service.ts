@@ -5,6 +5,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { BriefService } from "./brief.service";
 import { syncDesignStages } from "../design/design-stage-sync";
+import { designQueue, noticeDesignMentions, noticeDesignStep } from "./design-notices";
 import { STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
 import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
 
@@ -50,6 +51,13 @@ export class DesignService {
    const portal=await this.portalReadiness(client,workspaceId,caseId);
    const members=await client.query(`SELECT u.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active' AND u.status='active' ORDER BY u.display_name`,[workspaceId]);
    return {members:members.rows,folders:folders.rows,reviewers:reviewers.rows,portal,actorId:user.userId,canReview:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),canRecordClient:context.status==='active'&&await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions'),items:(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 ORDER BY d.updated_at DESC,d.id`,[workspaceId,caseId])).rows};
+  });
+ }
+ /** Designs waiting on this person across the workspace's active planning cases (Home → Approvals). */
+ queue(actor:RequestActor,workspaceId:string) {
+  return this.access.withPermission(actor,workspaceId,'pre_projects.view',async(client,user)=>{
+   const can={review:await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.review_designs'),recordClient:await this.access.hasPermission(client,workspaceId,user.userId,'pre_projects.record_client_design_decisions')};
+   return {items:await designQueue(client,workspaceId,user.userId,can)};
   });
  }
  save(actor:RequestActor,workspaceId:string,caseId:string,input:SaveDesignDto) {
@@ -131,6 +139,7 @@ export class DesignService {
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_'+input.action,input);
    if(input.action==='approved')await syncDesignStages(client,workspaceId,caseId,userId);
+   if(input.action!=='comment')await noticeDesignStep(client,{workspaceId,caseId,designId:id,title:design.title,action:input.action,fromStatus:latest.status,actorUserId:userId,reviewerUserId:input.reviewerId??latest.reviewerId??null,uploaderUserId:latest.createdBy??null,note:input.note,activityId:input.id});
    return this.read(client,workspaceId,caseId,id);
   });
  }
@@ -195,7 +204,9 @@ export class DesignService {
    if(input.mentions?.length){const members=await client.query(`SELECT DISTINCT user_id FROM workspace_memberships WHERE workspace_id=$1 AND status='active' AND user_id=ANY($2::uuid[])`,[w,input.mentions]);if(members.rows.length!==input.mentions.length)throw new BadRequestException('Choose active workspace members.');}
    await client.query(`INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by,anchor,mentions) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)`,[input.id,w,c,id,input.versionId,input.title,input.blocking,userId,input.anchor == null ? null : JSON.stringify(input.anchor),JSON.stringify(input.mentions??[])]);
    await client.query(`INSERT INTO pre_project_design_messages(id,workspace_id,case_id,design_id,thread_id,body,created_by) VALUES($1,$2,$3,$4,$1,$5,$6)`,[input.id,w,c,id,input.body,userId]);
-   await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_started',input);return this.read(client,w,c,id);
+   await this.touch(client,w,c,id);await this.event(client,w,c,userId,id,'design_thread_started',input);
+   await noticeDesignMentions(client,{workspaceId:w,caseId:c,designId:id,title:design.title,actorUserId:userId,mentions:input.mentions??[],body:input.body,threadId:input.id});
+   return this.read(client,w,c,id);
   });
  }
  replyThread(actor:RequestActor,w:string,c:string,id:string,threadId:string,input:ReplyDesignThreadDto){

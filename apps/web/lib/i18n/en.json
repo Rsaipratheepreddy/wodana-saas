@@ -1226,5 +1226,14 @@
   "Decision due {date}": "Decision due {date}",
   "1 file without a stage": "1 file without a stage",
   "1 design waiting for approval": "1 design waiting for approval",
-  "1 blocking comment open": "1 blocking comment open"
+  "1 blocking comment open": "1 blocking comment open",
+  "Design reviews didn't load": "Design reviews didn't load",
+  "Nothing waiting on you": "Nothing waiting on you",
+  "Designs to review, present or revise appear here.": "Designs to review, present or revise appear here.",
+  "Room · stage": "Room · stage",
+  "Your step": "Your step",
+  "Waiting since": "Waiting since",
+  "Due {date}": "Due {date}",
+  "Designs waiting on you": "Designs waiting on you",
+  "Give the design a title.": "Give the design a title."
 }

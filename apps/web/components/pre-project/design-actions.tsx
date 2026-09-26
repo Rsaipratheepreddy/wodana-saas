@@ -4,11 +4,12 @@ import { useRef, useState } from "react";
 import { today, type CalendarDate } from "@internationalized/date";
 import { Badge, Button, Checkbox, DateField, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type DesignOptions } from "@/lib/pre-project/content";
-import { DESIGN_STATUS_LABEL, designStatusTone, latestOf } from "@/lib/pre-project/design-workspace";
+import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
+import { DESIGN_STATUS_LABEL, DELIVERABLE_STAGES, designStatusTone, latestOf } from "@/lib/pre-project/design-workspace";
+import { RoomField } from "./room-manager";
 import styles from "./design-workspace.module.css";
 
-type Mode = null | "review" | "send_back" | "present" | "client_approved" | "client_changes";
+type Mode = null | "review" | "send_back" | "present" | "client_approved" | "client_changes" | "details";
 const SOURCES = [{ id: "meeting", label: "In a meeting" }, { id: "email", label: "By email" }, { id: "phone", label: "By phone" }, { id: "document", label: "Signed document" }];
 
 /**
@@ -16,7 +17,7 @@ const SOURCES = [{ id: "meeting", label: "In a meeting" }, { id: "email", label:
  * approve or send back, present to the client, record the client's decision, upload a revision.
  * Each step is offered only to people allowed to take it.
  */
-export function DesignActions({ data, design, options, onUpdate }: { data: CaseContent; design: CaseDesign; options: DesignOptions; onUpdate: (design: CaseDesign) => void }) {
+export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: { data: CaseContent; design: CaseDesign; options: DesignOptions; onUpdate: (design: CaseDesign) => void; onRoomAdded?: (room: CaseRoom) => void }) {
   const t = useT();
   const { timeZone } = useDesignSystem();
   const latest = latestOf(design);
@@ -32,6 +33,9 @@ export function DesignActions({ data, design, options, onUpdate }: { data: CaseC
   const [error, setError] = useState("");
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const fileInput = useRef<HTMLInputElement>(null);
+  const [title, setTitle] = useState(design.title);
+  const [roomId, setRoomId] = useState<string | null>(design.roomId);
+  const [stage, setStage] = useState<string | null>(design.stage ?? null);
   if (!latest) return null;
   const status = latest.status;
   const writable = data.canEdit && !design.archivedAt;
@@ -63,11 +67,23 @@ export function DesignActions({ data, design, options, onUpdate }: { data: CaseC
     finally { setBusy(false); if (fileInput.current) fileInput.current.value = ""; }
   };
 
+  // Title, room and stage; room and stage lock once the file has entered review (a new revision reopens them).
+  const saveDetails = async (archived = false) => {
+    if (!title.trim()) { setError(t("Give the design a title.")); return; }
+    setBusy(true); setError("");
+    try {
+      onUpdate(await caseRequest<CaseDesign>(data.workspaceId, data.caseId, "designs", "PUT", { id: design.id, version: design.version, title: title.trim(), documentType: design.documentType, description: design.description ?? "", roomId, scopeEntryId: design.scopeEntryId ?? null, folderId: design.folderId ?? null, stage, archived }));
+      setMode(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    finally { setBusy(false); }
+  };
+  const locked = status !== "draft";
   const steps: React.ReactNode[] = [];
   if (writable && status === "draft") steps.push(<Button key="review" size="compact" variant="primary" onPress={() => open("review")}>{t("Send for review")}</Button>);
   if (status === "internal_review" && isReviewer) steps.push(<Button key="approve" size="compact" variant="primary" isLoading={busy && mode === null} onPress={() => void send("internal_approved")}>{t("Approve")}</Button>, <Button key="back" size="compact" onPress={() => open("send_back")}>{t("Send back")}</Button>);
   if (writable && status === "internal_approved") steps.push(<Button key="present" size="compact" variant="primary" onPress={() => open("present")}>{t("Present to client")}</Button>);
   if (status === "client_review" && options.canRecordClient) steps.push(<Button key="yes" size="compact" variant="primary" onPress={() => open("client_approved")}>{t("Client approved")}</Button>, <Button key="no" size="compact" onPress={() => open("client_changes")}>{t("Client wants changes")}</Button>);
+  if (writable) steps.push(<Button key="details" size="compact" variant="quiet" onPress={() => { setTitle(design.title); setRoomId(design.roomId); setStage(design.stage ?? null); open("details"); }}>{t("Edit details")}</Button>);
   if (writable && ["approved", "changes_requested", "rejected", "expired"].includes(status)) steps.push(<Button key="revision" size="compact" variant={status === "approved" ? "secondary" : "primary"} isLoading={busy} onPress={() => fileInput.current?.click()}>{t("Upload revision")}</Button>);
 
   return <section className={styles.actions} aria-label={t("Review")}>
@@ -78,6 +94,18 @@ export function DesignActions({ data, design, options, onUpdate }: { data: CaseC
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {mode === null ? steps.length ? <div className={styles.actionRow}>{steps}</div> : null : null}
     <input ref={fileInput} type="file" accept="image/*,application/pdf" hidden onChange={(event) => void uploadRevision(event.target.files?.[0])} />
+
+    {mode === "details" ? <div className={styles.actionForm}>
+      <TextInput isRequired label={t("Title")} maxLength={240} value={title} onChange={setTitle} />
+      <RoomField data={data} value={roomId} isDisabled={locked} onChange={(room) => setRoomId(room.id)} onRoomAdded={(room) => onRoomAdded?.(room)} />
+      <SelectField label={t("Stage")} isDisabled={locked} items={DELIVERABLE_STAGES.map((id) => ({ id, label: t(({ space_planning: "Space planning", concepts: "Concepts", material_selection: "Material selection", renders: "3D renders" } as Record<string, string>)[id] as never) }))} selectedKey={stage} onSelectionChange={(key) => setStage(key ? String(key) : null)} />
+      <div className={styles.actionRow}>
+        <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => void saveDetails(true)}>{t("Archive")}</Button>
+        <span className={styles.spacer} />
+        <Button size="compact" onPress={() => setMode(null)} isDisabled={busy}>{t("Cancel")}</Button>
+        <Button size="compact" variant="primary" isLoading={busy} onPress={() => void saveDetails()}>{t("Save")}</Button>
+      </div>
+    </div> : null}
 
     {mode === "review" ? <div className={styles.actionForm}>
       <SelectField label={t("Reviewer")} items={options.reviewers.map((item) => ({ id: item.id, label: item.name }))} selectedKey={reviewer} onSelectionChange={(key) => setReviewer(key ? String(key) : null)} />

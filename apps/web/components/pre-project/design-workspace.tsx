@@ -154,7 +154,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
       <p className={styles.muted}>{t("The next stage opens straight away.")}</p>
     </CaseModal> : null}
     {selected ? <DesignReviewModal data={data} design={selected} options={review} onClose={() => openFile(null)} onUpdate={updated}
-      actions={<DesignActions data={data} design={selected} options={review} onUpdate={updated} />} /> : null}
+      actions={<DesignActions data={data} design={selected} options={review} onUpdate={(design) => { if (design.archivedAt) openFile(null); updated(design); }} onRoomAdded={(room) => setData((value) => ({ ...value, rooms: [...value.rooms, room] }))} />} /> : null}
   </section>;
 }
 
