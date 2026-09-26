@@ -13,6 +13,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 4) return method === "GET";
   if (path.length === 5 && path[4] === "catalog") return method === "GET";
   if (path.length === 5 && path[4] === "lines") return method === "POST";
+  if (path.length === 7 && path[4] === "lines" && QUOTE_ID.test(path[5]) && path[6] === "to-catalog") return method === "POST";
   if (path.length === 5 && ["discounts", "tax", "payment-terms", "document"].includes(path[4])) return method === "PUT";
   if (path.length === 6 && path[4] === "ai" && ["draft", "edit"].includes(path[5])) return method === "POST";
   if (path.length === 5 && path[4] === "comments") return ["GET", "POST"].includes(method);

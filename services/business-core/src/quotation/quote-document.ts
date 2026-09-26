@@ -11,7 +11,7 @@ export type QuoteDocument = {
   accent: string | null;
   sections: Record<(typeof SECTIONS)[number], boolean>;
   title: string; subtitle: string; intro: string; terms: string; exclusions: string;
-  itemsView: "area" | "trade" | "area_trade"; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean;
+  itemsView: "area" | "trade" | "area_trade"; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; showImages: boolean;
   coverAssetId: string | null;
 };
 
@@ -20,7 +20,7 @@ export function defaultDocument(input: { terms?: string; exclusions?: string; vi
     style: "atelier", accent: null,
     sections: { cover: true, intro: true, summary: true, items: true, payments: true, terms: true, acceptance: true },
     title: "", subtitle: "", intro: "", terms: input.terms ?? "", exclusions: input.exclusions ?? "",
-    itemsView: input.view ?? "area", itemsDetail: "lines", showRates: true, showDescriptions: true, coverAssetId: null,
+    itemsView: input.view ?? "area", itemsDetail: "lines", showRates: true, showDescriptions: true, showImages: false, coverAssetId: null,
   };
 }
 
@@ -54,7 +54,7 @@ export function parseDocument(input: Record<string, unknown>, current: QuoteDocu
   text("title", 200); text("subtitle", 300); text("intro", 6000); text("terms", 30000); text("exclusions", 12000);
   if (input.itemsView !== undefined) { if (!["area", "trade", "area_trade"].includes(String(input.itemsView))) throw new BadRequestException("Choose how items are grouped."); next.itemsView = input.itemsView as QuoteDocument["itemsView"]; }
   if (input.itemsDetail !== undefined) { if (!["lines", "totals"].includes(String(input.itemsDetail))) throw new BadRequestException("Choose lines or totals."); next.itemsDetail = input.itemsDetail as QuoteDocument["itemsDetail"]; }
-  for (const key of ["showRates", "showDescriptions"] as const)
+  for (const key of ["showRates", "showDescriptions", "showImages"] as const)
     if (input[key] !== undefined) { if (typeof input[key] !== "boolean") throw new BadRequestException("Expected yes or no."); next[key] = input[key] as boolean; }
   if (input.coverAssetId !== undefined) {
     if (input.coverAssetId !== null && (typeof input.coverAssetId !== "string" || !UUID.test(input.coverAssetId))) throw new BadRequestException("Choose a cover image from this project.");

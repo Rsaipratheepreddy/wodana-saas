@@ -24,6 +24,7 @@ export type BuilderLine = {
   optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
   catalogSnapshot: { name?: string; code?: string; priceReason?: string | null } | null; buildUpComplete: boolean | null;
   updatedAt: string; updatedByName: string | null; components: BuildUpRow[];
+  imageAssetId: string | null; catalogImageId: string | null;
 };
 
 export type SectionTotal = { key: string; gross: string; discount: string; net: string };
@@ -73,7 +74,7 @@ export type AiChange = {
 };
 export type AiProposal = { summary: string; changes: AiChange[] };
 
-export type CatalogHit = { id: string; code: string; name: string; itemType: string; unitCode: string; categoryName: string | null; description: string | null; rate: string | null; hasBuildUp: boolean };
+export type CatalogHit = { id: string; code: string; name: string; itemType: string; unitCode: string; categoryName: string | null; description: string | null; rate: string | null; hasBuildUp: boolean; imageId: string | null };
 
 export type LineOp =
   | { op: "upsert"; line: Partial<Omit<BuilderLine, "components">> & { id: string; version?: number; components?: Array<Partial<BuildUpRow>> } }
@@ -97,12 +98,12 @@ export type DocumentSection = "cover" | "intro" | "summary" | "items" | "payment
 export type QuoteDocument = {
   style: DocumentStyleId; accent: string | null; sections: Record<DocumentSection, boolean>;
   title: string; subtitle: string; intro: string; terms: string; exclusions: string;
-  itemsView: QuoteView; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; coverAssetId: string | null;
+  itemsView: QuoteView; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; showImages: boolean; coverAssetId: string | null;
 };
 
 export type TemplateLine = {
   title: string; description: string; unit: string; quantity: string; rate: string; unitCost: string | null; kind: string; formula: string | null;
   length: string | null; width: string | null; height: string | null; count: string | null; markupPercent: string | null; pricingMode: "rate" | "build_up";
-  catalogItemId: string | null; workPackageId: string | null; optional: boolean; components: Array<Partial<BuildUpRow>>;
+  catalogItemId: string | null; workPackageId: string | null; optional: boolean; components: Array<Partial<BuildUpRow>>; areaName: string | null;
 };
 export type QuoteTemplate = { id: string; name: string; lines: TemplateLine[] };

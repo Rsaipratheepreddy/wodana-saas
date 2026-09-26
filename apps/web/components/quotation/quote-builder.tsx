@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Percent, Plus } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
+import { ArrowLeft, Bookmark, Image as ImageIcon, Percent, Plus } from "lucide-react";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SegmentedControl, Skeleton, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { quoteApi, QuotationRequestError } from "@/lib/quotation/client";
+import { catalogImageUrl, quoteApi, QuotationRequestError } from "@/lib/quotation/client";
+import { caseApi, caseRequest, saveCaseRoom, type CaseAsset } from "@/lib/pre-project/content";
 import { groupLines, money, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteThread, QuoteView } from "@/lib/quotation/types";
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
@@ -44,8 +45,11 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [dragged, setDragged] = useState<string | null>(null);
   const [addingArea, setAddingArea] = useState(false);
   const [tab, setTab] = useState<"items" | "document">(initialTab);
+  // Showing pictures is a per-person choice, remembered on this device.
+  const images = useSyncExternalStore(subscribePictures, readPictures, () => false);
+  const toggleImages = () => { try { window.localStorage.setItem(PICTURES_KEY, images ? "0" : "1"); } catch { /* storage unavailable */ } window.dispatchEvent(new Event(PICTURES_KEY)); };
   const [inserting, setInserting] = useState(false);
-  const [savingTemplate, setSavingTemplate] = useState<{ scope: "area" | "trade"; target: string; name: string } | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
   const [threads, setThreads] = useState<QuoteThread[]>([]);
   const [members, setMembers] = useState<Array<{ id: string; name: string }>>([]);
   const [commentAt, setCommentAt] = useState<{ anchor: QuoteAnchor; title: string } | null>(null);
@@ -94,6 +98,16 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     const base = { id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId, ...fields };
     send([hit ? { op: "catalog", itemId: hit.id, line: base } : { op: "upsert", line: base }]);
   };
+  // A brand-new item: the line is created, then added to the catalog (price and picture can follow).
+  const newCatalogLine = async (draft: Draft, title: string) => {
+    setDrafts((current) => current.filter((item) => item.id !== draft.id));
+    try {
+      const created = await api.apply([{ op: "upsert", line: { id: draft.id, title, areaId: draft.areaId, workPackageId: draft.workPackageId } }]);
+      const line = created.lines.find((item) => item.id === draft.id);
+      setState(line ? await api.toCatalog(draft.id, line.version) : created);
+      setOpen(draft.id);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); void load(); }
+  };
   const addDraft = (group: { areaId: string | null; workPackageId: string | null }) => setDrafts((current) => [...current, { id: crypto.randomUUID(), ...group }]);
 
   const loadThreads = useCallback(async () => {
@@ -111,6 +125,25 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     onComments: () => void loadThreads(),
   });
   const openComments = (anchor: QuoteAnchor, title: string) => setCommentAt({ anchor, title });
+  const lineImage = (line: BuilderLine) => line.imageAssetId ? caseApi(workspaceId, caseId, `assets/${line.imageAssetId}?preview=1`) : line.catalogImageId ? catalogImageUrl(workspaceId, line.catalogImageId) : null;
+  const setLineImage = async (line: BuilderLine, file: File | null) => {
+    if (!file) { changeLine(line, line.imageAssetId ? { imageAssetId: null } : { catalogImageId: null }); return; }
+    try {
+      const body = new FormData(); body.append("file", file);
+      const asset = await caseRequest<CaseAsset>(workspaceId, caseId, `assets/${crypto.randomUUID()}`, "POST", body);
+      changeLine(line, { imageAssetId: asset.id });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not upload the picture.")); }
+  };
+  // A new area straight from a line's area picker; the line moves into it.
+  const newArea = async (line: BuilderLine) => {
+    const name = window.prompt(t("Name of the new area"))?.trim();
+    if (!name) return;
+    try {
+      const room = await saveCaseRoom(workspaceId, caseId, { id: crypto.randomUUID(), version: 0, name: name.slice(0, 120), catalogRecordId: null } as never);
+      await load();
+      changeLine(line, { areaId: room.id });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+  };
 
   const search = useCallback(async (text: string, signal: AbortSignal) => (await api.search(text, signal)).items, [api]);
 
@@ -127,6 +160,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const menu = (line: BuilderLine, action: string) => {
     if (action === "details") setOpen(line.id);
     else if (action === "comment") openComments({ kind: "line", key: line.id }, line.title);
+    else if (action === "to_catalog") {
+      void api.toCatalog(line.id, line.version).then((next) => { setState(next); setError(""); }).catch((cause: Error) => { setError(cause.message); void load(); });
+    }
     else if (action === "optional") changeLine(line, { optional: !line.optional });
     else if (action === "delete") {
       setState((current) => current ? { ...current, lines: current.lines.filter((item) => item.id !== line.id) } : current);
@@ -191,14 +227,17 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {group.lines.map((line) => <QuoteRow key={line.id} line={line} column={column} areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
           currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
           comments={threadsAt(threads, { kind: "line", key: line.id })} editingBy={people.filter((person) => person.lineId === line.id)}
+          image={images ? { url: lineImage(line) } : null} onImage={(file) => void setLineImage(line, file)} catalogThumb={(id) => catalogImageUrl(workspaceId, id)} onNewArea={() => void newArea(line)}
           onComments={() => openComments({ kind: "line", key: line.id }, line.title)}
           onChange={(fields) => changeLine(line, fields)}
           onCatalog={(hit) => send([{ op: "catalog", itemId: hit.id, line: { id: line.id } }])}
           onOpen={() => setOpen(line.id)} onMenu={(action) => menu(line, action)} onDragStart={() => setDragged(line.id)}
           onDropBefore={() => dropBefore({ lineId: line.id, areaId: line.areaId, workPackageId: line.workPackageId }, view)} onNewTrade={() => void newTrade(line)} />)}
         {groupDrafts.map((draft) => <QuoteRow key={draft.id} draft line={{ ...EMPTY_LINE, id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId }} column={column} areas={state.areas} trades={state.workPackages}
+          image={images ? { url: null } : null} catalogThumb={(id) => catalogImageUrl(workspaceId, id)}
           amount={null} currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
           onChange={(fields) => { if (fields.title) createFromDraft(draft, fields); }} onCatalog={(hit) => createFromDraft(draft, {}, hit)}
+          onNewCatalogItem={(title) => void newCatalogLine(draft, title)}
           onOpen={() => undefined} onMenu={() => undefined} onDragStart={() => undefined} onDropBefore={() => undefined} onNewTrade={() => undefined} />)}
         {state.canEdit && (depth > 0 || !group.children) ? <div role="row" className={styles.addRow} data-empty={empty || undefined}>
           <button type="button" onClick={() => addDraft(context)}><Plus aria-hidden="true" size={14} />{empty ? t("Add the first item") : t("Add item")}</button>
@@ -240,6 +279,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       {state.canEdit && view !== "trade" ? <Button size="compact" variant="quiet" onPress={() => setAddingArea(true)}><Plus aria-hidden="true" size={14} />{t("Area")}</Button> : null}
       {state.canEdit && view !== "area" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
       {state.canEdit ? <Button size="compact" variant="quiet" onPress={() => setInserting(true)}><Bookmark aria-hidden="true" size={14} />{t("Insert template")}</Button> : null}
+      {state.lines.length ? <Button size="compact" variant="quiet" onPress={() => setSavingTemplate({ scope: "quote", target: "", name: state.quote.title })}>{t("Save quote as template")}</Button> : null}
+      <ToggleButton size="compact" isSelected={images} onPress={toggleImages}><ImageIcon aria-hidden="true" size={14} />{t("Pictures")}</ToggleButton>
     </div>
 
     {state.canEdit ? <QuoteAssistant state={state} api={api} starting={!state.lines.length} onApply={(ops) => send(ops)} onError={setError} /> : null}
@@ -247,7 +288,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
     <div className={styles.body}>
-      <div role="grid" aria-label={t("Quote lines")} className={styles.grid} data-column={column ?? "none"}
+      <div role="grid" aria-label={t("Quote lines")} className={styles.grid} data-column={column ?? "none"} data-images={images || undefined}
         onFocusCapture={(event) => {
           const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
           const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
@@ -256,6 +297,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         onBlurCapture={() => { focus.current = { lineId: null, field: null }; }}>
         <div role="row" className={styles.columns}>
           <span role="columnheader" />
+          {images ? <span role="columnheader" data-col="image" /> : null}
           <span role="columnheader">{t("Item")}</span>
           {column ? <span role="columnheader" data-col="pick">{column === "area" ? t("Area") : t("Work package")}</span> : null}
           <span role="columnheader" data-numeric>{t("Qty")}</span>
@@ -278,7 +320,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     </div>
 
     </>}
-    {inserting ? <InsertTemplate state={state} api={api} onInsert={(ops) => send(ops)} onClose={() => setInserting(false)} /> : null}
+    {inserting ? <InsertTemplate state={state} api={api} onInsert={(ops) => send(ops)} onClose={() => { setInserting(false); void load(); }}
+      createArea={(name) => saveCaseRoom(workspaceId, caseId, { id: crypto.randomUUID(), version: 0, name: name.slice(0, 120), catalogRecordId: null } as never)} /> : null}
     {savingTemplate ? <SaveTemplate api={api} scope={savingTemplate.scope} target={savingTemplate.target} name={savingTemplate.name} onClose={() => setSavingTemplate(null)} onError={setError} /> : null}
     {addingArea ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
       onClose={() => setAddingArea(false)} onPick={() => { setAddingArea(false); void load(); }} /> : null}
@@ -290,11 +333,15 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   </section>;
 }
 
+const PICTURES_KEY = "wodana.quote.images";
+const readPictures = () => { try { return window.localStorage.getItem(PICTURES_KEY) === "1"; } catch { return false; } };
+const subscribePictures = (notify: () => void) => { window.addEventListener(PICTURES_KEY, notify); window.addEventListener("storage", notify); return () => { window.removeEventListener(PICTURES_KEY, notify); window.removeEventListener("storage", notify); }; };
+
 const EMPTY_LINE: BuilderLine = {
   id: "", position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "", quantity: "1",
   formula: null, formulaError: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null, markupPercent: null,
   pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null,
-  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [],
+  catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null,
 };
 
 /** Combines queued changes: several edits to one line become one upsert with the version we last saw. */

@@ -5,7 +5,7 @@ import { Printer } from "lucide-react";
 import { Button, SegmentedControl, SelectField, Switch, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseApi, caseRequest, type CaseDesign } from "@/lib/pre-project/content";
-import type { quoteApi } from "@/lib/quotation/client";
+import { catalogImageUrl, type quoteApi } from "@/lib/quotation/client";
 import { DOCUMENT_STYLES, documentVariables } from "@/lib/quotation/document-styles";
 import { VIEW_LABEL } from "@/lib/quotation/format";
 import { printDocument } from "@/lib/quotation/print-document";
@@ -116,6 +116,7 @@ export function DocumentStudio({ state, api, workspaceId, caseId, onState, onErr
           options={[{ id: "lines", label: t("Every item") }, { id: "totals", label: t("Group totals") }]} />
         <Switch isDisabled={readOnly} isSelected={doc.showRates} onChange={(on) => change({ showRates: on })}>{t("Show rates")}</Switch>
         <Switch isDisabled={readOnly} isSelected={doc.showDescriptions} onChange={(on) => change({ showDescriptions: on })}>{t("Show descriptions")}</Switch>
+        <Switch isDisabled={readOnly} isSelected={doc.showImages} onChange={(on) => change({ showImages: on })}>{t("Show pictures")}</Switch>
       </section>
       {doc.sections.terms ? <section>
         <h3>{t("Terms")}</h3>
@@ -131,7 +132,8 @@ export function DocumentStudio({ state, api, workspaceId, caseId, onState, onErr
         </Button>
       </div>
       <div className={styles.preview} ref={preview}>
-        <div ref={sheet} style={{ zoom }}><QuoteDocumentView state={view} coverUrl={coverUrl} /></div>
+        <div ref={sheet} style={{ zoom }}><QuoteDocumentView state={view} coverUrl={coverUrl}
+          imageOf={(line) => line.imageAssetId ? caseApi(workspaceId, caseId, `assets/${line.imageAssetId}?preview=1`) : line.catalogImageId ? catalogImageUrl(workspaceId, line.catalogImageId) : null} /></div>
       </div>
     </div>
   </div>;

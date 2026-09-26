@@ -13,7 +13,7 @@ import styles from "./quote-document.module.css";
  * or trade), payments, terms and acceptance. Everything priced comes from the quote itself; only the
  * look and the words are the document's. One sheet per section; long sections run onto more pages in print.
  */
-export function QuoteDocumentView({ state, coverUrl }: { state: BuilderState; coverUrl: string | null }) {
+export function QuoteDocumentView({ state, coverUrl, imageOf }: { state: BuilderState; coverUrl: string | null; imageOf?: (line: BuilderLine) => string | null }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const doc = state.document;
@@ -35,13 +35,14 @@ export function QuoteDocumentView({ state, coverUrl }: { state: BuilderState; co
   const Head = ({ children }: { children: ReactNode }) => <header className={styles.pageHead}><span>{state.brand.logo ? <img src={state.brand.logo} alt="" /> : state.brand.name}</span><span>{children}</span><span>{reference}</span></header>;
   const lineRow = (line: BuilderLine, index: number) => <tr key={line.id} data-optional={line.optional || undefined}>
     <td>{index + 1}</td>
+    {doc.showImages ? <td className={styles.pictureCell}>{imageOf?.(line) ? <img src={imageOf(line)!} alt="" /> : null}</td> : null}
     <td><strong>{line.title}</strong>{doc.showDescriptions && line.description ? <small>{line.description}</small> : null}{line.optional ? <em>{t("Optional")}</em> : null}{line.kind === "client_supplied" ? <em>{t("Supplied by the client")}</em> : null}</td>
     <td>{plain(line.quantity, locale)} {line.unit}</td>
     {doc.showRates ? <td>{m(line.rate)}</td> : null}
     <td>{m(amountOf.get(line.id) ?? 0)}</td>
   </tr>;
   const table = (lines: BuilderLine[]) => <table className={styles.items} data-table={style.table}>
-    <thead><tr><th>#</th><th>{t("Item")}</th><th>{t("Qty")}</th>{doc.showRates ? <th>{t("Rate")}</th> : null}<th>{t("Amount")}</th></tr></thead>
+    <thead><tr><th>#</th>{doc.showImages ? <th><span className={styles.srOnly}>{t("Picture")}</span></th> : null}<th>{t("Item")}</th><th>{t("Qty")}</th>{doc.showRates ? <th>{t("Rate")}</th> : null}<th>{t("Amount")}</th></tr></thead>
     <tbody>{lines.map(lineRow)}</tbody>
   </table>;
 

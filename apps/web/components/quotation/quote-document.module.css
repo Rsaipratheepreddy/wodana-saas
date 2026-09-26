@@ -72,11 +72,14 @@
 .items td { padding: 2.2mm 1.5mm; border-block-end: 0.3mm solid var(--doc-line); vertical-align: top; }
 .items th:first-child, .items td:first-child { inline-size: 8mm; color: var(--doc-muted); }
 .items th:nth-last-child(-n + 3), .items td:nth-last-child(-n + 3) { text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.items td:nth-child(2) { inline-size: 100%; }
+.items td:has(> strong) { inline-size: 100%; }
 .items td strong { display: block; font-weight: 600; }
 .items td small { display: block; margin-block-start: 0.8mm; color: var(--doc-muted); font-size: 8.5pt; }
 .items td em { display: inline-block; margin-block-start: 1mm; margin-inline-end: 2mm; color: var(--doc-accent); font-size: 7.5pt; font-style: normal; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .items tr { break-inside: avoid; }
+.items td.pictureCell { inline-size: 18mm; }
+.pictureCell img { display: block; inline-size: 16mm; block-size: 16mm; object-fit: cover; border-radius: 1mm; }
+.srOnly { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .items tr[data-optional] td { color: var(--doc-muted); }
 .items[data-table="zebra"] tbody tr:nth-child(odd) td { background: color-mix(in srgb, var(--doc-line) 45%, transparent); }
 .items[data-table="zebra"] td { border-block-end: 0; }

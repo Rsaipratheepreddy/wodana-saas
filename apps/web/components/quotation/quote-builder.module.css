@@ -219,3 +219,21 @@
 .templateLines { display: flex; flex-direction: column; gap: var(--wd-space-1); margin: 0; padding: var(--wd-space-2) var(--wd-space-3); list-style: none; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); font-size: var(--wd-text-sm); }
 .templateLines li { display: flex; justify-content: space-between; gap: var(--wd-space-3); }
 .templateLines small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* Pictures. */
+.grid[data-images] { --cols: var(--wd-space-6) var(--wd-space-12) minmax(12rem, 1fr) minmax(8rem, 11rem) 6rem 4.5rem 7rem 8rem var(--wd-space-16); }
+.grid[data-images][data-column="none"] { --cols: var(--wd-space-6) var(--wd-space-12) minmax(12rem, 1fr) 6rem 4.5rem 7rem 8rem var(--wd-space-16); }
+.imageCell { display: flex; }
+.thumb { position: relative; display: grid; place-items: center; inline-size: var(--wd-space-10); block-size: var(--wd-space-10); overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.thumbButton { position: absolute; inset: 0; display: grid; place-items: center; padding: 0; border: 1px dashed transparent; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-tertiary); cursor: pointer; }
+.thumbButton[data-empty] { border-color: var(--wd-color-border); }
+.thumbButton:hover { border-color: var(--wd-color-border-strong); color: var(--wd-color-text); }
+.thumbButton:focus-visible { outline: 2px solid var(--wd-color-focus); }
+.thumbRemove { position: absolute; inset-block-start: 0; inset-inline-end: 0; display: none; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); padding: 0; border: 0; border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-2xs); line-height: 1; cursor: pointer; }
+.thumb:hover .thumbRemove, .thumbRemove:focus-visible { display: block; }
+.hitThumb { flex: none; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); overflow: hidden; border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); }
+.hitThumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+@media (max-width: 48rem) {
+  .grid[data-images], .grid[data-images][data-column="none"] { --cols: var(--wd-space-6) var(--wd-space-10) minmax(9rem, 1fr) 4.5rem 6rem 6rem var(--wd-space-16); }
+}

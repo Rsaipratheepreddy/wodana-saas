@@ -37,7 +37,11 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     document: (change: Partial<QuoteDocument>) => request<BuilderState>(quotationPath(workspaceId, `${base}/document`), "PUT", change),
     templates: () => request<{ templates: QuoteTemplate[] }>(quotationPath(workspaceId, "templates")),
     saveTemplate: (id: string, name: string, scope: "area" | "trade" | "quote", target: string) => request<{ id: string; name: string; lines: number }>(quotationPath(workspaceId, `${base}/templates`), "POST", { id, name, scope, target }),
+    toCatalog: (lineId: string, version: number) => request<BuilderState>(quotationPath(workspaceId, `${base}/lines/${encodeURIComponent(lineId)}/to-catalog`), "POST", { version }),
     loadOther: (otherId: string) => request<BuilderState>(quotationPath(workspaceId, `cases/${caseId}/quotes/${encodeURIComponent(otherId)}`)),
     addTrade: (id: string, name: string) => request<{ id: string; name: string }>(quotationPath(workspaceId, "work-packages"), "POST", { id, name }),
   };
 }
+
+/** A catalog item's picture (small preview by default). */
+export const catalogImageUrl = (workspaceId: string, imageId: string, preview = true) => `/api/catalog-images/${imageId}?${new URLSearchParams({ workspaceId, ...(preview ? { preview: "1" } : {}) })}`;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { GripVertical, Plus, Sigma } from "lucide-react";
+import { GripVertical, ImagePlus, Plus, Sigma } from "lucide-react";
 import { Avatar, Badge, IconMenuButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
@@ -17,11 +17,29 @@ type Option = { id: string; name: string };
  * quantity, unit and rate in place; Enter saves and moves down, Escape undoes the cell. A formula
  * quantity or a build-up rate opens the line's details instead of being typed over.
  */
-export function QuoteRow({ line, draft, column, areas, trades, amount, currency, decimals, canEdit, search, comments = [], editingBy = [], onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade }: {
+/** A line's picture: click to add or replace one; the × removes it. */
+function ImageCell({ url, canEdit, title, onPick }: { url: string | null; canEdit: boolean; title: string; onPick: (file: File | null) => void }) {
+  const t = useT();
+  const input = useRef<HTMLInputElement>(null);
+  return <span className={styles.thumb}>
+    {url ? <img src={url} alt={t("Picture of {name}", { name: title })} /> : null}
+    {canEdit ? <>
+      <button type="button" className={styles.thumbButton} data-empty={url ? undefined : true} aria-label={url ? t("Change the picture of {name}", { name: title }) : t("Add a picture to {name}", { name: title })} onClick={() => input.current?.click()}>
+        {url ? null : <ImagePlus aria-hidden="true" size={14} />}
+      </button>
+      {url ? <button type="button" className={styles.thumbRemove} aria-label={t("Remove the picture of {name}", { name: title })} onClick={() => onPick(null)}>×</button> : null}
+      <input ref={input} type="file" accept="image/*" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) onPick(file); }} />
+    </> : null}
+  </span>;
+}
+
+export function QuoteRow({ line, draft, column, areas, trades, amount, currency, decimals, canEdit, search, comments = [], editingBy = [], image, onImage, catalogThumb, onNewCatalogItem, onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade, onNewArea }: {
   line: BuilderLine; draft?: boolean; column: RowColumn; areas: Option[]; trades: Option[]; amount: string | null; currency: string; decimals: number; canEdit: boolean;
+  /** The picture column, when shown: the line's picture URL (its own or its catalog item's). */
+  image?: { url: string | null } | null; onImage?: (file: File | null) => void; onNewArea?: () => void; catalogThumb?: (imageId: string) => string;
   comments?: QuoteThread[]; editingBy?: QuotePerson[]; onComments?: () => void;
   search: (text: string, signal: AbortSignal) => Promise<CatalogHit[]>;
-  onChange: (fields: Partial<BuilderLine>) => void; onCatalog: (hit: CatalogHit, title: string) => void; onOpen: () => void;
+  onChange: (fields: Partial<BuilderLine>) => void; onCatalog: (hit: CatalogHit, title: string) => void; onOpen: () => void; onNewCatalogItem?: (title: string) => void;
   onMenu: (action: string) => void; onDragStart: () => void; onDropBefore: () => void; onNewTrade: () => void;
 }) {
   const t = useT();
@@ -35,7 +53,7 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
       {canEdit && !draft && !editingBy.length ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
     </span>
     <span role="gridcell" className={styles.itemCell}>
-      <ItemCell line={line} canEdit={canEdit} search={search} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} autoFocus={draft} />
+      <ItemCell line={line} canEdit={canEdit} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} autoFocus={draft} />
       <span className={styles.itemMeta}>
         {line.kind !== "item" ? <Badge tone={line.kind === "client_supplied" ? "info" : "neutral"}>{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
         {line.optional ? <Badge tone="warning">{t("Optional")}</Badge> : null}
@@ -43,16 +61,21 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
         {line.catalogSnapshot?.priceReason ? <span className={styles.warn}>{t(line.catalogSnapshot.priceReason as never)}</span> : null}
       </span>
     </span>
+    {image ? <span role="gridcell" className={styles.imageCell}>
+      <ImageCell url={image.url} canEdit={canEdit && !draft} title={line.title} onPick={(file) => onImage?.(file)} />
+    </span> : null}
     {column ? <span role="gridcell" className={styles.pickCell}>
       <select aria-label={column === "area" ? t("Area") : t("Work package")} disabled={!canEdit || draft} className={styles.select}
         value={(column === "area" ? line.areaId : line.workPackageId) ?? ""}
         onChange={(event) => {
           if (event.target.value === "__new") { onNewTrade(); return; }
+          if (event.target.value === "__new_area") { onNewArea?.(); return; }
           onChange(column === "area" ? { areaId: event.target.value || null } : { workPackageId: event.target.value || null });
         }}>
         <option value="">{column === "area" ? t("General") : t("No work package")}</option>
         {(column === "area" ? areas : trades).map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
         {column === "trade" && canEdit ? <option value="__new">{t("New work package…")}</option> : null}
+        {column === "area" && canEdit && onNewArea ? <option value="__new_area">{t("New area…")}</option> : null}
       </select>
     </span> : null}
     <span role="gridcell" className={styles.numberCell}>
@@ -72,6 +95,7 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
         { id: "comment", label: t("Comment") },
         ...(canEdit ? [
           { id: "duplicate", label: t("Duplicate") },
+          ...(!line.catalogItemId ? [{ id: "to_catalog", label: t("Add to catalog") }] : []),
           { id: "optional", label: line.optional ? t("Include in total") : t("Make optional") },
           { id: "delete", label: t("Delete"), tone: "danger" as const },
         ] : []),
@@ -114,7 +138,7 @@ function moveDown(event: KeyboardEvent<HTMLInputElement>) {
 }
 
 /** The item name: typing searches the catalog; pick a result to fill the row, or keep the typed name as a custom line. */
-function ItemCell({ line, canEdit, search, onCommit, onCatalog, autoFocus }: { line: BuilderLine; canEdit: boolean; search: (text: string, signal: AbortSignal) => Promise<CatalogHit[]>; onCommit: (title: string) => void; onCatalog: (hit: CatalogHit, title: string) => void; autoFocus?: boolean }) {
+function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCatalogItem, autoFocus }: { line: BuilderLine; canEdit: boolean; search: (text: string, signal: AbortSignal) => Promise<CatalogHit[]>; thumb?: (imageId: string) => string; onCommit: (title: string) => void; onCatalog: (hit: CatalogHit, title: string) => void; onNewCatalogItem?: (title: string) => void; autoFocus?: boolean }) {
   const t = useT();
   const { locale } = useDesignSystem();
   const listId = useId();
@@ -132,7 +156,8 @@ function ItemCell({ line, canEdit, search, onCommit, onCatalog, autoFocus }: { l
     const timer = window.setTimeout(() => { search(text.trim(), controller.signal).then((items) => { setHits(items); setActive(0); }).catch(() => undefined); }, 160);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [open, text, search]);
-  const options = [...hits.map((hit) => ({ type: "hit" as const, hit })), ...(text.trim() && text.trim() !== line.title ? [{ type: "custom" as const }] : [])];
+  const fresh = text.trim() && text.trim() !== line.title && !hits.some((hit) => hit.name.toLowerCase() === text.trim().toLowerCase());
+  const options = [...hits.map((hit) => ({ type: "hit" as const, hit })), ...(text.trim() && text.trim() !== line.title ? [{ type: "custom" as const }] : []), ...(fresh && onNewCatalogItem ? [{ type: "catalog" as const }] : [])];
   const choose = (index: number) => {
     const option = options[index];
     setOpen(false);
@@ -140,6 +165,7 @@ function ItemCell({ line, canEdit, search, onCommit, onCatalog, autoFocus }: { l
     const typed = text.trim();
     cancelled.current = true; // leaving the cell mustn't also save the typed words
     if (option.type === "hit") onCatalog(option.hit, typed);
+    else if (option.type === "catalog") onNewCatalogItem?.(typed);
     else onCommit(typed);
     requestAnimationFrame(() => input.current?.blur());
   };
@@ -161,12 +187,13 @@ function ItemCell({ line, canEdit, search, onCommit, onCatalog, autoFocus }: { l
         if (event.key === "Escape") { if (open) { setOpen(false); return; } cancelled.current = true; setText(line.title); event.currentTarget.blur(); }
       }} />
     {open && options.length ? <ul id={listId} role="listbox" aria-label={t("Catalog items")} className={styles.suggestions}>
-      {options.map((option, index) => <li key={option.type === "hit" ? option.hit.id : "custom"} id={`${listId}-${index}`} role="option" aria-selected={index === active}
+      {options.map((option, index) => <li key={option.type === "hit" ? option.hit.id : option.type} id={`${listId}-${index}`} role="option" aria-selected={index === active}
         onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}>
         {option.type === "hit" ? <>
+          {thumb ? <span className={styles.hitThumb}>{option.hit.imageId ? <img src={thumb(option.hit.imageId)} alt="" /> : null}</span> : null}
           <span className={styles.hitName}>{option.hit.name}<small>{[option.hit.categoryName, option.hit.code].filter(Boolean).join(" · ")}</small></span>
           <span className={styles.hitPrice}>{option.hit.rate ? `${plain(option.hit.rate, locale, 2)} / ${option.hit.unitCode}` : option.hit.hasBuildUp ? t("Priced from parts") : t("No price")}</span>
-        </> : <span className={styles.hitName}><span className={styles.customHit}><Plus aria-hidden="true" size={13} />{t("Add “{name}” as a new line", { name: text.trim() })}</span></span>}
+        </> : <span className={styles.hitName}><span className={styles.customHit}><Plus aria-hidden="true" size={13} />{option.type === "catalog" ? t("Add “{name}” to the catalog too", { name: text.trim() }) : t("Add “{name}” as a new line", { name: text.trim() })}</span></span>}
       </li>)}
     </ul> : null}
   </div>;

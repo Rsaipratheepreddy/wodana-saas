@@ -11,7 +11,7 @@ const KITCHEN = "11111111-1111-4111-8111-111111111111", JOINERY = "44444444-4444
 const line = (fields: Partial<BuilderLine>): BuilderLine => ({
   id: "a", position: 0, version: 3, kind: "item", areaId: KITCHEN, fromAreaId: null, workPackageId: JOINERY, title: "Base cabinets", description: "", unit: "lm", quantity: "4", formula: null, formulaError: null,
   length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "100", unitCost: "60", markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null,
-  taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], ...fields,
+  taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], imageAssetId: null, catalogImageId: null, ...fields,
 });
 const state = (lines: BuilderLine[]): BuilderState => ({
   quote: { id: "q1", number: 2, title: "Main quote", status: "draft", kind: "quotation", round: "main", currency: "AED", decimals: 2, validUntil: null, taxRate: "5", revision: 1, paymentTerms: [], approvedBy: null, clientDecision: null },
@@ -24,17 +24,17 @@ const state = (lines: BuilderLine[]): BuilderState => ({
     areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",
     discounts: { line: "0.00", section: "0.00", quote: "0.00", total: "0.00" }, net: "400.00", tax: "20.00", taxes: [{ rate: "5", base: "400.00", tax: "20.00" }], total: "420.00", cost: "240.00", margin: "40.00", optionalTotal: "0.00" },
   checks: [], me: "u1",
-  document: { style: "atelier", accent: null, sections: { cover: true, intro: true, summary: true, items: true, payments: true, terms: true, acceptance: true }, title: "", subtitle: "", intro: "", terms: "", exclusions: "", itemsView: "area", itemsDetail: "lines", showRates: true, showDescriptions: true, coverAssetId: null },
+  document: { style: "atelier", accent: null, sections: { cover: true, intro: true, summary: true, items: true, payments: true, terms: true, acceptance: true }, title: "", subtitle: "", intro: "", terms: "", exclusions: "", itemsView: "area", itemsDetail: "lines", showRates: true, showDescriptions: true, showImages: false, coverAssetId: null },
   brand: { name: "Studio", logo: "", primaryColor: "#1f6f5c", accentColor: "#1f6f5c" }, client: { name: "Maya Client", project: "Villa", address: null },
   canEdit: true, canEditCosts: true, canViewCosts: true,
 });
 const mount = (initial: BuilderState, respond: (url: string, body: unknown) => unknown = () => initial) => {
-  const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, init?.body ? JSON.parse(String(init.body)) : undefined) }));
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined) }));
   vi.stubGlobal("fetch", fetcher);
   render(<DesignSystemProvider><QuoteBuilder workspaceId="w" caseId="c" quoteId="q1" backHref="/quotes" initial={initial} /></DesignSystemProvider>);
   return fetcher;
 };
-const posted = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([url, init]) => init?.method === "POST" && !String(url).includes("/pulse")).map(([, init]) => JSON.parse(String(init!.body)));
+const posted = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([url, init]) => init?.method === "POST" && !String(url).includes("/pulse") && typeof init.body === "string").map(([, init]) => JSON.parse(String(init!.body)));
 
 describe("quotation builder", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -169,5 +169,16 @@ describe("quotation builder", () => {
     await userEvent.type(within(panel).getByRole("textbox"), "check hinges{Enter}", { skipClick: true });
     await waitFor(() => expect(posted(fetcher).find((body) => body.anchorKind)).toMatchObject({ anchorKind: "line", anchorKey: "a", body: "@Dana check hinges", mentions: ["u2"] }));
     expect(await within(panel).findByText("@Dana check hinges")).toBeInTheDocument();
+  });
+
+  it("shows a pictures column and saves an uploaded picture on the line", async () => {
+    const initial = state([line({ catalogImageId: "11111111-2222-4333-8444-555555555555" })]);
+    const fetcher = mount(initial, (url) => url.includes("/api/workspace/pre-projects/") ? { id: "99999999-2222-4333-8444-555555555555", name: "tv.png" } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Pictures" }));
+    expect(screen.getByRole("img", { name: "Picture of Base cabinets" })).toHaveAttribute("src", expect.stringContaining("/api/catalog-images/11111111-2222-4333-8444-555555555555"));
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    await userEvent.upload(input, new File(["x"], "tv.png", { type: "image/png" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual({ ops: [{ op: "upsert", line: { id: "a", imageAssetId: "99999999-2222-4333-8444-555555555555", version: 3 } }] }));
+    window.localStorage.removeItem("wodana.quote.images");
   });
 });
