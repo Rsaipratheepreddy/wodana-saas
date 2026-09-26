@@ -120,6 +120,13 @@
       "when": 1790852400000,
       "tag": "0016_design_packages",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790938800000,
+      "tag": "0017_opportunity_discovery",
+      "breakpoints": true
     }
   ]
 }

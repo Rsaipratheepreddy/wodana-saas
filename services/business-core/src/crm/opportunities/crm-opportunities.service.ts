@@ -1,10 +1,5 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from "@nestjs/common";
+import { OpportunityDiscoveryService } from "./discovery.service";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException, Optional } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
@@ -43,6 +38,7 @@ export class CrmOpportunitiesService {
     private readonly access: WorkspaceAccessService,
     private readonly events: CrmEventsService,
     private readonly slas: CrmSlaLifecycleService = new CrmSlaLifecycleService(),
+    @Optional() private readonly discovery?: OpportunityDiscoveryService,
   ) {}
 
   listPipelines(actor: RequestActor, workspaceId: string) {
@@ -591,11 +587,15 @@ export class CrmOpportunitiesService {
       const result = await client.query(`SELECT 1 FROM crm_opportunity_stakeholders WHERE workspace_id = $1 AND opportunity_id = $2 LIMIT 1`, [workspaceId, opportunity.id]);
       if (!result.rowCount) missing.push("stakeholders");
     }
+    // PLM-040: e.g. Design Quote needs the Account Manager's discovery form complete.
+    if (requirements.discovery === true && opportunity.id && this.discovery) {
+      for (const item of await this.discovery.missing(client, workspaceId, String(opportunity.id))) missing.push(`discovery:${item.label}`);
+    }
     if (missing.length) throw new UnprocessableEntityException({ message: "Stage requirements are not met", missing });
   }
 
   private validateRequirements(requirements: Record<string, unknown>) {
-    const allowed = new Set(["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders"]);
+    const allowed = new Set(["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders", "discovery"]);
     for (const [key, value] of Object.entries(requirements)) {
       if (!allowed.has(key) || typeof value !== "boolean") throw new UnprocessableEntityException(`Invalid stage requirement: ${key}`);
     }

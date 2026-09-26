@@ -27,7 +27,7 @@ describe("CRM qualification form integrity", () => {
     await service.createForm({} as never, "workspace", {
       code: "global", name: "Global", serviceType: "   ", questions: [],
     });
-    expect(query.mock.calls[0][1]).toEqual(["workspace", "global", "Global", null]);
+    expect(query.mock.calls[0][1]).toEqual(["workspace", "global", "Global", null, "qualification"]);
   });
 
   it("prevents two active forms for the same global or service-specific scope", async () => {

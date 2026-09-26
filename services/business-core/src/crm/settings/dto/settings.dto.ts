@@ -54,6 +54,8 @@ export class CreateQualificationFormDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
   @IsString() @IsNotEmpty() @MaxLength(160) name!: string;
   @IsOptional() @IsString() @MaxLength(100) serviceType?: string;
+  /** "discovery" forms are the Account Manager's intro questions on an opportunity (PLM-040). */
+  @IsOptional() @IsIn(["qualification", "discovery"]) purpose?: "qualification" | "discovery";
   @IsArray() @ValidateNested({ each: true }) @Type(() => QualificationQuestionDto) questions!: QualificationQuestionDto[];
 }
 export class UpdateQualificationFormDto {

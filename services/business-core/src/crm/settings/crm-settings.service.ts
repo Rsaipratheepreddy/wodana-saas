@@ -169,7 +169,7 @@ export class CrmSettingsService {
       const keys = new Set(input.questions.map((question) => question.key));
       const positions = new Set(input.questions.map((question) => question.position));
       if (keys.size !== input.questions.length || positions.size !== input.questions.length) throw new UnprocessableEntityException("Question keys and positions must be unique");
-      const result = await client.query(`INSERT INTO crm_qualification_forms (workspace_id, code, name, service_type) VALUES ($1,lower($2),$3,$4) RETURNING id, code, name, status, service_type AS "serviceType", version`, [workspaceId, input.code, input.name, input.serviceType?.trim() || null]);
+      const result = await client.query(`INSERT INTO crm_qualification_forms (workspace_id, code, name, service_type, purpose) VALUES ($1,lower($2),$3,$4,$5) RETURNING id, code, name, status, service_type AS "serviceType", purpose, version`, [workspaceId, input.code, input.name, input.serviceType?.trim() || null, input.purpose ?? "qualification"]);
       const form = result.rows[0] as Row;
       const questions: Row[] = [];
       for (const question of input.questions) {
