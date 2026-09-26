@@ -144,7 +144,7 @@ export class LeadFormsService {
     };
   }
 
-  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean; link?: { source?: string; channel?: string; placement?: string } }) {
+  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean; link?: { source?: string; channel?: string; placement?: string } ; selection?: string[]}) {
     const form = await this.resolve(token);
     return this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       // Serialize submissions to enforce per-form limits and check publication atomically.
@@ -191,7 +191,7 @@ export class LeadFormsService {
       await this.intake.createFormIntake(client, form.workspace_id, key, {
         source: link?.source ?? schema.source, channel: link?.channel ?? schema.channel, intakeMethod: "form", title: "",
         party,
-        serviceType: fields.serviceType, summary: fields.summary,
+        serviceType: fields.serviceType, summary: withSelection(fields.summary, input.selection),
         details: { emirate: fields.emirate, area: fields.area, budgetRange: fields.budgetRange, ...(link?.placement ? { campaign: link.placement } : {}) }, assignment: { mode: "automatic" },
         consents: [consent],
         originalPayload: {
@@ -202,6 +202,7 @@ export class LeadFormsService {
           formAnswers: responses,
           formRawAnswers: structuredClone(input.answers),
           ...(link ? { link } : {}),
+          ...(input.selection?.length ? { selection: input.selection.slice(0, 50) } : {}),
           consent: consent.evidence,
         },
       });
@@ -227,4 +228,12 @@ async function linkCustomFields(client: PoolClient, workspaceId: string, draft: 
     if (!definition) throw new BadRequestException(`“${question.title || "A question"}” is linked to an enquiry field that was removed. Choose another field`);
     Object.assign(question, questionShape(definition));
   }
+}
+
+/** Items a visitor picked (e.g. from the company gallery) are added to the enquiry's summary so Sales sees them. */
+export function withSelection(summary: string | undefined, selection: string[] | undefined) {
+  const picked = (selection ?? []).filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim().slice(0, 200)).slice(0, 50);
+  if (!picked.length) return summary;
+  const list = `Interested in: ${picked.join(", ")}`;
+  return (summary?.trim() ? `${summary.trim()}\n\n${list}` : list).slice(0, 4000);
 }

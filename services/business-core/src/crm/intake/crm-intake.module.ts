@@ -10,6 +10,6 @@ import { CrmLeadsModule } from "../leads/crm-leads.module";
   imports: [WorkspacesModule, CrmLeadsModule],
   controllers: [LeadFormsController, PublicLeadFormsController, CrmIntakeController, InternalCrmIntakeController],
   providers: [LeadFormsService, CrmIntakeService],
-  exports: [CrmIntakeService],
+  exports: [CrmIntakeService, LeadFormsService],
 })
 export class CrmIntakeModule {}

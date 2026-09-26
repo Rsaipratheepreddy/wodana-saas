@@ -100,6 +100,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "design.client_changes", channel: "in_app", subject: "{{clientName}} wants changes to {{title}}", body: "{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.client_changes", channel: "email", subject: "{{clientName}} wants changes to {{title}}", body: "{{clientName}} asked for changes to {{title}}:\n\n{{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.mentioned", channel: "in_app", subject: "{{actor}} mentioned you · {{title}}", body: "{{note}}", variables: ["title", "actor", "note"] },
+  { code: "gallery.published", channel: "in_app", subject: "Your gallery is live", body: "{{actor}} published the company gallery.", variables: ["actor"] },
   { code: "quotation.mentioned", channel: "in_app", subject: "{{actor}} mentioned you · {{title}}", body: "{{note}}", variables: ["title", "actor", "note"] },
   { code: "quotation.review_requested", channel: "in_app", subject: "Review quote {{title}} · {{clientName}}", body: "{{actor}} sent it for review.", variables: ["title", "clientName", "actor", "note"] },
   { code: "quotation.review_requested", channel: "email", subject: "Please review quote {{title}} ({{clientName}})", body: "{{actor}} sent quote {{title}} for {{clientName}} for your review.", variables: ["title", "clientName", "actor", "note"] },

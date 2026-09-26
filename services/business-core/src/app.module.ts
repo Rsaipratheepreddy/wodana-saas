@@ -33,6 +33,7 @@ import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
 import { DesignModule } from "./design/design.module";
 import { QuotationModule } from "./quotation/quotation.module";
+import { GalleryModule } from "./gallery/gallery.module";
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { QuotationModule } from "./quotation/quotation.module";
     AiGatewayModule,
     DesignModule,
     QuotationModule,
+    GalleryModule,
     HrmsModule,
   ],
   controllers: [AppController],
