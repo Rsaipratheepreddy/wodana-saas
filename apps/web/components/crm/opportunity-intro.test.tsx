@@ -1,0 +1,41 @@
+import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DesignSystemProvider } from "@/design-system";
+import { OpportunityIntro, type IntroView } from "./opportunity-intro";
+
+afterEach(() => vi.unstubAllGlobals());
+const base: IntroView = { designer: null, intro: null, history: [], blockers: [], timezone: "Europe/London", canChangeDesigner: false };
+function stub(view: IntroView) {
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => url.includes("/members") ? { items: [{ id: "m1", displayName: "Dana Designer" }] } : view })));
+}
+const renderIntro = () => render(<DesignSystemProvider><OpportunityIntro workspaceId="ws" opportunityId="o1" locale="en-GB" /></DesignSystemProvider>);
+
+describe("opportunity intro meeting (PLM-043, PLM-088)", () => {
+  it("waits for the discovery facts before booking", async () => {
+    stub({ ...base, blockers: [{ key: "floorPlan", label: "Floor plan" }, { key: "clientEmail", label: "Client email" }] });
+    renderIntro();
+    expect(await screen.findByText("Add these on Discovery first: Floor plan, Client email")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Book intro meeting" })).toBeDisabled();
+    expect(screen.getByText("Not booked")).toBeInTheDocument();
+  });
+
+  it("shows the booked meeting in the workspace zone and the dedicated designer", async () => {
+    stub({ ...base, canChangeDesigner: true, designer: { membershipId: "m1", name: "Dana Designer", version: 1 },
+      intro: { activityId: "a1", status: "pending", title: "Intro to Studio", startsAt: "2031-07-15T08:00:00Z", endsAt: "2031-07-15T09:00:00Z", timezone: "Europe/London", location: { mode: "online", url: "https://meet.example.com/x" } } });
+    renderIntro();
+    expect(await screen.findByText(/Tue 15 Jul, 9:00 – 10:00/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Online meeting link" })).toHaveAttribute("href", "https://meet.example.com/x");
+    expect(screen.getByText("Booked")).toBeInTheDocument();
+    expect(screen.getByText("Dana Designer")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Book intro meeting" })).not.toBeInTheDocument();
+  });
+
+  it("hides Change from people who cannot change the designer", async () => {
+    stub({ ...base, designer: { membershipId: "m1", name: "Dana Designer", version: 1 } });
+    renderIntro();
+    expect(await screen.findByText("Dana Designer")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Book intro meeting" })).toBeEnabled();
+  });
+});

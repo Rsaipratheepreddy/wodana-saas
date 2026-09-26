@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
 import { OpportunityDiscovery } from "./opportunity-discovery";
+import { OpportunityIntro } from "./opportunity-intro";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
@@ -140,6 +141,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       <p className={styles.opportunityPipeline}>Pipeline: {String(live.pipelineName ?? pipeline?.name ?? "Not set")}</p>
     </div> },
     { id: "discovery", label: "Discovery", panel: <OpportunityDiscovery workspaceId={workspaceId} opportunityId={row.id} onSaved={saved} /> },
+    { id: "intro", label: "Intro meeting", panel: <OpportunityIntro workspaceId={workspaceId} opportunityId={row.id} onSaved={saved} /> },
     ...(qualificationEvidence ? [{ id: "qualification", label: "Qualification", panel: <div className={styles.stack}>
       <p>This is the enquiry information captured when this opportunity was created. Later enquiry edits do not change this snapshot.</p>
       <FactList facts={[["Form", qualificationEvidence.form?.name ?? "No configured form"], ["Selection", label(qualificationEvidence.selection)], ["Evaluated", dateText(qualificationEvidence.evaluatedAt)], ["Conversion", label(live.conversionOrigin ?? live.conversion_origin ?? "lead_qualification")]]} />

@@ -11,3 +11,20 @@ export class SaveDiscoveryDto {
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsUUID() designPackageId?: string | null;
   @IsOptional() @IsObject() answers?: Record<string, unknown>;
 }
+
+export class BookIntroDto {
+  @IsUUID() designerMembershipId!: string;
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}T/) startsAt!: string;
+  @IsString() @Matches(/^\d{4}-\d{2}-\d{2}T/) endsAt!: string;
+  @IsString() @MaxLength(64) timezone!: string;
+  @IsIn(["in_person", "online"]) mode!: "in_person" | "online";
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) place?: string | null;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(2000) note?: string | null;
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) changeReason?: string | null;
+}
+
+export class ChangeDesignerDto {
+  @IsUUID() membershipId!: string;
+  @IsString() @MaxLength(500) reason!: string;
+  @IsInt() @Min(0) version!: number;
+}

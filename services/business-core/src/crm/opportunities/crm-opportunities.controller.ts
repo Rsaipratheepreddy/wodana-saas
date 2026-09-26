@@ -3,7 +3,8 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
 import { OpportunityDiscoveryService } from "./discovery.service";
-import { SaveDiscoveryDto } from "./dto/discovery.dto";
+import { BookIntroDto, ChangeDesignerDto, SaveDiscoveryDto } from "./dto/discovery.dto";
+import { IntroMeetingService } from "./intro-meeting.service";
 import { CrmOpportunitiesService } from "./crm-opportunities.service";
 import { AddStakeholderDto, CreateOpportunityDto, CreatePipelineDto, CreateProjectLinkDto, ListOpportunitiesQueryDto, OpportunityTeamMemberDto, PipelineStageDto, QualifyLeadDto, TransitionOpportunityDto, UpdateOpportunityDto, UpdatePipelineDto, UpdatePipelineStageDto } from "./dto/opportunities.dto";
 
@@ -11,7 +12,7 @@ import { AddStakeholderDto, CreateOpportunityDto, CreatePipelineDto, CreateProje
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/crm")
 export class CrmOpportunitiesController {
-  constructor(private readonly opportunities: CrmOpportunitiesService, private readonly discovery: OpportunityDiscoveryService) {}
+  constructor(private readonly opportunities: CrmOpportunitiesService, private readonly discovery: OpportunityDiscoveryService, private readonly intro: IntroMeetingService) {}
   @Get("pipelines") pipelines(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.opportunities.listPipelines(actor, workspaceId); }
   @Post("pipelines") createPipeline(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreatePipelineDto) { return this.opportunities.createPipeline(actor, workspaceId, input); }
   @Patch("pipelines/:pipelineId") updatePipeline(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("pipelineId", ParseUUIDPipe) pipelineId: string, @Body() input: UpdatePipelineDto) { return this.opportunities.updatePipeline(actor, workspaceId, pipelineId, input); }
@@ -23,6 +24,9 @@ export class CrmOpportunitiesController {
   @Post("leads/:leadId/qualify") qualify(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: QualifyLeadDto) { return this.opportunities.qualifyLead(actor, workspaceId, leadId, input); }
   @Get("opportunities/:opportunityId/discovery") getDiscovery(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string) { return this.discovery.get(actor, workspaceId, opportunityId); }
   @Put("opportunities/:opportunityId/discovery") saveDiscovery(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: SaveDiscoveryDto) { return this.discovery.save(actor, workspaceId, opportunityId, input); }
+  @Get("opportunities/:opportunityId/intro") getIntro(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string) { return this.intro.get(actor, workspaceId, opportunityId); }
+  @Post("opportunities/:opportunityId/intro") bookIntro(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: BookIntroDto) { return this.intro.book(actor, workspaceId, opportunityId, input); }
+  @Put("opportunities/:opportunityId/designer") changeDesigner(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: ChangeDesignerDto) { return this.intro.changeDesigner(actor, workspaceId, opportunityId, input); }
   @Patch("opportunities/:opportunityId") update(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: UpdateOpportunityDto) { return this.opportunities.update(actor, workspaceId, opportunityId, input); }
   @Post("opportunities/:opportunityId/transition") transition(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: TransitionOpportunityDto) { return this.opportunities.transition(actor, workspaceId, opportunityId, input); }
   @Post("opportunities/:opportunityId/stakeholders") stakeholder(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("opportunityId", ParseUUIDPipe) opportunityId: string, @Body() input: AddStakeholderDto) { return this.opportunities.addStakeholder(actor, workspaceId, opportunityId, input); }

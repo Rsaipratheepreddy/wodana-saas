@@ -1,0 +1,9 @@
+.intro { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.meeting, .designer, .change { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); text-align: end; }
+.meeting small, .change small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.meeting a { color: var(--wd-color-text); text-decoration: underline; text-underline-offset: 2px; }
+.empty { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.form { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--wd-space-2); }
+.zone { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); margin-block-start: calc(var(--wd-space-2) * -1); }
+@media (max-width: 560px) { .row { grid-template-columns: minmax(0, 1fr); } }

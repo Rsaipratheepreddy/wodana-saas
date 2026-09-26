@@ -66,6 +66,27 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "You have a new enquiry.\n\nReference: {{reference}}\nClient: {{clientName}}\nSource: {{source}}\n\nOpen it and log your first contact within the response time.",
     variables: ["reference", "clientName", "source"],
   },
+  {
+    code: "crm.intro_booked",
+    channel: "in_app",
+    subject: "{{meeting}} with {{clientName}}",
+    body: "{{when}} · {{place}}. Booked by {{bookedBy}}.",
+    variables: ["meeting", "clientName", "when", "place", "bookedBy"],
+  },
+  {
+    code: "crm.intro_booked",
+    channel: "email",
+    subject: "Invitation: {{meeting}} with {{clientName}}",
+    body: "{{meeting}} with {{clientName}}\n\nWhen: {{when}}\nWhere: {{place}}\nBooked by: {{bookedBy}}\n\nThe floor plan and the client's details are on the opportunity.",
+    variables: ["meeting", "clientName", "when", "place", "bookedBy"],
+  },
+  {
+    code: "crm.designer_assigned",
+    channel: "in_app",
+    subject: "You are the designer for {{clientName}}",
+    body: "{{changedBy}} made you the dedicated designer. Reason: {{reason}}",
+    variables: ["clientName", "changedBy", "reason"],
+  },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {

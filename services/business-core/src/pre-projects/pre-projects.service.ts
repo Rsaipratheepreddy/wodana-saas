@@ -1,3 +1,4 @@
+import { assignDesignerToCase } from "../crm/opportunities/dedicated-designer";
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
@@ -154,6 +155,7 @@ export class PreProjectsService {
         WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
+      await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id } });
       return result;
@@ -184,6 +186,7 @@ export class PreProjectsService {
         WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
+      await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
       const result = await this.read(client, workspaceId, created.rows[0].id);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId } });
       return result;

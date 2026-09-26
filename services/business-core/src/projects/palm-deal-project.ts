@@ -1,4 +1,5 @@
 import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
+import { caseDesigner } from "../crm/opportunities/dedicated-designer";
 import { projectRepository } from "./project-repository";
 import { ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -45,6 +46,10 @@ export async function openPalmProjectAtDealFile(
     execution.controls ??= emptyProject().controls;
     execution.controls!.reference = deal.reference.replace(/^DF-/, "PRJ-");
     execution.phase = "active";
+    // PLM-088: the designer from the intro meeting is the project's designer from the start.
+    const designer = await caseDesigner(client, workspaceId, caseId);
+    if (designer && !execution.roleAssignments?.some((assignment) => assignment.role === "senior_designer"))
+      execution.roleAssignments = [...(execution.roleAssignments ?? []), { role: "senior_designer", memberId: designer }];
     execution.revision++;
     await projectRepository.save(client, workspaceId, project.id, execution);
   }
