@@ -205,9 +205,9 @@ export function QuotationEditor({
 ...(costing?[{id:"unit",header:"Unit",size:110,accessorFn:(l:QuoteLine)=>l.unit,meta:{renderCell:(l:QuoteLine)=><>{readOnly ? l.unit : <button className={q.unitButton} aria-label={`Change unit for ${l.title}`} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}</>}}]:[]),
 ...(costing?[{id:"cost",header:"Unit cost",size:150,accessorFn:(l:QuoteLine)=>l.unitCost,meta:{renderCell:(l:QuoteLine)=><>
                               {readOnly || !canEditCosts ? (
-                                money(l.unitCost, quote.currency)
+                                money(l.unitCost ?? 0, quote.currency)
                               ) : (
-                                <QuotationNumberInput label={`Cost for ${l.title}`} value={l.unitCost} money onChange={(unitCost) => line(l.id, { unitCost })} />
+                                <QuotationNumberInput label={`Cost for ${l.title}`} value={l.unitCost ?? 0} money onChange={(unitCost) => line(l.id, { unitCost })} />
                               )}
                             </>}}]:[]),
 {id:"total",header:"Amount",size:160,accessorFn:(l:QuoteLine)=>l.quantity*l.rate,meta:{renderCell:(l:QuoteLine)=><>
@@ -571,7 +571,7 @@ export function QuotationEditor({
                 !item?.title.trim() ||
                 !item.room.trim() ||
                 !item.unit.trim() ||
-                item.quantity <= 0 || !Number.isFinite(item.quantity) || item.quantity > 1e6 || item.rate < 0 || item.unitCost < 0 || !Number.isFinite(item.rate) || !Number.isFinite(item.unitCost) || item.rate > 1e8 || item.unitCost > 1e8 || (item.catalogLinks?.length ?? 0) > 12
+                item.quantity <= 0 || !Number.isFinite(item.quantity) || item.quantity > 1e6 || item.rate < 0 || (item.unitCost ?? 0) < 0 || !Number.isFinite(item.rate) || !Number.isFinite(item.unitCost) || item.rate > 1e8 || (item.unitCost ?? 0) > 1e8 || (item.catalogLinks?.length ?? 0) > 12
               }
               onClick={() => {
                 if (item) {
@@ -708,7 +708,7 @@ export function QuotationEditor({
               </label>
               {costing ? <label>
                 Internal unit cost
-                {readOnly || !canEditCosts ? <span>{money(item.unitCost, quote.currency)}</span> : <QuotationNumberInput label="Internal unit cost" value={item.unitCost} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />}
+                {readOnly || !canEditCosts ? <span>{money(item.unitCost ?? 0, quote.currency)}</span> : <QuotationNumberInput label="Internal unit cost" value={item.unitCost ?? 0} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />}
               </label> : null}
               <label>
                 Selling rate
