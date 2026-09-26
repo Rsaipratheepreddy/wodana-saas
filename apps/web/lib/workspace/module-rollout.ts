@@ -9,6 +9,7 @@ export function isCrmFirstWorkspace(slug: string, configured = process.env.WODAN
 export function deferredModuleForPath(pathname: string): DeferredModule | null {
   if (pathname === "/workspace/catalogs" || pathname === "/workspace/pre-projects" || pathname.startsWith("/workspace/pre-projects/")) return "pre-project";
   if (pathname === "/workspace/projects" || pathname.startsWith("/workspace/projects/")) return "projects";
+  if (pathname === "/workspace/purchasing" || pathname.startsWith("/workspace/purchasing/")) return "projects";
   return null;
 }
 
@@ -16,6 +17,7 @@ export function moduleForWorkspacePath(pathname: string): WorkspaceModuleId {
   if (pathname === "/workspace/catalogs" || pathname.startsWith("/workspace/catalogs/")) return "pre-project";
   if (pathname === "/workspace/pre-projects" || pathname.startsWith("/workspace/pre-projects/")) return "pre-project";
   if (pathname === "/workspace/projects" || pathname.startsWith("/workspace/projects/")) return "projects";
+  if (pathname === "/workspace/purchasing" || pathname.startsWith("/workspace/purchasing/")) return "projects";
   if (pathname === "/workspace/crm" || pathname.startsWith("/workspace/crm/")) return "crm";
   if (pathname === "/workspace/hrms" || pathname.startsWith("/workspace/hrms/")) return "hrms";
   return "workspace";
@@ -52,13 +54,13 @@ export function scopeSupplyNavigation(
   roleCodes: readonly string[],
 ): WorkspaceModuleDefinition[] {
   const isAdministrator = roleCodes.some(role => ["owner", "administrator"].includes(role.toLowerCase()));
-  const canViewProjects = isAdministrator || (allowedPermissions ?? []).some(permission => ["projects.view", "projects.manage"].includes(permission));
+  const canViewPurchasing = isAdministrator || (allowedPermissions ?? []).some(permission => ["purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage"].includes(permission));
   const canViewInventory = isAdministrator || (allowedPermissions ?? []).some(permission => ["projects.buy", "projects.manage"].includes(permission));
   return modules.map(module => module.id !== "projects" ? module : {
     ...module,
     navigation: module.navigation.map(section => ({
       ...section,
-      items: section.items.filter(item => (item.id !== "global-purchasing" || canViewProjects) && (item.id !== "global-inventory" || canViewInventory)),
+      items: section.items.filter(item => (item.id !== "global-purchasing" || canViewPurchasing) && (item.id !== "global-inventory" || canViewInventory)),
     })),
   });
 }

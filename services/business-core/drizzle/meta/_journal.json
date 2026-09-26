@@ -274,6 +274,13 @@
       "when": 1792670400000,
       "tag": "0038_work_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792756800000,
+      "tag": "0039_suppliers",
+      "breakpoints": true
     }
   ]
 }

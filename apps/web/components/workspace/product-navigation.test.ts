@@ -36,8 +36,8 @@ describe('product navigation route ownership', () => {
     expect(work?.items.find(item => item.id === 'clients')?.href).toBe('/workspace/crm/customers');
     expect(company?.items.find(item => item.id === 'resources')).toMatchObject({label:'Catalog',href:'/workspace/catalogs'});
     expect(company?.items.find(item => item.id === 'resources')?.children).toBeUndefined();
-    // Purchasing, stock and the factory come back as their own rebuilt modules.
-    expect(sections.find(section => section.id === 'operations')).toBeUndefined();
+    // Operations lists the rebuilt modules only: Purchasing so far.
+    expect(sections.find(section => section.id === 'operations')?.items.map(item => [item.label, item.href])).toEqual([['Purchasing', '/workspace/purchasing']]);
     expect(sections.find(section => section.id === 'main')?.items.map(item => item.label)).toEqual(['Home', 'Calendar', 'Inbox']);
   });
   it('uses an authorized settings destination when company access is absent', () => {

@@ -562,6 +562,13 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 - **Screens:** Materials tab (grid grouped by package: required / reserved / ordered / received / issued, and the next action per line) · Portal sign-off view (images, finishes, quantities, accept or reject per line).
 
 ### 6.13 Suppliers
+**Built (Operations → Purchasing):** the supplier register on `workspace_vendors`:
+- categories, approval (not reviewed / approved / on hold / not approved) with the categories it's the preferred supplier for;
+- payment terms (upfront, advance % then rest on delivery, on delivery, N days credit, monthly statement) and a discount or commission deal;
+- the main contact, and the buying companies (legal entities) that buy from it.
+
+Approving is its own permission (`vendors.approve`), so adding a supplier never approves it. A duplicate name or tax number is refused, and archiving asks why. *Import* reads the list a firm already keeps (Excel/CSV, one sheet per company): it finds the columns by their names, turns written terms ("50 / 50", "SOA end of month", "30 days after received", "0.1", "Discount as requested") into those fields, merges rows with the same name, and gives approvals only when the person importing may approve. It shows what it will do first and is safe to run again.
+
 - **Records:** vendors (`draft → pending_approval → approved → on_hold → blocked → archived`), sites, contacts, documents with expiry, bank accounts (Finance approval + call-back evidence), rate contracts + lines (price, validity, MOQ, pack size, lead time), scorecard view (on-time %, QC reject %, price variance, RFQ response time).
 - **Rules:**
   - An RFQ may go to any vendor; a PO only to approved vendors.

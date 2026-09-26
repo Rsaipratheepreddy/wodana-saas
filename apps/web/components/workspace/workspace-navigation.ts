@@ -72,6 +72,8 @@ export type WorkspaceModuleDefinition = {
   id: WorkspaceModuleId;
   label: string;
   navigation: WorkspaceNavigationSection[];
+  /** Other paths the module owns besides its own (e.g. Projects owns Purchasing). */
+  paths?: string[];
 };
 
 export type WorkspaceIdentity = {
@@ -302,11 +304,13 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     icon: "projects",
     id: "projects",
     label: "Projects",
+    paths: ["/workspace/purchasing"],
     navigation: [
       {
         id: "projects-primary",
         items: [
           { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Projects", description: "Every project: stage, next step and handover date." },
+          { href: "/workspace/purchasing", icon: "procurement", id: "global-purchasing", label: "Purchasing", description: "What to order, orders and suppliers." },
         ],
       },
     ],
@@ -353,7 +357,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
       ...(allowed.has("projects-overview") ? [{ id: "projects", label: "Projects", href: "/workspace/projects", icon: "projects" as const }] : []),
     ] },
     { id: "operations", label: "Operations", items: [
-      ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: "Purchasing", href: "/workspace/projects/purchasing", icon: "procurement" as const }] : []),
+      ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", icon: "procurement" as const }] : []),
       ...(allowed.has("global-inventory") ? [{ id: "inventory", label: "Inventory", href: "/workspace/projects/inventory", icon: "materialPlan" as const }] : []),
       ...(allowed.has("production") ? [{ id: "factory", label: "Factory", href: "/workspace/projects/factory", icon: "production" as const }] : []),
     ] },
@@ -395,6 +399,7 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/crm")) return exists("sales");
   if (under("/workspace/pre-projects")) return exists("planning") ?? exists("projects");
   if (under("/workspace/projects/clients")) return exists("clients");
+  if (under("/workspace/purchasing")) return exists("purchasing");
   if (under("/workspace/projects")) return exists("projects");
   if (under("/workspace/hrms")) return exists("team");
   if (under("/workspace/integrations")) return exists("integrations");
@@ -410,12 +415,8 @@ export function findWorkspaceModule(
   pathname: string,
   modules: WorkspaceModuleDefinition[] = workspaceModules,
 ) {
-  return (
-    modules
-      .slice(1)
-      .find((module) => pathname === module.href || pathname.startsWith(`${module.href}/`)) ??
-    modules[0]
-  );
+  const under = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  return modules.slice(1).find((module) => under(module.href) || module.paths?.some(under)) ?? modules[0];
 }
 
 export function findWorkspaceScreen(

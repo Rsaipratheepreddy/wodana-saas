@@ -114,3 +114,11 @@ export function phoneProblem(national: string, country: string, text: PhoneProbl
   if (options.mobile && type && !["MOBILE", "FIXED_LINE_OR_MOBILE", "PERSONAL_NUMBER"].includes(type)) return text.notMobile(name);
   return null;
 }
+
+/** A local number and its country as one international number (+9715…), for storing. */
+export function joinPhone(country: string, national: string): string {
+  const digits = national.replace(/[^\d]/g, "");
+  if (!digits) return "";
+  const code = country && isSupportedCountry(country.toUpperCase()) ? getCountryCallingCode(country.toUpperCase() as CountryCode) : null;
+  return code ? `+${code}${digits}` : national.trim();
+}

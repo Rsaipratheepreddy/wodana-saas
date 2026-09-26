@@ -1,7 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useRef, useState, type ChangeEvent, type FormHTMLAttributes, type ReactNode, type Ref } from "react";
+import { useId, useRef, useState, type ChangeEvent, type FormHTMLAttributes, type ReactNode, type Ref } from "react";
 import {
   Button as AriaButton,
   Calendar,
@@ -163,6 +163,39 @@ export function DateRangeField({ description, errorMessage, label, ...props }: D
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   return <DateRangePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input" slot="start">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><span aria-hidden="true">–</span><DateInput className="wd-date-input" slot="end">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><div role="dialog"><RangeCalendarBody /></div></Popover></DateRangePicker>;
+}
+
+/**
+ * A list of short values (categories, tags): type and press Enter or a comma to add, Backspace on an
+ * empty box to remove the last. Known values are suggested; case differences don't make duplicates.
+ */
+export function TagsField({ description, isReadOnly = false, label, onChange, placeholder, suggestions = [], values }: {
+  description?: ReactNode; isReadOnly?: boolean; label: string; onChange: (values: string[]) => void; placeholder?: string; suggestions?: string[]; values: string[];
+}) {
+  const [draft, setDraft] = useState("");
+  const listId = useId();
+  const has = (value: string) => values.some((item) => item.toLocaleLowerCase() === value.toLocaleLowerCase());
+  const add = (value: string) => {
+    const text = value.replace(/\s+/g, " ").trim();
+    setDraft("");
+    if (!text || has(text)) return;
+    onChange([...values, suggestions.find((item) => item.toLocaleLowerCase() === text.toLocaleLowerCase()) ?? text]);
+  };
+  const options = suggestions.filter((item) => !has(item)).slice(0, 50);
+  return <div className="wd-field wd-tags-field">
+    <span className="wd-field-label" aria-hidden="true">{label}</span>
+    <div className="wd-tags-input wd-focus-frame" data-readonly={isReadOnly || undefined}>
+      {values.map((value) => <Tag key={value} onRemove={isReadOnly ? undefined : () => onChange(values.filter((item) => item !== value))}>{value}</Tag>)}
+      {isReadOnly ? null : <input aria-label={label} className="wd-tags-draft" list={listId} placeholder={values.length ? undefined : placeholder} value={draft}
+        onBlur={() => add(draft)} onChange={(event) => { const next = event.target.value; if (/[,\n]$/.test(next)) add(next.slice(0, -1)); else setDraft(next); }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") { event.preventDefault(); add(draft); }
+          else if (event.key === "Backspace" && !draft && values.length) onChange(values.slice(0, -1));
+        }} />}
+      <datalist id={listId}>{options.map((item) => <option key={item} value={item} />)}</datalist>
+    </div>
+    {description ? <span className="wd-field-help">{description}</span> : null}
+  </div>;
 }
 
 export function FieldStack({ children }: { children: ReactNode }) { return <div className="wd-field-stack">{children}</div>; }
