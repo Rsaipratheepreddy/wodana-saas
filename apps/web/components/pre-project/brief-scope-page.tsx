@@ -13,6 +13,7 @@ import { MeasurementCreateForm } from './measurement-create-form';
 import { ScopeEditor } from './scope-entry-editor';
 import { useRequirementNotes } from '../crm/requirement-notes';
 import workspace from './requirements-workspace.module.css';
+import { NotePreview } from '@/components/crm/note-preview';
 import { DimensionReadout } from './scope-note-cards';
 import tableStyles from '../crm/leads-page.module.css';
 import styles from './case-content.module.css';
@@ -134,11 +135,11 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     {view !== 'inspiration' && sharedNotes.failure && <p className={styles.error} role="alert">{sharedNotes.failure}<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>Retry</Button></p>}
     {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={compact ? workspace.srOnly : styles.notice}>{message}</p>}
     {sharedNotes.loading && !allEntries.length && view !== 'inspiration' ? null : (view === 'requirement' || presentation === 'cards') ? <div className={workspace.cards}>{cardEntries.map(value => {
-      return <article className={workspace.card} data-tone={Math.abs([...value.id].reduce((hash,letter) => (Math.imul(hash,31) + letter.charCodeAt(0)) | 0, 0)) % 5} key={value.id} aria-label={value.title}>
+      return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} key={value.id} aria-label={value.title}>
         <div className={workspace.body}>
           <div className={workspace.meta}><span>{data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? 'Whole project'}</span>{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabels[value.scopeStatus]} items={[{id:'included',label:'Include in scope'},{id:'excluded',label:'Exclude from scope'},{id:'undecided',label:'Decide later'}]} onAction={key => {  void saveEntry({...value,scopeStatus:String(key)}).catch(failure=>setError(failure instanceof Error?failure.message:'Could not update scope.')); }} /> : <span data-status={value.scopeStatus}>{value.kind === 'file' ? 'Site file' : value.kind === 'inspiration' ? 'Inspiration' : scopeLabels[value.scopeStatus]}</span>)}</div>
           <button className={workspace.title} aria-label={`Open details for ${value.title}`} onClick={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{value.title}</button>
-          {view === 'measurements' ? <div className={workspace.measurementPreview}>{value.specification?.dimensions.length ? <DimensionReadout dimensions={value.specification.dimensions.slice(0,2)} /> : <p className={workspace.note}>No measurements yet.</p>}</div> : value.note && <p className={workspace.note}>{value.note.replace(/\s+/g, " ").trim()}</p>}
+          {view === 'measurements' ? <div className={workspace.measurementPreview}>{value.specification?.dimensions.length ? <DimensionReadout dimensions={value.specification.dimensions.slice(0,2)} /> : <p className={workspace.note}>No measurements yet.</p>}</div> : (value.document || value.note) && <NotePreview className={workspace.noteRich} document={value.document} limit={5} text={value.note} />}
           {value.assets.length > 0 && <div className={workspace.attachmentStrip} aria-label={`${value.assets.length} attachments`}>{value.assets.slice(0,3).map(asset => <button type="button" key={asset.id} title={asset.name} aria-label={`View ${asset.name}`} onClick={() => setEntry(value)}>{asset.hasPreview ? <Image unoptimized src={assetUrl(value,asset,true)} alt="" width={28} height={28}/> : <FileText size={16}/>}<span>{asset.name}</span></button>)}{value.assets.length > 3 && <span className={workspace.moreAttachments}>+{value.assets.length-3}</span>}</div>}
           <div className={workspace.footer}>
             <Button size="compact" variant="quiet" aria-label={`${canEditEntry(value) && !archived ? 'Edit' : 'View'} ${view === 'measurements' ? 'measurements for ' : ''}${value.title}`} onPress={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{canEditEntry(value) && !archived ? 'Edit' : 'View'} {view === 'measurements' ? 'sizes' : value.kind === 'file' ? 'plan' : 'note'} ↗</Button>

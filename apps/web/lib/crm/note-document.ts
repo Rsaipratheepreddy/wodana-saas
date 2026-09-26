@@ -79,3 +79,54 @@ export function plainNoteDraft(original: RequirementNote, draft: RequirementNote
     : textDocument(draft.note);
   return { ...draft, document };
 }
+
+type Mark = { type: string; attrs?: Record<string, unknown> };
+/** Inline markdown (**bold**, *italic* / _italic_, `code`, [label](https://…)) as text nodes with marks. */
+function inlineMarkdown(text: string): JSONContent[] {
+  const nodes: JSONContent[] = [];
+  const pattern = /(\*\*([^*]+)\*\*)|(\*([^*]+)\*|_([^_]+)_)|(`([^`]+)`)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
+  let last = 0; let match: RegExpExecArray | null;
+  const push = (value: string, marks?: Mark[]) => { if (value) nodes.push({ type: "text", text: value, ...(marks ? { marks } : {}) }); };
+  while ((match = pattern.exec(text))) {
+    push(text.slice(last, match.index));
+    if (match[2]) push(match[2], [{ type: "bold" }]);
+    else if (match[4] ?? match[5]) push((match[4] ?? match[5])!, [{ type: "italic" }]);
+    else if (match[7]) push(match[7], [{ type: "code" }]);
+    else if (match[9]) push(match[9], [{ type: "link", attrs: { href: match[10] } }]);
+    last = match.index + match[0].length;
+  }
+  push(text.slice(last));
+  return nodes;
+}
+
+/**
+ * Plain-text notes written with markdown habits (# headings, - lists, 1. lists, > quotes, **bold**)
+ * as a document, so they read the same as notes written in the editor.
+ */
+export function markdownDocument(text: string): JSONContent {
+  const blocks: JSONContent[] = [];
+  let list: JSONContent | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const task = line.match(/^\s*[-*]\s+\[( |x|X)\]\s+(.*)$/);
+    const item = task ?? bullet ?? ordered;
+    if (item) {
+      const type = ordered && !bullet ? "orderedList" : "bulletList";
+      if (!list || list.type !== type) { list = { type, content: [] }; blocks.push(list); }
+      const content = task ? task[2] : item[1];
+      list.content!.push({ type: "listItem", attrs: task ? { checked: task[1].toLowerCase() === "x" } : undefined, content: [{ type: "paragraph", content: inlineMarkdown(content) }] });
+      continue;
+    }
+    list = null;
+    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    if (heading) { blocks.push({ type: "heading", attrs: { level: heading[1].length }, content: inlineMarkdown(heading[2]) }); continue; }
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) { blocks.push({ type: "blockquote", content: [{ type: "paragraph", content: inlineMarkdown(quote[1]) }] }); continue; }
+    if (/^\s*(---|\*\*\*)\s*$/.test(line)) { blocks.push({ type: "horizontalRule" }); continue; }
+    if (!line.trim()) continue;
+    blocks.push({ type: "paragraph", content: inlineMarkdown(line) });
+  }
+  return { type: "doc", content: blocks };
+}
