@@ -85,10 +85,12 @@ export class ClientPortalService {
     );
     if (!r.rowCount)
       throw new NotFoundException("This client portal is not available.");
+    const gallery = await this.db.query<{ slug: string | null }>(`SELECT published_gallery_slug($1) AS slug`, [r.rows[0].workspaceId]);
     return {
       ...r.rows[0],
       brand: await effectivePortalBrand(this.db, r.rows[0].workspaceId, r.rows[0].brand),
       testMode: this.commercial.testMode,
+      gallerySlug: gallery.rows[0]?.slug ?? null,
     } as PortalSettings;
   }
   private async session(

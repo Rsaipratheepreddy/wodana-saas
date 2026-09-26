@@ -688,6 +688,8 @@ export type PortalSettings = {
   brand: PortalBrand;
   testMode: boolean;
   canManage?: boolean;
+  /** The firm's company gallery, when published. */
+  gallerySlug?: string | null;
 };
 export type PortalGrant = {
   id: string;

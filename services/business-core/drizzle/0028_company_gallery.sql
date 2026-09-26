@@ -124,3 +124,22 @@ INSERT INTO notification_templates (workspace_id, code, channel, locale, version
 SELECT workspace.id, 'gallery.published', 'in_app', 'en', 1, 'approved', 'Your gallery is live', '{{actor}} published the company gallery.', '["actor"]'::jsonb, now()
 FROM workspaces workspace
 ON CONFLICT (workspace_id, code, channel, locale, version_number) DO NOTHING;
+--> statement-breakpoint
+-- The client portal links to the firm's gallery while it's published.
+CREATE FUNCTION published_gallery_slug(p_workspace_id uuid)
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT slug FROM workspace_galleries WHERE workspace_id = p_workspace_id AND status = 'published';
+$$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION published_gallery_slug(uuid) FROM PUBLIC;
+--> statement-breakpoint
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wodana_app') THEN
+    GRANT EXECUTE ON FUNCTION published_gallery_slug(uuid) TO wodana_app;
+  END IF;
+END $$;

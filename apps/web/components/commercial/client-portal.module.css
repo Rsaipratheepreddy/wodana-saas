@@ -696,3 +696,7 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* The firm's company gallery, opened in a new tab. */
+.galleryLink { display: inline-flex; align-items: center; padding: var(--wd-space-2) var(--wd-space-3); color: inherit; font-size: var(--wd-text-sm); text-decoration: none; opacity: 0.8; }
+.galleryLink:hover { opacity: 1; text-decoration: underline; }

@@ -118,6 +118,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: "Workspace language" },
           { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: "Design packages" },
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: "Quotations" },
+          { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },
       {
@@ -386,6 +387,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
     { id: "utilities", label: "Company", items: [
       ...(allowed.has("hrms-overview") ? [{ id: "team", label: "People", description: "Team, attendance and leave", href: "/workspace/hrms", icon: "members" as const }] : []),
       ...(allowed.has("pre-project-catalogs") ? [{ id: "resources", label: "Catalog", description: "Shared items, materials and prices", href: "/workspace/catalogs", icon: "materialPlan" as const }] : []),
+      ...(modules.some(module => module.navigation.some(group => group.items.some(item => item.id === "gallery"))) ? [{ id: "gallery", label: "Gallery", description: "Your brochure to share", href: "/workspace/gallery", icon: "designs" as const }] : []),
       ...(allowed.has("integrations") ? [{ id: "integrations", label: "Connections", href: "/workspace/integrations", icon: "integrations" as const }] : []),
       ...(modules.find(module => module.id === "workspace")?.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false && item.id !== "integrations").sort((a, b) => Number(b.id === "company") - Number(a.id === "company")).slice(0, 1).map(item => ({ id: "settings", label: "Settings", href: item.href, icon: "settings" as const })) ?? []),
     ] },
@@ -426,6 +428,7 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/projects")) return exists("projects");
   if (under("/workspace/hrms")) return exists("team");
   if (under("/workspace/integrations")) return exists("integrations");
+  if (under("/workspace/gallery")) return exists("gallery");
   return exists("settings");
 }
 

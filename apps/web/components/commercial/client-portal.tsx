@@ -445,6 +445,7 @@ export function ClientPortal({ settings }: { settings: PortalSettings }) {
                     : id === "requests" && pendingDecisions.length > 0 ? <span className={p.count}>{pendingDecisions.length}</span> : null}
                 </button>
               ))}
+              {settings.gallerySlug ? <a className={p.galleryLink} href={`/gallery/${settings.gallerySlug}`} target="_blank" rel="noreferrer">Gallery</a> : null}
             </nav>
             {mainTab === "approvals" && <nav className={p.subnav} aria-label="Approval views"><button aria-current={tab === "approvals" ? "page" : undefined} onClick={() => setTab("approvals")}>Review queue</button><button aria-current={tab === "designs" ? "page" : undefined} onClick={() => setTab("designs")}>Designs</button></nav>}
             {mainTab === "project" && clientSections.updates && <nav className={p.subnav} aria-label="Progress views"><button aria-current={tab === "project" ? "page" : undefined} onClick={() => setTab("project")}>Project updates</button><button aria-current={tab === "alerts" ? "page" : undefined} onClick={() => setTab("alerts")}>Alerts{!!current?.project?.alerts?.length && <span className={p.count}>{current.project.alerts.length}</span>}</button></nav>}

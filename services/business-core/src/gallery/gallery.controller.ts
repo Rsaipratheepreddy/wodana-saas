@@ -21,6 +21,9 @@ export class GalleryController {
   @Put()
   save(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.gallery.saveSettings(actor, workspaceId, input ?? {}); }
 
+  @Get("catalog")
+  catalog(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("q") query = "") { return this.gallery.catalogChoices(actor, workspaceId, String(query)); }
+
   @Post("items")
   saveItem(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.gallery.saveItem(actor, workspaceId, input ?? {}); }
 

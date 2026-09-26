@@ -197,6 +197,20 @@ export class GalleryService {
     });
   }
 
+  /** Catalog items to show as products (with a picture and price when they have one), not already in the gallery. */
+  catalogChoices(actor: RequestActor, workspaceId: string, search: string) {
+    return this.access.asMember(actor, workspaceId, async (client) => ({
+      items: (await client.query(
+        `SELECT item.id, item.name, item.unit_code AS unit, category.name AS category,
+                (SELECT picture.id FROM catalog_item_images picture WHERE picture.workspace_id = item.workspace_id AND picture.item_id = item.id ORDER BY picture.sort_order LIMIT 1) AS "imageId"
+           FROM catalog_items item LEFT JOIN catalog_categories category ON category.id = item.category_id
+          WHERE item.workspace_id = $1 AND item.status = 'active' AND item.item_type IN ('product', 'assembly', 'service', 'package', 'ready_made')
+            AND NOT EXISTS (SELECT 1 FROM workspace_gallery_items gallery WHERE gallery.workspace_id = item.workspace_id AND gallery.catalog_item_id = item.id)
+            AND ($2 = '' OR item.name ILIKE '%' || $2 || '%' OR category.name ILIKE '%' || $2 || '%')
+          ORDER BY category.name NULLS LAST, item.name LIMIT 100`, [workspaceId, search.trim().slice(0, 80).replace(/[%_\\]/g, "\\$&")])).rows,
+    }));
+  }
+
   async uploadImage(actor: RequestActor, workspaceId: string, imageId: string, itemId: string | null, file?: ReferenceUpload) {
     const prepared = await prepareReferenceUpload(file);
     if (!prepared.mimeType.startsWith("image/")) throw new BadRequestException("Choose an image (JPG, PNG or WebP).");

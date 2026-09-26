@@ -21,6 +21,7 @@ describe('product navigation route ownership', () => {
     ['/workspace/projects/factory', '', 'factory'],
     ['/workspace/settings/client-portal', '', 'settings'],
     ['/workspace/integrations', '', 'integrations'],
+    ['/workspace/gallery', '', 'gallery'],
   ])('assigns %s to one destination', (path, query, expected) => {
     expect(productNavigationActive(path, new URLSearchParams(query), sections)).toBe(expected);
   });

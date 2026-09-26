@@ -7,7 +7,11 @@ import type { PublicEnquiryForm } from "@/lib/crm/lead-forms";
 import { CrmPhoneField } from "./crm-phone-field";
 import styles from "./lead-forms.module.css";
 
-export function PublicEnquiryFormView({ form, token, preview = false, link }: { form: PublicEnquiryForm; token?: string; preview?: boolean; link?: { source?: string; channel?: string; placement?: string } }) {
+export function PublicEnquiryFormView({ form, token, preview = false, link, submitTo, extra, bare = false, onReceived }: {
+  form: PublicEnquiryForm; token?: string; preview?: boolean; link?: { source?: string; channel?: string; placement?: string };
+  /** Another endpoint for the same form (e.g. the company gallery), with extra fields such as the picked items. */
+  submitTo?: string; extra?: Record<string, unknown>; bare?: boolean; onReceived?: () => void;
+}) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [phoneCountries, setPhoneCountries] = useState<Record<string, string>>({});
   const [customAreas, setCustomAreas] = useState<Record<string, boolean>>({});
@@ -28,22 +32,22 @@ export function PublicEnquiryFormView({ form, token, preview = false, link }: { 
     setSaving(true); setError("");
     try {
       const phoneCountryCodes = Object.fromEntries(form.questions.filter(question => question.type === "tel").map(question => [question.id, phoneCountries[question.id] ?? form.defaultCountryCode ?? ""]));
-      const response = await fetch(`/api/enquiry-forms/${token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, revision: form.revision, answers, phoneCountryCodes, serviceConsent, ...(link ? { link } : {}) }) });
+      const response = await fetch(submitTo ?? `/api/enquiry-forms/${token}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, revision: form.revision, answers, phoneCountryCodes, serviceConsent, ...(link ? { link } : {}), ...(extra ?? {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(". ") : result.message ?? "Your enquiry could not be submitted. Please try again.");
-      setReceived(true);
+      setReceived(true); onReceived?.();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Please try again."); }
     finally { setSaving(false); }
   };
   if (received) return <div className={styles.received}><h1>Thank you for your enquiry</h1><p>Our team will review your request and get in touch.</p></div>;
   return <Form className={[styles.customerForm, preview && styles.compactPreview].filter(Boolean).join(" ")} onSubmit={submit}>
-    <header className={styles.customerHeading}>
+    {bare ? null : <header className={styles.customerHeading}>
       {form.branding && <div className={styles.customerBrand}>{form.branding.logoUrl ? <Image src={form.branding.logoUrl} alt={`${form.branding.displayName} logo`} width={140} height={56} unoptimized /> : <strong>{form.branding.displayName}</strong>}</div>}
       <h1>{form.title}</h1>
       {form.description && <p>{form.description}</p>}
       <small>Fields marked * are required.</small>
       {preview && <p className={styles.previewNotice}>Preview · answers here are not submitted</p>}
-    </header>
+    </header>}
     {form.questions.map(question => <section key={question.id} data-question-id={question.id} className={styles.customerQuestion}>
       {question.field === "area" ? emirate === "other" || !(form.areas?.[emirate]?.length)
         ? <TextInput label={question.title} description={question.description} value={String(answers[question.id] ?? "")} onChange={value => update(question.id, value)} />
