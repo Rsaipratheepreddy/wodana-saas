@@ -13,6 +13,7 @@ import { processWorkDeadlines } from "./work-reminders";
 import { OrdersService } from "../purchasing/orders.service";
 import { PriceRequestsService } from "../purchasing/price-requests.service";
 import { ReceivingService } from "../purchasing/receiving.service";
+import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -892,6 +893,100 @@ integration("projects core (plan §6.10)", () => {
 
       const notices = (await w.client.query<{ event: string; recipient: string }>(`SELECT event_type AS event, recipient_id AS recipient FROM notifications WHERE workspace_id = $1 AND event_type IN ('purchasing.received', 'purchasing.rejected', 'purchasing.inspection_needed') AND channel = 'in_app' ORDER BY created_at`, [w.workspaceId])).rows;
       expect(notices).toEqual(expect.arrayContaining([{ event: "purchasing.rejected", recipient: w.designer }, { event: "purchasing.received", recipient: w.designer }]));
+    });
+  });
+
+  it("keeps stock by place and owner: receipts in, reserve and release, issue, moves that arrive short, counts, and a ledger that never changes", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const company = randomUUID(), vendor = randomUUID();
+      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio Furniture','Studio Furniture LLC','AE','AED','en-AE','Asia/Dubai')`, [company, w.workspaceId]);
+      const access = (userId: string, permissions: string[]) => {
+        const run = async (_a: unknown, _w: string, code: string | string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          if (!(Array.isArray(code) ? code : [code]).some((item) => permissions.includes(item))) throw new Error("Not allowed");
+          return fn(w.client, { userId });
+        };
+        return { withPermission: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
+      };
+      const all = ["vendors.view", "vendors.manage", "purchasing.view", "purchasing.manage", "stock.view", "stock.manage", "stock.adjust", "stock.receive"];
+      const orders = new OrdersService(access(w.designer, all));
+      const store = new InventoryService(access(w.manager, all));
+      const keeper = new InventoryService(access(w.designer, ["stock.view", "stock.receive"]));
+      await w.client.query(`INSERT INTO workspace_purchasing_settings (workspace_id, approval_threshold, require_material_signoff, require_approved_supplier, require_inspection) VALUES ($1, NULL, false, false, false)`, [w.workspaceId]);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "10", unit: "m²", version: detail.project.version });
+      await new SuppliersService(access(w.designer, all)).save(actor, w.workspaceId, { id: vendor, version: 0, name: "Nile Marble", entityIds: [company] });
+      const slabNeed = (await orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Calacatta slab")!;
+      const order = randomUUID();
+      let state = await orders.create(actor, w.workspaceId, { id: order, vendorId: vendor, lines: [{ source: "material", materialItemId: slabNeed.sourceId, quantity: "10", unitPrice: "350", discountPercent: "0", taxRate: "0" }] });
+      state = await orders.command(actor, w.workspaceId, order, { action: "submit", version: state.order.version });
+      state = await orders.command(actor, w.workspaceId, order, { action: "send", version: state.order.version });
+      await new ReceivingService(access(w.designer, all)).receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "warehouse", receivedOn: "2026-09-26",
+        lines: [{ orderLineId: state.lines[0].id, received: "10" }] });
+
+      // The slab is the project's stock at the warehouse, at its price; the glue is added as free stock.
+      let stock = await store.stock(actor, w.workspaceId);
+      const warehouse = stock.locations.find((location) => location.kind === "warehouse")!;
+      expect(stock.rows.map((row) => [row.itemName, row.unit, row.locationName, row.projectReference, row.onHand])).toEqual([["Calacatta slab", "m²", "Warehouse", detail.project.reference, "10.0000"]]);
+      const add = { id: randomUUID(), action: "add", name: "Wood glue", unit: "nos", locationId: warehouse.id, quantity: "20", reason: "Opening stock" };
+      await expect(keeper.command(actor, w.workspaceId, add)).rejects.toThrow("Not allowed");
+      await expect(store.command(actor, w.workspaceId, { ...add, reason: "" })).rejects.toThrow(/where this stock comes from/);
+      stock = await store.command(actor, w.workspaceId, add);
+      const glue = stock.rows.find((row) => row.itemName === "Wood glue")!;
+      const slab = stock.rows.find((row) => row.itemName === "Calacatta slab")!;
+      const change = (action: string, input: Record<string, unknown>) => store.command(actor, w.workspaceId, { id: randomUUID(), action, itemId: glue.itemId, locationId: warehouse.id, ...input });
+
+      // Reserve 5 for the project (replaying it changes nothing), use 3 there, release 2.
+      const reserve = { id: randomUUID(), action: "allocate", itemId: glue.itemId, locationId: warehouse.id, quantity: "5", forProjectId: projectId };
+      await store.command(actor, w.workspaceId, reserve);
+      stock = await store.command(actor, w.workspaceId, reserve);
+      const glueRows = () => stock.rows.filter((row) => row.itemName === "Wood glue").map((row) => [row.projectReference, row.onHand]);
+      expect(glueRows()).toEqual([[null, "15.0000"], [detail.project.reference, "5.0000"]]);
+      await expect(change("issue", { quantity: "30", forProjectId: projectId })).rejects.toThrow(/Only 15/);
+      stock = await change("issue", { projectId, quantity: "3" });
+      await expect(change("release", { projectId, quantity: "3" })).rejects.toThrow(/Only 2/);
+      stock = await change("release", { projectId, quantity: "2" });
+      expect(glueRows()).toEqual([[null, "17.0000"]]);
+
+      // The slab goes to another store; one m² breaks on the way.
+      const yard = randomUUID();
+      await store.saveLocation(actor, w.workspaceId, { id: yard, kind: "warehouse", name: "Al Quoz yard" });
+      const move = randomUUID();
+      let transfer = await store.send(actor, w.workspaceId, { id: move, fromLocationId: warehouse.id, toLocationId: yard, lines: [{ itemId: slab.itemId, projectId, quantity: "10" }] });
+      expect(transfer.transfer).toMatchObject({ number: 1, status: "in_transit", fromName: "Warehouse", toName: "Al Quoz yard" });
+      expect((await store.stock(actor, w.workspaceId)).rows.filter((row) => row.itemName === "Calacatta slab")).toEqual([]);
+      await expect(store.saveLocation(actor, w.workspaceId, { id: warehouse.id, name: "Warehouse", active: false })).rejects.toThrow(/Move the stock out/);
+      await expect(keeper.transferCommand(actor, w.workspaceId, move, { action: "receive", lines: [{ id: transfer.lines[0].id, received: "9" }] })).rejects.toThrow(/what happened to the rest/);
+      transfer = await keeper.transferCommand(actor, w.workspaceId, move, { action: "receive", lines: [{ id: transfer.lines[0].id, received: "9", lossReason: "Cracked in the truck" }] });
+      expect(transfer.transfer).toMatchObject({ status: "received", short: true });
+      expect((await keeper.transferCommand(actor, w.workspaceId, move, { action: "receive", lines: [] })).transfer.status).toBe("received");
+      stock = await store.stock(actor, w.workspaceId);
+      expect(stock.rows.filter((row) => row.itemName === "Calacatta slab").map((row) => [row.locationName, row.onHand])).toEqual([["Al Quoz yard", "9.0000"]]);
+
+      // A cancelled move puts everything back.
+      const back = randomUUID();
+      await store.send(actor, w.workspaceId, { id: back, fromLocationId: warehouse.id, toLocationId: yard, lines: [{ itemId: glue.itemId, quantity: "4" }] });
+      await expect(store.transferCommand(actor, w.workspaceId, back, { action: "cancel" })).rejects.toThrow(/Say why/);
+      await store.transferCommand(actor, w.workspaceId, back, { action: "cancel", reason: "Van broke down" });
+      stock = await store.stock(actor, w.workspaceId);
+      expect(glueRows()).toEqual([[null, "17.0000"]]);
+
+      // A count corrects stock with the reason; the ledger keeps every step and can't be changed.
+      await expect(change("count", { counted: "16" })).rejects.toThrow(/why the count is different/);
+      stock = await change("count", { counted: "16", reason: "One tube dried out" });
+      expect(glueRows()).toEqual([[null, "16.0000"]]);
+      const ledger = (await store.movements(actor, w.workspaceId, { itemId: glue.itemId })).movements;
+      expect(ledger.map((row) => [row.kind, row.quantity]).reverse()).toEqual([["adjust", "20.0000"], ["allocate", "-5.0000"], ["allocate", "5.0000"], ["issue", "-3.0000"],
+        ["release", "-2.0000"], ["release", "2.0000"], ["transfer_out", "-4.0000"], ["transfer_in", "4.0000"], ["adjust", "-1.0000"]]);
+      expect(ledger[0]).toMatchObject({ reason: "Count: One tube dried out", byName: "Omar Manager" });
+      const slabIn = (await store.movements(actor, w.workspaceId, { itemId: slab.itemId })).movements.at(-1)!;
+      expect(slabIn).toMatchObject({ kind: "receive", orderNumber: state.order.number, receiptNumber: 1 });
+      expect((await w.client.query(`SELECT unit_cost::text AS cost, currency FROM stock_movements WHERE workspace_id = $1 AND kind = 'receive'`, [w.workspaceId])).rows).toEqual([{ cost: "350.0000", currency: "AED" }]);
+      await w.client.query("SAVEPOINT immutable");
+      await expect(w.client.query(`UPDATE stock_movements SET quantity = 1 WHERE workspace_id = $1`, [w.workspaceId])).rejects.toThrow(/cannot be changed/);
+      await w.client.query("ROLLBACK TO SAVEPOINT immutable");
     });
   });
 

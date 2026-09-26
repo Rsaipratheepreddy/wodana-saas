@@ -95,7 +95,7 @@ export type PriceRequestState = {
 };
 
 export type LocationKind = "warehouse" | "factory" | "site" | "other";
-export type StockLocation = { id: string; kind: LocationKind; name: string; projectId: string | null; projectReference: string | null; address: string; isDefault: boolean };
+export type StockLocation = { id: string; kind: LocationKind; name: string; projectId: string | null; projectReference: string | null; address: string; isDefault: boolean; active: boolean };
 /** Where goods can be received: a location, or one made on first use (`site:<project>`, `warehouse`, `factory`). */
 export type Place = { key: string; kind: LocationKind; name: string | null; projectReference: string | null };
 

@@ -5,6 +5,7 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
+import { stockFromReceipt } from "../inventory/stock";
 import { event as boqEvent } from "../project-core/project-scope";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { currencyDecimals, ensurePurchasingSettings, orderEvent, readOrder, readOrderLines, readOrders, type OrderDetail } from "./orders";
@@ -92,7 +93,7 @@ export class ReceivingService {
 
       if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Enter what arrived.");
       const seen = new Set<string>();
-      const lines: Array<{ orderLineId: string; description: string; received: string; accepted: string; rejected: string; pending: string; rejectReason: string }> = [];
+      const lines: Array<{ id: string; orderLineId: string; description: string; received: string; accepted: string; rejected: string; pending: string; rejectReason: string }> = [];
       for (const raw of body.lines) {
         const input = (raw ?? {}) as Record<string, unknown>;
         const line = orderLines.find((item) => item.id === input.orderLineId);
@@ -109,7 +110,7 @@ export class ReceivingService {
           ({ accepted, rejected, rejectReason } = split(line.description, received, input));
           pending = "0";
         }
-        lines.push({ orderLineId: line.id, description: line.description, received, accepted, rejected, pending, rejectReason });
+        lines.push({ id: randomUUID(), orderLineId: line.id, description: line.description, received, accepted, rejected, pending, rejectReason });
       }
       if (!lines.length) throw new BadRequestException("Enter what arrived.");
 
@@ -122,9 +123,10 @@ export class ReceivingService {
       for (const line of lines)
         await client.query(
           `INSERT INTO goods_receipt_lines (id, workspace_id, receipt_id, order_line_id, received, accepted, rejected, pending, reject_reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [randomUUID(), workspaceId, id, line.orderLineId, line.received, line.accepted, line.rejected, line.pending, line.rejectReason]);
+          [line.id, workspaceId, id, line.orderLineId, line.received, line.accepted, line.rejected, line.pending, line.rejectReason]);
 
       await this.settle(client, workspaceId, order);
+      await stockFromReceipt(client, workspaceId, { receiptId: id, lines: lines.map((line) => ({ receiptLineId: line.id, accepted: line.accepted })), actorId: user.userId });
       await orderEvent(client, workspaceId, orderId, "received", { receipt: number, location: location.name, lines: lines.length, inspection: settings.requireInspection }, user.userId);
       await this.booked(client, workspaceId, order, lines, user.userId);
       const pending = lines.some((line) => Dec.of(line.pending).cmp(0) > 0);
@@ -167,6 +169,7 @@ export class ReceivingService {
           [workspaceId, line.id, line.take, line.refuse, line.reason]);
       await client.query(`UPDATE goods_receipts SET inspected_by = $3, inspected_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, receiptId, user.userId]);
       await this.settle(client, workspaceId, order);
+      await stockFromReceipt(client, workspaceId, { receiptId, lines: results.map((line) => ({ receiptLineId: line.id, accepted: line.take })), actorId: user.userId });
       const settled = results.map((line) => ({ orderLineId: line.orderLineId, description: line.description, accepted: line.take, rejected: line.refuse, rejectReason: line.reason }));
       await orderEvent(client, workspaceId, order.id, "inspected", { receipt: receipt.number, accepted: settled.filter((line) => Dec.of(line.accepted).cmp(0) > 0).length,
         rejected: settled.filter((line) => Dec.of(line.rejected).cmp(0) > 0).length }, user.userId);

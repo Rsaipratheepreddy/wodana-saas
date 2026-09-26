@@ -650,7 +650,20 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - The order shows what arrived per line and its deliveries.
 - **Notices:** inspection needed (inspectors), received (the buyer and the receiver), and goods rejected (the buyer).
 - **Permissions:** `stock.receive` and `stock.inspect`, alongside `purchasing.manage` and `purchasing.approve`.
-- Still to come: the stock ledger by location (reservations, issues, transfers, counts), site deliveries with photo proof, returns to the supplier and debit notes, and payables.
+- Accepted goods go into stock where they arrived (see Inventory below).
+
+**Built (Operations → Inventory: Stock · Moves · History; Settings → Stock places):**
+- **Stock** is held per item, place and owner: a project's stock, or free stock.
+  - Items come from the catalog item, or by name and unit when there's none.
+  - Every change is a row in the immutable `stock_movements` ledger. The database keeps `stock_balances` in the same transaction, and stock can never go below zero.
+  - Deliveries add stock at the order line's price. Work bought as a service isn't stock.
+- **Changes:** issue to a project, reserve free stock for a project or release it, take unused stock back from a project, count (a difference needs its reason), and add opening stock with its origin. Each change is replayed safely by its id.
+- **Moves** between places: stock leaves when sent and arrives when received. Anything missing on arrival says why; a cancelled move puts everything back. One project's stock can't go to another project's site.
+- **History:** the ledger per item, with the order, delivery or move each change came from.
+- **Places:** warehouses, factory and other places in Settings; a project's site is made by its first delivery; a place with stock can't be closed.
+- **Notices:** a move is on its way (receivers), a move arrived short (the sender), and stock was corrected (people who adjust stock).
+- **Permissions:** `stock.view`, `stock.manage` and `stock.adjust`.
+- Still to come: delivery problems (reject reasons, missing goods, returns to the supplier, reversing a wrong receipt, inspecting line by line), site deliveries with photo proof, unit conversions, costing (moving average) and payables.
 
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.
@@ -800,7 +813,7 @@ One adapter interface per capability. States: **Not configured → Connected →
 | Calendar | Google (exists), Microsoft later | site visits, client meetings; free/busy |
 | Lead ads | Meta Lead Ads, PlyLeads | in → intake events; field mapping per form |
 | Payments | Stripe / Network International / Telr (UAE), Razorpay (IN) | payment link → webhook → receipt `recorded`, then Finance verifies (never auto-verified) |
-| Accounting | Zoho Books, QuickBooks (partial) | out: invoices, receipts, bills, payments; reconciliation job; Wodana stays the source of truth |
+| Accounting | Zoho Books, QuickBooks Online | out: suppliers, supplier bills (matched to orders and receipts), supplier payments, credit and debit notes, client invoices and receipts, per buying company and tax code; in: payment status; a reconciliation job flags differences; Wodana stays the source of truth |
 | Storage | S3-compatible | per-tenant prefix, malware scan, signed URLs |
 | E-sign | later (DocuSign/Zoho Sign) | agreements |
 

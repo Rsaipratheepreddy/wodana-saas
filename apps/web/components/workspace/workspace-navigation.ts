@@ -122,6 +122,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: "Quotations" },
           { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: "Projects" },
           { href: "/workspace/settings/purchasing", icon: "procurement", id: "purchasing-settings", label: "Purchasing" },
+          { href: "/workspace/settings/inventory", icon: "materialPlan", id: "inventory-settings", label: "Stock places" },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },
@@ -305,13 +306,14 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     icon: "projects",
     id: "projects",
     label: "Projects",
-    paths: ["/workspace/purchasing"],
+    paths: ["/workspace/purchasing", "/workspace/inventory"],
     navigation: [
       {
         id: "projects-primary",
         items: [
           { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Projects", description: "Every project: stage, next step and handover date." },
           { href: "/workspace/purchasing", icon: "procurement", id: "global-purchasing", label: "Purchasing", description: "What to order, orders and suppliers." },
+          { href: "/workspace/inventory", icon: "materialPlan", id: "global-inventory", label: "Inventory", description: "Stock by place, moves and counts." },
         ],
       },
     ],
@@ -359,7 +361,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
     ] },
     { id: "operations", label: "Operations", items: [
       ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", icon: "procurement" as const }] : []),
-      ...(allowed.has("global-inventory") ? [{ id: "inventory", label: "Inventory", href: "/workspace/projects/inventory", icon: "materialPlan" as const }] : []),
+      ...(allowed.has("global-inventory") ? [{ id: "inventory", label: "Inventory", href: "/workspace/inventory", icon: "materialPlan" as const }] : []),
       ...(allowed.has("production") ? [{ id: "factory", label: "Factory", href: "/workspace/projects/factory", icon: "production" as const }] : []),
     ] },
     { id: "utilities", label: "Company", items: [
@@ -401,6 +403,7 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/pre-projects")) return exists("planning") ?? exists("projects");
   if (under("/workspace/projects/clients")) return exists("clients");
   if (under("/workspace/purchasing")) return exists("purchasing");
+  if (under("/workspace/inventory")) return exists("inventory");
   if (under("/workspace/projects")) return exists("projects");
   if (under("/workspace/hrms")) return exists("team");
   if (under("/workspace/integrations")) return exists("integrations");

@@ -9,13 +9,16 @@ export type LocationKind = (typeof LOCATION_KINDS)[number];
 /** Orders goods can arrive against: sent to the supplier and not yet complete. */
 export const RECEIVABLE = ["sent", "confirmed", "partly_received"] as const;
 
-export type StockLocation = { id: string; kind: LocationKind; name: string; projectId: string | null; projectReference: string | null; address: string; isDefault: boolean };
+export type StockLocation = {
+  id: string; kind: LocationKind; name: string; projectId: string | null; projectReference: string | null; address: string; isDefault: boolean; active: boolean;
+};
 
-export async function readLocations(db: Db, workspaceId: string): Promise<StockLocation[]> {
+/** Places stock is kept, the open ones unless asked for all. */
+export async function readLocations(db: Db, workspaceId: string, all = false): Promise<StockLocation[]> {
   return (await db.query<StockLocation>(
-    `SELECT location.id, location.kind, location.name, location.project_id AS "projectId", project.reference AS "projectReference", location.address, location.is_default AS "isDefault"
+    `SELECT location.id, location.kind, location.name, location.project_id AS "projectId", project.reference AS "projectReference", location.address, location.is_default AS "isDefault", location.active
        FROM stock_locations location LEFT JOIN delivery_projects project ON project.workspace_id = location.workspace_id AND project.id = location.project_id
-      WHERE location.workspace_id = $1 AND location.active ORDER BY array_position(ARRAY['site', 'warehouse', 'factory', 'other'], location.kind::text), location.name`, [workspaceId])).rows;
+      WHERE location.workspace_id = $1 AND (location.active OR $2) ORDER BY array_position(ARRAY['site', 'warehouse', 'factory', 'other'], location.kind::text), location.name`, [workspaceId, all])).rows;
 }
 
 /**

@@ -36,6 +36,7 @@ import { QuotationModule } from "./quotation/quotation.module";
 import { GalleryModule } from "./gallery/gallery.module";
 import { ProjectCoreModule } from "./project-core/project-core.module";
 import { PurchasingModule } from "./purchasing/purchasing.module";
+import { InventoryModule } from "./inventory/inventory.module";
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { PurchasingModule } from "./purchasing/purchasing.module";
     GalleryModule,
     ProjectCoreModule,
     PurchasingModule,
+    InventoryModule,
     HrmsModule,
   ],
   controllers: [AppController],
