@@ -1,5 +1,5 @@
 import { Braces, CreditCard } from "lucide-react";
-import { siAutodesk, siDropbox, siQuickbooks, siWhatsapp, siZoho, type SimpleIcon } from "simple-icons";
+import { siAutodesk, siDropbox, siMeta, siQuickbooks, siWhatsapp, siZoho, type SimpleIcon } from "simple-icons";
 import type { ProviderCapabilityState } from "@/lib/workspace/integrations";
 
 function SimpleBrandMark({ color, icon }: { color?: string; icon: SimpleIcon }) {
@@ -41,6 +41,7 @@ export function ProviderMark({ provider }: { provider: ProviderCapabilityState["
   if (provider === "microsoft_365") return <MicrosoftMark />;
   if (provider === "docusign") return <DocusignMark />;
   if (provider === "dropbox") return <SimpleBrandMark icon={siDropbox} />;
+  if (provider === "meta_lead_ads") return <SimpleBrandMark icon={siMeta} />;
   if (provider === "payment") return <CreditCard aria-hidden="true" size={24} strokeWidth={1.7} />;
   return <Braces aria-hidden="true" size={24} strokeWidth={1.7} />;
 }

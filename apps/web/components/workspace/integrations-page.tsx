@@ -338,7 +338,7 @@ export function IntegrationsPage({
         <div className={styles.sectionHeading}><div><h2 id="unavailable-apps-heading">{t("External lead capture")}</h2><p>{t("Shared enquiry links and QR codes work now. These native sources need provider access before they can be enabled.")}</p></div><span>{unavailableCatalog.length} {t("source")}{unavailableCatalog.length === 1 ? "" : "s"}</span></div>
         <div className={styles.plannedGrid}>{unavailableCatalog.map((item) => <Surface as="article" aria-label={`${item.label} integration`} className={styles.plannedCard} key={item.id}>
           <span className={styles.plannedIcon}><ProviderMark provider={item.id} /></span>
-          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{item.description}</small></span>
+          <span className={styles.plannedIdentity}><strong>{item.label}</strong><small>{embedded ? item.source : item.description}</small></span>
           <Badge tone="warning">{t("Details required")}</Badge>
         </Surface>)}</div>
       </section> : null}

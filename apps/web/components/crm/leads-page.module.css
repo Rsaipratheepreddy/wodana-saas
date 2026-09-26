@@ -237,10 +237,6 @@
 .assignmentSummary small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
 
 .sheet .createDeal { min-block-size: 28px; padding: var(--wd-space-1) var(--wd-space-2); font-size: var(--wd-text-xs); font-weight: 600; border-radius: var(--wd-radius-xs); white-space: nowrap; }
-.sourceIntro { display:flex; align-items:center; justify-content:space-between; gap:var(--wd-space-5); margin-block-end:var(--wd-space-4); padding:var(--wd-space-4) var(--wd-space-4); border:0; border-radius:var(--wd-radius-sm); background:var(--wd-color-surface-muted); }
-.sourceIntro h2 { margin:0 0 var(--wd-space-0-5); font-size:var(--wd-text-lg); font-weight:650; }
-.sourceIntro p { margin:0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); line-height:1.5; }
-@media(max-width:600px) { .sourceIntro { align-items:flex-start; flex-direction:column; } }
 
 .listBar { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); padding-block-end: var(--wd-space-1); }
 .listBar > :global(.wd-list-tabs) { flex: 1; min-inline-size: 0; border-block-end: 0; }

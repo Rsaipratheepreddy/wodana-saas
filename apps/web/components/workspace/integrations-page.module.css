@@ -356,4 +356,10 @@
 .embedded .cardFooter { padding:var(--wd-space-2); }
 .embedded .cardFooter :global(.wd-button) { min-block-size:30px; font-size:var(--wd-text-xs); }
 .embedded .cardFooter :global(.wd-button):nth-child(n+2) { display:none; }
+/* Both card kinds share one anatomy when embedded: same padding, logo box and title weight. */
+.embedded .plannedCard { gap:var(--wd-space-2); padding:var(--wd-space-3); }
+.embedded .plannedIcon { display:grid; place-items:center; inline-size:28px; block-size:28px; background:transparent; }
+.embedded .plannedIcon svg { inline-size:24px; block-size:24px; }
+.embedded .plannedCard :global(.wd-badge) { margin-inline-end:var(--wd-space-2); }
+.embedded .cardIdentity strong, .embedded .plannedIdentity strong { font-size:var(--wd-text-md); font-weight:650; }
 @container (max-width:38rem) { .embedded .plannedCard { flex-wrap:wrap; } .embedded .plannedCard :global(.wd-badge) { margin-inline-start:var(--wd-space-12); } }
