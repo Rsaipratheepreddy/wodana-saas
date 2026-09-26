@@ -17,9 +17,12 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
   if (!UUID.test(workspaceId) || !allowed) return invalidRequest("Invalid gallery resource.");
   const base = `/workspaces/${workspaceId}/gallery${path.length ? `/${path.join("/")}` : ""}`;
   if (path[0] === "images" && method === "GET") {
-    const result = await authenticatedBackendFetch(`${base}${url.searchParams.get("preview") === "1" ? "?preview=1" : ""}`, { cache: "no-store" });
-    if (result.unauthenticated || !result.upstream?.ok) return NextResponse.json({ message: "The image could not be loaded." }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
-    const response = new NextResponse(result.upstream.body, { headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream", "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
+    const range = request.headers.get("range");
+    const result = await authenticatedBackendFetch(`${base}${url.searchParams.get("preview") === "1" ? "?preview=1" : ""}`, { cache: "no-store", headers: range ? { range } : undefined });
+    if (result.unauthenticated || !result.upstream || (!result.upstream.ok && result.upstream.status !== 206)) return NextResponse.json({ message: "The image could not be loaded." }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
+    const headers: Record<string, string> = { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream", "cache-control": "private, max-age=300", "x-content-type-options": "nosniff", "accept-ranges": "bytes" };
+    for (const name of ["content-range", "content-length"]) { const value = result.upstream.headers.get(name); if (value) headers[name] = value; }
+    const response = new NextResponse(result.upstream.body, { status: result.upstream.status, headers });
     applyRotatedSession(response, result.rotatedSession);
     return response;
   }
@@ -28,7 +31,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path?: s
     if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return invalidRequest("Choose an image up to 20 MB.");
     const input = await request.formData().catch(() => null);
     const file = input?.get("file");
-    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !file.type.startsWith("image/")) return invalidRequest("Choose an image up to 20 MB.");
+    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !(file.type.startsWith("image/") || ["video/mp4", "video/webm", "video/quicktime"].includes(file.type))) return invalidRequest("Choose a picture or an MP4/WebM video up to 20 MB.");
     const body = new FormData(); body.set("file", file);
     const itemId = url.searchParams.get("itemId");
     return workspaceJsonResponse(`${base}${itemId && UUID.test(itemId) ? `?itemId=${itemId}` : ""}`, { method: "POST", body }, "The image could not be uploaded.");

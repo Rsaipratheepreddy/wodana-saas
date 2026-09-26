@@ -10,9 +10,12 @@ async function handle(request: Request, { params }: { params: Promise<{ slug: st
   if (!SLUG.test(slug)) return NextResponse.json({ message: "Gallery not found." }, { status: 404 });
   const url = new URL(request.url);
   if (request.method === "GET" && path.length === 2 && path[0] === "images" && UUID.test(path[1])) {
-    const upstream = await fetch(businessApiUrl(`/public/gallery/${slug}/images/${path[1]}${url.searchParams.get("preview") === "1" ? "?preview=1" : ""}`), { signal: AbortSignal.timeout(20000) }).catch(() => null);
-    if (!upstream?.ok) return NextResponse.json({ message: "Image not found." }, { status: upstream?.status ?? 503 });
-    return new NextResponse(upstream.body, { headers: { "content-type": upstream.headers.get("content-type") ?? "image/webp", "cache-control": "public, max-age=3600, stale-while-revalidate=86400", "x-content-type-options": "nosniff" } });
+    const range = request.headers.get("range");
+    const upstream = await fetch(businessApiUrl(`/public/gallery/${slug}/images/${path[1]}${url.searchParams.get("preview") === "1" ? "?preview=1" : ""}`), { headers: range ? { range } : undefined, signal: AbortSignal.timeout(30000) }).catch(() => null);
+    if (!upstream || (!upstream.ok && upstream.status !== 206)) return NextResponse.json({ message: "Image not found." }, { status: upstream?.status ?? 503 });
+    const headers: Record<string, string> = { "content-type": upstream.headers.get("content-type") ?? "image/webp", "cache-control": "public, max-age=3600, stale-while-revalidate=86400", "x-content-type-options": "nosniff", "accept-ranges": "bytes" };
+    for (const name of ["content-range", "content-length"]) { const value = upstream.headers.get(name); if (value) headers[name] = value; }
+    return new NextResponse(upstream.body, { status: upstream.status, headers });
   }
   if (request.method === "POST" && path.length === 1 && path[0] === "enquiries") {
     if (!isSameOrigin(request)) return NextResponse.json({ message: "Please send your list from the gallery." }, { status: 403 });

@@ -42,7 +42,7 @@
 .order { display: flex; }
 .pictures { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--wd-space-16) + var(--wd-space-4)), 1fr)); gap: var(--wd-space-2); }
 .pictures > span { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
-.pictures img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.pictures img, .pictures video { inline-size: 100%; block-size: 100%; object-fit: cover; }
 .pictures :global(.wd-icon-button) { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); background: var(--wd-color-surface); }
 .addPicture { display: grid; place-items: center; aspect-ratio: 1; border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-secondary); cursor: pointer; }
 .addPicture:hover { color: var(--wd-color-text); }

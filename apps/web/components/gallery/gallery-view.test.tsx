@@ -64,6 +64,19 @@ describe("company gallery", () => {
     expect(within(project).getByRole("img", { name: "Jumeirah villa · 2" })).toBeInTheDocument();
   });
 
+  it("plays videos muted on the wall and with controls inside a project", async () => {
+    const reel = item({ kind: "project", title: "Marina flat", images: [{ id: "v1", source: "gallery", video: true }, { id: "p3", source: "gallery" }] });
+    const { container } = render(<DesignSystemProvider><GalleryView content={{ ...content, items: [reel] }} imageUrl={(id) => `/img/${id}`} locale="en" /></DesignSystemProvider>);
+    const tile = container.querySelector("video")!;
+    expect(tile).toHaveAttribute("src", "/img/v1");
+    expect(tile.muted).toBe(true);
+    expect(tile).not.toHaveAttribute("controls");
+    await userEvent.click(screen.getByRole("button", { name: "Open Marina flat" }));
+    const project = screen.getByRole("dialog", { name: "Marina flat" });
+    expect(within(project).getByLabelText("Video 1")).toHaveAttribute("controls");
+    expect(within(project).getAllByRole("button", { name: /Picture/ })).toHaveLength(1);
+  });
+
   it("hides whatever the firm switches off", () => {
     const quiet = { ...content, settings: { ...content.settings, showPrices: false, display: { descriptions: false, list: false, search: false, chips: false, contact: false } } };
     render(<DesignSystemProvider><GalleryView content={quiet} imageUrl={(id) => `/img/${id}`} locale="en" /></DesignSystemProvider>);

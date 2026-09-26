@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { Public } from "../auth/public.decorator";
@@ -46,11 +46,10 @@ export class GalleryController {
   removeImage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("imageId", ParseUUIDPipe) imageId: string) { return this.gallery.removeImage(actor, workspaceId, imageId); }
 
   @Get("images/:imageId")
-  async image(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("imageId", ParseUUIDPipe) imageId: string, @Query("preview") preview: string, @Res({ passthrough: true }) response: Response) {
+  async image(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("imageId", ParseUUIDPipe) imageId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const file = await this.gallery.ownerImage(actor, workspaceId, imageId, preview === "1");
     response.setHeader("Cache-Control", "private, max-age=300");
-    response.setHeader("X-Content-Type-Options", "nosniff");
-    return new StreamableFile(file.body, { type: file.contentType, disposition: "inline" });
+    return sendMedia(file, request, response);
   }
 }
 
@@ -65,14 +64,32 @@ export class PublicGalleryController {
   get(@Param("slug") slug: string) { return this.gallery.publicGallery(slug); }
 
   @Get("images/:imageId")
-  async image(@Param("slug") slug: string, @Param("imageId") imageId: string, @Query("preview") preview: string, @Res({ passthrough: true }) response: Response) {
+  async image(@Param("slug") slug: string, @Param("imageId") imageId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const file = await this.gallery.publicImage(slug, imageId, preview === "1");
     response.setHeader("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
-    response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-    return new StreamableFile(file.body, { type: file.contentType, disposition: "inline" });
+    return sendMedia(file, request, response);
   }
 
   @Post("enquiries")
   enquire(@Param("slug") slug: string, @Body() input: Record<string, unknown>) { return this.gallery.publicEnquiry(slug, input ?? {}); }
+}
+
+/** A picture or a video; videos answer byte ranges so they can play and seek on every browser. */
+export function sendMedia(file: { body: Buffer | Uint8Array; contentType: string }, request: Request, response: Response) {
+  const body = Buffer.isBuffer(file.body) ? file.body : Buffer.from(file.body);
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("Accept-Ranges", "bytes");
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range ?? ""));
+  if (range && (range[1] || range[2])) {
+    const size = body.length;
+    let start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    let end = range[1] && range[2] ? Number(range[2]) : size - 1;
+    if (start >= size || start > end) { response.status(416); response.setHeader("Content-Range", `bytes */${size}`); return new StreamableFile(Buffer.alloc(0), { type: file.contentType }); }
+    end = Math.min(end, size - 1); start = Math.max(0, start);
+    response.status(206);
+    response.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+    return new StreamableFile(body.subarray(start, end + 1), { type: file.contentType, disposition: "inline", length: end - start + 1 });
+  }
+  return new StreamableFile(body, { type: file.contentType, disposition: "inline", length: body.length });
 }

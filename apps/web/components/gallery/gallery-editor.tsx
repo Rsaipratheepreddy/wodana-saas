@@ -199,7 +199,7 @@ function ItemsPanel({ kind, data, readOnly, workspaceId, imageUrl, onItems, onEr
     </div>}
     {items.length ? <ul>{items.map((item, index) => <li key={item.id} data-hidden={item.visible ? undefined : true}>
       <button type="button" className={styles.itemRow} onClick={() => setEditing(item)}>
-        <span className={styles.thumb}>{item.images[0] ? <img src={imageUrl(item.images[0].id, true, item.images[0].source)} alt="" /> : null}</span>
+        <span className={styles.thumb}>{item.images[0] && !item.images[0].video ? <img src={imageUrl(item.images[0].id, true, item.images[0].source)} alt="" /> : null}</span>
         <span><strong>{item.title}</strong><small>{item.visible ? item.subtitle || (item.catalogItemId ? t("From the catalog") : "") : t("Hidden")}</small></span>
       </button>
       {readOnly ? null : <span className={styles.order}>
@@ -244,7 +244,7 @@ function ItemDialog({ item, workspaceId, readOnly, imageUrl, currency, onClose, 
         const body = new FormData(); body.append("file", file);
         const id = crypto.randomUUID();
         await fetch(`/api/gallery/images/${id}?${new URLSearchParams({ workspaceId, itemId: item.id })}`, { method: "POST", body }).then(async (response) => { if (!response.ok) throw new Error((await response.json().catch(() => null))?.message ?? t("Could not upload the picture.")); });
-        setImages((current) => [...current, { id, source: "gallery" }]);
+        setImages((current) => [...current, { id, source: "gallery", video: file.type.startsWith("video/") }]);
       }
       onReload();
     } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not upload the picture.")); }
@@ -277,10 +277,10 @@ function ItemDialog({ item, workspaceId, readOnly, imageUrl, currency, onClose, 
       {testimonial ? <SelectField label={t("Rating")} isDisabled={readOnly} selectedKey={String(form.rating ?? 5)} onSelectionChange={(key) => set("rating", Number(key))} items={[5, 4, 3, 2, 1].map((value) => ({ id: String(value), label: "★".repeat(value) }))} /> : null}
       <Switch isDisabled={readOnly} isSelected={form.visible} onChange={(on) => set("visible", on)}>{t("Show in the gallery")}</Switch>
       <div className={styles.pictures}>
-        {images.map((image) => <span key={image.id}><img src={imageUrl(image.id, true, image.source)} alt="" />
+        {images.map((image) => <span key={image.id}>{image.video ? <video src={imageUrl(image.id, false, image.source)} muted playsInline preload="metadata" /> : <img src={imageUrl(image.id, true, image.source)} alt="" />}
           {readOnly || image.source === "catalog" ? null : <IconButton aria-label={t("Remove picture")} size="compact" variant="quiet" onPress={() => void removeImage(image.id)}><Trash2 aria-hidden="true" size={13} /></IconButton>}</span>)}
-        {readOnly ? null : <button type="button" className={styles.addPicture} onClick={() => input.current?.click()} aria-label={t("Add pictures")}><ImagePlus aria-hidden="true" size={18} /></button>}
-        <input ref={input} type="file" accept="image/*" multiple hidden onChange={(event) => { void upload(event.target.files); event.target.value = ""; }} />
+        {readOnly ? null : <button type="button" className={styles.addPicture} onClick={() => input.current?.click()} aria-label={t("Add pictures or videos")}><ImagePlus aria-hidden="true" size={18} /></button>}
+        <input ref={input} type="file" accept="image/*,video/mp4,video/webm" multiple hidden onChange={(event) => { void upload(event.target.files); event.target.value = ""; }} />
       </div>
       {isNew ? <p className={styles.muted}>{t("Save it first, then add pictures.")}</p> : null}
     </div>

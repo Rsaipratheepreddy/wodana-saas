@@ -14,7 +14,7 @@ export type GalleryDisplay = { descriptions: boolean; list: boolean; search: boo
 export const DEFAULT_DISPLAY: GalleryDisplay = { descriptions: true, list: true, search: true, chips: true, contact: true };
 export type GalleryItem = {
   id: string; kind: GalleryKind; title: string; subtitle: string; body: string; priceFrom: string | null; priceUnit: string; catalogItemId: string | null;
-  rating: number | null; position: number; visible: boolean; version: number; images: Array<{ id: string; source: "gallery" | "catalog" }>;
+  rating: number | null; position: number; visible: boolean; version: number; images: Array<{ id: string; source: "gallery" | "catalog"; video?: boolean }>;
 };
 export type GalleryBrand = { name: string; logo: string; primaryColor: string; accentColor: string };
 /** What the page shows: the owner's editor passes the draft; the public page the published gallery. */

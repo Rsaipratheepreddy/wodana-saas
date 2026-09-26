@@ -26,7 +26,7 @@ type Settings = {
 };
 type Item = {
   id: string; kind: (typeof KINDS)[number]; title: string; subtitle: string; body: string; priceFrom: string | null; priceUnit: string; catalogItemId: string | null;
-  rating: number | null; position: number; visible: boolean; version: number; images: Array<{ id: string; source: "gallery" | "catalog" }>;
+  rating: number | null; position: number; visible: boolean; version: number; images: Array<{ id: string; source: "gallery" | "catalog"; video?: boolean }>;
 };
 
 /**
@@ -107,7 +107,7 @@ export class GalleryService {
       }
       if (input.heroImageId !== undefined) {
         next.heroImageId = input.heroImageId === null ? null : String(input.heroImageId);
-        if (next.heroImageId && !(await client.query(`SELECT 1 FROM workspace_gallery_images WHERE workspace_id = $1 AND id = $2 AND item_id IS NULL`, [workspaceId, next.heroImageId])).rowCount) throw new BadRequestException("Upload the cover image first.");
+        if (next.heroImageId && !(await client.query(`SELECT 1 FROM workspace_gallery_images WHERE workspace_id = $1 AND id = $2 AND item_id IS NULL AND mime_type LIKE 'image/%'`, [workspaceId, next.heroImageId])).rowCount) throw new BadRequestException("Upload the cover image first.");
       }
       let published = false;
       if (input.status !== undefined) {
@@ -224,8 +224,9 @@ export class GalleryService {
   }
 
   async uploadImage(actor: RequestActor, workspaceId: string, imageId: string, itemId: string | null, file?: ReferenceUpload) {
-    const prepared = await prepareReferenceUpload(file);
-    if (!prepared.mimeType.startsWith("image/")) throw new BadRequestException("Choose an image (JPG, PNG or WebP).");
+    // Pictures and short videos (MP4 or WebM) for items; the cover is always a picture.
+    const prepared = await prepareReferenceUpload(file, { allowVideo: Boolean(itemId) });
+    if (!prepared.mimeType.startsWith("image/") && !prepared.mimeType.startsWith("video/")) throw new BadRequestException(itemId ? "Choose a picture or an MP4/WebM video." : "Choose a picture (JPG, PNG or WebP).");
     return this.access.withAnyPermission(actor, workspaceId, MANAGE, async (client, user) => {
       await ensureGallery(client, workspaceId);
       if (itemId && !(await client.query(`SELECT 1 FROM workspace_gallery_items WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, itemId])).rowCount) throw new NotFoundException("Gallery item not found.");
@@ -356,7 +357,7 @@ async function readItems(client: PoolClient, workspaceId: string, publicOnly: bo
   return (await client.query<Item>(
     `SELECT item.id, item.kind, item.title, item.subtitle, item.body, item.price_from::text AS "priceFrom", item.price_unit AS "priceUnit", item.catalog_item_id AS "catalogItemId",
             item.rating, item.position, item.visible, item.version,
-            coalesce((SELECT jsonb_agg(jsonb_build_object('id', image.id, 'source', 'gallery') ORDER BY image.sort_order, image.created_at) FROM workspace_gallery_images image
+            coalesce((SELECT jsonb_agg(jsonb_build_object('id', image.id, 'source', 'gallery', 'video', image.mime_type LIKE 'video/%') ORDER BY image.sort_order, image.created_at) FROM workspace_gallery_images image
                        WHERE image.workspace_id = item.workspace_id AND image.item_id = item.id), '[]'::jsonb)
             || coalesce((SELECT jsonb_agg(jsonb_build_object('id', picture.id, 'source', 'catalog') ORDER BY picture.sort_order, picture.created_at) FROM catalog_item_images picture
                        WHERE picture.workspace_id = item.workspace_id AND picture.item_id = item.catalog_item_id), '[]'::jsonb) AS images

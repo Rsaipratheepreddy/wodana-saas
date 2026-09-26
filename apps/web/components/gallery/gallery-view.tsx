@@ -9,6 +9,13 @@ import { documentVariables, styleById } from "@/lib/quotation/document-styles";
 import styles from "./gallery.module.css";
 
 type ImageUrl = (id: string, preview?: boolean, source?: "gallery" | "catalog") => string;
+type Media = GalleryItem["images"][number];
+
+/** A picture, or a video: on the wall it plays muted and loops; up close it has controls. */
+function MediaView({ media, imageUrl, preview, alt, controls = false, className, onClick }: { media: Media; imageUrl: ImageUrl; preview?: boolean; alt: string; controls?: boolean; className?: string; onClick?: (event: React.MouseEvent) => void }) {
+  if (media.video) return <video className={className} src={imageUrl(media.id, false, media.source)} aria-label={alt || undefined} muted={!controls} loop={!controls} autoPlay={!controls} playsInline controls={controls} preload="metadata" onClick={onClick} />;
+  return <img className={className} src={imageUrl(media.id, preview, media.source)} alt={alt} loading="lazy" onClick={onClick} />;
+}
 type Filter = { kind: "all" } | { kind: "type"; value: GalleryItem["kind"] } | { kind: "label"; value: string };
 const KIND_OF: Partial<Record<GallerySectionKey, GalleryItem["kind"]>> = { services: "service", products: "product", projects: "project", testimonials: "testimonial" };
 const KIND_LABEL: Record<GalleryItem["kind"], string> = { service: "Services", product: "Products", project: "Projects", testimonial: "What clients say" };
@@ -132,7 +139,7 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
         <header><h2>{t("My list")}</h2><button type="button" className={styles.close} aria-label={t("Close")} onClick={() => setListOpen(false)}><X aria-hidden="true" size={18} /></button></header>
         {sent ? <div className={styles.thanks}><Check aria-hidden="true" size={28} /><h3>{t("Thank you")}</h3><p>{t("We have your list and will be in touch soon.")}</p></div> : <>
           {picked.length ? <ul className={styles.picked}>{picked.map((item) => <li key={item.id}>
-            {item.images[0] ? <img src={imageUrl(item.images[0].id, true, item.images[0].source)} alt="" /> : <span />}
+            {item.images[0] && !item.images[0].video ? <img src={imageUrl(item.images[0].id, true, item.images[0].source)} alt="" /> : <span />}
             <span><strong>{item.title}</strong>{price(item) ? <small>{price(item)}</small> : null}</span>
             <button type="button" aria-label={t("Remove {name}", { name: item.title })} onClick={() => toggle(item.id)}><X aria-hidden="true" size={14} /></button>
           </li>)}</ul> : <p className={styles.muted}>{t("Nothing here yet. Add services or products you like, or just tell us what you need.")}</p>}
@@ -152,7 +159,7 @@ function Tile({ item, imageUrl, price, canAdd, inList, onOpen, onToggle }: { ite
   const project = item.kind === "project";
   return <article className={styles.tile}>
     <button type="button" className={styles.tileOpen} onClick={onOpen} aria-label={t("Open {name}", { name: item.title })}>
-      {cover ? <img src={imageUrl(cover.id, true, cover.source)} alt="" loading="lazy" /> : <span className={styles.noImage}>{item.title.slice(0, 1)}</span>}
+      {cover ? <MediaView media={cover} imageUrl={imageUrl} preview alt="" /> : <span className={styles.noImage}>{item.title.slice(0, 1)}</span>}
       <span className={styles.tileText}>
         <strong>{item.title}</strong>
         <small>{project ? item.subtitle : price ?? item.subtitle}</small>
@@ -181,14 +188,14 @@ function Detail({ item, all, imageUrl, price, inList, listIds, canAdd, descripti
       onKeyDown={(event) => { if (event.key === "Escape") onClose(); if (event.key === "ArrowRight") step(1); if (event.key === "ArrowLeft") step(-1); }}>
       <button type="button" className={styles.detailClose} aria-label={t("Close")} onClick={onClose}><X aria-hidden="true" size={18} /></button>
       <div className={styles.stage}>
-        {image ? <img src={imageUrl(image.id, false, image.source)} alt={item.title} /> : <span className={styles.noImage}>{item.title.slice(0, 1)}</span>}
+        {image ? <MediaView key={image.id} media={image} imageUrl={imageUrl} alt={item.title} controls /> : <span className={styles.noImage}>{item.title.slice(0, 1)}</span>}
         {all.length > 1 ? <>
           <button type="button" className={styles.prev} aria-label={t("Previous")} onClick={() => step(-1)}><ChevronLeft aria-hidden="true" data-directional="true" size={20} /></button>
           <button type="button" className={styles.next} aria-label={t("Next")} onClick={() => step(1)}><ChevronRight aria-hidden="true" data-directional="true" size={20} /></button>
         </> : null}
       </div>
       {item.images.length > 1 ? <div className={styles.thumbs}>{item.images.map((entry, position) => <button key={entry.id} type="button" aria-label={t("Picture {number}", { number: position + 1 })} aria-pressed={position === picture} onClick={() => setPicture(position)}>
-        <img src={imageUrl(entry.id, true, entry.source)} alt="" /></button>)}</div> : null}
+        {entry.video ? <span className={styles.videoThumb} aria-hidden="true">▶</span> : <img src={imageUrl(entry.id, true, entry.source)} alt="" />}</button>)}</div> : null}
       <div className={styles.detailText}>
         {item.subtitle ? <small className={styles.eyebrow}>{item.kind === "project" ? <MapPin aria-hidden="true" size={13} /> : null}{item.subtitle}</small> : null}
         <h2>{item.title}</h2>
@@ -201,7 +208,7 @@ function Detail({ item, all, imageUrl, price, inList, listIds, canAdd, descripti
       {more.length ? <section className={styles.more} aria-label={t("More like this")}>
         <h3>{t("More like this")}</h3>
         <div>{more.map((entry) => <button key={entry.id} type="button" onClick={() => { onOpen(entry.id); setPicture(0); }} aria-label={entry.title}>
-          {entry.images[0] ? <img src={imageUrl(entry.images[0].id, true, entry.images[0].source)} alt="" /> : <span className={styles.noImage}>{entry.title.slice(0, 1)}</span>}
+          {entry.images[0] ? <MediaView media={entry.images[0]} imageUrl={imageUrl} preview alt="" /> : <span className={styles.noImage}>{entry.title.slice(0, 1)}</span>}
           <span>{entry.title}</span>{listIds.includes(entry.id) ? <Check aria-hidden="true" size={12} /> : null}
         </button>)}</div>
       </section> : null}
@@ -222,11 +229,13 @@ function ProjectView({ project, imageUrl, descriptions, onClose }: { project: Ga
       <button type="button" className={styles.close} aria-label={t("Close")} onClick={onClose}><X aria-hidden="true" size={20} /></button>
     </header>
     {descriptions && project.body ? <p className={styles.projectBody}>{project.body}</p> : null}
-    <div className={styles.projectWall}>{images.map((image, index) => <button key={image.id} type="button" aria-label={t("Picture {number}", { number: index + 1 })} onClick={() => setLarge(index)}>
-      <img src={imageUrl(image.id, true, image.source)} alt="" loading="lazy" />
-    </button>)}</div>
+    <div className={styles.projectWall}>{images.map((image, index) => image.video
+      ? <div key={image.id} className={styles.wallVideo}><MediaView media={image} imageUrl={imageUrl} alt={t("Video {number}", { number: index + 1 })} controls /></div>
+      : <button key={image.id} type="button" aria-label={t("Picture {number}", { number: index + 1 })} onClick={() => setLarge(index)}>
+        <img src={imageUrl(image.id, true, image.source)} alt="" loading="lazy" />
+      </button>)}</div>
     {large !== null && images[large] ? <div className={styles.lightbox} onClick={() => setLarge(null)}>
-      <img src={imageUrl(images[large].id, false, images[large].source)} alt={`${project.title} · ${large + 1}`} onClick={(event) => event.stopPropagation()} />
+      <MediaView key={images[large].id} media={images[large]} imageUrl={imageUrl} alt={`${project.title} · ${large + 1}`} controls onClick={(event) => event.stopPropagation()} />
       {images.length > 1 ? <>
         <button type="button" className={styles.prev} aria-label={t("Previous")} onClick={(event) => { event.stopPropagation(); step(-1); }}><ChevronLeft aria-hidden="true" data-directional="true" size={20} /></button>
         <button type="button" className={styles.next} aria-label={t("Next")} onClick={(event) => { event.stopPropagation(); step(1); }}><ChevronRight aria-hidden="true" data-directional="true" size={20} /></button>
