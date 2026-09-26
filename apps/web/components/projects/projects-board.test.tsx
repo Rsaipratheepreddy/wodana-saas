@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi, afterEach, beforeEach } from "vitest";
 import { ProjectsBoard, projectCards } from "./projects-board";
@@ -18,19 +18,23 @@ it("deduplicates linked cases and maps planning, production, handover and delive
  expect(projectCards([], [planning])[0].stage).toBe("planning");
  expect(projectCards([{...project,team:undefined}],[])[0].team).toEqual(["Owner"]);
 });
-it("keeps unpaid Palm preparation in Sales and the paid Deal project in Planning until procurement",()=>{
+it("shows Palm cases before their deal and paid design projects together in Planning, with a stage filter",()=>{
  const beforePayment={...planning,id:'unpaid-case',title:'Unpaid preparation',projectId:null};
  const paid={...project,reference:'PRJ-0007',workflow:{templateCode:'design_build_deal_first',currentStageKey:'site_visit',currentStageName:'Site visit & scope'}};
- expect(projectCards([], [beforePayment], true)).toEqual([]);
- expect(projectCards([paid], [planning,beforePayment], true)).toMatchObject([{stage:'planning',step:'Site visit & scope'}]);
+ expect(projectCards([], [beforePayment], true)).toMatchObject([{stage:'planning',group:'before_deal',step:'Before deal'}]);
+ expect(projectCards([paid], [planning,beforePayment], true)).toMatchObject([{title:'Unpaid preparation',group:'before_deal'},{stage:'planning',group:'in_design',step:'Site visit & scope'}]);
  expect(projectCards([{...paid,workflow:{...paid.workflow,currentStageKey:'procurement',currentStageName:'Procurement'}}], [], true)[0].stage).toBe('production');
  navigation.query='';
  render(<ProjectsBoard mode="planning" projects={[paid]} planning={{workspaceId:'workspace',items:[planning,beforePayment],total:2,canCreate:true}} palmFlowEnabled/>);
- expect(screen.getByRole('link',{name:'Villa interiors'})).toHaveAttribute('href','/workspace/projects/project-1/overview?projectName=Villa+interiors');
+ expect(screen.getByText('Unpaid preparation')).toBeVisible();
  expect(screen.getByText('PRJ-0007')).toBeVisible();
+ expect(screen.getByRole('button',{name:'Start planning'})).toBeVisible();
+ fireEvent.click(screen.getByRole('radio',{name:'Before deal'}));
+ expect(screen.getByText('Unpaid preparation')).toBeVisible();
+ expect(screen.queryByText('PRJ-0007')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('radio',{name:'In design'}));
  expect(screen.queryByText('Unpaid preparation')).not.toBeInTheDocument();
- expect(screen.queryByRole('button',{name:'Start planning'})).not.toBeInTheDocument();
- expect(screen.getByRole('link',{name:'Open Sales preparation'})).toHaveAttribute('href','/workspace/crm/preparation');
+ expect(screen.getByText('PRJ-0007')).toBeVisible();
 });
 it("shows project details with stage and status, with the project name opening its detail page",()=>{
  render(<ProjectsBoard projects={[project]} planning={{workspaceId:'workspace',items:[planning],total:1,canCreate:true}}/>);

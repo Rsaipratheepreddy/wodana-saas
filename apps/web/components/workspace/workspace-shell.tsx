@@ -61,7 +61,6 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const moduleSelector = false;
   const { selected } = usePreProject();
   const selectedCase = selected?.record.id === preProjectRoute?.id ? selected : null;
-  const preDealCase = Boolean(preProjectRoute && selectedCase?.record.palmFlowEnabled && !selectedCase.record.projectId);
   const registeredFocus = useWorkspaceFocus();
   const focus = registeredFocus;
   const baseModule = findWorkspaceModule(pathname, modules);
@@ -114,7 +113,6 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
       {!moduleSelector ? <div className={styles.desktopSidebar}>
         <WorkspaceSidebar
           activeModule={activeModule}
-          activeItemId={preDealCase ? "sales" : undefined}
           key={`${activeModule.id}-${preProjectRoute?.id ?? "module"}`}
           modules={modules}
           unavailableOrganizations={unavailableOrganizations}
@@ -134,8 +132,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           <Dialog aria-label="Mobile workspace navigation" className={styles.mobileDialog}>
             <WorkspaceSidebar
               activeModule={activeModule}
-              activeItemId={preDealCase ? "sales" : undefined}
-              key={`mobile-${activeModule.id}-${preProjectRoute?.id ?? "module"}`}
+                  key={`mobile-${activeModule.id}-${preProjectRoute?.id ?? "module"}`}
               mode="mobile"
               modules={modules}
               unavailableOrganizations={unavailableOrganizations}
@@ -160,12 +157,12 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           >
             <Menu size={19} />
           </button>
-          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label={preDealCase ? "Sales preparation" : "All planning"} className={styles.focusBack} href={preDealCase ? "/workspace/crm/preparation" : "/workspace/pre-projects"}><ArrowLeft size={16} data-directional="true" /><span>{preDealCase ? "Sales" : "Planning"}</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
+          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="All planning" className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>Planning</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
           {projectRoute ? <div className={styles.caseHeader}><Link aria-label="All projects" className={styles.focusBack} href="/workspace/projects"><ArrowLeft size={16} data-directional="true" /><span>All projects</span></Link><div><strong>Project workspace</strong><small>Plan · deliver · hand over</small></div></div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to planning") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
           <nav aria-label="Breadcrumb" className={styles.breadcrumbs} data-project={revampedProject || undefined}>
             <ol>
-              {revampedProject ? <li><Link href="/workspace/projects">Projects</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : !operationsScreen && pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && currentScreen.label !== activeModule.label ? <li><Link href={preDealCase ? "/workspace/crm/preparation" : activeModule.href}>{preDealCase ? "Sales" : activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
+              {revampedProject ? <li><Link href="/workspace/projects">Projects</Link><ChevronRight aria-hidden="true" data-directional="true" size={13}/></li> : !operationsScreen && pathname !== "/workspace" && pathname !== "/workspace/tasks" && pathname !== "/workspace/approvals" && !pathname.startsWith("/workspace/catalogs") && currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
               <li aria-current="page" title={revampedProject ? projectBreadcrumbTitle : undefined}>{revampedProject ? projectBreadcrumbTitle ? <Link href={`${pathname}?${new URLSearchParams({projectName:projectBreadcrumbTitle})}`} aria-current="page">{projectBreadcrumbTitle}</Link> : loadedProjectName?.id === projectId && loadedProjectName.error ? <span>Project unavailable</span> : <span aria-busy="true">Loading project…</span> : pathname === "/workspace" ? "Home" : currentScreen.label}</li>
             </ol>
           </nav>
@@ -211,7 +208,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} canPreExecution={modules.some(module => module.navigation.some(group => group.items.some(item => item.id === "pre-projects" && item.showInSidebar !== false)))} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && pathname !== "/workspace" ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && pathname !== "/workspace" ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );

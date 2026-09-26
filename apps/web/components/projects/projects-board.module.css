@@ -1,5 +1,6 @@
 .page { padding:var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem); min-inline-size:0; color:var(--wd-color-text); }
-.toolbar { display:flex; align-items:center; gap:var(--wd-space-2); margin-block-end:var(--wd-space-5); }
+.toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wd-space-2); margin-block-end:var(--wd-space-5); }
+.toolbarSpacer { flex:1 1 auto; }
 .toolbar > :first-child { inline-size:260px; }
 .toolbar :global(.wd-field-label) { display:none; }
 .toolbar :global(.wd-field) { gap:0; }
@@ -105,3 +106,7 @@
 .projectTable .tableLink[data-tone="warning"] { background:var(--wd-warning-soft); color:var(--wd-warning); }
 .projectTable .tableLink:hover { border-color:currentColor; }
 .projectTable .tableLink:disabled { opacity:.6; }
+/* One control height across the board toolbar. */
+.toolbar :global(.wd-input-group), .toolbar :global(.wd-select-button), .toolbar :global(.wd-button) { block-size:var(--wd-control-sm); min-block-size:var(--wd-control-sm); }
+.toolbar :global(.wd-segmented) { padding:var(--wd-space-0-5); }
+.toolbar :global(.wd-segmented button) { min-block-size:calc(var(--wd-control-sm) - var(--wd-space-1) - 2px); font-size:var(--wd-text-sm); }

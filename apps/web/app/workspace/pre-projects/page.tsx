@@ -12,7 +12,9 @@ export default async function PlanningEntryPage({ searchParams }: { searchParams
   const record = query.get("record");
   const section = selected.get("section") ?? "requirements";
   if (record && caseRoute(`${PRE_PROJECT_ROOT}/cases/${record}/${section}`)) redirect(caseHref(record, selected, section));
-  if (!selected.size) return <ProjectsBoard mode="planning" {...await loadProjectsBoard()} />;
+  const stage = query.get("stage");
+  const initialGroup = stage === "ready" || stage === "before_deal" || stage === "in_design" ? stage : undefined;
+  if (!selected.size) return <ProjectsBoard mode="planning" initialGroup={initialGroup} {...await loadProjectsBoard()} />;
   const search = selected.toString();
   return <PreProjectListPage initialData={await getPreProjects(selected)} search={search} />;
 }

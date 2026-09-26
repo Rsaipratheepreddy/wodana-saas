@@ -38,12 +38,11 @@ it("uses the same compact tab treatment for Sales",()=>{
   }
 });
 
-it("opens unpaid Deal preparation from Sales without adding a Projects tab",()=>{
+it("keeps Sales to its own tabs; cases before their deal live in Planning",()=>{
   query="";
-  render(<WorkspaceFlowNavigation module={workspaceModules[1]} pathname="/workspace/crm/preparation" canPreExecution/>);
+  render(<WorkspaceFlowNavigation module={workspaceModules[1]} pathname="/workspace/crm/leads"/>);
   const nav=screen.getByRole('navigation',{name:'Sales sections'});
-  expect(within(nav).getByRole('link',{name:'Preparation'})).toHaveAttribute('aria-current','page');
-  expect(within(nav).getByRole('link',{name:'Preparation'})).toHaveAttribute('href','/workspace/crm/preparation');
+  expect(within(nav).queryByRole('link',{name:'Preparation'})).not.toBeInTheDocument();
 });
 
 it("keeps Reports selected and preserves Sales settings destinations", () => {

@@ -231,9 +231,9 @@ try {
   const prepared = await request(`/workspaces/${workspaceId}/pre-projects`, {
     method: "POST", expected: 201, body: { opportunityId: opportunity.id },
   });
-  assert(prepared.id, "The enquiry did not become a Sales preparation case.");
+  assert(prepared.id, "The enquiry did not become a Planning case before its deal.");
   const pending = await request(`/workspaces/${workspaceId}/pre-projects?pendingDeal=true`);
-  assert(pending.items.some(item => item.id === prepared.id && !item.projectId), "The unpaid case is missing from Sales preparation.");
+  assert(pending.items.some(item => item.id === prepared.id && !item.projectId), "The unpaid case is missing from Planning (before deal).");
   console.log(JSON.stringify({ step: "sales_preparation_created", leadId: lead.id, opportunityId: opportunity.id, caseId: prepared.id }));
 
   const commercialPath = `/workspaces/${workspaceId}/commercial/cases/${prepared.id}`;

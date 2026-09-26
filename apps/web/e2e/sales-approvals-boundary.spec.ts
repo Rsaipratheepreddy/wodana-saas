@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-test("Sales preparation and Approvals are reachable without leaving the workspace", async ({ page }) => {
+test("cases before their deal live in Planning, and Approvals are reachable without leaving the workspace", async ({ page }) => {
   await page.goto("/workspace/crm/preparation");
-  await expect(page.getByRole("navigation", { name: "Sales sections" }).getByRole("link", { name: "Preparation" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("region", { name: "Sales preparation workspace" })).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\/pre-projects\?stage=before_deal$/);
+  await expect(page.getByRole("region", { name: "Planning" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Before deal" })).toHaveAttribute("aria-checked", "true");
 
   await page.goto("/workspace/approvals");
   await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
