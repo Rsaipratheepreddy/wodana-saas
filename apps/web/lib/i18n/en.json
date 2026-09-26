@@ -1833,5 +1833,15 @@
   "What they want instead of {name}": "What they want instead of {name}",
   "What they want instead": "What they want instead",
   "Client signed off the material list": "Client signed off the material list",
-  "Open the material list": "Open the material list"
+  "Open the material list": "Open the material list",
+  "Decide {count} requirements before sending": "Decide {count} requirements before sending",
+  "{name} is included but no line covers it": "{name} is included but no line covers it",
+  "Requests": "Requests",
+  "A later phase": "A later phase",
+  "Not included": "Not included",
+  "Not possible": "Not possible",
+  "Covered by {items}": "Covered by {items}",
+  "Asked by the client": "Asked by the client",
+  "Covers the requirement": "Covers the requirement",
+  "Why (the client reads this)": "Why (the client reads this)"
 }

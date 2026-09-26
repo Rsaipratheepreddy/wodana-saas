@@ -4,10 +4,11 @@ import { useId, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
-import { Badge, Button, Checkbox, DataGrid, EmptyState, MenuButton, SelectField, SearchInput, TextInput, TextAreaField, NumericInput, useDesignSystem, type DataGridColumn } from '@/design-system';
+import { Badge, Button, Checkbox, ControlledModalDialog, DataGrid, EmptyState, MenuButton, SelectField, SearchInput, TextInput, TextAreaField, NumericInput, useDesignSystem, type DataGridColumn } from '@/design-system';
 import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabels, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
 import { CaseModal } from './case-controls';
+import { useT } from '@/lib/i18n/i18n-provider';
 import { ItemSpecificationEditor } from './item-specification-editor';
 import { MeasurementCreateForm } from './measurement-create-form';
 import { ScopeEditor } from './scope-entry-editor';
@@ -45,6 +46,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
   const [roomsOpen, setRoomsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [deciding, setDeciding] = useState<{ entry: ScopeEntry; status: string } | null>(null);
   const { locale } = useDesignSystem();
   const { workspaceId, caseId } = data;
   const blockedReason = readOnlyReason ?? 'Your role does not have permission to edit this record.';
@@ -137,7 +139,10 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     {sharedNotes.loading && !allEntries.length && view !== 'inspiration' ? null : (view === 'requirement' || presentation === 'cards') ? <div className={workspace.cards}>{cardEntries.map(value => {
       return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} key={value.id} aria-label={value.title}>
         <div className={workspace.body}>
-          <div className={workspace.meta}><span>{data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? ''}</span>{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabels[value.scopeStatus]} items={[{id:'included',label:'Include in scope'},{id:'excluded',label:'Exclude from scope'},{id:'undecided',label:'Decide later'}]} onAction={key => {  void saveEntry({...value,scopeStatus:String(key)}).catch(failure=>setError(failure instanceof Error?failure.message:'Could not update scope.')); }} /> : <span data-status={value.scopeStatus}>{value.kind === 'file' ? 'Site file' : value.kind === 'inspiration' ? 'Inspiration' : scopeLabels[value.scopeStatus]}</span>)}</div>
+          <div className={workspace.meta}><span>{data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? ''}</span>{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabels[value.scopeStatus]} items={[{id:'included',label:'Include in scope'},{id:'excluded',label:'Not included'},{id:'later',label:'A later phase'},{id:'not_possible',label:'Not possible'},{id:'undecided',label:'Decide later'}]} onAction={key => {
+            // Anything not included gets a reason the client can read; it's sealed with the accepted scope.
+            if (['excluded','later','not_possible'].includes(String(key))) { setDeciding({ entry: value, status: String(key) }); return; }
+            void saveEntry({...value,scopeStatus:String(key)}).catch(failure=>setError(failure instanceof Error?failure.message:'Could not update scope.')); }} /> : <span data-status={value.scopeStatus}>{value.kind === 'file' ? 'Site file' : value.kind === 'inspiration' ? 'Inspiration' : scopeLabels[value.scopeStatus]}</span>)}</div>
           <button className={workspace.title} aria-label={`Open details for ${value.title}`} onClick={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{value.title}</button>
           {view === 'measurements' ? <div className={workspace.measurementPreview}>{value.specification?.dimensions.length ? <DimensionReadout dimensions={value.specification.dimensions.slice(0,2)} /> : <p className={workspace.note}>No measurements yet.</p>}</div> : (value.document || value.note) && <NotePreview className={workspace.noteRich} document={value.document} limit={5} text={value.note} />}
           {value.assets.length > 0 && <div className={workspace.attachmentStrip} aria-label={`${value.assets.length} attachments`}>{value.assets.slice(0,3).map(asset => <button type="button" key={asset.id} title={asset.name} aria-label={`View ${asset.name}`} onClick={() => setEntry(value)}>{asset.hasPreview ? <Image unoptimized src={assetUrl(value,asset,true)} alt="" width={28} height={28}/> : <FileText size={16}/>}<span>{asset.name}</span></button>)}{value.assets.length > 3 && <span className={workspace.moreAttachments}>+{value.assets.length-3}</span>}</div>}
@@ -168,6 +173,8 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     {measurementOpen && <MeasurementCreateForm data={data} entries={allEntries.filter(value => storedRequirement(value) && !value.archivedAt && canEditEntry(value))} initialEntryId={measurementFor} initialRoom={room} onClose={() => setMeasurementOpen(false)} onCreateRequirement={() => { setMeasurementOpen(false); setMeasureAfterSave(true); setEntry(blankEntry(room === 'all' ? null : room)); }} onSaved={(value, specification) => { upsert({ ...value, assets: data.entries.find(item => item.id === value.id)?.assets ?? value.assets, specification }); setSearch(''); setRoom(value.roomId ?? 'all'); setMessage('Measurement saved.'); setMeasurementOpen(false); }}/>} 
     {specEntry && <ItemSpecificationEditor entry={specEntry} data={{ ...data, canEdit: canEditEntry(specEntry) }} focusSection={specFocus} onClose={() => setSpecEntry(null)} onSaved={specification => { upsert({ ...specEntry, assets: data.entries.find(item => item.id === specEntry.id)?.assets ?? specEntry.assets, specification }); setSpecEntry(null); setMessage('Measurements saved.'); }}/>}
     {briefOpen && <BriefEditor data={data} onClose={() => setBriefOpen(false)} onSave={async brief => { const input = { ...brief }; delete input.updatedAt; const saved = await caseRequest<CaseBrief>(workspaceId, caseId, 'brief', 'PUT', input); setData(current => ({ ...current, brief: saved, fromCrm: false })); setMessage('Brief saved.'); }}/>}
+    {deciding && <ScopeReason status={deciding.status} title={deciding.entry.title} initial={deciding.entry.scopeStatus === deciding.status ? deciding.entry.scopeNote ?? '' : ''} onClose={() => setDeciding(null)}
+      onSave={async (reason) => { await saveEntry({ ...deciding.entry, scopeStatus: deciding.status, scopeNote: reason }); setDeciding(null); }} />}
     {roomsOpen && <RoomManager data={data} onClose={() => setRoomsOpen(false)} onSave={async value => { const saved = await caseRequest<CaseRoom>(workspaceId, caseId, 'rooms', 'PUT', { id: value.id, version: value.version, name: value.name, catalogRecordId: value.catalogRecordId ?? null }); setData(current => ({ ...current, rooms: [...current.rooms.filter(item => item.id !== saved.id), saved], entries: current.entries.map(item => item.roomId === saved.id ? { ...item, roomName: saved.name } : item) })); return saved; }}/>}
   </div>;
 }
@@ -191,4 +198,19 @@ function EligibilityButton({ reason, ...props }: ComponentProps<typeof Button> &
     <Button {...props} />
     {props.isDisabled && <span id={id} role="tooltip" className={workspace.blockedTip}>{reason}</span>}
   </span>;
+}
+
+/** Why a requirement isn't in this quotation, in words the client reads; it's sealed with the accepted scope. */
+function ScopeReason({ status, title, initial, onClose, onSave }: { status: string; title: string; initial: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+  const t = useT();
+  const [reason, setReason] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState('');
+  const heading = status === 'later' ? t("A later phase") : status === 'not_possible' ? t("Not possible") : t("Not included");
+  return <ControlledModalDialog isOpen size="md" title={`${heading} · ${title}`} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} onPress={async () => { setBusy(true); setFailure(''); try { await onSave(reason.trim()); } catch (cause) { setFailure(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); } }}>{t("Save")}</Button></div>}>
+    <TextAreaField label={t("Why (the client reads this)")} value={reason} onChange={setReason} autoFocus />
+    {failure ? <p role="alert" className={styles.error}>{failure}</p> : null}
+  </ControlledModalDialog>;
 }

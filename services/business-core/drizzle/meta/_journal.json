@@ -232,6 +232,13 @@
       "when": 1792152000000,
       "tag": "0032_material_list",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792238400000,
+      "tag": "0033_requirement_trace",
+      "breakpoints": true
     }
   ]
 }

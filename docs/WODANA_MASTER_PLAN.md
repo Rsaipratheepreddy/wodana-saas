@@ -440,7 +440,22 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 **Locked scope (the answer to "I already told you").**
 - At start the accepted revision is sealed: lines (chosen options included), options not chosen, discounts, price from the one pricing engine, payment terms, terms and exclusions, the client's acceptance (who, when, how) and the agreement reference. It is canonical-JSON hashed (SHA-256); the row can never be updated; every read re-verifies the fingerprint and shows *Unchanged* or *Changed since it was sealed*. A scope certificate PDF comes with the document builder.
 - After the seal nothing changes silently: every change is a variation with its own price, time impact and client acceptance; each live-BOQ line shows its origin (Baseline R3, VO-2).
-- Planned with the Scope phase: requirement trace (each Planning requirement marked Included → lines / Excluded / Later / Not possible before a quote is sent), client-confirmed meeting notes (optional auto-confirm after N days), and "Ask the scope" answers with links to the requirement, line, exclusion and signature.
+- **Requirement trace (built):** every Planning requirement is Included, Not included, A later phase or Not possible (the last three with a reason the client reads) before a quotation can be sent — the send is refused while any is undecided. A quote line points at the requirement it covers; included requirements without a line are flagged. The decisions and covering lines are sealed with the scope (sealed document → Requests).
+- Still to come: client-confirmed meeting notes (optional auto-confirm after N days) and "Ask the scope" answers with links to the requirement, line, exclusion and signature.
+
+**Scope (built).**
+- **Live BOQ:** the sealed baseline plus applied variations. Each line keeps its origin (R#, VO-n) and an append-only history (agreed, packaged, reduced, removed, moved, added, signed off).
+- **Packages:** suggested per area, trade and way of delivery (made in our factory, bought materials, bought ready-made, subcontracted, supplied by the client, site work). They are named, owned and dated.
+- **Variations:** built in the quotation builder. A variation can:
+  - remove some or all of a line, as a credit at what the client paid, with no discount and with tax following;
+  - move a line to another area, with its own labour price;
+  - replace a line (a removal plus a new line);
+  - add new scope.
+  Once accepted (and, optionally, once its payment is verified), *Apply to project* seals it as VO-n and changes the live BOQ. Stale changes are refused with the line named.
+- **Material list:** materials and finishes tied to the lines that use them, suggested from the catalog items on the lines.
+  - Sending freezes a revision.
+  - The client decides per material; a rejection says what they want instead.
+  - Signed off means the latest revision is approved in full and unchanged since. This is the *Material sign-off* stage check.
 
 **Records (built):** `delivery_projects` (reference with the firm's prefix, quote, route, priority, health, start and handover dates, hold), `project_scope_seals` (immutable), `project_stages` + `project_stage_confirmations`, `project_status_updates`, `project_assignments.role_keys` (one team model), `workspace_project_settings` (start rules, numbering, team roles), `project_templates` + `project_template_stages` (routes).
 
@@ -456,7 +471,7 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 
 **Notifications.** Started (team: in-app + email), named for a role (in-app + email), stage finished (lead and the next stage's owner), on hold / resumed / off track (team). The actor is never told about their own step.
 
-**End-to-end build order (agreed 26 Sept):** 1 project core ✔ → 2 scope (live BOQ, packages, line history, requirement trace, material-list sign-off, variations through the quotation builder) → 3 plan and tasks (one task system, Gantt, global Tasks, Calendar) → 4 suppliers and purchasing (supplier register with approval status, buying company, payment terms, discount/commission deals; requests → optional price comparison → orders → confirmations; subcontract orders) → 5 receiving, stock and logistics (three-way bill match, bank-statement matching, reservations, deliveries with proof) → 6 factory (§6.16) → 7 site, installation, snags and handover → 8 warranty and aftercare → 9 money (client and cost ledgers, milestones, cash forecast, reconciliation) → 10 client portal and the automations switchboard. Each phase ships with its notifications, labels, RTL, real-database tests and smoke.
+**End-to-end build order (agreed 26 Sept):** 1 project core ✔ → 2 scope ✔ (live BOQ, packages, line history, requirement trace, material-list sign-off, variations through the quotation builder) → 3 plan and tasks (one task system run like Jira: packages as stories, tasks, subtasks, issues, sprints with a board and burndown, statuses fed by the records; Gantt, global Tasks, Calendar, workload and on-time analytics) → 4 suppliers and purchasing (supplier register with approval status, buying company, payment terms, discount/commission deals; requests → optional price comparison → orders → confirmations; subcontract orders) → 5 receiving, stock and logistics (three-way bill match, bank-statement matching, reservations, deliveries with proof) → 6 factory (§6.16) → 7 site, installation, snags and handover → 8 warranty and aftercare → 9 money (client and cost ledgers, milestones, cash forecast, reconciliation) → 10 client portal and the automations switchboard. Each phase ships with its notifications, labels, RTL, real-database tests and smoke.
 
 **Calculations never drift.** Exact decimals only; one pricing engine for quotes, variations, invoices and orders; totals are always derived (agreed = baseline + approved variations; milestones sum to 100 %; balance = invoiced − verified receipts); quantities guarded by ledgers (ordered ≤ required unless a reason, received ≤ ordered + tolerance, no negative stock); every figure opens to its lines; a nightly reconciliation flags mismatches.
 

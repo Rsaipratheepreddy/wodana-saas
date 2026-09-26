@@ -43,6 +43,8 @@ type LineRow = {
   imageAssetId: string | null; catalogImageId: string | null;
   /** On a variation: what the line does to the agreed scope, and the live BOQ line it changes. */
   changeOp: "add" | "omit" | "move" | null; boqLineId: string | null;
+  /** The client requirement this line covers (requirement trace). */
+  scopeId: string | null;
 };
 type ComponentRow = {
   id: string; lineId: string; kind: string; catalogItemId: string | null; name: string; quantityFormula: string | null; quantity: string;
@@ -182,6 +184,7 @@ export class QuotationBuilderService {
       const trades = new Set((await workPackages(client, workspaceId, false)).map((trade) => trade.id));
       const codes = await taxCodes(client, workspaceId, caseId);
       const taxes = new Map(codes.map((tax) => [tax.code, tax.rate]));
+      const requirements = new Set((await caseRequirements(client, workspaceId, caseId)).filter((item) => item.status === "included").map((item) => item.id));
       // New lines take the firm's default tax; without tax codes the quote's own rate applies.
       const standard = codes.find((tax) => tax.isDefault);
       const defaultTax = standard ? { taxCode: standard.code, taxRate: standard.rate } : {};
@@ -250,7 +253,7 @@ export class QuotationBuilderService {
             ? { ...current, components: null }
             : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
           if (kind === "catalog") next = await this.fromCatalog(client, workspaceId, quote, settings, decimals, next, uuid(op.itemId, "Catalog item"));
-          next = applyFields(next, fields, { canEditCosts, areas, trades, taxes });
+          next = applyFields(next, fields, { canEditCosts, areas, trades, taxes, requirements });
           if (current?.changeOp === "omit") {
             // A removal keeps what it removes; only how much (and its note) can change.
             next = { ...current, components: null, quantity: next.quantity, note: next.note };
@@ -497,8 +500,8 @@ export class QuotationBuilderService {
       `INSERT INTO commercial_quote_lines (workspace_id, case_id, quote_id, id, sort_order, room, title, quantity, unit, unit_cost, rate, optional,
          kind, description, pricing_mode, note, area_id, from_area_id, work_package_id, catalog_item_id, catalog_snapshot, formula, length, width, height,
          count, dimension_unit, markup_percent, discount_kind, discount_value, tax_code, tax_rate, option_group, version, updated_by, updated_at, image_asset_id, catalog_image_id,
-         change_op, boq_line_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36, $37, $38)
+         change_op, boq_line_id, scope_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36, $37, $38, $39)
        ON CONFLICT (case_id, quote_id, id) DO UPDATE SET sort_order = excluded.sort_order, room = excluded.room, title = excluded.title, quantity = excluded.quantity,
          unit = excluded.unit, unit_cost = excluded.unit_cost, rate = excluded.rate, optional = excluded.optional, kind = excluded.kind, description = excluded.description,
          pricing_mode = excluded.pricing_mode, note = excluded.note, area_id = excluded.area_id, from_area_id = excluded.from_area_id, work_package_id = excluded.work_package_id,
@@ -506,12 +509,12 @@ export class QuotationBuilderService {
          height = excluded.height, count = excluded.count, dimension_unit = excluded.dimension_unit, markup_percent = excluded.markup_percent,
          discount_kind = excluded.discount_kind, discount_value = excluded.discount_value, tax_code = excluded.tax_code, tax_rate = excluded.tax_rate,
          option_group = excluded.option_group, version = commercial_quote_lines.version + 1, updated_by = excluded.updated_by, updated_at = now(),
-         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id, change_op = excluded.change_op, boq_line_id = excluded.boq_line_id`,
+         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id, change_op = excluded.change_op, boq_line_id = excluded.boq_line_id, scope_id = excluded.scope_id`,
       [workspaceId, caseId, quoteId, line.id, line.position, room, line.title.trim(), line.quantity, line.unit, line.unitCost, line.rate, line.optional || null,
         line.kind, line.description, line.pricingMode, line.note, line.areaId, line.fromAreaId, line.workPackageId, line.catalogItemId,
         line.catalogSnapshot ? JSON.stringify(line.catalogSnapshot) : null, line.formula, line.length, line.width, line.height, line.count, line.dimensionUnit,
         line.markupPercent, line.discountKind, line.discountValue, line.taxCode, line.taxRate, line.optionGroup, userId, line.imageAssetId, line.catalogImageId,
-        line.changeOp, line.boqLineId]);
+        line.changeOp, line.boqLineId, line.scopeId]);
     if (line.components) {
       await client.query(`DELETE FROM commercial_quote_line_components WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND line_id = $4`, [workspaceId, caseId, quoteId, line.id]);
       for (const [position, component] of line.components.entries())
@@ -563,7 +566,7 @@ export class QuotationBuilderService {
     const can = async (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
     const decision = quote.detail.clientDecision as { decision: string; decidedBy: string; decidedAt: string; note?: string; method?: string; recordedBy?: string } | undefined;
     const hideCost = <T extends { unitCost: string | null }>(row: T) => (canViewCosts ? row : { ...row, unitCost: null });
-    const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft" });
+    const checks = await quoteChecks(client, workspaceId, caseId, { lines, components, decimals, pricing, settings, canViewCosts, paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], draft: quote.status === "draft", kind: quote.kind });
     return {
       quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
         paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
@@ -601,6 +604,7 @@ export class QuotationBuilderService {
            LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
           WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null },
       canEdit, canEditCosts, canViewCosts,
+      requirements: await caseRequirements(client, workspaceId, caseId),
       // The project this quote belongs to (once started), and the sealed name a variation got when applied.
       project: (await client.query<{ id: string; reference: string; appliedAs: string | null }>(
         `SELECT project.id, project.reference,
@@ -664,7 +668,7 @@ const LINE_SELECT = `SELECT line.id, line.sort_order AS position, line.version, 
   line.discount_kind AS "discountKind", line.discount_value::text AS "discountValue", line.tax_code AS "taxCode", line.tax_rate::text AS "taxRate",
   line.optional, line.option_group AS "optionGroup", line.note, line.catalog_item_id AS "catalogItemId", line.catalog_snapshot AS "catalogSnapshot",
   line.updated_at AS "updatedAt", editor.display_name AS "updatedByName", line.image_asset_id AS "imageAssetId", line.catalog_image_id AS "catalogImageId",
-  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId"
+  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId", line.scope_id AS "scopeId"
   FROM commercial_quote_lines line LEFT JOIN users editor ON editor.id = line.updated_by`;
 
 async function readLines(db: Db, workspaceId: string, caseId: string, quoteId: string) {
@@ -709,11 +713,11 @@ const blankLine = (id: string): LineRow => ({
   quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null,
   markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null,
   optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null, imageAssetId: null, catalogImageId: null,
-  changeOp: null, boqLineId: null,
+  changeOp: null, boqLineId: null, scopeId: null,
 });
 
 /** Validates and applies the editor's fields to a line. Costs and markup change only with cost permission. */
-function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fields: Record<string, unknown>, context: { canEditCosts: boolean; areas: Map<string, string>; trades: Set<string>; taxes: Map<string, string> }) {
+function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fields: Record<string, unknown>, context: { canEditCosts: boolean; areas: Map<string, string>; trades: Set<string>; taxes: Map<string, string>; requirements: Set<string> }) {
   const next = { ...line };
   const has = (key: string) => Object.prototype.hasOwnProperty.call(fields, key);
   if (has("kind")) next.kind = oneOf(fields.kind, LINE_KINDS, "line kind");
@@ -752,6 +756,10 @@ function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fie
       if (!context.taxes.has(code)) throw new BadRequestException("Choose a tax from your tax settings.");
       next.taxCode = code; next.taxRate = context.taxes.get(code)!;
     }
+  }
+  if (has("scopeId")) {
+    next.scopeId = fields.scopeId === null || fields.scopeId === "" ? null : uuid(fields.scopeId, "Requirement");
+    if (next.scopeId && !context.requirements.has(next.scopeId)) throw new BadRequestException("Choose a requirement included in the scope.");
   }
   if (has("optional")) next.optional = bool(fields.optional) || null;
   if (has("imageAssetId")) next.imageAssetId = fields.imageAssetId === null ? null : uuid(fields.imageAssetId, "Image");
@@ -848,6 +856,7 @@ export type QuoteCheck = { code: string; values?: Record<string, string>; lineId
  */
 async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
   lines: LineRow[]; components: ComponentRow[]; decimals: number; pricing: ReturnType<typeof priceQuote>; settings: QuotationSettings; canViewCosts: boolean; paymentTerms: unknown[]; draft: boolean;
+  kind?: string;
 }): Promise<QuoteCheck[]> {
   const checks: QuoteCheck[] = [];
   for (const line of input.lines) {
@@ -870,6 +879,15 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
   if (input.canViewCosts && floor !== null && input.pricing.margin !== null && Dec.of(input.pricing.margin).cmp(floor) < 0)
     checks.push({ code: "Margin is below the {floor}% floor", values: { floor }, tone: "warning" });
   if (input.draft && input.lines.length && !input.paymentTerms.length) checks.push({ code: "Add the payment milestones", tone: "warning" });
+  // Requirement trace: nothing is sent while a requirement is undecided; an included one should have a line.
+  if (input.kind === "quotation") {
+    const requirements = await caseRequirements(db, workspaceId, caseId);
+    const undecided = requirements.filter((item) => item.status === "undecided").length;
+    if (undecided) checks.push({ code: "Decide {count} requirements before sending", values: { count: String(undecided) }, tone: "danger" });
+    const covered = new Set(input.lines.map((line) => line.scopeId).filter(Boolean));
+    for (const item of requirements.filter((entry) => entry.status === "included" && !covered.has(entry.id)))
+      checks.push({ code: "{name} is included but no line covers it", values: { name: item.title }, tone: "warning" });
+  }
   return checks;
 }
 
@@ -900,6 +918,15 @@ async function toBuffer(body: unknown): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of body as AsyncIterable<Buffer | string>) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   return Buffer.concat(chunks);
+}
+
+/** The case's client requirements and the decision on each (requirement trace). */
+async function caseRequirements(db: Db, workspaceId: string, caseId: string) {
+  return (await db.query<{ id: string; title: string; roomName: string | null; priority: string; source: string; status: string; note: string }>(
+    `SELECT entry.id, entry.title, room.name AS "roomName", entry.priority, entry.source, entry.scope_status AS status, entry.scope_note AS note
+       FROM pre_project_brief_entries entry LEFT JOIN pre_project_rooms room ON room.workspace_id = entry.workspace_id AND room.id = entry.room_id
+      WHERE entry.workspace_id = $1 AND entry.case_id = $2 AND entry.kind = 'requirement' AND entry.archived_at IS NULL
+      ORDER BY room.name NULLS LAST, entry.created_at`, [workspaceId, caseId])).rows;
 }
 
 /** A live BOQ line of the case's project, with its price per unit after discounts (what a removal credits). */
@@ -971,6 +998,10 @@ export async function acceptedScope(db: Db, workspaceId: string, caseId: string,
     pricing: { subtotal: pricing.subtotal, discounts: pricing.discounts.total, net: pricing.net, tax: pricing.tax, taxes: pricing.taxes, total: pricing.total, areas: pricing.areas, trades: pricing.trades },
     paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [],
     terms: document.terms, exclusions: document.exclusions,
+    // What the client asked for and what became of each request: the answer to "I already told you".
+    requirements: quote.kind === "quotation" ? (await caseRequirements(db, workspaceId, caseId)).map((item) => ({
+      ...item, lineIds: included.filter((line) => line.scopeId === item.id).map((line) => line.id),
+    })) : [],
   };
 }
 export type AcceptedScope = Awaited<ReturnType<typeof acceptedScope>>;

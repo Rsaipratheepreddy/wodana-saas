@@ -365,6 +365,36 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("traces every requirement: undecided ones block sending, included ones point at lines, and the decisions are sealed", async () => {
+    await world(async (w) => {
+      const [drawers, fridge, sauna] = [randomUUID(), randomUUID(), randomUUID()];
+      await w.client.query(`INSERT INTO pre_project_brief_entries(workspace_id,case_id,id,kind,title,note,category,priority,scope_status,review_status,unit,reference_url,avoid,source,created_by,updated_by)
+        VALUES ($1,$2,$3,'requirement','Soft-close drawers','','Joinery','must_have','included','reviewed','nos','','','client',$6,$6),
+               ($1,$2,$4,'requirement','Built-in wine fridge','','Appliances','preferred','undecided','reviewed','nos','','','client',$6,$6),
+               ($1,$2,$5,'requirement','Steam room','','Wellness','optional','not_possible','reviewed','nos','','','client',$6,$6)`,
+        [w.workspaceId, w.caseId, drawers, fridge, sauna, w.manager]);
+      await w.client.query("UPDATE pre_project_brief_entries SET scope_note = 'No drainage on this floor' WHERE id = $1", [sauna]);
+      let state = await w.builder.builder(actor, w.workspaceId, w.caseId, w.quoteId);
+      expect(state.checks.map((check) => [check.code, check.values])).toEqual(expect.arrayContaining([
+        ["Decide {count} requirements before sending", { count: "1" }], ["{name} is included but no line covers it", { name: "Soft-close drawers" }]]));
+      const cabinets = state.lines.find((line) => line.id === "a")!;
+      await expect(w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: cabinets.version, scopeId: fridge } }] })).rejects.toThrow(/included in the scope/);
+      state = await w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "upsert", line: { id: "a", version: cabinets.version, scopeId: drawers } }] });
+      await w.client.query("UPDATE pre_project_brief_entries SET scope_status = 'later', scope_note = 'Client will buy it next year' WHERE id = $1", [fridge]);
+      state = await w.builder.builder(actor, w.workspaceId, w.caseId, w.quoteId);
+      expect(state.checks.filter((check) => /requirement|covers it/.test(check.code))).toEqual([]);
+
+      await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const scope = await manager.scope(actor, w.workspaceId, projectId);
+      const sealed = await manager.seal(actor, w.workspaceId, projectId, scope.seals[0].id);
+      const requirements = (sealed.snapshot as { requirements: Array<{ title: string; status: string; note: string; lineIds: string[] }> }).requirements;
+      expect(requirements.map((item) => [item.title, item.status, item.note, item.lineIds])).toEqual(expect.arrayContaining([
+        ["Soft-close drawers", "included", "", ["a"]], ["Built-in wine fridge", "later", "Client will buy it next year", []], ["Steam room", "not_possible", "No drainage on this floor", []]]));
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

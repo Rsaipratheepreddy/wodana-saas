@@ -225,3 +225,25 @@ describe("variations", () => {
     expect(await screen.findByRole("link", { name: "Applied as VO-1" })).toHaveAttribute("href", "/workspace/projects/p1/scope");
   });
 });
+
+describe("requirement trace", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("links a line to the requirement it covers and shows what's still undecided", async () => {
+    const base = state([line({})]);
+    const traced: BuilderState = { ...base, requirements: [
+      { id: "11111111-1111-4111-8111-111111111112", title: "Soft-close drawers", roomName: "Kitchen", priority: "must_have", source: "client", status: "included", note: "" },
+      { id: "11111111-1111-4111-8111-111111111113", title: "Wine fridge", roomName: null, priority: "preferred", source: "client", status: "undecided", note: "" }],
+      checks: [{ code: "Decide {count} requirements before sending", values: { count: "1" }, tone: "danger" }] };
+    const fetcher = mount(traced);
+    expect(await screen.findByText("Decide 1 requirements before sending")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Line actions for Base cabinets" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: /Covers the requirement/ }));
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["None", "Soft-close drawers · Kitchen"]);
+    await userEvent.click(options[1]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(fetcher).at(-1)).toEqual({ ops: [{ op: "upsert", line: expect.objectContaining({ id: "a", scopeId: "11111111-1111-4111-8111-111111111112" }) }] }));
+  });
+});

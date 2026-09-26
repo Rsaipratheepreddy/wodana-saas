@@ -2563,6 +2563,13 @@ export class CommercialService {
               throw new ConflictException(
                 "Internal approval is required before issue.",
               );
+            // Every requirement ends in a decision before a quotation goes out (plan §6.8, requirement trace).
+            if (q.kind === "quotation") {
+              const open = (await client.query<{ count: number }>(
+                `SELECT count(*)::int AS count FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND kind='requirement' AND archived_at IS NULL AND scope_status='undecided'`,
+                [workspaceId, caseId])).rows[0].count;
+              if (open) throw new ConflictException(`Decide every requirement before sending: ${open} still to decide.`);
+            }
             if (data.palmFlow && q.kind === "quotation" && !qsEstimateCurrent(q))
               throw new ConflictException("The QS estimate review is missing or the quotation changed. Return it for a fresh review.");
             const controlledRequest = controlledChangeForQuote(data, q.id);

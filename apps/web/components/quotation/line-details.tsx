@@ -28,6 +28,7 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
     length: line.length ?? "", width: line.width ?? "", height: line.height ?? "", count: line.count ?? "", dimensionUnit: line.dimensionUnit ?? "",
     formula: line.formula ?? "", quantity: line.quantity, unit: line.unit, pricingMode: line.pricingMode, rate: line.rate, unitCost: line.unitCost ?? "", markupPercent: line.markupPercent ?? "",
     discountKind: line.discountKind ?? "", discountValue: line.discountValue ?? "", taxCode: line.taxCode ?? "", optional: Boolean(line.optional), optionGroup: line.optionGroup ?? "", note: line.note,
+    scopeId: line.scopeId ?? "",
   }));
   const [rows, setRows] = useState<Row[]>(() => line.components.map((part) => ({ ...part, key: part.id || crypto.randomUUID() })));
   const [rowsChanged, setRowsChanged] = useState(false);
@@ -38,13 +39,14 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
     length: line.length ?? "", width: line.width ?? "", height: line.height ?? "", count: line.count ?? "", dimensionUnit: line.dimensionUnit ?? "", formula: line.formula ?? "",
     quantity: line.quantity, unit: line.unit, pricingMode: line.pricingMode, rate: line.rate, unitCost: line.unitCost ?? "", markupPercent: line.markupPercent ?? "",
     discountKind: line.discountKind ?? "", discountValue: line.discountValue ?? "", taxCode: line.taxCode ?? "", optional: Boolean(line.optional), optionGroup: line.optionGroup ?? "", note: line.note,
+    scopeId: line.scopeId ?? "",
   };
   const changed = Object.keys(form).filter((key) => form[key as keyof typeof form] !== original[key]);
   const dirty = changed.length > 0 || rowsChanged;
   const editRows = (next: Row[]) => { setRows(next); setRowsChanged(true); };
 
   const save = async () => {
-    const nullable = new Set(["areaId", "fromAreaId", "workPackageId", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "taxCode", "optionGroup"]);
+    const nullable = new Set(["areaId", "fromAreaId", "workPackageId", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "taxCode", "optionGroup", "scopeId"]);
     const fields: Record<string, unknown> = {};
     for (const key of changed) {
       if (!state.canEditCosts && (key === "unitCost" || key === "markupPercent")) continue;
@@ -76,6 +78,9 @@ export function LineDetails({ line, state, onClose, onSave }: { line: BuilderLin
         </div>
         <TextInput label={t("Name")} isReadOnly={readOnly} value={form.title} onChange={(value) => set("title", value)} />
         <TextAreaField label={t("Description")} isReadOnly={readOnly} value={form.description} onChange={(value) => set("description", value)} />
+        {state.quote.kind === "quotation" && state.requirements?.some((item) => item.status === "included") ? <SelectField label={t("Covers the requirement")} isDisabled={readOnly}
+          selectedKey={form.scopeId} onSelectionChange={(key) => set("scopeId", String(key ?? ""))}
+          items={[{ id: "", label: t("None") }, ...state.requirements.filter((item) => item.status === "included").map((item) => ({ id: item.id, label: item.roomName ? `${item.title} · ${item.roomName}` : item.title }))]} /> : null}
         <div className={styles.pair}>
           {form.kind === "relocate" ? <SelectField label={t("From area")} isDisabled={readOnly} items={areaItems.filter((item) => item.id)} selectedKey={form.fromAreaId || null} onSelectionChange={(key) => set("fromAreaId", String(key ?? ""))} /> : null}
           <SelectField label={form.kind === "relocate" ? t("To area") : t("Area")} isDisabled={readOnly} items={areaItems} selectedKey={form.areaId} onSelectionChange={(key) => set("areaId", String(key ?? ""))} />

@@ -141,6 +141,11 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
 .decisions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-2) var(--wd-space-3); align-items: center; padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .decisions li > :nth-child(3) { grid-column: 1 / -1; }
 
+.requests { display: grid; gap: var(--wd-space-5); max-inline-size: 52rem; }
+.requests h3 { margin: 0 0 var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.requests ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.requests li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-space-3); padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+
 /* Updates */
 .updates { display: grid; gap: var(--wd-space-4); max-inline-size: 48rem; }
 .composer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: center; }

@@ -62,6 +62,8 @@ export type SealedScope = {
     terms: string; exclusions: string;
     acceptance: { decidedBy: string; decidedAt: string; method: string; recordedBy: string | null; note: string };
     agreement: { reference: string; status: string; executedAt: string | null } | null;
+    /** What the client asked for and what became of each request (absent on older seals). */
+    requirements?: Array<{ id: string; title: string; roomName: string | null; priority: string; source: string; status: string; note: string; lineIds: string[] }>;
   };
   contentHash: string; sealedAt: string; sealedBy: string; intact: boolean;
 };

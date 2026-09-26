@@ -27,6 +27,8 @@ export type BuilderLine = {
   imageAssetId: string | null; catalogImageId: string | null;
   /** On a variation: what the line does to the agreed scope (add, remove, move) and the live BOQ line it changes. */
   changeOp?: "add" | "omit" | "move" | null; boqLineId?: string | null;
+  /** The client requirement this line covers (requirement trace). */
+  scopeId?: string | null;
 };
 
 export type SectionTotal = { key: string; gross: string; discount: string; net: string };
@@ -66,6 +68,8 @@ export type BuilderState = {
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
   /** The project this quote belongs to once it has started, and the sealed name a variation got when applied. */
   project?: { id: string; reference: string; appliedAs: string | null } | null;
+  /** The client's requirements and the decision on each: included, excluded, later, not possible, undecided. */
+  requirements?: Array<{ id: string; title: string; roomName: string | null; priority: string; source: string; status: string; note: string }>;
 };
 
 /** A line of the project's live BOQ that a variation can remove, move or replace. */

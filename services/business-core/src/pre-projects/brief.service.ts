@@ -35,7 +35,7 @@ type CatalogSnapshot={catalogName:string;id:string;name:string;kind:string;code:
 type Context = { status: string; description: string | null; amount: string | null; currencyCode: string | null; leadId: string | null; qualificationEvidence: unknown };
 type BriefUpload = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 const entrySelect = `SELECT (SELECT content || jsonb_build_object('version',s.version,'createdAt',s.created_at,'designRefs',COALESCE((SELECT jsonb_agg(ref || jsonb_build_object('currentStatus',v.status)) FROM jsonb_array_elements(s.content->'designRefs') ref JOIN pre_project_design_versions v ON v.workspace_id=s.workspace_id AND v.case_id=s.case_id AND v.id=(ref->>'versionId')::uuid),'[]'::jsonb)) FROM pre_project_item_specifications s WHERE s.workspace_id=e.workspace_id AND s.case_id=e.case_id AND s.entry_id=e.id ORDER BY s.version DESC LIMIT 1) AS specification,e.id,e.kind,e.title,e.note,e.note_document AS document,e.pinned,e.category,e.priority,e.source,e.version,
-  e.room_id AS "roomId",r.name AS "roomName",e.scope_status AS "scopeStatus",e.review_status AS "reviewStatus",
+  e.room_id AS "roomId",r.name AS "roomName",e.scope_status AS "scopeStatus",e.scope_note AS "scopeNote",e.review_status AS "reviewStatus",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('role',l.role,'recordId',l.record_id,'snapshot',l.snapshot)) FROM pre_project_scope_links l WHERE l.workspace_id=e.workspace_id AND l.entry_id=e.id),'[]'::jsonb) AS "catalogLinks",
   e.quantity::float AS quantity,e.unit,e.reference_url AS "referenceUrl",e.avoid,
   COALESCE((SELECT jsonb_agg(rl.requirement_id ORDER BY rl.created_at) FROM pre_project_entry_requirement_links rl WHERE rl.workspace_id=e.workspace_id AND rl.entry_id=e.id),'[]'::jsonb) AS "requirementIds",
@@ -207,6 +207,9 @@ export class BriefService {
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)`, [workspaceId,caseId,input.id,...fields,userId]);
       }
       await client.query(`UPDATE pre_project_brief_entries SET note_document=$4,pinned=$5,archived_at=CASE WHEN $6 THEN COALESCE(archived_at,now()) ELSE NULL END WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,document ?? null,pinned,archived]);
+      // The reason goes with the decision; an included requirement needs none.
+      if (input.scopeNote !== undefined || input.scopeStatus === 'included')
+        await client.query(`UPDATE pre_project_brief_entries SET scope_note=$4 WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,input.scopeStatus === 'included' ? '' : input.scopeNote ?? '']);
       // A design linked to a scope item follows that item's room, without losing its file history.
       await client.query(`UPDATE pre_project_designs SET room_id=$4,version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND scope_entry_id=$3 AND room_id IS DISTINCT FROM $4::uuid`,[workspaceId,caseId,input.id,input.roomId??null]);
       await client.query(`DELETE FROM pre_project_scope_links WHERE workspace_id=$1 AND entry_id=$2`,[workspaceId,input.id]);

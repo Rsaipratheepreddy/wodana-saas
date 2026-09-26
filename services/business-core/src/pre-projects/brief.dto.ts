@@ -48,7 +48,9 @@ export class SaveBriefEntryDto {
   @IsString() @MaxLength(60000) note!: string;
   @Transform(trim) @IsString() @MinLength(1) @MaxLength(60) category!: string;
   @IsIn(["must_have", "preferred", "optional"]) priority!: string;
-  @IsIn(["included", "excluded", "undecided"]) scopeStatus!: string;
+  @IsIn(["included", "excluded", "later", "not_possible", "undecided"]) scopeStatus!: string;
+  /** Why a requirement isn't included (not included, a later phase, not possible), in words the client reads. */
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(500) scopeNote?: string;
   @IsIn(["captured", "reviewed", "clarification"]) reviewStatus!: string;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 4, allowNaN: false, allowInfinity: false }) @Min(0.0001) @Max(1e9) quantity?: number | null;
   @Transform(trim) @IsString() @MinLength(1) @MaxLength(20) unit!: string;

@@ -9,7 +9,7 @@ import type { SealedLine, SealedScope } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import styles from "./project-core.module.css";
 
-type View = "items" | "payments" | "terms";
+type View = "items" | "requests" | "payments" | "terms";
 const METHOD: Record<string, string> = { signed_document: "Signed copy", email: "Email", in_person: "In person", phone: "Phone", message: "Message", portal: "Client portal" };
 
 /**
@@ -51,7 +51,7 @@ export function SealedDocument({ workspaceId, projectId, sealId, onBack }: { wor
       <strong>{scope.intact ? t("Unchanged") : t("Changed since it was sealed")}</strong>
     </p>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => setView(key as View)}
-      items={[{ id: "items", label: t("Items") }, { id: "payments", label: t("Payments") }, { id: "terms", label: t("Terms") }]} />
+      items={[{ id: "items", label: t("Items") }, ...(snapshot.requirements?.length ? [{ id: "requests", label: t("Requests") }] : []), { id: "payments", label: t("Payments") }, { id: "terms", label: t("Terms") }]} />
 
     {view === "items" ? <table className={styles.scopeTable}>
       <thead><tr><th>{t("Item")}</th><th>{t("Qty")}</th><th>{t("Rate")}</th><th>{t("Amount")}</th></tr></thead>
@@ -75,6 +75,24 @@ export function SealedDocument({ workspaceId, projectId, sealId, onBack }: { wor
         <tr className={styles.totalRow}><th colSpan={3}>{t("Total")}</th><td>{money(snapshot.pricing.total)}</td></tr>
       </tfoot>
     </table> : null}
+
+    {view === "requests" && snapshot.requirements ? <div className={styles.requests}>
+      {(["included", "later", "excluded", "not_possible"] as const).map((status) => {
+        const items = snapshot.requirements!.filter((item) => item.status === status);
+        if (!items.length) return null;
+        const title = { included: t("Included"), later: t("A later phase"), excluded: t("Not included"), not_possible: t("Not possible") }[status];
+        return <section key={status} aria-label={title}>
+          <h3>{title} <span className={styles.muted}>{items.length}</span></h3>
+          <ul>{items.map((item) => <li key={item.id}>
+            <span className={styles.lineCell}><span>{item.title}{item.roomName ? <span className={styles.muted}> · {item.roomName}</span> : null}</span>
+              {status === "included"
+                ? item.lineIds.length ? <small>{t("Covered by {items}", { items: item.lineIds.map((id) => snapshot.lines.find((line) => line.id === id)?.title).filter(Boolean).join(", ") })}</small> : null
+                : item.note ? <small>{item.note}</small> : null}</span>
+            {item.source === "client" ? <span className={styles.muted}>{t("Asked by the client")}</span> : null}
+          </li>)}</ul>
+        </section>;
+      })}
+    </div> : null}
 
     {view === "payments" ? snapshot.paymentTerms.length ? <ol className={styles.milestones}>
       {splitByPercent(snapshot.pricing.total, snapshot.paymentTerms.map((term) => term.percent), snapshot.quote.decimals).map((amount, index) => {

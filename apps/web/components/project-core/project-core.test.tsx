@@ -205,7 +205,10 @@ describe("projects", () => {
         lines: [{ id: "a", position: 0, kind: "item", areaId: "k", fromAreaId: null, workPackageId: null, title: "Kitchen cabinets", description: "", unit: "m", quantity: "6.5", rate: "4200", net: "27300.00", total: "27300.00", catalogImageId: null, imageAssetId: null }],
         declinedOptions: [{ id: "d", title: "Wine fridge", total: "3150.00" }], areas: [{ id: "k", name: "Kitchen" }], trades: [],
         pricing: { subtotal: "27300.00", discounts: "0.00", net: "27300.00", tax: "0.00", total: "27300.00", areas: [{ key: "k", net: "27300.00" }] },
-        paymentTerms: [], terms: "", exclusions: "", acceptance: { decidedBy: "Maya Rahman", decidedAt: "2026-09-20T10:00:00Z", method: "signed_document", recordedBy: null, note: "" }, agreement: null },
+        paymentTerms: [], terms: "", exclusions: "", acceptance: { decidedBy: "Maya Rahman", decidedAt: "2026-09-20T10:00:00Z", method: "signed_document", recordedBy: null, note: "" }, agreement: null,
+        requirements: [
+          { id: "r1", title: "Soft-close drawers", roomName: "Kitchen", priority: "must_have", source: "client", status: "included", note: "", lineIds: ["a"] },
+          { id: "r2", title: "Steam room", roomName: null, priority: "optional", source: "client", status: "not_possible", note: "No drainage on this floor", lineIds: [] }] },
       contentHash: "a".repeat(64), sealedAt: "2026-09-22T09:00:00Z", sealedBy: "Omar", intact: true,
     };
     mount((url) => (url.includes("/seals/") ? sealed : url.includes("/scope") ? live : detail()));
@@ -216,6 +219,10 @@ describe("projects", () => {
     expect(screen.getByText(/Sealed R3 · accepted by Maya Rahman/)).toBeInTheDocument();
     expect(screen.getByText("Options the client didn't choose")).toBeInTheDocument();
     expect(screen.getByText("Wine fridge")).toBeInTheDocument();
+    // What the client asked for, and what became of it.
+    await userEvent.click(screen.getByRole("tab", { name: "Requests" }));
+    expect(within(screen.getByRole("region", { name: "Included" })).getByText("Covered by Kitchen cabinets")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Not possible" })).getByText("No drainage on this floor")).toBeInTheDocument();
   });
 
   it("splits a total by percent in whole minor units that always add up", () => {
