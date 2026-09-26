@@ -23,7 +23,10 @@ const state = (lines: BuilderLine[]): BuilderState => ({
   pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
     areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",
     discounts: { line: "0.00", section: "0.00", quote: "0.00", total: "0.00" }, net: "400.00", tax: "20.00", taxes: [{ rate: "5", base: "400.00", tax: "20.00" }], total: "420.00", cost: "240.00", margin: "40.00", optionalTotal: "0.00" },
-  checks: [], me: "u1", canEdit: true, canEditCosts: true, canViewCosts: true,
+  checks: [], me: "u1",
+  document: { style: "atelier", accent: null, sections: { cover: true, intro: true, summary: true, items: true, payments: true, terms: true, acceptance: true }, title: "", subtitle: "", intro: "", terms: "", exclusions: "", itemsView: "area", itemsDetail: "lines", showRates: true, showDescriptions: true, coverAssetId: null },
+  brand: { name: "Studio", logo: "", primaryColor: "#1f6f5c", accentColor: "#1f6f5c" }, client: { name: "Maya Client", project: "Villa", address: null },
+  canEdit: true, canEditCosts: true, canViewCosts: true,
 });
 const mount = (initial: BuilderState, respond: (url: string, body: unknown) => unknown = () => initial) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, init?.body ? JSON.parse(String(init.body)) : undefined) }));

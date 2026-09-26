@@ -6,6 +6,8 @@ import { currencyDecimals } from "../catalog-core/catalog-v2.service";
 import { Dec } from "../catalog-core/decimal";
 import { FormulaError } from "../catalog-core/formula";
 import { parsePaymentTerms } from "../commercial/commercial.domain";
+import { effectivePortalBrand } from "../commercial/effective-brand";
+import { defaultDocument, parseDocument, type QuoteDocument } from "./quote-document";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { catalogLine, searchCatalog } from "./quote-catalog";
 import { priceQuote, PricingError, type PricingPolicy, type QuoteDiscountInput } from "./quote-pricing";
@@ -257,6 +259,23 @@ export class QuotationBuilderService {
     });
   }
 
+  /** The client document's style, texts and sections. Items and money always come from the quote. */
+  setDocument(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const settings = await readSettings(client, workspaceId);
+      const current = documentOf(quote, settings);
+      const next = parseDocument(input ?? {}, current);
+      if (next.coverAssetId && next.coverAssetId !== current.coverAssetId
+        && !(await client.query(`SELECT 1 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, next.coverAssetId])).rowCount)
+        throw new BadRequestException("Choose a cover image from this project.");
+      await client.query(`UPDATE commercial_quotes SET detail = detail || jsonb_build_object('document', $4::jsonb) WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId, JSON.stringify(next)]);
+      await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.document_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, style: next.style } });
+      return this.state(client, workspaceId, caseId, quoteId, user.userId);
+    });
+  }
+
   // ---------- internals ----------
   private async editable(client: Db, workspaceId: string, caseId: string, quoteId: string) {
     const record = (await client.query<{ status: string }>(`SELECT status FROM pre_project_cases WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, caseId])).rows[0];
@@ -400,6 +419,15 @@ export class QuotationBuilderService {
       pricing: canViewCosts ? pricing : { ...pricing, cost: null, margin: null, lines: pricing.lines.map((line) => ({ ...line, cost: null })) },
       checks,
       me: userId,
+      document: documentOf(quote, settings),
+      brand: await effectivePortalBrand(client, workspaceId, null),
+      client: (await client.query<{ name: string; project: string; address: string | null }>(
+        `SELECT coalesce(party.display_name, opportunity.title) AS name, opportunity.title AS project,
+                (SELECT concat_ws(', ', NULLIF(address.line1, ''), NULLIF(address.locality, ''), NULLIF(address.region, '')) FROM crm_addresses address
+                  WHERE address.workspace_id = party.workspace_id AND address.party_id = party.id ORDER BY address.is_primary DESC, address.created_at LIMIT 1) AS address
+           FROM pre_project_cases pre_case JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+           LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+          WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null },
       canEdit, canEditCosts, canViewCosts,
     };
   }
@@ -661,4 +689,10 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
     checks.push({ code: "Margin is below the {floor}% floor", values: { floor }, tone: "warning" });
   if (input.draft && input.lines.length && !input.paymentTerms.length) checks.push({ code: "Add the payment milestones", tone: "warning" });
   return checks;
+}
+
+function documentOf(quote: Quote, settings: QuotationSettings): QuoteDocument {
+  const stored = quote.detail.document as Partial<QuoteDocument> | undefined;
+  const base = defaultDocument({ terms: typeof quote.detail.terms === "string" ? quote.detail.terms : "", exclusions: typeof quote.detail.exclusions === "string" ? quote.detail.exclusions : "", view: settings.defaultView });
+  return stored ? { ...base, ...stored, sections: { ...base.sections, ...(stored.sections ?? {}) } } : base;
 }

@@ -38,7 +38,7 @@ export default async function CasePage({ params, searchParams }: {
     const backHref = caseHref(caseId, new URLSearchParams(listSearch(query).toString()), "quotations");
     // The document pages (cover, terms, PDF) until the document styles are rebuilt; the lines are built in the quotation builder.
     if (query.get("view") === "document") return <QuotationBuilderShell key={query.get("quote")!} initial={commercialState} quoteId={query.get("quote")!} backHref={`${backHref.split("?")[0]}?quote=${encodeURIComponent(query.get("quote")!)}`} />;
-    return <QuoteBuilder key={query.get("quote")!} workspaceId={commercialState.workspaceId} caseId={caseId} quoteId={query.get("quote")!} backHref={backHref} />;
+    return <QuoteBuilder key={query.get("quote")!} workspaceId={commercialState.workspaceId} caseId={caseId} quoteId={query.get("quote")!} backHref={backHref} initialTab={query.get("tab") === "document" ? "document" : "items"} />;
   }
   if (route.section === "approvals" && content && definition && commercialState) return <PlanningApprovals record={record} content={content} definition={definition} commercial={commercialState} search={listSearch(query).toString()} review={query.get("review") ?? undefined} />;
   if(commercialSection && commercialState)return <CommercialPage key={`${caseId}-${route.section}-${query.get("quote")??"list"}`} quotationId={query.get("quote")??undefined} initial={commercialState} record={record} section={route.section} search={listSearch(query).toString()}/>;

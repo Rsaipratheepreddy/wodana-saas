@@ -57,6 +57,9 @@ export type BuilderState = {
   pricing: Pricing;
   checks: QuoteCheck[];
   me: string;
+  document: QuoteDocument;
+  brand: { name: string; logo: string; primaryColor: string; accentColor: string };
+  client: { name: string; project: string; address: string | null };
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
 };
 
@@ -88,3 +91,11 @@ export type QuoteThread = {
   messages: Array<{ id: string; body: string; mentions: string[]; createdBy: string; createdByName: string; createdAt: string }>;
 };
 export type QuotePerson = { userId: string; name: string; lineId: string | null; field: string | null };
+
+export type DocumentStyleId = "atelier" | "minimal" | "noir" | "terrazzo" | "nordic" | "botanical" | "coastal" | "monochrome" | "heritage" | "linen" | "studio" | "marble";
+export type DocumentSection = "cover" | "intro" | "summary" | "items" | "payments" | "terms" | "acceptance";
+export type QuoteDocument = {
+  style: DocumentStyleId; accent: string | null; sections: Record<DocumentSection, boolean>;
+  title: string; subtitle: string; intro: string; terms: string; exclusions: string;
+  itemsView: QuoteView; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; coverAssetId: string | null;
+};

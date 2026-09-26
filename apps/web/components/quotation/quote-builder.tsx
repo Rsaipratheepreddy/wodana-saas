@@ -15,6 +15,7 @@ import { LineDetails } from "./line-details";
 import { QuoteRow, type RowColumn } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, RevisionChanges } from "./quote-flow";
+import { DocumentStudio } from "./document-studio";
 import { QuoteAssistant } from "./quote-assistant";
 import { CommentButton, CommentPanel, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import { useRouter } from "next/navigation";
@@ -27,7 +28,7 @@ const STATUS_LABEL: Record<string, string> = { draft: "Draft", internal_review: 
  * The quotation builder (plan §6.8): one list of lines, read by area, by trade or both. Edit like a
  * spreadsheet; every change is saved line by line as you go, priced on the server and shown back.
  */
-export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; initial?: BuilderState }) {
+export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, initialTab = "items" }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; initial?: BuilderState; initialTab?: "items" | "document" }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const router = useRouter();
@@ -41,6 +42,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
   const [open, setOpen] = useState<string | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
   const [addingArea, setAddingArea] = useState(false);
+  const [tab, setTab] = useState<"items" | "document">(initialTab);
   const [threads, setThreads] = useState<QuoteThread[]>([]);
   const [members, setMembers] = useState<Array<{ id: string; name: string }>>([]);
   const [commentAt, setCommentAt] = useState<{ anchor: QuoteAnchor; title: string } | null>(null);
@@ -206,12 +208,11 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
       <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
       <Badge tone={state.quote.status === "accepted" ? "success" : state.quote.status === "draft" ? "neutral" : "info"}>{t((STATUS_LABEL[state.quote.status] ?? state.quote.status) as never)}</Badge>
       {state.family.length > 1 ? <PillTabs ariaLabel={t("Revisions")} selectedKey={state.quote.id} onSelectionChange={(id) => router.push(quoteHref(id))}
-        items={state.family.map((item) => ({ id: item.id, label: t("R{number}", { number: item.number }) }))} /> : null}
+        items={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /> : null}
       {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
       <PeopleHere people={people} />
       <span className={styles.spacer} />
-      <Link className={styles.docLink} href={`${backHref.split("?")[0]}?${new URLSearchParams({ quote: quoteId, view: "document" })}`}>{t("Document")}</Link>
       <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
       <FlowActions state={state} api={api} caseHref={(section) => backHref.replace(/\/quotations(\?.*)?$/, `/${section}`)} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
     </header>
@@ -223,6 +224,11 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
     }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
     <RevisionChanges key={state.quote.id} state={state} api={api} />
 
+    <PillTabs ariaLabel={t("Quote")} selectedKey={tab} onSelectionChange={(key) => setTab(key as "items" | "document")} items={[{ id: "items", label: t("Items") }, { id: "document", label: t("Document") }]} />
+    {tab === "document" ? <>
+      {error ? <InlineNotice tone="error" message={error} /> : null}
+      <DocumentStudio state={state} api={api} workspaceId={workspaceId} caseId={caseId} onState={setState} onError={setError} />
+    </> : <>
     <div className={styles.toolbar}>
       <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as QuoteView)} options={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
       <span className={styles.spacer} />
@@ -265,6 +271,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
       </div>
     </div>
 
+    </>}
     {addingArea ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
       onClose={() => setAddingArea(false)} onPick={() => { setAddingArea(false); void load(); }} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}

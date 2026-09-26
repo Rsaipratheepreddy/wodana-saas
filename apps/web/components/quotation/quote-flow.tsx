@@ -167,7 +167,7 @@ export function RevisionChanges({ state, api }: { state: BuilderState; api: Api 
   const t = useT();
   const { locale } = useDesignSystem();
   const index = state.family.findIndex((item) => item.id === state.quote.id);
-  const previous = index > 0 ? state.family[index - 1] : null;
+  const previous = index > 0 ? { ...state.family[index - 1], number: index } : null;
   const [other, setOther] = useState<BuilderState | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -176,7 +176,7 @@ export function RevisionChanges({ state, api }: { state: BuilderState; api: Api 
     api.loadOther(previous.id).then((value) => { if (alive) setOther(value); }).catch(() => undefined);
     return () => { alive = false; };
   }, [api, previous]);
-  if (!previous || !other) return null;
+  if (!previous || !other || !Array.isArray(other.lines) || !other.pricing) return null;
   const before = new Map(other.lines.map((line) => [line.id, line]));
   const after = new Map(state.lines.map((line) => [line.id, line]));
   const added = state.lines.filter((line) => !before.has(line.id));

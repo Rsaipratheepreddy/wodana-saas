@@ -61,6 +61,9 @@ export class QuotationController {
   @Post("cases/:caseId/quotes/:quoteId/pulse")
   pulse(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { lineId?: unknown; field?: unknown }) { return this.collab.pulse(actor, workspaceId, caseId, quoteId, input ?? {}); }
 
+  @Put("cases/:caseId/quotes/:quoteId/document")
+  document(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: Record<string, unknown>) { return this.builder.setDocument(actor, workspaceId, caseId, quoteId, input ?? {}); }
+
   @Put("cases/:caseId/quotes/:quoteId/tax")
   tax(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { taxRate?: unknown }) { return this.builder.setQuoteTax(actor, workspaceId, caseId, quoteId, input ?? {}); }
 }

@@ -1,4 +1,4 @@
-import { Inter, JetBrains_Mono, Montserrat, Noto_Sans_Arabic, Plus_Jakarta_Sans, Noto_Sans_Devanagari, Noto_Sans_Telugu, Noto_Sans_Malayalam, Noto_Sans_Tamil } from "next/font/google";
+import { Cormorant_Garamond, Inter, JetBrains_Mono, Montserrat, Playfair_Display, Noto_Sans_Arabic, Plus_Jakarta_Sans, Noto_Sans_Devanagari, Noto_Sans_Telugu, Noto_Sans_Malayalam, Noto_Sans_Tamil } from "next/font/google";
 
 export const inter = Inter({
   subsets: ["latin", "latin-ext"],
@@ -39,4 +39,7 @@ export const notoHindi = Noto_Sans_Devanagari({ subsets: ["devanagari"], display
 export const notoTelugu = Noto_Sans_Telugu({ subsets: ["telugu"], display: "swap", preload: false, variable: "--font-noto-telugu" });
 export const notoMalayalam = Noto_Sans_Malayalam({ subsets: ["malayalam"], display: "swap", preload: false, variable: "--font-noto-malayalam" });
 export const notoTamil = Noto_Sans_Tamil({ subsets: ["tamil"], display: "swap", preload: false, variable: "--font-noto-tamil" });
-export const fontVariables = `${jakarta.variable} ${inter.variable} ${montserrat.variable} ${jetBrainsMono.variable} ${notoSansArabic.variable} ${notoHindi.variable} ${notoTelugu.variable} ${notoMalayalam.variable} ${notoTamil.variable}`;
+// Editorial faces for client documents (quotation styles); not preloaded on app pages.
+export const cormorant = Cormorant_Garamond({ subsets: ["latin", "latin-ext"], weight: ["400", "500", "600", "700"], display: "swap", preload: false, variable: "--font-cormorant", fallback: ["Georgia", "serif"] });
+export const playfair = Playfair_Display({ subsets: ["latin", "latin-ext"], display: "swap", preload: false, variable: "--font-playfair", fallback: ["Georgia", "serif"] });
+export const fontVariables = `${jakarta.variable} ${cormorant.variable} ${playfair.variable} ${inter.variable} ${montserrat.variable} ${jetBrainsMono.variable} ${notoSansArabic.variable} ${notoHindi.variable} ${notoTelugu.variable} ${notoMalayalam.variable} ${notoTamil.variable}`;

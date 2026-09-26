@@ -37,3 +37,15 @@ describe("AI proposal validation", () => {
     expect(JSON.stringify(proposal)).not.toContain("9999");
   });
 });
+
+import { defaultDocument, parseDocument } from "./quote-document";
+describe("quote document", () => {
+  it("keeps only valid styles, colours, texts and section switches", () => {
+    const base = defaultDocument({ terms: "Net 7 days" });
+    const next = parseDocument({ style: "noir", accent: "#1f6f5c", sections: { intro: false }, title: " Villa proposal ", itemsDetail: "totals", extra: "ignored" }, base);
+    expect(next).toMatchObject({ style: "noir", accent: "#1f6f5c", title: "Villa proposal", itemsDetail: "totals", terms: "Net 7 days", sections: { intro: false, cover: true } });
+    expect(() => parseDocument({ style: "neon" }, base)).toThrow(/styles/);
+    expect(() => parseDocument({ accent: "red" }, base)).toThrow(/colour/);
+    expect(() => parseDocument({ sections: { cover: "yes" } }, base)).toThrow(/sections/);
+  });
+});
