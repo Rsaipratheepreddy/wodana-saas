@@ -1621,5 +1621,15 @@
   "Add a service": "Add a service",
   "Add a product": "Add a product",
   "Add a project": "Add a project",
-  "Add feedback": "Add feedback"
+  "Add feedback": "Add feedback",
+  "Search the gallery": "Search the gallery",
+  "Search kitchens, wardrobes, finishes…": "Search kitchens, wardrobes, finishes…",
+  "Clear search": "Clear search",
+  "Nothing matches “{query}”.": "Nothing matches “{query}”.",
+  "Remove {name} from your list": "Remove {name} from your list",
+  "Add {name} to your list": "Add {name} to your list",
+  "Previous": "Previous",
+  "Next": "Next",
+  "Picture {number}": "Picture {number}",
+  "More like this": "More like this"
 }

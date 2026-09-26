@@ -18,21 +18,26 @@ const content: GalleryContent = {
 describe("company gallery", () => {
   afterEach(() => { vi.unstubAllGlobals(); window.localStorage.clear(); });
 
-  it("shows only visible sections and items, with starting prices and contact links", () => {
+  it("shows visible items as a searchable, filterable wall with prices and contact links", async () => {
     render(<DesignSystemProvider><GalleryView content={content} imageUrl={(id) => `/img/${id}`} locale="en" /></DesignSystemProvider>);
     expect(screen.getByRole("heading", { name: "Homes made calm" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Services" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Products" })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Services/ })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Products/ })).not.toBeInTheDocument();
     expect(screen.getByText("From AED 38,000 / kitchen")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /WhatsApp/ })).toHaveAttribute("href", "https://wa.me/971500000000");
+    expect(screen.getAllByRole("link", { name: /WhatsApp/ })[0]).toHaveAttribute("href", "https://wa.me/971500000000");
     expect(screen.getByLabelText("5 out of 5")).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search the gallery" }), "wardrobe");
+    expect(screen.getByText("Nothing matches “wardrobe”.")).toBeInTheDocument();
+    await userEvent.clear(screen.getByRole("searchbox", { name: "Search the gallery" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open Kitchens" }));
+    expect(screen.getByRole("dialog", { name: "Kitchens" })).toHaveTextContent("From AED 38,000 / kitchen");
   });
 
   it("keeps a list and sends it through the firm's enquiry form", async () => {
     const fetcher = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ received: true }) }));
     vi.stubGlobal("fetch", fetcher);
     render(<DesignSystemProvider><GalleryView content={content} imageUrl={(id) => `/img/${id}`} submitTo="/api/public-gallery/palm-studio/enquiries" locale="en" /></DesignSystemProvider>);
-    await userEvent.click(screen.getByRole("button", { name: "Add to list" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add Kitchens to your list" }));
     expect(JSON.parse(window.localStorage.getItem("wodana.gallery.palm-studio")!)).toEqual([kitchens.id]);
     await userEvent.click(screen.getByRole("button", { name: "My list, 1 items" }));
     const drawer = screen.getByRole("dialog", { name: "My list" });
