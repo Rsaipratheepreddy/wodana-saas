@@ -80,8 +80,25 @@ try {
     ON CONFLICT(id) DO UPDATE SET status='active',phase='design'`, [ids.case, ws, ids.opportunity, owner.userId, owner.membershipId]);
   await client.query(`INSERT INTO crm_opportunity_designer(workspace_id,opportunity_id,membership_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`, [ws, ids.opportunity, designer.membershipId]);
 
+  // Room types live in the catalog; the project's rooms link to them (a custom room stays possible).
+  const roomCatalogId = id(30);
+  const roomContent = (description) => JSON.stringify({ links: [], sizes: [], market: "CUSTOM", aliases: [], sources: [], dimension: "none", attributes: [], description, configuration: {}, specificationStatus: "ready" });
+  await client.query(`INSERT INTO workspace_catalog_records(workspace_id,id,kind,code,name,content,created_by,updated_by)
+    VALUES($1,$2,'catalog_group','PALM-ROOMS','Palm Living rooms',$3,$4,$4) ON CONFLICT(workspace_id,id) DO UPDATE SET archived=false`, [ws, roomCatalogId, roomContent("Room and area types used to organise project requirements."), owner.userId]);
+  const roomTypes = ["Entrance / foyer", "Living room", "Dining room", "Kitchen", "Majlis", "Master bedroom", "Bedroom", "Guest bedroom", "Walk-in wardrobe", "Master bathroom", "Bathroom", "Powder room", "Study", "Laundry", "Maid's room", "Balcony", "Terrace"];
+  const roomRecord = {};
+  for (const [index, name] of roomTypes.entries()) {
+    const recordId = id(40 + index);
+    roomRecord[name] = recordId;
+    await client.query(`INSERT INTO workspace_catalog_records(workspace_id,id,kind,code,name,content,catalog_id,created_by,updated_by)
+      VALUES($1,$2,'room',$3,$4,$5,$6,$7,$7) ON CONFLICT(workspace_id,id) DO UPDATE SET name=excluded.name,archived=false`,
+      [ws, recordId, `RM-${String(index + 1).padStart(3, "0")}`, name, roomContent(""), roomCatalogId, owner.userId]);
+  }
   for (const [key, name] of [["kitchen", "Kitchen"], ["living", "Living room"], ["master", "Master bedroom"]])
-    await client.query(`INSERT INTO pre_project_rooms(id,workspace_id,case_id,name) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=excluded.name`, [ids.rooms[key], ws, ids.case, name]);
+    await client.query(`INSERT INTO pre_project_rooms(id,workspace_id,case_id,name,catalog_record_id,catalog_snapshot)
+      SELECT $1,$2,$3,$4,r.id,jsonb_build_object('id',r.id,'name',r.name,'code',r.code,'kind',r.kind,'version',r.version,'catalogId',r.catalog_id,'catalogName','Palm Living rooms','configuration','{}'::jsonb)
+      FROM workspace_catalog_records r WHERE r.workspace_id=$2 AND r.id=$5
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,catalog_record_id=excluded.catalog_record_id,catalog_snapshot=excluded.catalog_snapshot`, [ids.rooms[key], ws, ids.case, name, roomRecord[name]]);
 
   const entry = async (entryId, fields) => {
     const f = { roomId: null, note: "", category: "General", priority: "preferred", scopeStatus: "included", reviewStatus: "captured", quantity: null, unit: "nos", referenceUrl: "", avoid: "", source: "team", ...fields };

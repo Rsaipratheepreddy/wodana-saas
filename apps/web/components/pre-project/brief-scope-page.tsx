@@ -3,14 +3,15 @@
 import { useId, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import { ClipboardList, DoorOpen, FileText, LayoutGrid, Plus, Ruler, Table2 } from 'lucide-react';
+import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
 import { Badge, Button, Checkbox, DataGrid, EmptyState, MenuButton, SelectField, SearchInput, TextInput, TextAreaField, NumericInput, useDesignSystem, type DataGridColumn } from '@/design-system';
 import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabels, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
-import { CaseModal, CatalogChoiceField } from './case-controls';
+import { CaseModal } from './case-controls';
 import { ItemSpecificationEditor } from './item-specification-editor';
 import { MeasurementCreateForm } from './measurement-create-form';
 import { ScopeEditor } from './scope-entry-editor';
+import { RoomManager } from './room-manager';
 import { useRequirementNotes } from '../crm/requirement-notes';
 import workspace from './requirements-workspace.module.css';
 import { NotePreview } from '@/components/crm/note-preview';
@@ -42,7 +43,6 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
   const [measureAfterSave, setMeasureAfterSave] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
   const [roomsOpen, setRoomsOpen] = useState(false);
-  const [addingRoom, setAddingRoom] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const { locale } = useDesignSystem();
@@ -119,7 +119,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     { id: 'action', header: '', size: 100, cell: ({ row: { original } }) => <Button size="compact" variant="quiet" aria-label={`${canEditEntry(original) && !archived ? 'Edit' : 'View'} ${original.title}`} onPress={() => setEntry(original)}>{canEditEntry(original) && !archived ? 'Edit' : 'View'}</Button> },
   ];
   const captureActions = <div className={`${styles.toolbarActions} ${workspace.captureActions}`}>
-        {!compact && <><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}>Project brief</Button><Button size="compact" variant="quiet" onPress={() => { setAddingRoom(false); setRoomsOpen(true); }}>Manage rooms</Button></>}
+        {!compact && <><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}>Project brief</Button><Button size="compact" variant="quiet" onPress={() => setRoomsOpen(true)}>Manage rooms</Button></>}
         {view !== 'requirement' && view !== 'measurements' && <div className={styles.presentationSwitch} role="group" aria-label="Display"><button type="button" aria-label="Cards view" aria-pressed={presentation === 'cards'} onClick={() => setPresentation('cards')}><LayoutGrid size={15}/></button><button type="button" aria-label="Table view" aria-pressed={presentation === 'table'} onClick={() => setPresentation('table')}><Table2 size={15}/></button></div>}
         {view === 'measurements' && <EligibilityButton reason={blockedReason} isDisabled={!data.canEdit} size="compact" variant="primary" onPress={() => { setArchived(false); setMeasurementFor(undefined); setMeasurementOpen(true); }}><Plus size={14}/>Add measurement</EligibilityButton>}
         {view !== 'measurements' && <EligibilityButton reason={blockedReason} isDisabled={!data.canEdit} size="compact" variant="primary" onPress={() => { setArchived(false); setEntry({ ...blankEntry(room === 'all' || room === 'general' ? null : room), kind: view }); }}><Plus size={14}/>{view === 'file' ? 'Add site plan' : view === 'inspiration' ? 'Add inspiration' : 'Add requirement'}</EligibilityButton>}
@@ -168,7 +168,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     {measurementOpen && <MeasurementCreateForm data={data} entries={allEntries.filter(value => storedRequirement(value) && !value.archivedAt && canEditEntry(value))} initialEntryId={measurementFor} initialRoom={room} onClose={() => setMeasurementOpen(false)} onCreateRequirement={() => { setMeasurementOpen(false); setMeasureAfterSave(true); setEntry(blankEntry(room === 'all' || room === 'general' ? null : room)); }} onSaved={(value, specification) => { upsert({ ...value, assets: data.entries.find(item => item.id === value.id)?.assets ?? value.assets, specification }); setSearch(''); setRoom(value.roomId ?? 'general'); setMessage('Measurement saved.'); setMeasurementOpen(false); }}/>} 
     {specEntry && <ItemSpecificationEditor entry={specEntry} data={{ ...data, canEdit: canEditEntry(specEntry) }} focusSection={specFocus} onClose={() => setSpecEntry(null)} onSaved={specification => { upsert({ ...specEntry, assets: data.entries.find(item => item.id === specEntry.id)?.assets ?? specEntry.assets, specification }); setSpecEntry(null); setMessage('Measurements saved.'); }}/>}
     {briefOpen && <BriefEditor data={data} onClose={() => setBriefOpen(false)} onSave={async brief => { const input = { ...brief }; delete input.updatedAt; const saved = await caseRequest<CaseBrief>(workspaceId, caseId, 'brief', 'PUT', input); setData(current => ({ ...current, brief: saved, fromCrm: false })); setMessage('Brief saved.'); }}/>}
-    {roomsOpen && <RoomManager startAdding={addingRoom} data={data} onClose={() => setRoomsOpen(false)} onSave={async value => { const saved = await caseRequest<CaseRoom>(workspaceId, caseId, 'rooms', 'PUT', { id: value.id, version: value.version, name: value.name, catalogRecordId: value.catalogRecordId ?? null }); setData(current => ({ ...current, rooms: [...current.rooms.filter(item => item.id !== saved.id), saved], entries: current.entries.map(item => item.roomId === saved.id ? { ...item, roomName: saved.name } : item) })); return saved; }}/>}
+    {roomsOpen && <RoomManager data={data} onClose={() => setRoomsOpen(false)} onSave={async value => { const saved = await caseRequest<CaseRoom>(workspaceId, caseId, 'rooms', 'PUT', { id: value.id, version: value.version, name: value.name, catalogRecordId: value.catalogRecordId ?? null }); setData(current => ({ ...current, rooms: [...current.rooms.filter(item => item.id !== saved.id), saved], entries: current.entries.map(item => item.roomId === saved.id ? { ...item, roomName: saved.name } : item) })); return saved; }}/>}
   </div>;
 }
 
@@ -182,16 +182,6 @@ function BriefEditor({data,onClose,onSave}:{data:CaseContent;onClose:()=>void;on
  {field('budget')}{field('decisionMakers')}</div>
  <section className={styles.divider}><h3>People, preferences & constraints</h3><div className={styles.grid}>{field('people',true)}{field('preferences',true)}{field('retainedItems')}{field('exclusions')}{field('constraints',true)}</div></section></fieldset></form>
  {data.crmContext.opportunityAmount&&<p className={styles.muted}>CRM opportunity value: {formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale)}. This remains separate from the client’s budget.</p>}
- </CaseModal>;
-}
-
-function RoomManager({data,onClose,onSave,startAdding=false}:{startAdding?:boolean;data:CaseContent;onClose:()=>void;onSave:(room:CaseRoom)=>Promise<CaseRoom>}) {
- const [draft,setDraft]=useState<CaseRoom|null>(()=>startAdding&&data.canEdit?{id:crypto.randomUUID(),version:0,name:'',catalogRecordId:null}:null);const [baseline,setBaseline]=useState<CaseRoom|null>(draft);const [saving,setSaving]=useState(false);const [error,setError]=useState('');
- return <CaseModal title="Project rooms" description="Organize requirements by room or area." onClose={onClose} dirty={draft!==null&&JSON.stringify(draft)!==JSON.stringify(baseline)} busy={saving} size="md" footer={draft&&<Button variant="primary" type="submit" form="room-form" isLoading={saving}>Save room</Button>}>
- {error&&<p role="alert" className={styles.error}>{error}</p>}<div className={styles.rooms}>{data.rooms.map(r=><div className={styles.room} key={r.id}><DoorOpen size={17}/><span>{r.name}<small className={styles.muted}>{r.catalogSnapshot?` · ${r.catalogSnapshot.name}`:''}</small></span>{data.canEdit&&<Button size="compact" isDisabled={Boolean(draft)||saving} onPress={()=>{setDraft(r);setBaseline(r);}}>Edit</Button>}</div>)}</div>
- {!data.rooms.length&&!draft&&<p className={styles.muted}>No rooms yet. Whole-project requirements can be entered straight away.</p>}
- {!draft&&data.canEdit&&<div className={styles.divider}><Button onPress={()=>{const fresh={id:crypto.randomUUID(),version:0,name:'',catalogRecordId:null};setDraft(fresh);setBaseline(fresh);}}><Plus size={15}/>Add room</Button></div>}
- {draft&&<form id="room-form" onSubmit={async e=>{e.preventDefault();setSaving(true);setError('');try{await onSave(draft);setDraft(null);setBaseline(null);}catch(err){setError(err instanceof Error?err.message:'Could not save.');}finally{setSaving(false);}}}><fieldset disabled={saving} className={styles.captureFields}><TextInput label="Room name" isRequired isDisabled={saving} maxLength={120} value={draft.name} onChange={value=>setDraft({...draft,name:value})} placeholder="e.g. Master bedroom"/><CatalogChoiceField workspaceId={data.workspaceId} caseId={data.caseId} kind="room" label="Room catalog · optional" value={draft.catalogSnapshot??null} disabled={saving} onChange={value=>setDraft(d=>d?{...d,catalogRecordId:value?.id??null,catalogSnapshot:value,name:d.name||value?.name||''}:d)}/></fieldset></form>}
  </CaseModal>;
 }
 
