@@ -4,7 +4,9 @@ import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { BriefService } from "./brief.service";
-import { FolderReviewerDto, ApproveFolderDto, AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
+import { syncDesignStages } from "../design/design-stage-sync";
+import { STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
+import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
 
 export function validateDesignTransition(status:string,action:string,note:string,decisionBy:string) {
  if(action==='comment') { if(!note.trim()) throw new BadRequestException('Enter a comment.'); return; }
@@ -25,7 +27,7 @@ export function clientReviewExpiry(requested:string|undefined,now=new Date()) {
 export function clientRoundOverrideRequired(used:number,included:number|null|undefined) {
  return included!==null&&included!==undefined&&used>=included;
 }
-const designSelect=`SELECT d.id,d.title,d.folder_id AS "folderId",d.document_type AS "documentType",d.description,d.version,d.room_id AS "roomId",r.name AS "roomName",d.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",e.archived_at IS NOT NULL AS "scopeArchived",d.archived_at AS "archivedAt",d.updated_at AS "updatedAt",
+const designSelect=`SELECT d.id,d.title,d.folder_id AS "folderId",d.document_type AS "documentType",d.stage,d.description,d.version,d.room_id AS "roomId",r.name AS "roomName",d.scope_entry_id AS "scopeEntryId",e.title AS "scopeTitle",e.archived_at IS NOT NULL AS "scopeArchived",d.archived_at AS "archivedAt",d.updated_at AS "updatedAt",
  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',v.id,'number',v.number,'note',v.note,'status',CASE WHEN v.status='client_review' AND v.client_review_expires_at<=now() THEN 'expired' ELSE v.status END,'includedClientRounds',v.included_client_rounds,'clientReviewExpiresAt',v.client_review_expires_at,'createdAt',v.created_at,'createdByName',u.display_name,'createdBy',v.created_by,'reviewerId',v.reviewer_id,'asset',jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL)) ORDER BY v.number DESC)
  FROM pre_project_design_versions v JOIN pre_project_brief_assets a ON a.workspace_id=v.workspace_id AND a.case_id=v.case_id AND a.id=v.asset_id JOIN users u ON u.id=v.created_by WHERE v.workspace_id=d.workspace_id AND v.design_id=d.id),'[]'::jsonb) AS versions,
  COALESCE((SELECT count(DISTINCT h.version_id)::int FROM pre_project_design_activity h WHERE h.workspace_id=d.workspace_id AND h.design_id=d.id AND h.action='client_review'),0) AS "clientRoundsUsed",
@@ -59,18 +61,21 @@ export class DesignService {
    if(input.folderId) await this.validateFolderContext(client,workspaceId,caseId,input.folderId,input.roomId??null,input.scopeEntryId??null);
    const latest=current?await client.query(`SELECT status,included_client_rounds FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2 ORDER BY number DESC LIMIT 1`,[workspaceId,input.id]):{rows:[]};
    const policyChanged=input.includedClientRounds!==undefined&&(latest.rows[0]?.included_client_rounds??null)!==input.includedClientRounds;
-   if(current&&(current.room_id!==(input.roomId??null)||current.scope_entry_id!==(input.scopeEntryId??null)||current.document_type!==input.documentType||policyChanged)&&latest.rows[0]&&latest.rows[0].status!=='draft')throw new ConflictException('This file has entered review. Upload a new draft revision before changing its room, scope, document type or included-round policy.');
+   if(current&&(current.room_id!==(input.roomId??null)||current.scope_entry_id!==(input.scopeEntryId??null)||current.document_type!==input.documentType||(input.stage!==undefined&&(current.stage??null)!==(input.stage??null))||policyChanged)&&latest.rows[0]&&latest.rows[0].status!=='draft')throw new ConflictException('This file has entered review. Upload a new draft revision before changing its stage, room, scope, document type or included-round policy.');
+   if(input.stage!==undefined)await this.validStage(client,workspaceId,caseId,input.stage??null);
    if(input.roomId) await this.belongs(client,'pre_project_rooms',workspaceId,caseId,input.roomId,'room');
    if(input.scopeEntryId) {
     const entry=await client.query(`SELECT room_id,archived_at,kind FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.scopeEntryId]);
     if(!entry.rowCount||entry.rows[0].kind!=='requirement'||(entry.rows[0].archived_at&&input.scopeEntryId!==current?.scope_entry_id)) throw new BadRequestException('Choose an active scope item from this pre-execution.');
     if((entry.rows[0].room_id??null)!==(input.roomId??null)) throw new BadRequestException('The design room must match its scope item.');
    }
-   if(current) await client.query(`UPDATE pre_project_designs SET title=$4,document_type=$5,description=$6,room_id=$7,scope_entry_id=$8,folder_id=$10,archived_at=CASE WHEN $9 THEN COALESCE(archived_at,now()) ELSE NULL END,version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,input.title,input.documentType,input.description,input.roomId??null,input.scopeEntryId??null,input.archived??Boolean(current.archived_at),input.folderId===undefined?current.folder_id:input.folderId]);
-   else await client.query(`INSERT INTO pre_project_designs(workspace_id,case_id,id,title,document_type,description,room_id,scope_entry_id,created_by,folder_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[workspaceId,caseId,input.id,input.title,input.documentType,input.description,input.roomId??null,input.scopeEntryId??null,userId,input.folderId??null]);
+   if(current) await client.query(`UPDATE pre_project_designs SET stage=CASE WHEN $11::boolean THEN $12::varchar ELSE stage END,title=$4,document_type=$5,description=$6,room_id=$7,scope_entry_id=$8,folder_id=$10,archived_at=CASE WHEN $9 THEN COALESCE(archived_at,now()) ELSE NULL END,version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,input.title,input.documentType,input.description,input.roomId??null,input.scopeEntryId??null,input.archived??Boolean(current.archived_at),input.folderId===undefined?current.folder_id:input.folderId,input.stage!==undefined,input.stage??null]);
+   else await client.query(`INSERT INTO pre_project_designs(workspace_id,case_id,id,title,document_type,description,room_id,scope_entry_id,created_by,folder_id,stage) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[workspaceId,caseId,input.id,input.title,input.documentType,input.description,input.roomId??null,input.scopeEntryId??null,userId,input.folderId??null,input.stage??null]);
    // Current draft notes may be edited; earlier revisions and review evidence remain untouched.
    if(current)await client.query(`UPDATE pre_project_design_versions SET note=$3,included_client_rounds=CASE WHEN $4::boolean THEN $5::smallint ELSE included_client_rounds END WHERE workspace_id=$1 AND design_id=$2 AND status='draft' AND number=(SELECT max(number) FROM pre_project_design_versions WHERE workspace_id=$1 AND design_id=$2)`,[workspaceId,input.id,input.description,input.includedClientRounds!==undefined,input.includedClientRounds??null]);
    await this.event(client,workspaceId,caseId,userId,input.id,'design_saved',input);
+   // Archiving or moving a deliverable can leave its stage fully approved.
+   await syncDesignStages(client,workspaceId,caseId,userId);
    return this.read(client,workspaceId,caseId,input.id);
   });
  }
@@ -115,9 +120,7 @@ export class DesignService {
     if(!input.decisionSource||!input.decisionAt||!Number.isFinite(Date.parse(input.decisionAt))||Date.parse(input.decisionAt)>Date.now()||Date.parse(input.decisionAt)<Date.parse(latest.createdAt))throw new BadRequestException('Record the decision source and a date between this revision upload and now.');
    }
    if(input.action==='client_review'){
-    const portal=await this.portalReadiness(client,workspaceId,caseId);
-    if(!portal.enabled)throw new BadRequestException('Enable the client portal in Client access before sending this design.');
-    if(!portal.hasApprover)throw new BadRequestException('Add an active client approver in Client access before sending this design.');
+    // Presented in a meeting or by email until the client portal ships; staff then record the client's decision.
     if(clientRoundOverrideRequired(design.clientRoundsUsed??0,latest.includedClientRounds)&&!input.note.trim())throw new BadRequestException('Included client review rounds are used. Add the approved exception reason before sending another round.');
    }
    const reviewExpiresAt=input.action==='client_review'?clientReviewExpiry(input.reviewExpiresAt):null;
@@ -127,6 +130,7 @@ export class DesignService {
    await client.query(`INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by,reviewer_id,decision_source,decision_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[input.id,workspaceId,caseId,id,input.versionId,input.action,input.note,input.decisionBy,userId,input.reviewerId??null,input.decisionSource??null,input.decisionAt??null]);
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_'+input.action,input);
+   if(input.action==='approved')await syncDesignStages(client,workspaceId,caseId,userId);
    return this.read(client,workspaceId,caseId,id);
   });
  }
@@ -164,43 +168,21 @@ export class DesignService {
    if(input.folderId)await this.validateFolderContext(client,w,c,input.folderId,input.roomId??null,input.scopeEntryId??null);
    if(input.roomId)await this.belongs(client,'pre_project_rooms',w,c,input.roomId,'room');
    if(input.scopeEntryId){const entry=await client.query(`SELECT room_id FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND id=$3 AND kind='requirement' AND archived_at IS NULL`,[w,c,input.scopeEntryId]);if(!entry.rowCount||(entry.rows[0].room_id??null)!==(input.roomId??null))throw new BadRequestException('Choose an active scope item in this room.');}
+   if(input.stage!==undefined)await this.validStage(client,w,c,input.stage??null);
+   // Client rounds come from the design package frozen on the journey unless set per file.
+   const packageRounds=(await client.query<{rounds:number}>(`SELECT included_revisions AS rounds FROM design_journeys WHERE workspace_id=$1 AND case_id=$2`,[w,c])).rows[0]?.rounds??null;
    const items=[];
    for(const file of input.files){
     const note=file.note??input.note;
     const found=await client.query(`SELECT id FROM pre_project_designs WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,file.id]);
     if(found.rowCount){const previous=await this.read(client,w,c,file.id);const first=previous.versions.find((v:{id:string;includedClientRounds?:number|null})=>v.id===file.versionId);if(!first||first.asset.id!==file.assetId||previous.title!==file.title||(previous.folderId??null)!==(input.folderId??null)||previous.documentType!==file.documentType||(previous.roomId??null)!==(input.roomId??null)||(previous.scopeEntryId??null)!==(input.scopeEntryId??null)||first.note!==note||(file.includedClientRounds!==undefined&&(first.includedClientRounds??null)!==file.includedClientRounds))throw new ConflictException('This upload has changed. Reload the folder before trying again.');items.push(previous);continue;}
     await this.belongs(client,'pre_project_brief_assets',w,c,file.assetId,'file');
-    await client.query(`INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,description,room_id,scope_entry_id,folder_id,created_by) VALUES($1,$2,$3,$4,$5,$10,$6,$7,$8,$9)`,[file.id,w,c,file.title,file.documentType,input.roomId??null,input.scopeEntryId??null,input.folderId??null,userId,note]);
-    await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by,included_client_rounds) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8)`,[file.versionId,w,c,file.id,file.assetId,note,userId,file.includedClientRounds??null]);
+    await client.query(`INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,description,room_id,scope_entry_id,folder_id,created_by,stage) VALUES($1,$2,$3,$4,$5,$10,$6,$7,$8,$9,$11)`,[file.id,w,c,file.title,file.documentType,input.roomId??null,input.scopeEntryId??null,input.folderId??null,userId,note,input.stage??null]);
+    await client.query(`INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,note,created_by,included_client_rounds) VALUES($1,$2,$3,$4,1,$5,$6,$7,$8)`,[file.versionId,w,c,file.id,file.assetId,note,userId,file.includedClientRounds===undefined?packageRounds:file.includedClientRounds]);
     await this.event(client,w,c,userId,file.id,'design_version_added',{...file,folderId:input.folderId??null});
     items.push(await this.read(client,w,c,file.id));
    }
    return {items};
-  });
- }
- assignFolderReviewer(actor:RequestActor,w:string,c:string,id:string,input:FolderReviewerDto){
-  return this.brief.edit(actor,w,c,async(client,userId)=>{
-   const folder=await this.readFolder(client,w,c,id);this.brief.version(folder.version,input.version);
-   const member=await client.query(`SELECT u.id FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.user_id=$2 AND m.status='active' AND u.status='active'`,[w,input.reviewerId]);
-   if(!member.rowCount||!await this.access.hasPermission(client,w,input.reviewerId,'pre_projects.review_designs'))throw new BadRequestException('Choose an active design reviewer.');
-   await client.query(`UPDATE pre_project_design_folders SET reviewer_id=$4,approved_versions=NULL,approved_at=NULL,version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,id,input.reviewerId]);
-   await this.event(client,w,c,userId,id,'folder_reviewer_assigned',input);return this.readFolder(client,w,c,id);
-  });
- }
- approveFolder(actor:RequestActor,w:string,c:string,id:string,input:ApproveFolderDto){
-  return this.access.withPermissions(actor,w,['pre_projects.view','pre_projects.review_designs'],async(client,user)=>{
-   await this.brief.case(client,w,c,true);
-   const folder=await this.readFolder(client,w,c,id);this.brief.version(folder.version,input.version);
-   if(folder.reviewerId!==user.userId)throw new ForbiddenException('Only the assigned reviewer can approve this folder.');
-   const files=(await client.query(`${designSelect} WHERE d.workspace_id=$1 AND d.case_id=$2 AND d.folder_id=$3 AND d.archived_at IS NULL`,[w,c,id])).rows;
-   const ids=files.map(d=>d.versions[0]?.id).filter(Boolean).sort();
-   if(!ids.length||ids.length!==files.length)throw new ConflictException('Add files before approving.');
-   if(JSON.stringify(ids)!==JSON.stringify([...input.versionIds].sort()))throw new ConflictException('Files changed. Review the latest files before approving.');
-   if(files.some(d=>d.threads.some((t:any)=>t.versionId===d.versions[0].id&&t.blocking&&t.status==='open')))throw new ConflictException('Resolve blocking comments before approving.');
-   if(files.some(d=>!['draft','internal_review','internal_approved'].includes(d.versions[0].status)))throw new ConflictException('Upload a new revision for files requiring changes before approving.');
-   for(const d of files){await client.query(`UPDATE pre_project_design_versions SET status='internal_approved',reviewer_id=$4 WHERE workspace_id=$1 AND design_id=$2 AND id=$3`,[w,d.id,d.versions[0].id,user.userId]);await this.event(client,w,c,user.userId,d.id,'folder_file_approved',{folderId:id,versionId:d.versions[0].id});}
-   await client.query(`UPDATE pre_project_design_folders SET approved_versions=$4::jsonb,approved_at=now(),version=version+1 WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[w,c,id,JSON.stringify(ids)]);
-   return this.readFolder(client,w,c,id);
   });
  }
  createThread(actor:RequestActor,w:string,c:string,id:string,input:CreateDesignThreadDto){
@@ -256,6 +238,12 @@ export class DesignService {
    LEFT JOIN pre_project_brief_entries e ON e.workspace_id=f.workspace_id AND e.case_id=f.case_id AND e.id=f.scope_entry_id
    WHERE f.workspace_id=$1 AND f.case_id=$2 AND f.id=$3`,[w,c,id]);
   if(!result.rowCount)throw new NotFoundException('Folder not found.');return result.rows[0];
+ }
+ /** A deliverable's stage must be one the case's design package includes (any, before the journey starts). */
+ private async validStage(client:PoolClient,w:string,c:string,stage:string|null){
+  if(stage===null)return;
+  const stages=(await client.query<{stage:string}>(`SELECT stage FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2`,[w,c])).rows.map(row=>row.stage);
+  if(stages.length&&!stages.includes(stage))throw new BadRequestException(`${STAGE_LABELS[stage as JourneyStage]??'This stage'} is not part of this design package.`);
  }
  private mutable(design:{archivedAt:string|null;version:number},version:number) { this.brief.version(design.version,version);if(design.archivedAt)throw new ConflictException('Restore this design before changing it.'); }
  private async belongs(client:PoolClient,table:'pre_project_rooms'|'pre_project_brief_assets',workspaceId:string,caseId:string,id:string,label:string) {

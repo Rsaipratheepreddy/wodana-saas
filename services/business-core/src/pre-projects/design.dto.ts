@@ -1,3 +1,4 @@
+import { DELIVERABLE_STAGES as DESIGN_STAGES } from '../design/design-stage-sync';
 import { Transform, Type } from "class-transformer";
 import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsISO8601, IsNumber, ValidateNested, IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 const trim = ({value}:{value:unknown}) => typeof value === "string" ? value.trim() : value;
@@ -19,6 +20,7 @@ export class SaveDesignDto {
  @IsOptional() @IsUUID() roomId?:string|null;
  @IsOptional() @IsUUID() scopeEntryId?:string|null;
  @IsOptional() @IsUUID() folderId?:string|null;
+ @IsOptional() @IsIn([...DESIGN_STAGES,null]) stage?:string|null;
  @IsOptional() @IsInt() @Min(0) @Max(99) includedClientRounds?:number|null;
  @IsOptional() @IsBoolean() archived?:boolean;
 }
@@ -62,6 +64,7 @@ class DesignUploadFileDto {
 }
 export class UploadDesignFilesDto {
  @IsOptional() @IsUUID() folderId?:string|null;
+ @IsOptional() @IsIn([...DESIGN_STAGES,null]) stage?:string|null;
  @IsOptional() @IsUUID() roomId?:string|null;
  @IsOptional() @IsUUID() scopeEntryId?:string|null;
  @IsString() @MaxLength(5000) note!:string;
@@ -90,5 +93,3 @@ export class ResolveDesignThreadDto {
  @IsIn(['open','resolved']) status!:string;
 }
 
-export class FolderReviewerDto { @IsInt() @Min(1) version!:number; @IsUUID() reviewerId!:string; }
-export class ApproveFolderDto { @IsInt() @Min(1) version!:number; @IsArray() @ArrayMaxSize(500) @IsUUID('all',{each:true}) versionIds!:string[]; }

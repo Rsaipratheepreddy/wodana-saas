@@ -162,6 +162,13 @@
       "when": 1791288000000,
       "tag": "0022_region_other",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791374400000,
+      "tag": "0023_design_stages",
+      "breakpoints": true
     }
   ]
 }

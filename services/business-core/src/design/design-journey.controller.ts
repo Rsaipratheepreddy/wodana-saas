@@ -13,6 +13,7 @@ class ScheduleSiteVisitDto {
   @IsString() @MaxLength(64) timezone!: string;
   @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @MaxLength(500) address?: string | null;
 }
+class SkipStageDto { @IsInt() @Min(1) version!: number; @IsString() @MinLength(1) @MaxLength(2000) note!: string; }
 class CompleteSiteVisitDto { @IsInt() @Min(1) version!: number; @IsString() @MinLength(1) @MaxLength(5000) summary!: string; }
 
 @ApiTags("design")
@@ -32,6 +33,12 @@ export class DesignJourneyController {
 
   @Post("site-visit/schedule")
   scheduleSiteVisit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: ScheduleSiteVisitDto) { return this.journey.scheduleSiteVisit(actor, workspaceId, caseId, input); }
+
+  @Post("stages/:stage/skip")
+  skipStage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("stage") stage: string, @Body() input: SkipStageDto) { return this.journey.skipStage(actor, workspaceId, caseId, stage, input); }
+
+  @Post("sign-off")
+  signOff(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: StageVersionDto) { return this.journey.signOff(actor, workspaceId, caseId, input); }
 
   @Post("site-visit/complete")
   completeSiteVisit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Body() input: CompleteSiteVisitDto) { return this.journey.completeSiteVisit(actor, workspaceId, caseId, input); }

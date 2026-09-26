@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { DesignJourneyService } from "./design-journey.service";
 import { processDesignDeadlines, startInspirationTimer, startJourney } from "./design-journey.store";
+import { syncDesignStages } from "./design-stage-sync";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -109,6 +110,57 @@ integration("design journey (PLM-047, PLM-048, PLM-044)", () => {
       expect(await processDesignDeadlines(client, ids.workspaceId)).toEqual({ closed: 0, alerted: 0 });
       const overdue = (await client.query(`SELECT recipient_id, channel FROM notifications WHERE workspace_id = $1 AND subject LIKE 'Site visit is overdue%' ORDER BY channel`, [ids.workspaceId])).rows;
       expect(overdue.length).toBe(4);
+    });
+  });
+
+  it("completes design stages from approved deliverables, skips an unneeded one and signs off only when everything is approved", async () => {
+    await withCase({ spacePlanning: true, renders: false }, async (client, ids, service) => {
+      await service.start(actor, ids.workspaceId, ids.caseId);
+      await client.query(`UPDATE design_journey_stages SET status = CASE stage WHEN 'inspiration' THEN 'done' WHEN 'site_visit' THEN 'done' WHEN 'concepts' THEN 'active' ELSE status END,
+        completed_at = CASE WHEN stage IN ('inspiration','site_visit') THEN now() END WHERE workspace_id = $1 AND case_id = $2`, [ids.workspaceId, ids.caseId]);
+      const user = ids.amUser, asset = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO pre_project_brief_assets(id,workspace_id,case_id,original_name,mime_type,byte_size,object_key,sha256,created_by) VALUES($1,$2,$3,'a.pdf','application/pdf',1,'k',repeat('a',64),$4)", [asset, ids.workspaceId, ids.caseId, user]);
+      const design = async (stage: string, title: string, status: string) => {
+        const id = randomUUID();
+        await client.query("INSERT INTO pre_project_designs(id,workspace_id,case_id,title,document_type,stage,created_by) VALUES($1,$2,$3,$4,'concept',$5,$6)", [id, ids.workspaceId, ids.caseId, title, stage, user]);
+        await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status) VALUES($1,$2,$3,$4,1,$5,$6,$7)", [randomUUID(), ids.workspaceId, ids.caseId, id, asset, user, status]);
+        return id;
+      };
+      const approve = (id: string) => client.query("UPDATE pre_project_design_versions SET status='approved' WHERE workspace_id=$1 AND design_id=$2", [ids.workspaceId, id]);
+      const kitchen = await design("concepts", "Kitchen concept", "client_review");
+      const living = await design("concepts", "Living concept", "approved");
+      await design("space_planning", "Ground floor layout", "approved");
+      await client.query("SET LOCAL session_replication_role = origin");
+      const statuses = async () => Object.fromEntries((await client.query(`SELECT stage, status FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2`, [ids.workspaceId, ids.caseId])).rows.map((row) => [row.stage, row.status]));
+
+      expect(await syncDesignStages(client, ids.workspaceId, ids.caseId, user)).toEqual([]);
+      await approve(kitchen);
+      // Concepts completes, and space planning (approved ahead of time) completes as soon as it opens.
+      expect(await syncDesignStages(client, ids.workspaceId, ids.caseId, user)).toEqual(["concepts", "space_planning"]);
+      expect(await statuses()).toMatchObject({ concepts: "done", space_planning: "done", material_selection: "active", approval: "locked" });
+      expect(await statuses()).not.toHaveProperty("renders");
+
+      const version = async (stage: string) => (await client.query(`SELECT version FROM design_journey_stages WHERE workspace_id=$1 AND case_id=$2 AND stage=$3`, [ids.workspaceId, ids.caseId, stage])).rows[0].version;
+      await expect(service.skipStage(actor, ids.workspaceId, ids.caseId, "material_selection", { version: await version("material_selection"), note: " " })).rejects.toThrow(/why/);
+      await expect(service.skipStage(actor, ids.workspaceId, ids.caseId, "approval", { version: await version("approval"), note: "x" })).rejects.toThrow(/Only a design stage/);
+      const skipped = await service.skipStage(actor, ids.workspaceId, ids.caseId, "material_selection", { version: await version("material_selection"), note: "Client supplies all finishes" });
+      expect(skipped.stages.find((row) => row.stage === "approval")?.status).toBe("active");
+
+      // A new draft revision of a concept holds sign-off until it is approved again.
+      await client.query("INSERT INTO pre_project_design_versions(id,workspace_id,case_id,design_id,number,asset_id,created_by,status) VALUES($1,$2,$3,$4,2,$5,$6,'draft')", [randomUUID(), ids.workspaceId, ids.caseId, living, asset, user]);
+      await expect(service.signOff(actor, ids.workspaceId, ids.caseId, { version: await version("approval") })).rejects.toThrow(/Waiting for approval: Living concept/);
+      await client.query("UPDATE pre_project_design_versions SET status='approved' WHERE workspace_id=$1 AND design_id=$2 AND number=2", [ids.workspaceId, living]);
+      const thread = randomUUID();
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query("INSERT INTO pre_project_design_threads(id,workspace_id,case_id,design_id,version_id,title,blocking,created_by) VALUES($1,$2,$3,$4,(SELECT id FROM pre_project_design_versions WHERE design_id=$4 AND number=2),'Island size',true,$5)", [thread, ids.workspaceId, ids.caseId, living, user]);
+      await client.query("SET LOCAL session_replication_role = origin");
+      await expect(service.signOff(actor, ids.workspaceId, ids.caseId, { version: await version("approval") })).rejects.toThrow(/open blocking comment/);
+      await client.query("UPDATE pre_project_design_threads SET status='resolved' WHERE id=$1", [thread]);
+      const signed = await service.signOff(actor, ids.workspaceId, ids.caseId, { version: await version("approval"), note: "Approved in the studio" });
+      expect(signed.stages.every((row) => row.status === "done")).toBe(true);
+      const told = (await client.query(`SELECT recipient_id, subject, deep_link FROM notifications WHERE workspace_id=$1 AND event_type='design.signed_off' AND channel='in_app'`, [ids.workspaceId])).rows;
+      expect(told).toEqual([{ recipient_id: ids.amUser, subject: "Design signed off · Maya Client", deep_link: `/workspace/pre-projects/cases/${ids.caseId}/quotations` }]);
     });
   });
 });

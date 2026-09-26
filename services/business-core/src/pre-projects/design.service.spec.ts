@@ -119,7 +119,7 @@ describe('recorded client decision permissions',()=>{
  });
 });
 
-describe('client portal handoff readiness',()=>{
+describe('presenting a design to the client',()=>{
  const make=(portal:{enabled:boolean;hasApprover:boolean}|null,rounds={used:0,included:null as number|null})=>{
   const design={id:'design',version:4,clientRoundsUsed:rounds.used,versions:[{id:'current',status:'internal_approved',includedClientRounds:rounds.included}],activity:[]};
   const query=vi.fn(async(sql:string)=>sql.startsWith('SELECT s.enabled')?{rows:portal?[portal]:[],rowCount:portal?1:0}:{rowCount:1,rows:[design]});
@@ -127,13 +127,9 @@ describe('client portal handoff readiness',()=>{
   return {service:new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService),query};
  };
  const input={id:'activity',version:4,versionId:'current',action:'client_review',note:'',decisionBy:''};
- it.each([null,{enabled:false,hasApprover:true}])('blocks handoff when the portal is not enabled',async portal=>{
-  const {service,query}=make(portal);await expect(service.activity(actor,'w','c','design',input)).rejects.toThrow('Enable the client portal');
-  expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE'))).toBe(false);
- });
- it('requires an active client approver',async()=>{
-  const {service,query}=make({enabled:true,hasApprover:false});await expect(service.activity(actor,'w','c','design',input)).rejects.toThrow('active client approver');
-  expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE'))).toBe(false);
+ it.each([null,{enabled:false,hasApprover:false}])('presents an internally approved revision without the portal (staff record the decision)',async portal=>{
+  const {service,query}=make(portal);await service.activity(actor,'w','c','design',input);
+  expect(query).toHaveBeenCalledWith(expect.stringContaining('SET status=$4'),['w','design','current','client_review',expect.any(String)]);
  });
  it('shares an internally approved revision when the portal is ready',async()=>{
   const {service,query}=make({enabled:true,hasApprover:true});await service.activity(actor,'w','c','design',input);
@@ -167,17 +163,3 @@ describe('comment pin persistence',()=>{
  });
 });
 
-describe('folder approval',()=>{
- const setup=(reviewer='user',status='active',versions=['revision'])=>{
-  const folder={id:'folder',version:1,reviewerId:reviewer};
-  const files=versions.map(id=>({id:'design',versions:[{id,status:'draft'}],threads:[]}));
-  const query=vi.fn(async(sql:string,_values?:unknown[])=>({rows:sql.includes('FROM pre_project_design_folders f')?[folder]:sql.includes('FROM pre_project_designs d')?files:[],rowCount:1}));
-  const access={withPermissions:async(_a:any,_w:any,_p:any,work:any)=>work({query},{userId:'user'})};
-  const brief={case:async()=>({status}),version:(actual:number,expected:number)=>{if(actual!==expected)throw Error('stale');}};
-  const service=new DesignService(access as any,brief as any,{record:vi.fn()} as any);return {service,query};
- };
- it('rejects a different reviewer',async()=>{const {service}=setup('other');await expect(service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['revision']})).rejects.toThrow('Only the assigned');});
- it('rejects changed file revisions',async()=>{const {service}=setup();await expect(service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['old']})).rejects.toThrow('Files changed');});
- it('rejects empty folders but allows review after release',async()=>{await expect(setup('user','active',[]).service.approveFolder(actor,'w','c','folder',{version:1,versionIds:[]})).rejects.toThrow('Add files');await expect(setup('user','released').service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['revision']})).resolves.toBeDefined();});
- it('approves only the reviewed revisions and stores the snapshot',async()=>{const {service,query}=setup();await service.approveFolder(actor,'w','c','folder',{version:1,versionIds:['revision']});expect(query).toHaveBeenCalledWith(expect.stringContaining("SET status='internal_approved'"),['w','design','revision','user']);expect(query).toHaveBeenCalledWith(expect.stringContaining('SET approved_versions='),['w','c','folder','["revision"]']);});
-});

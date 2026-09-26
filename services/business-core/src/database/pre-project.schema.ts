@@ -170,7 +170,7 @@ export const preProjectDesignFolders = pgTable("pre_project_design_folders",{
 
 export const preProjectDesigns = pgTable("pre_project_designs",{
   folderId:uuid("folder_id"),
-  id:uuid("id").primaryKey(),...caseColumns(),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),title:varchar("title",{length:240}).notNull(),documentType:varchar("document_type",{length:60}).notNull(),
+  id:uuid("id").primaryKey(),...caseColumns(),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),title:varchar("title",{length:240}).notNull(),documentType:varchar("document_type",{length:60}).notNull(),stage:varchar("stage",{length:30}),
   description:text("description").notNull().default(""),version:integer("version").notNull().default(1),archivedAt:timestamp("archived_at",{withTimezone:true}),...createdColumns(),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[foreignKey({columns:[t.workspaceId,t.caseId,t.folderId],foreignColumns:[preProjectDesignFolders.workspaceId,preProjectDesignFolders.caseId,preProjectDesignFolders.id]}),caseForeignKey(t),unique().on(t.workspaceId,t.caseId,t.id),index("pre_project_designs_case_idx").on(t.workspaceId,t.caseId,t.updatedAt.desc()),
   foreignKey({columns:[t.workspaceId,t.caseId,t.roomId],foreignColumns:[preProjectRooms.workspaceId,preProjectRooms.caseId,preProjectRooms.id]}),

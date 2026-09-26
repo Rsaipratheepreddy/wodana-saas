@@ -369,16 +369,18 @@ The current catalog (generic `workspace_catalog_records` + links) is too weak fo
 - **AI:** extract requirements from notes, voice and photos into proposed items per room, for review.
 
 ### 6.7 Design
-- **Records:** design deliverables per space (moodboard, space plan, render, material board, technical drawing), versions, threads and pinned comments, client decisions, allowed revision rounds (from contract), `client_publications`.
-- **States:** deliverable `draft → internal_review → published → approved | changes_requested → superseded`.
-- **Rules:**
-  - Only published revisions reach the client. Only an approved technical drawing reaches the factory or site.
-  - Revision rounds beyond the contract show a fee warning and a change-order prompt.
-- **Edge cases:**
-  - The client approves an old revision: rejected, and they are shown the latest.
-  - A design change after a WO is released: affected WOs and tasks are flagged "stale drawing" and blocked.
-  - Moodboard approval does not satisfy the technical drawing gate.
-- **Screens:** Design tab (per-space cards → version compare side by side, comments) · Portal decision view.
+One design workspace in Planning, driven by the design package's stages. Reviews and approvals happen on the drawing, inside Design.
+- **Stages** (from the package): space planning → concepts → materials → renders → sign-off. A compact clickable timeline; each stage holds its **deliverables per room** (layout, concept board, render view). A stage completes when its deliverables are client-approved; no manual stage buttons. Inspiration and site visit stay in Requirements/Site.
+- **Deliverable states:** `draft → internal_review → internal_approved → client_review → approved | changes_requested`; a new revision supersedes. One lifecycle only (no folder shortcut, one comment model).
+- **Reviews:** Creative Director (the package's reviewer role) approves or sends back with pinned notes; the designer presents a stage's deliverables to the client as one **presentation** (a round). Until the client portal ships, staff record the client's decision with evidence (who, when, how, note).
+- **Rounds:** one count per stage from the package's included revisions. A round beyond them needs the extra-revision fee (Design packages setting) accepted before work starts.
+- **Materials schedule:** a table per room and element (catalog material, finish code, supplier, sample status, client approval). Approved rows become quotation lines at catalog rates.
+- **Visibility:** drafts and internal review are staff-only; comments are internal or with-client; the project/site team sees approved work after sign-off.
+- **Approvals queue:** Home → Approvals lists pending design reviews and client decisions and opens the drawing in Design. Design is not approved from Agreement.
+- **Notifications:** review requested, sent back, presented to client, client decided, stage overdue, design signed off ("ready to quote").
+- **Sign-off:** freezes the design baseline (approved drawings + materials schedule). The main quote starts from it; later design changes become a new quote revision (or a variation once the project exists). Working drawings continue in the Project.
+- **Quotes vs design:** the design-fee quote is independent (package × area). The main quote is derived from the design baseline when the route includes design; without design it is built from Requirements.
+- **Edge cases:** the client approves an old revision (rejected, shown the latest); a design change after a WO is released flags affected WOs/tasks "stale drawing"; a moodboard approval never satisfies the technical-drawing gate; a removed room archives its deliverables but keeps history.
 
 ### 6.8 Quotation
 - **Records:** quote_rounds, quotes, quote_sections (per space), quote_lines (variant + snapshot, qty, unit, cost, sell, discount, tax, option group, included/excluded), quote_terms (payment schedule, validity, exclusions), qs_reviews (the approvals row + notes per line), quote_acceptances.

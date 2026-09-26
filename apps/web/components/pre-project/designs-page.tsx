@@ -2,11 +2,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronRight, FolderPlus, Pencil, Upload } from "lucide-react";
-import { SelectField, Avatar, Badge, Button, MenuButton } from "@/design-system";
+import { Avatar, Badge, Button, MenuButton } from "@/design-system";
 import { mergeDesigns } from "@/lib/pre-project/design-workflow";
 import { caseRequest, type CaseContent, type CaseDesign, type DesignFolder, type DesignOptions } from "@/lib/pre-project/content";
 import { DesignReviewModal } from "./design-review-modal";
-import { CaseModal } from "./case-controls";
 import { FileCover } from "./design-file-preview";
 import { DesignUpload, FolderEditor, DesignMetadata, RevisionUpload, type DesignUploadTarget } from "./design-forms";
 import styles from "./case-content.module.css";
@@ -46,13 +45,8 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [reviewerOpen,setReviewerOpen]=useState(false),[reviewerId,setReviewerId]=useState<string|null>(null),[reviewBusy,setReviewBusy]=useState(false);
   const folderFiles=activeFolder?designs.filter(d=>!d.archivedAt&&inFolder(d,activeFolder.id)):[];
   const folderReady=(folder:DesignFolder)=>{const files=designs.filter(d=>!d.archivedAt&&inFolder(d,folder.id));return Boolean(folder.approvedAt&&files.length&&JSON.stringify(files.map(d=>d.versions[0]?.id).sort())===JSON.stringify([...(folder.approvedVersions??[])].sort()));};
-  async function reviewFolder(action:'reviewer'|'approve'){
-    if(!activeFolder)return;setReviewBusy(true);setError('');
-    try{const saved=await caseRequest<DesignFolder>(data.workspaceId,data.caseId,`design-folders/${activeFolder.id}/${action}`,'POST',{version:activeFolder.version,...(action==='reviewer'?{reviewerId}:{versionIds:folderFiles.map(d=>d.versions[0]?.id)})});setReviewOptions(o=>({...o,folders:o.folders.map(f=>f.id===saved.id?saved:f)}));setReviewerOpen(false);if(action==='approve')setDesigns(ds=>ds.map(d=>d.folderId===saved.id?{...d,versions:d.versions.map((v,i)=>i===0?{...v,status:'internal_approved'}:v)}:d));}catch(e){setError(e instanceof Error?e.message:'Could not update review.');}finally{setReviewBusy(false);}
-  }
   const selected = designs.find((d) => d.id === fileId) ?? null;
 
   const applyListing = useCallback((listing: DesignOptions & { items: CaseDesign[] }) => {
@@ -131,12 +125,6 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
       {activeFolder && !activeFolder.id.startsWith("linked:") && data.canEdit ? <Button aria-label="Edit folder" onPress={() => setFolderEditor(activeFolder)} size="compact" variant="quiet"><Pencil size={14} /></Button> : null}
       {activeFolder ? <Button isDisabled={!data.canEdit} aria-describedby={!data.canEdit ? "design-add-reason" : undefined} onPress={() => setUpload({ folderId: activeFolder.id.startsWith("linked:") ? null : activeFolder.id, roomId: activeFolder.roomId, scopeEntryId: activeFolder.scopeEntryId, name: activeFolder.name })} size="compact" variant="primary"><Upload aria-hidden="true" size={14} />Add files</Button> : null}
     </div> : null}
-    {activeFolder && !activeFolder.id.startsWith('linked:') && <div className={view.location}>
-     {data.canEdit&&<Button size="compact" isDisabled={reviewBusy} onPress={()=>{setReviewerId(activeFolder.reviewerId??null);setReviewerOpen(true);}}>{activeFolder.reviewerId?'Change reviewer':'Add reviewer'}</Button>}
-     {activeFolder.reviewerId&&<><Avatar size="sm" name={reviewOptions.reviewers.find(r=>r.id===activeFolder.reviewerId)?.name??'Reviewer'}/><span>{reviewOptions.reviewers.find(r=>r.id===activeFolder.reviewerId)?.name??'Reviewer'}</span><Badge tone={folderReady(activeFolder)?'success':'neutral'}>{folderReady(activeFolder)?'Ready to send to client':'In review'}</Badge></>}
-     {reviewOptions.canReview&&activeFolder.reviewerId===reviewOptions.actorId&&!folderReady(activeFolder)&&<Button variant="primary" size="compact" isDisabled={reviewBusy||!folderFiles.length} isLoading={reviewBusy} onPress={()=>void reviewFolder('approve')}>Approve folder</Button>}
-    </div>}
-    {reviewerOpen&&<CaseModal title="Folder reviewer" size="md" busy={reviewBusy} onClose={()=>setReviewerOpen(false)} footer={<Button variant="primary" isDisabled={!reviewerId||reviewBusy} onPress={()=>void reviewFolder('reviewer')}>Assign reviewer</Button>}><SelectField label="Reviewer" placeholder="Choose reviewer" selectedKey={reviewerId} onSelectionChange={k=>setReviewerId(k?String(k):null)} items={reviewOptions.reviewers.map(r=>({id:r.id,label:r.name}))}/></CaseModal>}
     {activeFolder ? <div className={view.fileGrid} aria-label="Folder files">
       {folderFiles.map(design => {
         const asset = design.versions[0]?.asset;

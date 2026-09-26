@@ -8,6 +8,7 @@ import { notifyUserInApp, queueUserEmail } from "../notifications/default-templa
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { siteEvidenceProblem, STAGE_LABELS, type JourneyStage } from "./design-journey.domain";
 import { caseFacts, completeStage, recordProjectSiteVisit, startJourney } from "./design-journey.store";
+import { isDeliverableStage, stageProgress, syncDesignStages } from "./design-stage-sync";
 
 export type ScheduleSiteVisitInput = { startsAt: string; endsAt: string; timezone: string; address?: string | null; version: number };
 
@@ -94,6 +95,52 @@ export class DesignJourneyService {
     });
   }
 
+  /** A stage the package includes but this home doesn't need (no deliverables): the reviewer skips it with a reason. */
+  skipStage(actor: RequestActor, workspaceId: string, caseId: string, stage: string, input: { note: string; version: number }) {
+    return this.review(actor, workspaceId, caseId, async (client, userId) => {
+      if (!isDeliverableStage(stage)) throw new UnprocessableEntityException("Only a design stage can be skipped");
+      await this.activeStage(client, workspaceId, caseId, stage, input.version);
+      if (!input.note?.trim()) throw new UnprocessableEntityException("Say why this stage isn't needed");
+      const progress = (await stageProgress(client, workspaceId, caseId)).find((item) => item.stage === stage)!;
+      if (progress.total > 0) throw new ConflictException(`${STAGE_LABELS[stage]} has designs. Approve or archive them instead of skipping`);
+      await completeStage(client, workspaceId, caseId, stage, userId, input.note.trim(), "skipped");
+      await syncDesignStages(client, workspaceId, caseId, userId);
+      return this.view(client, workspaceId, caseId);
+    });
+  }
+
+  /**
+   * Design sign-off: every design stage is done, every current design is approved and no blocking
+   * comment is open. The Account Manager is told the design is ready to quote.
+   */
+  signOff(actor: RequestActor, workspaceId: string, caseId: string, input: { note?: string | null; version: number }) {
+    return this.review(actor, workspaceId, caseId, async (client, userId) => {
+      await this.activeStage(client, workspaceId, caseId, "approval", input.version);
+      const open = (await client.query<{ stage: JourneyStage }>(
+        `SELECT stage FROM design_journey_stages WHERE workspace_id = $1 AND case_id = $2 AND stage <> 'approval' AND status <> 'done' ORDER BY position`, [workspaceId, caseId])).rows;
+      if (open.length) throw new ConflictException(`Finish ${open.map((row) => STAGE_LABELS[row.stage]).join(", ")} first`);
+      const unapproved = (await client.query<{ title: string }>(
+        `SELECT design.title FROM pre_project_designs design
+           JOIN LATERAL (SELECT status FROM pre_project_design_versions version WHERE version.workspace_id = design.workspace_id AND version.design_id = design.id ORDER BY number DESC LIMIT 1) latest ON true
+          WHERE design.workspace_id = $1 AND design.case_id = $2 AND design.archived_at IS NULL AND design.stage IS NOT NULL AND latest.status <> 'approved' ORDER BY design.title LIMIT 5`, [workspaceId, caseId])).rows;
+      if (unapproved.length) throw new ConflictException(`Waiting for approval: ${unapproved.map((row) => row.title).join(", ")}`);
+      const blocking = (await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM pre_project_design_threads thread JOIN pre_project_designs design ON design.workspace_id = thread.workspace_id AND design.id = thread.design_id
+          WHERE thread.workspace_id = $1 AND thread.case_id = $2 AND design.archived_at IS NULL AND thread.blocking AND thread.status = 'open'`, [workspaceId, caseId])).rows[0].count;
+      if (blocking) throw new ConflictException(blocking === 1 ? "Resolve the open blocking comment first" : `Resolve the ${blocking} open blocking comments first`);
+      await completeStage(client, workspaceId, caseId, "approval", userId, input.note?.trim() || null, "signed_off");
+      const facts = await caseFacts(client, workspaceId, caseId);
+      const manager = facts?.accountManagerId ? (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2 AND status = 'active'`, [workspaceId, facts.accountManagerId])).rows[0] : undefined;
+      if (manager && facts) {
+        const message = { workspaceId, recipientUserId: manager.userId, code: "design.signed_off", eventType: "design.signed_off", variables: { clientName: facts.clientName }, deepLink: `/workspace/pre-projects/cases/${caseId}/quotations` };
+        await notifyUserInApp(client, { ...message, idempotencyKey: `design-signed-off:${caseId}` });
+        await queueUserEmail(client, { ...message, idempotencyKey: `design-signed-off:${caseId}:email` });
+      }
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "design.signed_off.v1", entityType: "pre_project_case", entityId: caseId, after: { note: input.note?.trim() || null } });
+      return this.view(client, workspaceId, caseId);
+    });
+  }
+
   private async view(client: PoolClient, workspaceId: string, caseId: string) {
     const journey = (await client.query(
       `SELECT package_name AS "packageName", included_revisions AS "includedRevisions", includes_space_planning AS "includesSpacePlanning", includes_renders AS "includesRenders",
@@ -110,7 +157,8 @@ export class DesignJourneyService {
       .map((row) => ({ ...row, label: STAGE_LABELS[row.stage], overdue: row.status === "active" && row.dueAt instanceof Date && row.dueAt.getTime() < Date.now() })) : [];
     const measurements = journey ? await this.measurements(client, workspaceId, caseId) : [];
     const timezone = (await client.query<{ timezone: string }>(`SELECT default_timezone AS timezone FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.timezone ?? "UTC";
-    return { journey, stages, measurements, siteEvidenceProblem: journey ? siteEvidenceProblem(measurements) : null, timezone };
+    const progress = journey ? await stageProgress(client, workspaceId, caseId) : [];
+    return { journey, stages: stages.map((stage) => ({ ...stage, progress: progress.find((item) => item.stage === stage.stage) ?? null })), measurements, siteEvidenceProblem: journey ? siteEvidenceProblem(measurements) : null, timezone };
   }
 
   private async measurements(client: PoolClient, workspaceId: string, caseId: string) {
@@ -134,6 +182,14 @@ export class DesignJourneyService {
     const found = await client.query(`SELECT status FROM pre_project_cases WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, caseId]);
     if (!found.rowCount) throw new NotFoundException("Case not found");
     if (found.rows[0].status !== "active") throw new ConflictException("Reactivate the case first");
+  }
+
+  /** Stage decisions are the design reviewer's (the Creative Director role). */
+  private review<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient, userId: string) => Promise<T>) {
+    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.review_designs"], async (client, user) => {
+      await this.lockCase(client, workspaceId, caseId);
+      return work(client, user.userId);
+    });
   }
 
   private edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient, userId: string) => Promise<T>) {
