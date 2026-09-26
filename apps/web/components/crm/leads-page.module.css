@@ -200,8 +200,7 @@
 .clientRequest small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); overflow: hidden; text-overflow: ellipsis; }
 .sheetLead { min-block-size: 42px; }
 .page { background: var(--wd-color-surface); padding: var(--wd-space-3) var(--wd-space-6) var(--wd-space-6); }
-.sheet :global(.wd-grid-footer) { border-inline: 0; border-radius: 0; border-block-start: 1px solid var(--wd-color-structural-divider); }
-.sheet :global(.wd-table-scroll) { border-radius: 0; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--wd-color-border-strong) transparent; }
+.sheet :global(.wd-table-scroll) { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--wd-color-border-strong) transparent; }
 @media (max-width: 42rem) {
   .sheet :global(.wd-table-scroll) { overflow-x: auto; }
   .sheet :global(.wd-table) { inline-size: max-content !important; min-inline-size: 100%; }

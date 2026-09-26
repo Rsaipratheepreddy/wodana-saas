@@ -1,3 +1,4 @@
+import { EmptyState } from "@/design-system";
 "use client";
 import { Fragment } from "react";
 import {
@@ -86,13 +87,7 @@ export function QuotationDocument({
       </div>
       <div className={s.body}>
         {!rooms.length && (
-          <div className={s.empty}>
-            <span>YOUR SCOPE, ROOM BY ROOM</span>
-            <h2>Your quotation starts here</h2>
-            <p>
-              Add a room from the builder or let AI suggest a starting point.
-            </p>
-          </div>
+          <EmptyState title="Your quotation starts here" description="Add a room from the builder, or let AI suggest a starting point." />
         )}
         {rooms.map((room, index) => {
           const lines = quote.lines.filter((l) => l.room === room);

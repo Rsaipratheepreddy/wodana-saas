@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Copy, Pencil, Plus, Users } from "lucide-react";
-import { DataGrid, ControlledModalDialog } from "@/design-system";
+import { ArrowUpRight, Copy, Pencil, Plus } from "lucide-react";
+import { DataGrid, ControlledModalDialog, EmptyState } from "@/design-system";
 import type { CommercialState, PortalGrant } from "@/lib/commercial/types";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
 import s from "./commercial.module.css";
@@ -161,14 +161,7 @@ export function ClientAccess({
                     )}
                   </>;}}]}/>
       ) : (
-        <div className={s.empty}>
-          <Users size={26} />
-          <h2>Add the people involved in this project</h2>
-          <p>
-            Give each client contact their own login. Access is limited to this
-            Planning.
-          </p>
-        </div>
+        <EmptyState title="Add the people involved in this project" description="Each client contact gets their own login, limited to this project." />
       )}
       <section className={s.section}>
         <div className={s.grid}>

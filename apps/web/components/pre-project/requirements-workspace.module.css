@@ -97,7 +97,7 @@
 .rooms { padding:var(--wd-space-3) var(--wd-space-2); border-inline-end:1px solid var(--wd-color-structural-divider); }
 .main { padding:0; }
 .heading { padding:var(--wd-space-2) var(--wd-space-3) 0; margin:0; }
-.workspace .toolbar { padding:var(--wd-space-2) var(--wd-space-3); margin:0; border-block-end:1px solid var(--wd-color-structural-divider); }
+.workspace .toolbar { padding:0 0 var(--wd-space-3); margin:0; border-block-end:0; }
 .cards { padding:var(--wd-space-3); }
 @media(max-width:700px) { .workspace { min-block-size:0; } .rooms { padding:var(--wd-space-2); border-inline-end:0; } }
 
@@ -212,3 +212,5 @@
 @media(pointer:coarse) { .compact .toolbar :is(:global(.wd-search-field),:global(.wd-select-button),:global(.wd-button)) { block-size:44px; min-block-size:44px; } }
 .visuallyHidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .heading:has(> .visuallyHidden) { justify-content: flex-end; }
+
+.emptyFrame { grid-column: 1 / -1; padding-block: var(--wd-phi-4); }

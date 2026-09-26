@@ -6,7 +6,7 @@ import { useState } from "react";
 import { parseDate } from "@internationalized/date";
 import Link from "next/link";
 import Image from "next/image";
-import { Plus, MessageSquare } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   Button,
   Checkbox,
@@ -16,7 +16,7 @@ import {
   NumericInput,
   SelectField,
   TextAreaField,
-  TextInput,
+  TextInput, EmptyState
 } from "@/design-system";
 import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
 import {
@@ -75,14 +75,7 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
         {state.canEdit && <div className={s.actions}>{decisionTargets.length > 0 && <Button size="compact" onPress={() => setCreateDecision(true)}>Request client decision</Button>}<Button size="compact" variant="primary" onPress={() => setCreate(true)}><Plus size={15} />{accepted ? "New change request" : "New request"}</Button></div>}
       </div>
       {!state.data.requests.length ? (
-        <div className={s.empty}>
-          <MessageSquare size={30} />
-          <h2>No change requests yet</h2>
-          <p>
-            Client change requests and your team’s clarifications appear here,
-            with an owner, replies and a clear resolution.
-          </p>
-        </div>
+        <EmptyState title="No change requests yet" description="Client changes and your team’s clarifications appear here, each with an owner and a resolution." />
       ) : (
         <div className={tableStyles.recordTablePanel}><DataGrid selectable={false} compactToolbar ariaLabel="Change requests" data={state.data.requests} getRowId={row=>row.id} searchLabel="Search change requests" exportFileName="change-requests.csv" onRowAction={r=>{setSelected(r.id);setEdit(r);}} columns={[{id:"title",header:"Request",size:320,accessorFn:(r)=>`CR-${String(r.number).padStart(3,"0")} ${r.title}`,cell:({row:{original:r}})=>{return <>
                     <button
@@ -409,14 +402,8 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
   return (
     <>
       {!accepted ? (
-        <div className={s.empty}>
-          <h2>Accept the quotation first</h2>
-          <p>
-            The agreement and payment schedule will reference the exact accepted
-            version.
-          </p>
-          <Link href={`/workspace/pre-projects/cases/${state.caseId}/quotations`}>Open quotations →</Link>
-        </div>
+        <EmptyState illustration="locked" title="Accept the quotation first" description="The agreement and payments follow the exact accepted version."
+          action={<Link className="wd-button" data-size="compact" data-variant="primary" href={`/workspace/pre-projects/cases/${state.caseId}/quotations`}>Open quotations</Link>} />
       ) : tab === "agreement" ? (
         <div className={s.form} style={{ maxWidth: "48rem" }}>
           <p className={s.detail}>
@@ -821,11 +808,8 @@ export function ApprovalRelease({
       {tab === "owner" ? (
         <>
           {!accepted ? (
-            <div className={s.empty}>
-              <h2>Client acceptance comes first</h2>
-              <p>Issue the reviewed quotation and wait for the assigned client approver.</p>
-              <Link className={s.button} href={sectionHref?.("quotations") ?? `${root}/quotations`}>Open quotations →</Link>
-            </div>
+            <EmptyState illustration="locked" title="Client acceptance comes first" description="Issue the reviewed quotation and wait for the client approver."
+              action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("quotations") ?? `${root}/quotations`}>Open quotations</Link>} />
           ) : <>
             <div className={s.controlSummary}>
               <div><small>Accepted quotation</small><strong>V{accepted.number} · {money(acceptedQuoteValue(accepted), accepted.currency)}</strong></div>
@@ -880,7 +864,7 @@ export function ApprovalRelease({
             {state.canEdit&&['proposed','rejected'].includes(item.status)&&<button className={s.button} onClick={()=>{setSelectedMaterial(item.id);setMaterialDraft({...item});}}>Edit</button>}
             {state.canEdit&&item.status==='proposed'&&<button className={s.primary} disabled={busy||!approver} onClick={()=>void run('submit_material_approval',{materialApprovalId:item.id,approverId:approver})}>Send to client</button>}
           </div>)}
-          {!(d.materialApprovals ?? []).some(item=>item.quoteId===accepted?.id)&&<div className={s.empty}><h2>No selections prepared</h2><p>Accept the quotation, then prepare its materials for client review.</p></div>}
+          {!(d.materialApprovals ?? []).some(item=>item.quoteId===accepted?.id)&&<EmptyState title="No selections prepared" description="Accept the quotation, then prepare its materials for client review." />}
           {(d.materialApprovals ?? []).some(item=>item.quoteId===accepted?.id&&item.status==='proposed')&&<label className={s.approverField}>Client approver<select value={approver} onChange={e=>setApprover(e.target.value)}><option value="">Choose approver…</option>{state.contacts.filter(contact=>contact.active&&contact.role==='approver').map(contact=><option key={contact.id} value={contact.id}>{contact.name} · {contact.phone}</option>)}</select></label>}
           <ControlledModalDialog isOpen={Boolean(selectedMaterial)} onOpenChange={open=>{if(!open){setSelectedMaterial('');setMaterialDraft(null);}}} title="Edit material selection">
             {materialDraft&&<form className={s.form} onSubmit={async e=>{e.preventDefault();if(await run('save_material_approval',{materialApprovalId:materialDraft.id,name:materialDraft.name,code:materialDraft.code,brand:materialDraft.brand,specification:materialDraft.specification,note:materialDraft.note,photo:materialDraft.photo??''})){setSelectedMaterial('');setMaterialDraft(null);}}}>
@@ -894,11 +878,8 @@ export function ApprovalRelease({
           </ControlledModalDialog>
         </>
       ) : tab === "release" ? (
-        d.palmFlow && !d.palmFlow.scope.mainQuotation ? <div className={s.empty}>
-          <h2>Design-only project</h2>
-          <p>This path ends after Design & Specifications. It does not need procurement or production release.</p>
-          <Link href={sectionHref?.("designs") ?? `${root}/designs`}>Open design work →</Link>
-        </div> : <>
+        d.palmFlow && !d.palmFlow.scope.mainQuotation ? <EmptyState illustration="done" title="Design-only project" description="This path ends with the approved design. Procurement and production don’t apply."
+          action={<Link className="wd-button" data-size="compact" data-variant="primary" href={sectionHref?.("designs") ?? `${root}/designs`}>Open design</Link>} /> : <>
           <p className={s.muted}>
             {d.palmFlow
               ? d.palmFlow.scope.mainQuotation

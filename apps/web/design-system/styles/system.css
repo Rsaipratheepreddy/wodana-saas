@@ -1135,3 +1135,6 @@
 .wd-list-tab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
 
 .wd-sheet-dialog > header[data-minimal] { justify-content: flex-end; min-block-size: 0; padding-block: var(--wd-space-2) 0; border-block-end: 0; }
+
+/* Links styled as buttons never underline. */
+a.wd-button, a.wd-button:hover, .wd-empty-state a { text-decoration: none; }

@@ -233,3 +233,60 @@
 .wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"] { border: 0; background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); padding-inline: var(--wd-space-3); }
 .wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"]:hover { background: var(--wd-color-action-primary-hover); }
 .wd-grid-toolbar.wd-grid-toolbar[data-leading] { border-block-end: 0; margin-block-end: var(--wd-space-2); }
+
+/* ── The Wodana table ───────────────────────────────────────────────────────
+   One table everywhere: a framed grid with every cell outlined, a solid header
+   band, generous rows, row hover and links in full ink with no underline.
+   Everything above is structure; this block is the look and wins by order. */
+@media screen {
+  :root {
+    --wd-grid-line: var(--wd-color-table-border);
+    --wd-grid-frame: var(--wd-color-border-strong);
+    --wd-grid-head-bg: var(--wd-color-table-header);
+    --wd-grid-head-ink: var(--wd-color-table-header-ink);
+    --wd-grid-row: var(--wd-table-row);
+  }
+  .wd-data-grid.wd-data-grid .wd-table-scroll,
+  :is(.wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll]).wd-grid-framed,
+  :is(.wd-grouped-table-scroll, .wd-record-table-scroll, [data-record-table-scroll]) {
+    border: 1px solid var(--wd-grid-frame);
+    border-radius: var(--wd-radius-md);
+    background: var(--wd-color-surface);
+    overflow: auto;
+  }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) {
+    border-collapse: separate; border-spacing: 0; inline-size: 100%;
+  }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > :is(thead, tbody, tfoot) > tr > :is(th, td) {
+    block-size: var(--wd-grid-row); height: var(--wd-grid-row);
+    padding: var(--wd-space-2) var(--wd-space-3);
+    border: 0;
+    border-inline-end: 1px solid var(--wd-grid-line);
+    border-block-end: 1px solid var(--wd-grid-line);
+    box-shadow: none;
+    font-size: var(--wd-text-sm);
+    color: var(--wd-color-text);
+    white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+  }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child { border-inline-end: 0; }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr:last-child > :is(th, td) { border-block-end: 0; }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > thead > tr > th {
+    block-size: var(--wd-record-header-height); height: var(--wd-record-header-height);
+    padding-block: 0;
+    background: var(--wd-grid-head-bg);
+    color: var(--wd-grid-head-ink);
+    font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold);
+    border-block-end: 1px solid var(--wd-grid-frame);
+    white-space: nowrap;
+  }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > thead .wd-column-icon { color: var(--wd-grid-head-ink); }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr:hover > td { background: var(--wd-color-surface-hover); }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr[data-selected="true"] > td { background: var(--wd-color-surface-selected); }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) :is(a, .wd-grid-value[data-primary="true"]) {
+    color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); text-decoration: none;
+  }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) a:hover { color: var(--wd-color-action-primary); text-decoration: none; }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) [data-pinned] { box-shadow: none; }
+  /* Footer sits under the frame as a quiet caption. */
+  .wd-data-grid.wd-data-grid .wd-grid-footer { border: 0; padding: var(--wd-space-2) var(--wd-space-1); min-block-size: 0; color: var(--wd-color-text-secondary); background: transparent; }
+}

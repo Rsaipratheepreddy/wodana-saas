@@ -30,7 +30,7 @@ describe('Requirements workspace', () => {
     expect(screen.getByRole('searchbox',{name:'Search requirements'}).compareDocumentPosition(screen.getByRole('button',{name:'Add requirement'})) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await userEvent.click(screen.getByRole('button',{name:'All rooms Room'}));
     await userEvent.click(screen.getByRole('option',{name:'Archived requirements'}));
-    expect(screen.getByText('No archived items match these filters.')).toBeVisible();
+    expect(screen.getByText('No archived items')).toBeVisible();
   });
   it('filters the notes board by room without a second sidebar', async () => {
     const user=userEvent.setup();

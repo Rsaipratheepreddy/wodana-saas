@@ -4,7 +4,7 @@ import { useId, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { ClipboardList, DoorOpen, FileText, LayoutGrid, Plus, Ruler, Table2 } from 'lucide-react';
-import { Badge, Button, Checkbox, DataGrid, MenuButton, SelectField, SearchInput, TextInput, TextAreaField, NumericInput, useDesignSystem, type DataGridColumn } from '@/design-system';
+import { Badge, Button, Checkbox, DataGrid, EmptyState, MenuButton, SelectField, SearchInput, TextInput, TextAreaField, NumericInput, useDesignSystem, type DataGridColumn } from '@/design-system';
 import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabels, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
 import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
 import { CaseModal, CatalogChoiceField } from './case-controls';
@@ -118,6 +118,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
     { id: 'action', header: '', size: 100, cell: ({ row: { original } }) => <Button size="compact" variant="quiet" aria-label={`${canEditEntry(original) && !archived ? 'Edit' : 'View'} ${original.title}`} onPress={() => setEntry(original)}>{canEditEntry(original) && !archived ? 'Edit' : 'View'}</Button> },
   ];
   const captureActions = <div className={`${styles.toolbarActions} ${workspace.captureActions}`}>
+        {!compact && <><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}>Project brief</Button><Button size="compact" variant="quiet" onPress={() => { setAddingRoom(false); setRoomsOpen(true); }}>Manage rooms</Button></>}
         {view !== 'requirement' && view !== 'measurements' && <div className={styles.presentationSwitch} role="group" aria-label="Display"><button type="button" aria-label="Cards view" aria-pressed={presentation === 'cards'} onClick={() => setPresentation('cards')}><LayoutGrid size={15}/></button><button type="button" aria-label="Table view" aria-pressed={presentation === 'table'} onClick={() => setPresentation('table')}><Table2 size={15}/></button></div>}
         {view === 'measurements' && <EligibilityButton reason={blockedReason} isDisabled={!data.canEdit} size="compact" variant="primary" onPress={() => { setArchived(false); setMeasurementFor(undefined); setMeasurementOpen(true); }}><Plus size={14}/>Add measurement</EligibilityButton>}
         {view !== 'measurements' && <EligibilityButton reason={blockedReason} isDisabled={!data.canEdit} size="compact" variant="primary" onPress={() => { setArchived(false); setEntry({ ...blankEntry(room === 'all' || room === 'general' ? null : room), kind: view }); }}><Plus size={14}/>{view === 'file' ? 'Add site plan' : view === 'inspiration' ? 'Add inspiration' : 'Add requirement'}</EligibilityButton>}
@@ -149,7 +150,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
           </div>
         </div>
       </article>;
-    })}{!cardEntries.length && <div className={workspace.empty}>{archived ? "No archived items match these filters." : search || room !== "all" ? "No items match these filters." : view === "file" ? "Add a floor plan, survey or site drawing." : view === "inspiration" ? "Collect photos, links and ideas the client likes." : "Add a note to capture what the client needs."}</div>}</div> : <div className={tableStyles.recordTablePanel}>{view === 'measurements'
+    })}{!cardEntries.length && <div className={workspace.emptyFrame}><EmptyState illustration={archived || search || room !== "all" ? "search" : view === "file" ? "upload" : "empty"} title={archived ? "No archived items" : search || room !== "all" ? "Nothing matches these filters" : view === "file" ? "No site plans yet" : view === "inspiration" ? "No inspiration yet" : "No requirements yet"} description={archived || search || room !== "all" ? "Try another room or clear the search." : view === "file" ? "Add a floor plan, survey or site drawing." : view === "inspiration" ? "Collect photos, links and ideas the client likes." : "Add a note to capture what the client needs."} /></div>}</div> : <div className={tableStyles.recordTablePanel}>{view === 'measurements'
       ? <DataGrid key="measurements" appearance="flush" ariaLabel="Measurements" data={measurementRows} columns={measurementColumns} getRowId={item => item.id} onRowAction={item => openSpecification(item.entry, 'dimensions')} showToolbar={false} selectable={false} pageSize={25} emptyTitle="No measurements yet" emptyDescription="Choose an item or type a name, then add its measurements."/>
       : <DataGrid key={view} appearance="flush" ariaLabel={view === 'file' ? 'Site plans' : view === 'inspiration' ? 'Client inspirations' : 'Requirements'} data={rows} columns={columns} getRowId={item => item.id} onRowAction={setEntry} showToolbar={false} selectable={false} pageSize={25} emptyTitle={view === 'file' ? 'No site plans yet' : view === 'inspiration' ? 'No inspiration yet' : 'No requirements yet'} emptyDescription={view === 'file' ? 'Upload site plans, drawings and layout references.' : 'Choose a room and add a requirement.'}/>}</div>}
   </div>;
@@ -157,10 +158,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
   return <div className={`${styles.content} ${compact ? workspace.compact : ''}`}>
     <div className={workspace.workspace}>
       <div className={workspace.main}>
-        {!compact && <div className={workspace.heading}>
-          <h2 className={workspace.visuallyHidden}>{view === 'requirement' ? 'Requirements' : view === 'measurements' ? 'Measurements' : view === 'file' ? 'Site plans' : 'Inspiration'}</h2>
-          <div className={workspace.actions}><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}>Project brief</Button><Button size="compact" variant="quiet" onPress={() => { setAddingRoom(false); setRoomsOpen(true); }}>Manage rooms</Button></div>
-        </div>}
+        {!compact && <h2 className={workspace.visuallyHidden}>{view === 'requirement' ? 'Requirements' : view === 'measurements' ? 'Measurements' : view === 'file' ? 'Site plans' : 'Inspiration'}</h2>}
         {!data.canEdit && <p className={workspace.readOnly} role="note">{blockedReason}</p>}
         {panel}
       </div>

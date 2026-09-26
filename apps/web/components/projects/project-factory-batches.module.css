@@ -3,7 +3,7 @@
 .toolbar { padding-block:var(--wd-space-3); }
 .toolbar strong { margin-inline-end:auto; }
 .form { display:grid; gap:var(--wd-space-3); }
-.root :global(.wd-table-scroll) { overflow-x:auto; max-inline-size:100%; border:1px solid var(--wd-color-structural-divider); }
+.root :global(.wd-table-scroll) { overflow-x:auto; max-inline-size:100%; }
 .links { min-inline-size:110px; }
 .links a { color:var(--wd-color-text); text-decoration:underline; }
 .summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--wd-space-3) var(--wd-space-6); margin:0 0 var(--wd-space-4); }

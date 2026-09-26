@@ -767,7 +767,7 @@
   text-decoration: none;
 }
 .quoteLink:hover {
-  text-decoration: underline;
+  color: var(--wd-color-action-primary);
 }
 .listAmount {
   white-space: nowrap;
@@ -1233,9 +1233,8 @@
 :global([data-theme="dark"]) .studioPage > .toolbar > .actions > strong { color: var(--wd-color-text); }
 .studioPage > .toolbar { padding-block: var(--wd-space-1-5); }
 
-.quotationTablePage { padding:var(--wd-space-3) var(--wd-space-4); }
 
-.builderLink { color:var(--wd-color-action-primary); text-decoration:underline; text-underline-offset:3px; font-size:var(--wd-text-sm); white-space:nowrap; }
+.builderLink { color:var(--wd-color-action-primary); text-decoration:none; font-size:var(--wd-text-sm); white-space:nowrap; }
 
 .reviewPage { padding:0; }
 .reviewPage > .toolbar { position:static; margin:0 0 var(--wd-space-3); }

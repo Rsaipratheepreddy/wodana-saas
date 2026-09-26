@@ -10,7 +10,7 @@ import { QuotationMaterialsEditor, QuotationMaterialsSummary } from "./quotation
 import { customUnit, selectUnit } from "@/lib/commercial/materials";
 import q from "./quotation-line-fields.module.css";
 import { PaymentScheduleEditor } from "./payment-schedule-editor";
-import { DataGrid, ControlledModalDialog } from "@/design-system";
+import { DataGrid, ControlledModalDialog, EmptyState } from "@/design-system";
 import type { Quote, QuoteLine, ChangeRequest } from "@/lib/commercial/types";
 import { money, newLine, quoteTotals } from "@/lib/commercial/client";
 import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
@@ -133,13 +133,7 @@ export function QuotationEditor({
         )}
       </div>
       {!rooms.length ? (
-        <div className={s.empty}>
-          <h2>Build your quotation, one item at a time.</h2>
-          <p>
-            Import included scope from Requirement gathering, or add an item. Materials,
-            finishes and quantities stay easy to edit.
-          </p>
-        </div>
+        <EmptyState title="Build your quotation, one item at a time" description="Import the included scope from the brief, or add an item." />
       ) : (
         <div className={s.form}>{rooms.filter(r=>room==="All rooms"||room===r).map(r=><section key={r}><div className={`${s.roomHeading} ${q.roomHeader}`}>
                           <span>

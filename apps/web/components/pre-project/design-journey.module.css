@@ -1,4 +1,4 @@
-.journey { display: flex; flex-direction: column; gap: var(--wd-space-3); padding-block-start: var(--wd-phi-1); }
+.journey { display: flex; flex-direction: column; gap: var(--wd-space-3); }
 .header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); }
 .heading { display: flex; align-items: baseline; gap: var(--wd-space-2); min-inline-size: 0; }
 .heading h3 { margin: 0; font-size: var(--wd-text-md); font-weight: 600; }

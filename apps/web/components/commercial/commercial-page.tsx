@@ -5,7 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { QuotationList } from "./quotation-list";
-import { FileText, History, Plus } from "lucide-react";
+import { History, Plus } from "lucide-react";
 import {
   Button,
   ControlledModalDialog,
@@ -13,7 +13,7 @@ import {
   IconButton,
   SelectField,
   useConfirmationDialog,
-  useDesignSystem,
+  useDesignSystem, EmptyState
 } from "@/design-system";
 import { usePreProject } from "@/components/pre-project/pre-project-context";
 import type { PreProjectCase } from "@/lib/pre-project/types";
@@ -296,10 +296,7 @@ export function CommercialPage({
             open={(id) => router.push(quoteHref(id))}
           />
         ) : section === "quotations" && quotationId && !draft ? (
-          <div className={s.empty}>
-            <h2>Quotation not found</h2>
-            <Link href={rootHref}>Back to quotations</Link>
-          </div>
+          <EmptyState illustration="search" title="Quotation not found" action={<Link className="wd-button" data-size="compact" data-variant="primary" href={rootHref}>Back to quotations</Link>} />
         ) : quotePage ? (
           draft ? (
             <>
@@ -492,29 +489,8 @@ export function CommercialPage({
               </fieldset>}
             </>
           ) : (
-            <div className={s.empty}>
-              <FileText size={30} />
-              <h2>
-                {section === "boq"
-                  ? "Prepare quotation items"
-                  : "Create your first quotation"}
-              </h2>
-              <p>
-                Import your included scope, choose materials and set rates. The
-                same items carry into your quotation.
-              </p>
-              {state.canEdit && (
-                <Button
-                  size="compact"
-                  variant="primary"
-                  isDisabled={busy}
-                  onPress={() => void run("create")}
-                >
-                  <Plus size={15} />
-                  Create quotation
-                </Button>
-              )}
-            </div>
+            <EmptyState title={section === "boq" ? "Prepare quotation items" : "Create your first quotation"} description="Import the included scope, choose materials and set rates. The same items carry into the quotation."
+              action={state.canEdit ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void run("create")}><Plus size={15} />Create quotation</Button> : undefined} />
           )
         ) : section === "client-portal" ? (
           <ClientAccess state={state} reload={reload} />

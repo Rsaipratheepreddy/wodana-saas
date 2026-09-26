@@ -948,5 +948,6 @@
   "{done} of {total} stages done": "{done} of {total} stages done",
   "Design starts once the design deposit is paid.": "Design starts once the design deposit is paid.",
   "Now": "Now",
-  "Visit": "Visit"
+  "Visit": "Visit",
+  "Design hasn't started": "Design hasn't started"
 }

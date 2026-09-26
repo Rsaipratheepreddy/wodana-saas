@@ -71,8 +71,6 @@
   border-color: var(--crm-accent);
 }
 .provider :global(.wd-table-scroll) {
-  border: 0;
-  border-radius: 0;
   scrollbar-width: none;
 }
 .provider :global(.wd-table-scroll::-webkit-scrollbar) {

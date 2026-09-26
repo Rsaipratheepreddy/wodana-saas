@@ -62,7 +62,7 @@
 .openAction { display: inline-grid; place-items: center; inline-size: 2.25rem; block-size: 2.25rem; border: 1px solid var(--wd-color-border-control); border-radius: 50%; color: var(--wd-color-text-secondary); }
 .openAction:hover { background: var(--pre-tint); border-color: var(--pre-accent); color: var(--pre-accent); }
 .casePage a, .dialog > a, .empty a { color: var(--pre-accent); text-decoration: none; }
-.table a:hover, .casePage a:hover { text-decoration: underline; }
+.table a:hover, .casePage a:hover { text-decoration: none; }
 .pagination { display: flex; flex-wrap: wrap; gap: var(--wd-space-3); justify-content: space-between; align-items: center; padding: var(--wd-space-3) var(--wd-space-5); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .pagination > div { display: flex; gap: var(--wd-space-2); }
 /* Keep the pre-project selector aligned with the compact CRM Leads table. */
@@ -208,9 +208,9 @@
 .qualifiedIdentity > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qualifiedIdentity :global(.wd-avatar) { display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; flex: 0 0 28px; font-size: var(--wd-text-2xs); line-height: 1; }
 .qualifiedName { display: block; inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wd-color-text); background: transparent; padding: 0; border: 0; text-decoration: none; font: inherit; text-align: start; }
-a.qualifiedName:hover { color: var(--pre-accent); text-decoration: underline; text-underline-offset: 3px; }
+a.qualifiedName:hover { color: var(--pre-accent); text-decoration: none; }
 .qualifiedName:focus-visible, .qualifiedOpen:focus-visible { outline: 2px solid var(--pre-accent); outline-offset: 3px; }
-.qualifiedOpen { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--pre-accent); text-decoration: underline; text-underline-offset: 3px; }
+.qualifiedOpen { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--pre-accent); text-decoration: none; }
 .qualifiedMuted { color: var(--wd-color-text-secondary); }
 .qualifiedStatus { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: 1.375rem; padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--pre-tint); color: var(--pre-accent); font-size: var(--wd-text-2xs); font-weight: 500; line-height: 1; white-space: nowrap; }
 .qualifiedStatus[data-status="qualified"], .qualifiedStatus[data-status="released"] { background: var(--wd-color-success-subtle); color: var(--wd-color-success); }
@@ -225,6 +225,4 @@ a.qualifiedName:hover { color: var(--pre-accent); text-decoration: underline; te
 .capitalize { text-transform: capitalize; }
 .capitalize[data-priority="urgent"], .capitalize[data-priority="high"] { color: var(--wd-color-warning); font-weight: var(--wd-weight-medium); }
 
-.casePage.compactCase[data-requirements] { padding:var(--wd-space-3) var(--wd-space-4) var(--wd-space-5) var(--wd-space-3); }
 
-.casePage.compactCase[data-requirements] { padding:0; }

@@ -160,6 +160,6 @@ it("shows the active delivery round as ready and excludes design-only release", 
   state.data.palmFlow!.scope.design = true;
   state.data.palmFlow!.scope.mainQuotation = false;
   render(<ApprovalRelease state={state} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
-  expect(screen.getByText(/This path ends after Design & Specifications/)).toBeVisible();
+  expect(screen.getByText(/This path ends with the approved design/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "Release to procurement" })).not.toBeInTheDocument();
 });

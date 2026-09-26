@@ -47,7 +47,6 @@
 
 
 .page :global(.wd-data-grid) { --wd-record-row-height:2.5rem; --wd-record-header-height:2.25rem; --wd-record-cell-padding:.625rem; box-shadow:none; }
-.page :global(.wd-data-grid .wd-record-table > tbody > tr > td) { padding-block:var(--wd-space-1); }
 .page :global(a.wd-button) { text-decoration:none; }
 @media(min-width:70rem) {
   .page :global(.wd-record-toolbar[data-compact] .wd-record-controls > button > span),

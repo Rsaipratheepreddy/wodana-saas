@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Check, CheckCircle2, Play } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, EmptyState, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -65,7 +65,7 @@ export function DesignJourney({ workspaceId, caseId, locale }: { workspaceId: st
     </header>
     {failure ? <InlineNotice message={failure} tone="error" /> : null}
     {notice ? <InlineNotice message={notice} tone="success" /> : null}
-    {!view.journey ? <p className={styles.empty}>{t("Design starts once the design deposit is paid.")}</p> : <ol className={styles.timeline}>
+    {!view.journey ? <EmptyState illustration="calendar" title={t("Design hasn't started")} description={t("Design starts once the design deposit is paid.")} /> : <ol className={styles.timeline}>
       {view.stages.map((stage) => <li className={styles.step} data-status={stage.status} data-overdue={stage.overdue || undefined} key={stage.stage}>
         <span aria-hidden="true" className={styles.marker}>{stage.status === "done" ? <Check size={12} strokeWidth={3} /> : null}</span>
         <div className={styles.body}>

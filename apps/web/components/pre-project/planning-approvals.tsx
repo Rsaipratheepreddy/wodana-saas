@@ -49,12 +49,12 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
     ? <DesignFileDetails key={`${selectedDesign.id}-${selectedDesign.version}`} data={content.data} design={selectedDesign} options={content.designOptions} folderName={content.designOptions.folders.find(folder => folder.id === selectedDesign.folderId)?.name ?? "Designs"} backLabel="Approvals" onClose={() => router.push(href())} onUpdate={() => router.refresh()} onReviewed={() => router.refresh()} />
     : selectedQuote ? <CommercialPage reviewOnly key={selectedQuote.id} initial={commercial} record={record} section="quotations" quotationId={selectedQuote.id} search={search} /> : null;
   return <section className={s.page}>
-    <header className={s.header}><h1 className={s.visuallyHidden}>Approvals</h1><Link href={`${root}/client-portal`}>Client access</Link></header>
+    <h1 className={s.visuallyHidden}>Approvals</h1>
     {review ? <>{!selectedDesign && <Link className={s.back} href={href()}>← All approvals</Link>}{detail ?? <Callout tone="warning" title="Review unavailable">This item may have been archived or replaced. Return to the queue for its current version.</Callout>}</> : <>
       {"error" in content && <Callout tone="warning" title="Designs could not be loaded">{content.error}</Callout>}
       {"error" in definition && <Callout tone="warning" title="Requirements could not be loaded">{definition.error}</Callout>}
       <div className={tableStyles.recordTablePanel}>
-        <DataGrid ariaLabel="Planning approvals" appearance="flush" compactToolbar selectable={false}
+        <DataGrid ariaLabel="Planning approvals" appearance="flush" compactToolbar selectable={false} toolbarActions={<Link className="wd-button" data-size="compact" href={`${root}/client-portal`}>Client access</Link>}
           data={rows.filter(row => filter === "all" || row.type === filter)} getRowId={row => row.id}
           selectedView={filter} onViewChange={setFilter}
           savedViews={[{id:"all",label:"All items"}, ...["Requirements", "Designs", "Quotations"].map(type => ({id:type,label:type}))]}

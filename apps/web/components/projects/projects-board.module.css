@@ -1,4 +1,4 @@
-.page { padding:var(--wd-space-5); min-inline-size:0; color:var(--wd-color-text); }
+.page { padding:var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem); min-inline-size:0; color:var(--wd-color-text); }
 .toolbar { display:flex; align-items:center; gap:var(--wd-space-2); margin-block-end:var(--wd-space-5); }
 .toolbar > :first-child { inline-size:260px; }
 .toolbar :global(.wd-field-label) { display:none; }
@@ -15,33 +15,30 @@
 .provider[data-wd-theme="dark"] { --project-row-hover:#252e40; }
 .empty { padding:var(--wd-space-6) var(--wd-space-4); text-align:center; font-size:var(--wd-text-xs); color:var(--wd-color-text-secondary); }
 @media(max-width:600px) { .toolbar { flex-wrap:wrap; } .toolbar > :first-child { inline-size:100%; } .page { padding:var(--wd-space-3); } }
-.tableFrame { border:1px solid var(--wd-color-border-strong); border-radius:var(--wd-radius-md); overflow:auto; scrollbar-width:none; }
+.tableFrame { overflow:auto; scrollbar-width:none; }
 .tableFrame::-webkit-scrollbar { display:none; }
 .clientTableFrame { scrollbar-width:thin; }
 .clientTableFrame::-webkit-scrollbar { display:block; block-size:8px; }
 .clientTableFrame::-webkit-scrollbar-thumb { background:var(--wd-color-structural-divider); border-radius:var(--wd-radius-sm); }
 .projectTable { inline-size:100%; border-collapse:separate; border-spacing:0; text-align:start; table-layout:fixed; min-inline-size:760px; }
-.clientProjectTable { min-inline-size:1320px; }
-.projectTable th,.projectTable td { text-align:start; border-inline-end:1px solid var(--wd-color-structural-divider); border-block-end:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-3) var(--wd-space-4); vertical-align:middle; }
-.projectTable thead th { background:var(--wd-color-surface-muted); font-size:var(--wd-text-xs); line-height:18px; font-weight:500; padding-block:var(--wd-space-2); }
+.clientProjectTable { min-inline-size:56rem; }
+.projectTable th,.projectTable td { text-align:start; vertical-align:middle; }
 .projectTable th:first-child { inline-size:28%; }
-.clientProjectTable th:nth-child(1) { inline-size:23%; }
+.clientProjectTable th:nth-child(1) { inline-size:26%; }
 .clientProjectTable th:nth-child(2) { inline-size:13%; }
-.clientProjectTable th:nth-child(3) { inline-size:20%; }
-.clientProjectTable th:nth-child(4) { inline-size:21%; }
-.clientProjectTable th:nth-child(5) { inline-size:11%; }
-.clientProjectTable th:nth-child(6) { inline-size:12%; }
+.clientProjectTable th:nth-child(3) { inline-size:17%; }
+.clientProjectTable th:nth-child(4) { inline-size:13%; }
+.clientProjectTable th:nth-child(5) { inline-size:12%; }
+.clientProjectTable th:nth-child(6) { inline-size:19%; }
 .clientProjectTable tr > :first-child { position:sticky; inset-inline-start:0; z-index:1; background:var(--wd-color-surface); box-shadow:1px 0 0 var(--wd-color-structural-divider); }
 .clientProjectTable thead tr > :first-child { z-index:2; background:var(--wd-color-surface-muted); }
 .clientProjectTable tbody tr:is(:hover,:focus-within) > :first-child { background:var(--project-row-hover); }
-.projectTable tr > :last-child { border-inline-end:0; }
-.projectTable tbody tr:last-child > * { border-block-end:0; }
 .projectTable tbody th { font-weight:400; }
 .projectTable tbody th strong { display:block; font-size:var(--wd-text-sm); font-weight:600; line-height:20px; }
 .projectTable tbody th > span { display:block; font-size:var(--wd-text-xs); margin-block-start:var(--wd-space-0-5); color:var(--wd-color-text-secondary); }
 .projectNameLink { display:inline-flex; align-items:center; gap:var(--wd-space-2); color:inherit; text-decoration:none; cursor:pointer; }
 .projectNameText { display:flex; flex-direction:column; gap:var(--wd-space-0-5); min-inline-size:0; overflow-wrap:anywhere; }
-.projectTable .projectNameTitle { font-size:var(--wd-text-sm); font-weight:600; line-height:20px; text-decoration:underline; text-decoration-color:currentColor; text-underline-offset:3px; }
+.projectTable .projectNameTitle { font-size:var(--wd-text-sm); font-weight:600; line-height:20px; text-decoration:none; }
 .projectTable .projectDescription { margin:var(--wd-space-1) 0 0; margin-inline-start:var(--wd-space-10); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-weight:400; line-height:16px; overflow-wrap:anywhere; white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .projectReference { display:block; margin-block-start:var(--wd-space-0-5); margin-inline-start:var(--wd-space-10); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-weight:500; line-height:16px; }
 .projectIcon { inline-size:34px; block-size:34px; display:inline-grid; place-items:center; flex:none; border-radius:var(--wd-radius-sm); background:#dfe9ff; color:var(--wd-color-info); }
@@ -67,18 +64,15 @@
 .teamCell :global(.wd-avatar-group) { flex:none; }
 .muted { color:var(--wd-color-text-secondary); }
 .projectTable small { display:block; margin-block-start:var(--wd-space-1); font-size:var(--wd-text-2xs); line-height:16px; font-weight:400; color:var(--wd-color-text-secondary); }
-.projectTable tbody tr:is(:hover,:focus-within) { background:var(--project-row-hover); }
 .tableLink { display:inline-flex; align-items:center; gap:var(--wd-space-2); font:inherit; font-size:var(--wd-text-xs); font-weight:500; color:var(--wd-color-action-primary); border:0; background:transparent; padding:0; text-decoration:none; cursor:pointer; text-align:start; }
 .tableLink:hover { text-decoration:underline; }
 .tableLink:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:4px; border-radius:var(--wd-radius-2xs); }
 .tableLink:disabled { color:var(--wd-color-text-secondary); cursor:default; }
 .notStarted { font-size:var(--wd-text-xs); color:var(--wd-color-text-secondary); }
-.tableFooter { display:flex; justify-content:space-between; gap:var(--wd-space-3); border-block-start:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-2) var(--wd-space-4); font-size:var(--wd-text-2xs); color:var(--wd-color-text-secondary); }
+.tableFooter { margin:0; padding:var(--wd-space-2) var(--wd-space-1); font-size:var(--wd-text-xs); color:var(--wd-color-text-secondary); }
 @media(max-width:600px) { .tableFooter span { display:none; } }
 /* Compact section controls share one fill across label and arrow. */
 .toolbar { margin-block-end:var(--wd-space-3); }
-.projectTable th,.projectTable td { padding:var(--wd-space-2) var(--wd-space-3); }
-.projectTable thead th { padding-block:var(--wd-space-2); font-weight:600; }
 .projectTable small { margin-block-start:var(--wd-space-0-5); }
 .projectTable .owner { display:flex; align-items:center; flex-wrap:wrap; gap:var(--wd-space-1-5); }
 .stageChip,.statusChip { display:inline-flex; align-items:center; gap:var(--wd-space-1-5); min-block-size:30px; padding:var(--wd-space-1-5) var(--wd-space-2); border-radius:var(--wd-radius-sm); font-size:var(--wd-text-xs); font-weight:600; line-height:18px; white-space:nowrap; }
