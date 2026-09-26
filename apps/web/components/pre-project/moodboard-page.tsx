@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, ChevronLeft, ChevronRight, CirclePlay, ExternalLink, Globe, Heart, ImagePlus, Link2, Maximize2, Pin, StickyNote, ThumbsDown, X } from "lucide-react";
-import { Button, ControlledModalDialog, EmptyState, InlineNotice, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { ChevronLeft, ChevronRight, ExternalLink, Heart, ImagePlus, Link2, Maximize2, StickyNote, ThumbsDown, X } from "lucide-react";
+import { PlatformMark } from "@/components/brand/platform-mark";
+import { Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, MultiSelectField, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type ScopeEntry } from "@/lib/pre-project/content";
 import { linkPlatform, pinKind } from "@/lib/pre-project/moodboard";
@@ -98,21 +99,20 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
     {error ? <InlineNotice message={error} tone="error" /> : null}
     {!entries.length ? <div className={styles.empty}><EmptyState illustration="upload" title={t("Start the moodboard")} description={t("Add photos, Instagram or Pinterest links, videos and notes the client loves, or wants to avoid.")} /></div>
       : !visible.length ? <div className={styles.empty}><EmptyState illustration="search" title={t("Nothing matches these filters")} description={t("Try another room, feeling or person.")} action={filtered ? <Button size="compact" onPress={() => { setRoom("all"); setFeeling("all"); setSource("all"); }}>{t("Clear filters")}</Button> : undefined} /></div>
-      : <div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
-        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>}
-    {selectedEntry ? <PinSheet key={selectedEntry.id} entry={selectedEntry} rooms={initialData.rooms} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
+      : <div className={styles.content} data-panel={selectedEntry ? "open" : undefined}><div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
+        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
+      {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} rooms={initialData.rooms} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
       onClose={() => setSelected(null)} onView={(index) => setViewing({ entryId: selectedEntry.id, index })}
       onFeeling={(value) => void markFeeling(selectedEntry, value)}
       onSave={async (next) => { await saveEntry(next); setSelected(null); }}
-      onRemove={async () => { await caseRequest(workspaceId, caseId, `entries/${selectedEntry.id}`, "PATCH", { version: selectedEntry.version, archived: true }); setEntries((current) => current.filter((item) => item.id !== selectedEntry.id)); setSelected(null); }} /> : null}
+      onRemove={async () => { await caseRequest(workspaceId, caseId, `entries/${selectedEntry.id}`, "PATCH", { version: selectedEntry.version, archived: true }); setEntries((current) => current.filter((item) => item.id !== selectedEntry.id)); setSelected(null); }} /> : null}</div>}
     {viewingEntry && images(viewingEntry).length ? <PhotoViewer entry={viewingEntry} start={viewing!.index} assetUrl={assetUrl} onClose={() => setViewing(null)} /> : null}
     {adding ? <AddPinDialog kind={adding} onClose={() => setAdding(null)} onAdd={async (draft) => { await create(draft); setAdding(null); }} /> : null}
   </section>;
 }
 
 function PlatformIcon({ id }: { id: string }) {
-  const Icon = id === "instagram" ? Camera : id === "pinterest" ? Pin : ["youtube", "tiktok"].includes(id) ? CirclePlay : Globe;
-  return <span aria-hidden="true" className={styles.platformIcon}><Icon size={16} /></span>;
+  return <span aria-hidden="true" className={styles.platformIcon}><PlatformMark platform={id} /></span>;
 }
 
 function FeelingToggle({ value, canEdit, onChange }: { value: Feeling; canEdit: boolean; onChange: (value: Feeling) => void }) {
@@ -155,7 +155,7 @@ function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, c
   </article>;
 }
 
-function PinSheet({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
+function PinPanel({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
   entry: ScopeEntry; rooms: CaseContent["rooms"]; requirements: ScopeEntry[]; canEdit: boolean; addedBy: string; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
   onClose: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void; onSave: (entry: ScopeEntry) => Promise<void>; onRemove: () => Promise<void>;
 }) {
@@ -164,20 +164,22 @@ function PinSheet({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const requestClose = () => { if (dirty) setConfirmDiscard(true); else onClose(); };
   const dirty = JSON.stringify({ ...draft, board: null }) !== JSON.stringify({ ...entry, board: null });
   const set = <K extends keyof ScopeEntry>(key: K) => (value: ScopeEntry[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const run = async (work: () => Promise<void>) => { setBusy(true); setError(""); try { await work(); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); setBusy(false); } };
   const validLink = !draft.referenceUrl || /^https?:\/\/\S+$/i.test(draft.referenceUrl);
   const photos = images(entry);
   const feeling = feelingOf(entry);
-  return <InspectorSheet isDirty={dirty} isOpen size="lg" title={entry.title || t("Pin")} onOpenChange={(open) => { if (!open) onClose(); }}
-    footer={canEdit ? <div className={styles.sheetFoot}>
-      {confirmRemove ? <><span>{t("Remove this pin?")}</span><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={() => setConfirmRemove(false)}>{t("Keep")}</Button><Button size="compact" variant="primary" isLoading={busy} onPress={() => void run(onRemove)}>{t("Remove")}</Button></>
-        : <><Button size="compact" variant="quiet" isDisabled={busy} onPress={() => setConfirmRemove(true)}>{t("Remove")}</Button><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button><Button size="compact" variant="primary" isDisabled={!dirty || !draft.title.trim() || !validLink} isLoading={busy} onPress={() => void run(() => onSave(draft))}>{t("Save")}</Button></>}
-    </div> : undefined}>
-    <div className={styles.sheet}>
+  return <aside className={styles.panel} aria-label={t("Pin details")}>
+    <header className={styles.panelHead}>
+      <strong>{entry.title || t("Pin")}</strong>
+      <IconButton aria-label={t("Close")} size="compact" onPress={requestClose}><X size={14} /></IconButton>
+    </header>
+    <div className={styles.panelBody}>
       {error ? <InlineNotice message={error} tone="error" /> : null}
-      {photos.length ? <div className={styles.sheetPhotos} data-count={Math.min(photos.length, 3)}>
+      {photos.length ? <div className={styles.panelPhotos} data-count={Math.min(photos.length, 2)}>
         {photos.map((asset, index) => <button type="button" key={asset.id} className={styles.sheetPhoto} onClick={() => onView(index)} aria-label={t("View {name} full size", { name: asset.name })}>
           <Image alt="" height={600} src={assetUrl(asset)} unoptimized width={800} />
           <span aria-hidden="true" className={styles.expand}><Maximize2 size={14} /></span>
@@ -186,9 +188,8 @@ function PinSheet({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onCl
       <div className={styles.sheetRow}>
         <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
         <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
-        <span className={styles.spacer} />
-        <span className={styles.byline}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</span>
       </div>
+      <p className={styles.byline}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</p>
       <TextInput isDisabled={!canEdit} isRequired label={t("Title")} maxLength={240} onChange={set("title")} value={draft.title} errorMessage={!draft.title.trim() ? t("Give the pin a title.") : undefined} />
       <TextAreaField isDisabled={!canEdit} label={t("Note")} maxLength={3000} onChange={set("note")} value={draft.note} />
       <TextInput isDisabled={!canEdit} inputType="url" label={t("Link")} maxLength={2000} onChange={set("referenceUrl")} placeholder="https://" value={draft.referenceUrl} errorMessage={!validLink ? t("Paste a full link starting with https://") : undefined} />
@@ -197,7 +198,12 @@ function PinSheet({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onCl
       {requirements.length ? <MultiSelectField label={t("Requirements it informs")} items={requirements.map((item) => ({ id: item.id, label: item.title }))} selectedKeys={new Set(draft.requirementIds ?? [])} onSelectionChange={(keys) => { if (canEdit) set("requirementIds")([...keys].map(String)); }} />
         : <p className={styles.hint}>{t("Add requirements to link this pin to them.")}</p>}
     </div>
-  </InspectorSheet>;
+    {canEdit ? <footer className={styles.panelFoot}>
+      {confirmDiscard ? <><span>{t("Discard your changes?")}</span><span className={styles.spacer} /><Button size="compact" onPress={() => setConfirmDiscard(false)}>{t("Keep editing")}</Button><Button size="compact" variant="primary" onPress={onClose}>{t("Discard")}</Button></>
+        : confirmRemove ? <><span>{t("Remove this pin?")}</span><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={() => setConfirmRemove(false)}>{t("Keep")}</Button><Button size="compact" variant="primary" isLoading={busy} onPress={() => void run(onRemove)}>{t("Remove")}</Button></>
+        : <><Button size="compact" variant="quiet" isDisabled={busy} onPress={() => setConfirmRemove(true)}>{t("Remove")}</Button><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={requestClose}>{t("Cancel")}</Button><Button size="compact" variant="primary" isDisabled={!dirty || !draft.title.trim() || !validLink} isLoading={busy} onPress={() => void run(() => onSave(draft))}>{t("Save")}</Button></>}
+    </footer> : null}
+  </aside>;
 }
 
 /** Photos full size: arrows and keys move between a pin's photos, Escape closes. */

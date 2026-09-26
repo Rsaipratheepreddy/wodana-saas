@@ -1004,5 +1004,8 @@
   "Add requirements to link this pin to them.": "Add requirements to link this pin to them.",
   "Open original": "Open original",
   "Previous photo": "Previous photo",
-  "Next photo": "Next photo"
+  "Next photo": "Next photo",
+  "Discard your changes?": "Discard your changes?",
+  "Keep editing": "Keep editing",
+  "Discard": "Discard"
 }
