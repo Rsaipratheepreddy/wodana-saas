@@ -122,6 +122,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "work.assigned", channel: "email", subject: "{{task}} is yours · {{title}}", body: "{{actor}} gave you {{task}} on {{title}} for {{clientName}}. {{due}}", variables: ["title", "clientName", "actor", "task", "due"] },
   { code: "work.commented", channel: "in_app", subject: "{{actor}} on {{task}}", body: "{{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
   { code: "work.blocked", channel: "in_app", subject: "{{task}} is blocked", body: "{{actor}} reported a blocker on {{title}}: {{note}}", variables: ["title", "clientName", "actor", "task", "note"] },
+  { code: "work.moved", channel: "in_app", subject: "{{task}} moved to {{due}}", body: "{{actor}} pushed it later because {{note}} moved.", variables: ["title", "clientName", "actor", "task", "due", "note"] },
   { code: "work.done", channel: "in_app", subject: "{{task}} is done", body: "{{actor}} finished {{task}} on {{title}}.", variables: ["title", "clientName", "actor", "task"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },

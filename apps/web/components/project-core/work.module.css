@@ -34,6 +34,9 @@
 .cardMeta { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-xs); font-size: var(--wd-text-xs); }
 .cardMeta > * { white-space: nowrap; }
 
+.risk { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+.dialogText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+
 /* Item panel */
 .sheet { display: grid; gap: var(--wd-space-4); }
 .sheetKey { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5) var(--wd-space-3); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
@@ -50,6 +53,10 @@
 .facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
 .facts dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; min-inline-size: 0; font-size: var(--wd-text-sm); }
 .dates > :global(.wd-field) { max-inline-size: 10rem; }
+.slip { color: var(--wd-color-warning); font-size: var(--wd-text-xs); }
+.moves { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.moves > li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
+.moves > li > :first-child { overflow-wrap: anywhere; }
 .description { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .part { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
 .part > h3 { display: flex; align-items: baseline; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }

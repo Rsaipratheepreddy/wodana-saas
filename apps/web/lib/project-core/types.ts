@@ -118,7 +118,7 @@ export type WorkRef = { id: string; number: number; title: string; type: WorkTyp
 export type WorkItem = {
   id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null;
   title: string; status: WorkStatus; priority: WorkPriority; assigneeId: string | null; assigneeName: string | null;
-  startDate: string | null; dueDate: string | null; completedAt: string | null; createdBy: string; version: number;
+  startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   subtasks: number; subtasksDone: number; comments: number; blockedBy: WorkRef[];
 };
 export type WorkLink = WorkRef & { kind: "fs" | "ss"; lagDays: number };
@@ -132,7 +132,12 @@ export type WorkDetail = WorkItem & {
 export type WorkBoard = {
   items: WorkItem[]; packages: Array<{ id: string; name: string }>; stages: Array<{ id: string; name: string; status: string }>;
   lines: Array<{ id: string; title: string; areaName: string | null; packageId: string | null }>;
-  people: Member[]; me: string | null; canEdit: boolean; item: WorkDetail | null;
+  people: Member[]; me: string | null; canEdit: boolean; canManage: boolean; item: WorkDetail | null;
+  /** The working week (0 = Sunday) and days off, for scheduling. */
+  calendar: { workingDays: number[]; holidays: string[] };
+  promiseDate: string | null; startDate: string | null; baseline: { at: string; byName: string | null } | null;
 };
+/** An item pushed later because something it waits on moved. */
+export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };
 export type OpenWorkItem = WorkItem & { projectReference: string; projectName: string };
 export type OpenWork = { items: OpenWorkItem[]; me: string | null; view: "mine" | "all" };

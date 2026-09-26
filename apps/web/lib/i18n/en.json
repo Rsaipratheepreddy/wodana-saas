@@ -1923,5 +1923,21 @@
   "made it wait on #{number} {title}": "made it wait on #{number} {title}",
   "stopped it waiting on #{number}": "stopped it waiting on #{number}",
   "reported a blocker: #{number} {title}": "reported a blocker: #{number} {title}",
-  "changed it": "changed it"
+  "changed it": "changed it",
+  "Work": "Work",
+  "No dates": "No dates",
+  "Timeline": "Timeline",
+  "Plan actions": "Plan actions",
+  "Reset the baseline": "Reset the baseline",
+  "Set the baseline": "Set the baseline",
+  "The plan ends {date}, {count} days after the handover date.": "The plan ends {date}, {count} days after the handover date.",
+  "Today's dates replace the baseline set on {date} by {name}.": "Today's dates replace the baseline set on {date} by {name}.",
+  "Today's dates become the plan you measure slips against.": "Today's dates become the plan you measure slips against.",
+  "1 day behind the baseline": "1 day behind the baseline",
+  "{count} days behind the baseline": "{count} days behind the baseline",
+  "This pushes 1 item later": "This pushes 1 item later",
+  "This pushes {count} items later": "This pushes {count} items later",
+  "Only this one": "Only this one",
+  "Move them too": "Move them too",
+  "Items that move": "Items that move"
 }

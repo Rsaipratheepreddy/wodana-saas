@@ -5,18 +5,19 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus } from "lucide-react";
 import {
-  Avatar, Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, InlineNotice, Kanban, MenuButton, SearchInput, SegmentedControl, SelectField,
-  Skeleton, TextInput, type GroupedTableColumn, type GroupedTableSection,
+  Avatar, Button, ControlledModalDialog, DateField, EmptyState, ErrorState, GroupedTable, IconMenuButton, InlineNotice, Kanban, MenuButton, SearchInput, SegmentedControl,
+  SelectField, Skeleton, TextInput, type GroupedTableColumn, type GroupedTableSection,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { WorkBoard, WorkItem, WorkStatus, WorkType } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
+import { PlanTimeline } from "./plan-timeline";
 import { BOARD_STATUSES, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import { WorkSheet } from "./work-sheet";
 import styles from "./work.module.css";
 
-type View = "list" | "board";
+type View = "list" | "board" | "timeline";
 type Row = WorkItem & { depth: 0 | 1 };
 
 /**
@@ -36,7 +37,10 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const [search, setSearch] = useState("");
   const [who, setWho] = useState<string>("everyone");
   const [creating, setCreating] = useState(false);
-  const view: View = params.get("view") === "board" ? "board" : "list";
+  const requested = params.get("view");
+  const view: View = requested === "board" || requested === "timeline" ? requested : "list";
+  const format = useProjectFormat();
+  const [baselining, setBaselining] = useState(false);
   const open = params.get("item");
 
   const load = useCallback(async () => {
@@ -71,6 +75,10 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const people = board.people.length ? board.people : [...new Map(board.items.filter((item) => item.assigneeId).map((item) => [item.assigneeId!, { membershipId: item.assigneeId!, name: item.assigneeName ?? "" }])).values()];
   const whoLabel = who === "everyone" ? t("Everyone") : who === "me" ? t("Assigned to me") : who === "none" ? t("No one") : people.find((person) => person.membershipId === who)?.name ?? t("Everyone");
   const empty = !board.items.some((item) => item.status !== "cancelled");
+  // When the open work runs past the handover date, say by how much.
+  const planEnd = board.items.filter((item) => isOpen(item.status)).map((item) => item.dueDate ?? item.startDate).filter((value): value is string => Boolean(value)).sort().at(-1);
+  const overrun = planEnd && board.promiseDate && planEnd > board.promiseDate
+    ? Math.round((Date.parse(`${planEnd}T00:00:00Z`) - Date.parse(`${board.promiseDate}T00:00:00Z`)) / 86_400_000) : 0;
 
   return <div className={styles.plan}>
     <div className={styles.toolbar}>
@@ -81,16 +89,21 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
             ...people.filter((person) => person.membershipId !== board.me).map((person) => ({ id: person.membershipId, label: person.name }))]} />
       </div>
       <div className={styles.toolbarGroup}>
-        <SegmentedControl label={t("View")} value={view} onChange={(value) => navigate({ view: value as View })} options={[{ id: "list", label: t("List") }, { id: "board", label: t("Board") }]} />
+        <SegmentedControl label={t("View")} value={view} onChange={(value) => navigate({ view: value as View })}
+          options={[{ id: "list", label: t("List") }, { id: "board", label: t("Board") }, { id: "timeline", label: t("Timeline") }]} />
         {board.canEdit ? <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("New task")}</Button> : null}
+        {board.canManage && !empty ? <IconMenuButton ariaLabel={t("Plan actions")} onAction={() => setBaselining(true)}
+          items={[{ id: "baseline", label: board.baseline ? t("Reset the baseline") : t("Set the baseline") }]} /> : null}
       </div>
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
+    {overrun ? <p className={styles.risk}>{t("The plan ends {date}, {count} days after the handover date.", { date: format.day(planEnd!), count: overrun })}</p> : null}
 
     {empty ? <EmptyState illustration={null} title={t("No work planned yet")} description={t("Break the project into tasks, give each one to someone and set when it's due.")}
         action={board.canEdit ? <Button variant="primary" onPress={() => setCreating(true)}>{t("New task")}</Button> : undefined} />
       : !filtered.length ? <EmptyState illustration={null} title={t("Nothing matches")} action={<Button onPress={() => { setSearch(""); setWho("everyone"); }}>{t("Clear filters")}</Button>} />
       : view === "list" ? <PlanList board={board} items={filtered} onOpen={(item) => navigate({ item: item.id })} />
+      : view === "timeline" ? <PlanTimeline board={board} items={filtered} onOpen={(id) => navigate({ item: id })} />
       : <Kanban<WorkItem> columns={BOARD_STATUSES.map((status) => ({ id: status, label: labels.status[status], items: filtered.filter((item) => item.status === status) }))}
           getId={(item) => item.id} getLabel={(item) => `#${item.number} ${item.title}`} onItemAction={(item) => navigate({ item: item.id })}
           onMove={board.canEdit ? (id, status) => { const item = board.items.find((entry) => entry.id === id); if (item) void move(item, status as WorkStatus); } : undefined}
@@ -98,6 +111,16 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
 
     {open && board.items.some((item) => item.id === open) ? <WorkSheet api={api} projectId={projectId} itemId={open} board={board} onBoard={setBoard}
       onOpenItem={(id) => navigate({ item: id })} onClose={() => navigate({ item: null })} /> : null}
+    {baselining ? <ControlledModalDialog isOpen size="md" title={board.baseline ? t("Reset the baseline") : t("Set the baseline")} onOpenChange={(open) => { if (!open) setBaselining(false); }}
+      footer={<div className="wd-dialog-actions"><Button onPress={() => setBaselining(false)}>{t("Cancel")}</Button>
+        <Button variant="primary" onPress={async () => {
+          try { setBoard(await api.workCommand(projectId, "set_baseline")); setBaselining(false); }
+          catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); setBaselining(false); }
+        }}>{t("Save")}</Button></div>}>
+      <p className={styles.dialogText}>{board.baseline
+        ? t("Today's dates replace the baseline set on {date} by {name}.", { date: format.when(board.baseline.at), name: board.baseline.byName ?? "" })
+        : t("Today's dates become the plan you measure slips against.")}</p>
+    </ControlledModalDialog> : null}
     {creating ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
       try { setBoard(await api.workCommand(projectId, "create", input)); return true; }
       catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }

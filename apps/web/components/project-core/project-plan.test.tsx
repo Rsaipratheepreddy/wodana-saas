@@ -28,7 +28,7 @@ vi.mock("next/navigation", async () => {
 const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const item = (patch: Partial<WorkItem> & Pick<WorkItem, "id" | "number" | "title">): WorkItem => ({
   projectId: PID, type: "task", parentId: null, packageId: null, boqLineId: null, stageId: null, status: "todo", priority: "normal",
-  assigneeId: null, assigneeName: null, startDate: null, dueDate: null, completedAt: null, createdBy: "u1", version: 1,
+  assigneeId: null, assigneeName: null, startDate: null, dueDate: null, baselineStart: null, baselineDue: null, completedAt: null, createdBy: "u1", version: 1,
   subtasks: 0, subtasksDone: 0, comments: 0, blockedBy: [], ...patch,
 });
 const drawings = item({ id: "i1", number: 1, title: "Kitchen shop drawings", packageId: "k1", assigneeId: "m2", assigneeName: "Dana Karim", dueDate: "2099-10-10", priority: "high", subtasks: 1,
@@ -38,7 +38,8 @@ const marble = item({ id: "i3", number: 3, title: "Marble thickness", type: "blo
 const handles = item({ id: "i4", number: 4, title: "Order handles", status: "done", completedAt: "2026-09-20T10:00:00Z" });
 const board = (items: WorkItem[] = [drawings, sheet, marble, handles], extra: Partial<WorkBoard> = {}): WorkBoard => ({
   items, packages: [{ id: "k1", name: "Kitchen joinery" }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
-  people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, item: null, ...extra,
+  people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, canManage: true, item: null,
+  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, ...extra,
 });
 const detail = (base: WorkItem, patch: Partial<WorkDetail> = {}): WorkDetail => ({
   ...base, description: "", createdByName: "Omar Haddad", createdAt: "2026-09-22T09:00:00Z", startedAt: null, subtaskIds: base.id === "i1" ? ["i2"] : [],
@@ -135,6 +136,49 @@ describe("project plan", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "create", title: "Site measure", type: "snag", assigneeId: "m1", dueDate: null, packageId: null })]));
     expect(posts(fetcher)[0].id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("asks before a date change pushes later work, and moves it only when told to", async () => {
+    const dated = { ...drawings, startDate: "2099-10-01", dueDate: "2099-10-10" };
+    const fetcher = mount((url, body) => {
+      if (url.includes("/ripple")) return { moves: [{ id: "i5", number: 5, title: "Cut list", fromStart: "2099-10-12", fromDue: "2099-10-13", startDate: "2099-10-19", dueDate: "2099-10-20", because: 1 }] };
+      if (!body) return url.includes("/work/i1") ? detail(dated) : board([dated, sheet, marble]);
+      return board([dated, sheet, marble]);
+    });
+    nav.set("item=i1");
+    plan();
+    const dialog = await screen.findByRole("dialog");
+    const due = await within(dialog).findByRole("group", { name: "Due" });
+    const day = within(due).getAllByRole("spinbutton")[1];
+    await userEvent.click(day);
+    await userEvent.keyboard("{ArrowUp}");
+    const ripple = await screen.findByRole("dialog", { name: "This pushes 1 item later" });
+    expect(ripple).toHaveTextContent("#5 Cut list");
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("/work/i1/ripple") && String(url).includes("dueDate=2099-10-11"))).toBe(true);
+    await userEvent.click(within(ripple).getByRole("button", { name: "Move them too" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "update", itemId: "i1", dueDate: "2099-10-11", ripple: true }));
+  });
+
+  it("draws the plan on a timeline and warns when it runs past the handover", async () => {
+    nav.set("view=timeline");
+    const late = { ...drawings, startDate: "2099-11-25", dueDate: "2099-12-04", baselineStart: "2099-11-20", baselineDue: "2099-11-28" };
+    mount((url) => (url.includes("/work/i1") ? detail(late) : board([late, { ...sheet, dueDate: "2099-11-26" }, marble, handles])));
+    plan();
+    expect(await screen.findByText("The plan ends Dec 4, 2099, 3 days after the handover date.")).toBeInTheDocument();
+    const timeline = screen.getByRole("region", { name: "Timeline" });
+    expect(within(timeline).getByRole("button", { name: "#1 Kitchen shop drawings" })).toBeInTheDocument();
+    expect(within(timeline).getByRole("region", { name: "No dates" })).toHaveTextContent("Marble thickness");
+    await userEvent.click(within(timeline).getByRole("button", { name: "#1 Kitchen shop drawings" }));
+    expect(nav.get()).toContain("item=i1");
+  });
+
+  it("lets the project manager set the baseline", async () => {
+    const fetcher = mount((_url, body) => (body ? board(undefined, { baseline: { at: "2026-09-26T10:00:00Z", byName: "Omar Haddad" } }) : board()));
+    plan();
+    await userEvent.click(await screen.findByRole("button", { name: "Plan actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Set the baseline" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "Set the baseline" })).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([{ action: "set_baseline" }]));
   });
 
   it("shows an empty plan with the first action", async () => {

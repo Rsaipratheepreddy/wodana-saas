@@ -477,6 +477,44 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("schedules on the workspace's working week: moving an item can push what waits on it, and the baseline keeps the committed dates", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership, promiseDate: "2026-10-20" });
+      // Sunday to Thursday, with a holiday on Tuesday 6 October.
+      await w.client.query("INSERT INTO hrms_calendars(workspace_id,name,timezone,working_days,holidays) VALUES($1,'Office','Asia/Dubai','{0,1,2,3,4}','{2026-10-06}')", [w.workspaceId]);
+      const lead = w.work(w.manager);
+      const drawings = randomUUID(), production = randomUUID(), install = randomUUID();
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: drawings, title: "Shop drawings", startDate: "2026-10-01", dueDate: "2026-10-04" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: production, title: "Production", startDate: "2026-10-05", dueDate: "2026-10-08", assigneeId: w.designerMembership });
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: install, title: "Install", dueDate: "2026-10-11" });
+      await lead.command(actor, w.workspaceId, projectId, { action: "link", itemId: production, predecessorId: drawings });
+      let state = await lead.command(actor, w.workspaceId, projectId, { action: "link", itemId: install, predecessorId: production, lagDays: 1 });
+      expect(state.calendar).toEqual({ workingDays: [0, 1, 2, 3, 4], holidays: ["2026-10-06"] });
+      expect(state.promiseDate).toBe("2026-10-20");
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "set_baseline" });
+      expect(state.baseline).toMatchObject({ byName: "Omar Manager" });
+      await expect(w.work(w.designer, ["projects.view"]).command(actor, w.workspaceId, projectId, { action: "set_baseline" })).rejects.toThrow(/project manager/);
+
+      // Drawings slip to Monday 5th: production keeps its 3 working days from Wednesday (Tuesday is a holiday,
+      // Sunday is worked) and install follows a working day after it.
+      const preview = await lead.preview(actor, w.workspaceId, projectId, drawings, { dueDate: "2026-10-05" });
+      expect(preview.moves.map(({ number, startDate, dueDate, because }) => [number, startDate, dueDate, because])).toEqual([[2, "2026-10-07", "2026-10-11", 1], [3, null, "2026-10-13", 2]]);
+      const version = state.items.find((item) => item.id === drawings)!.version;
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: drawings, version, dueDate: "2026-10-05", ripple: true });
+      const byId = new Map(state.items.map((item) => [item.id, item]));
+      expect([byId.get(production)!.startDate, byId.get(production)!.dueDate, byId.get(install)!.dueDate]).toEqual(["2026-10-07", "2026-10-11", "2026-10-13"]);
+      expect([byId.get(production)!.baselineStart, byId.get(production)!.baselineDue]).toEqual(["2026-10-05", "2026-10-08"]);
+      const history = await lead.item(actor, w.workspaceId, projectId, production);
+      expect(history.activity.at(-1)).toMatchObject({ kind: "dates", detail: { because: 1, fromDue: "2026-10-08", dueDate: "2026-10-11" } });
+      const moved = (await w.client.query<{ subject: string }>(`SELECT subject FROM notifications WHERE workspace_id = $1 AND event_type = 'work.moved' AND recipient_id = $2`, [w.workspaceId, w.designer])).rows;
+      expect(moved.map((row) => row.subject)).toEqual(["#2 Production moved to Oct 11, 2026"]);
+      // Without "move them too", only the item itself changes.
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: drawings, version: version + 1, dueDate: "2026-10-07" });
+      expect(state.items.find((item) => item.id === production)!.startDate).toBe("2026-10-07");
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

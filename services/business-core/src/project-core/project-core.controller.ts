@@ -63,6 +63,10 @@ export class ProjectCoreController {
   @Get("projects/:projectId/work/:itemId")
   workItem(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("itemId", ParseUUIDPipe) itemId: string) { return this.work.item(actor, workspaceId, projectId, itemId); }
 
+  @Get("projects/:projectId/work/:itemId/ripple")
+  workRipple(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("itemId", ParseUUIDPipe) itemId: string,
+    @Query("startDate") startDate?: string, @Query("dueDate") dueDate?: string) { return this.work.preview(actor, workspaceId, projectId, itemId, { startDate, dueDate }); }
+
   @Post("projects/:projectId/work")
   workCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Body() input: Record<string, unknown>) { return this.work.command(actor, workspaceId, projectId, input ?? {}); }
 }

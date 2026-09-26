@@ -466,11 +466,13 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 - Every change is history (`work_item_events`) and comments are append-only.
 - Items are version-checked one by one, so a busy team doesn't trip over the project's version.
 - Screens:
-  - the project's **Plan** tab: List grouped by package with subtasks under their task and done work last, or a Board by status (drag to move);
+  - the project's **Plan** tab: List grouped by package with subtasks under their task and done work last, a Board by status (drag to move), or a Timeline;
   - the item panel: properties saved as they change, subtasks, what it waits on, and activity with comments;
   - Home → **Tasks**: open work across projects, mine or everyone's, grouped Late / Today / Next 7 days / Later.
 - Notices: given to you (in-app and email), a comment (assignee and the person who raised it), a blocker (project manager and assignee), done (the person who raised it).
-- Next: working-day scheduling from the region's week with push-later ripple and a baseline, sprints with burndown, and workload / on-time analytics.
+- **Scheduling (built):** dates count working days from the workspace's work calendar (its week and holidays), else its country's region pack, else Monday to Friday. Moving an item later shows what it would push (everything waiting on it, directly or through others, keeping each item's length in working days; nothing is pulled earlier and finished work never moves) and asks *Only this one* or *Move them too*; the people whose work moved are told. The project manager sets the baseline (every item's dates, replaced when set again); an item shows how many days it is behind it. The plan warns when its open work runs past the handover date.
+- **Timeline:** the Plan's third view — items as bars from start to due, grouped like the list, with days off shaded, today and the handover date drawn across and the baseline under each bar; it opens on today.
+- Next: package task templates, sprints with burndown, and workload / on-time analytics.
 
 **Records (built):** `delivery_projects` (reference with the firm's prefix, quote, route, priority, health, start and handover dates, hold), `project_scope_seals` (immutable), `project_stages` + `project_stage_confirmations`, `project_status_updates`, `project_assignments.role_keys` (one team model), `workspace_project_settings` (start rules, numbering, team roles), `project_templates` + `project_template_stages` (routes), `work_items` + `work_item_links` + `work_item_comments` + `work_item_events` (the plan).
 

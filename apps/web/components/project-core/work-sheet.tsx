@@ -4,17 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
-  ActivityFeed, Avatar, Button, Checkbox, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
+  ActivityFeed, Avatar, Button, Checkbox, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
   TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
-import type { WorkActivity, WorkBoard, WorkDetail, WorkItem, WorkType } from "@/lib/project-core/types";
+import type { WorkActivity, WorkBoard, WorkDetail, WorkItem, WorkMove, WorkType } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import { ALL_STATUSES, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import styles from "./work.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
+type Dates = { startDate?: string | null; dueDate?: string | null };
+type Preview = (dates: Dates) => Promise<WorkMove[]>;
 
 /**
  * One piece of work, like an issue in a tracker: its properties saved as they change, then its
@@ -50,11 +52,12 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
   return <InspectorSheet isOpen size="md" title={detail ? `#${detail.number} ${detail.title}` : t("Loading")} hideTitle onOpenChange={(open) => { if (!open) onClose(); }}>
     {error && !detail ? <ErrorState description={error} onRetry={() => void load()} />
       : !detail ? <Skeleton lines={8} />
-      : <WorkBody key={`${detail.id}:${detail.version}`} detail={detail} board={board} run={run} notice={notice} onOpenItem={onOpenItem} />}
+      : <WorkBody key={`${detail.id}:${detail.version}`} detail={detail} board={board} run={run} notice={notice} onOpenItem={onOpenItem}
+          preview={async (dates) => (await api.workRipple(projectId, itemId, dates)).moves} />}
   </InspectorSheet>;
 }
 
-function WorkBody({ detail, board, run, notice, onOpenItem }: { detail: WorkDetail; board: WorkBoard; run: Run; notice: string; onOpenItem: (id: string) => void }) {
+function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail: WorkDetail; board: WorkBoard; run: Run; notice: string; onOpenItem: (id: string) => void; preview: Preview }) {
   const t = useT();
   const labels = useWorkLabels();
   const format = useProjectFormat();
@@ -68,6 +71,14 @@ function WorkBody({ detail, board, run, notice, onOpenItem }: { detail: WorkDeta
   const stageName = board.stages.find((item) => item.id === detail.stageId)?.name;
   const typeOptions: WorkType[] = ["task", "client_request", "snag", "blocker"];
   const due = detail.dueDate && isOpen(detail.status) ? format.until(detail.dueDate) : null;
+  const slip = detail.dueDate && detail.baselineDue && detail.dueDate > detail.baselineDue
+    ? Math.round((Date.parse(`${detail.dueDate}T00:00:00Z`) - Date.parse(`${detail.baselineDue}T00:00:00Z`)) / 86_400_000) : 0;
+  const [pending, setPending] = useState<{ dates: Dates; moves: WorkMove[] } | null>(null);
+  /** A date change that would push later work asks first; otherwise it's saved straight away. */
+  const changeDates = async (dates: Dates) => {
+    const moves = await preview(dates).catch(() => []);
+    if (moves.length) setPending({ dates, moves }); else void update(dates);
+  };
 
   return <div className={styles.sheet}>
     <p className={styles.sheetKey}>
@@ -102,12 +113,13 @@ function WorkBody({ detail, board, run, notice, onOpenItem }: { detail: WorkDeta
       <div><dt>{t("Dates")}</dt><dd className={styles.dates}>
         {edit ? <>
           <DateField label={null} aria-label={t("Start")} value={detail.startDate ? parseDate(detail.startDate) : null}
-            onChange={(value) => { const next = value ? value.toString() : null; if (next !== detail.startDate) void update({ startDate: next }); }} />
+            onChange={(value) => { const next = value ? value.toString() : null; if (next !== detail.startDate) void changeDates({ startDate: next }); }} />
           <ArrowRight aria-hidden="true" className={styles.muted} size={14} />
           <DateField label={null} aria-label={t("Due")} value={detail.dueDate ? parseDate(detail.dueDate) : null}
-            onChange={(value) => { const next = value ? value.toString() : null; if (next !== detail.dueDate) void update({ dueDate: next }); }} />
+            onChange={(value) => { const next = value ? value.toString() : null; if (next !== detail.dueDate) void changeDates({ dueDate: next }); }} />
         </> : <span>{[format.day(detail.startDate), format.day(detail.dueDate)].filter(Boolean).join(" – ") || "—"}</span>}
         {due ? <span className={styles.muted} data-late={due.late || undefined}>{due.text}</span> : null}
+        {slip ? <span className={styles.slip}>{slip === 1 ? t("1 day behind the baseline") : t("{count} days behind the baseline", { count: slip })}</span> : null}
       </dd></div>
       {board.packages.length ? <div><dt>{t("Package")}</dt><dd>
         {edit ? <MenuButton size="compact" label={packageName ?? t("None")} onAction={(id) => void update({ packageId: id === "none" ? null : id })}
@@ -132,7 +144,32 @@ function WorkBody({ detail, board, run, notice, onOpenItem }: { detail: WorkDeta
     {!detail.parentId ? <Subtasks detail={detail} board={board} run={run} onOpenItem={onOpenItem} /> : null}
     <WaitsOn detail={detail} board={board} run={run} onOpenItem={onOpenItem} />
     <Activity detail={detail} board={board} run={run} />
+    {pending ? <RippleDialog moves={pending.moves} onClose={() => setPending(null)}
+      onSave={async (ripple) => { if (await update({ ...pending.dates, ripple })) setPending(null); }} /> : null}
   </div>;
+}
+
+/** Moving an item later pushes what waits on it: the person sees exactly what moves before saving. */
+function RippleDialog({ moves, onClose, onSave }: { moves: WorkMove[]; onClose: () => void; onSave: (ripple: boolean) => Promise<void> }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const [busy, setBusy] = useState<"one" | "all" | null>(null);
+  const save = async (ripple: boolean) => { setBusy(ripple ? "all" : "one"); await onSave(ripple); setBusy(null); };
+  const when = (start: string | null, due: string | null) => [format.short(start), format.short(due)].filter(Boolean).join(" – ");
+  return <ControlledModalDialog isOpen size="md" title={moves.length === 1 ? t("This pushes 1 item later") : t("This pushes {count} items later", { count: moves.length })}
+    onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button isLoading={busy === "one"} isDisabled={Boolean(busy)} onPress={() => void save(false)}>{t("Only this one")}</Button>
+      <Button variant="primary" isLoading={busy === "all"} isDisabled={Boolean(busy)} onPress={() => void save(true)}>{t("Move them too")}</Button></div>}>
+    <ul className={styles.moves} aria-label={t("Items that move")}>
+      {moves.map((move) => <li key={move.id}>
+        <span><span className={styles.number}>#{move.number}</span> {move.title}</span>
+        <span className={styles.muted}>{when(move.fromStart, move.fromDue)}</span>
+        <ArrowRight aria-hidden="true" className={styles.muted} size={14} />
+        <span>{when(move.startDate, move.dueDate)}</span>
+      </li>)}
+    </ul>
+  </ControlledModalDialog>;
 }
 
 function Subtasks({ detail, board, run, onOpenItem }: { detail: WorkDetail; board: WorkBoard; run: Run; onOpenItem: (id: string) => void }) {

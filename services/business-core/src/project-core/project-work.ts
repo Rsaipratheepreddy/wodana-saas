@@ -13,7 +13,7 @@ export type WorkRef = { id: string; number: number; title: string; type: WorkTyp
 export type WorkItem = {
   id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null;
   title: string; status: WorkStatus; priority: (typeof WORK_PRIORITIES)[number]; assigneeId: string | null; assigneeName: string | null;
-  startDate: string | null; dueDate: string | null; completedAt: string | null; createdBy: string; version: number;
+  startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   subtasks: number; subtasksDone: number; comments: number;
   /** What it's waiting on: a predecessor not yet finished (finish-to-start) or not yet started (start-to-start). */
   blockedBy: WorkRef[];
@@ -22,7 +22,7 @@ export type WorkItem = {
 const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number, item.type, item.parent_id AS "parentId", item.package_id AS "packageId",
   item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
   coalesce(assignee.display_name, assignee.primary_email) AS "assigneeName", item.start_date::text AS "startDate", item.due_date::text AS "dueDate",
-  item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
+  item.baseline_start::text AS "baselineStart", item.baseline_due::text AS "baselineDue", item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status <> 'cancelled') AS subtasks,
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status = 'done') AS "subtasksDone",
   (SELECT count(*)::int FROM work_item_comments comment WHERE comment.workspace_id = item.workspace_id AND comment.work_item_id = item.id) AS comments,
@@ -113,4 +113,11 @@ export async function ensureProjectAccess(db: Db, workspaceId: string, projectId
      VALUES ($1, $2, $3, false, true, '{}')
      ON CONFLICT (workspace_id, project_id, membership_id) WHERE project_id IS NOT NULL DO UPDATE SET active = true`,
     [workspaceId, projectId, membershipId]);
+}
+
+/** Every dependency on the project, for scheduling. */
+export async function readProjectLinks(db: Db, workspaceId: string, projectId: string) {
+  return (await db.query<{ predecessorId: string; successorId: string; kind: "fs" | "ss"; lagDays: number }>(
+    `SELECT predecessor_id AS "predecessorId", successor_id AS "successorId", kind, lag_days AS "lagDays" FROM work_item_links WHERE workspace_id = $1 AND project_id = $2`,
+    [workspaceId, projectId])).rows;
 }

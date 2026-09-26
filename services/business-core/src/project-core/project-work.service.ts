@@ -6,9 +6,10 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
 import {
-  ensureProjectAccess, OPEN, readActivity, readItem, readItems, readLinks, readOpenWork, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
+  ensureProjectAccess, OPEN, readActivity, readItem, readItems, readLinks, readOpenWork, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
 } from "./project-work";
+import { readCalendar, ripple, type PlanMove } from "./work-calendar";
 
 type Db = PoolClient;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,6 +39,17 @@ export class ProjectWorkService {
     });
   }
 
+  /** What else would move later if this item's dates changed, without saving anything. */
+  preview(actor: RequestActor, workspaceId: string, projectId: string, itemId: string, query: { startDate?: string; dueDate?: string }) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.context(client, workspaceId, projectId, user);
+      const item = await this.own(client, workspaceId, projectId, itemId);
+      const startDate = query.startDate === undefined ? item.startDate : date(query.startDate, "Start date");
+      const dueDate = query.dueDate === undefined ? item.dueDate : date(query.dueDate, "Due date");
+      return { moves: await this.ripple(client, workspaceId, projectId, { id: itemId, startDate, dueDate }) };
+    });
+  }
+
   /** Open work across projects: the person's own, or (for someone who sees every project) everyone's. */
   open(actor: RequestActor, workspaceId: string, view: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
@@ -55,10 +67,17 @@ export class ProjectWorkService {
       if (!context.canEdit) throw new ConflictException(EDITABLE.includes(context.project.status) ? "Only the project's team can change its work." : "The project is closed.");
       const action = String(body.action ?? "");
       const notices: Array<{ key: string; notice: WorkNotice }> = [];
-      let itemId: string;
+      let itemId: string | null;
       let audit: Record<string, unknown>;
 
-      if (action === "create") {
+      if (action === "set_baseline") {
+        if (!context.manager) throw new ForbiddenException("Only the project manager can set the baseline.");
+        const saved = (await client.query(`UPDATE work_items SET baseline_start = start_date, baseline_due = due_date WHERE workspace_id = $1 AND project_id = $2 AND status <> 'cancelled'`,
+          [workspaceId, projectId])).rowCount;
+        await client.query(`UPDATE delivery_projects SET plan_baseline_at = now(), plan_baseline_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, user.userId]);
+        itemId = null;
+        audit = { items: saved };
+      } else if (action === "create") {
         const id = uuid(body.id, "Item");
         const existing = (await client.query<{ projectId: string }>(`SELECT project_id AS "projectId" FROM work_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
         if (existing) {
@@ -107,7 +126,7 @@ export class ProjectWorkService {
         throw new BadRequestException("Unknown action.");
       }
 
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `work.${action}`, entityType: "work_item", entityId: itemId, after: audit });
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `work.${action}`, entityType: itemId ? "work_item" : "project", entityId: itemId ?? projectId, after: audit });
       for (const item of notices) await noticeWork(client, { workspaceId, projectId, key: item.key, actorUserId: user.userId, notice: item.notice });
       return this.state(client, workspaceId, await this.context(client, workspaceId, projectId, user), itemId);
     });
@@ -175,6 +194,7 @@ export class ProjectWorkService {
       set("priority", priority);
       await workEvent(client, workspaceId, itemId, "priority", { from: item.priority, to: priority }, userId);
     }
+    let moves: PlanMove[] = [];
     if (body.startDate !== undefined || body.dueDate !== undefined) {
       const startDate = body.startDate === undefined ? item.startDate : date(body.startDate, "Start date");
       const dueDate = body.dueDate === undefined ? item.dueDate : date(body.dueDate, "Due date");
@@ -182,6 +202,8 @@ export class ProjectWorkService {
       if (startDate !== item.startDate || dueDate !== item.dueDate) {
         set("start_date", startDate); set("due_date", dueDate);
         await workEvent(client, workspaceId, itemId, "dates", { startDate, dueDate, fromStart: item.startDate, fromDue: item.dueDate }, userId);
+        // "Move them too": what waits on this item is pushed later, in the same save.
+        if (body.ripple === true) moves = await this.ripple(client, workspaceId, projectId, { id: itemId, startDate, dueDate });
       }
     }
     if (body.packageId !== undefined) {
@@ -226,7 +248,16 @@ export class ProjectWorkService {
     await client.query(
       `UPDATE work_items SET ${columns.map((column, index) => `${column} = $${index + 3}`).join(", ")}, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, itemId, ...columns.map((column) => changes[column])]);
-    return changes;
+    for (const move of moves) {
+      const moved = (await client.query<{ assigneeId: string | null }>(
+        `UPDATE work_items SET start_date = $3, due_date = $4, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2 AND status NOT IN ('done', 'cancelled')
+         RETURNING assignee_membership_id AS "assigneeId"`, [workspaceId, move.id, move.startDate, move.dueDate])).rows[0];
+      if (!moved) continue;
+      await workEvent(client, workspaceId, move.id, "dates", { startDate: move.startDate, dueDate: move.dueDate, fromStart: move.fromStart, fromDue: move.fromDue, because: move.because }, userId);
+      if (moved.assigneeId) notices.push({ key: `${move.id}:${item.version}`, notice: { code: "work.moved", item: { id: move.id, number: move.number, title: move.title, dueDate: move.dueDate ?? move.startDate },
+        note: `#${move.because}`, memberships: [moved.assigneeId] } });
+    }
+    return moves.length ? { ...changes, moved: moves.map((move) => move.number) } : changes;
   }
 
   // ---------- reads ----------
@@ -239,10 +270,15 @@ export class ProjectWorkService {
       `SELECT line.id, line.title, room.name AS "areaName", line.package_id AS "packageId" FROM project_boq_lines line
          LEFT JOIN pre_project_rooms room ON room.workspace_id = line.workspace_id AND room.case_id = $3 AND room.id = line.area_id
         WHERE line.workspace_id = $1 AND line.project_id = $2 AND line.status = 'active' ORDER BY line.position`, [workspaceId, project.id, project.caseId]);
+    const baseline = (await client.query<{ at: string | null; byName: string | null }>(
+      `SELECT project.plan_baseline_at AS at, person.display_name AS "byName" FROM delivery_projects project LEFT JOIN users person ON person.id = project.plan_baseline_by
+        WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, project.id])).rows[0];
     return {
       items, packages: packages.rows, stages: stages.rows, lines: lines.rows,
       people: context.canEdit ? await activeMembers(client, workspaceId) : [],
-      me: context.membershipId, canEdit: context.canEdit,
+      me: context.membershipId, canEdit: context.canEdit, canManage: context.manager && context.canEdit,
+      calendar: await readCalendar(client, workspaceId), promiseDate: project.promiseDate, startDate: project.startDate,
+      baseline: baseline?.at ? baseline : null,
       item: itemId ? await this.detail(client, workspaceId, project.id, itemId) : null,
     };
   }
@@ -267,7 +303,13 @@ export class ProjectWorkService {
     const onProject = all || Boolean((await client.query(
       `SELECT 1 FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active`, [workspaceId, projectId, membershipId])).rowCount);
     if (!onProject) throw new NotFoundException("Project not found.");
-    return { project, membershipId, canEdit: EDITABLE.includes(project.status) };
+    const lead = all || Boolean((await client.query(
+      `SELECT 1 FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active AND is_manager`, [workspaceId, projectId, membershipId])).rowCount);
+    return { project, membershipId, canEdit: EDITABLE.includes(project.status), manager: lead };
+  }
+
+  private async ripple(client: Db, workspaceId: string, projectId: string, changed: { id: string; startDate: string | null; dueDate: string | null }) {
+    return ripple(await readItems(client, workspaceId, projectId), await readProjectLinks(client, workspaceId, projectId), changed, await readCalendar(client, workspaceId));
   }
 
   private async own(client: Db, workspaceId: string, projectId: string, itemId: string, lock = false): Promise<WorkItem> {
@@ -324,7 +366,7 @@ export class ProjectWorkService {
   }
 }
 
-type Context = { project: ProjectRow; membershipId: string | null; canEdit: boolean };
+type Context = { project: ProjectRow; membershipId: string | null; canEdit: boolean; manager: boolean };
 
 // ---------- pure helpers ----------
 function uuid(value: unknown, label: string) {

@@ -1,4 +1,4 @@
-import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail } from "./types";
+import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -29,6 +29,12 @@ export function projectApi(workspaceId: string) {
       request<ProjectDetail>(path(`projects/${projectId}`), "POST", { ...input, action, version }),
     work: (projectId: string) => request<WorkBoard>(path(`projects/${projectId}/work`)),
     workItem: (projectId: string, itemId: string) => request<WorkDetail>(path(`projects/${projectId}/work/${itemId}`)),
+    /** What else would be pushed later if the item's dates changed (nothing is saved). */
+    workRipple: (projectId: string, itemId: string, dates: { startDate?: string | null; dueDate?: string | null }) => {
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(dates)) if (value !== undefined) query.set(key, value ?? "");
+      return request<{ moves: WorkMove[] }>(`${path(`projects/${projectId}/work/${itemId}/ripple`)}&${query}`);
+    },
     /** One change to the project's work (items are version-checked one by one); returns the work as it is now. */
     workCommand: (projectId: string, action: string, input: Record<string, unknown> = {}) => request<WorkBoard>(path(`projects/${projectId}/work`), "POST", { ...input, action }),
     openWork: (view: "mine" | "all") => request<OpenWork>(`${path("work")}&${new URLSearchParams({ view })}`),

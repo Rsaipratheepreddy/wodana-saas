@@ -13,6 +13,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials"].includes(path[2])) return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && ["seals", "lines", "work"].includes(path[2]) && UUID.test(path[3])) return method === "GET";
+  if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work" && UUID.test(path[3]) && path[4] === "ripple") return method === "GET";
   return false;
 }
 
@@ -24,9 +25,12 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: "Use your workspace to make this change." }, { status: 403 });
   const body = request.method === "GET" ? undefined : await request.text();
   if (body && body.length > 200_000) return NextResponse.json({ message: "The request is too large." }, { status: 413 });
-  // Open work is the person's own or everyone's.
-  const view = path[0] === "work" && search.get("view") === "all" ? "?view=all" : "";
-  return workspaceJsonResponse(`/workspaces/${workspaceId}/project-core/${path.join("/")}${view}`,
+  // Only the queries each read takes: whose open work, and the dates a ripple preview tries.
+  const forward = new URLSearchParams();
+  if (path[0] === "work" && search.get("view") === "all") forward.set("view", "all");
+  if (path.at(-1) === "ripple") for (const key of ["startDate", "dueDate"]) { const value = search.get(key); if (value !== null && /^(\d{4}-\d{2}-\d{2})?$/.test(value)) forward.set(key, value); }
+  const query = forward.size ? `?${forward}` : "";
+  return workspaceJsonResponse(`/workspaces/${workspaceId}/project-core/${path.join("/")}${query}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, "Could not update the project.");
 }
 export { handle as GET, handle as POST, handle as PUT };
