@@ -31,14 +31,16 @@ export type SupplierImportPlan = {
   canApprove: boolean;
 };
 
-export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "confirmed" | "closed" | "cancelled";
+export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "confirmed" | "partly_received" | "received" | "closed" | "cancelled";
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
-export type PurchasingSettings = { approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; version: number };
+export type PurchasingSettings = {
+  approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string; version: number;
+};
 
 /** Something a running project still needs to order. */
 export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
-  title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; remaining: string | null;
+  title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; blocked: "material_signoff" | null;
 };
 export type NeedsState = { needs: Need[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
@@ -53,14 +55,15 @@ export type OrdersState = { orders: OrderRow[]; settings: PurchasingSettings; ca
 export type OrderLine = {
   id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string; net: string; tax: string; total: string;
+  accepted: string; rejected: string; pending: string;
 };
 export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
-  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; companyName: string;
+  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; companyName: string;
 };
 export type OrderState = {
-  order: OrderDetail; lines: OrderLine[];
+  order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; canReceive: boolean;
   events: Array<{ id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string }>;
   revisions: Array<{ revision: number; reason: string; at: string; byName: string }>;
   supplier: { id: string; name: string; email: string | null; phone: string | null; contactName: string | null; approval: Approval; deal: Deal; dealPercent: string | null } | null;
@@ -89,4 +92,30 @@ export type PriceRequestState = {
   totals: Record<string, { net: string; priced: number }>;
   orders: Array<{ id: string; number: string; vendorId: string }>;
   canBuy: boolean;
+};
+
+export type LocationKind = "warehouse" | "factory" | "site" | "other";
+export type StockLocation = { id: string; kind: LocationKind; name: string; projectId: string | null; projectReference: string | null; address: string; isDefault: boolean };
+/** Where goods can be received: a location, or one made on first use (`site:<project>`, `warehouse`, `factory`). */
+export type Place = { key: string; kind: LocationKind; name: string | null; projectReference: string | null };
+
+export type Receipt = {
+  id: string; number: number; orderId: string; orderNumber: string; supplierName: string; locationId: string; locationName: string; locationKind: LocationKind;
+  receivedOn: string; receivedBy: string; receivedByName: string; deliveryNote: string; notes: string; inspectedByName: string | null; inspectedAt: string | null;
+  received: string; accepted: string; rejected: string; pending: string; createdAt: string;
+};
+export type ReceiptLine = {
+  id: string; orderLineId: string; description: string; specification: string; unit: string; projectReference: string | null; boqLineId: string | null; projectId: string | null;
+  received: string; accepted: string; rejected: string; pending: string; rejectReason: string;
+};
+export type ReceiptState = { receipt: Receipt; lines: ReceiptLine[]; canReceive: boolean; canInspect: boolean; canInspectThis: boolean };
+
+export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number };
+export type DeliveriesState = {
+  expected: ExpectedOrder[]; inspection: Receipt[]; received: Receipt[]; locations: StockLocation[]; canReceive: boolean; canInspect: boolean; userId: string;
+};
+/** What the receive form needs for one order. */
+export type ReceivingForm = {
+  order: OrderDetail; lines: Array<OrderLine & { outstanding: string; receivable: string }>; places: Place[]; defaultPlace: string | null;
+  requireInspection: boolean; receiveTolerancePercent: string;
 };

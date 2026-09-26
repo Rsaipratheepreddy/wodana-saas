@@ -4,11 +4,11 @@ import { materialsSignedOff } from "../project-core/project-materials";
 
 type Db = Pick<PoolClient, "query">;
 
-export const ORDER_STATUSES = ["draft", "pending_approval", "approved", "sent", "confirmed", "closed", "cancelled"] as const;
+export const ORDER_STATUSES = ["draft", "pending_approval", "approved", "sent", "confirmed", "partly_received", "received", "closed", "cancelled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 export const DELIVER_TO = ["site", "factory", "warehouse", "pickup", "other"] as const;
 /** Orders that count as placed: approved or further. Drafts and orders waiting for approval are "in draft". */
-export const PLACED: OrderStatus[] = ["approved", "sent", "confirmed", "closed"];
+export const PLACED: OrderStatus[] = ["approved", "sent", "confirmed", "partly_received", "received", "closed"];
 
 /** Minor units of a currency (AED 2, JPY 0, KWD 3). */
 export function currencyDecimals(currency: string) {
@@ -35,7 +35,7 @@ export function orderTotals(lines: Array<ReturnType<typeof priceLine>>, decimals
 
 export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
-  title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; remaining: string | null;
+  title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null;
   /** Why it can't be ordered yet, if it can't. */
   blocked: "material_signoff" | null;
@@ -51,11 +51,17 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
     `WITH projects AS (
        SELECT project.id, project.reference, project.name FROM delivery_projects project
         WHERE project.workspace_id = $1 AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold') AND ($2::uuid IS NULL OR project.id = $2)
+     ), accepted AS (
+       SELECT received.order_line_id, sum(received.accepted) AS accepted FROM goods_receipt_lines received WHERE received.workspace_id = $1 GROUP BY received.order_line_id
      ), ordered AS (
+       -- A closed (short-closed) order counts only what was accepted; the rest goes back to be ordered.
        SELECT line.material_item_id, line.boq_line_id,
-              sum(line.quantity) FILTER (WHERE purchase.status IN ('approved', 'sent', 'confirmed', 'closed')) AS placed,
-              sum(line.quantity) FILTER (WHERE purchase.status IN ('draft', 'pending_approval')) AS drafted
+              sum(CASE WHEN purchase.status = 'closed' THEN coalesce(accepted.accepted, 0) ELSE line.quantity END)
+                FILTER (WHERE purchase.status IN ('approved', 'sent', 'confirmed', 'partly_received', 'received', 'closed')) AS placed,
+              sum(line.quantity) FILTER (WHERE purchase.status IN ('draft', 'pending_approval')) AS drafted,
+              sum(coalesce(accepted.accepted, 0)) AS received
          FROM purchase_order_lines line JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
+         LEFT JOIN accepted ON accepted.order_line_id = line.id
         WHERE line.workspace_id = $1 AND purchase.status <> 'cancelled' AND line.source IN ('material', 'line')
         GROUP BY line.material_item_id, line.boq_line_id
      ), needs AS (
@@ -72,7 +78,7 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
         WHERE line.workspace_id = $1 AND line.status = 'active' AND package.supply IN ('buy', 'ready_made', 'subcontract')
      )
      SELECT needs.key, needs.source, needs."sourceId", needs."projectId", needs."projectReference", needs."projectName", needs.title, needs.detail, needs.unit,
-            needs.required::text AS required, coalesce(ordered.placed, 0)::text AS placed, coalesce(ordered.drafted, 0)::text AS drafted,
+            needs.required::text AS required, coalesce(ordered.placed, 0)::text AS placed, coalesce(ordered.drafted, 0)::text AS drafted, coalesce(ordered.received, 0)::text AS received,
             (needs.required - coalesce(ordered.placed, 0) - coalesce(ordered.drafted, 0))::text AS remaining,
             needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply
        FROM needs LEFT JOIN ordered ON (needs.source = 'material' AND ordered.material_item_id = needs."sourceId") OR (needs.source = 'line' AND ordered.boq_line_id = needs."sourceId")
@@ -107,12 +113,14 @@ export async function readOrders(db: Db, workspaceId: string): Promise<OrderRow[
 export type OrderLine = {
   id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string; net: string; tax: string; total: string;
+  /** What has arrived for the line: accepted, rejected and still waiting for inspection. */
+  accepted: string; rejected: string; pending: string;
 };
 
 export type OrderDetail = OrderRow & {
   paymentTerms: string; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: string; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
-  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; companyName: string;
+  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; companyName: string;
 };
 
 export async function readOrder(db: Db, workspaceId: string, orderId: string, lock = false): Promise<OrderDetail | undefined> {
@@ -122,7 +130,8 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
             purchase.deliver_to AS "deliverTo", purchase.delivery_address AS "deliveryAddress", purchase.supplier_reference AS "supplierReference", purchase.notes,
             purchase.subtotal::text AS subtotal, purchase.discount_total::text AS "discountTotal", purchase.tax_total::text AS "taxTotal", purchase.created_by AS "createdBy",
             purchase.submitted_by AS "submittedBy", approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
-            purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason", entity.display_name AS "companyName"
+            purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason",
+            purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", entity.display_name AS "companyName"
        FROM (${ORDER_SELECT} WHERE purchase.workspace_id = $1 AND purchase.id = $2) listed
        JOIN purchase_orders purchase ON purchase.workspace_id = $1 AND purchase.id = listed.id
        JOIN legal_entities entity ON entity.workspace_id = $1 AND entity.id = purchase.legal_entity_id
@@ -133,8 +142,12 @@ export async function readOrderLines(db: Db, workspaceId: string, orderId: strin
   return (await db.query<OrderLine>(
     `SELECT line.id, line.position, line.project_id AS "projectId", project.reference AS "projectReference", line.source, line.material_item_id AS "materialItemId", line.boq_line_id AS "boqLineId",
             line.description, line.specification, line.quantity::text AS quantity, line.unit, line.unit_price::text AS "unitPrice", line.discount_percent::text AS "discountPercent",
-            line.tax_rate::text AS "taxRate", line.net::text AS net, line.tax::text AS tax, line.total::text AS total
+            line.tax_rate::text AS "taxRate", line.net::text AS net, line.tax::text AS tax, line.total::text AS total,
+            coalesce(received.accepted, 0)::numeric(18, 4)::text AS accepted, coalesce(received.rejected, 0)::numeric(18, 4)::text AS rejected,
+            coalesce(received.pending, 0)::numeric(18, 4)::text AS pending
        FROM purchase_order_lines line LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+       LEFT JOIN LATERAL (SELECT sum(accepted) AS accepted, sum(rejected) AS rejected, sum(pending) AS pending FROM goods_receipt_lines
+                           WHERE workspace_id = line.workspace_id AND order_line_id = line.id) received ON true
       WHERE line.workspace_id = $1 AND line.order_id = $2 ORDER BY line.position, line.id`, [workspaceId, orderId])).rows;
 }
 
@@ -148,12 +161,15 @@ export async function readOrderEvents(db: Db, workspaceId: string, orderId: stri
       WHERE event.workspace_id = $1 AND event.order_id = $2 ORDER BY event.at, event.id`, [workspaceId, orderId])).rows;
 }
 
-export type PurchasingSettings = { approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; version: number };
+export type PurchasingSettings = {
+  approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string; version: number;
+};
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
   await db.query(`INSERT INTO workspace_purchasing_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<PurchasingSettings>(
-    `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier", version
+    `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
+            require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", version
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

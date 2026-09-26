@@ -5,21 +5,23 @@ import { Button, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSe
 import { useT } from "@/lib/i18n/i18n-provider";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSettings } from "@/lib/purchasing/types";
+import { quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
-/** Settings → Purchasing: from what amount an order needs approval, and what must be true before one is placed. */
+/** Settings → Purchasing: from what amount an order needs approval, what must be true before one is placed, and how deliveries are received. */
 export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
     setData(next);
     const value = next.settings.approvalThreshold;
     setForm({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
-      signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier });
+      signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
+      tolerance: quantityText(next.settings.receiveTolerancePercent) || "0" });
   };
   const load = useCallback(async () => {
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -32,7 +34,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const save = async () => {
     setBusy(true); setError("");
     try {
-      const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved });
+      const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved,
+        requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0" });
       accept({ ...data, settings });
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
@@ -59,8 +62,17 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
         <Switch aria-label={t("Supplier approved")} isDisabled={readOnly} isSelected={form.approved} onChange={(approved) => setForm({ ...form, approved })} />
       </SettingsRow>
     </SettingsSection>
+    <SettingsSection id="receiving" title={t("Receiving")}>
+      <SettingsRow label={t("Inspect deliveries")} hint={t("Someone other than the receiver accepts or rejects what arrived.")}>
+        <Switch aria-label={t("Inspect deliveries")} isDisabled={readOnly} isSelected={form.inspection} onChange={(inspection) => setForm({ ...form, inspection })} />
+      </SettingsRow>
+      <SettingsRow label={t("Over-delivery allowed")} hint={t("How much more than ordered can be received on a line.")}>
+        <TextInput aria-label={t("Over-delivery allowed")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix="%" value={form.tolerance}
+          onChange={(value) => setForm({ ...form, tolerance: value.replace(/[^\d.]/g, "") })} />
+      </SettingsRow>
+    </SettingsSection>
     {readOnly ? null : <div className={styles.actions}>
-      <Button size="compact" variant="primary" isLoading={busy} isDisabled={form.approval && !form.always && !(Number(form.threshold) > 0)} onPress={() => void save()}>{t("Save")}</Button>
+      <Button size="compact" variant="primary" isLoading={busy} isDisabled={(form.approval && !form.always && !(Number(form.threshold) > 0)) || Number(form.tolerance || 0) > 50} onPress={() => void save()}>{t("Save")}</Button>
     </div>}
   </SettingsPage>;
 }

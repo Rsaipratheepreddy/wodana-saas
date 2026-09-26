@@ -105,7 +105,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
     setData((current) => current.rooms.some((item) => item.id === room.id) ? current : { ...current, rooms: [...current.rooms, room] });
     setStarted((current) => current.includes(room.id) ? current : [...current, room.id]);
     setRoomFilter("all"); setPicking(false);
-    requestAnimationFrame(() => document.getElementById(`site-room-${room.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    requestAnimationFrame(() => document.getElementById(`site-room-${room.id}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
   };
   const addIssue = (area: Area) => setEditing({ ...newSiteRecord("observation", site.timezone, area.roomId), title: "" });
 

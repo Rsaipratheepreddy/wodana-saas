@@ -12,6 +12,7 @@ import { ProjectWorkService } from "./project-work.service";
 import { processWorkDeadlines } from "./work-reminders";
 import { OrdersService } from "../purchasing/orders.service";
 import { PriceRequestsService } from "../purchasing/price-requests.service";
+import { ReceivingService } from "../purchasing/receiving.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -803,6 +804,94 @@ integration("projects core (plan §6.10)", () => {
       expect(order.order).toMatchObject({ status: "draft", currency: "AED", expectedDate: "2026-10-15", total: "4320.0000" });
       expect(order.lines[0]).toMatchObject({ source: "material", materialItemId: slab.id, unitPrice: "360.0000", quantity: "12.0000" });
       await expect(requests.command(actor, w.workspaceId, id, { action: "cancel", reason: "x", version: state.request.version })).rejects.toThrow(/already awarded/);
+    });
+  });
+
+  it("receives deliveries: where they arrived, inspected by someone else, rejects owed again, over-delivery within the tolerance, and closed", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const company = randomUUID(), vendor = randomUUID();
+      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio Furniture','Studio Furniture LLC','AE','AED','en-AE','Asia/Dubai')`, [company, w.workspaceId]);
+      const access = (userId: string, permissions: string[]) => {
+        const run = async (_a: unknown, _w: string, code: string | string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          if (!(Array.isArray(code) ? code : [code]).some((item) => permissions.includes(item))) throw new Error("Not allowed");
+          return fn(w.client, { userId });
+        };
+        return { withPermission: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
+      };
+      const buying = ["vendors.view", "vendors.manage", "purchasing.view", "purchasing.manage", "stock.receive", "workspace.settings.manage"];
+      const orders = new OrdersService(access(w.designer, buying));
+      const storekeeper = new ReceivingService(access(w.designer, buying));
+      const inspector = new ReceivingService(access(w.manager, ["purchasing.view", "stock.inspect"]));
+      await w.client.query(`INSERT INTO workspace_purchasing_settings (workspace_id, approval_threshold, require_material_signoff, require_approved_supplier) VALUES ($1, NULL, false, false)`, [w.workspaceId]);
+
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "10", unit: "m²", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", name: "Lights", supply: "ready_made", version: detail.project.version });
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const lightsLine = scope.lines.find((line) => line.title === "Under-cabinet lights")!;
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [lightsLine.id], packageId: scope.packages.find((item) => item.name === "Lights")!.id, version: detail.project.version });
+      await new SuppliersService(access(w.designer, buying)).save(actor, w.workspaceId, { id: vendor, version: 0, name: "Nile Marble", entityIds: [company] });
+      const needs = (await orders.needs(actor, w.workspaceId)).needs.filter((need) => ["Calacatta slab", "Under-cabinet lights"].includes(need.title));
+      const order = randomUUID();
+      let state = await orders.create(actor, w.workspaceId, { id: order, vendorId: vendor, lines: needs.map((need) => ({ source: need.source,
+        ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: need.required, unitPrice: "100" })) });
+      state = await orders.command(actor, w.workspaceId, order, { action: "submit", version: state.order.version });
+      const early = await storekeeper.receiving(actor, w.workspaceId, order);
+      await expect(storekeeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: early.defaultPlace, receivedOn: "2026-09-26", lines: [{ orderLineId: state.lines[0].id, received: "1" }] }))
+        .rejects.toThrow(/Send the order/);
+      state = await orders.command(actor, w.workspaceId, order, { action: "send", version: state.order.version });
+      const [slabLine, lightLine] = state.lines;
+
+      // The form: the project's site first (made on first use), then the warehouse and factory; inspection is on.
+      const form = await storekeeper.receiving(actor, w.workspaceId, order);
+      expect(form.places.map((place) => [place.key, place.kind])).toEqual([[`site:${projectId}`, "site"], ["warehouse", "warehouse"], ["factory", "factory"]]);
+      expect(form).toMatchObject({ defaultPlace: `site:${projectId}`, requireInspection: true });
+      expect(form.lines.map((line) => [line.outstanding, line.receivable])).toEqual([["10", "10"], ["1", "1"]]);
+
+      const first = randomUUID();
+      const receiptInput = { id: first, orderId: order, place: form.defaultPlace, receivedOn: "2026-09-26", deliveryNote: "DN-88", lines: [{ orderLineId: slabLine.id, received: "6" }] };
+      let receipt = await storekeeper.receive(actor, w.workspaceId, receiptInput);
+      expect(receipt.receipt).toMatchObject({ number: 1, locationKind: "site", locationName: expect.stringContaining("Villa 12"), received: "6.0000", pending: "6.0000", accepted: "0.0000" });
+      expect((await storekeeper.receive(actor, w.workspaceId, receiptInput)).receipt.number).toBe(1);
+      expect((await orders.get(actor, w.workspaceId, order)).order.status).toBe("partly_received");
+      await expect(storekeeper.receive(actor, w.workspaceId, { ...receiptInput, id: randomUUID(), lines: [{ orderLineId: slabLine.id, received: "5" }] })).rejects.toThrow(/at most 4 m²/);
+      await expect(orders.command(actor, w.workspaceId, order, { action: "close", version: (await orders.get(actor, w.workspaceId, order)).order.version })).rejects.toThrow(/waiting for inspection/);
+
+      // Whoever received it doesn't inspect it; a rejection needs its reason and is owed again.
+      await expect(new ReceivingService(access(w.designer, [...buying, "stock.inspect"])).inspect(actor, w.workspaceId, first, { lines: [] })).rejects.toThrow(/Someone else inspects/);
+      expect(receipt.canInspectThis).toBe(false);
+      const waiting = receipt.lines[0];
+      await expect(inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "5", rejected: "1" }] })).rejects.toThrow(/Say why/);
+      await expect(inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "4", rejected: "1", rejectReason: "Chipped" }] })).rejects.toThrow(/add up to 6/);
+      receipt = await inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "5", rejected: "1", rejectReason: "Chipped edge" }] });
+      expect(receipt.receipt).toMatchObject({ accepted: "5.0000", rejected: "1.0000", pending: "0.0000", inspectedByName: "Omar Manager" });
+      let current = await orders.get(actor, w.workspaceId, order);
+      expect(current.lines.map((line) => [line.accepted, line.rejected, line.pending])).toEqual([["5.0000", "1.0000", "0.0000"], ["0.0000", "0.0000", "0.0000"]]);
+      expect(current.receipts).toHaveLength(1);
+      await expect(orders.command(actor, w.workspaceId, order, { action: "close", version: current.order.version })).rejects.toThrow(/Say why the rest/);
+
+      // Without inspection, what's accepted is entered at receipt; 10% over is allowed on the whole line.
+      await w.client.query(`UPDATE workspace_purchasing_settings SET require_inspection = false, receive_tolerance_percent = 10 WHERE workspace_id = $1`, [w.workspaceId]);
+      expect((await storekeeper.receiving(actor, w.workspaceId, order)).lines.map((line) => line.receivable)).toEqual(["6", "1.1"]);
+      receipt = await storekeeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: slabLine.id, received: "6" }, { orderLineId: lightLine.id, received: "1" }] });
+      expect(receipt.receipt).toMatchObject({ number: 2, locationKind: "warehouse", locationName: "Warehouse", accepted: "7.0000", pending: "0.0000" });
+      current = await orders.get(actor, w.workspaceId, order);
+      expect(current.order.status).toBe("received");
+      expect((await core.line(actor, w.workspaceId, projectId, lightsLine.id)).history.at(-1)).toMatchObject({ kind: "received", detail: { order: current.order.number, quantity: "1" } });
+      expect((await orders.needs(actor, w.workspaceId)).needs.filter((need) => Number(need.received)).map((need) => [need.title, need.received])).toEqual([["Calacatta slab", "11.0000"], ["Under-cabinet lights", "1.0000"]]);
+      current = await orders.command(actor, w.workspaceId, order, { action: "close", version: current.order.version });
+      expect(current.order.status).toBe("closed");
+      await expect(storekeeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "warehouse", receivedOn: "2026-09-27", lines: [{ orderLineId: lightLine.id, received: "0.1" }] }))
+        .rejects.toThrow(/isn't open for deliveries/);
+      const deliveries = await storekeeper.deliveries(actor, w.workspaceId);
+      expect([deliveries.expected.length, deliveries.inspection.length, deliveries.received.map((item) => item.number)]).toEqual([0, 0, [2, 1]]);
+
+      const notices = (await w.client.query<{ event: string; recipient: string }>(`SELECT event_type AS event, recipient_id AS recipient FROM notifications WHERE workspace_id = $1 AND event_type IN ('purchasing.received', 'purchasing.rejected', 'purchasing.inspection_needed') AND channel = 'in_app' ORDER BY created_at`, [w.workspaceId])).rows;
+      expect(notices).toEqual(expect.arrayContaining([{ event: "purchasing.rejected", recipient: w.designer }, { event: "purchasing.received", recipient: w.designer }]));
     });
   });
 

@@ -1,4 +1,6 @@
-import type { NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, SupplierImportPlan, SupplierImportRow, SupplierState } from "./types";
+import type {
+  DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow, SupplierState,
+} from "./types";
 
 export class PurchasingRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -33,6 +35,11 @@ export function purchasingApi(workspaceId: string) {
     priceRequest: (id: string) => request<PriceRequestState>(at(`price-requests/${id}`)),
     createPriceRequest: (input: Record<string, unknown>) => request<PriceRequestState>(at("price-requests"), "POST", input),
     priceRequestCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<PriceRequestState>(at(`price-requests/${id}`), "POST", { ...input, action, version }),
+    deliveries: () => request<DeliveriesState>(at("deliveries")),
+    receiving: (orderId: string) => request<ReceivingForm>(at(`orders/${orderId}/receiving`)),
+    receive: (input: Record<string, unknown>) => request<ReceiptState>(at("receipts"), "POST", input),
+    receipt: (id: string) => request<ReceiptState>(at(`receipts/${id}`)),
+    inspect: (id: string, input: Record<string, unknown>) => request<ReceiptState>(at(`receipts/${id}/inspection`), "POST", input),
     settings: () => request<{ settings: PurchasingSettings; canManage: boolean; currency: string | null }>(at("settings")),
     saveSettings: (input: Record<string, unknown>) => request<PurchasingSettings>(at("settings"), "PUT", input),
   };

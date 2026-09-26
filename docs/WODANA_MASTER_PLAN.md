@@ -582,7 +582,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Screens:** Suppliers grid · Supplier inspector (details, documents, rate contracts, POs, invoices, scorecard).
 
 ### 6.14 Purchasing (RFQ → PO)
-**Built (Operations → Purchasing: To order · Orders · Suppliers; Settings → Purchasing):**
+**Built (Operations → Purchasing: To order · Price requests · Orders · Deliveries · Suppliers; Settings → Purchasing):**
 - **To order** lists, for every running project, the materials on its material list and the scope lines of bought (ready-made, bought materials) and subcontracted packages: needed, on placed orders, in draft, and left. It's derived from the records, not kept by hand. Projects whose client hasn't signed off the material list are shown apart and can't be ordered (a setting). Lines from several projects go on one order to one supplier.
 - **Orders** (`purchase_orders`, `purchase_order_lines`, append-only `purchase_order_events`, frozen `purchase_order_revisions`):
   - Numbered by the buying company's numbering (`FAC-PO-2026-00001`).
@@ -590,7 +590,8 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Price comes from the supplier's catalog price when left empty. Discount defaults to the supplier's deal; tax defaults to the buying company's rate.
   - Amounts are exact: net = qty × price less discount, tax on net, each rounded to the currency's minor units; totals are sums of the lines.
   - Draft → waiting for approval (at or above the workspace's approval amount; other currencies always) → approved by someone other than the buyer → sent (branded email to the supplier, or marked sent; the delivery result is recorded) → confirmed (promised date and supplier reference).
-  - *Change* on an approved order keeps what was approved and sends it through approval again. *Cancel* asks why.
+  - *Change* on an approved order keeps what was approved and sends it through approval again. *Cancel* asks why and only works before anything arrives.
+  - Deliveries move it to partly received and received (see §6.15). *Close* ends it; closing short asks why, and what never came goes back to To order.
   - Orders only go to approved suppliers (a setting). Sending records "ordered" in each scope line's history. The Procurement stage's check *Everything is ordered* reads the orders.
 - **Notices:** approval needed (approvers, in-app and email), approved or sent back (the buyer).
 - **Price requests** (`price_requests`, lines, suppliers asked, quotes):
@@ -598,7 +599,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Replies are recorded per line: price and discount, delivery days, validity; a supplier can decline.
   - The comparison marks the cheapest per line after discounts. Each line is awarded to one supplier, and a dearer choice needs a reason.
   - Awarding creates one draft order per supplier at the quoted prices, still tied to the materials and scope lines. Only approved suppliers can be awarded (the setting).
-- Still to come: blanket orders, advances and retention (with payables), vendor portal replies, and the late-delivery expediting task (with receiving).
+- Still to come: blanket orders, advances and retention (with payables), vendor portal replies, and the late-delivery expediting task.
 
 - **Records:** rfqs, rfq_lines, rfq_suppliers (sent/viewed/responded), supplier_quotes + lines (price, qty, lead time, validity, alternate item), purchase_orders (kind `standard | blanket | service`, revision), po_lines (ship-to **per line**: warehouse, factory or site), po_line_allocations (line → requirement/project, qty), po_revisions, po_acknowledgements (per line; partial allowed), blanket_releases, supplier advances.
 - **PO states:** `draft → pending_approval → approved → sent → acknowledged | partly_acknowledged → partly_received → received → closed`, plus `cancelled` and `short_closed`.
@@ -633,6 +634,24 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Vendor communication:** RFQ and PO links sent by WhatsApp and email to the **vendor portal**; the vendor fills in prices and acknowledges there.
 
 ### 6.15 Receiving, inventory and payables
+**Built (Purchasing → Deliveries; Settings → Purchasing → Receiving):**
+- **Deliveries** has three views: *Expected* (sent and confirmed orders with lines still to come, the late ones marked), *To inspect*, and *Received*.
+- **Receive** against an order (`goods_receipts`, `goods_receipt_lines`), numbered across the workspace:
+  - Where it arrived: the project's site, the warehouse, the factory, or another place. `stock_locations` makes a project's site and the default warehouse and factory on first use.
+  - When, the delivery note, and how much of each line came.
+  - A line takes at most what's still to come plus the workspace's over-delivery allowance (0–50%).
+  - Receiving again with the same id changes nothing.
+- **Inspection** (a setting, on by default): everything that arrives waits until someone other than the receiver accepts or rejects it, with the reason for anything rejected. With inspection off, rejections are entered at receipt.
+  - A line always has received = accepted + rejected + waiting. What arrived never changes (enforced in the database).
+  - Rejected goods are still owed by the supplier.
+- **Status and records:**
+  - The order becomes partly received or received from its lines.
+  - Accepted quantities show in To order and in each scope line's history ("received").
+  - The order shows what arrived per line and its deliveries.
+- **Notices:** inspection needed (inspectors), received (the buyer and the receiver), and goods rejected (the buyer).
+- **Permissions:** `stock.receive` and `stock.inspect`, alongside `purchasing.manage` and `purchasing.approve`.
+- Still to come: the stock ledger by location (reservations, issues, transfers, counts), site deliveries with photo proof, returns to the supplier and debit notes, and payables.
+
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.
   - Cases: multiple partial deliveries; over-delivery within tolerance, else held; under-delivery then remainder or short-close; wrong item; damaged; pending QC in a **quarantine** location; partial QC pass; receipt with no PO (queue, can't enter stock until matched); unit conversion; site receipt by mobile photo; a defect found after acceptance (reverse movement + debit note).

@@ -21,7 +21,8 @@
 .orderStatus::before { content: ""; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-text-disabled); }
 .orderStatus[data-status="pending_approval"]::before { background: var(--wd-color-warning); }
 .orderStatus[data-status="approved"]::before, .orderStatus[data-status="sent"]::before { background: var(--wd-color-info); }
-.orderStatus[data-status="confirmed"]::before, .orderStatus[data-status="closed"]::before { background: var(--wd-color-success); }
+.orderStatus[data-status="partly_received"]::before { background: var(--wd-color-info); }
+.orderStatus[data-status="confirmed"]::before, .orderStatus[data-status="received"]::before, .orderStatus[data-status="closed"]::before { background: var(--wd-color-success); }
 .orderStatus[data-status="cancelled"]::before { background: var(--wd-color-danger); }
 
 .approval { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
@@ -59,6 +60,18 @@
 .compareCell > button small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .compareCell[data-cheapest] > button small { color: var(--wd-color-success); }
 .compareCell[data-chosen] > button { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); }
+.receiveLines { display: grid; min-inline-size: 0; }
+.receiveHead, .receiveLine { display: grid; grid-template-columns: minmax(8rem, 1fr) 7rem 8rem 8rem; gap: var(--wd-space-2); align-items: center; }
+.receiveLines[data-inspection] :is(.receiveHead, .receiveLine) { grid-template-columns: minmax(8rem, 1fr) 7rem 8rem; }
+.receiveHead { padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.receiveLine { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.receiveHead > :nth-child(n+2), .receiveLine > [role="cell"]:nth-child(n+2) { text-align: end; }
+.receiveReason { grid-column: 1 / -1; }
+.late { color: var(--wd-color-danger); }
+.nameCell small.arrived { color: var(--wd-color-text-secondary); }
+.receipts { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.receipts > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.receipts > li > .muted { flex: 1; min-inline-size: 0; }
 .totals { display: grid; justify-content: end; gap: var(--wd-space-1); margin: 0; }
 .totals > div { display: grid; grid-template-columns: 6rem 9rem; gap: var(--wd-space-3); font-size: var(--wd-text-sm); }
 .totals dt { color: var(--wd-color-text-tertiary); text-align: end; }
@@ -74,4 +87,6 @@
   .pair, .sheets > li { grid-template-columns: minmax(0, 1fr); }
   .importList > li { grid-template-columns: minmax(0, 1fr) auto; }
   .draftLines > li, .draftLines > li:has(> :nth-child(5)) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .receiveHead, .receiveLine, .receiveLines[data-inspection] :is(.receiveHead, .receiveLine) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .receiveHead > :first-child, .receiveLine > :first-child { grid-column: 1 / -1; text-align: start; }
 }

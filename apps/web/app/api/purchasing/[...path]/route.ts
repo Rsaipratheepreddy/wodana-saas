@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 
-/** Purchasing: suppliers, what projects need to order, purchase orders and their settings. */
+/** Purchasing: suppliers, what projects need to order, purchase orders, deliveries and their settings. */
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "suppliers") return ["GET", "POST"].includes(method);
   if (path.length === 2 && path[0] === "suppliers" && path[1] === "import") return method === "POST";
@@ -10,6 +10,11 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && (path[0] === "orders" || path[0] === "price-requests")) return ["GET", "POST"].includes(method);
   if (path.length === 2 && (path[0] === "orders" || path[0] === "price-requests") && UUID.test(path[1])) return ["GET", "POST"].includes(method);
+  if (path.length === 1 && path[0] === "deliveries") return method === "GET";
+  if (path.length === 3 && path[0] === "orders" && UUID.test(path[1]) && path[2] === "receiving") return method === "GET";
+  if (path.length === 1 && path[0] === "receipts") return method === "POST";
+  if (path.length === 2 && path[0] === "receipts" && UUID.test(path[1])) return method === "GET";
+  if (path.length === 3 && path[0] === "receipts" && UUID.test(path[1]) && path[2] === "inspection") return method === "POST";
   return false;
 }
 

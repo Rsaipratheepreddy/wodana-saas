@@ -13,7 +13,9 @@ import styles from "./purchasing.module.css";
 type Show = "open" | "all";
 
 /** Purchase orders: the open ones first, each with its supplier, projects, status, total and dates. A row opens the order. */
-export function Orders({ api, openId, onOpen, refreshKey }: { api: PurchasingApi; openId: string | null; onOpen: (id: string | null) => void; refreshKey: number }) {
+export function Orders({ api, openId, onOpen, onReceipt, refreshKey }: {
+  api: PurchasingApi; openId: string | null; onOpen: (id: string | null) => void; onReceipt: (receiptId: string) => void; refreshKey: number;
+}) {
   const t = useT();
   const labels = useOrderLabels();
   const format = useProjectFormat();
@@ -66,6 +68,6 @@ export function Orders({ api, openId, onOpen, refreshKey }: { api: PurchasingApi
       selectable={false}
       wrapText
     />
-    {openId ? <OrderSheet api={api} orderId={openId} settings={state?.settings ?? null} onChanged={() => void load()} onClose={() => onOpen(null)} /> : null}
+    {openId ? <OrderSheet api={api} orderId={openId} settings={state?.settings ?? null} onChanged={() => void load()} onClose={() => onOpen(null)} onReceipt={onReceipt} /> : null}
   </>;
 }

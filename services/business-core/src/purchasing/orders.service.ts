@@ -14,6 +14,7 @@ import {
   DELIVER_TO, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, nextOrderNumber, orderEvent, orderTotals, priceLine, readNeeds, readOrder, readOrderEvents, readOrderLines,
   readOrders, type OrderDetail, type OrderLine,
 } from "./orders";
+import { readReceipts } from "./receiving";
 import { PAYMENT_TERMS, percent, readSupplier, type Supplier } from "./suppliers";
 
 type Db = PoolClient;
@@ -70,9 +71,12 @@ export class OrdersService {
       if (body.version !== current.version) throw new ConflictException("Someone else changed these settings. Reload to see their changes.");
       const threshold = body.approvalThreshold === null || body.approvalThreshold === "" ? null : String(body.approvalThreshold ?? current.approvalThreshold ?? "");
       if (threshold !== null && !NUMBER.test(threshold)) throw new BadRequestException("Enter the amount from which orders need approval, or leave it empty.");
-      const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier") => (body[key] === undefined ? current[key] : body[key] === true);
-      await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, version = version + 1, updated_by = $5, updated_at = now()
-        WHERE workspace_id = $1`, [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), user.userId]);
+      const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier" | "requireInspection") => (body[key] === undefined ? current[key] : body[key] === true);
+      const tolerance = body.receiveTolerancePercent === undefined ? current.receiveTolerancePercent : String(body.receiveTolerancePercent || "0");
+      if (!NUMBER.test(tolerance) || Dec.of(tolerance).cmp(50) > 0) throw new BadRequestException("Over-delivery is a percentage from 0 to 50.");
+      await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
+        receive_tolerance_percent = $6, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });
@@ -178,6 +182,17 @@ export class OrdersService {
         await set(`status = 'draft', revision = revision + 1, approved_at = NULL, approved_by = NULL, submitted_by = NULL`, []);
         await orderEvent(client, workspaceId, orderId, "changing", { reason, revision: order.revision + 1, was: order.status }, user.userId);
         audit = { reason, revision: order.revision + 1 };
+      } else if (action === "close") {
+        await need("purchasing.manage", "You can't close purchase orders.");
+        status("partly_received", "received");
+        const reason = text(body.reason, 500, "Reason");
+        const lines = await readOrderLines(client, workspaceId, orderId);
+        if (lines.some((line) => Dec.of(line.pending).cmp(0) > 0)) throw new ConflictException("Some goods are still waiting for inspection.");
+        const short = lines.some((line) => Dec.of(line.accepted).cmp(line.quantity) < 0);
+        if (short && !reason) throw new BadRequestException("Say why the rest won't come.");
+        await set(`status = 'closed', closed_at = now(), close_reason = $3`, [reason || null]);
+        await orderEvent(client, workspaceId, orderId, "closed", { reason, short }, user.userId);
+        audit = { reason, short };
       } else if (action === "cancel") {
         await need("purchasing.manage", "You can't cancel purchase orders.");
         status("draft", "pending_approval", "approved", "sent", "confirmed");
@@ -244,6 +259,7 @@ export class OrdersService {
     const rights = await this.rights(client, workspaceId, userId);
     return {
       order, lines: await readOrderLines(client, workspaceId, orderId), events: await readOrderEvents(client, workspaceId, orderId),
+      receipts: await readReceipts(client, workspaceId, { orderId }),
       revisions: (await client.query<{ revision: number; reason: string; at: string; byName: string }>(
         `SELECT revision.revision, revision.reason, revision.created_at AS at, person.display_name AS "byName" FROM purchase_order_revisions revision JOIN users person ON person.id = revision.created_by
           WHERE revision.workspace_id = $1 AND revision.order_id = $2 ORDER BY revision.revision`, [workspaceId, orderId])).rows,
@@ -257,6 +273,7 @@ export class OrdersService {
     return {
       canBuy: await this.access.hasPermission(client, workspaceId, userId, "purchasing.manage"),
       canApprove: await this.access.hasPermission(client, workspaceId, userId, "purchasing.approve"),
+      canReceive: await this.access.hasPermission(client, workspaceId, userId, "purchasing.manage") || await this.access.hasPermission(client, workspaceId, userId, "stock.receive"),
     };
   }
 
@@ -433,6 +450,7 @@ export class OrdersService {
 
 function statusMessage(status: string) {
   return status === "cancelled" ? "The order is cancelled." : status === "pending_approval" ? "The order is waiting for approval." : status === "draft" ? "The order is still a draft."
+    : status === "partly_received" || status === "received" ? "Goods have arrived on this order; it can only be closed now."
     : status === "closed" ? "The order is closed." : "The order has moved on; reload to see it.";
 }
 

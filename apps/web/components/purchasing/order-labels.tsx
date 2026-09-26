@@ -8,12 +8,12 @@ import styles from "./purchasing.module.css";
 /** "12.0000" → "12": a stored quantity as people write it. */
 export const quantityText = (value: string | null) => (value === null ? "" : value.includes(".") ? value.replace(/\.?0+$/, "") : value);
 
-export const OPEN_ORDERS: OrderStatus[] = ["draft", "pending_approval", "approved", "sent", "confirmed"];
+export const OPEN_ORDERS: OrderStatus[] = ["draft", "pending_approval", "approved", "sent", "confirmed", "partly_received", "received"];
 
 export function useOrderLabels() {
   const t = useT();
   return useMemo(() => ({
-    status: { draft: t("Draft"), pending_approval: t("Waiting for approval"), approved: t("Approved"), sent: t("Sent"), confirmed: t("Confirmed"), closed: t("Closed"), cancelled: t("Cancelled") } satisfies Record<OrderStatus, string>,
+    status: { draft: t("Draft"), pending_approval: t("Waiting for approval"), approved: t("Approved"), sent: t("Sent"), confirmed: t("Confirmed"), partly_received: t("Partly received"), received: t("Received"), closed: t("Closed"), cancelled: t("Cancelled") } satisfies Record<OrderStatus, string>,
     deliverTo: { site: t("Project site"), factory: t("Our factory"), warehouse: t("Our warehouse"), pickup: t("We collect"), other: t("Another address") } satisfies Record<DeliverTo, string>,
   }), [t]);
 }

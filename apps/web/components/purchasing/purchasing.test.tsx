@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { Need, OrderState, PriceRequestState, Supplier, SupplierImportPlan, SupplierState } from "@/lib/purchasing/types";
+import type { DeliveriesState, Need, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierImportPlan, SupplierState } from "@/lib/purchasing/types";
 import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
@@ -124,25 +124,27 @@ describe("suppliers", () => {
 describe("ordering", () => {
   afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
   const need = (patch: Partial<Need>): Need => ({ key: "material:m1", source: "material", sourceId: "m1", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12",
-    title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
+    title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", received: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
     supply: null, blocked: null, ...patch });
   const needs = { needs: [need({}), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
     supplierHint: "", packageName: "Lights" }), need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", blocked: "material_signoff" })],
-    settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, version: 1 }, canBuy: true, canApprove: true };
+    settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, requireInspection: true, receiveTolerancePercent: "0.00", version: 1 }, canBuy: true, canApprove: true };
   const orderState = (patch: Partial<OrderState["order"]> = {}, rights: Partial<OrderState> = {}): OrderState => ({
     order: { id: "o1", number: "FAC-PO-2026-00001", status: "draft", vendorId: "s1", supplierName: "Nile Marble & Granite", legalEntityId: "f", companyCode: "FAC", currency: "AED",
       total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
       revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
       subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", createdBy: "u1", submittedBy: null, approvedByName: null, approvedAt: null, sentAt: null, sentTo: null,
-      confirmedAt: null, cancelledAt: null, cancelReason: null, companyName: "Studio Furniture", ...patch },
+      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, companyName: "Studio Furniture", ...patch },
     lines: [
       { id: "a", position: 0, projectId: "p1", projectReference: "PRJ-0007", source: "material", materialItemId: "m1", boqLineId: null, description: "Calacatta slab", specification: "CAL-20",
-        quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000" },
+        quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000",
+        accepted: "0.0000", rejected: "0.0000", pending: "0.0000" },
       { id: "b", position: 1, projectId: "p1", projectReference: "PRJ-0007", source: "line", materialItemId: null, boqLineId: "l1", description: "Under-cabinet lights", specification: "",
-        quantity: "1.0000", unit: "nos", unitPrice: "500.0000", discountPercent: "10.00", taxRate: "5.0000", net: "450.0000", tax: "22.5000", total: "472.5000" }],
+        quantity: "1.0000", unit: "nos", unitPrice: "500.0000", discountPercent: "10.00", taxRate: "5.0000", net: "450.0000", tax: "22.5000", total: "472.5000",
+        accepted: "0.0000", rejected: "0.0000", pending: "0.0000" }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    canBuy: true, canApprove: true, canApproveThis: false, ...rights,
+    receipts: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 
@@ -207,6 +209,81 @@ describe("ordering", () => {
     await userEvent.click(within(send).getByRole("button", { name: "Send" }));
     await waitFor(() => expect(posts(fetcher).map((post) => post.body.action)).toEqual(["approve", "send"]));
     expect(await within(sheet).findByText("Email isn't set up here. Send the order to the supplier yourself.")).toBeInTheDocument();
+  });
+
+  const receipt = (patch: Partial<ReceiptState["receipt"]> = {}, rights: Partial<ReceiptState> = {}): ReceiptState => ({
+    receipt: { id: "g1", number: 4, orderId: "o1", orderNumber: "FAC-PO-2026-00001", supplierName: "Nile Marble & Granite", locationId: "loc", locationName: "PRJ-0007 · Villa 12",
+      locationKind: "site", receivedOn: "2026-09-27", receivedBy: "u1", receivedByName: "Sam Store", deliveryNote: "DN-88", notes: "", inspectedByName: null, inspectedAt: null,
+      received: "6.0000", accepted: "0.0000", rejected: "0.0000", pending: "6.0000", createdAt: "2026-09-27T10:00:00Z", ...patch },
+    lines: [{ id: "gl1", orderLineId: "a", description: "Calacatta slab", specification: "CAL-20", unit: "m²", projectReference: "PRJ-0007", boqLineId: null, projectId: "p1",
+      received: "6.0000", accepted: "0.0000", rejected: "0.0000", pending: "6.0000", rejectReason: "" }],
+    canReceive: true, canInspect: true, canInspectThis: true, ...rights,
+  });
+
+  it("lists expected deliveries, late ones marked, and receives what arrived at the project's site", async () => {
+    const sent = orderState({ status: "confirmed", promisedDate: "2020-01-10", sentAt: "2026-09-27T11:00:00Z" });
+    const deliveries: DeliveriesState = { expected: [{ ...sent.order, deliverTo: "site", linesLeft: 2 }], inspection: [receipt().receipt], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" };
+    const form: ReceivingForm = { order: sent.order, lines: sent.lines.map((line) => ({ ...line, outstanding: line.quantity, receivable: line.quantity })),
+      places: [{ key: "site:p1", kind: "site", name: null, projectReference: "PRJ-0007" }, { key: "warehouse", kind: "warehouse", name: null, projectReference: null }],
+      defaultPlace: "site:p1", requireInspection: true, receiveTolerancePercent: "0.00" };
+    const fetcher = mount((url) => (url.includes("/receiving") ? form : url.includes("/receipts") ? receipt() : url.includes("/deliveries") ? deliveries : ordersList));
+    page("deliveries");
+    const grid = await screen.findByRole("grid", { name: "Expected deliveries" }).catch(() => screen.findByRole("table", { name: "Expected deliveries" }));
+    await within(grid).findByText("FAC-PO-2026-00001");
+    expect(grid).toHaveTextContent(/days late/);
+    expect(grid).toHaveTextContent("2 lines to come");
+    expect(screen.getByRole("radio", { name: "To inspect (1)" })).toBeInTheDocument();
+    await userEvent.click(within(grid).getByRole("button", { name: "Receive" }));
+    const dialog = await screen.findByRole("dialog", { name: "Receive FAC-PO-2026-00001" });
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /Arrived at/ })).toHaveTextContent("PRJ-0007 site"));
+    // Inspection is on: nothing is accepted or rejected at receipt.
+    expect(within(dialog).queryByRole("textbox", { name: "Rejected of Calacatta slab" })).toBeNull();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Received of Calacatta slab" }), "11");
+    expect(within(dialog).getByText("At most 10 m² of Calacatta slab can arrive.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Receive" })).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Everything left" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Delivery note" }), "DN-88");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Receive" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/purchasing/receipts?"));
+    expect(posts(fetcher).at(-1)!.body).toMatchObject({ orderId: "o1", place: "site:p1", deliveryNote: "DN-88", lines: [{ orderLineId: "a", received: "10" }, { orderLineId: "b", received: "1" }] });
+    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/deliveries?receipt=g1", { scroll: false });
+  });
+
+  it("inspects a delivery someone else received: accepted by default, a rejection needs its reason", async () => {
+    nav.query = "receipt=g1";
+    const fetcher = mount((url, body) => (url.includes("/receipts/g1") ? (body ? receipt({ accepted: "5.0000", rejected: "1.0000", pending: "0.0000", inspectedByName: "Dara Director",
+      inspectedAt: "2026-09-27T12:00:00Z" }, { canInspectThis: false }) : receipt()) : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
+    page("deliveries");
+    const sheet = await screen.findByRole("dialog", { name: "Delivery 4" });
+    await within(sheet).findByText("Calacatta slab");
+    expect(sheet).toHaveTextContent("Sam Store");
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Rejected of Calacatta slab" }), "1");
+    expect(sheet).toHaveTextContent("5 m²");
+    const save = within(sheet).getByRole("button", { name: "Save inspection" });
+    expect(save).toBeDisabled();
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Why it was rejected" }), "Chipped edge");
+    await userEvent.click(save);
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/receipts/g1/inspection"),
+      body: { lines: [{ id: "gl1", accepted: "5", rejected: "1", rejectReason: "Chipped edge" }] } }));
+    expect(await within(sheet).findByText("Some rejected")).toBeInTheDocument();
+  });
+
+  it("shows what arrived on each line and asks why when closing an order short", async () => {
+    nav.query = "order=o1";
+    const partly = orderState({ status: "partly_received", sentAt: "2026-09-27T11:00:00Z", version: 6 }, {
+      receipts: [receipt({ accepted: "5.0000", rejected: "1.0000", pending: "0.0000" }).receipt] });
+    partly.lines[0] = { ...partly.lines[0], accepted: "5.0000", rejected: "1.0000" };
+    const fetcher = mount((url) => (url.includes("/orders/o1") ? partly : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(await within(sheet).findByText("5 accepted · 1 rejected")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Delivery 4" })).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Close order" }));
+    const close = await screen.findByRole("dialog", { name: "Close order" });
+    expect(within(close).getByRole("button", { name: "Close order" })).toBeDisabled();
+    await userEvent.type(within(close).getByRole("textbox", { name: /Why the rest won't come/ }), "Supplier out of stock");
+    await userEvent.click(within(close).getByRole("button", { name: "Close order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "close", version: 6, reason: "Supplier out of stock" }));
   });
 });
 

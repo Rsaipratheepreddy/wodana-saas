@@ -4,6 +4,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { OrdersService } from "./orders.service";
 import { PriceRequestsService } from "./price-requests.service";
+import { ReceivingService } from "./receiving.service";
 import { SuppliersService } from "./suppliers.service";
 
 /** Purchasing: suppliers, what projects need to order, and purchase orders. Bodies are validated in the services. */
@@ -11,7 +12,8 @@ import { SuppliersService } from "./suppliers.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/purchasing")
 export class PurchasingController {
-  constructor(private readonly suppliers: SuppliersService, private readonly orders: OrdersService, private readonly requests: PriceRequestsService) {}
+  constructor(private readonly suppliers: SuppliersService, private readonly orders: OrdersService, private readonly requests: PriceRequestsService,
+    private readonly receiving: ReceivingService) {}
 
   @Get("suppliers")
   listSuppliers(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.suppliers.list(actor, workspaceId); }
@@ -67,5 +69,26 @@ export class PurchasingController {
   @Post("price-requests/:requestId")
   requestCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("requestId", ParseUUIDPipe) requestId: string, @Body() input: Record<string, unknown>) {
     return this.requests.command(actor, workspaceId, requestId, input ?? {});
+  }
+
+  @Get("deliveries")
+  deliveries(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.receiving.deliveries(actor, workspaceId); }
+
+  @Get("orders/:orderId/receiving")
+  receivingForm(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("orderId", ParseUUIDPipe) orderId: string) {
+    return this.receiving.receiving(actor, workspaceId, orderId);
+  }
+
+  @Post("receipts")
+  receive(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.receiving.receive(actor, workspaceId, input ?? {}); }
+
+  @Get("receipts/:receiptId")
+  receipt(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("receiptId", ParseUUIDPipe) receiptId: string) {
+    return this.receiving.receipt(actor, workspaceId, receiptId);
+  }
+
+  @Post("receipts/:receiptId/inspection")
+  inspect(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("receiptId", ParseUUIDPipe) receiptId: string, @Body() input: Record<string, unknown>) {
+    return this.receiving.inspect(actor, workspaceId, receiptId, input ?? {});
   }
 }
