@@ -988,5 +988,21 @@
   "Site": "Site",
   "Photos & plans": "Photos & plans",
   "Visits": "Visits",
-  "Scope": "Scope"
+  "Scope": "Scope",
+  "These could not be added": "These could not be added",
+  "Added by": "Added by",
+  "Everyone": "Everyone",
+  "{count} pins": "{count} pins",
+  "Nothing matches these filters": "Nothing matches these filters",
+  "Try another room, feeling or person.": "Try another room, feeling or person.",
+  "View {name} full size": "View {name} full size",
+  "Open details for {name}": "Open details for {name}",
+  "From {name}": "From {name}",
+  "Remove this pin?": "Remove this pin?",
+  "Keep": "Keep",
+  "Give the pin a title.": "Give the pin a title.",
+  "Add requirements to link this pin to them.": "Add requirements to link this pin to them.",
+  "Open original": "Open original",
+  "Previous photo": "Previous photo",
+  "Next photo": "Next photo"
 }

@@ -1,68 +1,82 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { CaseContent, ScopeEntry } from "@/lib/pre-project/content";
 import { MoodboardPage } from "./moodboard-page";
 
 afterEach(() => vi.unstubAllGlobals());
-const base = { version: 1, roomId: null, roomName: null, note: "", category: "Inspiration", priority: "preferred", scopeStatus: "undecided", reviewStatus: "captured", quantity: null, unit: "nos", referenceUrl: "", avoid: "", source: "team", assets: [], catalogLinks: [], archivedAt: null, requirementIds: [], board: null };
+const base = { version: 1, roomId: null, roomName: null, note: "", category: "Inspiration", priority: "preferred", scopeStatus: "undecided", reviewStatus: "captured", quantity: null, unit: "nos", referenceUrl: "", avoid: "", source: "team", assets: [], catalogLinks: [], archivedAt: null, requirementIds: [], board: null, createdByName: "Sara Sales" };
+const photo = (id: string) => ({ id, name: `${id}.jpg`, mimeType: "image/jpeg", byteSize: 1, hasPreview: true });
 const entries = [
-  { ...base, id: "p1", kind: "inspiration", title: "Fluted glass wardrobe", referenceUrl: "https://www.instagram.com/p/x/", source: "client", board: { x: 0, y: 0, width: 240, z: 1, sentiment: "love" } },
-  { ...base, id: "p2", kind: "inspiration", title: "Glossy white", note: "Too cold", board: { x: 300, y: 0, width: 240, z: 2, sentiment: "avoid" } },
-  { ...base, id: "q1", kind: "requirement", title: "Kitchen cabinets" },
+  { ...base, id: "p1", kind: "inspiration", title: "Fluted glass wardrobe", referenceUrl: "https://www.instagram.com/p/x/", source: "client", roomId: "r1", requirementIds: ["q1"] },
+  { ...base, id: "p2", kind: "inspiration", title: "Glossy white", note: "Too cold", assets: [photo("a1"), photo("a2")], board: { x: 0, y: 0, width: 240, z: 2, sentiment: "avoid" } },
+  { ...base, id: "p3", kind: "inspiration", title: "Keep the arch", note: "Keep the arch and light it." },
+  { ...base, id: "q1", kind: "requirement", title: "Walk-in wardrobe" },
 ] as unknown as ScopeEntry[];
-const data = { workspaceId: "ws", caseId: "c1", canEdit: true, rooms: [], entries, brief: { currencyCode: "AED" } } as unknown as CaseContent;
-const renderBoard = () => render(<DesignSystemProvider><MoodboardPage initialData={data} /></DesignSystemProvider>);
+const data = { workspaceId: "ws", caseId: "c1", canEdit: true, rooms: [{ id: "r1", name: "Master bedroom" }], entries, brief: { currencyCode: "AED" } } as unknown as CaseContent;
+const renderBoard = () => render(<DesignSystemProvider><MoodboardPage initialData={data} clientName="Aisha Al Mansoori" /></DesignSystemProvider>);
+const card = (name: string) => screen.getByRole("article", { name });
 
 describe("moodboard", () => {
-  it("shows pins with their platform, feeling and source, and filters by feeling", async () => {
+  it("shows who added each pin by name, its room and the requirements it informs", () => {
     renderBoard();
-    expect(screen.getByRole("button", { name: "Fluted glass wardrobe" })).toHaveTextContent("Instagram");
-    expect(screen.getByRole("button", { name: "Fluted glass wardrobe" })).toHaveTextContent("Client");
-    expect(screen.getByRole("button", { name: "Glossy white" })).toHaveTextContent("Avoid");
+    const wardrobe = card("Fluted glass wardrobe");
+    expect(wardrobe).toHaveTextContent("From Aisha Al Mansoori");
+    expect(wardrobe).toHaveTextContent("Master bedroom");
+    expect(wardrobe).toHaveTextContent("Walk-in wardrobe");
+    expect(wardrobe).toHaveTextContent("Instagram");
+    expect(card("Glossy white")).toHaveTextContent("Added by Sara Sales");
+    expect(card("Glossy white")).toHaveTextContent("Avoid");
+    expect(card("Glossy white")).toHaveTextContent("+1");
+  });
+
+  it("filters by feeling and by who added it, and offers to clear an empty result", () => {
+    renderBoard();
     fireEvent.click(screen.getByRole("radio", { name: "Avoid" }));
-    expect(screen.queryByRole("button", { name: "Fluted glass wardrobe" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Glossy white" })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Fluted glass wardrobe" })).not.toBeInTheDocument();
+    expect(card("Glossy white")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "Client" }));
+    expect(screen.getByText("Nothing matches these filters")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.getByText("3 pins")).toBeInTheDocument();
   });
 
-  it("opens a pin's details and lets you link it to requirements", async () => {
+  it("opens photos full size and steps between them", async () => {
     renderBoard();
-    fireEvent.click(screen.getByRole("button", { name: "Fluted glass wardrobe" }));
-    const panel = await screen.findByRole("complementary", { name: "Pin details" });
-    expect(panel).toHaveTextContent("Added by the client");
-    expect(panel).toHaveTextContent("Requirements it informs");
-    expect(screen.getByRole("link", { name: /Open Instagram/ })).toHaveAttribute("href", "https://www.instagram.com/p/x/");
+    fireEvent.click(screen.getByRole("button", { name: "View Glossy white full size" }));
+    const viewer = await screen.findByRole("dialog", { name: "Glossy white" });
+    expect(viewer).toHaveTextContent("1 / 2");
+    fireEvent.click(within(viewer).getByRole("button", { name: "Next photo" }));
+    expect(viewer).toHaveTextContent("2 / 2");
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Glossy white" })).not.toBeInTheDocument());
   });
 
-  it("adds a note pin and places it on the board", async () => {
-    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+  it("marks a pin Love or Avoid from its card and saves the new feeling", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => { if (url.includes("moodboard/layout")) bodies.push(JSON.parse(String(init?.body))); return { ok: true, json: async () => ({ saved: 1 }) }; }));
+    renderBoard();
+    fireEvent.click(within(card("Glossy white")).getByRole("button", { name: "Love" }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ pins: [{ entryId: "p2", sentiment: "love" }] });
+    expect(within(card("Glossy white")).getByRole("button", { name: "Love" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("adds a note pin", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-      calls.push({ url, method: init?.method ?? "GET", body });
-      if (url.includes("/entries")) return { ok: true, json: async () => ({ ...base, ...body, assets: [], catalogLinks: [] }) };
-      return { ok: true, json: async () => ({ saved: 1 }) };
+      calls.push({ url, body });
+      return { ok: true, json: async () => ({ ...base, ...body, assets: [], catalogLinks: [] }) };
     }));
     renderBoard();
     fireEvent.click(screen.getByRole("button", { name: "Note" }));
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     expect(await screen.findByText("Write the note first.")).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("textbox", { name: "Note" }), { target: { value: "Keep the arch" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Note" }), { target: { value: "No open shelving" } });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    await waitFor(() => expect(calls.some((call) => call.url.includes("moodboard/layout"))).toBe(true));
-    const saved = calls.find((call) => call.url.includes("/entries"))!.body as { kind: string; title: string; requirementIds: string[] };
-    expect(saved).toMatchObject({ kind: "inspiration", title: "Keep the arch", requirementIds: [] });
-    expect(await screen.findByRole("button", { name: "Keep the arch" })).toBeInTheDocument();
-  });
-
-  it("marks a pin Love or Avoid right on the card and saves the new feeling", async () => {
-    const bodies: unknown[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => { if (url.includes("moodboard/layout")) bodies.push(JSON.parse(String(init?.body))); return { ok: true, json: async () => ({ saved: 1 }) }; }));
-    renderBoard();
-    const avoidGroups = screen.getAllByRole("group", { name: "Feeling" });
-    const glossy = avoidGroups.find((group) => group.getAttribute("data-value") === "avoid")!;
-    fireEvent.click(glossy.querySelector('button[aria-label="Love"]')!);
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toMatchObject({ pins: [{ entryId: "p2", sentiment: "love" }] });
-    expect(screen.getByRole("button", { name: "Glossy white" })).not.toHaveTextContent("Avoid");
+    expect(await screen.findByRole("article", { name: "No open shelving" })).toBeInTheDocument();
+    expect(calls.find((call) => call.url.includes("/entries"))!.body).toMatchObject({ kind: "inspiration", title: "No open shelving", requirementIds: [] });
   });
 });

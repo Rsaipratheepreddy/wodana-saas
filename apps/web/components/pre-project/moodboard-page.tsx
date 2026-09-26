@@ -1,145 +1,92 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { Camera, CirclePlay, ExternalLink, Globe, Heart, Pin, ImagePlus, Link2, Maximize2, Minus, Plus, StickyNote, ThumbsDown, X } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, MultiSelectField, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera, ChevronLeft, ChevronRight, CirclePlay, ExternalLink, Globe, Heart, ImagePlus, Link2, Maximize2, Pin, StickyNote, ThumbsDown, X } from "lucide-react";
+import { Button, ControlledModalDialog, EmptyState, InlineNotice, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type MoodboardPlacement, type ScopeEntry } from "@/lib/pre-project/content";
-import { clampZoom, fitView, layoutPins, linkPlatform, pinKind, PIN_WIDTH, zoomAround } from "@/lib/pre-project/moodboard";
+import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type ScopeEntry } from "@/lib/pre-project/content";
+import { linkPlatform, pinKind } from "@/lib/pre-project/moodboard";
 import styles from "./moodboard.module.css";
 
-type View = { x: number; y: number; zoom: number };
-type Drag = { id: string; mode: "move" | "resize"; startX: number; startY: number; origin: MoodboardPlacement } | { id: null; mode: "pan"; startX: number; startY: number; origin: View };
+type Feeling = "love" | "avoid";
+const feelingOf = (entry: ScopeEntry): Feeling => entry.board?.sentiment ?? "love";
+const images = (entry: ScopeEntry) => entry.assets.filter((asset) => asset.mimeType.startsWith("image/"));
 
 /**
- * The moodboard: everything the client loves (or wants to avoid) on one board. Pins are photos,
- * links (Instagram, Pinterest, YouTube, any site) or notes; each can point to a room and to the
- * requirements it informs. Board view is a free canvas; grid view is for scanning.
+ * The moodboard: what the client loves, or wants to avoid, in one scannable grid. Pins are photos,
+ * links (Instagram, Pinterest, YouTube, any site) or notes; each names who added it, its room and
+ * the requirements it informs. Photos open full size.
  */
-export function MoodboardPage({ initialData }: { initialData: CaseContent }) {
+export function MoodboardPage({ initialData, clientName }: { initialData: CaseContent; clientName?: string }) {
   const t = useT();
-  const { workspaceId, caseId } = initialData;
+  const { workspaceId, caseId, canEdit } = initialData;
   const [entries, setEntries] = useState(() => initialData.entries.filter((entry) => entry.kind === "inspiration" && !entry.archivedAt));
-  const [placements, setPlacements] = useState(() => layoutPins(entries));
-  const [mode, setMode] = useState<"board" | "grid">("board");
   const [room, setRoom] = useState("all");
   const [feeling, setFeeling] = useState("all");
+  const [source, setSource] = useState("all");
   const [selected, setSelected] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ entryId: string; index: number } | null>(null);
   const [adding, setAdding] = useState<"link" | "note" | null>(null);
-  const [view, setView] = useState<View>({ x: 48, y: 48, zoom: 1 });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const canvas = useRef<HTMLDivElement>(null);
-  const drag = useRef<Drag | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const requirements = useMemo(() => initialData.entries.filter((entry) => entry.kind === "requirement" && !entry.archivedAt), [initialData.entries]);
-  const canEdit = initialData.canEdit;
+  const requirementName = useMemo(() => new Map(requirements.map((entry) => [entry.id, entry.title])), [requirements]);
+  const roomName = (entry: ScopeEntry) => initialData.rooms.find((item) => item.id === entry.roomId)?.name ?? entry.roomName ?? null;
+  const addedBy = (entry: ScopeEntry) => entry.source === "client" ? (clientName || t("Client")) : (entry.createdByName || t("Team"));
+  const assetUrl = (asset: CaseAsset, preview = true) => caseApi(workspaceId, caseId, `assets/${asset.id}${preview && asset.hasPreview ? "?preview=1" : ""}`);
 
-  const visible = entries.filter((entry) => (room === "all" || entry.roomId === room) && (feeling === "all" || (placements.get(entry.id)?.sentiment ?? "love") === feeling));
-  const assetUrl = (asset: CaseAsset, preview = true) => caseApi(workspaceId, caseId, `assets/${asset.id}${preview ? "?preview=1" : ""}`);
+  const visible = entries.filter((entry) => (room === "all" || (room === "project" ? !entry.roomId : entry.roomId === room))
+    && (feeling === "all" || feelingOf(entry) === feeling)
+    && (source === "all" || entry.source === source));
+  const filtered = room !== "all" || feeling !== "all" || source !== "all";
 
-  const fit = useCallback(() => {
-    const box = canvas.current?.getBoundingClientRect();
-    if (box) setView(fitView([...placements.values()], { width: box.width, height: box.height }));
-  }, [placements]);
-  useEffect(() => { if (mode === "board") fit(); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const saveLayout = async (ids: string[], override?: Map<string, MoodboardPlacement>) => {
-    if (!canEdit) return;
-    const pins = ids.map((id) => ({ entryId: id, ...(override?.get(id) ?? placements.get(id)!) })).map(({ entryId, x, y, width, z, sentiment }) => ({ entryId, x, y, width, z, sentiment }));
-    try { await caseRequest(workspaceId, caseId, "moodboard/layout", "PUT", { pins }); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : t("The board could not be saved.")); }
-  };
-  const place = (id: string, patch: Partial<MoodboardPlacement>) => setPlacements((current) => { const next = new Map(current); next.set(id, { ...current.get(id)!, ...patch }); return next; });
-  const markFeeling = (id: string, sentiment: "love" | "avoid") => {
-    const next = { ...placements.get(id)!, sentiment };
-    place(id, next);
-    void saveLayout([id], new Map([[id, next]]));
-  };
-  const topZ = () => Math.max(0, ...[...placements.values()].map((p) => p.z)) + 1;
-
+  const replace = (saved: ScopeEntry) => setEntries((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
   const saveEntry = async (entry: ScopeEntry) => {
     const saved = await caseRequest<ScopeEntry>(workspaceId, caseId, "entries", "PUT", entryPayload(entry));
-    setEntries((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [...current, saved]);
+    replace({ ...saved, board: saved.board ?? entry.board ?? null });
     return saved;
   };
-  /** New pins land in the middle of what's on screen, on top. */
-  const dropPoint = (index = 0) => {
-    const box = canvas.current?.getBoundingClientRect();
-    const cx = box ? (box.width / 2 - view.x) / view.zoom : 0; const cy = box ? (box.height / 2 - view.y) / view.zoom : 0;
-    return { x: Math.round(cx - PIN_WIDTH / 2 + index * 32), y: Math.round(cy - 120 + index * 32), width: PIN_WIDTH, z: topZ() + index, sentiment: "love" as const };
+  /** Love / avoid is stored with the pin's placement, so changing it never rewrites the pin. */
+  const markFeeling = async (entry: ScopeEntry, sentiment: Feeling) => {
+    if (!canEdit || feelingOf(entry) === sentiment) return;
+    const board = { x: entry.board?.x ?? 0, y: entry.board?.y ?? 0, width: entry.board?.width ?? 240, z: entry.board?.z ?? 0, sentiment };
+    replace({ ...entry, board });
+    try { await caseRequest(workspaceId, caseId, "moodboard/layout", "PUT", { pins: [{ entryId: entry.id, ...board }] }); }
+    catch (failure) { replace(entry); setError(failure instanceof Error ? failure.message : t("Could not save.")); }
   };
-  const create = async (draft: Partial<ScopeEntry>, index = 0) => {
-    const entry: ScopeEntry = { ...blankEntry(room === "all" ? null : room), kind: "inspiration", category: "Inspiration", source: "team", requirementIds: [], ...draft };
-    const saved = await saveEntry(entry);
-    const spot = dropPoint(index);
-    setPlacements((current) => new Map(current).set(saved.id, spot));
-    await caseRequest(workspaceId, caseId, "moodboard/layout", "PUT", { pins: [{ entryId: saved.id, ...spot }] });
-    return saved;
+  const create = async (draft: Partial<ScopeEntry>) => {
+    const entry: ScopeEntry = { ...blankEntry(room === "all" || room === "project" ? null : room), kind: "inspiration", category: "Inspiration", source: "team", requirementIds: [], ...draft };
+    return saveEntry(entry);
   };
   const uploadPhotos = async (files: FileList | null) => {
     if (!files?.length) return;
     setBusy(true); setError("");
-    try {
-      for (const [index, file] of [...files].entries()) {
-        if (!file.type.startsWith("image/")) throw new Error(t("Add photos here; share videos as links."));
+    const failed: string[] = [];
+    for (const file of [...files]) {
+      if (!file.type.startsWith("image/")) { failed.push(file.name); continue; }
+      try {
         const body = new FormData(); body.append("file", file);
         const asset = await caseRequest<CaseAsset>(workspaceId, caseId, `assets/${crypto.randomUUID()}`, "POST", body);
-        await create({ title: file.name.replace(/\.[^.]+$/, "").slice(0, 240) || t("Photo"), assets: [asset] }, index);
-      }
-    } catch (failure) { setError(failure instanceof Error ? failure.message : t("The photo could not be added.")); }
-    finally { setBusy(false); if (upload.current) upload.current.value = ""; }
-  };
-
-  // Canvas gestures: drag a pin to move it, its corner to resize, the background to pan.
-  const pointerDown = (event: ReactPointerEvent, id: string | null, action: "move" | "resize" | "pan") => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    setDragging(true);
-    if (id) { setSelected(id); if (!canEdit) return; drag.current = { id, mode: action as "move" | "resize", startX: event.clientX, startY: event.clientY, origin: placements.get(id)! }; }
-    else { setSelected(null); drag.current = { id: null, mode: "pan", startX: event.clientX, startY: event.clientY, origin: view }; }
-  };
-  const pointerMove = (event: ReactPointerEvent) => {
-    const current = drag.current; if (!current) return;
-    const dx = event.clientX - current.startX; const dy = event.clientY - current.startY;
-    if (current.mode === "pan") setView({ ...current.origin, x: current.origin.x + dx, y: current.origin.y + dy });
-    else if (current.mode === "move") place(current.id, { x: Math.round(current.origin.x + dx / view.zoom), y: Math.round(current.origin.y + dy / view.zoom) });
-    else place(current.id, { width: Math.round(Math.min(960, Math.max(120, current.origin.width + dx / view.zoom))) });
-  };
-  const pointerUp = () => {
-    const current = drag.current; drag.current = null; setDragging(false);
-    if (!current?.id) return;
-    const now = placements.get(current.id)!;
-    if (now.x === current.origin.x && now.y === current.origin.y && now.width === current.origin.width) return;
-    // A moved pin comes to the front.
-    const moved = { ...now, z: topZ() };
-    place(current.id, moved);
-    void saveLayout([current.id], new Map([[current.id, moved]]));
-  };
-  const wheel = (event: ReactWheelEvent) => {
-    if (mode !== "board") return;
-    const box = canvas.current!.getBoundingClientRect();
-    if (event.ctrlKey || event.metaKey) setView((current) => zoomAround(current, { x: event.clientX - box.left, y: event.clientY - box.top }, current.zoom * (1 - event.deltaY * 0.01)));
-    else setView((current) => ({ ...current, x: current.x - event.deltaX, y: current.y - event.deltaY }));
-  };
-  const nudge = (id: string, key: string, shift: boolean) => {
-    const step = shift ? 40 : 8; const p = placements.get(id)!;
-    const delta = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[key];
-    if (!delta || !canEdit) return false;
-    place(id, { x: p.x + delta[0], y: p.y + delta[1] }); return true;
+        await create({ title: file.name.replace(/\.[^.]+$/, "").slice(0, 240) || t("Photo"), assets: [asset] });
+      } catch { failed.push(file.name); }
+    }
+    if (failed.length) setError(`${t("These could not be added")}: ${failed.join(", ")}. ${t("Add photos here; share videos as links.")}`);
+    setBusy(false);
+    if (upload.current) upload.current.value = "";
   };
 
   const selectedEntry = entries.find((entry) => entry.id === selected) ?? null;
-  const rooms = [{ id: "all", label: t("All rooms") }, ...initialData.rooms.map((item) => ({ id: item.id, label: item.name }))];
+  const viewingEntry = viewing ? entries.find((entry) => entry.id === viewing.entryId) ?? null : null;
+  const rooms = [{ id: "all", label: t("All rooms") }, { id: "project", label: t("Whole project") }, ...initialData.rooms.map((item) => ({ id: item.id, label: item.name }))];
 
   return <section className={styles.page} aria-label={t("Moodboard")}>
     <div className={styles.toolbar}>
-      <SegmentedControl label={t("View")} value={mode} onChange={(value) => setMode(value as "board" | "grid")} options={[{ id: "board", label: t("Board") }, { id: "grid", label: t("Grid") }]} />
       <SelectField aria-label={t("Room")} accent="neutral" items={rooms} label={null} onSelectionChange={(key) => setRoom(String(key ?? "all"))} selectedKey={room} />
       <SegmentedControl label={t("Feeling")} value={feeling} onChange={setFeeling} options={[{ id: "all", label: t("All") }, { id: "love", label: t("Love") }, { id: "avoid", label: t("Avoid") }]} />
+      <SegmentedControl label={t("Added by")} value={source} onChange={setSource} options={[{ id: "all", label: t("Everyone") }, { id: "client", label: t("Client") }, { id: "team", label: t("Team") }]} />
+      <span className={styles.count}>{t("{count} pins", { count: visible.length })}</span>
       <span className={styles.spacer} />
       {canEdit ? <div className={styles.addGroup} role="group" aria-label={t("Add to moodboard")}>
         <Button size="compact" isLoading={busy} onPress={() => upload.current?.click()}><ImagePlus aria-hidden="true" size={14} />{t("Photos")}</Button>
@@ -150,41 +97,17 @@ export function MoodboardPage({ initialData }: { initialData: CaseContent }) {
     </div>
     {error ? <InlineNotice message={error} tone="error" /> : null}
     {!entries.length ? <div className={styles.empty}><EmptyState illustration="upload" title={t("Start the moodboard")} description={t("Add photos, Instagram or Pinterest links, videos and notes the client loves, or wants to avoid.")} /></div>
-      : mode === "grid" ? <div className={styles.grid}>{visible.map((entry) => <div className={styles.gridItem} key={entry.id}><PinCard entry={entry} placement={placements.get(entry.id)} requirementCount={entry.requirementIds?.length ?? 0} assetUrl={assetUrl} selected={selected === entry.id} onSelect={() => setSelected(entry.id)} /><FeelingToggle value={placements.get(entry.id)?.sentiment ?? "love"} canEdit={canEdit} onChange={(value) => markFeeling(entry.id, value)} /></div>)}</div>
-      : <div className={styles.canvas} ref={canvas} onPointerDown={(event) => pointerDown(event, null, "pan")} onPointerMove={pointerMove} onPointerUp={pointerUp} onWheel={wheel} data-dragging={dragging || undefined}>
-        <div className={styles.world} style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
-          {visible.map((entry) => { const p = placements.get(entry.id)!; return <div className={styles.pin} key={entry.id} style={{ transform: `translate(${p.x}px, ${p.y}px)`, inlineSize: p.width, zIndex: p.z }}
-            onPointerDown={(event) => pointerDown(event, entry.id, "move")}
-            onKeyDown={(event) => { if (nudge(entry.id, event.key, event.shiftKey)) { event.preventDefault(); } if (event.key === "Escape") setSelected(null); }}
-            onKeyUp={(event) => { if (event.key.startsWith("Arrow")) void saveLayout([entry.id]); }}>
-            <PinCard entry={entry} placement={p} requirementCount={entry.requirementIds?.length ?? 0} assetUrl={assetUrl} selected={selected === entry.id} onSelect={() => setSelected(entry.id)} />
-            <FeelingToggle value={p.sentiment} canEdit={canEdit} onChange={(value) => markFeeling(entry.id, value)} />
-            {canEdit ? <span aria-hidden="true" className={styles.resize} onPointerDown={(event) => pointerDown(event, entry.id, "resize")} /> : null}
-          </div>; })}
-        </div>
-        <div className={styles.zoom} onPointerDown={(event) => event.stopPropagation()}>
-          <IconButton aria-label={t("Zoom out")} size="compact" onPress={() => setView((current) => ({ ...current, zoom: clampZoom(current.zoom - 0.1) }))}><Minus size={14} /></IconButton>
-          <span aria-live="polite">{Math.round(view.zoom * 100)}%</span>
-          <IconButton aria-label={t("Zoom in")} size="compact" onPress={() => setView((current) => ({ ...current, zoom: clampZoom(current.zoom + 0.1) }))}><Plus size={14} /></IconButton>
-          <IconButton aria-label={t("Fit to screen")} size="compact" onPress={fit}><Maximize2 size={14} /></IconButton>
-        </div>
-      </div>}
-    {selectedEntry ? <PinInspector key={selectedEntry.id} entry={selectedEntry} placement={placements.get(selectedEntry.id)!} rooms={initialData.rooms} requirements={requirements} canEdit={canEdit} assetUrl={assetUrl}
-      onClose={() => setSelected(null)}
-      onFeeling={(sentiment) => markFeeling(selectedEntry.id, sentiment)}
-      onSave={async (next) => { await saveEntry(next); }}
+      : !visible.length ? <div className={styles.empty}><EmptyState illustration="search" title={t("Nothing matches these filters")} description={t("Try another room, feeling or person.")} action={filtered ? <Button size="compact" onPress={() => { setRoom("all"); setFeeling("all"); setSource("all"); }}>{t("Clear filters")}</Button> : undefined} /></div>
+      : <div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
+        assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>}
+    {selectedEntry ? <PinSheet key={selectedEntry.id} entry={selectedEntry} rooms={initialData.rooms} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
+      onClose={() => setSelected(null)} onView={(index) => setViewing({ entryId: selectedEntry.id, index })}
+      onFeeling={(value) => void markFeeling(selectedEntry, value)}
+      onSave={async (next) => { await saveEntry(next); setSelected(null); }}
       onRemove={async () => { await caseRequest(workspaceId, caseId, `entries/${selectedEntry.id}`, "PATCH", { version: selectedEntry.version, archived: true }); setEntries((current) => current.filter((item) => item.id !== selectedEntry.id)); setSelected(null); }} /> : null}
+    {viewingEntry && images(viewingEntry).length ? <PhotoViewer entry={viewingEntry} start={viewing!.index} assetUrl={assetUrl} onClose={() => setViewing(null)} /> : null}
     {adding ? <AddPinDialog kind={adding} onClose={() => setAdding(null)} onAdd={async (draft) => { await create(draft); setAdding(null); }} /> : null}
   </section>;
-}
-
-/** Love or avoid, right on the card: set in one click, always visible once chosen. */
-function FeelingToggle({ value, canEdit, onChange }: { value: "love" | "avoid"; canEdit: boolean; onChange: (value: "love" | "avoid") => void }) {
-  const t = useT();
-  return <span className={styles.feelingToggle} data-value={value} role="group" aria-label={t("Feeling")} onPointerDown={(event) => event.stopPropagation()}>
-    <button type="button" aria-label={t("Love")} aria-pressed={value === "love"} disabled={!canEdit} onClick={() => onChange("love")}><Heart aria-hidden="true" size={14} /></button>
-    <button type="button" aria-label={t("Avoid")} aria-pressed={value === "avoid"} disabled={!canEdit} onClick={() => onChange("avoid")}><ThumbsDown aria-hidden="true" size={14} /></button>
-  </span>;
 }
 
 function PlatformIcon({ id }: { id: string }) {
@@ -192,58 +115,124 @@ function PlatformIcon({ id }: { id: string }) {
   return <span aria-hidden="true" className={styles.platformIcon}><Icon size={16} /></span>;
 }
 
-function PinCard({ entry, placement, requirementCount, assetUrl, selected, onSelect }: { entry: ScopeEntry; placement?: MoodboardPlacement; requirementCount: number; assetUrl: (asset: CaseAsset) => string; selected: boolean; onSelect: () => void }) {
+function FeelingToggle({ value, canEdit, onChange }: { value: Feeling; canEdit: boolean; onChange: (value: Feeling) => void }) {
   const t = useT();
-  const kind = pinKind(entry);
-  const image = entry.assets.find((asset) => asset.mimeType.startsWith("image/"));
-  const platform = entry.referenceUrl ? linkPlatform(entry.referenceUrl) : null;
-  return <button type="button" className={styles.card} data-kind={kind} data-selected={selected || undefined} data-avoid={placement?.sentiment === "avoid" || undefined} onClick={onSelect} aria-label={entry.title}>
-    {kind === "image" && image ? <Image alt="" className={styles.photo} draggable={false} height={360} src={assetUrl(image)} unoptimized width={480} /> : null}
-    {kind === "link" && platform ? <span className={styles.link} data-platform={platform.id}><PlatformIcon id={platform.id} /><strong>{platform.label}</strong><small>{platform.host}</small></span> : null}
-    <span className={styles.caption}>
-      {kind === "note" ? <span className={styles.noteText}>{entry.note || entry.title}</span> : <strong>{entry.title}</strong>}
-      <span className={styles.meta}>
-        {placement?.sentiment === "avoid" ? <Badge tone="danger">{t("Avoid")}</Badge> : null}
-        {entry.source === "client" ? <Badge tone="info">{t("Client")}</Badge> : null}
-        {entry.roomName ? <span>{entry.roomName}</span> : null}
-        {requirementCount ? <span>{t("{count} linked", { count: requirementCount })}</span> : null}
-        {entry.assets.length > 1 ? <span>+{entry.assets.length - 1}</span> : null}
-      </span>
-    </span>
-  </button>;
+  return <span className={styles.feelingToggle} data-value={value} role="group" aria-label={t("Feeling")}>
+    <button type="button" aria-label={t("Love")} aria-pressed={value === "love"} disabled={!canEdit} onClick={() => onChange("love")}><Heart aria-hidden="true" size={14} /></button>
+    <button type="button" aria-label={t("Avoid")} aria-pressed={value === "avoid"} disabled={!canEdit} onClick={() => onChange("avoid")}><ThumbsDown aria-hidden="true" size={14} /></button>
+  </span>;
 }
 
-function PinInspector({ entry, placement, rooms, requirements, canEdit, assetUrl, onClose, onFeeling, onSave, onRemove }: {
-  entry: ScopeEntry; placement: MoodboardPlacement; rooms: CaseContent["rooms"]; requirements: ScopeEntry[]; canEdit: boolean; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
-  onClose: () => void; onFeeling: (sentiment: "love" | "avoid") => void; onSave: (entry: ScopeEntry) => Promise<void>; onRemove: () => Promise<void>;
+function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, canEdit, onOpen, onView, onFeeling }: {
+  entry: ScopeEntry; room: string | null; addedBy: string; requirementNames: string[]; assetUrl: (asset: CaseAsset) => string; selected: boolean; canEdit: boolean;
+  onOpen: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void;
+}) {
+  const t = useT();
+  const kind = pinKind(entry);
+  const photos = images(entry);
+  const platform = entry.referenceUrl ? linkPlatform(entry.referenceUrl) : null;
+  const feeling = feelingOf(entry);
+  return <article className={styles.card} data-kind={kind} data-selected={selected || undefined} data-avoid={feeling === "avoid" || undefined} aria-label={entry.title}>
+    {kind === "image" && photos[0] ? <button type="button" className={styles.media} aria-label={t("View {name} full size", { name: entry.title })} onClick={() => onView(0)}>
+      <Image alt="" className={styles.photo} height={360} src={assetUrl(photos[0])} unoptimized width={480} />
+      <span aria-hidden="true" className={styles.expand}><Maximize2 size={14} /></span>
+      {photos.length > 1 ? <span className={styles.photoCount}>+{photos.length - 1}</span> : null}
+    </button> : null}
+    {kind === "link" && platform ? <a className={styles.link} data-platform={platform.id} href={entry.referenceUrl} target="_blank" rel="noreferrer"><PlatformIcon id={platform.id} /><strong>{platform.label}</strong><small>{platform.host}</small><ExternalLink aria-hidden="true" className={styles.linkOut} size={14} /></a> : null}
+    <button type="button" className={styles.body} onClick={onOpen} aria-label={t("Open details for {name}", { name: entry.title })}>
+      {kind === "note" ? <span className={styles.noteText}>{entry.note || entry.title}</span> : <strong className={styles.cardTitle}>{entry.title}</strong>}
+      {kind !== "note" && entry.note ? <span className={styles.cardNote}>{entry.note}</span> : null}
+      {requirementNames.length || room ? <span className={styles.tags}>
+        {room ? <span className={styles.tag} data-kind="room">{room}</span> : null}
+        {requirementNames.map((name) => <span className={styles.tag} data-kind="requirement" key={name}>{name}</span>)}
+      </span> : null}
+    </button>
+    <footer className={styles.cardFoot}>
+      <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
+      <span className={styles.byline} title={addedBy}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</span>
+      <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
+    </footer>
+  </article>;
+}
+
+function PinSheet({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
+  entry: ScopeEntry; rooms: CaseContent["rooms"]; requirements: ScopeEntry[]; canEdit: boolean; addedBy: string; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
+  onClose: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void; onSave: (entry: ScopeEntry) => Promise<void>; onRemove: () => Promise<void>;
 }) {
   const t = useT();
   const [draft, setDraft] = useState(entry);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const dirty = JSON.stringify(draft) !== JSON.stringify(entry);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const dirty = JSON.stringify({ ...draft, board: null }) !== JSON.stringify({ ...entry, board: null });
   const set = <K extends keyof ScopeEntry>(key: K) => (value: ScopeEntry[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const run = async (work: () => Promise<void>) => { setBusy(true); setError(""); try { await work(); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); } finally { setBusy(false); } };
-  return <aside className={styles.inspector} aria-label={t("Pin details")}>
-    <header className={styles.inspectorHead}><strong>{t("Pin")}</strong><IconButton aria-label={t("Close")} size="compact" onPress={onClose}><X size={14} /></IconButton></header>
-    {error ? <InlineNotice message={error} tone="error" /> : null}
-    {entry.assets.filter((asset) => asset.mimeType.startsWith("image/")).length ? <div className={styles.inspectorPhotos}>{entry.assets.map((asset) => <a key={asset.id} href={assetUrl(asset, false)} target="_blank" rel="noreferrer"><Image alt={asset.name} height={160} src={assetUrl(asset)} unoptimized width={160} /></a>)}</div> : null}
-    <div className={styles.feeling} role="group" aria-label={t("Feeling")}>
-      <Button size="compact" variant={placement.sentiment === "love" ? "primary" : "secondary"} isDisabled={!canEdit} onPress={() => onFeeling("love")}><Heart aria-hidden="true" size={13} />{t("Love")}</Button>
-      <Button size="compact" variant={placement.sentiment === "avoid" ? "primary" : "secondary"} isDisabled={!canEdit} onPress={() => onFeeling("avoid")}><ThumbsDown aria-hidden="true" size={13} />{t("Avoid")}</Button>
+  const run = async (work: () => Promise<void>) => { setBusy(true); setError(""); try { await work(); } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not save.")); setBusy(false); } };
+  const validLink = !draft.referenceUrl || /^https?:\/\/\S+$/i.test(draft.referenceUrl);
+  const photos = images(entry);
+  const feeling = feelingOf(entry);
+  return <InspectorSheet isDirty={dirty} isOpen size="lg" title={entry.title || t("Pin")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={canEdit ? <div className={styles.sheetFoot}>
+      {confirmRemove ? <><span>{t("Remove this pin?")}</span><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={() => setConfirmRemove(false)}>{t("Keep")}</Button><Button size="compact" variant="primary" isLoading={busy} onPress={() => void run(onRemove)}>{t("Remove")}</Button></>
+        : <><Button size="compact" variant="quiet" isDisabled={busy} onPress={() => setConfirmRemove(true)}>{t("Remove")}</Button><span className={styles.spacer} /><Button size="compact" isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button><Button size="compact" variant="primary" isDisabled={!dirty || !draft.title.trim() || !validLink} isLoading={busy} onPress={() => void run(() => onSave(draft))}>{t("Save")}</Button></>}
+    </div> : undefined}>
+    <div className={styles.sheet}>
+      {error ? <InlineNotice message={error} tone="error" /> : null}
+      {photos.length ? <div className={styles.sheetPhotos} data-count={Math.min(photos.length, 3)}>
+        {photos.map((asset, index) => <button type="button" key={asset.id} className={styles.sheetPhoto} onClick={() => onView(index)} aria-label={t("View {name} full size", { name: asset.name })}>
+          <Image alt="" height={600} src={assetUrl(asset)} unoptimized width={800} />
+          <span aria-hidden="true" className={styles.expand}><Maximize2 size={14} /></span>
+        </button>)}
+      </div> : null}
+      <div className={styles.sheetRow}>
+        <span className={styles.chip} data-feeling={feeling}>{feeling === "avoid" ? t("Avoid") : t("Love")}</span>
+        <FeelingToggle value={feeling} canEdit={canEdit} onChange={onFeeling} />
+        <span className={styles.spacer} />
+        <span className={styles.byline}>{entry.source === "client" ? t("From {name}", { name: addedBy }) : t("Added by {name}", { name: addedBy })}</span>
+      </div>
+      <TextInput isDisabled={!canEdit} isRequired label={t("Title")} maxLength={240} onChange={set("title")} value={draft.title} errorMessage={!draft.title.trim() ? t("Give the pin a title.") : undefined} />
+      <TextAreaField isDisabled={!canEdit} label={t("Note")} maxLength={3000} onChange={set("note")} value={draft.note} />
+      <TextInput isDisabled={!canEdit} inputType="url" label={t("Link")} maxLength={2000} onChange={set("referenceUrl")} placeholder="https://" value={draft.referenceUrl} errorMessage={!validLink ? t("Paste a full link starting with https://") : undefined} />
+      {draft.referenceUrl && validLink ? <a className={styles.openLink} href={draft.referenceUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" size={13} />{t("Open")} {linkPlatform(draft.referenceUrl).label}</a> : null}
+      <SelectField isDisabled={!canEdit} items={[{ id: "", label: t("Whole project") }, ...rooms.map((item) => ({ id: item.id, label: item.name }))]} label={t("Room")} onSelectionChange={(key) => set("roomId")(key ? String(key) : null)} selectedKey={draft.roomId ?? ""} />
+      {requirements.length ? <MultiSelectField label={t("Requirements it informs")} items={requirements.map((item) => ({ id: item.id, label: item.title }))} selectedKeys={new Set(draft.requirementIds ?? [])} onSelectionChange={(keys) => { if (canEdit) set("requirementIds")([...keys].map(String)); }} />
+        : <p className={styles.hint}>{t("Add requirements to link this pin to them.")}</p>}
     </div>
-    <TextInput isDisabled={!canEdit} label={t("Title")} maxLength={240} onChange={set("title")} value={draft.title} />
-    <TextAreaField isDisabled={!canEdit} label={t("Note")} maxLength={3000} onChange={set("note")} value={draft.note} />
-    <TextInput isDisabled={!canEdit} inputType="url" label={t("Link")} maxLength={2000} onChange={set("referenceUrl")} placeholder="https://" value={draft.referenceUrl} />
-    {draft.referenceUrl ? <a className={styles.openLink} href={draft.referenceUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" size={13} />{t("Open")} {linkPlatform(draft.referenceUrl).label}</a> : null}
-    <SelectField isDisabled={!canEdit} items={[{ id: "", label: t("Whole project") }, ...rooms.map((item) => ({ id: item.id, label: item.name }))]} label={t("Room")} onSelectionChange={(key) => set("roomId")(key ? String(key) : null)} selectedKey={draft.roomId ?? ""} />
-    <MultiSelectField label={t("Requirements it informs")} items={requirements.map((item) => ({ id: item.id, label: item.title }))} selectedKeys={new Set(draft.requirementIds ?? [])} onSelectionChange={(keys) => set("requirementIds")([...keys].map(String))} />
-    <p className={styles.provenance}>{entry.source === "client" ? t("Added by the client") : entry.createdByName ? t("Added by {name}", { name: entry.createdByName }) : null}</p>
-    {canEdit ? <footer className={styles.inspectorFoot}>
-      <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => void run(onRemove)}>{t("Remove")}</Button>
-      <Button size="compact" variant="primary" isDisabled={!dirty || !draft.title.trim()} isLoading={busy} onPress={() => void run(() => onSave(draft))}>{t("Save")}</Button>
-    </footer> : null}
-  </aside>;
+  </InspectorSheet>;
+}
+
+/** Photos full size: arrows and keys move between a pin's photos, Escape closes. */
+function PhotoViewer({ entry, start, assetUrl, onClose }: { entry: ScopeEntry; start: number; assetUrl: (asset: CaseAsset, preview?: boolean) => string; onClose: () => void }) {
+  const t = useT();
+  const photos = images(entry);
+  const [index, setIndex] = useState(Math.min(start, photos.length - 1));
+  const close = useRef<HTMLButtonElement>(null);
+  const step = (delta: number) => setIndex((current) => (current + delta + photos.length) % photos.length);
+  useEffect(() => {
+    close.current?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") step(document.dir === "rtl" ? -1 : 1);
+      if (event.key === "ArrowLeft") step(document.dir === "rtl" ? 1 : -1);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const photo = photos[index];
+  return <div className={styles.viewer} role="dialog" aria-modal="true" aria-label={entry.title} onClick={onClose}>
+    <div className={styles.viewerBar} onClick={(event) => event.stopPropagation()}>
+      <strong>{entry.title}</strong>
+      {photos.length > 1 ? <span>{index + 1} / {photos.length}</span> : null}
+      <span className={styles.spacer} />
+      <a className={styles.viewerAction} href={assetUrl(photo, false)} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" size={14} />{t("Open original")}</a>
+      <button ref={close} type="button" className={styles.viewerClose} aria-label={t("Close")} onClick={onClose}><X size={18} /></button>
+    </div>
+    {/* eslint-disable-next-line @next/next/no-img-element -- full-size original, sized by the viewport */}
+    <img alt={photo.name} className={styles.viewerImage} onClick={(event) => event.stopPropagation()} src={assetUrl(photo, false)} />
+    {photos.length > 1 ? <>
+      <button type="button" className={styles.viewerNav} data-side="start" aria-label={t("Previous photo")} onClick={(event) => { event.stopPropagation(); step(-1); }}><ChevronLeft size={22} /></button>
+      <button type="button" className={styles.viewerNav} data-side="end" aria-label={t("Next photo")} onClick={(event) => { event.stopPropagation(); step(1); }}><ChevronRight size={22} /></button>
+    </> : null}
+  </div>;
 }
 
 function AddPinDialog({ kind, onClose, onAdd }: { kind: "link" | "note"; onClose: () => void; onAdd: (draft: Partial<ScopeEntry>) => Promise<void> }) {
