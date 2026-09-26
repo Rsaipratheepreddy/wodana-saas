@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Image as ImageIcon, Percent, Plus } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Bookmark, Image as ImageIcon, Percent, Plus } from "lucide-react";
 import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SegmentedControl, Skeleton, ToggleButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogImageUrl, quoteApi, QuotationRequestError } from "@/lib/quotation/client";
@@ -19,6 +19,7 @@ import { FlowActions, RevisionChanges } from "./quote-flow";
 import { DocumentStudio } from "./document-studio";
 import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteAssistant } from "./quote-assistant";
+import { ChangeAgreedItem } from "./quote-variation";
 import { CommentButton, CommentPanel, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import { useRouter } from "next/navigation";
 import styles from "./quote-builder.module.css";
@@ -30,7 +31,7 @@ const STATUS_LABEL: Record<string, string> = { draft: "Draft", internal_review: 
  * The quotation builder (plan §6.8): one list of lines, read by area, by trade or both. Edit like a
  * spreadsheet; every change is saved line by line as you go, priced on the server and shown back.
  */
-export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, initialTab = "items" }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; initial?: BuilderState; initialTab?: "items" | "document" }) {
+export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, initialTab = "items", quoteHref: hrefOf }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; quoteHref?: (id: string) => string; initial?: BuilderState; initialTab?: "items" | "document" }) {
   const t = useT();
   const { locale, timeZone } = useDesignSystem();
   const router = useRouter();
@@ -49,6 +50,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const images = useSyncExternalStore(subscribePictures, readPictures, () => false);
   const toggleImages = () => { try { window.localStorage.setItem(PICTURES_KEY, images ? "0" : "1"); } catch { /* storage unavailable */ } window.dispatchEvent(new Event(PICTURES_KEY)); };
   const [inserting, setInserting] = useState(false);
+  const [changing, setChanging] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
   const [threads, setThreads] = useState<QuoteThread[]>([]);
   const [members, setMembers] = useState<Array<{ id: string; name: string }>>([]);
@@ -191,7 +193,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     if (ops.length) send(ops);
   };
 
-  const quoteHref = (id: string) => `${backHref.split("?")[0]}?${new URLSearchParams({ quote: id })}`;
+  const quoteHref = hrefOf ?? ((id: string) => `${backHref.split("?")[0]}?${new URLSearchParams({ quote: id })}`);
   if (loadError && !state) return <EmptyState illustration="error" title={t("The quote didn't load")} description={loadError} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!state) return <Skeleton lines={8} />;
 
@@ -274,6 +276,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <DocumentStudio state={state} api={api} workspaceId={workspaceId} caseId={caseId} onState={setState} onError={setError} />
     </> : <>
     <div className={styles.toolbar}>
+      {state.quote.kind === "variation" && state.canEdit && state.project ? <Button size="compact" onPress={() => setChanging(true)}><ArrowLeftRight aria-hidden="true" size={14} />{t("Change an agreed item")}</Button> : null}
       <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as QuoteView)} options={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
       <span className={styles.spacer} />
       {state.canEdit && view !== "trade" ? <Button size="compact" variant="quiet" onPress={() => setAddingArea(true)}><Plus aria-hidden="true" size={14} />{t("Area")}</Button> : null}
@@ -320,6 +323,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     </div>
 
     </>}
+    {changing ? <ChangeAgreedItem state={state} api={api} onClose={() => setChanging(false)}
+      onApply={async (ops) => { try { setState(await api.apply(ops)); setError(""); return true; } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); return false; } }} /> : null}
     {inserting ? <InsertTemplate state={state} api={api} onInsert={(ops) => send(ops)} onClose={() => { setInserting(false); void load(); }}
       createArea={(name) => saveCaseRoom(workspaceId, caseId, { id: crypto.randomUUID(), version: 0, name: name.slice(0, 120), catalogRecordId: null } as never)} /> : null}
     {savingTemplate ? <SaveTemplate api={api} scope={savingTemplate.scope} target={savingTemplate.target} name={savingTemplate.name} onClose={() => setSavingTemplate(null)} onError={setError} /> : null}

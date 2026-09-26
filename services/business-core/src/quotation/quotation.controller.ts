@@ -34,6 +34,9 @@ export class QuotationController {
   @Get("cases/:caseId/quotes/:quoteId")
   get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.builder.builder(actor, workspaceId, caseId, quoteId); }
 
+  @Get("cases/:caseId/quotes/:quoteId/boq")
+  boq(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.builder.boq(actor, workspaceId, caseId, quoteId); }
+
   @Get("cases/:caseId/quotes/:quoteId/catalog")
   search(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Query("q") query = "") { return this.builder.search(actor, workspaceId, caseId, quoteId, String(query)); }
 

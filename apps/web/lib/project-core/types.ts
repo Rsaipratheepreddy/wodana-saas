@@ -87,5 +87,9 @@ export type ScopeLine = {
 };
 export type ScopePackage = { id: string; name: string; supply: Supply; ownerMembershipId: string | null; ownerName: string | null; dueDate: string | null; version: number };
 export type SealSummary = { id: string; kind: "baseline" | "variation"; revisionLabel: string; quoteNumber: number; total: string; currency: string; acceptedAt: string; acceptedBy: string };
-export type LiveScope = { lines: ScopeLine[]; packages: ScopePackage[]; seals: SealSummary[]; currency: string; version: number; canManage: boolean; members: Member[] };
+export type VariationSummary = { id: string; number: number; title: string; status: string; total: string; appliedAs: string | null };
+export type LiveScope = {
+  lines: ScopeLine[]; packages: ScopePackage[]; seals: SealSummary[]; variations: VariationSummary[];
+  currency: string; version: number; canManage: boolean; members: Member[]; caseId: string; baselineQuoteId: string;
+};
 export type LineHistoryEntry = { id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string };

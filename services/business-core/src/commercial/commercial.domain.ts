@@ -99,6 +99,7 @@ export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partia
         optional: Boolean(line.optional), areaKey: line.areaId ?? "general", tradeKey: line.workPackageId ?? "none",
         discountKind: line.discountKind ?? null, discountValue: line.discountValue === undefined || line.discountValue === null ? null : String(line.discountValue),
         taxRate: line.lineTaxRate === undefined || line.lineTaxRate === null ? String(q.taxRate) : String(line.lineTaxRate),
+        credit: line.changeOp === "omit",
       })), (q.discounts ?? []).map((discount) => ({ ...discount, value: String(discount.value) })), q.pricing);
     } catch (error) {
       if (error instanceof PricingError) throw new BadRequestException(error.message);

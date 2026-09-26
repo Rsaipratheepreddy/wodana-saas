@@ -19,7 +19,7 @@ import {
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
 import { noticeProject, type ProjectNotice } from "./project-notices";
-import { assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq } from "./project-scope";
+import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq } from "./project-scope";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -60,11 +60,11 @@ export class ProjectCoreService {
       }
       const prefix = body.referencePrefix === undefined ? current.referencePrefix : String(body.referencePrefix).trim().toUpperCase();
       if (!/^[A-Z][A-Z0-9]{0,11}$/.test(prefix)) throw new BadRequestException("Use up to 12 letters or digits for the project number, starting with a letter.");
-      const flag = (key: "requireAgreement" | "requirePayment" | "requireApproval") => (body[key] === undefined ? current[key] : body[key] === true);
+      const flag = (key: "requireAgreement" | "requirePayment" | "requireApproval" | "requireVariationPayment") => (body[key] === undefined ? current[key] : body[key] === true);
       await client.query(
         `UPDATE workspace_project_settings SET require_agreement = $2, require_payment = $3, require_approval = $4, reference_prefix = $5, roles = $6::jsonb,
-                version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId]);
+                require_variation_payment = $8, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
       return { settings: await ensureSettings(client, workspaceId), templates: await readTemplates(client, workspaceId), canManage: true };
     });
@@ -300,7 +300,7 @@ export class ProjectCoreService {
       const { all, membershipId, project } = await this.visible(client, workspaceId, projectId, user);
       const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
       const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
-      return { ...(await readScope(client, workspaceId, projectId)), currency: project.currency, version: project.version,
+      return { ...(await readScope(client, workspaceId, projectId)), currency: project.currency, version: project.version, caseId: project.caseId, baselineQuoteId: project.quoteId,
         canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [] };
     });
   }
@@ -406,6 +406,38 @@ export class ProjectCoreService {
         else if (action === "save_package") audit = { packageId: await savePackage(client, workspaceId, projectId, body) };
         else if (action === "delete_package") { await deletePackage(client, workspaceId, projectId, String(body.packageId ?? "")); audit = { packageId: body.packageId }; }
         else audit = { moved: await assignLines(client, workspaceId, projectId, body.lineIds, body.packageId ?? null, user.userId), packageId: body.packageId ?? null };
+      } else if (action === "apply_variation") {
+        needManager();
+        if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
+        const loaded = await commercialRepository.load(client, workspaceId, project.caseId, { forUpdate: true });
+        const data = loaded ? ({ ...(loaded.content as CommercialData), revision: loaded.revision }) : null;
+        const quote = data?.quotes.find((item) => item.id === body.quoteId && item.kind === "variation");
+        if (!data || !quote) throw new NotFoundException("Variation not found.");
+        if (quote.status !== "accepted" || quote.clientDecision?.decision !== "accept") throw new ConflictException("The client hasn't accepted this variation yet.");
+        const applied = (await client.query<{ label: string }>(`SELECT revision_label AS label FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND quote_id = $3`, [workspaceId, projectId, quote.id])).rows[0];
+        if (applied) throw new ConflictException(`This variation is already applied as ${applied.label}.`);
+        if (settings.requireVariationPayment && !financeGatePaymentsReady(data, "release", quote.id))
+          throw new ConflictException("The variation's payment before the work starts isn't verified yet.");
+        const scope = await acceptedScope(client, workspaceId, project.caseId, quote.id);
+        const tolerance = Dec.of(Math.min(2, scope.quote.decimals) === 0 ? "1" : Math.min(2, scope.quote.decimals) === 1 ? "0.1" : "0.01");
+        if (Dec.of(scope.pricing.total).sub(Dec.of(String(acceptedQuoteValue(quote)))).abs().cmp(tolerance) > 0)
+          throw new ConflictException("The variation's lines no longer add up to the total the client accepted. Issue a new revision and record the client's decision again.");
+        const count = (await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM project_scope_seals WHERE workspace_id = $1 AND project_id = $2 AND kind = 'variation'`, [workspaceId, projectId])).rows[0].count;
+        const label = `VO-${count + 1}`;
+        const decision = quote.clientDecision;
+        const snapshot = { ...scope, revisionLabel: label,
+          acceptance: { decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, method: decision.method ?? "portal", recordedBy: decision.recordedBy ?? null,
+            note: decision.note ?? "", quoteHash: decision.quoteHash, acceptedTotal: String(decision.acceptedTotal ?? quote.total) }, agreement: null };
+        const sealId = randomUUID();
+        await client.query(
+          `INSERT INTO project_scope_seals (id, workspace_id, project_id, kind, quote_id, quote_number, revision_label, quote_hash, snapshot, content_hash, currency, total,
+             accepted_at, accepted_by_name, acceptance_method, recorded_by_name, agreement_reference, sealed_by)
+           VALUES ($1, $2, $3, 'variation', $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, NULL, $16)`,
+          [sealId, workspaceId, projectId, quote.id, quote.number, label, decision.quoteHash, JSON.stringify(snapshot), canonicalHash(snapshot), scope.quote.currency,
+            scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null, user.userId]);
+        await applyVariation(client, workspaceId, projectId, { id: sealId, label }, scope.lines, user.userId);
+        notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
+        audit = { quoteId: quote.id, label, total: scope.pricing.total };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {
         running();
         const stages = await readStages(client, workspaceId, [projectId]);

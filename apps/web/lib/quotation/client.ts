@@ -1,4 +1,4 @@
-import type { AiProposal, BuilderState, QuoteDocument, QuoteTemplate, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
+import type { AiProposal, BoqPick, BuilderState, QuoteDocument, QuoteTemplate, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
 
 export const quotationPath = (workspaceId: string, path: string, query?: Record<string, string>) =>
   `/api/quotation/${path}?${new URLSearchParams({ workspaceId, ...query })}`;
@@ -22,6 +22,7 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     apply: (ops: LineOp[]) => request<BuilderState>(quotationPath(workspaceId, `${base}/lines`), "POST", { ops }),
     discount: (input: Omit<QuoteDiscount, "reason"> & { reason?: string }) => request<BuilderState>(quotationPath(workspaceId, `${base}/discounts`), "PUT", input),
     tax: (taxRate: string) => request<BuilderState>(quotationPath(workspaceId, `${base}/tax`), "PUT", { taxRate }),
+    boq: () => request<{ lines: BoqPick[] }>(quotationPath(workspaceId, `${base}/boq`)),
     search: (q: string, signal?: AbortSignal) => request<{ items: CatalogHit[] }>(quotationPath(workspaceId, `${base}/catalog`, { q }), "GET", undefined, signal),
     paymentTerms: (terms: PaymentMilestone[]) => request<BuilderState>(quotationPath(workspaceId, `${base}/payment-terms`), "PUT", { terms }),
     /** A step on the quote's journey (submit, approve, issue, revise, record_decision…), through the commercial case. */

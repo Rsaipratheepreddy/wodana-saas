@@ -17,6 +17,8 @@ export type PricedLineInput = {
   discountValue?: string | number | null;
   /** Tax percent for this line; null or undefined when tax isn't set up. */
   taxRate?: string | number | null;
+  /** A credit: scope a variation removes. Priced negative; takes no discount of its own or of its section. */
+  credit?: boolean;
 };
 export type QuoteDiscountInput = { scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: string | number };
 
@@ -57,9 +59,11 @@ export function priceQuote(inputs: PricedLineInput[], discounts: QuoteDiscountIn
   const state = inputs.map((line) => {
     const quantity = Dec.of(line.quantity), rate = Dec.of(line.rate);
     if (quantity.isNegative() || rate.isNegative()) throw new PricingError("Quantity and rate can't be negative.");
-    const gross = r(quantity.mul(rate));
+    const gross = line.credit ? r(quantity.mul(rate)).neg() : r(quantity.mul(rate));
     let lineDiscount = Dec.ZERO;
-    if (line.discountKind && line.discountValue !== null && line.discountValue !== undefined) {
+    if (line.credit && line.discountKind && line.discountValue !== null && line.discountValue !== undefined && !Dec.of(line.discountValue).isZero())
+      throw new PricingError("A removed item can't have a discount.");
+    if (!line.credit && line.discountKind && line.discountValue !== null && line.discountValue !== undefined) {
       const value = Dec.of(line.discountValue);
       lineDiscount = line.discountKind === "percent" ? r(gross.mul(value).div(100)) : value;
       if (lineDiscount.cmp(gross) > 0) throw new PricingError("A line discount can't be more than the line.");
@@ -67,10 +71,12 @@ export function priceQuote(inputs: PricedLineInput[], discounts: QuoteDiscountIn
     return {
       input: line, included: !line.optional, gross, lineDiscount, sectionDiscount: Dec.ZERO, quoteDiscount: Dec.ZERO,
       running: gross.sub(lineDiscount),
-      cost: line.unitCost === null || line.unitCost === undefined ? null : r(quantity.mul(Dec.of(line.unitCost))),
+      cost: line.unitCost === null || line.unitCost === undefined ? null : line.credit ? r(quantity.mul(Dec.of(line.unitCost))).neg() : r(quantity.mul(Dec.of(line.unitCost))),
     };
   });
   const included = state.filter((line) => line.included);
+  // Discounts are shared over what's charged; a credit returns exactly what was removed.
+  const discountable = included.filter((line) => !line.input.credit);
 
   // Apply one discount to a set of lines, sharing an amount by each line's current value.
   const apply = (lines: typeof state, discount: QuoteDiscountInput, field: "sectionDiscount" | "quoteDiscount") => {
@@ -90,8 +96,8 @@ export function priceQuote(inputs: PricedLineInput[], discounts: QuoteDiscountIn
   };
   for (const scope of ["area", "trade"] as const)
     for (const discount of discounts.filter((item) => item.scope === scope))
-      apply(included.filter((line) => (scope === "area" ? line.input.areaKey : line.input.tradeKey) === discount.target), discount, "sectionDiscount");
-  for (const discount of discounts.filter((item) => item.scope === "quote")) apply(included, discount, "quoteDiscount");
+      apply(discountable.filter((line) => (scope === "area" ? line.input.areaKey : line.input.tradeKey) === discount.target), discount, "sectionDiscount");
+  for (const discount of discounts.filter((item) => item.scope === "quote")) apply(discountable, discount, "quoteDiscount");
 
   // Tax per line on what remains; inclusive prices carry their tax inside.
   const taxOf = (amount: Dec, rate: Dec) => (policy.pricesIncludeTax ? amount.mul(rate).div(rate.add(100)) : amount.mul(rate).div(100));

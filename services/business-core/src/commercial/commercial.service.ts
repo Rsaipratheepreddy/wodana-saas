@@ -125,7 +125,7 @@ export function preserveUnauthorizedCosts(lines: QuoteLine[], previous: Map<stri
 }
 
 const BUILDER_LINE_KEYS = ["kind", "description", "pricingMode", "note", "version", "areaId", "fromAreaId", "workPackageId", "catalogItemId", "catalogVariantId",
-  "catalogSnapshot", "formula", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "discountKind", "discountValue", "taxCode", "lineTaxRate", "optionGroup"];
+  "catalogSnapshot", "formula", "length", "width", "height", "count", "dimensionUnit", "markupPercent", "discountKind", "discountValue", "taxCode", "lineTaxRate", "optionGroup", "imageAssetId", "catalogImageId", "changeOp", "boqLineId"];
 
 export function isManualQuotationLine(line: QuoteLine) {
   return !line.scopeId && !line.catalogLinks?.some((selection) => selection.role === "work");

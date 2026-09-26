@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Sparkles } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
@@ -15,7 +16,7 @@ import { SealedDocument } from "./sealed-document";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
-type View = "items" | "sealed";
+type View = "items" | "changes" | "sealed";
 type Group = "package" | "area";
 const SUPPLIES: Supply[] = ["make", "buy", "ready_made", "subcontract", "client", "site_work"];
 const NONE = "__none";
@@ -98,7 +99,7 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "sealed", label: t("Sealed") }]} />
+      items={[{ id: "items", label: t("Items") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -120,7 +121,8 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
         onSectionAction={group === "package" && scope.canManage ? (id) => { const found = scope.packages.find((item) => item.id === id); if (found) setEditing(found); } : undefined} />
         : <EmptyState illustration={null} title={t("No items")} />}
       <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{money(agreed)}</strong></p>
-    </> : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />
+    </> : view === "changes" ? <Changes workspaceId={workspaceId} projectId={projectId} scope={scope} />
+    : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />
       : <ul className={styles.sealList} aria-label={t("Sealed documents")}>
           {scope.seals.map((item) => <li key={item.id}><button type="button" onClick={() => setSeal(item.id)}>
             <span><strong>{item.revisionLabel}</strong> {item.kind === "baseline" ? t("Accepted quotation") : t("Variation")}</span>
@@ -204,4 +206,49 @@ function PackageSheet({ item, scope, run, onClose }: { item: ScopePackage | null
       <DateField label={t("Due")} isDisabled={readOnly} value={due ? parseDate(due) : null} onChange={(value) => setDue(value ? value.toString() : null)} />
     </div>
   </InspectorSheet>;
+}
+
+const QUOTE_STATUS: Record<string, string> = { draft: "Draft", internal_review: "In review", internal_approved: "Approved internally", issued: "Sent", accepted: "Accepted", changes_requested: "Changes requested", declined: "Declined", expired: "Expired" };
+
+/** The project's variations: drafts, sent, accepted, and what each became once applied. A new one opens in the quotation builder. */
+function Changes({ workspaceId, projectId, scope }: { workspaceId: string; projectId: string; scope: LiveScope }) {
+  const t = useT();
+  const router = useRouter();
+  const format = useProjectFormat();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const open = (quoteId: string) => router.push(`/workspace/projects/${projectId}/changes/${quoteId}`);
+  const create = async () => {
+    setBusy(true); setError("");
+    try { open(await createVariation(workspaceId, scope.caseId, scope.baselineQuoteId)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not start a variation.")); setBusy(false); }
+  };
+  return <div className={styles.changes}>
+    <div className={styles.scopeToolbar}>
+      <span />
+      <Button size="compact" variant="primary" isLoading={busy} onPress={() => void create()}><Plus aria-hidden="true" size={14} />{t("New variation")}</Button>
+    </div>
+    {error ? <p className={styles.errorLine} role="alert">{error}</p> : null}
+    {scope.variations.length ? <ul className={styles.sealList} aria-label={t("Variations")}>
+      {scope.variations.map((item) => <li key={item.id}><button type="button" onClick={() => open(item.id)}>
+        <span><strong>{item.appliedAs ?? t("Q-{number}", { number: item.number })}</strong> {item.title}</span>
+        <span className={styles.muted}>{item.appliedAs ? t("Applied") : QUOTE_STATUS[item.status] ? t(QUOTE_STATUS[item.status] as never) : item.status}</span>
+        <span className={styles.number}>{format.money(item.total, scope.currency)}</span>
+      </button></li>)}
+    </ul> : <EmptyState illustration={null} title={t("No variations yet")} description={t("Changes after the scope is sealed are priced and accepted here.")} />}
+  </div>;
+}
+
+/** Starts a draft variation of the accepted quotation through the commercial case; returns its id. */
+async function createVariation(workspaceId: string, caseId: string, baselineQuoteId: string) {
+  const url = `/api/commercial/cases/${caseId}?${new URLSearchParams({ workspaceId })}`;
+  const read = async (response: Response) => {
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(typeof data?.message === "string" ? data.message : "Could not start a variation.");
+    return data as { data: { revision: number; quotes: Array<{ id: string; number: number; kind: string }> } };
+  };
+  const current = await read(await fetch(url, { cache: "no-store" }));
+  const next = await read(await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "variation", revision: current.data.revision, quoteId: baselineQuoteId }) }));
+  return [...next.data.quotes].filter((quote) => quote.kind === "variation").sort((a, b) => b.number - a.number)[0].id;
 }

@@ -17,7 +17,7 @@
 .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(15rem, 18rem); gap: var(--wd-space-5); align-items: start; }
 
 /* The grid: every row shares the same columns; the middle column switches between area and trade. */
-.grid { --cols: var(--wd-space-6) minmax(12rem, 1fr) minmax(8rem, 11rem) 6rem 4.5rem 7rem 8rem var(--wd-space-16); display: flex; flex-direction: column; min-inline-size: 0; border-block-start: 1px solid var(--wd-color-structural-divider); }
+.grid { --cols: var(--wd-space-6) minmax(10rem, 1fr) minmax(7rem, 11rem) 6rem 4.5rem 7rem 8rem var(--wd-space-16); display: flex; flex-direction: column; min-inline-size: 0; border-block-start: 1px solid var(--wd-color-structural-divider); }
 .grid[data-column="none"] { --cols: var(--wd-space-6) minmax(12rem, 1fr) 6rem 4.5rem 7rem 8rem var(--wd-space-16); }
 .columns, .row { display: grid; grid-template-columns: var(--cols); align-items: center; column-gap: var(--wd-space-2); }
 .columns { min-block-size: var(--wd-space-8); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
@@ -234,4 +234,22 @@
 .hitThumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
 @media (max-width: 48rem) {
   .grid[data-images], .grid[data-images][data-column="none"] { --cols: var(--wd-space-6) var(--wd-space-10) minmax(9rem, 1fr) 4.5rem 6rem 6rem var(--wd-space-16); }
+}
+
+/* Variations */
+.row[data-change="omit"] .amountCell { color: var(--wd-color-danger); }
+.boqPick { display: grid; gap: var(--wd-space-0-5); max-block-size: 24rem; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.boqPick button { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); inline-size: 100%; padding: var(--wd-space-2) var(--wd-space-3); border: 0; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
+.boqPick button:hover { background: var(--wd-color-surface-hover); }
+.boqPick button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.boqPick button > span:first-child { display: grid; gap: var(--wd-space-0-5); }
+.boqPick small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.boqPick button > span:last-child { font-variant-numeric: tabular-nums; }
+.pickedLine { margin: 0; font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+.pickedLine strong { color: var(--wd-color-text); }
+
+/* Too narrow for lines and totals side by side: the totals go below the lines. */
+@media (max-width: 1279px) {
+  .body { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; }
 }

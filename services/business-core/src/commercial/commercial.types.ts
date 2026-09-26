@@ -203,6 +203,9 @@ export type QuoteLine = {
   taxCode?: string;
   lineTaxRate?: number;
   optionGroup?: string;
+  /** A variation's change to the agreed scope: add, remove (a credit) or move a live BOQ line. */
+  changeOp?: "add" | "omit" | "move";
+  boqLineId?: string;
   components?: Array<Record<string, unknown>>;
 };
 /** Selling-price breakdown per ONE item unit. Never contains internal purchase costs. */

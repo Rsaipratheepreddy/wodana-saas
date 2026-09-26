@@ -141,7 +141,7 @@ describe("projects", () => {
       ],
       packages: [{ id: "p1", name: "Kitchen joinery", supply: "make", ownerMembershipId: "m2", ownerName: "Dana Karim", dueDate: null, version: 1 }],
       seals: [{ id: "s1", kind: "baseline", revisionLabel: "R3", quoteNumber: 14, total: "35070.00", currency: "AED", acceptedAt: "2026-09-20T10:00:00Z", acceptedBy: "Maya Rahman" }],
-      currency: "AED", version: 4, canManage: true, members: [{ membershipId: "m2", name: "Dana Karim" }],
+      currency: "AED", version: 4, canManage: true, members: [{ membershipId: "m2", name: "Dana Karim" }], variations: [], caseId: "c1", baselineQuoteId: "q1",
     };
     const fetcher = mount((url, body) => (body ? detail({ version: 5 }) : url.includes("/lines/") ? { history: [{ id: "h1", kind: "agreed", detail: { revision: "R3", quantity: "6.5" }, byName: "Omar", at: "2026-09-22T09:00:00Z" }] } : url.includes("/scope") ? live : detail()));
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
@@ -157,8 +157,23 @@ describe("projects", () => {
     expect(await screen.findByText("Agreed in R3 · 6.5 m")).toBeInTheDocument();
   });
 
+  it("lists variations and starts a new one on the accepted quotation, opening it in the project", async () => {
+    const live: LiveScope = { lines: [], packages: [], seals: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1",
+      variations: [{ id: "v1", number: 3, title: "Additional work", status: "accepted", total: "350.00", appliedAs: "VO-1" }] };
+    const fetcher = mount((url, body) => {
+      if (url.startsWith("/api/commercial/cases/c1")) return body ? { data: { revision: 8, quotes: [{ id: "q1", number: 1, kind: "quotation" }, { id: "v1", number: 3, kind: "variation" }, { id: "v2", number: 4, kind: "variation" }] } } : { data: { revision: 7, quotes: [] } };
+      return url.includes("/scope") ? live : detail();
+    });
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("tab", { name: "Changes" }));
+    expect(await screen.findByRole("button", { name: /VO-1 Additional work/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New variation" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/workspace/projects/${PID}/changes/v2`));
+    expect(posts(fetcher)).toEqual([{ action: "variation", revision: 7, quoteId: "q1" }]);
+  });
+
   it("opens a sealed document from the Sealed list, with what the client didn't choose", async () => {
-    const live: LiveScope = { lines: [], packages: [], currency: "AED", version: 4, canManage: false, members: [],
+    const live: LiveScope = { lines: [], packages: [], currency: "AED", version: 4, canManage: false, members: [], variations: [], caseId: "c1", baselineQuoteId: "q1",
       seals: [{ id: "s1", kind: "baseline", revisionLabel: "R3", quoteNumber: 14, total: "27300.00", currency: "AED", acceptedAt: "2026-09-20T10:00:00Z", acceptedBy: "Maya Rahman" }] };
     const sealed: SealedScope = {
       snapshot: { quote: { id: "q1", number: 14, title: "Main quote", currency: "AED", decimals: 2 }, revisionLabel: "R3",

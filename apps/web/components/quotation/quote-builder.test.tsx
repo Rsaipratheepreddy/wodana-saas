@@ -182,3 +182,46 @@ describe("quotation builder", () => {
     window.localStorage.removeItem("wodana.quote.images");
   });
 });
+
+describe("variations", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const variation = (lines: BuilderLine[], status = "draft", appliedAs: string | null = null): BuilderState => {
+    const base = state(lines);
+    return { ...base, quote: { ...base.quote, kind: "variation", status }, canEdit: status === "draft", project: { id: "p1", reference: "PRJ-0001", appliedAs } };
+  };
+
+  it("removes part of an agreed item as a locked credit line", async () => {
+    const removal = line({ id: "r1", title: "Worktop", changeOp: "omit", boqLineId: "b1", quantity: "1", rate: "800" });
+    const fetcher = mount(variation([removal]), (url) => (url.includes("/boq")
+      ? { lines: [{ id: "b1", title: "Worktop", unit: "m²", quantity: "2.25", net: "1800.00", areaId: KITCHEN, areaName: "Kitchen" }] }
+      : variation([removal])));
+    expect(await screen.findByText("Removes")).toBeInTheDocument();
+    const row = screen.getByText("Removes").closest("[role=row]") as HTMLElement;
+    expect(within(row).getByRole("textbox", { name: "Rate" })).toBeDisabled();
+    expect(within(row).getByRole("textbox", { name: "Quantity" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Change an agreed item" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change an agreed item" });
+    await userEvent.click(await within(dialog).findByRole("button", { name: /Worktop/ }));
+    const amount = within(dialog).getByRole("textbox", { name: /How much to remove/ });
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "3");
+    expect(within(dialog).getByRole("button", { name: "Add to variation" })).toBeDisabled();
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "1.25");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add to variation" }));
+    await waitFor(() => expect(posted(fetcher).at(-1)).toEqual({ ops: [expect.objectContaining({ op: "change", change: "omit", boqLineId: "b1", quantity: "1.25" })] }));
+  });
+
+  it("applies an accepted variation to the project, then links to it", async () => {
+    const fetcher = mount(variation([], "accepted"), (url, body) => {
+      if (url.includes("/api/project-core/projects/p1") && !body) return { project: { version: 9 } };
+      if (url.includes("/api/project-core/projects/p1")) return { project: { version: 10 } };
+      return variation([], "accepted", "VO-1");
+    });
+    await userEvent.click(await screen.findByRole("button", { name: "Apply to project" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes("/api/project-core/projects/p1") && init?.method === "POST"
+      && JSON.parse(String(init.body)).action === "apply_variation" && JSON.parse(String(init.body)).version === 9)).toBe(true));
+    expect(await screen.findByRole("link", { name: "Applied as VO-1" })).toHaveAttribute("href", "/workspace/projects/p1/scope");
+  });
+});

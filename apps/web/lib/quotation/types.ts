@@ -25,6 +25,8 @@ export type BuilderLine = {
   catalogSnapshot: { name?: string; code?: string; priceReason?: string | null } | null; buildUpComplete: boolean | null;
   updatedAt: string; updatedByName: string | null; components: BuildUpRow[];
   imageAssetId: string | null; catalogImageId: string | null;
+  /** On a variation: what the line does to the agreed scope (add, remove, move) and the live BOQ line it changes. */
+  changeOp?: "add" | "omit" | "move" | null; boqLineId?: string | null;
 };
 
 export type SectionTotal = { key: string; gross: string; discount: string; net: string };
@@ -62,7 +64,12 @@ export type BuilderState = {
   brand: { name: string; logo: string; primaryColor: string; accentColor: string };
   client: { name: string; project: string; address: string | null };
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
+  /** The project this quote belongs to once it has started, and the sealed name a variation got when applied. */
+  project?: { id: string; reference: string; appliedAs: string | null } | null;
 };
+
+/** A line of the project's live BOQ that a variation can remove, move or replace. */
+export type BoqPick = { id: string; title: string; unit: string; quantity: string; net: string; areaId: string | null; areaName: string | null };
 
 export type QuoteCheck = { code: string; values?: Record<string, string>; lineId?: string; tone: "danger" | "warning" };
 
@@ -80,7 +87,8 @@ export type LineOp =
   | { op: "upsert"; line: Partial<Omit<BuilderLine, "components">> & { id: string; version?: number; components?: Array<Partial<BuildUpRow>> } }
   | { op: "catalog"; itemId: string; line: Partial<BuilderLine> & { id: string; version?: number } }
   | { op: "delete"; id: string; version: number }
-  | { op: "reorder"; ids: string[] };
+  | { op: "reorder"; ids: string[] }
+  | { op: "change"; change: "omit" | "move" | "replace"; id: string; boqLineId: string; quantity?: string; areaId?: string | null; replacementId?: string };
 
 export const GENERAL = "general";
 export const NO_TRADE = "none";

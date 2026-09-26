@@ -44,7 +44,9 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
-  return <div role="row" className={styles.row} data-line-id={line.id} data-optional={line.optional || undefined} data-draft={draft || undefined} data-busy={editingBy.length ? true : undefined}
+  // A removal credits an agreed item as it was sold: only how much is removed can change.
+  const fixed = line.changeOp === "omit";
+  return <div role="row" className={styles.row} data-line-id={line.id} data-change={line.changeOp ?? undefined} data-optional={line.optional || undefined} data-draft={draft || undefined} data-busy={editingBy.length ? true : undefined}
     onDragOver={(event) => { if (canEdit) { event.preventDefault(); event.currentTarget.dataset.dropTarget = "true"; } }}
     onDragLeave={(event) => { delete event.currentTarget.dataset.dropTarget; }}
     onDrop={(event) => { event.preventDefault(); delete event.currentTarget.dataset.dropTarget; onDropBefore(); }}>
@@ -53,9 +55,10 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
       {canEdit && !draft && !editingBy.length ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
     </span>
     <span role="gridcell" className={styles.itemCell}>
-      <ItemCell line={line} canEdit={canEdit} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} autoFocus={draft} />
+      <ItemCell line={line} canEdit={canEdit && !fixed} search={search} thumb={catalogThumb} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} onNewCatalogItem={onNewCatalogItem} autoFocus={draft} />
       <span className={styles.itemMeta}>
-        {line.kind !== "item" ? <Badge tone={line.kind === "client_supplied" ? "info" : "neutral"}>{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
+        {line.changeOp === "omit" ? <Badge tone="danger">{t("Removes")}</Badge> : line.changeOp === "move" ? <Badge tone="info">{t("Moves")}</Badge> : null}
+        {line.kind !== "item" && line.changeOp !== "move" ? <Badge tone={line.kind === "client_supplied" ? "info" : "neutral"}>{t(LINE_KIND_LABEL[line.kind] as never)}</Badge> : null}
         {line.optional ? <Badge tone="warning">{t("Optional")}</Badge> : null}
         {line.description ? <span className={styles.description}>{line.description}</span> : null}
         {line.catalogSnapshot?.priceReason ? <span className={styles.warn}>{t(line.catalogSnapshot.priceReason as never)}</span> : null}
@@ -65,7 +68,7 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
       <ImageCell url={image.url} canEdit={canEdit && !draft} title={line.title} onPick={(file) => onImage?.(file)} />
     </span> : null}
     {column ? <span role="gridcell" className={styles.pickCell}>
-      <select aria-label={column === "area" ? t("Area") : t("Work package")} disabled={!canEdit || draft} className={styles.select}
+      <select aria-label={column === "area" ? t("Area") : t("Work package")} disabled={!canEdit || draft || fixed} className={styles.select}
         value={(column === "area" ? line.areaId : line.workPackageId) ?? ""}
         onChange={(event) => {
           if (event.target.value === "__new") { onNewTrade(); return; }
@@ -82,10 +85,10 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
       {line.formula ? <button type="button" className={styles.formulaChip} onClick={onOpen} title={line.formula} data-error={line.formulaError ? true : undefined}>ƒ {plain(line.quantity, locale)}</button>
         : <CellInput label={t("Quantity")} value={plain(line.quantity, locale, 4)} disabled={!canEdit || draft} numeric onCommit={(value) => onChange({ quantity: value })} />}
     </span>
-    <span role="gridcell" className={styles.unitCell}><CellInput label={t("Unit")} value={line.unit} disabled={!canEdit || draft} onCommit={(value) => onChange({ unit: value })} /></span>
+    <span role="gridcell" className={styles.unitCell}><CellInput label={t("Unit")} value={line.unit} disabled={!canEdit || draft || fixed} onCommit={(value) => onChange({ unit: value })} /></span>
     <span role="gridcell" className={styles.numberCell}>
       {line.pricingMode === "build_up" ? <button type="button" className={styles.formulaChip} onClick={onOpen} data-error={line.buildUpComplete === false || undefined}><Sigma aria-hidden="true" size={12} />{plain(line.rate, locale, decimals)}</button>
-        : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied"} numeric onCommit={(value) => onChange({ rate: value })} />}
+        : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
     </span>
     <span role="gridcell" className={styles.amountCell}>{draft ? "" : money(amount, currency, decimals, locale)}</span>
     <span role="gridcell" className={styles.menuCell}>
@@ -94,9 +97,9 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
         { id: "details", label: t("Details") },
         { id: "comment", label: t("Comment") },
         ...(canEdit ? [
-          { id: "duplicate", label: t("Duplicate") },
-          ...(!line.catalogItemId ? [{ id: "to_catalog", label: t("Add to catalog") }] : []),
-          { id: "optional", label: line.optional ? t("Include in total") : t("Make optional") },
+          ...(line.changeOp === "omit" || line.changeOp === "move" ? [] : [{ id: "duplicate", label: t("Duplicate") }]),
+          ...(!line.catalogItemId && !line.changeOp ? [{ id: "to_catalog", label: t("Add to catalog") }] : []),
+          ...(!line.changeOp || line.changeOp === "add" ? [{ id: "optional", label: line.optional ? t("Include in total") : t("Make optional") }] : []),
           { id: "delete", label: t("Delete"), tone: "danger" as const },
         ] : []),
       ]} /> : null}

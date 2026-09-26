@@ -11,7 +11,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 2 && path[0] === "work-packages" && UUID.test(path[1])) return method === "PATCH";
   if (path[0] !== "cases" || !UUID.test(path[1] ?? "") || path[2] !== "quotes" || !QUOTE_ID.test(path[3] ?? "")) return false;
   if (path.length === 4) return method === "GET";
-  if (path.length === 5 && path[4] === "catalog") return method === "GET";
+  if (path.length === 5 && ["catalog", "boq"].includes(path[4])) return method === "GET";
   if (path.length === 5 && path[4] === "lines") return method === "POST";
   if (path.length === 7 && path[4] === "lines" && QUOTE_ID.test(path[5]) && path[6] === "to-catalog") return method === "POST";
   if (path.length === 5 && ["discounts", "tax", "payment-terms", "document"].includes(path[4])) return method === "PUT";

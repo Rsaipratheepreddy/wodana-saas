@@ -115,6 +115,7 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "project.stage_done", channel: "in_app", subject: "{{title}} moved to {{stage}}", body: "{{actor}} finished {{previous}}.", variables: ["title", "clientName", "actor", "stage", "previous"] },
   { code: "project.on_hold", channel: "in_app", subject: "{{title}} is on hold", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "project.resumed", channel: "in_app", subject: "{{title}} is running again", body: "{{actor}} resumed the project.", variables: ["title", "clientName", "actor", "note"] },
+  { code: "project.variation_applied", channel: "in_app", subject: "{{title}}: {{variation}} applied", body: "{{actor}} applied {{variation}} ({{amount}}).", variables: ["title", "clientName", "actor", "variation", "amount"] },
   { code: "project.off_track", channel: "in_app", subject: "{{title}} is off track", body: "{{actor}}: {{note}}", variables: ["title", "clientName", "actor", "note"] },
   { code: "design.signed_off", channel: "in_app", subject: "Design signed off · {{clientName}}", body: "The design is approved. It's ready to quote.", variables: ["clientName"] },
   { code: "design.signed_off", channel: "email", subject: "Design signed off: {{clientName}}", body: "The design for {{clientName}} is signed off and ready to quote.\n\nOpen the case to start the quotation.", variables: ["clientName"] },

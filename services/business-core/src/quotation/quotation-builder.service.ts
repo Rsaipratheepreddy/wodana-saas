@@ -41,6 +41,8 @@ type LineRow = {
   taxRate: string | null; optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
   catalogSnapshot: Record<string, unknown> | null; updatedAt: string; updatedByName: string | null;
   imageAssetId: string | null; catalogImageId: string | null;
+  /** On a variation: what the line does to the agreed scope, and the live BOQ line it changes. */
+  changeOp: "add" | "omit" | "move" | null; boqLineId: string | null;
 };
 type ComponentRow = {
   id: string; lineId: string; kind: string; catalogItemId: string | null; name: string; quantityFormula: string | null; quantity: string;
@@ -151,6 +153,19 @@ export class QuotationBuilderService {
     });
   }
 
+  /** The project's live BOQ, for a variation to remove, move or replace its lines. */
+  boq(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string) {
+    return this.access.withPermission(actor, workspaceId, VIEW, async (client) => {
+      await readQuote(client, workspaceId, caseId, quoteId);
+      return { lines: (await client.query<{ id: string; title: string; unit: string; quantity: string; net: string; areaId: string | null; areaName: string | null }>(
+        `SELECT line.id, line.title, line.unit, line.quantity::text AS quantity, line.net::text AS net, line.area_id AS "areaId", room.name AS "areaName"
+           FROM project_boq_lines line
+           JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id AND project.case_id = $2
+           LEFT JOIN pre_project_rooms room ON room.workspace_id = line.workspace_id AND room.case_id = $2 AND room.id = line.area_id
+          WHERE line.workspace_id = $1 AND line.status = 'active' ORDER BY room.name NULLS LAST, line.position`, [workspaceId, caseId])).rows };
+    });
+  }
+
   /**
    * Applies a batch of line changes in one transaction: upsert (fields to change, with the version
    * the editor saw), delete, reorder, or fill a line from a catalog item. On a version clash the
@@ -188,6 +203,40 @@ export class QuotationBuilderService {
             `UPDATE commercial_quote_lines line SET sort_order = ordered.position - 1
                FROM unnest($4::text[]) WITH ORDINALITY AS ordered(id, position)
               WHERE line.workspace_id = $1 AND line.case_id = $2 AND line.quote_id = $3 AND line.id = ordered.id`, [workspaceId, caseId, quoteId, ids]);
+        } else if (kind === "change") {
+          // A variation's change to one live BOQ line: remove some or all of it, move it, or replace it.
+          if (quote.kind !== "variation") throw new BadRequestException("Only a variation changes the agreed scope.");
+          const change = oneOf(op.change, ["omit", "move", "replace"] as const, "change");
+          const boq = await projectBoqLine(client, workspaceId, caseId, uuid(op.boqLineId, "Item"));
+          const id = lineId(op.id);
+          if (await readLine(client, workspaceId, caseId, quoteId, id)) continue; // the same change again
+          const base = { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), boqLineId: boq.id };
+          if (change === "move") {
+            const target = area(op.areaId, areas);
+            if (target === boq.areaId) throw new BadRequestException("Choose a different area to move it to.");
+            await this.saveLine(client, workspaceId, caseId, quoteId, {
+              ...base, kind: boq.areaId ? "relocate" : "service", title: `Move ${boq.title}`.slice(0, 240), unit: "", quantity: "1", rate: "0",
+              areaId: target, fromAreaId: boq.areaId, workPackageId: boq.workPackageId, changeOp: "move",
+            }, null, areas, decimals, user.userId);
+          } else {
+            const quantity = decimal(op.quantity ?? boq.quantity, "Quantity", { max: "1000000000" })!;
+            await assertRemovable(client, workspaceId, caseId, quoteId, boq, quantity, id);
+            await this.saveLine(client, workspaceId, caseId, quoteId, {
+              ...base, kind: boq.kind, title: boq.title, description: boq.description, unit: boq.unit, quantity, rate: boq.unitNet,
+              areaId: boq.areaId, workPackageId: boq.workPackageId, taxRate: boq.taxRate, changeOp: "omit",
+            }, null, areas, decimals, user.userId);
+            if (change === "replace") {
+              const replacement = lineId(op.replacementId);
+              if (!(await readLine(client, workspaceId, caseId, quoteId, replacement)))
+                await this.saveLine(client, workspaceId, caseId, quoteId, {
+                  ...blankLine(replacement), position: await nextPosition(client, workspaceId, caseId, quoteId), ...defaultTax,
+                  kind: boq.kind, title: `${boq.title} (replacement)`.slice(0, 240), unit: boq.unit, quantity, rate: "0",
+                  areaId: boq.areaId, workPackageId: boq.workPackageId, changeOp: "add", markupPercent: settings.defaultMarkupPercent,
+                }, null, areas, decimals, user.userId);
+              changed.push(replacement);
+            }
+          }
+          changed.push(id);
         } else if (kind === "upsert" || kind === "catalog") {
           const fields = object(op.line);
           const id = lineId(fields.id);
@@ -202,6 +251,15 @@ export class QuotationBuilderService {
             : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
           if (kind === "catalog") next = await this.fromCatalog(client, workspaceId, quote, settings, decimals, next, uuid(op.itemId, "Catalog item"));
           next = applyFields(next, fields, { canEditCosts, areas, trades, taxes });
+          if (current?.changeOp === "omit") {
+            // A removal keeps what it removes; only how much (and its note) can change.
+            next = { ...current, components: null, quantity: next.quantity, note: next.note };
+            const boq = await projectBoqLine(client, workspaceId, caseId, current.boqLineId!);
+            await assertRemovable(client, workspaceId, caseId, quoteId, boq, next.quantity, id);
+          } else if (current?.changeOp === "move") {
+            next = { ...next, boqLineId: current.boqLineId, fromAreaId: current.fromAreaId, changeOp: "move" };
+            if (!next.areaId || next.areaId === next.fromAreaId) throw new BadRequestException("Choose a different area to move it to.");
+          } else if (!current && quote.kind === "variation") next.changeOp = "add";
           await this.saveLine(client, workspaceId, caseId, quoteId, next, current, areas, decimals, user.userId);
           changed.push(id);
         } else throw new BadRequestException(`Unknown change "${kind}".`);
@@ -438,8 +496,9 @@ export class QuotationBuilderService {
     await client.query(
       `INSERT INTO commercial_quote_lines (workspace_id, case_id, quote_id, id, sort_order, room, title, quantity, unit, unit_cost, rate, optional,
          kind, description, pricing_mode, note, area_id, from_area_id, work_package_id, catalog_item_id, catalog_snapshot, formula, length, width, height,
-         count, dimension_unit, markup_percent, discount_kind, discount_value, tax_code, tax_rate, option_group, version, updated_by, updated_at, image_asset_id, catalog_image_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36)
+         count, dimension_unit, markup_percent, discount_kind, discount_value, tax_code, tax_rate, option_group, version, updated_by, updated_at, image_asset_id, catalog_image_id,
+         change_op, boq_line_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36, $37, $38)
        ON CONFLICT (case_id, quote_id, id) DO UPDATE SET sort_order = excluded.sort_order, room = excluded.room, title = excluded.title, quantity = excluded.quantity,
          unit = excluded.unit, unit_cost = excluded.unit_cost, rate = excluded.rate, optional = excluded.optional, kind = excluded.kind, description = excluded.description,
          pricing_mode = excluded.pricing_mode, note = excluded.note, area_id = excluded.area_id, from_area_id = excluded.from_area_id, work_package_id = excluded.work_package_id,
@@ -447,11 +506,12 @@ export class QuotationBuilderService {
          height = excluded.height, count = excluded.count, dimension_unit = excluded.dimension_unit, markup_percent = excluded.markup_percent,
          discount_kind = excluded.discount_kind, discount_value = excluded.discount_value, tax_code = excluded.tax_code, tax_rate = excluded.tax_rate,
          option_group = excluded.option_group, version = commercial_quote_lines.version + 1, updated_by = excluded.updated_by, updated_at = now(),
-         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id`,
+         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id, change_op = excluded.change_op, boq_line_id = excluded.boq_line_id`,
       [workspaceId, caseId, quoteId, line.id, line.position, room, line.title.trim(), line.quantity, line.unit, line.unitCost, line.rate, line.optional || null,
         line.kind, line.description, line.pricingMode, line.note, line.areaId, line.fromAreaId, line.workPackageId, line.catalogItemId,
         line.catalogSnapshot ? JSON.stringify(line.catalogSnapshot) : null, line.formula, line.length, line.width, line.height, line.count, line.dimensionUnit,
-        line.markupPercent, line.discountKind, line.discountValue, line.taxCode, line.taxRate, line.optionGroup, userId, line.imageAssetId, line.catalogImageId]);
+        line.markupPercent, line.discountKind, line.discountValue, line.taxCode, line.taxRate, line.optionGroup, userId, line.imageAssetId, line.catalogImageId,
+        line.changeOp, line.boqLineId]);
     if (line.components) {
       await client.query(`DELETE FROM commercial_quote_line_components WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND line_id = $4`, [workspaceId, caseId, quoteId, line.id]);
       for (const [position, component] of line.components.entries())
@@ -541,6 +601,11 @@ export class QuotationBuilderService {
            LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
           WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, caseId])).rows[0] ?? { name: "", project: "", address: null },
       canEdit, canEditCosts, canViewCosts,
+      // The project this quote belongs to (once started), and the sealed name a variation got when applied.
+      project: (await client.query<{ id: string; reference: string; appliedAs: string | null }>(
+        `SELECT project.id, project.reference,
+                (SELECT seal.revision_label FROM project_scope_seals seal WHERE seal.workspace_id = project.workspace_id AND seal.project_id = project.id AND seal.quote_id = $3) AS "appliedAs"
+           FROM delivery_projects project WHERE project.workspace_id = $1 AND project.case_id = $2 AND project.started_at IS NOT NULL`, [workspaceId, caseId, quoteId])).rows[0] ?? null,
     };
   }
 
@@ -598,7 +663,8 @@ const LINE_SELECT = `SELECT line.id, line.sort_order AS position, line.version, 
   line.rate::text AS rate, line.unit_cost::text AS "unitCost", line.markup_percent::text AS "markupPercent", line.pricing_mode AS "pricingMode",
   line.discount_kind AS "discountKind", line.discount_value::text AS "discountValue", line.tax_code AS "taxCode", line.tax_rate::text AS "taxRate",
   line.optional, line.option_group AS "optionGroup", line.note, line.catalog_item_id AS "catalogItemId", line.catalog_snapshot AS "catalogSnapshot",
-  line.updated_at AS "updatedAt", editor.display_name AS "updatedByName", line.image_asset_id AS "imageAssetId", line.catalog_image_id AS "catalogImageId"
+  line.updated_at AS "updatedAt", editor.display_name AS "updatedByName", line.image_asset_id AS "imageAssetId", line.catalog_image_id AS "catalogImageId",
+  line.change_op AS "changeOp", line.boq_line_id AS "boqLineId"
   FROM commercial_quote_lines line LEFT JOIN users editor ON editor.id = line.updated_by`;
 
 async function readLines(db: Db, workspaceId: string, caseId: string, quoteId: string) {
@@ -630,10 +696,11 @@ async function nextPosition(db: Db, workspaceId: string, caseId: string, quoteId
   return Number((await db.query<{ next: number }>(`SELECT coalesce(max(sort_order), -1) + 1 AS next FROM commercial_quote_lines WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3`, [workspaceId, caseId, quoteId])).rows[0].next);
 }
 
-export const pricedInput = (line: Pick<LineRow, "id" | "quantity" | "rate" | "unitCost" | "optional" | "areaId" | "workPackageId" | "discountKind" | "discountValue" | "taxRate">, quoteTaxRate: string) => ({
+export const pricedInput = (line: Pick<LineRow, "id" | "quantity" | "rate" | "unitCost" | "optional" | "areaId" | "workPackageId" | "discountKind" | "discountValue" | "taxRate"> & { changeOp?: LineRow["changeOp"] }, quoteTaxRate: string) => ({
   id: line.id, quantity: line.quantity, rate: line.rate, unitCost: line.unitCost, optional: Boolean(line.optional),
   areaKey: line.areaId ?? "general", tradeKey: line.workPackageId ?? "none",
   discountKind: line.discountKind, discountValue: line.discountValue, taxRate: line.taxRate ?? quoteTaxRate,
+  credit: line.changeOp === "omit",
 });
 
 // ---------- editing ----------
@@ -642,6 +709,7 @@ const blankLine = (id: string): LineRow => ({
   quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null,
   markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null,
   optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null, imageAssetId: null, catalogImageId: null,
+  changeOp: null, boqLineId: null,
 });
 
 /** Validates and applies the editor's fields to a line. Costs and markup change only with cost permission. */
@@ -834,6 +902,31 @@ async function toBuffer(body: unknown): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/** A live BOQ line of the case's project, with its price per unit after discounts (what a removal credits). */
+async function projectBoqLine(db: Db, workspaceId: string, caseId: string, boqLineId: string) {
+  const row = (await db.query<{ id: string; kind: string; title: string; description: string; unit: string; quantity: string; net: string; areaId: string | null; workPackageId: string | null; taxRate: string | null; status: string }>(
+    `SELECT line.id, line.kind, line.title, line.description, line.unit, line.quantity::text AS quantity, line.net::text AS net, line.area_id AS "areaId",
+            line.work_package_id AS "workPackageId", line.status,
+            (SELECT item->>'taxRate' FROM jsonb_array_elements(seal.snapshot->'lines') item WHERE item->>'id' = line.source_line_id LIMIT 1) AS "taxRate"
+       FROM project_boq_lines line
+       JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id AND project.case_id = $2
+       JOIN project_scope_seals seal ON seal.workspace_id = line.workspace_id AND seal.id = line.origin_seal_id
+      WHERE line.workspace_id = $1 AND line.id = $3`, [workspaceId, caseId, boqLineId])).rows[0];
+  if (!row || row.status !== "active") throw new NotFoundException("That item isn't in the project's scope.");
+  const unitNet = Dec.of(row.quantity).isZero() ? "0" : Dec.of(row.net).div(Dec.of(row.quantity)).round(6).toString();
+  return { ...row, unitNet };
+}
+
+/** A removal can't take more than the line has left after the other removals in this variation. */
+async function assertRemovable(db: Db, workspaceId: string, caseId: string, quoteId: string, boq: { id: string; quantity: string; title: string }, quantity: string, exceptLineId: string) {
+  if (Dec.of(quantity).isZero()) throw new BadRequestException("Remove at least some of it.");
+  const others = (await db.query<{ total: string }>(
+    `SELECT coalesce(sum(quantity), 0)::text AS total FROM commercial_quote_lines
+      WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND change_op = 'omit' AND boq_line_id = $4 AND id <> $5`,
+    [workspaceId, caseId, quoteId, boq.id, exceptLineId])).rows[0].total;
+  if (Dec.of(quantity).add(others).cmp(boq.quantity) > 0) throw new BadRequestException(`Only ${Dec.of(boq.quantity).sub(others).toString()} of ${boq.title} is left to remove.`);
+}
+
 /**
  * The client-facing scope of an accepted quote, for sealing into its project: every line the client
  * accepted (chosen options included), the options they didn't choose, the discounts, the price from
@@ -860,6 +953,7 @@ export async function acceptedScope(db: Db, workspaceId: string, caseId: string,
     length: line.length, width: line.width, height: line.height, count: line.count, dimensionUnit: line.dimensionUnit,
     rate: line.rate, discountKind: line.discountKind, discountValue: line.discountValue, taxRate: line.taxRate ?? quote.taxRate,
     catalogItemId: line.catalogItemId, imageAssetId: line.imageAssetId, catalogImageId: line.catalogImageId,
+    changeOp: line.changeOp, boqLineId: line.boqLineId,
     net: priced.get(line.id)?.net ?? "0", total: priced.get(line.id)?.total ?? "0",
   });
   const included = lines.filter((line) => !line.optional);

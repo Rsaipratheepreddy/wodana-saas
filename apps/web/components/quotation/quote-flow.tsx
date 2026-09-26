@@ -6,6 +6,8 @@ import { Button, Checkbox, ControlledModalDialog, IconButton, InlineNotice, Sele
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { StartProjectDialog } from "@/components/project-core/start-project-dialog";
+import { projectApi } from "@/lib/project-core/client";
+import Link from "next/link";
 import { money, plain } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, PaymentMilestone } from "@/lib/quotation/types";
 import styles from "./quote-builder.module.css";
@@ -63,6 +65,20 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
     </>;
   } else if (["changes_requested", "declined", "withdrawn", "superseded"].includes(status)) {
     actions = newRevision;
+  } else if (status === "accepted" && state.quote.kind === "variation" && state.project) {
+    // An accepted variation changes the project's scope once it's applied (sealed as VO-n).
+    actions = state.project.appliedAs
+      ? <Link className="wd-button" data-size="compact" data-variant="quiet" href={`/workspace/projects/${state.project.id}/scope`}>{t("Applied as {label}", { label: state.project.appliedAs })}</Link>
+      : <Button size="compact" variant="primary" isLoading={busy === "apply"} onPress={async () => {
+          setBusy("apply"); onError("");
+          try {
+            const projects = projectApi(workspaceId);
+            const detail = await projects.get(state.project!.id);
+            await projects.command(state.project!.id, detail.project.version, "apply_variation", { quoteId: state.quote.id });
+            await onDone();
+          } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not apply the variation.")); }
+          finally { setBusy(null); }
+        }}>{t("Apply to project")}</Button>;
   } else if (status === "accepted" && state.quote.kind === "quotation" && state.quote.round !== "design") {
     // The accepted quotation starts the project; the dialog shows what the firm's start rules still need.
     actions = <Button size="compact" variant="primary" onPress={() => setStarting(true)}>{t("Start project")}</Button>;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commercialRepository } from "../commercial/commercial-repository";
-import { freezeHash } from "../commercial/commercial.domain";
+import { freezeHash, totals } from "../commercial/commercial.domain";
 import type { CommercialData } from "../commercial/commercial.types";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
@@ -243,6 +243,62 @@ integration("projects core (plan §6.10)", () => {
       // Only the project manager arranges packages.
       await expect(w.as(w.designer, ["projects.view"]).command(actor, w.workspaceId, projectId, { action: "propose_packages", version: detail.project.version }))
         .rejects.toThrow(/Only the project manager/);
+    });
+  });
+
+  it("applies an accepted variation: removals credit exactly, moves re-home a line, additions join the BOQ", async () => {
+    await world(async (w) => {
+      const total = await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const before = await manager.scope(actor, w.workspaceId, projectId);
+      const worktop = before.lines.find((line) => line.title === "Worktop")!;
+      const cabinets = before.lines.find((line) => line.title === "Kitchen cabinets")!;
+      const pantry = randomUUID(), variationId = randomUUID();
+      await w.client.query("INSERT INTO pre_project_rooms(id,workspace_id,case_id,name) VALUES($1,$2,$3,'Pantry')", [pantry, w.workspaceId, w.caseId]);
+      await w.client.query(`INSERT INTO commercial_quotes(workspace_id,case_id,id,sort_order,number,kind,round,status,title,currency,baseline_id)
+        VALUES($1,$2,$3,1,2,'variation','main','draft','Changes','AED',$4)`, [w.workspaceId, w.caseId, variationId, w.quoteId]);
+      // Only a variation changes agreed scope, and a removal can't take more than is left.
+      await expect(w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [{ op: "change", change: "omit", id: "x", boqLineId: worktop.id }] })).rejects.toThrow();
+      await expect(w.builder.apply(actor, w.workspaceId, w.caseId, variationId, { ops: [{ op: "change", change: "omit", id: "o1", boqLineId: worktop.id, quantity: "3" }] }))
+        .rejects.toThrow(/Only 2.25 of Worktop is left/);
+      let state = await w.builder.apply(actor, w.workspaceId, w.caseId, variationId, { ops: [
+        { op: "change", change: "omit", id: "o1", boqLineId: worktop.id, quantity: "1" },
+        { op: "change", change: "move", id: "m1", boqLineId: cabinets.id, areaId: pantry },
+        { op: "upsert", line: { id: "n1", title: "Wine rack", unit: "nos", quantity: "1", rate: "900" } },
+      ] });
+      expect(state.lines.map((line) => [line.id, line.changeOp])).toEqual([["o1", "omit"], ["m1", "move"], ["n1", "add"]]);
+      // The removal credits 1 m² at the worktop's rate; the move is free until labour is priced.
+      expect(state.pricing.lines.find((line) => line.id === "o1")!.total).toBe("-800.00");
+      state = await w.builder.apply(actor, w.workspaceId, w.caseId, variationId, { ops: [{ op: "upsert", line: { id: "m1", version: state.lines.find((line) => line.id === "m1")!.version, rate: "250" } }] });
+      expect(state.pricing.total).toBe("350.00");
+      expect(state.project).toMatchObject({ id: projectId, appliedAs: null });
+
+      // Accepted by the client through the existing decision (its total uses the same credit rule).
+      const loaded = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!;
+      const data = { ...(loaded.content as CommercialData), revision: loaded.revision };
+      const variation = data.quotes.find((quote) => quote.id === variationId)!;
+      expect(totals(variation).total).toBe(350);
+      variation.status = "accepted"; variation.hash = freezeHash(variation);
+      variation.clientDecision = { decision: "accept", quoteHash: variation.hash, selectedOptionLineIds: [], baseTotal: 350, optionsTotal: 0, acceptedTotal: 350,
+        decidedAt: "2026-10-05T10:00:00.000Z", decidedBy: "Maya Client", method: "email", recordedBy: "Omar Manager" };
+      data.revision = loaded.revision + 1;
+      await commercialRepository.save(w.client, w.workspaceId, w.caseId, data);
+
+      let detail = await manager.get(actor, w.workspaceId, projectId);
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "apply_variation", quoteId: variationId, version: detail.project.version });
+      expect(Number(detail.project.total)).toBe(total + 350);
+      await expect(manager.command(actor, w.workspaceId, projectId, { action: "apply_variation", quoteId: variationId, version: detail.project.version })).rejects.toThrow(/already applied as VO-1/);
+      const after = await manager.scope(actor, w.workspaceId, projectId);
+      const worktopAfter = after.lines.find((line) => line.id === worktop.id)!;
+      expect([worktopAfter.quantity, worktopAfter.net, worktopAfter.status]).toEqual(["1.2500", "1000.0000", "active"]);
+      expect(after.lines.find((line) => line.id === cabinets.id)!.areaName).toBe("Pantry");
+      expect(after.lines.filter((line) => line.origin === "VO-1").map((line) => [line.title, line.net])).toEqual([["Move Kitchen cabinets", "250.0000"], ["Wine rack", "900.0000"]]);
+      expect(after.seals.map((seal) => [seal.revisionLabel, seal.total])).toEqual([["R1", `${total}.0000`], ["VO-1", "350.0000"]]);
+      expect(after.variations).toEqual([expect.objectContaining({ id: variationId, appliedAs: "VO-1" })]);
+      expect((await manager.line(actor, w.workspaceId, projectId, worktop.id)).history.at(-1)).toMatchObject({ kind: "reduced", detail: { variation: "VO-1", quantity: "1", left: "1.25" } });
+      expect((await manager.line(actor, w.workspaceId, projectId, cabinets.id)).history.at(-1)).toMatchObject({ kind: "moved", detail: { variation: "VO-1", from: "Kitchen", to: "Pantry" } });
+      expect((await w.builder.apply(actor, w.workspaceId, w.caseId, variationId, { ops: [] }).catch(() => null))).toBeNull();
     });
   });
 

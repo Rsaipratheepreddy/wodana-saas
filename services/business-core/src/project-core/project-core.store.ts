@@ -8,7 +8,7 @@ import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, LEAD_ROLE, type ProjectRole
 type Db = Pick<PoolClient, "query">;
 
 export type ProjectSettings = {
-  requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
+  requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
 };
 
 /** The workspace's project settings, created with the defaults the first time they're read. */
@@ -17,7 +17,7 @@ export async function ensureSettings(db: Db, workspaceId: string): Promise<Proje
     [workspaceId, JSON.stringify(DEFAULT_ROLES)]);
   return (await db.query<ProjectSettings>(
     `SELECT require_agreement AS "requireAgreement", require_payment AS "requirePayment", require_approval AS "requireApproval",
-            reference_prefix AS "referencePrefix", roles, version FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+            require_variation_payment AS "requireVariationPayment", reference_prefix AS "referencePrefix", roles, version FROM workspace_project_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
 export type TemplateRow = { id: string; name: string; isDefault: boolean; version: number; stages: TemplateStage[] };
