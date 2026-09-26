@@ -1,0 +1,12 @@
+.page { display: grid; gap: var(--wd-space-6); max-inline-size: 64rem; }
+.name { display: grid; gap: var(--wd-space-0-5); }
+.name strong { font-weight: var(--wd-weight-medium); }
+.name small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.rowActions { display: flex; align-items: center; gap: var(--wd-space-1); }
+.minimum { display: flex; align-items: center; gap: var(--wd-space-2); }
+.minimum :global(.wd-field) { inline-size: 12rem; }
+.form { display: grid; gap: var(--wd-space-3); }
+.row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.toggles { display: flex; flex-wrap: wrap; gap: var(--wd-space-5); }
+@media (max-width: 40rem) { .row { grid-template-columns: minmax(0, 1fr); } }

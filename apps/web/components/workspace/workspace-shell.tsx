@@ -87,7 +87,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
     : projectPortfolio ? { ...baseModule, navigation: projectPortfolioNavigation(baseModule.navigation) } : baseModule;
   // Sales sub-sections share /workspace/crm/leads; name the breadcrumb after the tab the person is on.
   const salesSection = pathname === "/workspace/crm/leads" ? builderSearch.get("section") : null;
-  const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? "Campaigns" : salesSection && ["assignment", "sla", "options"].includes(salesSection) ? "Settings" : salesSection === "reports" ? "Reports" : null;
+  const salesSectionLabel = salesSection && ["forms", "sources"].includes(salesSection) ? "Campaigns" : salesSection && ["assignment", "sla", "options", "design"].includes(salesSection) ? "Settings" : salesSection === "reports" ? "Reports" : null;
   const currentScreen = salesSectionLabel ? { label: salesSectionLabel } : pathname === "/workspace/crm/follow-ups" && ["schedule", "calendar"].includes(builderSearch.get("view") ?? "") ? { label: "Calendar" } : pathname === "/workspace/crm/preparation" ? { label: "Preparation" } : pathname === "/workspace/projects/clients" ? { label: "Clients" } : pathname === "/workspace/tasks" ? { label: "Tasks" } : pathname === "/workspace/approvals" ? { label: "Approvals" } : pathname === "/workspace/projects/factory" ? { label: "Factory" } : preProjectRoute || projectSection ? activeModule.navigation.flatMap((group) => group.items).find((item) => item.href.split("?")[0] === pathname) ?? findWorkspaceScreen(pathname, modules) : findWorkspaceScreen(pathname, modules);
   const [mobileNavigationPath, setMobileNavigationPath] = useState<string | null>(null);
   const woddy = useWoddy();

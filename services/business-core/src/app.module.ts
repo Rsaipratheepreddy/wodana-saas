@@ -31,6 +31,7 @@ import { JobsModule } from "./jobs/jobs.module";
 import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
 import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
+import { DesignModule } from "./design/design.module";
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
     WorkspaceSearchModule,
     AiSuggestionsModule,
     AiGatewayModule,
+    DesignModule,
     HrmsModule,
   ],
   controllers: [AppController],

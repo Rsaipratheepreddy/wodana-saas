@@ -1,3 +1,5 @@
+import { Dec } from "../catalog-core/decimal";
+import { depositMeetsMinimum } from "../design/design-packages.domain";
 import { paymentIsVerified } from "./accounting-invoice";
 import { acceptedQuoteLines } from "./commercial.domain";
 import {
@@ -78,16 +80,15 @@ export function financeGatePaymentsReady(
   );
 }
 
-/** Palm design starts only after at least AED 15,000 is actually received. */
+/** Design starts only after the case's minimum design deposit (workspace configuration) is actually received. */
 export function palmDesignDepositReady(data: CommercialData, quote: Quote) {
-  if (quote.round !== "design" || quote.currency !== "AED" ||
-      !financeGatePaymentsReady(data, "release", quote.id)) return false;
+  if (quote.round !== "design" || !financeGatePaymentsReady(data, "release", quote.id)) return false;
   const paid = data.payments
     .filter(payment => payment.sourceQuoteId === quote.id && payment.requiredForRelease &&
-      payment.currency === "AED" && releasePaymentIsOperational(payment) &&
+      payment.currency === quote.currency && releasePaymentIsOperational(payment) &&
       paymentHasFinanceVerifiedReceipt(data, payment))
-    .reduce((total, payment) => total + payment.amount, 0);
-  return Math.round(paid * 100) >= 1_500_000;
+    .reduce((total, payment) => Dec.of(total).add(String(payment.amount)).toString(), "0");
+  return depositMeetsMinimum(paid, data.palmFlow?.designMinimumDeposit, quote.currency);
 }
 
 export function variationReleasePaymentsReady(

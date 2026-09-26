@@ -391,6 +391,8 @@ try {
   const fixture = JSON.parse(await readFile(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
   await tenantQuery(`INSERT INTO project_workflow_templates(workspace_id,code,name,description,is_default,version,stages,created_by) VALUES($1,$2,$3,$4,true,1,$5,$6)`, [workspaceId, fixture.code, fixture.name, fixture.description, JSON.stringify(fixture.stages), ownerId]);
 
+  // The minimum design deposit is workspace configuration (Palm: AED 15,000), not a constant.
+  await request(`/workspaces/${workspaceId}/design/settings`, "PUT", { minimumDeposit: { amount: "15000.00", currency: "AED" } });
   const insufficientCase = await createCase("Insufficient design deposit QA");
   await command(insufficientCase, "set_palm_flow", { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false } });
   const insufficientCreated = await command(insufficientCase, "create");

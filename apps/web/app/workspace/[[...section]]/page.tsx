@@ -150,7 +150,7 @@ export default async function WorkspaceScreen({
 
   if (screen.id === "leads") {
     const query = await searchParams;
-    const enquirySection = typeof query.section === "string" && ["forms", "sources", "options", "reports", "sla", "assignment"].includes(query.section)
+    const enquirySection = typeof query.section === "string" && ["forms", "sources", "options", "reports", "sla", "assignment", "design"].includes(query.section)
       ? query.section as Exclude<EnquirySection, "leads">
       : undefined;
     const [leadsData, integrationsData, companyData] = await Promise.all([getLeadsPageData(), enquirySection === "sources" ? getIntegrationsPageData() : Promise.resolve(undefined), enquirySection === "forms" ? getCompanyProfilePageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined)]);

@@ -610,6 +610,8 @@ export type CommercialData = {
     scope: import("../projects/palm-flow-route").PalmFlowScope;
     selectedAt: string;
     selectedBy: string;
+    /** Minimum design deposit from the workspace's design settings, frozen when the path is chosen. */
+    designMinimumDeposit?: { amount: string; currency: string } | null;
   };
   /** First paid design round retained when a second, main round starts in the same Deal. */
   designRound?: {

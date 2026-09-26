@@ -144,8 +144,10 @@ describe("four business gates", () => {
     expect(variationReleasePaymentsReady(data, variation)).toBe(true);
   });
 
-  it("requires AED 15,000 in Finance-verified design receipts before the first paid Deal", () => {
+  it("requires the workspace's minimum design deposit in Finance-verified receipts before the first paid Deal", () => {
     const data = fixture();
+    // Configured per workspace and frozen into the case (Palm: AED 15,000).
+    data.palmFlow = { scope: { design: true, mainQuotation: false, materialSelection: false, procurement: false, manufacturing: false, siteWorks: false, installation: false }, selectedAt: "2026-09-18T00:00:00.000Z", selectedBy: "owner", designMinimumDeposit: { amount: "15000.00", currency: "AED" } };
     const design = data.quotes[0];
     design.round = "design";
     design.currency = "AED";
@@ -162,6 +164,13 @@ describe("four business gates", () => {
     payment.amount = 15_000;
     data.receipts[0].amount = 15_000;
     data.allocations[0].amount = 15_000;
+    expect(palmDesignDepositReady(data, design)).toBe(true);
+    // A minimum set in another currency is never met by this quote's payments.
+    data.palmFlow.designMinimumDeposit = { amount: "15000.00", currency: "USD" };
+    expect(palmDesignDepositReady(data, design)).toBe(false);
+    // Without a configured minimum, a verified design payment is enough.
+    data.palmFlow.designMinimumDeposit = null;
+    payment.amount = 100; data.receipts[0].amount = 100; data.allocations[0].amount = 100;
     expect(palmDesignDepositReady(data, design)).toBe(true);
   });
 });

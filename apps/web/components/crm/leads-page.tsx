@@ -43,6 +43,7 @@ import { formAnswerColumns, formAnswerValue } from "@/lib/crm/form-answer-column
 import type { IntegrationsPageData } from "@/lib/workspace/integrations";
 import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import { LogContactDialog } from "./log-contact-dialog";
+import { DesignPackagesSettings } from "./design-packages-settings";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { administrativeAreaLabel, countryFromLocale } from "@/lib/workspace/region-labels";
 
@@ -50,7 +51,7 @@ const LOCAL_FORMAT = { locale: "en-GB", timeZone: Intl.DateTimeFormat().resolved
 const ACTIVE_STATUSES = new Set<CrmLeadStatus>(["new", "attempting_contact", "connected", "nurturing", "paused"]);
 const stageLabel = leadStageLabel;
 type LeadMove = { leadId: string; status: CrmLeadStatus };
-export type EnquirySection = "leads" | "forms" | "sources" | "options" | "reports" | "sla" | "assignment";
+export type EnquirySection = "leads" | "forms" | "sources" | "options" | "reports" | "sla" | "assignment" | "design";
 function humanize(value: string | null) {
   if (!value) return "Not set";
   return value
@@ -346,6 +347,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
           {activeSection === "reports" ? <LeadFlowReport initialData={initialData} /> : null}
           {activeSection === "sla" ? <LeadResponseSla initialData={initialData} /> : null}
           {activeSection === "assignment" ? <LeadRouting initialData={initialData} /> : null}
+          {activeSection === "design" ? <DesignPackagesSettings workspaceId={initialData.workspaceId} currency={initialData.defaultCurrency ?? ""} locale={initialData.defaultLocale} canManage={seesTeam} /> : null}
         </div>
 
         {cardLead ? <InspectorSheet isOpen onOpenChange={(open) => { if (!open) setCardLead(null); }} size="md" hideTitle title="Enquiry details"><LeadWorkbench initialData={initialData} key={cardLead.id} lead={items.find((item) => item.id === cardLead.id) ?? cardLead} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}

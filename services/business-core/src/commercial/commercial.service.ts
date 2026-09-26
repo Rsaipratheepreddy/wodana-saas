@@ -1,3 +1,4 @@
+import { DesignPackagesService } from "../design/design-packages.service";
 import { effectivePortalBrand, portalOwnedBrand } from "./effective-brand";
 import { commercialRepository } from "./commercial-repository";
 import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
@@ -1559,7 +1560,7 @@ export class CommercialService {
           } catch (error) {
             throw new BadRequestException(error instanceof Error ? error.message : "Invalid service path.");
           }
-          data.palmFlow = { scope, selectedAt: now, selectedBy: user.userId };
+          data.palmFlow = { scope, selectedAt: now, selectedBy: user.userId, designMinimumDeposit: await DesignPackagesService.minimumDeposit(client, workspaceId) };
         } else if (action === "create_change_case") {
           const kind = text(b.kind, 40, true) as ControlledChangeKind;
           if (!controlledChangeKinds.includes(kind))
@@ -2764,7 +2765,9 @@ export class CommercialService {
               throw new ConflictException("Finance must verify this quotation round's payment before Owner approval.");
             if (data.palmFlow?.scope.design && accepted.round === "design" &&
                 !palmDesignDepositReady(data, accepted))
-              throw new ConflictException("Verify at least AED 15,000 for the design proposal before Owner approval and the Deal File.");
+              throw new ConflictException(data.palmFlow.designMinimumDeposit
+                ? `Verify at least ${data.palmFlow.designMinimumDeposit.currency} ${data.palmFlow.designMinimumDeposit.amount} for the design proposal before Owner approval and the Deal File.`
+                : "Verify the design proposal payment before Owner approval and the Deal File.");
             const snapshot = acceptedQuoteTotals(accepted);
             review.status = "approved";
             review.decisionNote = decisionNote;

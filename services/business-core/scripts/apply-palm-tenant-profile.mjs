@@ -9,7 +9,8 @@ const allowRemote = process.argv.includes("--allow-remote");
 const profile = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-crm-intake-profile.json", import.meta.url), "utf8"));
 const brand = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-living-brand.json", import.meta.url), "utf8"));
 const workflow = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
-const fixtureHash = createHash("sha256").update(JSON.stringify({ profile, brand, workflow })).digest("hex");
+const design = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-design-packages.json", import.meta.url), "utf8"));
+const fixtureHash = createHash("sha256").update(JSON.stringify({ profile, brand, workflow, design })).digest("hex");
 const api = process.env.BUSINESS_CORE_URL ?? "http://127.0.0.1:8166/api/v1";
 const endpoint = new URL(api);
 const local = ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname);
@@ -211,6 +212,18 @@ if (websiteForm) {
     method: "PATCH", body: { version: websiteForm.version, action: websiteForm.status === "published" ? "pause" : "save", draft },
   }));
 } else pending.push("form:website-draft");
+
+// Design packages and minimum design deposit (PLM-041): configuration, applied idempotently.
+const designSettings = await request(`/workspaces/${workspaceId}/design/settings`);
+if (JSON.stringify(designSettings.minimumDeposit) === JSON.stringify(design.minimumDeposit)) unchanged.push("design:minimum-deposit");
+else await act("design:minimum-deposit", () => request(`/workspaces/${workspaceId}/design/settings`, { method: "PUT", expected: 200, body: { minimumDeposit: design.minimumDeposit, version: designSettings.version } }));
+for (const desired of design.packages) {
+  const existing = designSettings.packages.find((row) => row.code === desired.code);
+  const same = existing && ["name", "pricingMethod", "rate", "currency", "includedRevisions", "includesSpacePlanning", "includesRenders", "inclusions", "position"].every((key) => String(existing[key] ?? "") === String(desired[key] ?? ""))
+    && String(existing.areaUnit ?? "") === String(desired.areaUnit ?? "") && String(existing.requiredRoleCode ?? "") === String(desired.requiredRoleCode ?? "");
+  if (same) unchanged.push(`design:package:${desired.code}`);
+  else await act(`design:package:${desired.code}`, () => request(`/workspaces/${workspaceId}/design/packages`, { body: { ...desired, ...(existing ? { id: existing.id, version: existing.version } : {}) } }));
+}
 
 process.stdout.write(`${JSON.stringify({
   ok: true,
