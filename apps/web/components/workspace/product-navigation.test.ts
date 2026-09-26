@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { productNavigation, productNavigationActive, workspaceModules } from './workspace-navigation';
+import { homeTabs, productNavigation, productNavigationActive, workspaceModules } from './workspace-navigation';
 
 describe('product navigation route ownership', () => {
   const sections = productNavigation(workspaceModules);
@@ -8,7 +8,7 @@ describe('product navigation route ownership', () => {
     ['/workspace/crm/leads', '', 'sales'],
     ['/workspace/crm/conversations/thread-1', '', 'inbox'],
     ['/workspace/crm/customers/person-1', '', 'clients'],
-    ['/workspace/crm/follow-ups', 'view=activity', 'my-activity'],
+    ['/workspace/crm/follow-ups', 'view=activity', 'home'],
     ['/workspace/crm/follow-ups', 'view=schedule', 'daily-follow-ups'],
     ['/workspace/crm/calendar', 'view=activity', 'daily-follow-ups'],
     ['/workspace/crm/follow-ups', '', 'sales'],
@@ -38,7 +38,7 @@ describe('product navigation route ownership', () => {
     expect(company?.items.find(item => item.id === 'resources')).toMatchObject({label:'Catalog',href:'/workspace/catalogs'});
     expect(company?.items.find(item => item.id === 'resources')?.children).toBeUndefined();
     expect(sections.find(section => section.id === 'operations')?.items.map(item => item.label)).toEqual(['Purchasing','Inventory','Factory']);
-    expect(sections.find(section => section.id === 'main')?.items.some(item => item.id === 'approvals')).toBe(true);
+    expect(sections.find(section => section.id === 'main')?.items.map(item => item.label)).toEqual(['Home', 'Calendar', 'Inbox']);
   });
   it('uses an authorized settings destination when company access is absent', () => {
     const settings = workspaceModules[0];
@@ -47,8 +47,10 @@ describe('product navigation route ownership', () => {
   });
 });
 
-it('uses the shared Tasks entry when project work is authorized and preserves CRM-only routing',()=>{
- const all=productNavigation(workspaceModules);expect(all.flatMap(group=>group.items).find(item=>item.id==='my-activity')?.href).toBe('/workspace/tasks');expect(productNavigationActive('/workspace/tasks',new URLSearchParams(),all)).toBe('my-activity');
- const crmOnly=productNavigation(workspaceModules.filter(module=>module.id==='crm'));expect(crmOnly.flatMap(group=>group.items).find(item=>item.id==='my-activity')?.href).toBe('/workspace/crm/follow-ups?view=activity');
- const projectsOnly=productNavigation(workspaceModules.filter(module=>module.id==='projects'));expect(projectsOnly.flatMap(group=>group.items).filter(item=>item.id==='my-activity')).toHaveLength(1);
+it('keeps Tasks and Approvals as Home tabs, and CRM-only Tasks on the follow-up list', () => {
+  expect(homeTabs(workspaceModules).map(tab => [tab.label, tab.href])).toEqual([['Overview', '/workspace'], ['Tasks', '/workspace/tasks'], ['Approvals', '/workspace/approvals']]);
+  const all = productNavigation(workspaceModules);
+  for (const path of ['/workspace/tasks', '/workspace/approvals']) expect(productNavigationActive(path, new URLSearchParams(), all)).toBe('home');
+  expect(homeTabs(workspaceModules.filter(module => module.id === 'crm')).find(tab => tab.id === 'tasks')?.href).toBe('/workspace/crm/follow-ups?view=activity');
+  expect(productNavigationActive('/workspace/crm/follow-ups', new URLSearchParams('view=activity'), all)).toBe('home');
 });

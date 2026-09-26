@@ -40,10 +40,11 @@ describe("WorkspaceSidebar", () => {
   it.each(["desktop", "mobile"] as const)("keeps shared destinations accessible on %s", async (mode) => {
     render(<WorkspaceSidebar activeModule={preProjectModule} mode={mode} modules={workspaceModules} navigation={preProjectModule.navigation} pathname="/workspace/pre-projects/requirements" workspaces={workspaces}/>);
     const nav = within(screen.getByRole('navigation',{name:'Main navigation'}));
-    for (const name of ['Home','Inbox','Tasks','Calendar','Approvals','Sales','Clients','Projects','Purchasing','Inventory','Factory']) expect(nav.getByRole('link',{name})).toBeVisible();
+    for (const name of ['Home','Calendar','Inbox','Sales','Clients','Projects','Purchasing','Inventory','Factory']) expect(nav.getByRole('link',{name})).toBeVisible();
     expect(nav.queryByRole('link',{name:'Requirements'})).not.toBeInTheDocument();
     expect(screen.queryByRole('searchbox',{name:'Search workspace'})).not.toBeInTheDocument();
-    expect(nav.getByRole('link',{name:'Tasks'})).toHaveAttribute('href','/workspace/tasks');
+    expect(nav.queryByRole('link',{name:'Tasks'})).not.toBeInTheDocument();
+    expect(nav.getByRole('link',{name:'Calendar'})).toHaveAttribute('href','/workspace/crm/follow-ups?view=schedule');
     expect(nav.getByRole('link',{name:'Home'})).toBeVisible();
   });
 
@@ -51,14 +52,14 @@ describe("WorkspaceSidebar", () => {
     render(<WorkspaceSidebar activeModule={crmModule} modules={workspaceModules} navigation={crmModule.navigation} pathname="/workspace/crm/leads" workspaces={workspaces}/>);
     expect(screen.getByRole('link',{name:'Sales'})).toHaveAttribute('aria-current','page');
     expect(screen.queryByRole('link',{name:'Enquiries'})).not.toBeInTheDocument();
-    expect(screen.getByRole('link',{name:'Tasks'})).toBeVisible();
+    expect(screen.getByRole('link',{name:'Home'})).toBeVisible();
     expect(screen.getByRole('link',{name:'Calendar'})).toBeVisible();
   });
 
   it("opens the shared approval hub and keeps Sales selected for an unpaid Palm case", () => {
     const {rerender}=render(<WorkspaceSidebar activeModule={crmModule} modules={workspaceModules} navigation={crmModule.navigation} pathname="/workspace/approvals" workspaces={workspaces}/>);
-    expect(screen.getByRole('link',{name:'Approvals'})).toHaveAttribute('href','/workspace/approvals');
-    expect(screen.getByRole('link',{name:'Approvals'})).toHaveAttribute('aria-current','page');
+    expect(screen.queryByRole('link',{name:'Approvals'})).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:'Home'})).toHaveAttribute('aria-current','page');
     rerender(<WorkspaceSidebar activeModule={preProjectModule} activeItemId="sales" modules={workspaceModules} navigation={preProjectModule.navigation} pathname="/workspace/pre-projects/cases/00000000-0000-4000-8000-000000000001/requirements" workspaces={workspaces}/>);
     expect(screen.getByRole('link',{name:'Sales'})).toHaveAttribute('aria-current','page');
     expect(screen.getByRole('link',{name:'Projects'})).not.toHaveAttribute('aria-current');
@@ -91,7 +92,7 @@ describe("WorkspaceSidebar", () => {
     );
 
     expect(screen.queryByRole("searchbox", { name: "Search workspace" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Calendar" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
   });
 
@@ -101,9 +102,9 @@ describe("WorkspaceSidebar", () => {
     render(<WorkspaceSidebar activeModule={crmModule} modules={workspaceModules} navigation={crmModule.navigation}
       onNavigate={onNavigate} pathname="/workspace/crm" workspaces={workspaces} />);
 
-    const tasks = screen.getByRole("link", { name: "Tasks" });
-    expect(tasks).toHaveAttribute("href", "/workspace/tasks");
-    await interaction.click(tasks);
+    const calendar = screen.getByRole("link", { name: "Calendar" });
+    expect(calendar).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
+    await interaction.click(calendar);
     expect(onNavigate).toHaveBeenCalledOnce();
   });
 
@@ -142,7 +143,7 @@ describe("WorkspaceSidebar", () => {
       />,
     );
 
-    for (const destination of ['Home','Inbox','Tasks','Calendar','Projects','Purchasing','Inventory','Factory','Connections','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
+    for (const destination of ['Home','Calendar','Inbox','Projects','Purchasing','Inventory','Factory','Connections','Settings']) expect(screen.getByRole('link',{name:destination})).toBeVisible();
     expect(screen.getByRole('link',{name:'Settings'})).toHaveAttribute('href','/workspace/company');
     for (const section of ['Daily work','Business','Operations','Company']) expect(screen.getByRole('button',{name:section})).toBeVisible();
     expect(screen.queryByRole("link", { name: "Manage workspaces" })).not.toBeInTheDocument();

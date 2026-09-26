@@ -110,7 +110,7 @@ describe("WorkspaceShell theme", () => {
     const { container } = render(<WorkspaceShell {...shellProps}><p>Project portfolio</p></WorkspaceShell>);
     expect(container.querySelector("[data-module-selector]")).toBeNull();
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(expect.arrayContaining(["Projects", "Sales", "Calendar", "Tasks"]));
+    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(expect.arrayContaining(["Projects", "Sales", "Calendar", "Home"]));
     expect(navigation.getByRole("link", { name: "Projects" })).toHaveAttribute("aria-current", "page");
   });
 
@@ -139,7 +139,7 @@ describe("WorkspaceShell theme", () => {
     expect(screen.getByRole("link", { name: "Catalog" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps Client Inbox standalone with direct Tasks and Calendar links", () => {
+  it("keeps Client Inbox standalone with direct Home and Calendar links", () => {
     route.pathname = "/workspace/crm/conversations";
     const content = <WorkspaceShell {...shellProps}><CrmProductShell title="Inbox" description="Chats" canView compact><p>Chat content</p></CrmProductShell></WorkspaceShell>;
     expect(renderToString(content)).not.toContain('data-focus="true"');
@@ -149,7 +149,7 @@ describe("WorkspaceShell theme", () => {
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
     expect(navigation.getByRole("link", { name: "Inbox" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("navigation", { name: "Workspace sections" })).not.toBeInTheDocument();
-    expect(navigation.getByRole("link", { name: "Tasks" })).toHaveAttribute("href", "/workspace/tasks");
+    expect(navigation.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/workspace");
     expect(navigation.getByRole("link", { name: "Calendar" })).toHaveAttribute("href", "/workspace/crm/follow-ups?view=schedule");
     expect(navigation.getByRole("link", { name: "Factory" })).toHaveAttribute("href", "/workspace/projects/factory");
     expect(navigation.queryByRole("button", { name: "Production Tracking" })).not.toBeInTheDocument();
@@ -209,5 +209,16 @@ describe("WorkspaceShell theme", () => {
     expect(screen.getByRole("textbox", { name: "Message Woddy" })).toBeInTheDocument();
     await interaction.click(screen.getByRole("button", { name: "Close Woddy chat" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Woddy chat" })).not.toBeInTheDocument());
+  });
+});
+
+describe("Home tabs", () => {
+  it("shows Overview, Tasks and Approvals as tabs on Home's pages, with the current one selected", () => {
+    route.pathname = "/workspace/approvals";
+    render(<WorkspaceShell {...shellProps}><p>Approvals</p></WorkspaceShell>);
+    const tabs = within(screen.getByRole("navigation", { name: "Home" }));
+    expect(tabs.getAllByRole("link").map((link) => link.textContent)).toEqual(["Overview", "Tasks", "Approvals"]);
+    expect(tabs.getByRole("link", { name: "Approvals" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   });
 });

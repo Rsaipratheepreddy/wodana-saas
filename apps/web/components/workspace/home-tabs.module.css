@@ -1,0 +1,6 @@
+.bar { display: flex; justify-content: center; padding-block: var(--wd-space-3) var(--wd-space-1); padding-inline: var(--wd-space-4); }
+.tabs { display: inline-flex; gap: var(--wd-space-0-5); max-inline-size: 100%; overflow-x: auto; padding: var(--wd-space-1); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); scrollbar-width: none; }
+.tab { flex: none; display: inline-flex; align-items: center; min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-4); border-radius: var(--wd-radius-pill); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; white-space: nowrap; }
+.tab:hover { color: var(--wd-color-text); background: var(--wd-color-surface-hover); }
+.tab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.tab[aria-current="page"] { background: var(--wd-color-text); color: var(--wd-color-surface); }

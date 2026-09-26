@@ -365,12 +365,11 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
   const hasProjectTasks = allowed.has("projects-overview");
   const salesEntry = modules.find(module => module.id === "crm")?.navigation.flatMap(group => group.items).find(item => allowed.has(item.id) && ["crm-overview", "leads", "opportunities", "follow-ups"].includes(item.id));
   const sections: WorkspaceNavigationSection[] = [
+    // Daily work: Home (Overview, Tasks, Approvals as tabs), then Calendar and Inbox on their own.
     { id: "main", label: "Daily work", items: [
       { id: "home", label: "Home", href: "/workspace", icon: "home" },
+      ...(allowed.has("follow-ups") || allowed.has("calendar") ? [{ id: "daily-follow-ups", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", icon: "calendar" as const }] : []),
       ...(allowed.has("conversations") ? [{ id: "inbox", label: "Inbox", href: "/workspace/crm/conversations", icon: "conversations" as const }] : []),
-      ...(allowed.has("follow-ups") ? [{ id: "my-activity", label: "Tasks", href: hasProjectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity", icon: "requirements" as const }, { id: "daily-follow-ups", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", icon: "calendar" as const }] : allowed.has("calendar") ? [{ id: "daily-follow-ups", label: "Calendar", href: "/workspace/crm/follow-ups?view=schedule", icon: "calendar" as const }] : []),
-      ...(hasProjectTasks && !allowed.has("follow-ups") ? [{id:"my-activity",label:"Tasks",href:"/workspace/tasks",icon:"requirements" as const}] : []),
-      ...((allowed.has("projects-overview") || allowed.has("pre-projects")) ? [{ id: "approvals", label: "Approvals", href: "/workspace/approvals", icon: "preProjects" as const }] : []),
     ] },
     { id: "work", label: "Business", items: [
       ...(salesEntry ? [{ id: "sales", label: "Sales", href: salesEntry.href, icon: "opportunities" as const }] : []),
@@ -393,6 +392,18 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
   return sections.filter(section => section.items.length);
 }
 
+/** The tabs on Home: the overview plus the person's own queues. */
+export function homeTabs(modules: WorkspaceModuleDefinition[]): { id: string; label: string; href: string }[] {
+  const allowed = new Set(modules.flatMap(module => module.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false).map(item => item.id)));
+  const projectTasks = allowed.has("projects-overview");
+  return [
+    { id: "overview", label: "Overview", href: "/workspace" },
+    ...(projectTasks || allowed.has("follow-ups") ? [{ id: "tasks", label: "Tasks", href: projectTasks ? "/workspace/tasks" : "/workspace/crm/follow-ups?view=activity" }] : []),
+    ...(allowed.has("projects-overview") || allowed.has("pre-projects") ? [{ id: "approvals", label: "Approvals", href: "/workspace/approvals" }] : []),
+  ];
+}
+export const HOME_ROUTES = ["/workspace", "/workspace/tasks", "/workspace/approvals"];
+
 export function productNavigationActive(pathname: string, query: URLSearchParams, sections: WorkspaceNavigationSection[]): string | undefined {
   const items = sections.flatMap(section => section.items);
   const exists = (id: string) => items.some(item => item.id === id) ? id : undefined;
@@ -403,9 +414,8 @@ export function productNavigationActive(pathname: string, query: URLSearchParams
   if (under("/workspace/crm/customers") || under("/workspace/crm/organizations")) return exists("clients");
   if (under("/workspace/crm/calendar")) return exists("daily-follow-ups");
   if (under("/workspace/crm/follow-ups") && query.get("view") === "schedule") return exists("daily-follow-ups");
-  if (under("/workspace/tasks")) return exists("my-activity");
-  if (under("/workspace/approvals")) return exists("approvals");
-  if (under("/workspace/crm/follow-ups") && query.get("view") === "activity") return exists("my-activity");
+  if (under("/workspace/tasks") || under("/workspace/approvals")) return exists("home");
+  if (under("/workspace/crm/follow-ups") && query.get("view") === "activity") return exists("home");
   if (under("/workspace/crm")) return exists("sales");
   if (under("/workspace/pre-projects")) return exists("planning") ?? exists("projects");
   if (under("/workspace/projects/clients")) return exists("clients");

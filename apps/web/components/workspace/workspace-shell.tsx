@@ -14,11 +14,14 @@ import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
   findWorkspaceModule,
   findWorkspaceScreen,
+  HOME_ROUTES,
+  homeTabs,
   type WorkspaceIdentity,
   type WorkspaceModuleDefinition,
   type WorkspaceUser,
 } from "./workspace-navigation";
 import { WorkspaceFlowNavigation } from "./workspace-flow-navigation";
+import { HomeTabs } from "./home-tabs";
 import { SettingsLayout } from "./settings-layout";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceAccountMenu } from "./workspace-account-menu";
@@ -210,7 +213,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && settingsPage ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{HOME_ROUTES.includes(pathname) ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects") ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : activeModule.id === "workspace" && settingsPage ? <SettingsLayout module={activeModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );
