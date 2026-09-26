@@ -9,6 +9,8 @@ import { quoteApi, QuotationRequestError } from "@/lib/quotation/client";
 import { groupLines, money, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
 import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteView } from "@/lib/quotation/types";
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
+import { RoomPicker } from "@/components/pre-project/room-manager";
+import type { CaseRoom } from "@/lib/pre-project/content";
 import { LineDetails } from "./line-details";
 import { QuoteRow, type RowColumn } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
@@ -33,6 +35,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
+  const [addingArea, setAddingArea] = useState(false);
   const [discountFor, setDiscountFor] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; }, [state]);
@@ -180,7 +183,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
     <div className={styles.toolbar}>
       <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as QuoteView)} options={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />
       <span className={styles.spacer} />
-      {state.canEdit && view === "trade" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
+      {state.canEdit && view !== "trade" ? <Button size="compact" variant="quiet" onPress={() => setAddingArea(true)}><Plus aria-hidden="true" size={14} />{t("Area")}</Button> : null}
+      {state.canEdit && view !== "area" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
     </div>
 
     {error ? <InlineNotice tone="error" message={error} /> : null}
@@ -206,6 +210,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
       <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor} />
     </div>
 
+    {addingArea ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
+      onClose={() => setAddingArea(false)} onPick={() => { setAddingArea(false); void load(); }} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}
       onSave={async (fields) => {
         try { const next = await api.apply([{ op: "upsert", line: { id: openLine.id, version: openLine.version, ...fields } }]); setState(next); setError(""); return true; }

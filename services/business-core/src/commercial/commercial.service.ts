@@ -2008,7 +2008,11 @@ export class CommercialService {
           if (!q) throw new NotFoundException("Quotation not found.");
           editable(q);
           const v = object(b.quote);
+          // An unknown cost (from the builder) arrives as null; keep it unknown rather than zero.
+          const unknownCost = new Set(q.lines.filter((line) => line.unitCost === null).map((line) => line.id));
+          if (Array.isArray(v.lines)) v.lines = v.lines.map((line) => (line && typeof line === "object" && (line as { unitCost?: unknown }).unitCost === null ? { ...line, unitCost: 0 } : line));
           const lines = parseLines(v.lines);
+          for (const line of lines) if (unknownCost.has(line.id)) (line as { unitCost: number | null }).unitCost = null;
           // Fields owned by the quotation builder are kept as they are; this save never clears them.
           for (const line of lines) {
             const stored = q.lines.find((item) => item.id === line.id) as Record<string, unknown> | undefined;

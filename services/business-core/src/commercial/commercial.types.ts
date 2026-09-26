@@ -158,7 +158,8 @@ export type QuoteLine = {
   finish: string;
   quantity: number;
   unit: string;
-  unitCost: number;
+  /** Null when the builder couldn't find every part's cost. */
+  unitCost: number | null;
   rate: number;
   variant?: string;
   photo?: string;

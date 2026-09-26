@@ -117,6 +117,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/company", icon: "company", id: "company", label: "Company profile" },
           { href: "/workspace/language", icon: "language", id: "workspace-language", label: "Workspace language" },
           { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: "Design packages" },
+          { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: "Quotations" },
         ],
       },
       {

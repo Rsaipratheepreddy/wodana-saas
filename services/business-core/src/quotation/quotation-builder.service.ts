@@ -30,7 +30,7 @@ const DEFAULT_SETTINGS: QuotationSettings = {
 type LineRow = {
   id: string; position: number; version: number; kind: string; areaId: string | null; fromAreaId: string | null; workPackageId: string | null;
   title: string; description: string; unit: string; quantity: string; formula: string | null; length: string | null; width: string | null;
-  height: string | null; count: string | null; dimensionUnit: string | null; rate: string; unitCost: string; markupPercent: string | null;
+  height: string | null; count: string | null; dimensionUnit: string | null; rate: string; unitCost: string | null; markupPercent: string | null;
   pricingMode: "rate" | "build_up"; discountKind: "percent" | "amount" | null; discountValue: string | null; taxCode: string | null;
   taxRate: string | null; optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
   catalogSnapshot: Record<string, unknown> | null; updatedAt: string; updatedByName: string | null;
@@ -158,7 +158,11 @@ export class QuotationBuilderService {
       const decimals = currencyDecimals(quote.currency);
       const areas = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
       const trades = new Set((await workPackages(client, workspaceId, false)).map((trade) => trade.id));
-      const taxes = new Map((await taxCodes(client, workspaceId, caseId)).map((tax) => [tax.code, tax.rate]));
+      const codes = await taxCodes(client, workspaceId, caseId);
+      const taxes = new Map(codes.map((tax) => [tax.code, tax.rate]));
+      // New lines take the firm's default tax; without tax codes the quote's own rate applies.
+      const standard = codes.find((tax) => tax.isDefault);
+      const defaultTax = standard ? { taxCode: standard.code, taxRate: standard.rate } : {};
       const changed: string[] = [];
       for (const raw of input.ops) {
         const op = object(raw);
@@ -188,7 +192,7 @@ export class QuotationBuilderService {
           }
           let next: LineRow & { components?: ComponentRow[] | null } = current
             ? { ...current, components: null }
-            : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null };
+            : { ...blankLine(id), position: await nextPosition(client, workspaceId, caseId, quoteId), markupPercent: settings.defaultMarkupPercent, components: null, ...defaultTax };
           if (kind === "catalog") next = await this.fromCatalog(client, workspaceId, quote, settings, decimals, next, uuid(op.itemId, "Catalog item"));
           next = applyFields(next, fields, { canEditCosts, areas, trades, taxes });
           await this.saveLine(client, workspaceId, caseId, quoteId, next, current, areas, decimals, user.userId);
@@ -261,7 +265,7 @@ export class QuotationBuilderService {
       kind: item.kind === "service" && line.kind === "item" ? "service" : line.kind,
       title: item.title, description: item.description, unit: item.unit, catalogItemId: item.snapshot.itemId,
       catalogSnapshot: { ...item.snapshot, priceReason: item.priceReason },
-      rate: item.rate ?? "0", unitCost: item.unitCost ?? "0",
+      rate: item.rate ?? "0", unitCost: item.unitCost,
       pricingMode: buildUpMode ? "build_up" as const : "rate" as const,
       markupPercent: buildUpMode ? item.rollup?.marginPercent ?? line.markupPercent : line.markupPercent,
       components: components.length ? components : [],
@@ -281,7 +285,7 @@ export class QuotationBuilderService {
       if (!components.length) throw new BadRequestException("Add what the item is made of, or price it with a rate.");
       const built = buildUp(components, measurements, line.markupPercent, decimals);
       line.rate = built.rate;
-      line.unitCost = built.cost ?? "0";
+      line.unitCost = built.cost;
     }
     if (line.kind === "client_supplied") line.rate = "0";
     const room = line.areaId ? areas.get(line.areaId) ?? "" : "";
@@ -432,7 +436,7 @@ async function readLine(db: Db, workspaceId: string, caseId: string, quoteId: st
 }
 const trim = (value: string | null) => (value === null ? null : Dec.of(value).toString());
 const tidyLine = (line: LineRow): LineRow => ({
-  ...line, quantity: Dec.of(line.quantity).toString(), rate: Dec.of(line.rate).toString(), unitCost: Dec.of(line.unitCost).toString(),
+  ...line, quantity: Dec.of(line.quantity).toString(), rate: Dec.of(line.rate).toString(), unitCost: trim(line.unitCost),
   length: trim(line.length), width: trim(line.width), height: trim(line.height), count: trim(line.count), markupPercent: trim(line.markupPercent),
   discountValue: trim(line.discountValue), taxRate: trim(line.taxRate),
 });
@@ -461,7 +465,7 @@ export const pricedInput = (line: Pick<LineRow, "id" | "quantity" | "rate" | "un
 // ---------- editing ----------
 const blankLine = (id: string): LineRow => ({
   id, position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "",
-  quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: "0",
+  quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null,
   markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null,
   optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null,
 });
@@ -488,10 +492,10 @@ function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fie
   if (has("rate")) next.rate = decimal(fields.rate, "Rate", { max: "100000000000" })!;
   if (has("pricingMode")) next.pricingMode = oneOf(fields.pricingMode, ["rate", "build_up"] as const, "pricing");
   if (context.canEditCosts) {
-    if (has("unitCost")) next.unitCost = decimal(fields.unitCost, "Cost", { max: "100000000000" })!;
+    if (has("unitCost")) next.unitCost = decimal(fields.unitCost, "Cost", { max: "100000000000", nullable: true });
     if (has("markupPercent")) next.markupPercent = decimal(fields.markupPercent, "Markup", { max: "1000", nullable: true });
     // A new cost or markup (without a typed rate) sets the sell rate: cost plus markup.
-    if ((has("unitCost") || has("markupPercent")) && !has("rate") && next.pricingMode === "rate" && next.markupPercent !== null && !Dec.of(next.unitCost).isZero())
+    if ((has("unitCost") || has("markupPercent")) && !has("rate") && next.pricingMode === "rate" && next.markupPercent !== null && next.unitCost !== null && !Dec.of(next.unitCost).isZero())
       next.rate = Dec.of(next.unitCost).mul(Dec.of(next.markupPercent).add(100)).div(100).toString();
   }
   if (has("discountKind") || has("discountValue")) {

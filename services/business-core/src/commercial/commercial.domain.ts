@@ -95,7 +95,7 @@ export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partia
     let priced;
     try {
       priced = priceQuote(q.lines.map((line) => ({
-        id: line.id, quantity: String(line.quantity), rate: String(line.rate), unitCost: line.unitCost === undefined ? null : String(line.unitCost),
+        id: line.id, quantity: String(line.quantity), rate: String(line.rate), unitCost: line.unitCost === undefined || line.unitCost === null ? null : String(line.unitCost),
         optional: Boolean(line.optional), areaKey: line.areaId ?? "general", tradeKey: line.workPackageId ?? "none",
         discountKind: line.discountKind ?? null, discountValue: line.discountValue === undefined || line.discountValue === null ? null : String(line.discountValue),
         taxRate: line.lineTaxRate === undefined || line.lineTaxRate === null ? String(q.taxRate) : String(line.lineTaxRate),

@@ -1,0 +1,11 @@
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-3); }
+.saved { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.trades { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.trades li { display: flex; align-items: center; gap: var(--wd-space-2); padding-block: var(--wd-space-1); border-block-end: 1px solid var(--wd-color-border); }
+.trades li[data-archived] .tradeInput { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+.tradeInput { flex: 1 1 auto; min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-2); border: 1px solid transparent; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); }
+.tradeInput:hover:not(:disabled) { border-color: var(--wd-color-border); }
+.tradeInput:focus { border-color: var(--wd-color-focus); outline: none; }
+.addTrade { display: flex; align-items: center; gap: var(--wd-space-2); padding-block-start: var(--wd-space-2); }
+.addTrade :global(.wd-field) { flex: 1 1 auto; }

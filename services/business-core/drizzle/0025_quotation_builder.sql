@@ -81,6 +81,9 @@ ALTER TABLE commercial_quote_lines
   ADD COLUMN updated_by uuid,
   ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now();
 --> statement-breakpoint
+-- A line's cost can be unknown (a part without a cost); unknown is never shown as zero margin.
+ALTER TABLE commercial_quote_lines ALTER COLUMN unit_cost DROP NOT NULL;
+--> statement-breakpoint
 ALTER TABLE commercial_quote_lines ADD CONSTRAINT commercial_quote_lines_workspace_key UNIQUE (workspace_id, case_id, quote_id, id);
 --> statement-breakpoint
 ALTER TABLE commercial_quote_lines ADD CONSTRAINT commercial_quote_lines_area_fk
@@ -274,7 +277,7 @@ BEGIN
     tax_code, tax_rate, option_group, version)
   SELECT p_workspace_id, p_case_id, quote->>'id', line->>'id', (line_ordinal - 1)::int, coalesce(line->>'room', ''),
     line->>'title', coalesce((line->>'quantity')::numeric, 0), coalesce(line->>'unit', ''),
-    coalesce((line->>'unitCost')::numeric, 0), coalesce((line->>'rate')::numeric, 0),
+    CASE WHEN line ? 'unitCost' AND line->'unitCost' = 'null'::jsonb THEN NULL ELSE coalesce((line->>'unitCost')::numeric, 0) END, coalesce((line->>'rate')::numeric, 0),
     (line->>'optional')::boolean, line->>'scopeId', line - line_keys,
     coalesce(line->>'kind', 'item'), coalesce(line->>'description', ''), coalesce(line->>'pricingMode', 'rate'),
     coalesce(line->>'note', ''), (line->>'areaId')::uuid, (line->>'fromAreaId')::uuid, (line->>'workPackageId')::uuid,
