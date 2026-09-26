@@ -1,21 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, EmptyState, ErrorState, GroupedTable, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, EmptyState, ErrorState, GroupedTable, MenuButton, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { OpenWork as OpenWorkState, OpenWorkItem, WorkBoard } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import { StatusLabel, TypeIcon, useWorkLabels } from "./work-labels";
+import { TeamInsights } from "./team-insights";
 import { WorkSheet } from "./work-sheet";
 import styles from "./work.module.css";
 
-type View = "mine" | "all";
+type View = "mine" | "all" | "team";
 type Bucket = "late" | "today" | "week" | "later" | "none";
 
 /**
- * Open work across every project the person is on, by when it's due: their own, or everyone's.
- * A row opens the item's panel in place.
+ * Open work across every project the person is on, by when it's due: their own, or everyone's; and,
+ * for someone who oversees every project, the team's workload and how work has gone. A row opens the
+ * item's panel in place.
  */
 export function OpenWork({ workspaceId }: { workspaceId: string }) {
   const t = useT();
@@ -27,10 +29,14 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
   const [data, setData] = useState<OpenWorkState | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [who, setWho] = useState<{ id: string | null; name: string } | null>(null);
+  const [canSeeTeam, setCanSeeTeam] = useState(false);
+  const [days, setDays] = useState<30 | 90>(30);
   const [opened, setOpened] = useState<{ projectId: string; itemId: string; board: WorkBoard | null; error?: string } | null>(null);
 
   const load = useCallback(async () => {
-    try { setData(await api.openWork(view)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Your work didn't load.")); }
+    if (view === "team") return;
+    try { const next = await api.openWork(view); setData(next); setCanSeeTeam(next.canSeeTeam); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Your work didn't load.")); }
   }, [api, view, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
@@ -47,7 +53,10 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
 
   if (error && !data) return <div className={styles.openWork}><ErrorState description={error} onRetry={() => void load()} /></div>;
   const needle = search.trim().toLocaleLowerCase();
-  const items = (data?.items ?? []).filter((item) => !needle || `${item.title} ${item.projectName} ${item.projectReference}`.toLocaleLowerCase().includes(needle));
+  const people = [...new Map((data?.items ?? []).map((item) => [item.assigneeId ?? "none", { id: item.assigneeId, name: item.assigneeName ?? t("No one") }])).values()]
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const items = (data?.items ?? []).filter((item) => (!needle || `${item.title} ${item.projectName} ${item.projectReference}`.toLocaleLowerCase().includes(needle))
+    && (view !== "all" || !who || item.assigneeId === who.id));
   const sections: GroupedTableSection<OpenWorkItem>[] = (Object.keys(bucketLabels) as Bucket[])
     .map((id) => ({ id, label: bucketLabels[id], rows: items.filter((item) => bucket(item.dueDate) === id), emptyMessage: "" }))
     .filter((section) => section.rows.length)
@@ -66,11 +75,17 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
 
   return <div className={styles.openWork}>
     <div className={styles.toolbar}>
-      <SearchInput label={t("Search work")} placeholder={t("Search")} value={search} onChange={setSearch} />
-      <SegmentedControl label={t("Whose work")} value={view} onChange={(value) => { setView(value as View); setData(null); }}
-        options={[{ id: "mine", label: t("Mine") }, { id: "all", label: t("Everyone") }]} />
+      {view === "team" ? <SegmentedControl label={t("Period")} value={String(days)} onChange={(value) => setDays(value === "90" ? 90 : 30)}
+        options={[{ id: "30", label: t("Last 30 days") }, { id: "90", label: t("Last 90 days") }]} /> : <div className={styles.toolbarGroup}>
+        <SearchInput label={t("Search work")} placeholder={t("Search")} value={search} onChange={setSearch} />
+        {view === "all" ? <MenuButton size="compact" label={who ? who.name : t("Everyone")} onAction={(id) => setWho(id === "everyone" ? null : people.find((person) => (person.id ?? "none") === id) ?? null)}
+          items={[{ id: "everyone", label: t("Everyone") }, ...people.map((person) => ({ id: person.id ?? "none", label: person.name }))]} /> : null}
+      </div>}
+      <SegmentedControl label={t("Whose work")} value={view} onChange={(value) => { setView(value as View); if (value !== "team") setData(null); }}
+        options={[{ id: "mine", label: t("Mine") }, { id: "all", label: t("Everyone") }, ...(canSeeTeam ? [{ id: "team", label: t("Team") }] : [])]} />
     </div>
-    {!data ? <Skeleton lines={6} />
+    {view === "team" ? <TeamInsights api={api} days={days} onPerson={(id, name) => { setWho({ id, name }); setView("all"); setData(null); }} />
+      : !data ? <Skeleton lines={6} />
       : !data.items.length ? <EmptyState illustration={null} title={view === "mine" ? t("Nothing on your plate") : t("No open work")}
           description={view === "mine" ? t("Work given to you on any project shows here.") : undefined} />
       : !items.length ? <EmptyState illustration={null} title={t("Nothing matches")} />

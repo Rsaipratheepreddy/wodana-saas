@@ -88,6 +88,11 @@
 .commentBox > :first-child { justify-self: stretch; }
 
 /* Open work across projects */
+.team { display: grid; gap: var(--wd-phi-2); min-inline-size: 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--wd-space-4); }
+.count { font-variant-numeric: tabular-nums; }
+.count[data-zero] { color: var(--wd-color-text-disabled); }
+.count[data-late] { color: var(--wd-color-danger); }
 .openWork { display: grid; gap: var(--wd-space-3); min-inline-size: 0; padding: var(--wd-phi-2) var(--wd-phi-3); }
 .projectCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; font-size: var(--wd-text-sm); }
 .projectCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }

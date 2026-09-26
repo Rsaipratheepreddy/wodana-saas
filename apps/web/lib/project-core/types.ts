@@ -143,7 +143,12 @@ export type WorkBoard = {
 /** An item pushed later because something it waits on moved. */
 export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };
 export type OpenWorkItem = WorkItem & { projectReference: string; projectName: string };
-export type OpenWork = { items: OpenWorkItem[]; me: string | null; view: "mine" | "all" };
+export type OpenWork = { items: OpenWorkItem[]; me: string | null; view: "mine" | "all"; canSeeTeam: boolean };
+export type WorkInsightRow = {
+  membershipId: string | null; name: string | null; total: boolean; open: number; late: number; dueThisWeek: number; blocked: number;
+  done: number; doneWithDue: number; onTime: number; cycleDays: number | null;
+};
+export type WorkInsights = { days: 30 | 90; total: WorkInsightRow | null; people: WorkInsightRow[] };
 /** A package's standard work laid out from a start date, before it's created. */
 export type PackagePlan = {
   package: { id: string; name: string; supply: Supply }; startDate: string; planned: boolean;

@@ -10,6 +10,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "ready") return method === "GET";
   if (path.length === 2 && path[0] === "start" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
+  if (path.length === 2 && path[0] === "work" && path[1] === "insights") return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials"].includes(path[2])) return method === "GET";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
@@ -31,6 +32,7 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   // Only the queries each read takes: whose open work, and the dates a preview tries.
   const forward = new URLSearchParams();
   if (path[0] === "work" && search.get("view") === "all") forward.set("view", "all");
+  if (path[0] === "work" && path[1] === "insights" && search.get("days") === "90") forward.set("days", "90");
   if (path.at(-1) === "ripple" || path.at(-1) === "plan") for (const key of ["startDate", "dueDate"]) { const value = search.get(key); if (value !== null && /^(\d{4}-\d{2}-\d{2})?$/.test(value)) forward.set(key, value); }
   const query = forward.size ? `?${forward}` : "";
   return workspaceJsonResponse(`/workspaces/${workspaceId}/project-core/${path.join("/")}${query}`,

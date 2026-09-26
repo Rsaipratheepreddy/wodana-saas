@@ -7,7 +7,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
 import {
-  ensureProjectAccess, OPEN, readActivity, readItem, readItems, readLinks, readOpenWork, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
+  ensureProjectAccess, OPEN, readActivity, readInsights, readItem, readItems, readLinks, readOpenWork, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
 } from "./project-work";
 import { readCalendar, ripple, type PlanMove } from "./work-calendar";
@@ -78,7 +78,17 @@ export class ProjectWorkService {
       if (!all && !(await this.access.hasPermission(client, workspaceId, user.userId, "projects.view"))) throw new ForbiddenException("You don't have access to projects.");
       const membershipId = await membershipOf(client, workspaceId, user.userId);
       const mine = view !== "all";
-      return { items: await readOpenWork(client, workspaceId, membershipId, { all, mine }), me: membershipId, view: mine ? "mine" : "all" };
+      return { items: await readOpenWork(client, workspaceId, membershipId, { all, mine }), me: membershipId, view: mine ? "mine" : "all", canSeeTeam: all };
+    });
+  }
+
+  /** Workload and how work has gone, per person and in total, for someone who oversees every project. */
+  insights(actor: RequestActor, workspaceId: string, period: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "projects.manage"))) throw new ForbiddenException("Only people who oversee all projects see the team's work.");
+      const days = period === "90" ? 90 : 30;
+      const rows = await readInsights(client, workspaceId, await membershipOf(client, workspaceId, user.userId), true, days);
+      return { days, total: rows.find((row) => row.total) ?? null, people: rows.filter((row) => !row.total) };
     });
   }
 

@@ -796,6 +796,7 @@
 .wd-kpi > strong { font-size: var(--wd-text-xl); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
 .wd-kpi small { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-danger); }
 .wd-kpi small[data-positive="true"] { color: var(--wd-success); }
+.wd-kpi > strong > .wd-kpi-unit { display: inline; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); letter-spacing: 0; }
 .wd-chart { margin: 0; }
 .wd-chart svg { inline-size: 100%; block-size: 12rem; overflow: visible; }
 .wd-chart line { stroke: var(--wd-line); stroke-width: 0.5; }

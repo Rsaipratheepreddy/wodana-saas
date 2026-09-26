@@ -121,3 +121,55 @@ export async function readProjectLinks(db: Db, workspaceId: string, projectId: s
     `SELECT predecessor_id AS "predecessorId", successor_id AS "successorId", kind, lag_days AS "lagDays" FROM work_item_links WHERE workspace_id = $1 AND project_id = $2`,
     [workspaceId, projectId])).rows;
 }
+
+export type WorkInsightRow = {
+  membershipId: string | null; name: string | null; total: boolean;
+  open: number; late: number; dueThisWeek: number; blocked: number;
+  /** Finished in the period; of those with a due date, how many on or before it. */
+  done: number; doneWithDue: number; onTime: number;
+  /** Median days from starting to finishing, for work finished in the period. */
+  cycleDays: number | null;
+};
+
+/**
+ * Who has what across the projects someone oversees, and how work has gone over the last `days` days.
+ * Dates are the workspace's calendar days; "on time" means finished on or before the due date. The
+ * total row is computed on its own (never an average of people), so its median is a true median.
+ */
+export async function readInsights(db: Db, workspaceId: string, membershipId: string | null, all: boolean, days: number): Promise<WorkInsightRow[]> {
+  return (await db.query<WorkInsightRow>(
+    `WITH clock AS (
+       SELECT (now() AT TIME ZONE coalesce(default_timezone, 'UTC'))::date AS today, coalesce(default_timezone, 'UTC') AS zone FROM workspaces WHERE id = $1
+     ), scoped AS (
+       SELECT item.assignee_membership_id, item.status, item.due_date, item.started_at, item.completed_at,
+              item.status NOT IN ('done', 'cancelled') AS is_open,
+              item.status = 'done' AND item.completed_at >= now() - make_interval(days => $4) AS done_recently,
+              (item.completed_at AT TIME ZONE clock.zone)::date AS done_on, clock.today,
+              EXISTS (SELECT 1 FROM work_item_links link JOIN work_items before ON before.workspace_id = link.workspace_id AND before.id = link.predecessor_id
+                       WHERE link.workspace_id = item.workspace_id AND link.successor_id = item.id
+                         AND ((link.kind = 'fs' AND before.status NOT IN ('done', 'cancelled')) OR (link.kind = 'ss' AND before.status = 'todo'))) AS is_blocked
+         FROM work_items item
+         JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
+         CROSS JOIN clock
+        WHERE item.workspace_id = $1 AND item.status <> 'cancelled' AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold', 'completed')
+          AND ($2 OR EXISTS (SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id = project.workspace_id
+                              AND assignment.project_id = project.id AND assignment.membership_id = $3 AND assignment.active))
+     )
+     SELECT scoped.assignee_membership_id AS "membershipId", coalesce(person.display_name, person.primary_email) AS name,
+            GROUPING(scoped.assignee_membership_id) = 1 AS total,
+            count(*) FILTER (WHERE is_open)::int AS open,
+            count(*) FILTER (WHERE is_open AND due_date < today)::int AS late,
+            count(*) FILTER (WHERE is_open AND due_date BETWEEN today AND today + 6)::int AS "dueThisWeek",
+            count(*) FILTER (WHERE is_open AND is_blocked)::int AS blocked,
+            count(*) FILTER (WHERE done_recently)::int AS done,
+            count(*) FILTER (WHERE done_recently AND due_date IS NOT NULL)::int AS "doneWithDue",
+            count(*) FILTER (WHERE done_recently AND due_date IS NOT NULL AND done_on <= due_date)::int AS "onTime",
+            round((percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM completed_at - started_at) / 86400)
+                   FILTER (WHERE done_recently AND started_at IS NOT NULL AND completed_at >= started_at))::numeric, 1)::float8 AS "cycleDays"
+       FROM scoped
+       LEFT JOIN workspace_memberships membership ON membership.workspace_id = $1 AND membership.id = scoped.assignee_membership_id
+       LEFT JOIN users person ON person.id = membership.user_id
+      GROUP BY GROUPING SETS ((scoped.assignee_membership_id, person.display_name, person.primary_email), ())
+      ORDER BY GROUPING(scoped.assignee_membership_id) DESC, count(*) FILTER (WHERE is_open) DESC, name NULLS LAST`,
+    [workspaceId, all, membershipId, days])).rows;
+}

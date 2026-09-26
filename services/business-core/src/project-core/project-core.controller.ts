@@ -62,6 +62,9 @@ export class ProjectCoreController {
   @Get("work")
   openWork(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("view") view?: string) { return this.work.open(actor, workspaceId, view ?? "mine"); }
 
+  @Get("work/insights")
+  workInsights(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("days") days?: string) { return this.work.insights(actor, workspaceId, days ?? "30"); }
+
   @Get("projects/:projectId/work")
   board(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.work.board(actor, workspaceId, projectId); }
 

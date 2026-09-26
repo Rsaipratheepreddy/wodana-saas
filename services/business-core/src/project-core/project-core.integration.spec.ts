@@ -608,6 +608,35 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("measures the team's work: late, due this week, blocked, on time and cycle time, per person and in total", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const lead = w.work(w.manager);
+      const ids = Object.fromEntries(["a", "b", "c", "d", "e", "f"].map((key) => [key, randomUUID()]));
+      for (const [key, assignee] of [["a", w.designerMembership], ["b", w.designerMembership], ["c", w.managerMembership], ["d", w.designerMembership], ["e", w.designerMembership], ["f", null]] as const)
+        await lead.command(actor, w.workspaceId, projectId, { action: "create", id: ids[key], title: key.toUpperCase(), assigneeId: assignee });
+      await lead.command(actor, w.workspaceId, projectId, { action: "link", itemId: ids.b, predecessorId: ids.c });
+      // Dates relative to the workspace's today (Asia/Dubai), set directly so the numbers are exact.
+      const today = "(now() AT TIME ZONE 'Asia/Dubai')::date";
+      await w.client.query(`UPDATE work_items SET due_date = ${today} - 1 WHERE id = $1`, [ids.a]);
+      await w.client.query(`UPDATE work_items SET due_date = ${today} + 2 WHERE id = $1`, [ids.b]);
+      await w.client.query(`UPDATE work_items SET status = 'done', due_date = ${today}, started_at = now() - interval '3 days', completed_at = now() - interval '1 day' WHERE id = $1`, [ids.d]);
+      await w.client.query(`UPDATE work_items SET status = 'done', due_date = ${today} - 3, started_at = now() - interval '5 days', completed_at = now() - interval '2 days' WHERE id = $1`, [ids.e]);
+      await w.client.query(`UPDATE work_items SET status = 'done', completed_at = now() - interval '40 days' WHERE id = $1`, [ids.f]);
+
+      const month = await lead.insights(actor, w.workspaceId, "30");
+      const dana = month.people.find((row) => row.name === "Dana Designer")!;
+      expect(dana).toMatchObject({ open: 2, late: 1, dueThisWeek: 1, blocked: 1, done: 2, doneWithDue: 2, onTime: 1, cycleDays: 2.5 });
+      expect(month.people.find((row) => row.name === "Omar Manager")).toMatchObject({ open: 1, late: 0, blocked: 0, done: 0, cycleDays: null });
+      expect(month.total).toMatchObject({ open: 3, late: 1, blocked: 1, done: 2, onTime: 1, doneWithDue: 2, cycleDays: 2.5 });
+      const quarter = await lead.insights(actor, w.workspaceId, "90");
+      expect(quarter.total).toMatchObject({ done: 3, doneWithDue: 2, cycleDays: 2.5 });
+      expect(quarter.people.find((row) => row.membershipId === null)).toMatchObject({ done: 1, open: 0 });
+      await expect(w.work(w.designer, ["projects.view"]).insights(actor, w.workspaceId, "30")).rejects.toThrow(/oversee all projects/);
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

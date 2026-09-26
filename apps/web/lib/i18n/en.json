@@ -1987,5 +1987,15 @@
   "Taken out": "Taken out",
   "All sprints": "All sprints",
   "{name} (running)": "{name} (running)",
-  "Sprints": "Sprints"
+  "Sprints": "Sprints",
+  "The team's work didn't load.": "The team's work didn't load.",
+  "Person": "Person",
+  "Due in 7 days": "Due in 7 days",
+  "{done} of {count} finished by their due date": "{done} of {count} finished by their due date",
+  "Days to finish": "Days to finish",
+  "Last 30 days": "Last 30 days",
+  "Last 90 days": "Last 90 days",
+  "Finished on time": "Finished on time",
+  "Median days to finish": "Median days to finish",
+  "No work yet": "No work yet"
 }

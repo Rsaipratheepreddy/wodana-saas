@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { OpenWork as OpenWorkState, PackagePlan, SettingsState, Sprint, SprintDetail, WorkBoard, WorkDetail, WorkItem } from "@/lib/project-core/types";
+import type { OpenWork as OpenWorkState, PackagePlan, SettingsState, Sprint, SprintDetail, WorkBoard, WorkDetail, WorkInsights, WorkItem } from "@/lib/project-core/types";
 import { OpenWork } from "./open-work";
 import { ProjectPlan } from "./project-plan";
 import { ProjectSettingsPage } from "./project-settings";
@@ -188,7 +188,7 @@ describe("project plan", () => {
       { title: "Production", days: 10, withPrevious: false, startDate: "2099-10-06", dueDate: "2099-10-19", role: "factory_lead", roleLabel: "Factory lead", assigneeId: null, assigneeName: null, stageId: null, stageName: null },
     ] };
     const packages = [{ id: "k1", name: "Kitchen joinery", supply: "make" as const, planned: true }, { id: "k2", name: "Wardrobes", supply: "make" as const, planned: false }];
-    const fetcher = mount((url, body) => (url.includes("/packages/k2/plan") ? preview : board(body ? undefined : undefined, { packages })));
+    const fetcher = mount((url) => (url.includes("/packages/k2/plan") ? preview : board(undefined, { packages })));
     plan();
     await userEvent.click(await screen.findByRole("button", { name: "Plan actions" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Plan a package" }));
@@ -208,7 +208,7 @@ describe("project plan", () => {
     const items = [{ ...drawings, sprintId: "sp1", blockedBy: [] }, { ...handles, sprintId: "sp1" }, marble];
     const detail: SprintDetail = { sprint: sprints[0], days: [{ date: "2099-10-05", remaining: 2, ideal: 2 }, { date: "2099-10-06", remaining: 1, ideal: 1.8 }], added: 0, removed: 0, missed: [],
       unfinished: [{ itemId: "i1", number: 1, title: "Kitchen shop drawings" }] };
-    const fetcher = mount((url, body) => (url.includes("/work/sprints/sp1") ? detail : board(items, { sprints })));
+    const fetcher = mount((url) => (url.includes("/work/sprints/sp1") ? detail : board(items, { sprints })));
     plan();
     const running = await screen.findByRole("region", { name: "Sprint 1" });
     expect(running).toHaveTextContent("Drawings out");
@@ -257,7 +257,7 @@ describe("open work", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("groups the person's open work by when it's due, and shows everyone's on request", async () => {
-    const rows = (view: string): OpenWorkState => ({ view: view as "mine" | "all", me: "m1", items: [
+    const rows = (view: string): OpenWorkState => ({ view: view as "mine" | "all", me: "m1", canSeeTeam: false, items: [
       { ...item({ id: "a", number: 7, title: "Approve shop drawings", dueDate: "2020-01-01", assigneeId: "m1", assigneeName: "Omar Haddad" }), projectReference: "PRJ-0007", projectName: "Villa 12" },
       { ...item({ id: "b", number: 2, title: "Book the crane", dueDate: "2099-01-01", assigneeId: "m1", assigneeName: "Omar Haddad" }), projectReference: "PRJ-0008", projectName: "Marina Penthouse" },
       ...(view === "all" ? [{ ...item({ id: "c", number: 3, title: "Paint samples", assigneeId: "m2", assigneeName: "Dana Karim" }), projectReference: "PRJ-0007", projectName: "Villa 12" }] : []),
@@ -272,6 +272,25 @@ describe("open work", () => {
     await userEvent.click(screen.getByRole("radio", { name: "Everyone" }));
     expect(await screen.findByText("Paint samples")).toBeInTheDocument();
     expect(fetcher.mock.calls.at(-1)![0]).toContain("view=all");
+  });
+  it("shows the team's workload and how work went, and opens a person's work", async () => {
+    const open: OpenWorkState = { view: "all", me: "m1", canSeeTeam: true, items: [
+      { ...item({ id: "a", number: 7, title: "Approve shop drawings", assigneeId: "m2", assigneeName: "Dana Karim" }), projectReference: "PRJ-0007", projectName: "Villa 12" },
+      { ...item({ id: "b", number: 8, title: "Book the crane", assigneeId: "m1", assigneeName: "Omar Haddad" }), projectReference: "PRJ-0007", projectName: "Villa 12" }] };
+    const row = (patch: Partial<WorkInsights["people"][number]>) => ({ membershipId: "m2", name: "Dana Karim", total: false, open: 4, late: 1, dueThisWeek: 2, blocked: 1, done: 5, doneWithDue: 4, onTime: 3, cycleDays: 2.5, ...patch });
+    const insights: WorkInsights = { days: 30, total: row({ membershipId: null, name: null, total: true, open: 6, done: 8, doneWithDue: 8, onTime: 6, cycleDays: 3 }),
+      people: [row({}), row({ membershipId: "m1", name: "Omar Haddad", open: 2, late: 0, done: 3, doneWithDue: 0, onTime: 0, cycleDays: null })] };
+    const fetcher = mount((url) => (url.includes("/work/insights") ? insights : open));
+    render(<DesignSystemProvider><OpenWork workspaceId="w" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("radio", { name: "Team" }));
+    const table = await screen.findByRole("table", { name: "Team" }).catch(() => screen.findByRole("grid", { name: "Team" }));
+    expect(screen.getAllByText("75%")).toHaveLength(2); // Finished on time overall: 6 of 8; and Dana's row
+    expect(within(table).getAllByText("75%")).toHaveLength(1); // Dana: 3 of 4; Omar has no due dates, so no percentage
+    await userEvent.click(screen.getByRole("radio", { name: "Last 90 days" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("days=90"))).toBe(true));
+    await userEvent.click(await within(await screen.findByRole("table", { name: "Team" }).catch(() => screen.findByRole("grid", { name: "Team" }))).findByText("Dana Karim"));
+    expect(await screen.findByText("Approve shop drawings")).toBeInTheDocument();
+    expect(screen.queryByText("Book the crane")).not.toBeInTheDocument();
   });
 });
 
