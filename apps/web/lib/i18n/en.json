@@ -2375,5 +2375,12 @@
   "Collected by the supplier": "Collected by the supplier",
   "The email didn't go. Send the return note to the supplier yourself.": "The email didn't go. Send the return note to the supplier yourself.",
   "Collected": "Collected",
-  "Credit due": "Credit due"
+  "Credit due": "Credit due",
+  "Why it's coming back": "Why it's coming back",
+  "No client choice": "No client choice",
+  "The client chooses it (needs their sign-off)": "The client chooses it (needs their sign-off)",
+  "More than the project needs: {lines}": "More than the project needs: {lines}",
+  "Why order more than needed": "Why order more than needed",
+  "Ordered more than needed: {reason}": "Ordered more than needed: {reason}",
+  "Ordered {quantity} more than needed": "Ordered {quantity} more than needed"
 }

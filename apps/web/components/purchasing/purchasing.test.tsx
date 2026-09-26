@@ -125,7 +125,7 @@ describe("ordering", () => {
   afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
   const need = (patch: Partial<Need>): Need => ({ key: "material:m1", source: "material", sourceId: "m1", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12",
     title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", received: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
-    supply: null, blocked: null, ...patch });
+    supply: null, clientChoice: true, blocked: null, ...patch });
   const needs = { needs: [need({}), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
     supplierHint: "", packageName: "Lights" }), need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", blocked: "material_signoff" })],
     settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, requireInspection: true, receiveTolerancePercent: "0.00", version: 1 }, canBuy: true, canApprove: true };
@@ -134,7 +134,7 @@ describe("ordering", () => {
       total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
       revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
       subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", createdBy: "u1", submittedBy: null, approvedByName: null, approvedAt: null, sentAt: null, sentTo: null,
-      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, companyName: "Studio Furniture", ...patch },
+      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, overReason: null, companyName: "Studio Furniture", ...patch },
     lines: [
       { id: "a", position: 0, projectId: "p1", projectReference: "PRJ-0007", source: "material", materialItemId: "m1", boqLineId: null, description: "Calacatta slab", specification: "CAL-20",
         quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000",
@@ -144,7 +144,7 @@ describe("ordering", () => {
         accepted: "0.0000", rejected: "0.0000", pending: "0.0000", credited: "0.0000", returned: "0.0000" }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, ...rights,
+    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 
@@ -190,6 +190,26 @@ describe("ordering", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Send for approval" }));
     await waitFor(() => expect(posts(fetcher).map((post) => [post.body.action, post.body.version])).toEqual([["save", 1], ["submit", 2]]));
     expect(posts(fetcher)[0].body.lines[0]).toMatchObject({ id: "a", source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350", discountPercent: "10", taxRate: "5" });
+  });
+
+  it("asks why when an order takes a project past what it needs, and shows over-ordered items in To order", async () => {
+    nav.query = "order=o1";
+    const over = orderState({}, { overOrdered: [{ lineId: "a", description: "Calacatta slab", unit: "m²", over: "2.0000" }] });
+    const fetcher = mount((url, body) => (url.includes("/orders/o1") ? (body ? orderState({ status: "pending_approval", version: 2, overReason: "Cutting waste" }) : over) : ordersList));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(await within(sheet).findByText("More than the project needs: Calacatta slab +2 m²")).toBeInTheDocument();
+    const send = within(sheet).getByRole("button", { name: "Send for approval" });
+    expect(send).toBeDisabled();
+    await userEvent.type(within(sheet).getByRole("textbox", { name: /Why order more than needed/ }), "Cutting waste");
+    await userEvent.click(send);
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "submit", overReason: "Cutting waste" }));
+  });
+
+  it("keeps over-ordered items in To order with how much too many", async () => {
+    mount((url) => (url.includes("/needs") ? { ...needs, needs: [need({ placed: "14.0000", remaining: "-2.0000" })] } : ordersList));
+    page("to-order");
+    expect(await screen.findByText("Ordered 2 m² more than needed")).toBeInTheDocument();
   });
 
   it("lets someone else approve, then sends it to the supplier and says if the email couldn't go", async () => {
@@ -311,7 +331,7 @@ describe("ordering", () => {
     const created: SupplierReturnState = { return: { id: "r1", number: 2, orderId: "o1", orderNumber: "FAC-PO-2026-00001", supplierName: "Nile Marble & Granite", locationName: "Warehouse",
       outcome: "replace", status: "open", note: "", createdByName: "Omar", createdAt: "2026-09-27T12:00:00Z", sentOn: null, sentByName: null, cancelReason: null, version: 1, lines: 1, credit: null, currency: "AED" },
       lines: [{ id: "rl1", receiptLineId: "gl1", receiptNumber: 4, description: "Calacatta slab", unit: "m²", source: "rejected", quantity: "1.0000", reasonKind: "wrong_spec", reason: "Veins don't match",
-        creditAmount: null, projectReference: "PRJ-0007" }], canBuy: true, canReceive: true, canSendThis: true, canCancelThis: true };
+        creditAmount: null, creditTax: null, projectReference: "PRJ-0007" }], canBuy: true, canReceive: true, canSendThis: true, canCancelThis: true };
     const fetcher = mount((url, body) => (url.includes("/returns/r1") ? (body ? { ...created, return: { ...created.return, status: "sent", sentOn: "2026-09-28", version: 2 }, canSendThis: false, canCancelThis: false } : created)
       : url.includes("/returns") ? (body ? created : { returns: [created.return], canBuy: true, canReceive: true })
       : url.includes("/receipts/g1") ? inspected : url.includes("/orders/o1") ? orderState({ status: "partly_received" }) : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
@@ -331,17 +351,18 @@ describe("ordering", () => {
   it("records the supplier collecting a credited return, with the credit due", async () => {
     nav.query = "return=r1";
     const credited: SupplierReturnState = { return: { id: "r1", number: 3, orderId: "o1", orderNumber: "FAC-PO-2026-00001", supplierName: "Nile Marble & Granite", locationName: "Warehouse",
-      outcome: "credit", status: "open", note: "", createdByName: "Omar", createdAt: "2026-09-27T12:00:00Z", sentOn: null, sentByName: null, cancelReason: null, version: 1, lines: 1, credit: "350.0000", currency: "AED" },
+      outcome: "credit", status: "open", note: "", createdByName: "Omar", createdAt: "2026-09-27T12:00:00Z", sentOn: null, sentByName: null, cancelReason: null, version: 1, lines: 1, credit: "367.5000", currency: "AED" },
       lines: [{ id: "rl1", receiptLineId: "gl1", receiptNumber: 4, description: "Calacatta slab", unit: "m²", source: "accepted", quantity: "1.0000", reasonKind: "defective", reason: "Hairline crack",
-        creditAmount: "350.0000", projectReference: "PRJ-0007" }], canBuy: true, canReceive: true, canSendThis: true, canCancelThis: true };
+        creditAmount: "350.0000", creditTax: "17.5000", projectReference: "PRJ-0007" }], canBuy: true, canReceive: true, canSendThis: true, canCancelThis: true };
     const fetcher = mount((url, body) => (url.includes("/returns/r1") ? (body ? { ...credited, return: { ...credited.return, status: "sent", sentOn: "2026-09-28", version: 2 }, canSendThis: false, canCancelThis: false } : credited)
       : url.includes("/returns") ? { returns: [credited.return], canBuy: true, canReceive: true } : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
     page("deliveries");
     const sheet = await screen.findByRole("dialog", { name: "Return 3" });
     expect(await within(sheet).findByText("Defective: Hairline crack")).toBeInTheDocument();
-    expect(sheet).toHaveTextContent(/350\.00/);
+    // The credit carries its tax: 350.00 + 17.50.
+    expect(sheet).toHaveTextContent(/367\.50/);
     await userEvent.click(within(sheet).getByRole("button", { name: "Collected by the supplier" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "sent", version: 1 }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "sent", version: 1, commandId: expect.any(String) }));
     expect(await within(sheet).findByText("Gone back")).toBeInTheDocument();
   });
 
@@ -375,7 +396,7 @@ describe("ordering", () => {
     expect(within(close).getByRole("button", { name: "Close order" })).toBeDisabled();
     await userEvent.type(within(close).getByRole("textbox", { name: /Why the rest won't come/ }), "Supplier out of stock");
     await userEvent.click(within(close).getByRole("button", { name: "Close order" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "close", version: 6, reason: "Supplier out of stock" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "close", version: 6, reason: "Supplier out of stock", commandId: expect.any(String) }));
   });
 });
 

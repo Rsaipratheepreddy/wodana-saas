@@ -11,7 +11,8 @@ import { quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
 
 type Show = "left" | "all";
-const left = (need: Need) => need.remaining === null || Number(need.remaining) > 0;
+/** Still to order, or ordered past what's needed now (a change after ordering): both need the buyer. */
+const left = (need: Need) => need.remaining === null || Number(need.remaining) !== 0;
 
 /**
  * What running projects still need to order, one project at a time: materials from signed-off material
@@ -41,7 +42,9 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
     { id: "ordered", label: t("Ordered"), width: "18%", mobileHidden: true, render: (need) => <span className={styles.nameCell}><span>{Number(need.placed) ? `${quantityText(need.placed)} ${need.unit}` : "—"}</span>
       {Number(need.drafted) ? <small>{t("{quantity} in draft", { quantity: `${quantityText(need.drafted)} ${need.unit}` })}</small> : null}</span> },
     { id: "left", label: t("Left"), width: "22%", render: (need) => need.blocked ? <span className={styles.muted}>{t("Waiting for the client's sign-off")}</span>
-      : need.remaining === null ? "—" : Number(need.remaining) > 0 ? <strong>{`${quantityText(need.remaining)} ${need.unit}`}</strong> : <span className={styles.done}>{t("Ordered")}</span> },
+      : need.remaining === null ? "—" : Number(need.remaining) > 0 ? <strong>{`${quantityText(need.remaining)} ${need.unit}`}</strong>
+      : Number(need.remaining) < 0 ? <span className={styles.lateText}>{t("Ordered {quantity} more than needed", { quantity: `${quantityText(need.remaining.replace("-", ""))} ${need.unit}`.trim() })}</span>
+      : <span className={styles.done}>{t("Ordered")}</span> },
   ];
   const sections = (blocked: boolean): GroupedTableSection<Need>[] => [...new Set(needs.filter((need) => Boolean(need.blocked) === blocked).map((need) => need.projectId))].map((projectId) => {
     const rows = needs.filter((need) => need.projectId === projectId);
@@ -70,7 +73,8 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
         description={t("Materials appear here from each project's material list, and bought items from its scope.")} />
       : <>
         {ready.length ? <GroupedTable<Need> ariaLabel={t("To order")} columns={columns} sections={ready} getRowId={(need) => need.key} getRowLabel={(need) => `${need.projectReference} ${need.title}`}
-          selectable={state.canBuy} selectedIds={selected} onSelectionChange={(ids) => setSelected(new Set([...ids].filter((id) => state.needs.some((need) => need.key === id && !need.blocked && left(need)))))} /> : null}
+          selectable={state.canBuy} selectedIds={selected}
+          onSelectionChange={(ids) => setSelected(new Set([...ids].filter((id) => state.needs.some((need) => need.key === id && !need.blocked && (need.remaining === null || Number(need.remaining) > 0)))))} /> : null}
         {waiting.length ? <section className={styles.stack} aria-label={t("Waiting for the client's sign-off")}>
           <h3 className={styles.subhead}>{t("Waiting for the client's sign-off")}</h3>
           <GroupedTable<Need> ariaLabel={t("Waiting for the client's sign-off")} columns={columns} sections={waiting} getRowId={(need) => need.key} selectable={false} />

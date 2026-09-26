@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
+import { addExact } from "@/lib/purchasing/amounts";
 import type { SupplierReturnRow, SupplierReturnState } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText, useOrderLabels } from "./order-labels";
@@ -89,7 +90,7 @@ export function ReturnSheet({ api, returnId, onChanged, onClose, onOpenOrder }: 
               <small>{[labels.rejectKind[line.reasonKind], line.reason].join(": ")}</small>
               <small>{[line.source === "rejected" ? t("Rejected at delivery") : t("Accepted, found wrong later"), t("Delivery {number}", { number: line.receiptNumber })].join(" · ")}</small></span>
             <span role="cell" className={styles.money}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span>
-            <span role="cell" className={styles.money}>{line.creditAmount ? format.money(line.creditAmount, row.currency) : "—"}</span>
+            <span role="cell" className={styles.money}>{line.creditAmount ? format.money(addExact(line.creditAmount, line.creditTax), row.currency) : "—"}</span>
           </div>)}
         </div>
       </section>

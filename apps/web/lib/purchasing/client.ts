@@ -31,7 +31,8 @@ export function purchasingApi(workspaceId: string) {
     order: (id: string) => request<OrderState>(at(`orders/${id}`)),
     createOrder: (input: Record<string, unknown>) => request<OrderState>(at("orders"), "POST", input),
     /** One change to an order, version-checked; returns the order as it is now. */
-    orderCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<OrderState>(at(`orders/${id}`), "POST", { ...input, action, version }),
+    orderCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) =>
+      request<OrderState>(at(`orders/${id}`), "POST", { ...input, action, version, commandId: crypto.randomUUID() }),
     priceRequests: () => request<PriceRequestsState>(at("price-requests")),
     priceRequest: (id: string) => request<PriceRequestState>(at(`price-requests/${id}`)),
     createPriceRequest: (input: Record<string, unknown>) => request<PriceRequestState>(at("price-requests"), "POST", input),
@@ -45,7 +46,8 @@ export function purchasingApi(workspaceId: string) {
     returns: () => request<SupplierReturnsState>(at("returns")),
     supplierReturn: (id: string) => request<SupplierReturnState>(at(`returns/${id}`)),
     createReturn: (input: Record<string, unknown>) => request<SupplierReturnState>(at("returns"), "POST", input),
-    returnCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<SupplierReturnState>(at(`returns/${id}`), "POST", { ...input, action, version }),
+    returnCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) =>
+      request<SupplierReturnState>(at(`returns/${id}`), "POST", { ...input, action, version, commandId: crypto.randomUUID() }),
     settings: () => request<{ settings: PurchasingSettings; canManage: boolean; currency: string | null }>(at("settings")),
     saveSettings: (input: Record<string, unknown>) => request<PurchasingSettings>(at("settings"), "PUT", input),
   };

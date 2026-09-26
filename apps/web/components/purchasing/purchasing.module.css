@@ -69,7 +69,7 @@
 .receiveHead > :nth-child(n+2), .receiveLine > [role="cell"]:nth-child(n+2) { text-align: end; }
 .receiveReason { grid-column: 1 / -1; }
 .late { color: var(--wd-color-danger); }
-.nameCell small.lateText { color: var(--wd-color-danger); }
+.nameCell small.lateText, .lateText { color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 .nameCell small.arrived { color: var(--wd-color-text-secondary); }
 .receipts { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
 .receipts > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }

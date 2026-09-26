@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, ControlledModalDialog, InlineNotice, SegmentedControl, Switch, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { ReceiptLine, ReceiptState, RejectKind, SupplierReturnState } from "@/lib/purchasing/types";
 import { quantityText, useOrderLabels } from "./order-labels";
@@ -11,7 +12,7 @@ import styles from "./purchasing.module.css";
 
 type Row = { key: string; line: ReceiptLine; source: "rejected" | "accepted"; left: string; quantity: string; kind: RejectKind | null; reason: string };
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
-const left = (a: string, b: string) => Math.max(0, Number(a) - Number(b)).toFixed(4);
+const left = (a: string, b: string) => subtractExact(a, b);
 
 /**
  * Sends goods from one delivery back to the supplier: what was rejected, or accepted goods found wrong

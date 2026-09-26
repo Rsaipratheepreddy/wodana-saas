@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
@@ -8,7 +8,7 @@ import { notifyUserInApp } from "../notifications/default-templates";
 import { move, stockFromReceipt } from "../inventory/stock";
 import { event as boqEvent } from "../project-core/project-scope";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { currencyDecimals, ensurePurchasingSettings, orderEvent, readOrder, readOrderLines, readOrders, type OrderDetail } from "./orders";
+import { currencyDecimals, ensurePurchasingSettings, firstTime, orderEvent, readOrder, readOrderLines, readOrders, type OrderDetail } from "./orders";
 import {
   RECEIVABLE, REJECT_KINDS, outstanding, placesFor, readLocations, readReceipt, readReceiptLines, readReceipts, receivable, resolvePlace, settleOrder, type ReceiptLine, type RejectKind,
 } from "./receiving";
@@ -75,7 +75,7 @@ export class ReceivingService {
   receive(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
       const id = uuid(body.id, "Receipt");
-      if ((await client.query(`SELECT 1 FROM goods_receipts WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return this.detail(client, workspaceId, id, user.userId);
+      if (!(await firstTime(client, workspaceId, id, id, "receive", user.userId))) return this.detail(client, workspaceId, id, user.userId);
       const orderId = uuid(body.orderId, "Order");
       const order = await readOrder(client, workspaceId, orderId, true);
       if (!order) throw new NotFoundException("Order not found.");
@@ -84,7 +84,10 @@ export class ReceivingService {
       const settings = await ensurePurchasingSettings(client, workspaceId);
       const orderLines = await readOrderLines(client, workspaceId, orderId);
       const receivedOn = date(body.receivedOn, "Received on");
-      if ((await client.query<{ future: boolean }>(`SELECT $1::date > current_date + 1 AS future`, [receivedOn])).rows[0].future) throw new BadRequestException("Goods can't be received in the future.");
+      // "Today" is the firm's today, in its time zone.
+      if ((await client.query<{ future: boolean }>(
+        `SELECT $2::date > (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date AS future FROM workspaces WHERE id = $1`, [workspaceId, receivedOn])).rows[0].future)
+        throw new BadRequestException("Goods can't be received in the future.");
       const projectIds = [...new Set(orderLines.map((line) => line.projectId).filter((value): value is string => Boolean(value)))];
       const location = await resolvePlace(client, workspaceId, typeof body.place === "string" ? body.place : "", projectIds, randomUUID);
       if (!location) throw new BadRequestException("Choose where the goods arrived.");
@@ -97,6 +100,9 @@ export class ReceivingService {
         const input = (raw ?? {}) as Record<string, unknown>;
         const line = orderLines.find((item) => item.id === input.orderLineId);
         if (!line) throw new BadRequestException("A line isn't on this order.");
+        // A project's site holds only that project's goods; another project's lines go to their own site or a store.
+        if (location.kind === "site" && line.projectId && line.projectId !== location.projectId)
+          throw new BadRequestException(`${line.description} is for ${line.projectReference}; receive it at its own site or a store.`);
         if (seen.has(line.id)) throw new BadRequestException(`${line.description} is entered twice.`);
         seen.add(line.id);
         const received = quantity(input.received, `${line.description}: received`);
@@ -183,8 +189,9 @@ export class ReceivingService {
       await orderEvent(client, workspaceId, order.id, "inspected", { receipt: receipt.number, done, accepted: settled.filter((line) => Dec.of(line.accepted).cmp(0) > 0).length,
         rejected: settled.filter((line) => Dec.of(line.rejected).cmp(0) > 0).length }, user.userId);
       await this.booked(client, workspaceId, order, settled, user.userId);
-      await this.tell(client, workspaceId, order, receiptId, "purchasing.received", [order.createdBy, receipt.receivedBy], user.userId, receipt.locationName);
-      await this.rejectedNotice(client, workspaceId, order, receiptId, settled, user.userId, [receipt.receivedBy]);
+      const pass = createHash("sha256").update(results.map((line) => line.id).sort().join(",")).digest("hex").slice(0, 16);
+      await this.tell(client, workspaceId, order, receiptId, "purchasing.received", [order.createdBy, receipt.receivedBy], user.userId, receipt.locationName, pass);
+      await this.rejectedNotice(client, workspaceId, order, receiptId, settled, user.userId, [receipt.receivedBy], pass);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "goods_receipt.inspected", entityType: "goods_receipt", entityId: receiptId, after: { lines: settled } });
       return this.detail(client, workspaceId, receiptId, user.userId);
     });
@@ -270,11 +277,11 @@ export class ReceivingService {
   }
 
   private async rejectedNotice(client: Db, workspaceId: string, order: OrderDetail, receiptId: string, lines: Array<{ description: string; rejected: string; rejectReason: string; rejectKind: RejectKind | null }>,
-    actorId: string, also: string[] = []) {
+    actorId: string, also: string[] = [], pass = "") {
     const rejected = lines.filter((line) => Dec.of(line.rejected).cmp(0) > 0);
     if (!rejected.length) return;
     const note = rejected.map((line) => `${line.description} ${Dec.of(line.rejected).toString()} (${KIND_WORDS[line.rejectKind ?? "other"]}): ${line.rejectReason}`).join("; ").slice(0, 480);
-    await this.tell(client, workspaceId, order, receiptId, "purchasing.rejected", [order.createdBy, order.submittedBy, ...also], actorId, note);
+    await this.tell(client, workspaceId, order, receiptId, "purchasing.rejected", [order.createdBy, order.submittedBy, ...also], actorId, note, pass);
   }
 
   /** People who can inspect deliveries. */
@@ -287,13 +294,14 @@ export class ReceivingService {
         WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
   }
 
-  private async tell(client: Db, workspaceId: string, order: OrderDetail, receiptId: string, code: string, userIds: Array<string | null>, actorId: string, note: string) {
+  /** Tells people about a delivery; `pass` tells one inspection pass apart from the next on the same delivery. */
+  private async tell(client: Db, workspaceId: string, order: OrderDetail, receiptId: string, code: string, userIds: Array<string | null>, actorId: string, note: string, pass = "") {
     const actor = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [actorId])).rows[0]?.name ?? "Someone";
     const amount = `${order.currency} ${Dec.of(order.total).toFixed(currencyDecimals(order.currency))}`;
     const variables = { order: order.number, supplier: order.supplierName, amount, actor, note };
     for (const userId of new Set(userIds.filter((id): id is string => Boolean(id) && id !== actorId)))
       await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code, eventType: code, variables, deepLink: `/workspace/purchasing/deliveries?receipt=${receiptId}`,
-        idempotencyKey: `${code}:${receiptId}:${userId}` });
+        idempotencyKey: `${code}:${receiptId}${pass ? `:${pass}` : ""}:${userId}` });
   }
 }
 

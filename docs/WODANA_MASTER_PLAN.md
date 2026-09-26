@@ -599,6 +599,14 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Replies are recorded per line: price and discount, delivery days, validity; a supplier can decline.
   - The comparison marks the cheapest per line after discounts. Each line is awarded to one supplier, and a dearer choice needs a reason.
   - Awarding creates one draft order per supplier at the quoted prices, still tied to the materials and scope lines. Only approved suppliers can be awarded (the setting).
+- **Accuracy rules:**
+  - Only materials the client chooses wait for their sign-off; a material can be marked "no client choice" (cement, screws). Bought and subcontracted scope lines were agreed in the quotation and order freely.
+  - A material or scope line is ordered in its own unit.
+  - Ordering more than a project needs says why, and the reason stays on the order. To order shows anything ordered past what's needed now (after a change).
+  - A material on an order can't be deleted and keeps its unit.
+  - An order's lines are saved in place: a line with deliveries or returns stays on the order, keeps what it's for and its unit, and can't go below what has arrived.
+  - An expired supplier price can't be awarded, and the cheapest is chosen from valid prices only.
+  - Create commands, and order and return commands sent with a command id, run once: a retry returns the result.
 - Still to come: blanket orders, advances and retention (with payables), vendor portal replies, and the late-delivery expediting task.
 
 - **Records:** rfqs, rfq_lines, rfq_suppliers (sent/viewed/responded), supplier_quotes + lines (price, qty, lead time, validity, alternate item), purchase_orders (kind `standard | blanket | service`, revision), po_lines (ship-to **per line**: warehouse, factory or site), po_line_allocations (line → requirement/project, qty), po_revisions, po_acknowledgements (per line; partial allowed), blanket_releases, supplier advances.
@@ -661,6 +669,8 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
     - Its receiver can reverse it before anyone inspects it; a buyer can reverse it at any time.
     - A delivery can't be reversed once goods from it went back to the supplier.
   - Still owed on a line = ordered − credited − (accepted − returned after acceptance) − waiting for inspection.
+  - A credit carries the line's net and tax. Each credit is the line's share up to now less what was credited before, so partial credits add up to the line exactly.
+  - A project's site holds only that project's goods, and "today" is the firm's today in its time zone.
 - **Notices:** inspection needed (inspectors), received (the buyer and the receiver), goods rejected and goods missing (the buyer), a return raised (the buyer), and a delivery reversed (the buyer and the receiver).
 - **Permissions:** `stock.receive` and `stock.inspect`, alongside `purchasing.manage` and `purchasing.approve`.
 - Accepted goods go into stock where they arrived (see Inventory below).
@@ -670,7 +680,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Items come from the catalog item, or by name and unit when there's none.
   - Every change is a row in the immutable `stock_movements` ledger. The database keeps `stock_balances` in the same transaction, and stock can never go below zero.
   - Deliveries add stock at the order line's price. Work bought as a service isn't stock.
-- **Changes:** issue to a project, reserve free stock for a project or release it, take unused stock back from a project, count (a difference needs its reason), and add opening stock with its origin. Each change is replayed safely by its id.
+- **Changes:** issue to a project, reserve free stock for a project or release it, take unused stock back from a project (only what was issued to it, with the reason), count (a difference needs its reason), and add opening stock with its origin. Each change runs once by its id, even when sent twice at the same moment.
 - **Moves** between places: stock leaves when sent and arrives when received. Anything missing on arrival says why; a cancelled move puts everything back. One project's stock can't go to another project's site.
 - **History:** the ledger per item, with the order, delivery or move each change came from.
 - **Places:** warehouses, factory and other places in Settings; a project's site is made by its first delivery; a place with stock can't be closed.

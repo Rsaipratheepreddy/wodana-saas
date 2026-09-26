@@ -7,7 +7,7 @@ import { Dec } from "../catalog-core/decimal";
 import { renderBrandedEmail } from "../email/branded-email";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { currencyDecimals, ensurePurchasingSettings } from "./orders";
+import { currencyDecimals, ensurePurchasingSettings, firstTime } from "./orders";
 import { OrdersService } from "./orders.service";
 
 type Db = PoolClient;
@@ -53,7 +53,7 @@ export class PriceRequestsService {
   create(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "purchasing.manage", async (client, user) => {
       const id = uuid(body.id, "Price request");
-      if ((await client.query(`SELECT 1 FROM price_requests WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return { ...(await this.detail(client, workspaceId, id, user.userId)), asks: [] };
+      if (!(await firstTime(client, workspaceId, id, id, "create_price_request", user.userId))) return { ...(await this.detail(client, workspaceId, id, user.userId)), asks: [] };
       const vendorIds = Array.isArray(body.vendorIds) ? [...new Set(body.vendorIds.map((item) => uuid(item, "Supplier")))] : [];
       if (!vendorIds.length || vendorIds.length > 12) throw new BadRequestException("Ask between 1 and 12 suppliers.");
       const suppliers = [];
@@ -144,13 +144,22 @@ export class PriceRequestsService {
         const decimals = currencyDecimals(request.currency);
         const net = (quote: { unitPrice: string; discountPercent: string }) => Dec.of(quote.unitPrice).mul(Dec.of(100).sub(quote.discountPercent)).div(100).round(decimals);
         const chosen = new Map<string, { vendorId: string; reason: string }>();
+        // Prices past the date the supplier gave can't be awarded; their new reply is recorded first.
+        const expired = new Map((await client.query<{ vendorId: string; name: string; validUntil: string }>(
+          `SELECT asked.vendor_id AS "vendorId", vendor.display_name AS name, asked.valid_until::text AS "validUntil"
+             FROM price_request_suppliers asked JOIN workspace_vendors vendor ON vendor.workspace_id = asked.workspace_id AND vendor.id = asked.vendor_id
+             JOIN workspaces workspace ON workspace.id = asked.workspace_id
+            WHERE asked.workspace_id = $1 AND asked.request_id = $2 AND asked.valid_until IS NOT NULL
+              AND asked.valid_until < (now() AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date`, [workspaceId, requestId])).rows.map((row) => [row.vendorId, row]));
         for (const award of awards) {
           const line = lines.find((item) => item.id === award.lineId);
           if (!line) throw new BadRequestException("That line isn't on this request.");
           const vendorId = uuid(award.vendorId, "Supplier");
           const quote = quotes.find((item) => item.lineId === line.id && item.vendorId === vendorId);
           if (!quote) throw new BadRequestException(`${line.description}: that supplier hasn't priced it.`);
-          const cheapest = quotes.filter((item) => item.lineId === line.id).reduce((best, item) => (net(item).cmp(net(best)) < 0 ? item : best), quote);
+          const stale = expired.get(vendorId);
+          if (stale) throw new ConflictException(`${stale.name}'s prices were valid until ${stale.validUntil}. Record their new reply first.`);
+          const cheapest = quotes.filter((item) => item.lineId === line.id && !expired.has(item.vendorId)).reduce((best, item) => (net(item).cmp(net(best)) < 0 ? item : best), quote);
           const reason = text(award.reason, 500, "Reason");
           if (net(cheapest).cmp(net(quote)) < 0 && !reason) throw new BadRequestException(`${line.description}: say why it isn't going to the cheapest supplier.`);
           chosen.set(line.id, { vendorId, reason });

@@ -174,7 +174,7 @@ describe("projects", () => {
 
   it("sends the material list and records the client's decision, needing a reason for each rejection", async () => {
     const live: LiveScope = { lines: [], packages: [], seals: [], variations: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1" };
-    const item = (id: string, name: string) => ({ id, position: 0, catalogItemId: null, name, code: "", specification: "", supplier: "", quantity: null, unit: "", note: "", boqLineIds: [], version: 1, usedIn: [], decision: null });
+    const item = (id: string, name: string) => ({ id, position: 0, catalogItemId: null, name, code: "", specification: "", supplier: "", quantity: null, unit: "", note: "", boqLineIds: [], version: 1, clientChoice: true, usedIn: [], decision: null });
     let materials: MaterialsState = { state: "draft", items: [item("m1", "Quartz, Calacatta"), item("m2", "Oak veneer")], revisions: [], version: 4, canEdit: true };
     const fetcher = mount((url, body) => {
       if (body?.action === "send_materials") materials = { ...materials, state: "sent", revisions: [{ id: "r1", number: 1, status: "sent", sentAt: "2026-10-01T09:00:00Z", sentByName: "Dana", decidedAt: null, decidedBy: null, method: null, note: "" }] };
@@ -195,6 +195,24 @@ describe("projects", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "record_materials_decision", decidedBy: "Maya", method: "signed_document",
       decisions: [{ itemId: "m1", decision: "approved", note: "" }, { itemId: "m2", decision: "rejected", note: "Smoked oak" }] }));
+  });
+
+  it("marks materials the client doesn't choose, so they don't wait for sign-off", async () => {
+    const live: LiveScope = { lines: [], packages: [], seals: [], variations: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1" };
+    const cement = { id: "m1", position: 0, catalogItemId: null, name: "Cement", code: "", specification: "", supplier: "", quantity: "5.0000", unit: "bags", note: "", boqLineIds: [], version: 1,
+      clientChoice: false, usedIn: [], decision: null };
+    const fetcher = mount((url, body) => (body ? detail({ version: 5 }) : url.includes("/materials") ? { state: "draft", items: [cement], revisions: [], version: 4, canEdit: true }
+      : url.includes("/scope") ? live : detail()));
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("tab", { name: "Materials" }));
+    expect(await screen.findByText("No client choice")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Cement"));
+    const sheet = await screen.findByRole("dialog", { name: "Cement" });
+    const choice = within(sheet).getByRole("switch", { name: "The client chooses it (needs their sign-off)" });
+    expect(choice).not.toBeChecked();
+    await userEvent.click(choice);
+    await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "save_material", id: "m1", name: "Cement", clientChoice: true }));
   });
 
   it("opens a sealed document from the Sealed list, with what the client didn't choose", async () => {

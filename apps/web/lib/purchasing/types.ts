@@ -41,7 +41,7 @@ export type PurchasingSettings = {
 export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
   title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
-  catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; blocked: "material_signoff" | null;
+  catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null; clientChoice: boolean; blocked: "material_signoff" | null;
 };
 export type NeedsState = { needs: Need[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
 
@@ -60,7 +60,7 @@ export type OrderLine = {
 export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
-  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; companyName: string;
+  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
 };
 export type OrderState = {
   order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; returns: SupplierReturnRow[]; canReceive: boolean;
@@ -68,6 +68,8 @@ export type OrderState = {
   revisions: Array<{ revision: number; reason: string; at: string; byName: string }>;
   supplier: { id: string; name: string; email: string | null; phone: string | null; contactName: string | null; approval: Approval; deal: Deal; dealPercent: string | null } | null;
   canBuy: boolean; canApprove: boolean; canApproveThis: boolean;
+  /** Lines taking a project past what it needs, by how much (while the order is a draft or waiting for approval). */
+  overOrdered: Array<{ lineId: string; description: string; unit: string; over: string }>;
   /** After sending: how the supplier's email went. */
   delivery?: "sent" | "not_configured" | "failed" | null;
 };
@@ -121,7 +123,7 @@ export type SupplierReturnRow = {
 };
 export type SupplierReturnLine = {
   id: string; receiptLineId: string; receiptNumber: number; description: string; unit: string; source: "rejected" | "accepted"; quantity: string; reasonKind: RejectKind; reason: string;
-  creditAmount: string | null; projectReference: string | null;
+  creditAmount: string | null; creditTax: string | null; projectReference: string | null;
 };
 export type SupplierReturnState = {
   return: SupplierReturnRow; lines: SupplierReturnLine[]; canBuy: boolean; canReceive: boolean; canSendThis: boolean; canCancelThis: boolean;

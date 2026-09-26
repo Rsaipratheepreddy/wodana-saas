@@ -52,3 +52,15 @@ export function orderTotals(lines: Array<ReturnType<typeof priceLine>>, decimals
   const tax = lines.reduce((sum, line) => sum + (line?.units.tax ?? 0n), 0n);
   return { net: fixed(net, decimals), tax: fixed(tax, decimals), total: fixed(net + tax, decimals) };
 }
+
+/** Exact sum of decimal strings ("5.0000" + "1.25" = "6.25"), to four places, trailing zeros dropped. */
+export function addExact(...values: Array<string | null | undefined>) {
+  const total = values.reduce((sum, value) => sum + (parse(value || "0") ?? 0n), 0n);
+  return fixed(total, 4).replace(/\.?0+$/, "") || "0";
+}
+
+/** Exact a − b, never below zero: what's left ("6" − "1.5" = "4.5"). */
+export function subtractExact(a: string, b: string) {
+  const left = (parse(a || "0") ?? 0n) - (parse(b || "0") ?? 0n);
+  return left <= 0n ? "0" : fixed(left, 4).replace(/\.?0+$/, "");
+}

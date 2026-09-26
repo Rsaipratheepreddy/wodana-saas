@@ -10,7 +10,7 @@ import { move } from "../inventory/stock";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { event as boqEvent } from "../project-core/project-scope";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { currencyDecimals, orderEvent, readOrder, readOrderLines, type OrderDetail } from "./orders";
+import { currencyDecimals, firstTime, orderEvent, readOrder, readOrderLines, type OrderDetail } from "./orders";
 import { REJECT_KINDS, readReceipt, readReceiptLines, settleOrder, type RejectKind } from "./receiving";
 
 type Db = PoolClient;
@@ -29,7 +29,7 @@ const RETURN_SELECT = `SELECT back.id, back.number, back.order_id AS "orderId", 
   back.outcome, back.status, back.note, creator.display_name AS "createdByName", back.created_at AS "createdAt", back.sent_on::text AS "sentOn", sender.display_name AS "sentByName",
   back.cancel_reason AS "cancelReason", back.version, purchase.currency,
   (SELECT count(*)::int FROM supplier_return_lines line WHERE line.workspace_id = back.workspace_id AND line.return_id = back.id) AS lines,
-  (SELECT sum(line.credit_amount)::text FROM supplier_return_lines line WHERE line.workspace_id = back.workspace_id AND line.return_id = back.id) AS credit
+  (SELECT sum(line.credit_amount + coalesce(line.credit_tax, 0))::text FROM supplier_return_lines line WHERE line.workspace_id = back.workspace_id AND line.return_id = back.id) AS credit
   FROM supplier_returns back
   JOIN purchase_orders purchase ON purchase.workspace_id = back.workspace_id AND purchase.id = back.order_id
   JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
@@ -68,7 +68,7 @@ export class SupplierReturnsService {
   create(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "purchasing.manage", async (client, user) => {
       const id = uuid(body.id, "Return");
-      if ((await client.query(`SELECT 1 FROM supplier_returns WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return { ...(await this.detail(client, workspaceId, id, user.userId)), email: null };
+      if (!(await firstTime(client, workspaceId, id, id, "create_return", user.userId))) return { ...(await this.detail(client, workspaceId, id, user.userId)), email: null };
       const receiptId = uuid(body.receiptId, "Delivery");
       await client.query(`SELECT 1 FROM goods_receipts WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, receiptId]);
       const receipt = await readReceipt(client, workspaceId, receiptId);
@@ -84,7 +84,9 @@ export class SupplierReturnsService {
       const orderLines = await readOrderLines(client, workspaceId, order.id);
       if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Choose what goes back.");
       const seen = new Set<string>();
-      const lines: Array<{ receiptLineId: string; orderLineId: string; source: "rejected" | "accepted"; quantity: string; kind: RejectKind; reason: string; credit: string | null; description: string; unit: string }> = [];
+      const lines: Array<{ receiptLineId: string; orderLineId: string; source: "rejected" | "accepted"; quantity: string; kind: RejectKind; reason: string; credit: string | null; creditTax: string | null;
+        description: string; unit: string }> = [];
+      const creditedBefore = new Map<string, Dec>();
       for (const raw of body.lines as Array<Record<string, unknown>>) {
         const line = receiptLines.find((item) => item.id === raw?.receiptLineId);
         if (!line) throw new BadRequestException("A line isn't on this delivery.");
@@ -101,9 +103,19 @@ export class SupplierReturnsService {
         const reason = text(raw.reason, 500, "Reason") || (source === "rejected" ? line.rejectReason : "");
         if (!reason) throw new BadRequestException(`Say why ${line.description} goes back.`);
         const ordered = orderLines.find((item) => item.id === line.orderLineId)!;
-        const credit = outcome === "credit" && !Dec.of(ordered.quantity).isZero()
-          ? Dec.of(ordered.net).div(ordered.quantity).mul(quantity).round(currencyDecimals(order.currency)).toFixed(4) : null;
-        lines.push({ receiptLineId: line.id, orderLineId: line.orderLineId, source, quantity, kind, reason, credit, description: line.description, unit: line.unit });
+        let credit: string | null = null, creditTax: string | null = null;
+        if (outcome === "credit" && !Dec.of(ordered.quantity).isZero()) {
+          // Each credit is the line's share up to now less what was credited before, so partial credits add up to the line exactly.
+          if (!creditedBefore.has(ordered.id)) creditedBefore.set(ordered.id, Dec.of((await client.query<{ quantity: string }>(
+            `SELECT coalesce(sum(line.quantity), 0)::text AS quantity FROM supplier_return_lines line JOIN supplier_returns back ON back.workspace_id = line.workspace_id AND back.id = line.return_id
+              WHERE line.workspace_id = $1 AND line.order_line_id = $2 AND back.outcome = 'credit' AND back.status <> 'cancelled'`, [workspaceId, ordered.id])).rows[0].quantity));
+          const before = creditedBefore.get(ordered.id)!;
+          const share = (total: string, units: Dec) => Dec.of(total).mul(units).div(ordered.quantity).round(currencyDecimals(order.currency));
+          credit = share(ordered.net, before.add(quantity)).sub(share(ordered.net, before)).toFixed(4);
+          creditTax = share(ordered.tax, before.add(quantity)).sub(share(ordered.tax, before)).toFixed(4);
+          creditedBefore.set(ordered.id, before.add(quantity));
+        }
+        lines.push({ receiptLineId: line.id, orderLineId: line.orderLineId, source, quantity, kind, reason, credit, creditTax, description: line.description, unit: line.unit });
       }
       if (!lines.length) throw new BadRequestException("Choose what goes back.");
       await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('supplier_returns:' || $1::text, 0))`, [workspaceId]);
@@ -113,8 +125,9 @@ export class SupplierReturnsService {
         [id, workspaceId, number, order.id, receipt.locationId, outcome, note, user.userId]);
       for (const line of lines)
         await client.query(
-          `INSERT INTO supplier_return_lines (id, workspace_id, return_id, receipt_line_id, order_line_id, source, quantity, reason_kind, reason, credit_amount) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [randomUUID(), workspaceId, id, line.receiptLineId, line.orderLineId, line.source, line.quantity, line.kind, line.reason, line.credit]);
+          `INSERT INTO supplier_return_lines (id, workspace_id, return_id, receipt_line_id, order_line_id, source, quantity, reason_kind, reason, credit_amount, credit_tax)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [randomUUID(), workspaceId, id, line.receiptLineId, line.orderLineId, line.source, line.quantity, line.kind, line.reason, line.credit, line.creditTax]);
       // Credited goods stop being owed now; goods to be replaced are owed again once they've gone back.
       await settleOrder(client, workspaceId, order.id);
       await orderEvent(client, workspaceId, order.id, "return_raised", { return: number, outcome, receipt: receipt.number, lines: lines.length }, user.userId);
@@ -134,6 +147,8 @@ export class SupplierReturnsService {
   /** The supplier collected the goods (accepted goods leave stock), or the return is cancelled before that. */
   command(actor: RequestActor, workspaceId: string, returnId: string, body: Record<string, unknown>) {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
+      const commandId = body.commandId === undefined || body.commandId === null ? null : uuid(body.commandId, "Command");
+      if (commandId && !(await firstTime(client, workspaceId, commandId, returnId, String(body.action ?? ""), user.userId))) return this.detail(client, workspaceId, returnId, user.userId);
       await client.query(`SELECT 1 FROM supplier_returns WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, returnId]);
       const current = (await client.query<{ status: string; version: number; orderId: string; locationId: string; number: number; outcome: string }>(
         `SELECT status, version, order_id AS "orderId", location_id AS "locationId", number, outcome FROM supplier_returns WHERE workspace_id = $1 AND id = $2`, [workspaceId, returnId])).rows[0];
@@ -193,9 +208,9 @@ export class SupplierReturnsService {
 
   private async lines(client: Db, workspaceId: string, returnId: string) {
     return (await client.query<{ id: string; receiptLineId: string; receiptNumber: number; description: string; unit: string; source: "rejected" | "accepted"; quantity: string;
-      reasonKind: RejectKind; reason: string; creditAmount: string | null; boqLineId: string | null; projectId: string | null; projectReference: string | null }>(
+      reasonKind: RejectKind; reason: string; creditAmount: string | null; creditTax: string | null; boqLineId: string | null; projectId: string | null; projectReference: string | null }>(
       `SELECT line.id, line.receipt_line_id AS "receiptLineId", receipt.number AS "receiptNumber", ordered.description, ordered.unit, line.source, line.quantity::text AS quantity,
-              line.reason_kind AS "reasonKind", line.reason, line.credit_amount::text AS "creditAmount", ordered.boq_line_id AS "boqLineId", ordered.project_id AS "projectId",
+              line.reason_kind AS "reasonKind", line.reason, line.credit_amount::text AS "creditAmount", line.credit_tax::text AS "creditTax", ordered.boq_line_id AS "boqLineId", ordered.project_id AS "projectId",
               project.reference AS "projectReference"
          FROM supplier_return_lines line
          JOIN purchase_order_lines ordered ON ordered.workspace_id = line.workspace_id AND ordered.id = line.order_line_id

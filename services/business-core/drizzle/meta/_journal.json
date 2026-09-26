@@ -316,6 +316,13 @@
       "when": 1793188800000,
       "tag": "0044_delivery_problems",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793275200000,
+      "tag": "0045_purchasing_accuracy",
+      "breakpoints": true
     }
   ]
 }

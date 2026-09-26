@@ -173,6 +173,8 @@ export class ProjectWorkService {
         const kind = body.kind === "ss" ? "ss" : "fs";
         const lag = body.lagDays === undefined || body.lagDays === null || body.lagDays === "" ? 0 : Number(body.lagDays);
         if (!Number.isInteger(lag) || Math.abs(lag) > 365) throw new BadRequestException("The lag is a whole number of days, up to a year.");
+        // Links in a project are added one at a time, so two opposite links can't both pass the loop check.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('work-links:' || $1::text, 0))`, [projectId]);
         if (await wouldCycle(client, workspaceId, before.id, after.id)) throw new ConflictException(`#${before.number} already waits on #${after.number}, so this would go round in a circle.`);
         await client.query(
           `INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -203,6 +205,7 @@ export class ProjectWorkService {
     if (!title) throw new BadRequestException("Give it a title.");
     const parent = body.parentId ? await this.own(client, workspaceId, projectId, uuid(body.parentId, "Parent")) : null;
     if (parent?.parentId) throw new BadRequestException("A subtask can't have its own subtasks.");
+    if (parent && !OPEN(parent.status)) throw new ConflictException(`#${parent.number} is ${parent.status === "done" ? "done" : "cancelled"}; reopen it to add subtasks.`);
     const type = parent ? "task" : oneOf(body.type ?? "task", WORK_TYPES, "Type");
     const blocks = type === "blocker" && body.blocks ? await this.own(client, workspaceId, projectId, uuid(body.blocks, "Item")) : null;
     const line = body.boqLineId ? await this.line(client, workspaceId, projectId, uuid(body.boqLineId, "Line")) : null;
@@ -293,6 +296,11 @@ export class ProjectWorkService {
     }
     if (body.status !== undefined && body.status !== item.status) {
       const status = oneOf(body.status, WORK_STATUSES, "Status");
+      // A subtask reopens only under an open parent.
+      if (item.parentId && OPEN(status) && !OPEN(item.status)) {
+        const parent = await this.own(client, workspaceId, projectId, item.parentId);
+        if (!OPEN(parent.status)) throw new ConflictException(`#${parent.number} is ${parent.status === "done" ? "done" : "cancelled"}; reopen it first.`);
+      }
       const children = (await client.query<{ id: string; status: WorkStatus; number: number }>(
         `SELECT id, status, number FROM work_items WHERE workspace_id = $1 AND parent_id = $2 FOR UPDATE`, [workspaceId, itemId])).rows.filter((child) => OPEN(child.status));
       if (status === "done" && children.length) throw new ConflictException(children.length === 1 ? "Finish or cancel its open subtask first." : `Finish or cancel its ${children.length} open subtasks first.`);

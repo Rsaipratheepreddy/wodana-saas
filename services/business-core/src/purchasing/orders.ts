@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
-import { materialsSignedOff } from "../project-core/project-materials";
+import { clientChoicesSignedOff } from "../project-core/project-materials";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -37,6 +37,8 @@ export type Need = {
   key: string; source: "material" | "line"; sourceId: string; projectId: string; projectReference: string; projectName: string;
   title: string; detail: string; unit: string; required: string | null; placed: string; drafted: string; received: string; remaining: string | null;
   catalogItemId: string | null; supplierHint: string; packageName: string | null; supply: string | null;
+  /** A material the client chooses (it waits for their sign-off); scope lines never do. */
+  clientChoice: boolean;
   /** Why it can't be ordered yet, if it can't. */
   blocked: "material_signoff" | null;
 };
@@ -76,12 +78,13 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
      ), needs AS (
        SELECT 'material:' || item.id AS key, 'material' AS source, item.id AS "sourceId", projects.id AS "projectId", projects.reference AS "projectReference", projects.name AS "projectName",
               item.name AS title, concat_ws(' · ', nullif(item.code, ''), nullif(item.specification, '')) AS detail, item.unit, item.quantity AS required,
-              item.catalog_item_id AS "catalogItemId", item.supplier AS "supplierHint", NULL::text AS "packageName", NULL::text AS supply, item.position AS sort
+              item.catalog_item_id AS "catalogItemId", item.supplier AS "supplierHint", NULL::text AS "packageName", NULL::text AS supply, item.position AS sort,
+              item.client_choice AS "clientChoice"
          FROM project_material_items item JOIN projects ON projects.id = item.project_id
         WHERE item.workspace_id = $1
        UNION ALL
        SELECT 'line:' || line.id, 'line', line.id, projects.id, projects.reference, projects.name, line.title, line.description, line.unit, line.quantity,
-              line.catalog_item_id, '', package.name, package.supply, 100000 + line.position
+              line.catalog_item_id, '', package.name, package.supply, 100000 + line.position, false
          FROM project_boq_lines line JOIN projects ON projects.id = line.project_id
          JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
         WHERE line.workspace_id = $1 AND line.status = 'active' AND package.supply IN ('buy', 'ready_made', 'subcontract')
@@ -89,12 +92,13 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
      SELECT needs.key, needs.source, needs."sourceId", needs."projectId", needs."projectReference", needs."projectName", needs.title, needs.detail, needs.unit,
             needs.required::text AS required, coalesce(ordered.placed, 0)::text AS placed, coalesce(ordered.drafted, 0)::text AS drafted, coalesce(ordered.received, 0)::text AS received,
             (needs.required - coalesce(ordered.placed, 0) - coalesce(ordered.drafted, 0))::text AS remaining,
-            needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply
+            needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply, needs."clientChoice"
        FROM needs LEFT JOIN ordered ON (needs.source = 'material' AND ordered.material_item_id = needs."sourceId") OR (needs.source = 'line' AND ordered.boq_line_id = needs."sourceId")
       ORDER BY needs."projectReference", needs.sort`, [workspaceId, projectId])).rows;
+  // Only materials the client chooses wait for their sign-off; bought scope lines were agreed in the quotation.
   const signed = new Map<string, boolean>();
-  if (requireSignoff) for (const projectId of new Set(rows.map((row) => row.projectId))) signed.set(projectId, await materialsSignedOff(db, workspaceId, projectId));
-  return rows.map((row) => ({ ...row, blocked: requireSignoff && !signed.get(row.projectId) ? "material_signoff" as const : null }));
+  if (requireSignoff) for (const projectId of new Set(rows.filter((row) => row.clientChoice).map((row) => row.projectId))) signed.set(projectId, await clientChoicesSignedOff(db, workspaceId, projectId));
+  return rows.map((row) => ({ ...row, blocked: requireSignoff && row.clientChoice && !signed.get(row.projectId) ? "material_signoff" as const : null }));
 }
 
 export type OrderRow = {
@@ -134,7 +138,7 @@ export type OrderLine = {
 export type OrderDetail = OrderRow & {
   paymentTerms: string; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: string; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
-  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; companyName: string;
+  sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
 };
 
 export async function readOrder(db: Db, workspaceId: string, orderId: string, lock = false): Promise<OrderDetail | undefined> {
@@ -145,7 +149,7 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
             purchase.subtotal::text AS subtotal, purchase.discount_total::text AS "discountTotal", purchase.tax_total::text AS "taxTotal", purchase.created_by AS "createdBy",
             purchase.submitted_by AS "submittedBy", approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
             purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason",
-            purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", entity.display_name AS "companyName"
+            purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", purchase.over_reason AS "overReason", entity.display_name AS "companyName"
        FROM (${ORDER_SELECT} WHERE purchase.workspace_id = $1 AND purchase.id = $2) listed
        JOIN purchase_orders purchase ON purchase.workspace_id = $1 AND purchase.id = listed.id
        JOIN legal_entities entity ON entity.workspace_id = $1 AND entity.id = purchase.legal_entity_id
@@ -220,4 +224,14 @@ export async function nextOrderNumber(db: Db, workspaceId: string, legalEntityId
 export async function everythingOrdered(db: Db, workspaceId: string, projectId: string) {
   const needs = await readNeeds(db, workspaceId, false, projectId);
   return needs.every((need) => (need.required === null ? Dec.of(need.placed).cmp(0) > 0 : Dec.of(need.placed).cmp(need.required) >= 0));
+}
+
+/**
+ * Records a purchasing command by its id the first time it runs; false when it already ran (or is running
+ * in another request, which this waits for), so a retry returns the result instead of acting twice.
+ */
+export async function firstTime(db: Db, workspaceId: string, commandId: string, entityId: string, action: string, actorId: string) {
+  return Boolean((await db.query(
+    `INSERT INTO purchasing_commands (workspace_id, id, entity_id, action, actor_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (workspace_id, id) DO NOTHING`,
+    [workspaceId, commandId, entityId, action.slice(0, 24), actorId])).rowCount);
 }

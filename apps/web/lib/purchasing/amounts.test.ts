@@ -17,3 +17,14 @@ describe("order amounts in the browser", () => {
     expect(currencyDecimals("KWD")).toBe(3);
   });
 });
+
+describe("exact quantities", () => {
+  it("adds and subtracts without floating-point drift", async () => {
+    const { addExact, subtractExact } = await import("./amounts");
+    expect(addExact("0.1", "0.2")).toBe("0.3");
+    expect(addExact("5.0000", "1.2500", null)).toBe("6.25");
+    expect(subtractExact("6.0000", "1.5")).toBe("4.5");
+    expect(subtractExact("1", "2")).toBe("0");
+    expect(subtractExact("0.3", "0.1")).toBe("0.2");
+  });
+});

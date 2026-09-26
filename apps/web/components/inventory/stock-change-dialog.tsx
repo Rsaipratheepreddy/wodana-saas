@@ -41,7 +41,7 @@ export function StockChangeDialog({ api, state, mode, row, onClose, onDone }: {
   const differs = mode === "count" && row && Number(quantity || 0) !== Number(row.onHand);
   const ready = Boolean(locationId) && quantity !== "" && (mode === "count" || Number(quantity) > 0) && !over
     && (mode !== "issue" || row?.projectId || projectId) && (mode !== "allocate" || projectId) && (mode !== "return" || projectId)
-    && (!differs || reason.trim()) && (mode !== "add" || ((itemId !== NEW_ITEM || name.trim()) && reason.trim()));
+    && (!differs || reason.trim()) && (mode !== "add" || ((itemId !== NEW_ITEM || name.trim()) && reason.trim())) && (mode !== "return" || reason.trim());
 
   const save = async () => {
     setBusy(true); setError("");
@@ -82,8 +82,9 @@ export function StockChangeDialog({ api, state, mode, row, onClose, onDone }: {
         {mode === "add" ? <TextInput label={t("Cost each")} inputMode="decimal" value={cost} onChange={(value) => setCost(numeric(value))} /> : null}
       </div>
       {over ? <InlineNotice tone="error" message={t("Only {quantity} there.", { quantity: `${quantityText(row!.onHand)} ${row!.unit}`.trim() })} /> : null}
-      {mode === "add" || mode === "count" || mode === "return" || mode === "issue" ? <TextInput label={mode === "add" ? t("Where it comes from") : mode === "count" ? t("Why it's different") : t("Note")}
-        isRequired={mode === "add" || Boolean(differs)} value={reason} onChange={setReason} /> : null}
+      {mode === "add" || mode === "count" || mode === "return" || mode === "issue" ? <TextInput
+        label={mode === "add" ? t("Where it comes from") : mode === "count" ? t("Why it's different") : mode === "return" ? t("Why it's coming back") : t("Note")}
+        isRequired={mode === "add" || mode === "return" || Boolean(differs)} value={reason} onChange={setReason} /> : null}
     </div>
   </ControlledModalDialog>;
 }

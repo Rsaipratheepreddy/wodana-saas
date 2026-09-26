@@ -51,6 +51,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<{ tone: "error" | "info" | "success"; text: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [overReason, setOverReason] = useState("");
   const [busy, setBusy] = useState(false);
   const accept = useCallback((next: OrderState) => { setState(next); setForm(formOf(next)); }, []);
   const load = useCallback(async () => {
@@ -86,11 +87,13 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
       specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, discountPercent: line.discountPercent, taxRate: line.taxRate })) } : {};
   const submit = async () => {
     const saved = dirty ? await run("save", saveInput()) : state;
-    if (saved) await run("submit", {}, saved.order.version);
+    if (saved) await run("submit", overReason.trim() ? { overReason: overReason.trim() } : {}, saved.order.version);
   };
   const setLine = (id: string, patch: Partial<LineDraft>) => form && setForm({ ...form, lines: form.lines.map((line) => (line.id === id ? { ...line, ...patch } : line)) });
   const money = (value: string) => (order ? format.money(value, order.currency) : value);
-  const short = (state?.lines ?? []).some((line) => Number(line.accepted) < Number(line.quantity));
+  // Short when what was accepted and what the supplier credited don't make up the line (as the server counts it).
+  const short = (state?.lines ?? []).some((line) => Number(line.accepted) + Number(line.credited) < Number(line.quantity));
+  const over = order && ["draft", "pending_approval"].includes(order.status) ? state?.overOrdered ?? [] : [];
   /** What has arrived on a line so far, once anything has. */
   const arrived = (line: OrderLine | undefined) => {
     if (!line || !(Number(line.accepted) || Number(line.rejected) || Number(line.pending) || Number(line.credited))) return "";
@@ -103,7 +106,8 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     : order.status === "draft" && state.canBuy ? <div className="wd-dialog-actions">
       <Button variant="quiet" onPress={() => setDialog("cancel")}>{t("Cancel order")}</Button><span className={styles.spacer} />
       <Button isDisabled={!dirty} isLoading={busy} onPress={() => void run("save", saveInput())}>{t("Save")}</Button>
-      <Button variant="primary" isLoading={busy} onPress={() => void submit()}>{settings?.approvalThreshold === null ? t("Place order") : t("Send for approval")}</Button></div>
+      <Button variant="primary" isLoading={busy} isDisabled={over.length > 0 && !overReason.trim() && !order.overReason} onPress={() => void submit()}>
+        {settings?.approvalThreshold === null ? t("Place order") : t("Send for approval")}</Button></div>
     : order.status === "pending_approval" && state.canApproveThis ? <div className="wd-dialog-actions"><span className={styles.spacer} />
       <Button onPress={() => setDialog("return")}>{t("Send back")}</Button>
       <Button variant="primary" isLoading={busy} onPress={() => void run("approve")}>{t("Approve")}</Button></div>
@@ -130,6 +134,9 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
       {order.status === "cancelled" ? <InlineNotice tone="info" message={t("Cancelled: {reason}", { reason: order.cancelReason ?? "" })} /> : null}
       {order.status === "closed" && order.closeReason ? <InlineNotice tone="info" message={t("Closed: {reason}", { reason: order.closeReason })} /> : null}
       {order.status === "pending_approval" && !state.canApproveThis ? <InlineNotice tone="info" message={t("Waiting for someone who approves orders.")} /> : null}
+      {over.length ? <InlineNotice tone="info" message={t("More than the project needs: {lines}", { lines: over.map((line) => `${line.description} +${quantityText(line.over)} ${line.unit}`.trim()).join(", ") })} /> : null}
+      {over.length && draft ? <TextInput label={t("Why order more than needed")} isRequired value={overReason || order.overReason || ""} onChange={setOverReason} /> : null}
+      {order.overReason && !draft ? <InlineNotice tone="info" message={t("Ordered more than needed: {reason}", { reason: order.overReason })} /> : null}
 
       {draft ? <section className={styles.part} aria-label={t("Delivery and terms")}>
         <div className={styles.pair}>

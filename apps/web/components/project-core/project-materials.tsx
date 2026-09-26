@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Send, Sparkles } from "lucide-react";
 import {
-  Button, ControlledModalDialog, EmptyState, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput,
+  Button, ControlledModalDialog, EmptyState, ErrorState, GroupedTable, InspectorSheet, MultiSelectField, SegmentedControl, SelectField, Skeleton, Switch, TextAreaField, TextInput,
   type GroupedTableColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -45,7 +45,7 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
     { id: "name", label: t("Material"), width: "30%", render: (item) => <span className={styles.lineCell}><span>{item.name}</span>{item.code || item.supplier ? <small>{[item.code, item.supplier].filter(Boolean).join(" · ")}</small> : null}</span> },
     { id: "spec", label: t("Finish"), width: "24%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.specification}</span> },
     { id: "used", label: t("For"), width: "26%", mobileHidden: true, render: (item) => <span className={styles.muted}>{item.usedIn.map((line) => line.title).join(", ")}</span> },
-    { id: "decision", label: t("Client"), width: "20%", render: (item) => item.decision
+    { id: "decision", label: t("Client"), width: "20%", render: (item) => !item.clientChoice ? <span className={styles.muted}>{t("No client choice")}</span> : item.decision
       ? <span className={styles.lineCell}><span className={styles.status} data-tone={item.decision.decision === "approved" ? "ok" : "off"}>{item.decision.decision === "approved" ? t("Approved") : t("Rejected")}</span>
           {item.decision.note ? <small>{item.decision.note}</small> : null}</span>
       : <span className={styles.muted}>{locked ? t("Waiting") : "—"}</span> },
@@ -76,12 +76,13 @@ function MaterialSheet({ item, lines, run, onClose }: { item: MaterialItem | nul
   const t = useT();
   const [form, setForm] = useState({ name: item?.name ?? "", code: item?.code ?? "", specification: item?.specification ?? "", supplier: item?.supplier ?? "",
     quantity: item?.quantity ? String(Number(item.quantity)) : "", unit: item?.unit ?? "", note: item?.note ?? "" });
+  const [clientChoice, setClientChoice] = useState(item?.clientChoice ?? true);
   const [used, setUsed] = useState<Set<string>>(new Set(item?.boqLineIds ?? []));
   const [busy, setBusy] = useState(false);
   const set = (key: keyof typeof form) => (value: string) => setForm({ ...form, [key]: value });
   const save = async () => {
     setBusy(true);
-    if (await run("save_material", { id: item?.id, ...form, quantity: form.quantity || null, boqLineIds: [...used] })) onClose();
+    if (await run("save_material", { id: item?.id, ...form, quantity: form.quantity || null, boqLineIds: [...used], clientChoice })) onClose();
     setBusy(false);
   };
   return <InspectorSheet isOpen size="md" title={item ? item.name : t("New material")} onOpenChange={(open) => { if (!open) onClose(); }}
@@ -104,6 +105,7 @@ function MaterialSheet({ item, lines, run, onClose }: { item: MaterialItem | nul
       </div>
       <MultiSelectField label={t("For")} selectedKeys={used} onSelectionChange={(keys) => setUsed(new Set([...keys].map(String)))}
         items={lines.filter((line) => line.status === "active").map((line) => ({ id: line.id, label: line.areaName ? `${line.title} · ${line.areaName}` : line.title }))} />
+      <Switch isSelected={clientChoice} onChange={setClientChoice}>{t("The client chooses it (needs their sign-off)")}</Switch>
       <TextAreaField label={t("Note")} value={form.note} onChange={set("note")} />
     </div>
   </InspectorSheet>;

@@ -9,6 +9,8 @@ type Db = Pick<PoolClient, "query">;
 export type MaterialItem = {
   id: string; position: number; catalogItemId: string | null; name: string; code: string; specification: string; supplier: string;
   quantity: string | null; unit: string; note: string; boqLineIds: string[]; version: number;
+  /** False for materials the client doesn't choose (cement, screws): they don't wait for the client's sign-off. */
+  clientChoice: boolean;
 };
 type Revision = {
   id: string; number: number; status: "sent" | "signed_off" | "changes_requested"; contentHash: string; sentAt: string; sentByName: string | null;
@@ -20,13 +22,13 @@ const METHODS = ["signed_document", "email", "in_person", "phone", "message"] as
 async function readItems(db: Db, workspaceId: string, projectId: string): Promise<MaterialItem[]> {
   return (await db.query<MaterialItem>(
     `SELECT id, position, catalog_item_id AS "catalogItemId", name, code, specification, supplier, quantity::text AS quantity, unit, note,
-            boq_line_ids AS "boqLineIds", version
+            boq_line_ids AS "boqLineIds", version, client_choice AS "clientChoice"
        FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 ORDER BY position, lower(name)`, [workspaceId, projectId])).rows;
 }
 
-/** What the client signs: the list as it stands, in a stable shape (so its fingerprint only changes when the list does). */
+/** What the client signs: the materials they choose, in a stable shape (so its fingerprint only changes when the list does). */
 function signable(items: MaterialItem[]) {
-  return items.map((item) => ({ id: item.id, name: item.name, code: item.code, specification: item.specification, supplier: item.supplier,
+  return items.filter((item) => item.clientChoice).map((item) => ({ id: item.id, name: item.name, code: item.code, specification: item.specification, supplier: item.supplier,
     quantity: item.quantity, unit: item.unit, note: item.note, catalogItemId: item.catalogItemId, boqLineIds: [...item.boqLineIds].sort() }));
 }
 
@@ -39,11 +41,26 @@ async function latestRevision(db: Db, workspaceId: string, projectId: string, lo
     [workspaceId, projectId])).rows[0];
 }
 
-/** True when the latest revision was approved in full and the list hasn't changed since. */
+/**
+ * True when the list is agreed: it has materials, and the ones the client chooses were approved in the
+ * latest revision without changing since (a list of materials the client doesn't choose needs nothing).
+ */
 export async function materialsSignedOff(db: Db, workspaceId: string, projectId: string) {
+  const items = await readItems(db, workspaceId, projectId);
+  return items.length > 0 && await choicesSignedOff(db, workspaceId, projectId, items);
+}
+
+/** True when nothing the client chooses is waiting for their sign-off; what gates ordering a project's client-chosen materials. */
+export async function clientChoicesSignedOff(db: Db, workspaceId: string, projectId: string) {
+  return choicesSignedOff(db, workspaceId, projectId, await readItems(db, workspaceId, projectId));
+}
+
+async function choicesSignedOff(db: Db, workspaceId: string, projectId: string, items: MaterialItem[]) {
+  const choices = signable(items);
+  if (!choices.length) return true;
   const revision = await latestRevision(db, workspaceId, projectId);
   if (!revision || revision.status !== "signed_off") return false;
-  return canonicalHash(signable(await readItems(db, workspaceId, projectId))) === revision.contentHash;
+  return canonicalHash(choices) === revision.contentHash;
 }
 
 /** The list, where each material is used, and its revisions with the client's decisions. */
@@ -105,7 +122,7 @@ export async function suggestMaterials(db: Db, workspaceId: string, projectId: s
         `INSERT INTO project_material_items (id, workspace_id, project_id, position, catalog_item_id, name, code, specification, unit, boq_line_ids)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [id, workspaceId, projectId, position++, row.itemId, row.name.slice(0, 240), row.code.slice(0, 80), (row.description ?? "").slice(0, 1000), row.unit ?? "", [row.lineId]]);
-      existing.set(row.itemId, { id, position, catalogItemId: row.itemId, name: row.name, code: row.code, specification: row.description, supplier: "", quantity: null, unit: row.unit, note: "", boqLineIds: [row.lineId], version: 1 });
+      existing.set(row.itemId, { id, position, catalogItemId: row.itemId, name: row.name, code: row.code, specification: row.description, supplier: "", quantity: null, unit: row.unit, note: "", boqLineIds: [row.lineId], version: 1, clientChoice: true });
       added += 1;
     }
   }
@@ -134,24 +151,44 @@ export async function saveMaterial(db: Db, workspaceId: string, projectId: strin
     const known = (await db.query(`SELECT 1 FROM project_boq_lines WHERE workspace_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])`, [workspaceId, projectId, lineIds])).rowCount;
     if (known !== lineIds.length) throw new BadRequestException("Choose items from the project's scope.");
   }
-  const fields = [name, text("code", "Code", 80), text("specification", "Finish or specification", 1000), text("supplier", "Supplier", 200), quantity, text("unit", "Unit", 40), text("note", "Note", 2000), lineIds];
+  const unit = text("unit", "Unit", 40);
+  const fields = [name, text("code", "Code", 80), text("specification", "Finish or specification", 1000), text("supplier", "Supplier", 200), quantity, unit, text("note", "Note", 2000), lineIds];
   if (typeof input.id === "string") {
-    const updated = await db.query(
-      `UPDATE project_material_items SET name = $4, code = $5, specification = $6, supplier = $7, quantity = $8, unit = $9, note = $10, boq_line_ids = $11,
-              version = version + 1, updated_at = now() WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, input.id, ...fields]);
-    if (!updated.rowCount) throw new NotFoundException("Material not found.");
+    const current = (await db.query<{ unit: string; clientChoice: boolean }>(`SELECT unit, client_choice AS "clientChoice" FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+      [workspaceId, projectId, input.id])).rows[0];
+    if (!current) throw new NotFoundException("Material not found.");
+    // Once it's on an order, its unit stays: quantities in two units can't be added up.
+    if (unit.toLocaleLowerCase() !== current.unit.toLocaleLowerCase() && await onOrders(db, workspaceId, input.id))
+      throw new ConflictException(`${name} is already ordered in ${current.unit || "its unit"}; keep that unit.`);
+    const clientChoice = typeof input.clientChoice === "boolean" ? input.clientChoice : current.clientChoice;
+    await db.query(
+      `UPDATE project_material_items SET name = $4, code = $5, specification = $6, supplier = $7, quantity = $8, unit = $9, note = $10, boq_line_ids = $11, client_choice = $12,
+              version = version + 1, updated_at = now() WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, input.id, ...fields, clientChoice]);
     return input.id;
   }
   const id = randomUUID();
   const position = (await db.query<{ next: number }>(`SELECT coalesce(max(position) + 1, 0)::int AS next FROM project_material_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
   await db.query(
-    `INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, specification, supplier, quantity, unit, note, boq_line_ids)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [id, workspaceId, projectId, position, ...fields]);
+    `INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, specification, supplier, quantity, unit, note, boq_line_ids, client_choice)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, [id, workspaceId, projectId, position, ...fields, input.clientChoice !== false]);
   return id;
+}
+
+/** The orders and price requests a material is on (not cancelled), by number. */
+async function onOrders(db: Db, workspaceId: string, itemId: string) {
+  const rows = (await db.query<{ number: string }>(
+    `SELECT purchase.number FROM purchase_order_lines line JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
+      WHERE line.workspace_id = $1 AND line.material_item_id = $2 AND purchase.status <> 'cancelled'
+     UNION ALL
+     SELECT 'price request ' || request.number FROM price_request_lines line JOIN price_requests request ON request.workspace_id = line.workspace_id AND request.id = line.request_id
+      WHERE line.workspace_id = $1 AND line.material_item_id = $2 AND request.status <> 'cancelled'`, [workspaceId, itemId])).rows;
+  return rows.map((row) => row.number)[0] ?? null;
 }
 
 export async function deleteMaterial(db: Db, workspaceId: string, projectId: string, itemId: string) {
   await assertEditable(db, workspaceId, projectId);
+  const used = await onOrders(db, workspaceId, itemId);
+  if (used) throw new ConflictException(`This material is on ${used}. Cancel that first, or change the quantity instead.`);
   const removed = await db.query(`DELETE FROM project_material_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3`, [workspaceId, projectId, itemId]);
   if (!removed.rowCount) throw new NotFoundException("Material not found.");
 }
@@ -163,6 +200,7 @@ export async function sendMaterials(db: Db, workspaceId: string, projectId: stri
   const items = await readItems(db, workspaceId, projectId);
   if (!items.length) throw new BadRequestException("Add the materials first.");
   const snapshot = signable(items);
+  if (!snapshot.length) throw new BadRequestException("Nothing on the list is the client's choice, so there's nothing to sign off.");
   const hash = canonicalHash(snapshot);
   if (latest?.status === "signed_off" && latest.contentHash === hash) throw new ConflictException(`Nothing changed since R${latest.number} was signed off.`);
   const number = (latest?.number ?? 0) + 1;

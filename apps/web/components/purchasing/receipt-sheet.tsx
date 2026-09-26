@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Checkbox, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { addExact, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { ReceiptState, RejectKind, SupplierReturnState } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
@@ -66,7 +67,7 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
       accept(await api.inspect(receiptId, { lines: chosen.map((line) => {
         const check = checks[line.id];
         const rejected = check.rejected || "0";
-        return { id: line.id, accepted: quantityText(Math.max(0, Number(line.pending) - Number(rejected)).toFixed(4)), rejected, rejectKind: check.kind, rejectReason: check.reason.trim() };
+        return { id: line.id, accepted: subtractExact(line.pending, rejected), rejected, rejectKind: check.kind, rejectReason: check.reason.trim() };
       }) }));
       onChanged();
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); }
@@ -103,18 +104,18 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
           {state.lines.map((line) => {
             const check = checks[line.id];
             const open = inspecting && check && Number(line.pending) > 0 && !receipt.reversedAt;
-            const missing = line.noted !== null && Number(line.noted) > Number(line.received) ? String(Number(line.noted) - Number(line.received)) : null;
-            const back = Number(line.returnedRejected) + Number(line.returnedAccepted);
+            const missing = line.noted !== null && Number(line.noted) > Number(line.received) ? subtractExact(line.noted, line.received) : null;
+            const back = addExact(line.returnedRejected, line.returnedAccepted);
             const facts = [line.projectReference, line.specification].filter(Boolean).join(" · ");
             return <div role="row" key={line.id} className={styles.receiveLine}>
               <span role="cell" className={styles.nameCell}><span>{line.description}</span>{facts ? <small>{facts}</small> : null}
                 {open ? <Checkbox isSelected={check.include} onChange={(include) => setCheck(line.id, { include })}>{t("Inspect now")}</Checkbox> : null}
                 {!open && Number(line.rejected) > 0 ? <small>{[line.rejectKind ? labels.rejectKind[line.rejectKind] : "", line.rejectReason].filter(Boolean).join(": ")}</small> : null}
                 {missing ? <small className={styles.lateText}>{t("{quantity} missing against the note", { quantity: amount(missing, line.unit) })}</small> : null}
-                {back ? <small>{t("{quantity} going back to the supplier", { quantity: amount(String(back), line.unit) })}</small> : null}</span>
+                {back !== "0" ? <small>{t("{quantity} going back to the supplier", { quantity: amount(back, line.unit) })}</small> : null}</span>
               <span role="cell" className={styles.money}>{amount(line.received, line.unit)}</span>
               {open && check.include ? <>
-                <span role="cell" className={styles.money}>{amount((Number(line.accepted) + Math.max(0, Number(line.pending) - Number(check.rejected || 0))).toFixed(4), line.unit)}</span>
+                <span role="cell" className={styles.money}>{amount(addExact(line.accepted, subtractExact(line.pending, check.rejected || "0")), line.unit)}</span>
                 <span role="cell"><TextInput aria-label={t("Rejected of {item}", { item: line.description })} label={null} inputMode="decimal" value={check.rejected}
                   onChange={(value) => setCheck(line.id, { rejected: numeric(value) })} /></span>
                 {Number(check.rejected) > 0 ? <RejectFields description={line.description} kind={check.kind} reason={check.reason} labels={labels.rejectKind} onChange={(patch) => setCheck(line.id, patch)} /> : null}

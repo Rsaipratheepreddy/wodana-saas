@@ -103,6 +103,8 @@ export type MaterialDecision = { itemId: string; decision: "approved" | "rejecte
 export type MaterialItem = {
   id: string; position: number; catalogItemId: string | null; name: string; code: string; specification: string; supplier: string;
   quantity: string | null; unit: string; note: string; boqLineIds: string[]; version: number;
+  /** False for materials the client doesn't choose; they don't wait for sign-off. */
+  clientChoice: boolean;
   usedIn: Array<{ id: string; title: string; areaName: string | null }>; decision: MaterialDecision | null;
 };
 export type MaterialRevision = {

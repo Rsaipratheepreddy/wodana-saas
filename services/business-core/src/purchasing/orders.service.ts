@@ -8,10 +8,10 @@ import { renderBrandedEmail } from "../email/branded-email";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
 import { event as boqEvent } from "../project-core/project-scope";
-import { materialsSignedOff } from "../project-core/project-materials";
+import { clientChoicesSignedOff } from "../project-core/project-materials";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import {
-  DELIVER_TO, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, nextOrderNumber, orderEvent, orderTotals, priceLine, readNeeds, readOrder, readOrderEvents, readOrderLines,
+  DELIVER_TO, currencyDecimals, defaultTaxRate, ensurePurchasingSettings, firstTime, nextOrderNumber, orderEvent, orderTotals, priceLine, readNeeds, readOrder, readOrderEvents, readOrderLines,
   readOrders, type OrderDetail, type OrderLine,
 } from "./orders";
 import { readReceipts } from "./receiving";
@@ -87,7 +87,7 @@ export class OrdersService {
   create(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "purchasing.manage", async (client, user) => {
       const id = uuid(body.id, "Order");
-      if ((await client.query(`SELECT 1 FROM purchase_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return this.detail(client, workspaceId, id, user.userId);
+      if (!(await firstTime(client, workspaceId, id, id, "create_order", user.userId))) return this.detail(client, workspaceId, id, user.userId);
       const supplier = await this.supplier(client, workspaceId, body.vendorId);
       const legalEntityId = await this.company(client, workspaceId, supplier, body.legalEntityId);
       const currency = supplier.currency ?? (await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, legalEntityId])).rows[0].currency;
@@ -98,6 +98,10 @@ export class OrdersService {
 
   command(actor: RequestActor, workspaceId: string, orderId: string, body: Record<string, unknown>) {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "purchasing.approve"], async (client, user) => {
+      // A command sent again with the same id returns the order as it is now.
+      const commandId = body.commandId === undefined || body.commandId === null ? null : uuid(body.commandId, "Command");
+      if (commandId && !(await firstTime(client, workspaceId, commandId, orderId, String(body.action ?? ""), user.userId)))
+        return { ...(await this.detail(client, workspaceId, orderId, user.userId)), email: null };
       const order = await readOrder(client, workspaceId, orderId, true);
       if (!order) throw new NotFoundException("Order not found.");
       if (body.version !== order.version) throw new ConflictException("Someone else changed this order. Reload to see their changes.");
@@ -127,6 +131,12 @@ export class OrdersService {
         await need("purchasing.manage", "You can't raise purchase orders.");
         status("draft");
         await this.checkReady(client, workspaceId, order);
+        // Ordering more than the project needs says why, once.
+        const over = await this.overOrdered(client, workspaceId, orderId);
+        const overReason = text(body.overReason, 500, "Reason") || order.overReason || "";
+        if (over.length && !overReason)
+          throw new ConflictException(`${over.map((line) => `${line.description}: ${line.over} ${line.unit}`.trim()).join(", ")} more than needed. Say why to order more.`);
+        if (over.length && overReason !== order.overReason) await set(`over_reason = $3`, [overReason]);
         const settings = await ensurePurchasingSettings(client, workspaceId);
         const home = (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency;
         const needsApproval = settings.approvalThreshold !== null && (order.currency !== home || Dec.of(order.total).cmp(settings.approvalThreshold) >= 0);
@@ -270,6 +280,7 @@ export class OrdersService {
       supplier: supplier ? { id: supplier.id, name: supplier.name, email: supplier.email, phone: supplier.phone, contactName: supplier.contactName, approval: supplier.approval, deal: supplier.deal, dealPercent: supplier.dealPercent } : null,
       ...rights,
       canApproveThis: rights.canApprove && order.status === "pending_approval" && order.createdBy !== userId && order.submittedBy !== userId,
+      overOrdered: ["draft", "pending_approval"].includes(order.status) ? await this.overOrdered(client, workspaceId, orderId) : [],
     };
   }
 
@@ -366,22 +377,71 @@ export class OrdersService {
       if (Dec.of(taxRate).cmp(100) > 0) throw new BadRequestException(`Line ${index + 1}: tax is at most 100%.`);
       out.push({ id, source, materialItemId: source === "material" ? input.materialItemId as string : null, boqLineId: source === "line" ? input.boqLineId as string : null, projectId,
         description, specification: text(input.specification, 1000, "Specification") || (input.specification === undefined ? origin?.detail ?? "" : ""),
-        quantity, unit: text(input.unit, 40, "Unit") || origin?.unit || "", unitPrice: unitPrice ?? "0", discountPercent, taxRate });
+        quantity, unit: this.unit(text(input.unit, 40, "Unit"), origin, index), unitPrice: unitPrice ?? "0", discountPercent, taxRate });
     }
     return out;
   }
 
+  /**
+   * Writes an order's lines in place. A line with deliveries or returns against it stays (it can't be
+   * removed, pointed at something else or change unit) and can't be ordered below what has arrived.
+   */
+  /** A material or scope line is ordered in its own unit, so what's needed and what's ordered add up. */
+  private unit(given: string, origin: { title: string; unit: string } | null, index: number) {
+    if (!origin || !origin.unit.trim()) return given;
+    if (given && given.toLocaleLowerCase() !== origin.unit.trim().toLocaleLowerCase()) throw new BadRequestException(`Line ${index + 1}: order ${origin.title} in ${origin.unit}.`);
+    return origin.unit;
+  }
+
+  /** Lines on this order that take a project past what it needs, by how much. */
+  private async overOrdered(client: Db, workspaceId: string, orderId: string) {
+    const lines = (await readOrderLines(client, workspaceId, orderId)).filter((line) => line.source !== "free" && line.projectId);
+    const needs: Awaited<ReturnType<typeof readNeeds>> = [];
+    for (const projectId of new Set(lines.map((line) => line.projectId!))) needs.push(...await readNeeds(client, workspaceId, false, projectId));
+    return lines.flatMap((line) => {
+      const need = needs.find((item) => item.source === line.source && item.sourceId === (line.materialItemId ?? line.boqLineId));
+      if (!need || need.remaining === null || Dec.of(need.remaining).cmp(0) >= 0) return [];
+      return [{ lineId: line.id, description: line.description, unit: line.unit, over: Dec.of(need.remaining).neg().toString() }];
+    });
+  }
+
   private async writeLines(client: Db, workspaceId: string, orderId: string, lines: LineInput[], currency: string) {
     const decimals = currencyDecimals(currency);
-    await client.query(`DELETE FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2`, [workspaceId, orderId]);
+    const existing = new Map((await readOrderLines(client, workspaceId, orderId)).map((line) => [line.id, line]));
+    const used = new Set((await client.query<{ id: string }>(
+      `SELECT line.id FROM purchase_order_lines line WHERE line.workspace_id = $1 AND line.order_id = $2
+          AND (EXISTS (SELECT 1 FROM goods_receipt_lines got WHERE got.workspace_id = line.workspace_id AND got.order_line_id = line.id)
+            OR EXISTS (SELECT 1 FROM supplier_return_lines back WHERE back.workspace_id = line.workspace_id AND back.order_line_id = line.id))`, [workspaceId, orderId])).rows.map((row) => row.id));
+    const keep = new Set(lines.map((line) => line.id));
+    for (const [id, line] of existing) {
+      if (keep.has(id)) continue;
+      if (used.has(id)) throw new ConflictException(`${line.description} has deliveries against it and stays on the order; change its quantity instead.`);
+      await client.query(`DELETE FROM purchase_order_lines WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+    }
     const priced = lines.map((line) => ({ line, amounts: priceLine(line, decimals) }));
-    for (const [position, { line, amounts }] of priced.entries())
-      await client.query(
-        `INSERT INTO purchase_order_lines (id, workspace_id, order_id, position, project_id, source, material_item_id, boq_line_id, description, specification, quantity, unit, unit_price,
-                                           discount_percent, tax_rate, net, tax, total)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-        [line.id, workspaceId, orderId, position, line.projectId, line.source, line.materialItemId, line.boqLineId, line.description, line.specification, line.quantity, line.unit,
-          line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total]);
+    for (const [position, { line, amounts }] of priced.entries()) {
+      const before = existing.get(line.id);
+      if (before && used.has(line.id)) {
+        if (before.source !== line.source || before.materialItemId !== line.materialItemId || before.boqLineId !== line.boqLineId || before.unit.toLocaleLowerCase() !== line.unit.toLocaleLowerCase())
+          throw new ConflictException(`${before.description} has deliveries against it; it can't be changed to something else or another unit.`);
+        const arrived = Dec.of(before.accepted).add(before.pending);
+        if (Dec.of(line.quantity).cmp(arrived) < 0) throw new ConflictException(`${before.description}: ${arrived.toString()} ${before.unit} has already arrived; order at least that.`);
+      }
+      const values = [line.id, workspaceId, orderId, position, line.projectId, line.source, line.materialItemId, line.boqLineId, line.description, line.specification, line.quantity, line.unit,
+        line.unitPrice, line.discountPercent, line.taxRate, amounts.net, amounts.tax, amounts.total];
+      // A new line never takes an id already used elsewhere.
+      if (!before && (await client.query(`SELECT 1 FROM purchase_order_lines WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id])).rowCount) values[0] = randomUUID();
+      if (before)
+        await client.query(
+          `UPDATE purchase_order_lines SET position = $4, project_id = $5, source = $6, material_item_id = $7, boq_line_id = $8, description = $9, specification = $10, quantity = $11,
+                  unit = $12, unit_price = $13, discount_percent = $14, tax_rate = $15, net = $16, tax = $17, total = $18
+            WHERE id = $1 AND workspace_id = $2 AND order_id = $3`, values);
+      else
+        await client.query(
+          `INSERT INTO purchase_order_lines (id, workspace_id, order_id, position, project_id, source, material_item_id, boq_line_id, description, specification, quantity, unit, unit_price,
+                                             discount_percent, tax_rate, net, tax, total)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`, values);
+    }
     const totals = orderTotals(priced.map((item) => item.amounts), decimals);
     await client.query(`UPDATE purchase_orders SET subtotal = $3, discount_total = $4, tax_total = $5, total = $6 WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, orderId, totals.subtotal, totals.discountTotal, totals.taxTotal, totals.total]);
@@ -398,9 +458,14 @@ export class OrdersService {
     if (!supplier || supplier.status === "archived") throw new ConflictException("The supplier is archived.");
     if (settings.requireApprovedSupplier && supplier.approval !== "approved") throw new ConflictException(`${supplier.name} isn't approved as a supplier yet.`);
     if (settings.requireMaterialSignoff) {
-      const projects = new Map(lines.filter((line: OrderLine) => line.source !== "free" && line.projectId).map((line) => [line.projectId!, line.projectReference]));
-      for (const [projectId, reference] of projects)
-        if (!(await materialsSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
+      // Only materials the client chooses wait for their sign-off.
+      const chosen = (await client.query<{ projectId: string; reference: string }>(
+        `SELECT DISTINCT line.project_id AS "projectId", project.reference FROM purchase_order_lines line
+           JOIN project_material_items item ON item.workspace_id = line.workspace_id AND item.id = line.material_item_id
+           JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
+          WHERE line.workspace_id = $1 AND line.order_id = $2 AND item.client_choice`, [workspaceId, order.id])).rows;
+      for (const { projectId, reference } of chosen)
+        if (!(await clientChoicesSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
     }
   }
 

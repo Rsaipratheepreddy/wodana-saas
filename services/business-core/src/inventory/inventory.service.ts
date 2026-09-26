@@ -45,8 +45,9 @@ export class InventoryService {
   command(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withAnyPermission(actor, workspaceId, ["stock.manage", "stock.adjust"], async (client, user) => {
       const batchId = uuid(body.id, "Change");
-      if ((await client.query(`SELECT 1 FROM stock_movements WHERE workspace_id = $1 AND batch_id = $2 LIMIT 1`, [workspaceId, batchId])).rowCount) return this.state(client, workspaceId, user.userId);
       const action = String(body.action ?? "");
+      // Each change runs once: a retry (or the same change sent twice at once) returns stock as it is.
+      if (!(await this.firstTime(client, workspaceId, batchId, action, user.userId))) return this.state(client, workspaceId, user.userId);
       const need = async (code: string, message: string) => { if (!(await this.access.hasPermission(client, workspaceId, user.userId, code))) throw new ForbiddenException(message); };
       const movedOn = body.movedOn ? date(body.movedOn, "Date") : await this.today(client, workspaceId);
       const reason = text(body.reason, 500, "Reason");
@@ -94,6 +95,13 @@ export class InventoryService {
             audit = { quantity, owner, forProjectId, reason };
           } else if (action === "return") {
             const fromProject = await this.runningProject(client, workspaceId, body.forProjectId, false);
+            if (!reason) throw new BadRequestException("Say why it's coming back.");
+            await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('stock-returns:' || $1::text || ':' || $2::text, 0))`, [itemId, fromProject]);
+            // Only what was issued to the project (and not already taken back) can come back from it.
+            const issued = Dec.of((await client.query<{ net: string }>(
+              `SELECT coalesce(sum(-quantity) FILTER (WHERE kind = 'issue'), 0) - coalesce(sum(quantity) FILTER (WHERE kind = 'return'), 0) AS net
+                 FROM stock_movements WHERE workspace_id = $1 AND item_id = $2 AND for_project_id = $3 AND kind IN ('issue', 'return')`, [workspaceId, itemId, fromProject])).rows[0].net);
+            if (Dec.of(quantity).cmp(issued) > 0) throw new ConflictException(issued.cmp(0) > 0 ? `Only ${issued.toString()} was issued to that project.` : "None of this was issued to that project.");
             await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "return", quantity, forProjectId: fromProject, reason });
             audit = { quantity, owner, fromProject, reason };
           } else if (action === "allocate") {
@@ -131,7 +139,7 @@ export class InventoryService {
   send(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "stock.manage", async (client, user) => {
       const id = uuid(body.id, "Move");
-      if ((await client.query(`SELECT 1 FROM stock_transfers WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return this.transferDetail(client, workspaceId, id, user.userId);
+      if (!(await this.firstTime(client, workspaceId, id, "send", user.userId))) return this.transferDetail(client, workspaceId, id, user.userId);
       const from = await this.location(client, workspaceId, body.fromLocationId);
       const to = await this.location(client, workspaceId, body.toLocationId);
       if (from.id === to.id) throw new BadRequestException("Choose another place to move it to.");
@@ -255,6 +263,11 @@ export class InventoryService {
   }
 
   // ---------- helpers ----------
+  private async firstTime(client: Db, workspaceId: string, id: string, action: string, actorId: string) {
+    return Boolean((await client.query(`INSERT INTO stock_commands (workspace_id, id, action, actor_id) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, id) DO NOTHING`,
+      [workspaceId, id, action.slice(0, 24), actorId])).rowCount);
+  }
+
   private async state(client: Db, workspaceId: string, userId: string) {
     return {
       rows: await readStock(client, workspaceId),

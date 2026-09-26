@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
 import { Button, ControlledModalDialog, DateField, InlineNotice, SelectField, Skeleton, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Place, ReceiptState, ReceivingForm, RejectKind } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
@@ -81,7 +82,7 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
             return <div role="row" key={item.id} className={styles.receiveLine}>
               <span role="cell" className={styles.nameCell}><span>{item.description}</span><small>{[item.projectReference, item.specification].filter(Boolean).join(" · ")}</small>
                 {Number(value.noted) > Number(value.received || 0) && value.received !== "" ? <small className={styles.lateText}>
-                  {t("{quantity} missing against the note", { quantity: `${quantityText(String(Number(value.noted) - Number(value.received)))} ${item.unit}`.trim() })}</small> : null}</span>
+                  {t("{quantity} missing against the note", { quantity: `${subtractExact(value.noted, value.received)} ${item.unit}`.trim() })}</small> : null}</span>
               <span role="cell" className={styles.money}>{`${quantityText(item.outstanding)} ${item.unit}`.trim()}</span>
               <span role="cell"><TextInput aria-label={t("On the note of {item}", { item: item.description })} label={null} inputMode="decimal" value={value.noted}
                 onChange={(noted) => setLine(item.id, { noted: numeric(noted) })} /></span>
