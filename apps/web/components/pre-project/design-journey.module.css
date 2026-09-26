@@ -9,10 +9,11 @@
 .empty { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 
 .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.step { position: relative; display: grid; grid-template-columns: var(--wd-space-6) minmax(0, 1fr); column-gap: var(--wd-space-3); padding-block: var(--wd-space-2); }
+.step { --marker-center: calc(var(--wd-space-2) + var(--wd-space-1) + var(--wd-space-5) / 2); position: relative; display: grid; grid-template-columns: var(--wd-space-6) minmax(0, 1fr); column-gap: var(--wd-space-3); padding-block: var(--wd-space-2); }
 .step::before { content: ""; position: absolute; inset-inline-start: calc(var(--wd-space-6) / 2 - 1px); inset-block: 0; inline-size: 2px; background: var(--wd-color-border); }
-.step:first-child::before { inset-block-start: 50%; }
-.step:last-child::before { inset-block-end: 50%; }
+.step:first-child::before { inset-block-start: var(--marker-center); }
+.step:last-child::before { inset-block-end: auto; block-size: var(--marker-center); }
+.step:only-child::before { display: none; }
 .step[data-status="done"]::before { background: var(--wd-color-text); }
 .marker { position: relative; z-index: 1; align-self: start; justify-self: center; margin-block-start: var(--wd-space-1); display: grid; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-round); border: 2px solid var(--wd-color-border-strong); background: var(--wd-color-surface); color: var(--wd-color-text-inverse); }
 .step[data-status="done"] .marker { background: var(--wd-color-text); border-color: var(--wd-color-text); }
