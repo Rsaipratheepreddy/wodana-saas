@@ -53,4 +53,16 @@ describe("moodboard", () => {
     expect(saved).toMatchObject({ kind: "inspiration", title: "Keep the arch", requirementIds: [] });
     expect(await screen.findByRole("button", { name: "Keep the arch" })).toBeInTheDocument();
   });
+
+  it("marks a pin Love or Avoid right on the card and saves the new feeling", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => { if (url.includes("moodboard/layout")) bodies.push(JSON.parse(String(init?.body))); return { ok: true, json: async () => ({ saved: 1 }) }; }));
+    renderBoard();
+    const avoidGroups = screen.getAllByRole("group", { name: "Feeling" });
+    const glossy = avoidGroups.find((group) => group.getAttribute("data-value") === "avoid")!;
+    fireEvent.click(glossy.querySelector('button[aria-label="Love"]')!);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ pins: [{ entryId: "p2", sentiment: "love" }] });
+    expect(screen.getByRole("button", { name: "Glossy white" })).not.toHaveTextContent("Avoid");
+  });
 });

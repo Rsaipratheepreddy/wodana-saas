@@ -53,6 +53,11 @@ export function MoodboardPage({ initialData }: { initialData: CaseContent }) {
     catch (failure) { setError(failure instanceof Error ? failure.message : t("The board could not be saved.")); }
   };
   const place = (id: string, patch: Partial<MoodboardPlacement>) => setPlacements((current) => { const next = new Map(current); next.set(id, { ...current.get(id)!, ...patch }); return next; });
+  const markFeeling = (id: string, sentiment: "love" | "avoid") => {
+    const next = { ...placements.get(id)!, sentiment };
+    place(id, next);
+    void saveLayout([id], new Map([[id, next]]));
+  };
   const topZ = () => Math.max(0, ...[...placements.values()].map((p) => p.z)) + 1;
 
   const saveEntry = async (entry: ScopeEntry) => {
@@ -145,7 +150,7 @@ export function MoodboardPage({ initialData }: { initialData: CaseContent }) {
     </div>
     {error ? <InlineNotice message={error} tone="error" /> : null}
     {!entries.length ? <div className={styles.empty}><EmptyState illustration="upload" title={t("Start the moodboard")} description={t("Add photos, Instagram or Pinterest links, videos and notes the client loves, or wants to avoid.")} /></div>
-      : mode === "grid" ? <div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} placement={placements.get(entry.id)} requirementCount={entry.requirementIds?.length ?? 0} assetUrl={assetUrl} selected={selected === entry.id} onSelect={() => setSelected(entry.id)} />)}</div>
+      : mode === "grid" ? <div className={styles.grid}>{visible.map((entry) => <div className={styles.gridItem} key={entry.id}><PinCard entry={entry} placement={placements.get(entry.id)} requirementCount={entry.requirementIds?.length ?? 0} assetUrl={assetUrl} selected={selected === entry.id} onSelect={() => setSelected(entry.id)} /><FeelingToggle value={placements.get(entry.id)?.sentiment ?? "love"} canEdit={canEdit} onChange={(value) => markFeeling(entry.id, value)} /></div>)}</div>
       : <div className={styles.canvas} ref={canvas} onPointerDown={(event) => pointerDown(event, null, "pan")} onPointerMove={pointerMove} onPointerUp={pointerUp} onWheel={wheel} data-dragging={dragging || undefined}>
         <div className={styles.world} style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
           {visible.map((entry) => { const p = placements.get(entry.id)!; return <div className={styles.pin} key={entry.id} style={{ transform: `translate(${p.x}px, ${p.y}px)`, inlineSize: p.width, zIndex: p.z }}
@@ -153,6 +158,7 @@ export function MoodboardPage({ initialData }: { initialData: CaseContent }) {
             onKeyDown={(event) => { if (nudge(entry.id, event.key, event.shiftKey)) { event.preventDefault(); } if (event.key === "Escape") setSelected(null); }}
             onKeyUp={(event) => { if (event.key.startsWith("Arrow")) void saveLayout([entry.id]); }}>
             <PinCard entry={entry} placement={p} requirementCount={entry.requirementIds?.length ?? 0} assetUrl={assetUrl} selected={selected === entry.id} onSelect={() => setSelected(entry.id)} />
+            <FeelingToggle value={p.sentiment} canEdit={canEdit} onChange={(value) => markFeeling(entry.id, value)} />
             {canEdit ? <span aria-hidden="true" className={styles.resize} onPointerDown={(event) => pointerDown(event, entry.id, "resize")} /> : null}
           </div>; })}
         </div>
@@ -165,11 +171,20 @@ export function MoodboardPage({ initialData }: { initialData: CaseContent }) {
       </div>}
     {selectedEntry ? <PinInspector key={selectedEntry.id} entry={selectedEntry} placement={placements.get(selectedEntry.id)!} rooms={initialData.rooms} requirements={requirements} canEdit={canEdit} assetUrl={assetUrl}
       onClose={() => setSelected(null)}
-      onFeeling={(sentiment) => { place(selectedEntry.id, { sentiment }); setTimeout(() => void saveLayout([selectedEntry.id])); }}
+      onFeeling={(sentiment) => markFeeling(selectedEntry.id, sentiment)}
       onSave={async (next) => { await saveEntry(next); }}
       onRemove={async () => { await caseRequest(workspaceId, caseId, `entries/${selectedEntry.id}`, "PATCH", { version: selectedEntry.version, archived: true }); setEntries((current) => current.filter((item) => item.id !== selectedEntry.id)); setSelected(null); }} /> : null}
     {adding ? <AddPinDialog kind={adding} onClose={() => setAdding(null)} onAdd={async (draft) => { await create(draft); setAdding(null); }} /> : null}
   </section>;
+}
+
+/** Love or avoid, right on the card: set in one click, always visible once chosen. */
+function FeelingToggle({ value, canEdit, onChange }: { value: "love" | "avoid"; canEdit: boolean; onChange: (value: "love" | "avoid") => void }) {
+  const t = useT();
+  return <span className={styles.feelingToggle} data-value={value} role="group" aria-label={t("Feeling")} onPointerDown={(event) => event.stopPropagation()}>
+    <button type="button" aria-label={t("Love")} aria-pressed={value === "love"} disabled={!canEdit} onClick={() => onChange("love")}><Heart aria-hidden="true" size={14} /></button>
+    <button type="button" aria-label={t("Avoid")} aria-pressed={value === "avoid"} disabled={!canEdit} onClick={() => onChange("avoid")}><ThumbsDown aria-hidden="true" size={14} /></button>
+  </span>;
 }
 
 function PlatformIcon({ id }: { id: string }) {
