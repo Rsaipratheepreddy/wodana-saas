@@ -582,12 +582,17 @@
 .wd-approval-row > div:nth-child(2) { display: grid; }
 .wd-approval-row small { color: var(--wd-muted); font-size: var(--wd-text-xs); }
 .wd-approval-row > div:last-child { display: flex; gap: var(--wd-space-1); }
-.wd-kanban { display: grid; grid-auto-columns: minmax(17rem, 1fr); grid-auto-flow: column; gap: var(--wd-space-4); overflow-x: auto; }
+.wd-kanban { display: grid; grid-auto-columns: minmax(15rem, 1fr); grid-auto-flow: column; gap: var(--wd-space-4); overflow-x: auto; }
 .wd-kanban > section { min-inline-size: 0; background: var(--wd-surface-soft); }
 .wd-kanban section > header { min-block-size: 2.5rem; display: flex; align-items: center; justify-content: space-between; padding-inline: var(--wd-space-3); border-block-end: 1px solid var(--wd-line); }
 .wd-kanban section > div { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-2); }
 .wd-kanban article { min-block-size: 3.5rem; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--wd-space-2); border: 1px solid var(--wd-line); border-radius: var(--wd-radius-sm); padding: var(--wd-space-3); background: var(--wd-surface); cursor: grab; }
 .wd-kanban article > svg { color: var(--wd-faint); }
+.wd-kanban section > div { min-block-size: var(--wd-space-16); align-content: start; }
+.wd-kanban section[data-drop-target] { box-shadow: inset 0 0 0 2px var(--wd-color-focus); }
+.wd-kanban article[data-actionable] { grid-template-columns: minmax(0, 1fr); cursor: pointer; }
+.wd-kanban article[data-actionable]:hover { background: var(--wd-color-surface-hover); }
+.wd-kanban article[data-actionable]:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .wd-automation { display: grid; gap: var(--wd-space-3); }
 .wd-automation > header { display: flex; align-items: center; justify-content: space-between; }
 .wd-automation > header > span { display: flex; align-items: center; gap: var(--wd-space-2); }

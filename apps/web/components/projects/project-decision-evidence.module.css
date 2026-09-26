@@ -1,4 +1,0 @@
-.evidence { display: grid; gap: var(--wd-space-2); min-width: 0; }
-.upload { display: grid; gap: var(--wd-space-1-5); }
-.evidence input[type="file"] { width: 100%; min-width: 0; }
-.files { display: grid; gap: var(--wd-space-1-5); overflow-wrap: anywhere; }

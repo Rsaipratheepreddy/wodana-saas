@@ -16,7 +16,30 @@ export function TaskChecklist({ items, onChange }: { items: TaskItem[]; onChange
 export function ApprovalRow({ approver, description, label, onApprove, onReject, state = "pending" }: { approver?: string; description?: string; label: string; onApprove?: () => void; onReject?: () => void; state?: "pending" | "approved" | "rejected" }) { return <div className="wd-approval-row"><span data-state={state}>{state === "approved" ? <Check size={14} /> : state === "rejected" ? <AlertTriangle size={14} /> : <Circle size={14} />}</span><div><strong>{label}</strong>{description ? <small>{description}</small> : null}</div>{approver ? <Avatar name={approver} size="sm" /> : null}<Badge tone={state === "approved" ? "success" : state === "rejected" ? "danger" : "warning"}>{state}</Badge>{state === "pending" ? <div><Button onPress={onReject} size="compact">Reject</Button><Button onPress={onApprove} size="compact" variant="primary">Approve</Button></div> : null}</div>; }
 
 export type KanbanColumn<T> = { id: string; label: string; items: T[]; limit?: number };
-export function Kanban<T>({ columns, getId, renderItem }: { columns: KanbanColumn<T>[]; getId: (item: T) => string; renderItem: (item: T) => ReactNode }) { return <div className="wd-kanban">{columns.map((column) => <section key={column.id}><header><strong>{column.label}</strong><Badge>{column.items.length}{column.limit ? ` / ${column.limit}` : ""}</Badge></header><div>{column.items.map((item) => <article draggable key={getId(item)}><GripVertical aria-hidden="true" size={14} />{renderItem(item)}</article>)}</div></section>)}</div>; }
+/**
+ * Columns of cards. Cards open with click, Enter or Space when `onItemAction` is set; with `onMove`
+ * they can be dragged to another column (the record's own panel is the keyboard way to move them).
+ */
+export function Kanban<T>({ columns, getId, getLabel, onItemAction, onMove, renderItem }: {
+  columns: KanbanColumn<T>[]; getId: (item: T) => string; getLabel?: (item: T) => string; onItemAction?: (item: T) => void;
+  onMove?: (itemId: string, columnId: string) => void; renderItem: (item: T) => ReactNode;
+}) {
+  const [target, setTarget] = useState<string | null>(null);
+  const draggable = Boolean(onMove) || !onItemAction;
+  return <div className="wd-kanban">{columns.map((column) => <section aria-label={column.label} data-drop-target={target === column.id || undefined} key={column.id}
+    onDragLeave={onMove ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTarget(null); } : undefined}
+    onDragOver={onMove ? (event) => { if (event.dataTransfer.types.includes(CARD)) { event.preventDefault(); setTarget(column.id); } } : undefined}
+    onDrop={onMove ? (event) => { const id = event.dataTransfer.getData(CARD); setTarget(null); if (id) { event.preventDefault(); onMove(id, column.id); } } : undefined}>
+    <header><strong>{column.label}</strong><Badge>{column.items.length}{column.limit ? ` / ${column.limit}` : ""}</Badge></header>
+    <div>{column.items.map((item) => { const id = getId(item); return <article aria-label={onItemAction ? getLabel?.(item) : undefined} data-actionable={onItemAction ? true : undefined} draggable={draggable} key={id}
+      onClick={onItemAction ? () => onItemAction(item) : undefined}
+      onDragStart={onMove ? (event) => { event.dataTransfer.setData(CARD, id); event.dataTransfer.effectAllowed = "move"; } : undefined}
+      onKeyDown={onItemAction ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onItemAction(item); } } : undefined}
+      role={onItemAction ? "button" : undefined} tabIndex={onItemAction ? 0 : undefined}>
+      {draggable && !onItemAction ? <GripVertical aria-hidden="true" size={14} /> : null}{renderItem(item)}</article>; })}</div>
+  </section>)}</div>;
+}
+const CARD = "text/x-wd-card";
 
 export type AutomationStep = { id: string; kind: "trigger" | "condition" | "action"; label: string; description?: string };
 export function AutomationBuilder({ onChange, steps }: { onChange?: (steps: AutomationStep[]) => void; steps: AutomationStep[] }) { const [adding, setAdding] = useState(false); return <div className="wd-automation"><header><span><Bot size={16} /><strong>Automation</strong></span><Button onPress={() => setAdding(true)} size="compact"><Play size={13} />Test run</Button></header><ol>{steps.map((step, index) => <li key={step.id}><span data-kind={step.kind}>{index + 1}</span><div><strong>{step.label}</strong><small>{step.description ?? step.kind}</small></div>{index < steps.length - 1 ? <i /> : null}</li>)}</ol>{adding ? <div className="wd-automation-add"><SelectField aria-label="Step type" items={[{ id: "condition", label: "Condition" }, { id: "action", label: "Action" }]} label="Step type" /><TextInput label="Name" /><Button onPress={() => { onChange?.([...steps, { id: crypto.randomUUID(), kind: "action", label: "New action" }]); setAdding(false); }} variant="primary">Add step</Button></div> : <Button onPress={() => setAdding(true)}><Plus size={14} />Add step</Button>}</div>; }

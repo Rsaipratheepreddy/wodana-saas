@@ -1,0 +1,77 @@
+/* Project work: the plan (list and board), the item panel and open work across projects. */
+.muted { color: var(--wd-color-text-tertiary); }
+.muted[data-late] { color: var(--wd-color-danger); }
+.number { color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spacer { flex: 1; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); align-items: end; }
+.dialogBody { display: grid; gap: var(--wd-space-4); }
+.person { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+
+.typeIcon { flex: none; color: var(--wd-color-info); }
+.typeIcon[data-type="blocker"] { color: var(--wd-color-danger); }
+.typeIcon[data-type="client_request"] { color: var(--wd-color-warning); }
+.typeIcon[data-type="snag"] { color: var(--wd-color-text-secondary); }
+.statusIcon { flex: none; color: var(--wd-color-text-tertiary); }
+.statusIcon[data-status="in_progress"] { color: var(--wd-color-warning); }
+.statusIcon[data-status="in_review"] { color: var(--wd-color-info); }
+.statusIcon[data-status="done"] { color: var(--wd-color-success); }
+.statusLabel { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
+.blocked { display: inline-flex; margin-inline-end: var(--wd-space-2); padding: 0 var(--wd-space-1-5); border-radius: var(--wd-radius-xs); background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+
+/* Plan */
+.plan { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); }
+.toolbarGroup { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.titleCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; white-space: normal; }
+.titleCell > span { display: flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.titleCell > small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.titleCell[data-depth] { padding-inline-start: var(--wd-space-6); }
+.titleCell [data-done] { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+.card { display: grid; gap: var(--wd-space-1-5); min-inline-size: 0; }
+.card small { font-size: var(--wd-text-xs); }
+.cardTitle { display: flex; align-items: baseline; gap: var(--wd-space-1-5); min-inline-size: 0; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.cardTitle > svg { align-self: center; }
+.cardMeta { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-xs); font-size: var(--wd-text-xs); }
+.cardMeta > * { white-space: nowrap; }
+
+/* Item panel */
+.sheet { display: grid; gap: var(--wd-space-4); }
+.sheetKey { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5) var(--wd-space-3); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.sheetKey > span { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+.linkButton, .refButton { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; padding: 0; border: 0; background: transparent; color: var(--wd-color-link); font: inherit; text-align: start; cursor: pointer; }
+.linkButton:hover, .refButton:hover { color: var(--wd-color-link-hover); }
+.linkButton:focus-visible, .refButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
+.refButton { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.refButton[data-done] { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+.titleField input { font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); }
+.sheetTitle { margin: 0; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.facts { display: grid; gap: var(--wd-space-1); margin: 0; }
+.facts > div { display: grid; grid-template-columns: 7rem minmax(0, 1fr); align-items: center; min-block-size: var(--wd-control-sm); }
+.facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.facts dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; min-inline-size: 0; font-size: var(--wd-text-sm); }
+.dates > :global(.wd-field) { max-inline-size: 10rem; }
+.description { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.part { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.part > h3 { display: flex; align-items: baseline; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.part > h3 > span { font-weight: var(--wd-weight-regular); }
+.part > p { margin: 0; font-size: var(--wd-text-sm); }
+.refList { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.refList > li { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-sm); font-size: var(--wd-text-sm); }
+.refList > li > .refButton { flex: 1; }
+.refList > li > .muted { font-size: var(--wd-text-xs); white-space: nowrap; }
+.addRow { display: flex; flex-wrap: wrap; align-items: end; gap: var(--wd-space-2); }
+.addRow > :first-child:not(button) { flex: 1; min-inline-size: 12rem; }
+.inlineForm { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
+.commentBox { display: grid; justify-items: end; gap: var(--wd-space-2); }
+.commentBox > :first-child { justify-self: stretch; }
+
+/* Open work across projects */
+.openWork { display: grid; gap: var(--wd-space-3); min-inline-size: 0; padding: var(--wd-phi-2) var(--wd-phi-3); }
+.projectCell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; font-size: var(--wd-text-sm); }
+.projectCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+@media (max-width: 640px) {
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  .facts > div { grid-template-columns: 6rem minmax(0, 1fr); }
+  .openWork { padding: var(--wd-space-4); }
+}

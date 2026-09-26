@@ -10,6 +10,7 @@ import { projectApi } from "@/lib/project-core/client";
 import type { ProjectSection } from "@/lib/project-core/sections";
 import type { Priority, ProjectDetail } from "@/lib/project-core/types";
 import { useProjectFormat, useStatusLabel } from "./format";
+import { ProjectPlan } from "./project-plan";
 import { ProjectScope } from "./project-scope";
 import { ProjectStages } from "./project-stages";
 import { ProjectTeam } from "./project-team";
@@ -19,7 +20,8 @@ import styles from "./project-core.module.css";
 
 /**
  * One project: its name and properties at the top (like a Notion page), then one thing per tab —
- * the stages and what each needs (Overview), the sealed scope (Scope) and the lead's updates (Updates).
+ * the stages and what each needs (Overview), the sealed scope (Scope), the work (Plan) and the lead's
+ * updates (Updates).
  */
 export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: string; projectId: string; section: ProjectSection }) {
   const t = useT();
@@ -102,6 +104,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
     <Tabs selectedKey={section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
       { id: "overview", label: t("Overview"), panel: <ProjectStages detail={detail} run={run} caseHref={(part) => `/workspace/pre-projects/cases/${project.caseId}/${part}`} onTeam={() => setDialog("team")} /> },
       { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
+      { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },
       { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} /> },
     ]} />
 

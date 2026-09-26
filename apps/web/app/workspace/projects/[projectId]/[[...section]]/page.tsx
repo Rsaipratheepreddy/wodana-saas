@@ -5,7 +5,7 @@ import { getAuthenticatedProfile } from "@/lib/auth/server";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/** One project: Overview (stages), Scope (the sealed scope) and Updates. Any other section opens the Overview. */
+/** One project: Overview (stages), Scope (the sealed scope), Plan (its work) and Updates. Any other section opens the Overview. */
 export default async function Page({ params }: { params: Promise<{ projectId: string; section?: string[] }> }) {
   const { projectId, section } = await params;
   if (!UUID.test(projectId)) notFound();

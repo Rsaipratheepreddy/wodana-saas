@@ -8,6 +8,7 @@ import { canonicalHash } from "../crm/shared/crm-types";
 import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
 import { QuotationBuilderService } from "../quotation/quotation-builder.service";
 import { ProjectCoreService } from "./project-core.service";
+import { ProjectWorkService } from "./project-work.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -16,7 +17,7 @@ const actor = { subject: "t", provider: "local", email: "t@example.com", display
 
 type World = {
   client: PoolClient; workspaceId: string; caseId: string; quoteId: string; manager: string; designer: string; managerMembership: string; designerMembership: string;
-  as: (userId: string, permissions?: string[]) => ProjectCoreService; builder: QuotationBuilderService;
+  as: (userId: string, permissions?: string[]) => ProjectCoreService; work: (userId: string, permissions?: string[]) => ProjectWorkService; builder: QuotationBuilderService;
 };
 
 integration("projects core (plan §6.10)", () => {
@@ -28,7 +29,7 @@ integration("projects core (plan §6.10)", () => {
   });
   afterAll(() => pool.end());
 
-  async function world(work: (world: World) => Promise<void>) {
+  async function world(work_: (world: World) => Promise<void>) {
     const client = await pool.connect();
     const workspaceId = randomUUID(), caseId = randomUUID(), quoteId = randomUUID(), manager = randomUUID(), designer = randomUUID();
     const managerMembership = randomUUID(), designerMembership = randomUUID(), party = randomUUID(), opportunity = randomUUID(), kitchen = randomUUID();
@@ -50,10 +51,13 @@ integration("projects core (plan §6.10)", () => {
       await seedDefaultNotificationTemplates(client, workspaceId);
       const run = (userId: string) => (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId });
       const member = (userId: string) => (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId });
-      const as = (userId: string, permissions = ["projects.manage", "projects.view", "pre_projects.view", "workspace.settings.manage"]) => new ProjectCoreService({
+      const access = (userId: string, permissions: string[]) => ({
         asMember: member(userId), withPermission: run(userId), withAnyPermission: run(userId),
         hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code),
       } as never);
+      const everything = ["projects.manage", "projects.view", "pre_projects.view", "workspace.settings.manage"];
+      const as = (userId: string, permissions = everything) => new ProjectCoreService(access(userId, permissions));
+      const work = (userId: string, permissions = everything) => new ProjectWorkService(access(userId, permissions));
       const builder = new QuotationBuilderService({ withPermission: run(manager), withPermissions: run(manager), withAnyPermission: run(manager), hasPermission: async () => true } as never, {} as never);
       // The quote: two lines, one option the client chose and one they didn't.
       await builder.apply(actor, workspaceId, caseId, quoteId, { ops: [
@@ -62,7 +66,7 @@ integration("projects core (plan §6.10)", () => {
         { op: "upsert", line: { id: "c", title: "Under-cabinet lights", unit: "nos", quantity: "1", rate: "650", optional: true } },
         { op: "upsert", line: { id: "d", title: "Wine fridge", unit: "nos", quantity: "1", rate: "3000", optional: true } },
       ] });
-      await work({ client, workspaceId, caseId, quoteId, manager, designer, managerMembership, designerMembership, as, builder });
+      await work_({ client, workspaceId, caseId, quoteId, manager, designer, managerMembership, designerMembership, as, work, builder });
     } finally {
       await client.query("ROLLBACK");
       client.release();
@@ -392,6 +396,84 @@ integration("projects core (plan §6.10)", () => {
       const requirements = (sealed.snapshot as { requirements: Array<{ title: string; status: string; note: string; lineIds: string[] }> }).requirements;
       expect(requirements.map((item) => [item.title, item.status, item.note, item.lineIds])).toEqual(expect.arrayContaining([
         ["Soft-close drawers", "included", "", ["a"]], ["Built-in wine fridge", "later", "Client will buy it next year", []], ["Steam room", "not_possible", "No drainage on this floor", []]]));
+    });
+  });
+
+  it("runs the project's work: subtasks, blockers, links without loops, access for the assignee, history and notices", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const { projectId } = await w.as(w.manager).start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const lead = w.work(w.manager);
+      const board = await lead.board(actor, w.workspaceId, projectId);
+      expect(board.items).toEqual([]);
+      expect(board.canEdit).toBe(true);
+      const drawings = randomUUID(), sheet = randomUUID(), marble = randomUUID(), fixing = randomUUID();
+      const stage = board.stages.find((item) => item.name === "Technical drawings")!;
+      let state = await lead.command(actor, w.workspaceId, projectId, { action: "create", id: drawings, title: "Kitchen shop drawings", assigneeId: w.designerMembership, dueDate: "2026-10-10", stageId: stage.id, priority: "high" });
+      // Creating again with the same id changes nothing.
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "create", id: drawings, title: "Kitchen shop drawings" });
+      expect(state.items).toHaveLength(1);
+      expect(state.item).toMatchObject({ number: 1, type: "task", assigneeName: "Dana Designer", dueDate: "2026-10-10", stageId: stage.id, priority: "high", createdByName: "Omar Manager" });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "create", id: sheet, parentId: drawings, title: "Elevation sheet", type: "snag" });
+      expect(state.item).toMatchObject({ number: 2, type: "task", parentId: drawings, stageId: stage.id });
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), parentId: sheet, title: "Too deep" })).rejects.toThrow(/can't have its own subtasks/);
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "create", id: marble, type: "blocker", blocks: drawings, title: "Marble thickness not confirmed" });
+      const blocked = state.items.find((item) => item.id === drawings)!;
+      expect(blocked.blockedBy.map((item) => item.number)).toEqual([3]);
+      expect(blocked).toMatchObject({ subtasks: 1, subtasksDone: 0 });
+
+      // The designer works on it with view access only: the subtask must finish first.
+      const designer = w.work(w.designer, ["projects.view"]);
+      const mine = await designer.open(actor, w.workspaceId, "mine");
+      expect(mine.items.map((item) => item.title)).toEqual(["Kitchen shop drawings"]);
+      await expect(designer.command(actor, w.workspaceId, projectId, { action: "update", itemId: drawings, version: blocked.version, status: "done" })).rejects.toThrow(/open subtask/);
+      const sub = state.items.find((item) => item.id === sheet)!;
+      await designer.command(actor, w.workspaceId, projectId, { action: "update", itemId: sheet, version: sub.version, status: "done" });
+      await expect(designer.command(actor, w.workspaceId, projectId, { action: "update", itemId: drawings, version: blocked.version - 1, status: "done" })).rejects.toThrow(/Someone else changed/);
+      state = await designer.command(actor, w.workspaceId, projectId, { action: "update", itemId: marble, version: state.items.find((item) => item.id === marble)!.version, status: "done" });
+      expect(state.items.find((item) => item.id === drawings)!.blockedBy).toEqual([]);
+      state = await designer.command(actor, w.workspaceId, projectId, { action: "update", itemId: drawings, version: blocked.version, status: "done" });
+      expect(state.item).toMatchObject({ status: "done" });
+      expect(state.item!.completedAt).toBeTruthy();
+      await designer.command(actor, w.workspaceId, projectId, { action: "comment", itemId: drawings, id: randomUUID(), body: "Sent to the factory." });
+
+      // Links: fixing waits on drawings; the other way round would loop.
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: fixing, title: "Fix cabinets on site" });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "link", itemId: fixing, predecessorId: drawings, kind: "fs", lagDays: 2 });
+      expect(state.item!.before).toEqual([expect.objectContaining({ number: 1, kind: "fs", lagDays: 2 })]);
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "link", itemId: drawings, predecessorId: fixing })).rejects.toThrow(/circle/);
+
+      // Giving work to someone outside the team lets them open the project.
+      const fitter = randomUUID(), fitterMembership = randomUUID();
+      await w.client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Fahad Fitter')", [fitter, `${fitter.slice(0, 8)}@example.com`]);
+      await w.client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [fitterMembership, w.workspaceId, fitter]);
+      await expect(w.work(fitter, ["projects.view"]).board(actor, w.workspaceId, projectId)).rejects.toThrow(/not found/);
+      const fix = state.items.find((item) => item.id === fixing)!;
+      await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: fixing, version: fix.version, assigneeId: fitterMembership });
+      expect((await w.work(fitter, ["projects.view"]).board(actor, w.workspaceId, projectId)).items).toHaveLength(4);
+      expect((await w.as(w.manager).get(actor, w.workspaceId, projectId)).team.some((role) => role.member?.name === "Fahad Fitter")).toBe(false);
+
+      // Cancelling a task cancels its open subtasks.
+      const tile = randomUUID(), grout = randomUUID();
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: tile, title: "Tile the backsplash" });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "create", id: grout, parentId: tile, title: "Grout" });
+      state = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: tile, version: state.items.find((item) => item.id === tile)!.version, status: "cancelled" });
+      expect(state.items.find((item) => item.id === grout)!.status).toBe("cancelled");
+
+      const detail = await lead.item(actor, w.workspaceId, projectId, drawings);
+      expect(detail.activity.map((entry) => entry.kind)).toEqual(["created", "blocked", "status", "comment"]);
+      expect(detail.after.map((item) => item.number)).toEqual([4]);
+      const notices = (await w.client.query<{ event: string; channel: string; recipient: string; subject: string }>(
+        `SELECT event_type AS event, channel, recipient_id AS recipient, subject FROM notifications WHERE workspace_id = $1 AND event_type LIKE 'work.%' ORDER BY created_at, channel`, [w.workspaceId])).rows;
+      expect(notices).toEqual(expect.arrayContaining([
+        expect.objectContaining({ event: "work.assigned", channel: "in_app", recipient: w.designer, subject: "#1 Kitchen shop drawings is yours" }),
+        expect.objectContaining({ event: "work.assigned", channel: "email", recipient: w.designer }),
+        expect.objectContaining({ event: "work.blocked", recipient: w.designer }),
+        expect.objectContaining({ event: "work.done", recipient: w.manager, subject: "#1 Kitchen shop drawings is done" }),
+        expect.objectContaining({ event: "work.commented", recipient: w.manager }),
+        expect.objectContaining({ event: "work.assigned", recipient: fitter }),
+      ]));
+      expect(notices.some((notice) => notice.recipient === w.manager && notice.event === "work.blocked")).toBe(false);
     });
   });
 

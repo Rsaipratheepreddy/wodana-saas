@@ -239,6 +239,13 @@
       "when": 1792238400000,
       "tag": "0033_requirement_trace",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792324800000,
+      "tag": "0034_work_items",
+      "breakpoints": true
     }
   ]
 }

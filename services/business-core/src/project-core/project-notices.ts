@@ -53,3 +53,37 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
     for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, false);
   }
 }
+
+export type WorkNotice =
+  | { code: "work.assigned" | "work.done"; item: { id: string; number: number; title: string; dueDate?: string | null }; memberships: string[] }
+  | { code: "work.commented" | "work.blocked"; item: { id: string; number: number; title: string }; note: string; memberships: string[] };
+
+/**
+ * Who hears about project work: the person it's given to (also by email), the assignee and the person
+ * who raised it when someone comments, the person who raised it when it's done, and the project
+ * manager and the assignee when a blocker is reported. Never the person who acted.
+ */
+export async function noticeWork(db: Db, input: { workspaceId: string; projectId: string; key: string; actorUserId: string; notice: WorkNotice }) {
+  const facts = (await db.query<{ title: string; clientName: string }>(
+    `SELECT project.reference || ' · ' || project.name AS title, coalesce(party.display_name, opportunity.title) AS "clientName"
+       FROM delivery_projects project
+       JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+      WHERE project.workspace_id = $1 AND project.id = $2`, [input.workspaceId, input.projectId])).rows[0];
+  if (!facts) return;
+  const actor = (await db.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [input.actorUserId])).rows[0]?.name ?? "Someone";
+  const { notice } = input;
+  const people = (await db.query<{ userId: string }>(
+    `SELECT DISTINCT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND status = 'active'`,
+    [input.workspaceId, [...new Set(notice.memberships)]])).rows.filter((row) => row.userId !== input.actorUserId);
+  const task = `#${notice.item.number} ${notice.item.title}`;
+  const variables: Record<string, string> = { title: facts.title, clientName: facts.clientName, actor, task,
+    note: "note" in notice ? notice.note : "", due: notice.code === "work.assigned" && notice.item.dueDate ? `Due ${notice.item.dueDate}.` : "" };
+  const deepLink = `/workspace/projects/${input.projectId}/plan?item=${notice.item.id}`;
+  for (const person of people) {
+    const message = { workspaceId: input.workspaceId, recipientUserId: person.userId, code: notice.code, eventType: notice.code, variables, deepLink };
+    await notifyUserInApp(db, { ...message, idempotencyKey: `${notice.code}:${input.key}:${person.userId}` });
+    if (notice.code === "work.assigned") await queueUserEmail(db, { ...message, idempotencyKey: `${notice.code}:${input.key}:${person.userId}:email` });
+  }
+}

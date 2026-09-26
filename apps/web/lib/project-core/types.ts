@@ -110,3 +110,29 @@ export type MaterialsState = {
   state: "draft" | "sent" | "signed_off" | "changes_requested" | "changed";
   items: MaterialItem[]; revisions: MaterialRevision[]; version: number; canEdit: boolean;
 };
+
+export type WorkType = "task" | "blocker" | "client_request" | "snag";
+export type WorkStatus = "todo" | "in_progress" | "in_review" | "done" | "cancelled";
+export type WorkPriority = "low" | "normal" | "high" | "urgent";
+export type WorkRef = { id: string; number: number; title: string; type: WorkType; status: WorkStatus };
+export type WorkItem = {
+  id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null;
+  title: string; status: WorkStatus; priority: WorkPriority; assigneeId: string | null; assigneeName: string | null;
+  startDate: string | null; dueDate: string | null; completedAt: string | null; createdBy: string; version: number;
+  subtasks: number; subtasksDone: number; comments: number; blockedBy: WorkRef[];
+};
+export type WorkLink = WorkRef & { kind: "fs" | "ss"; lagDays: number };
+export type WorkActivity =
+  | { id: string; kind: "comment"; body: string; by: string; at: string }
+  | { id: string; kind: string; detail: Record<string, unknown>; by: string; at: string };
+export type WorkDetail = WorkItem & {
+  description: string; createdByName: string; createdAt: string; startedAt: string | null;
+  subtaskIds: string[]; before: WorkLink[]; after: WorkLink[]; activity: WorkActivity[];
+};
+export type WorkBoard = {
+  items: WorkItem[]; packages: Array<{ id: string; name: string }>; stages: Array<{ id: string; name: string; status: string }>;
+  lines: Array<{ id: string; title: string; areaName: string | null; packageId: string | null }>;
+  people: Member[]; me: string | null; canEdit: boolean; item: WorkDetail | null;
+};
+export type OpenWorkItem = WorkItem & { projectReference: string; projectName: string };
+export type OpenWork = { items: OpenWorkItem[]; me: string | null; view: "mine" | "all" };

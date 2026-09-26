@@ -1,4 +1,0 @@
-.panel { min-inline-size:0; padding:var(--wd-space-4); font-size:var(--wd-text-xs); color:var(--wd-color-text); }
-.message { padding-block:var(--wd-space-3); }
-.message p { margin-block:0 var(--wd-space-3); }
-@media(max-width:600px) { .panel { padding:var(--wd-space-3); } }

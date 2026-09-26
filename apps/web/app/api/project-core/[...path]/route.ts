@@ -1,28 +1,32 @@
 import { NextResponse } from "next/server";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 
-/** Projects: settings, starting a project from an accepted quotation, and one project's stages, team and status. */
+/** Projects: settings, starting a project from an accepted quotation, one project's stages, team, scope and work, and open work across projects. */
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "routes") return method === "POST";
   if (path.length === 3 && path[0] === "routes" && UUID.test(path[1]) && path[2] === "archive") return method === "POST";
   if (path.length === 1 && path[0] === "ready") return method === "GET";
   if (path.length === 2 && path[0] === "start" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
-  if (path.length === 1 && path[0] === "projects") return method === "GET";
+  if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials"].includes(path[2])) return method === "GET";
-  if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && ["seals", "lines"].includes(path[2]) && UUID.test(path[3])) return method === "GET";
+  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
+  if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && ["seals", "lines", "work"].includes(path[2]) && UUID.test(path[3])) return method === "GET";
   return false;
 }
 
 async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? "";
+  const search = new URL(request.url).searchParams;
+  const workspaceId = search.get("workspaceId") ?? "";
   if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: "Invalid project resource." }, { status: 400 });
   if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: "Use your workspace to make this change." }, { status: 403 });
   const body = request.method === "GET" ? undefined : await request.text();
   if (body && body.length > 200_000) return NextResponse.json({ message: "The request is too large." }, { status: 413 });
-  return workspaceJsonResponse(`/workspaces/${workspaceId}/project-core/${path.join("/")}`,
+  // Open work is the person's own or everyone's.
+  const view = path[0] === "work" && search.get("view") === "all" ? "?view=all" : "";
+  return workspaceJsonResponse(`/workspaces/${workspaceId}/project-core/${path.join("/")}${view}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, "Could not update the project.");
 }
 export { handle as GET, handle as POST, handle as PUT };

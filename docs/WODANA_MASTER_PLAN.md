@@ -457,7 +457,22 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
   - The client decides per material; a rejection says what they want instead.
   - Signed off means the latest revision is approved in full and unchanged since. This is the *Material sign-off* stage check.
 
-**Records (built):** `delivery_projects` (reference with the firm's prefix, quote, route, priority, health, start and handover dates, hold), `project_scope_seals` (immutable), `project_stages` + `project_stage_confirmations`, `project_status_updates`, `project_assignments.role_keys` (one team model), `workspace_project_settings` (start rules, numbering, team roles), `project_templates` + `project_template_stages` (routes).
+**Plan (built: work items).** One task system for every piece of project work, run like an issue tracker.
+- Items: tasks, subtasks (one level) and issues — blocker, client request, snag. Each item can belong to a package, a scope line and a stage.
+- Items are numbered per project (#n) and never deleted; cancelling a task cancels its open subtasks.
+- Statuses: To do → In progress → In review → Done, or Cancelled. A task can't be done while a subtask is open.
+- Dependencies: finish-to-start or start-to-start, with a lag in days; loops are refused. An item is *blocked* while a predecessor isn't finished (or started). *Report a blocker* creates a blocker issue that holds the item up until it's done.
+- Giving work to someone outside the team gives them access to the project without a role.
+- Every change is history (`work_item_events`) and comments are append-only.
+- Items are version-checked one by one, so a busy team doesn't trip over the project's version.
+- Screens:
+  - the project's **Plan** tab: List grouped by package with subtasks under their task and done work last, or a Board by status (drag to move);
+  - the item panel: properties saved as they change, subtasks, what it waits on, and activity with comments;
+  - Home → **Tasks**: open work across projects, mine or everyone's, grouped Late / Today / Next 7 days / Later.
+- Notices: given to you (in-app and email), a comment (assignee and the person who raised it), a blocker (project manager and assignee), done (the person who raised it).
+- Next: working-day scheduling from the region's week with push-later ripple and a baseline, sprints with burndown, and workload / on-time analytics.
+
+**Records (built):** `delivery_projects` (reference with the firm's prefix, quote, route, priority, health, start and handover dates, hold), `project_scope_seals` (immutable), `project_stages` + `project_stage_confirmations`, `project_status_updates`, `project_assignments.role_keys` (one team model), `workspace_project_settings` (start rules, numbering, team roles), `project_templates` + `project_template_stages` (routes), `work_items` + `work_item_links` + `work_item_comments` + `work_item_events` (the plan).
 
 **Stages and checks.** Routes are configuration (stages, owner role, checks). A stage finishes only when its checks pass. Checks are read from records wherever the record exists (project manager named, a role named, production payment verified) and otherwise confirmed by a person (e.g. "Client approved the drawings") until the module that records it lands — then the check reads the record. A stage that checks a payment can't be skipped; other stages can be skipped with a reason; the project manager can go back a stage with a reason. Finishing the last stage completes the project. On hold (reason + review date) stops all stage work until resumed.
 
@@ -467,11 +482,11 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
 
 **Screens (Notion-clean, one thing per view).**
 - Projects: one table — project + number, client, stage (n of m), next step + who holds it, handover, status; Running / On hold / Closed; *Start project* lists accepted quotations waiting to start.
-- Project page: the name, properties (client, number, stage, status, priority, project manager, team, handover, agreed value · sealed R#), then tabs — **Overview** (the stages; the current one lists what it needs), **Scope** (the sealed scope: items / payments / terms), **Updates**. Later phases add Plan, Site, Money and Files as their own tabs.
+- Project page: the name, properties (client, number, stage, status, priority, project manager, team, handover, agreed value · sealed R#), then tabs — **Overview** (the stages; the current one lists what it needs), **Scope** (the live BOQ, material list, changes and sealed documents), **Plan** (the work), **Updates**. Later phases add Site, Money and Files as their own tabs.
 
 **Notifications.** Started (team: in-app + email), named for a role (in-app + email), stage finished (lead and the next stage's owner), on hold / resumed / off track (team). The actor is never told about their own step.
 
-**End-to-end build order (agreed 26 Sept):** 1 project core ✔ → 2 scope ✔ (live BOQ, packages, line history, requirement trace, material-list sign-off, variations through the quotation builder) → 3 plan and tasks (one task system run like Jira: packages as stories, tasks, subtasks, issues, sprints with a board and burndown, statuses fed by the records; Gantt, global Tasks, Calendar, workload and on-time analytics) → 4 suppliers and purchasing (supplier register with approval status, buying company, payment terms, discount/commission deals; requests → optional price comparison → orders → confirmations; subcontract orders) → 5 receiving, stock and logistics (three-way bill match, bank-statement matching, reservations, deliveries with proof) → 6 factory (§6.16) → 7 site, installation, snags and handover → 8 warranty and aftercare → 9 money (client and cost ledgers, milestones, cash forecast, reconciliation) → 10 client portal and the automations switchboard. Each phase ships with its notifications, labels, RTL, real-database tests and smoke.
+**End-to-end build order (agreed 26 Sept):** 1 project core ✔ → 2 scope ✔ (live BOQ, packages, line history, requirement trace, material-list sign-off, variations through the quotation builder) → 3 plan and tasks (work items ✔; one task system run like Jira: packages as stories, tasks, subtasks, issues, sprints with a board and burndown, statuses fed by the records; Gantt, global Tasks, Calendar, workload and on-time analytics) → 4 suppliers and purchasing (supplier register with approval status, buying company, payment terms, discount/commission deals; requests → optional price comparison → orders → confirmations; subcontract orders) → 5 receiving, stock and logistics (three-way bill match, bank-statement matching, reservations, deliveries with proof) → 6 factory (§6.16) → 7 site, installation, snags and handover → 8 warranty and aftercare → 9 money (client and cost ledgers, milestones, cash forecast, reconciliation) → 10 client portal and the automations switchboard. Each phase ships with its notifications, labels, RTL, real-database tests and smoke.
 
 **Calculations never drift.** Exact decimals only; one pricing engine for quotes, variations, invoices and orders; totals are always derived (agreed = baseline + approved variations; milestones sum to 100 %; balance = invoiced − verified receipts); quantities guarded by ledgers (ordered ≤ required unless a reason, received ≤ ordered + tolerance, no negative stock); every figure opens to its lines; a nightly reconciliation flags mismatches.
 
