@@ -184,6 +184,25 @@ export type QuoteLine = {
   optional?: boolean;
   /** Internal authorization evidence for a line with no confirmed scope or catalogue source. */
   manualReason?: string;
+  /** Builder fields (plan §6.8): the line's area and work package, its kind, discount and tax. */
+  kind?: string;
+  description?: string;
+  areaId?: string;
+  fromAreaId?: string;
+  workPackageId?: string;
+  catalogItemId?: string;
+  formula?: string;
+  length?: number;
+  width?: number;
+  height?: number;
+  count?: number;
+  markupPercent?: number;
+  discountKind?: "percent" | "amount";
+  discountValue?: number;
+  taxCode?: string;
+  lineTaxRate?: number;
+  optionGroup?: string;
+  components?: Array<Record<string, unknown>>;
 };
 /** Selling-price breakdown per ONE item unit. Never contains internal purchase costs. */
 export type QuotationMaterialRow = {
@@ -260,6 +279,9 @@ export type Quote = {
   terms: string;
   exclusions: string;
   lines: QuoteLine[];
+  /** Set by the builder: the workspace's pricing policy and the quote's discounts. */
+  pricing?: { currencyDecimals: number; pricesIncludeTax: boolean; rounding: "line" | "document" };
+  discounts?: Array<{ scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: number | string; reason?: string }>;
   requestIds: string[];
   paymentTerms: PaymentTerm[];
   paymentTemplate?: { id: string; version: number; name: string };

@@ -176,6 +176,13 @@
       "when": 1791460800000,
       "tag": "0024_design_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791547200000,
+      "tag": "0025_quotation_builder",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { priceQuote, PricingError } from "../quotation/quote-pricing";
 import { canonicalHash } from "../crm/shared/crm-types";
 import {parseQuotationRichText} from "./quotation-rich-text";
 import { quotationLineVariant, quotationMaterialText } from "./quotation-presentation";
@@ -88,7 +89,26 @@ export function phone(input: unknown): string {
 }
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
-export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
+export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partial<Pick<Quote, "pricing" | "discounts">>) {
+  // Quotes edited in the builder carry their pricing policy: price them with the shared engine.
+  if (q.pricing) {
+    let priced;
+    try {
+      priced = priceQuote(q.lines.map((line) => ({
+        id: line.id, quantity: String(line.quantity), rate: String(line.rate), unitCost: line.unitCost === undefined ? null : String(line.unitCost),
+        optional: Boolean(line.optional), areaKey: line.areaId ?? "general", tradeKey: line.workPackageId ?? "none",
+        discountKind: line.discountKind ?? null, discountValue: line.discountValue === undefined || line.discountValue === null ? null : String(line.discountValue),
+        taxRate: line.lineTaxRate === undefined || line.lineTaxRate === null ? String(q.taxRate) : String(line.lineTaxRate),
+      })), (q.discounts ?? []).map((discount) => ({ ...discount, value: String(discount.value) })), q.pricing);
+    } catch (error) {
+      if (error instanceof PricingError) throw new BadRequestException(error.message);
+      throw error;
+    }
+    return {
+      subtotal: Number(priced.subtotal), cost: Number(priced.cost ?? 0), discount: Number(priced.discounts.total),
+      net: Number(priced.net), tax: Number(priced.tax), total: Number(priced.total), margin: Number(priced.margin ?? 0),
+    };
+  }
   const includedLines = q.lines.filter((line) => !line.optional);
   const subtotal = round(
     includedLines.reduce((s, l) => s + round(l.quantity * l.rate), 0),
