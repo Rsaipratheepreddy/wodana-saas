@@ -15,6 +15,7 @@ import {
   readOrders, type OrderDetail, type OrderLine,
 } from "./orders";
 import { readReceipts } from "./receiving";
+import { readReturns } from "./returns.service";
 import { PAYMENT_TERMS, percent, readSupplier, type Supplier } from "./suppliers";
 
 type Db = PoolClient;
@@ -188,7 +189,9 @@ export class OrdersService {
         const reason = text(body.reason, 500, "Reason");
         const lines = await readOrderLines(client, workspaceId, orderId);
         if (lines.some((line) => Dec.of(line.pending).cmp(0) > 0)) throw new ConflictException("Some goods are still waiting for inspection.");
-        const short = lines.some((line) => Dec.of(line.accepted).cmp(line.quantity) < 0);
+        if ((await client.query(`SELECT 1 FROM supplier_returns WHERE workspace_id = $1 AND order_id = $2 AND status = 'open'`, [workspaceId, orderId])).rowCount)
+          throw new ConflictException("Goods are still waiting to go back to the supplier.");
+        const short = lines.some((line) => Dec.of(line.accepted).add(line.credited).cmp(line.quantity) < 0);
         if (short && !reason) throw new BadRequestException("Say why the rest won't come.");
         await set(`status = 'closed', closed_at = now(), close_reason = $3`, [reason || null]);
         await orderEvent(client, workspaceId, orderId, "closed", { reason, short }, user.userId);
@@ -260,6 +263,7 @@ export class OrdersService {
     return {
       order, lines: await readOrderLines(client, workspaceId, orderId), events: await readOrderEvents(client, workspaceId, orderId),
       receipts: await readReceipts(client, workspaceId, { orderId }),
+      returns: await readReturns(client, workspaceId, orderId),
       revisions: (await client.query<{ revision: number; reason: string; at: string; byName: string }>(
         `SELECT revision.revision, revision.reason, revision.created_at AS at, person.display_name AS "byName" FROM purchase_order_revisions revision JOIN users person ON person.id = revision.created_by
           WHERE revision.workspace_id = $1 AND revision.order_id = $2 ORDER BY revision.revision`, [workspaceId, orderId])).rows,

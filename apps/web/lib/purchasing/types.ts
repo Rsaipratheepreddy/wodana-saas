@@ -55,7 +55,7 @@ export type OrdersState = { orders: OrderRow[]; settings: PurchasingSettings; ca
 export type OrderLine = {
   id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string; net: string; tax: string; total: string;
-  accepted: string; rejected: string; pending: string;
+  accepted: string; rejected: string; pending: string; credited: string; returned: string;
 };
 export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
@@ -63,7 +63,7 @@ export type OrderDetail = OrderRow & {
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; companyName: string;
 };
 export type OrderState = {
-  order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; canReceive: boolean;
+  order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; returns: SupplierReturnRow[]; canReceive: boolean;
   events: Array<{ id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string }>;
   revisions: Array<{ revision: number; reason: string; at: string; byName: string }>;
   supplier: { id: string; name: string; email: string | null; phone: string | null; contactName: string | null; approval: Approval; deal: Deal; dealPercent: string | null } | null;
@@ -103,12 +103,31 @@ export type Receipt = {
   id: string; number: number; orderId: string; orderNumber: string; supplierName: string; locationId: string; locationName: string; locationKind: LocationKind;
   receivedOn: string; receivedBy: string; receivedByName: string; deliveryNote: string; notes: string; inspectedByName: string | null; inspectedAt: string | null;
   received: string; accepted: string; rejected: string; pending: string; createdAt: string;
+  missing: string; reversedAt: string | null; reversedByName: string | null; reverseReason: string | null;
 };
+export type RejectKind = "damaged" | "defective" | "wrong_item" | "wrong_spec" | "other";
 export type ReceiptLine = {
   id: string; orderLineId: string; description: string; specification: string; unit: string; projectReference: string | null; boqLineId: string | null; projectId: string | null;
-  received: string; accepted: string; rejected: string; pending: string; rejectReason: string;
+  received: string; accepted: string; rejected: string; pending: string; rejectReason: string; rejectKind: RejectKind | null; noted: string | null; inspectedByName: string | null;
+  returnedRejected: string; returnedAccepted: string;
 };
-export type ReceiptState = { receipt: Receipt; lines: ReceiptLine[]; canReceive: boolean; canInspect: boolean; canInspectThis: boolean };
+export type ReceiptState = {
+  receipt: Receipt; lines: ReceiptLine[]; canBuy: boolean; canReceive: boolean; canInspect: boolean; canInspectThis: boolean; canReturnThis: boolean; canReverseThis: boolean;
+};
+
+export type SupplierReturnRow = {
+  id: string; number: number; orderId: string; orderNumber: string; supplierName: string; locationName: string; outcome: "replace" | "credit"; status: "open" | "sent" | "cancelled";
+  note: string; createdByName: string; createdAt: string; sentOn: string | null; sentByName: string | null; cancelReason: string | null; version: number; lines: number; credit: string | null; currency: string;
+};
+export type SupplierReturnLine = {
+  id: string; receiptLineId: string; receiptNumber: number; description: string; unit: string; source: "rejected" | "accepted"; quantity: string; reasonKind: RejectKind; reason: string;
+  creditAmount: string | null; projectReference: string | null;
+};
+export type SupplierReturnState = {
+  return: SupplierReturnRow; lines: SupplierReturnLine[]; canBuy: boolean; canReceive: boolean; canSendThis: boolean; canCancelThis: boolean;
+  delivery?: "sent" | "not_configured" | "failed" | null;
+};
+export type SupplierReturnsState = { returns: SupplierReturnRow[]; canBuy: boolean; canReceive: boolean };
 
 export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number };
 export type DeliveriesState = {

@@ -1,5 +1,6 @@
 import type {
-  DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow, SupplierState,
+  DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow,
+  SupplierReturnState, SupplierReturnsState, SupplierState,
 } from "./types";
 
 export class PurchasingRequestError extends Error {
@@ -40,6 +41,11 @@ export function purchasingApi(workspaceId: string) {
     receive: (input: Record<string, unknown>) => request<ReceiptState>(at("receipts"), "POST", input),
     receipt: (id: string) => request<ReceiptState>(at(`receipts/${id}`)),
     inspect: (id: string, input: Record<string, unknown>) => request<ReceiptState>(at(`receipts/${id}/inspection`), "POST", input),
+    reverse: (id: string, reason: string) => request<ReceiptState>(at(`receipts/${id}/reversal`), "POST", { reason }),
+    returns: () => request<SupplierReturnsState>(at("returns")),
+    supplierReturn: (id: string) => request<SupplierReturnState>(at(`returns/${id}`)),
+    createReturn: (input: Record<string, unknown>) => request<SupplierReturnState>(at("returns"), "POST", input),
+    returnCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<SupplierReturnState>(at(`returns/${id}`), "POST", { ...input, action, version }),
     settings: () => request<{ settings: PurchasingSettings; canManage: boolean; currency: string | null }>(at("settings")),
     saveSettings: (input: Record<string, unknown>) => request<PurchasingSettings>(at("settings"), "PUT", input),
   };

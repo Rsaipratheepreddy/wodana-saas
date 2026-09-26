@@ -93,9 +93,10 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const short = (state?.lines ?? []).some((line) => Number(line.accepted) < Number(line.quantity));
   /** What has arrived on a line so far, once anything has. */
   const arrived = (line: OrderLine | undefined) => {
-    if (!line || !(Number(line.accepted) || Number(line.rejected) || Number(line.pending))) return "";
+    if (!line || !(Number(line.accepted) || Number(line.rejected) || Number(line.pending) || Number(line.credited))) return "";
     return [Number(line.accepted) ? t("{quantity} accepted", { quantity: quantityText(line.accepted) }) : "", Number(line.pending) ? t("{quantity} to inspect", { quantity: quantityText(line.pending) }) : "",
-      Number(line.rejected) ? t("{quantity} rejected", { quantity: quantityText(line.rejected) }) : ""].filter(Boolean).join(" · ");
+      Number(line.rejected) ? t("{quantity} rejected", { quantity: quantityText(line.rejected) }) : "", Number(line.returned) ? t("{quantity} returned", { quantity: quantityText(line.returned) }) : "",
+      Number(line.credited) ? t("{quantity} credited", { quantity: quantityText(line.credited) }) : ""].filter(Boolean).join(" · ");
   };
 
   const footer = !order || !state ? null
@@ -225,6 +226,13 @@ function History({ state }: { state: OrderState }) {
       case "received": return t("received delivery {number} at {place}", { number: String(detail.receipt ?? ""), place: value("location") });
       case "inspected": return t("inspected delivery {number}", { number: String(detail.receipt ?? "") });
       case "closed": return value("reason") ? t("closed it: {reason}", { reason: value("reason") }) : t("closed it");
+      case "receipt_reversed": return t("reversed delivery {number}: {reason}", { number: String(detail.receipt ?? ""), reason: value("reason") });
+      case "return_raised": return detail.outcome === "credit" ? t("raised return {number} for a credit", { number: String(detail.return ?? "") })
+        : t("raised return {number} to be replaced", { number: String(detail.return ?? "") });
+      case "return_emailed": return t("emailed the return note to {email}", { email: value("to") });
+      case "return_email_not_sent": return t("couldn't email the return note to {email}", { email: value("to") });
+      case "return_sent": return t("recorded the supplier collecting return {number}", { number: String(detail.return ?? "") });
+      case "return_cancelled": return t("cancelled return {number}: {reason}", { number: String(detail.return ?? ""), reason: value("reason") });
       default: return t("changed it");
     }
   };

@@ -52,11 +52,20 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
        SELECT project.id, project.reference, project.name FROM delivery_projects project
         WHERE project.workspace_id = $1 AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold') AND ($2::uuid IS NULL OR project.id = $2)
      ), accepted AS (
-       SELECT received.order_line_id, sum(received.accepted) AS accepted FROM goods_receipt_lines received WHERE received.workspace_id = $1 GROUP BY received.order_line_id
+       -- What each order line has: accepted (less what went back after acceptance) and what the supplier credited instead of sending.
+       SELECT line.id AS order_line_id,
+              coalesce((SELECT sum(received.accepted) FROM goods_receipt_lines received JOIN goods_receipts receipt ON receipt.workspace_id = received.workspace_id AND receipt.id = received.receipt_id
+                         WHERE received.workspace_id = line.workspace_id AND received.order_line_id = line.id AND receipt.reversed_at IS NULL), 0)
+            - coalesce((SELECT sum(back.quantity) FROM supplier_return_lines back JOIN supplier_returns sent ON sent.workspace_id = back.workspace_id AND sent.id = back.return_id
+                         WHERE back.workspace_id = line.workspace_id AND back.order_line_id = line.id AND back.source = 'accepted' AND sent.status = 'sent'), 0) AS accepted,
+              coalesce((SELECT sum(back.quantity) FROM supplier_return_lines back JOIN supplier_returns sent ON sent.workspace_id = back.workspace_id AND sent.id = back.return_id
+                         WHERE back.workspace_id = line.workspace_id AND back.order_line_id = line.id AND sent.outcome = 'credit'
+                           AND (sent.status = 'sent' OR (sent.status = 'open' AND back.source = 'rejected'))), 0) AS credited
+         FROM purchase_order_lines line WHERE line.workspace_id = $1
      ), ordered AS (
-       -- A closed (short-closed) order counts only what was accepted; the rest goes back to be ordered.
+       -- A closed (short-closed) order counts only what was accepted, and credited goods won't come: the rest goes back to be ordered.
        SELECT line.material_item_id, line.boq_line_id,
-              sum(CASE WHEN purchase.status = 'closed' THEN coalesce(accepted.accepted, 0) ELSE line.quantity END)
+              sum(CASE WHEN purchase.status = 'closed' THEN coalesce(accepted.accepted, 0) ELSE line.quantity - coalesce(accepted.credited, 0) END)
                 FILTER (WHERE purchase.status IN ('approved', 'sent', 'confirmed', 'partly_received', 'received', 'closed')) AS placed,
               sum(line.quantity) FILTER (WHERE purchase.status IN ('draft', 'pending_approval')) AS drafted,
               sum(coalesce(accepted.accepted, 0)) AS received
@@ -113,8 +122,13 @@ export async function readOrders(db: Db, workspaceId: string): Promise<OrderRow[
 export type OrderLine = {
   id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
   description: string; specification: string; quantity: string; unit: string; unitPrice: string; discountPercent: string; taxRate: string; net: string; tax: string; total: string;
-  /** What has arrived for the line: accepted, rejected and still waiting for inspection. */
+  /** What has arrived for the line: accepted (less what went back after acceptance), rejected and still waiting for inspection. */
   accepted: string; rejected: string; pending: string;
+  /**
+   * Credited by the supplier instead of sent again (rejected goods from when the return is raised,
+   * accepted goods once they've gone back), and what went back to the supplier.
+   */
+  credited: string; returned: string;
 };
 
 export type OrderDetail = OrderRow & {
@@ -143,11 +157,18 @@ export async function readOrderLines(db: Db, workspaceId: string, orderId: strin
     `SELECT line.id, line.position, line.project_id AS "projectId", project.reference AS "projectReference", line.source, line.material_item_id AS "materialItemId", line.boq_line_id AS "boqLineId",
             line.description, line.specification, line.quantity::text AS quantity, line.unit, line.unit_price::text AS "unitPrice", line.discount_percent::text AS "discountPercent",
             line.tax_rate::text AS "taxRate", line.net::text AS net, line.tax::text AS tax, line.total::text AS total,
-            coalesce(received.accepted, 0)::numeric(18, 4)::text AS accepted, coalesce(received.rejected, 0)::numeric(18, 4)::text AS rejected,
-            coalesce(received.pending, 0)::numeric(18, 4)::text AS pending
+            (coalesce(received.accepted, 0) - coalesce(back."returnedAccepted", 0))::numeric(18, 4)::text AS accepted, coalesce(received.rejected, 0)::numeric(18, 4)::text AS rejected,
+            coalesce(received.pending, 0)::numeric(18, 4)::text AS pending, coalesce(back.credited, 0)::numeric(18, 4)::text AS credited,
+            coalesce(back.returned, 0)::numeric(18, 4)::text AS returned
        FROM purchase_order_lines line LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
-       LEFT JOIN LATERAL (SELECT sum(accepted) AS accepted, sum(rejected) AS rejected, sum(pending) AS pending FROM goods_receipt_lines
-                           WHERE workspace_id = line.workspace_id AND order_line_id = line.id) received ON true
+       LEFT JOIN LATERAL (SELECT sum(got.accepted) AS accepted, sum(got.rejected) AS rejected, sum(got.pending) AS pending
+                            FROM goods_receipt_lines got JOIN goods_receipts receipt ON receipt.workspace_id = got.workspace_id AND receipt.id = got.receipt_id
+                           WHERE got.workspace_id = line.workspace_id AND got.order_line_id = line.id AND receipt.reversed_at IS NULL) received ON true
+       LEFT JOIN LATERAL (SELECT sum(item.quantity) FILTER (WHERE item.source = 'accepted' AND sent.status = 'sent') AS "returnedAccepted",
+                                 sum(item.quantity) FILTER (WHERE sent.status = 'sent') AS returned,
+                                 sum(item.quantity) FILTER (WHERE sent.outcome = 'credit' AND (sent.status = 'sent' OR (sent.status = 'open' AND item.source = 'rejected'))) AS credited
+                            FROM supplier_return_lines item JOIN supplier_returns sent ON sent.workspace_id = item.workspace_id AND sent.id = item.return_id
+                           WHERE item.workspace_id = line.workspace_id AND item.order_line_id = line.id) back ON true
       WHERE line.workspace_id = $1 AND line.order_id = $2 ORDER BY line.position, line.id`, [workspaceId, orderId])).rows;
 }
 

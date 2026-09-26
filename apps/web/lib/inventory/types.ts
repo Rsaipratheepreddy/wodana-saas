@@ -12,10 +12,10 @@ export type StockState = {
   rows: StockRow[]; locations: StockLocation[]; projects: ProjectOption[]; inTransit: number; canManage: boolean; canAdjust: boolean; canReceive: boolean;
 };
 
-export type MovementKind = "receive" | "issue" | "return" | "transfer_out" | "transfer_in" | "allocate" | "release" | "adjust";
+export type MovementKind = "receive" | "issue" | "return" | "transfer_out" | "transfer_in" | "allocate" | "release" | "adjust" | "supplier_return" | "reverse";
 export type MovementRow = {
   id: string; batchId: string; kind: MovementKind; quantity: string; itemId: string; itemName: string; unit: string; locationName: string; projectReference: string | null;
-  forProjectReference: string | null; reason: string; movedOn: string; byName: string; at: string; receiptNumber: number | null; orderNumber: string | null; transferNumber: number | null;
+  forProjectReference: string | null; reason: string; movedOn: string; byName: string; at: string; receiptNumber: number | null; orderNumber: string | null; transferNumber: number | null; returnNumber: number | null;
 };
 
 export type TransferStatus = "in_transit" | "received" | "cancelled";

@@ -4,21 +4,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, DataGrid, EmptyState, ErrorState, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
-import type { DeliveriesState, ExpectedOrder, Receipt } from "@/lib/purchasing/types";
+import type { DeliveriesState, ExpectedOrder, Receipt, SupplierReturnRow } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { OrderStatusLabel, useOrderLabels } from "./order-labels";
 import { ReceiptResult, ReceiptSheet } from "./receipt-sheet";
 import { ReceiveDialog, usePlaceLabel } from "./receive-dialog";
+import { ReturnSheet, SupplierReturns } from "./supplier-returns";
 import styles from "./purchasing.module.css";
 
-type Show = "expected" | "inspection" | "received";
+type Show = "expected" | "inspection" | "received" | "returns";
 
 /**
  * Deliveries: orders expected from suppliers (the late ones first), deliveries waiting for inspection,
- * and what arrived lately. An expected order is received in place; a delivery opens to inspect or read.
+ * what arrived lately, and goods going back to suppliers. An expected order is received in place; a
+ * delivery opens to inspect, return or reverse it; a return opens to record the pickup.
  */
-export function Deliveries({ api, openId, onOpen, onOpenOrder, refreshKey }: {
-  api: PurchasingApi; openId: string | null; onOpen: (receiptId: string | null) => void; onOpenOrder: (orderId: string) => void; refreshKey: number;
+export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpenOrder, refreshKey }: {
+  api: PurchasingApi; openId: string | null; returnId: string | null; onOpen: (receiptId: string | null) => void; onOpenReturn: (returnId: string | null) => void;
+  onOpenOrder: (orderId: string) => void; refreshKey: number;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -26,11 +29,15 @@ export function Deliveries({ api, openId, onOpen, onOpenOrder, refreshKey }: {
   const placeLabel = usePlaceLabel();
   const [state, setState] = useState<DeliveriesState | null>(null);
   const [error, setError] = useState("");
-  const [show, setShow] = useState<Show>("expected");
+  const [show, setShow] = useState<Show>(returnId ? "returns" : "expected");
+  const [returns, setReturns] = useState<SupplierReturnRow[] | null>(null);
   const [search, setSearch] = useState("");
   const [receiving, setReceiving] = useState<string | null>(null);
   const load = useCallback(async () => {
-    try { setState(await api.deliveries()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Deliveries didn't load.")); }
+    try {
+      const [deliveries, back] = await Promise.all([api.deliveries(), api.returns()]);
+      setState(deliveries); setReturns(back.returns ?? []); setError("");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Deliveries didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
 
@@ -68,6 +75,7 @@ export function Deliveries({ api, openId, onOpen, onOpenOrder, refreshKey }: {
     { id: "expected", label: t("Expected") },
     { id: "inspection", label: state?.inspection.length ? t("To inspect ({count})", { count: state.inspection.length }) : t("To inspect") },
     { id: "received", label: t("Received") },
+    { id: "returns", label: returns?.some((row) => row.status === "open") ? t("Returns ({count})", { count: returns.filter((row) => row.status === "open").length }) : t("Returns") },
   ]} />;
   const cleared = search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : null;
   return <>
@@ -75,11 +83,14 @@ export function Deliveries({ api, openId, onOpen, onOpenOrder, refreshKey }: {
       onRowAction={(row) => onOpenOrder(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toggle}
       emptyContent={cleared ?? <EmptyState title={t("No deliveries expected")} description={t("Orders appear here once they're sent to the supplier.")} />}
       rowNumbers={false} selectable={false} wrapText />
+      : show === "returns" ? <SupplierReturns api={api} rows={returns} search={search} onSearch={setSearch} toolbar={toggle} onOpen={(id) => onOpenReturn(id)} />
       : <DataGrid<Receipt> appearance="flush" ariaLabel={show === "inspection" ? t("To inspect") : t("Received")} columns={receiptColumns} data={receipts} getRowId={(row) => row.id} isLoading={!state}
         onRowAction={(row) => onOpen(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toggle}
         emptyContent={cleared ?? (show === "inspection" ? <EmptyState title={t("Nothing to inspect")} /> : <EmptyState title={t("Nothing received yet")} />)}
         rowNumbers={false} selectable={false} wrapText />}
     {receiving ? <ReceiveDialog api={api} orderId={receiving} onClose={() => setReceiving(null)} onReceived={(next) => { setReceiving(null); void load(); onOpen(next.receipt.id); }} /> : null}
-    {openId ? <ReceiptSheet api={api} receiptId={openId} onChanged={() => void load()} onClose={() => onOpen(null)} onOpenOrder={onOpenOrder} /> : null}
+    {openId ? <ReceiptSheet api={api} receiptId={openId} onChanged={() => void load()} onClose={() => onOpen(null)} onOpenOrder={onOpenOrder}
+      onReturn={(next) => { setShow("returns"); onOpenReturn(next.return.id); }} /> : null}
+    {returnId ? <ReturnSheet api={api} returnId={returnId} onChanged={() => void load()} onClose={() => onOpenReturn(null)} onOpenOrder={onOpenOrder} /> : null}
   </>;
 }

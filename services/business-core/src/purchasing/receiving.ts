@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
+import { readOrderLines } from "./orders";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -77,27 +78,37 @@ export type Receipt = {
   id: string; number: number; orderId: string; orderNumber: string; supplierName: string; locationId: string; locationName: string; locationKind: LocationKind;
   receivedOn: string; receivedBy: string; receivedByName: string; deliveryNote: string; notes: string; inspectedByName: string | null; inspectedAt: string | null;
   received: string; accepted: string; rejected: string; pending: string; createdAt: string;
+  /** Short against the supplier's delivery note. */
+  missing: string;
+  reversedAt: string | null; reversedByName: string | null; reverseReason: string | null;
 };
+
+export const REJECT_KINDS = ["damaged", "defective", "wrong_item", "wrong_spec", "other"] as const;
+export type RejectKind = (typeof REJECT_KINDS)[number];
 
 const RECEIPT_SELECT = `SELECT receipt.id, receipt.number, receipt.order_id AS "orderId", purchase.number AS "orderNumber", vendor.display_name AS "supplierName",
   receipt.location_id AS "locationId", location.name AS "locationName", location.kind AS "locationKind", receipt.received_on::text AS "receivedOn",
   receipt.received_by AS "receivedBy", receiver.display_name AS "receivedByName", receipt.delivery_note AS "deliveryNote", receipt.notes,
   inspector.display_name AS "inspectedByName", receipt.inspected_at AS "inspectedAt", receipt.created_at AS "createdAt",
-  totals.received::text AS received, totals.accepted::text AS accepted, totals.rejected::text AS rejected, totals.pending::text AS pending
+  totals.received::text AS received, totals.accepted::text AS accepted, totals.rejected::text AS rejected, totals.pending::text AS pending, totals.missing::text AS missing,
+  receipt.reversed_at AS "reversedAt", reverser.display_name AS "reversedByName", receipt.reverse_reason AS "reverseReason"
   FROM goods_receipts receipt
   JOIN purchase_orders purchase ON purchase.workspace_id = receipt.workspace_id AND purchase.id = receipt.order_id
   JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
   JOIN stock_locations location ON location.workspace_id = receipt.workspace_id AND location.id = receipt.location_id
   JOIN users receiver ON receiver.id = receipt.received_by
   LEFT JOIN users inspector ON inspector.id = receipt.inspected_by
-  JOIN LATERAL (SELECT sum(received) AS received, sum(accepted) AS accepted, sum(rejected) AS rejected, sum(pending) AS pending FROM goods_receipt_lines
-                 WHERE workspace_id = receipt.workspace_id AND receipt_id = receipt.id) totals ON true`;
+  LEFT JOIN users reverser ON reverser.id = receipt.reversed_by
+  JOIN LATERAL (SELECT sum(received) AS received, sum(accepted) AS accepted, sum(rejected) AS rejected, sum(pending) AS pending,
+                       sum(greatest(coalesce(noted, received) - received, 0)) AS missing
+                  FROM goods_receipt_lines WHERE workspace_id = receipt.workspace_id AND receipt_id = receipt.id) totals ON true`;
 
 export async function readReceipts(db: Db, workspaceId: string, filter: { orderId?: string; pending?: boolean; limit?: number } = {}): Promise<Receipt[]> {
   const where = ["receipt.workspace_id = $1"];
   const values: unknown[] = [workspaceId];
   if (filter.orderId) { values.push(filter.orderId); where.push(`receipt.order_id = $${values.length}`); }
-  if (filter.pending !== undefined) where.push(filter.pending ? "totals.pending > 0" : "totals.pending = 0");
+  // Waiting for inspection means a live receipt with something still pending; a reversed one never waits.
+  if (filter.pending !== undefined) where.push(filter.pending ? "totals.pending > 0 AND receipt.reversed_at IS NULL" : "(totals.pending = 0 OR receipt.reversed_at IS NOT NULL)");
   return (await db.query<Receipt>(`${RECEIPT_SELECT} WHERE ${where.join(" AND ")} ORDER BY receipt.received_on DESC, receipt.number DESC LIMIT ${filter.limit ?? 200}`, values)).rows;
 }
 
@@ -107,35 +118,63 @@ export async function readReceipt(db: Db, workspaceId: string, receiptId: string
 
 export type ReceiptLine = {
   id: string; orderLineId: string; description: string; specification: string; unit: string; projectReference: string | null; boqLineId: string | null; projectId: string | null;
-  received: string; accepted: string; rejected: string; pending: string; rejectReason: string;
+  received: string; accepted: string; rejected: string; pending: string; rejectReason: string; rejectKind: RejectKind | null; noted: string | null;
+  inspectedByName: string | null;
+  /** Already going back to the supplier (not cancelled), from what was rejected and from what was accepted. */
+  returnedRejected: string; returnedAccepted: string;
 };
 
 export async function readReceiptLines(db: Db, workspaceId: string, receiptId: string): Promise<ReceiptLine[]> {
   return (await db.query<ReceiptLine>(
     `SELECT received.id, received.order_line_id AS "orderLineId", line.description, line.specification, line.unit, project.reference AS "projectReference",
             line.boq_line_id AS "boqLineId", line.project_id AS "projectId", received.received::text AS received, received.accepted::text AS accepted,
-            received.rejected::text AS rejected, received.pending::text AS pending, received.reject_reason AS "rejectReason"
+            received.rejected::text AS rejected, received.pending::text AS pending, received.reject_reason AS "rejectReason", received.reject_kind AS "rejectKind",
+            received.noted::text AS noted, inspector.display_name AS "inspectedByName",
+            coalesce(back.rejected, 0)::numeric(18, 4)::text AS "returnedRejected", coalesce(back.accepted, 0)::numeric(18, 4)::text AS "returnedAccepted"
        FROM goods_receipt_lines received
+       LEFT JOIN users inspector ON inspector.id = received.inspected_by
+       LEFT JOIN LATERAL (SELECT sum(item.quantity) FILTER (WHERE item.source = 'rejected') AS rejected, sum(item.quantity) FILTER (WHERE item.source = 'accepted') AS accepted
+                            FROM supplier_return_lines item JOIN supplier_returns sent ON sent.workspace_id = item.workspace_id AND sent.id = item.return_id
+                           WHERE item.workspace_id = received.workspace_id AND item.receipt_line_id = received.id AND sent.status <> 'cancelled') back ON true
        JOIN purchase_order_lines line ON line.workspace_id = received.workspace_id AND line.id = received.order_line_id
        LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id
       WHERE received.workspace_id = $1 AND received.receipt_id = $2 ORDER BY line.position, line.id`, [workspaceId, receiptId])).rows;
 }
 
-/** Still to come on a line: ordered less what was accepted or is waiting for inspection. Rejected goods are still owed. */
-export function outstanding(line: { quantity: string; accepted: string; pending: string }) {
-  const left = Dec.of(line.quantity).sub(line.accepted).sub(line.pending);
+type Owed = { quantity: string; accepted: string; pending: string; credited?: string };
+
+/**
+ * Still to come on a line: ordered less what was credited, accepted or is waiting for inspection.
+ * Rejected goods, and goods returned to be replaced, are still owed.
+ */
+export function outstanding(line: Owed) {
+  const left = Dec.of(line.quantity).sub(line.credited ?? "0").sub(line.accepted).sub(line.pending);
   return left.cmp(0) > 0 ? left : Dec.of(0);
 }
 
 /** The most that can arrive now on a line: what's still to come plus the allowed over-delivery on the whole line. */
-export function receivable(line: { quantity: string; accepted: string; pending: string }, tolerancePercent: string) {
+export function receivable(line: Owed, tolerancePercent: string) {
   const ceiling = Dec.of(line.quantity).mul(Dec.of(100).add(tolerancePercent)).div(100);
-  const left = ceiling.sub(line.accepted).sub(line.pending).floor(4);
+  const left = ceiling.sub(line.credited ?? "0").sub(line.accepted).sub(line.pending).floor(4);
   return left.cmp(0) > 0 ? left : Dec.of(0);
 }
 
 /** An order's status from what has arrived: received once every line's quantity is accepted or waiting for inspection. */
-export function receivedStatus(lines: Array<{ quantity: string; accepted: string; pending: string }>, arrivedAny: boolean) {
+export function receivedStatus(lines: Owed[], arrivedAny: boolean) {
   if (lines.length && lines.every((line) => outstanding(line).isZero())) return "received" as const;
   return arrivedAny ? ("partly_received" as const) : null;
+}
+
+/**
+ * Moves an open order to partly received or received from what has arrived on its lines; when nothing
+ * counts any more (a receipt reversed), it goes back to confirmed or sent. Closed and cancelled orders stay.
+ */
+export async function settleOrder(db: Db, workspaceId: string, orderId: string) {
+  const order = (await db.query<{ status: string; confirmed: boolean }>(
+    `SELECT status, confirmed_at IS NOT NULL AS confirmed FROM purchase_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId])).rows[0];
+  if (!order || !["sent", "confirmed", "partly_received", "received"].includes(order.status)) return;
+  const arrived = Boolean((await db.query(`SELECT 1 FROM goods_receipts WHERE workspace_id = $1 AND order_id = $2 AND reversed_at IS NULL LIMIT 1`, [workspaceId, orderId])).rowCount);
+  const next = receivedStatus(await readOrderLines(db, workspaceId, orderId), arrived) ?? (order.confirmed ? "confirmed" : "sent");
+  if (next !== order.status)
+    await db.query(`UPDATE purchase_orders SET status = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId, next]);
 }

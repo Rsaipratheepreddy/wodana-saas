@@ -62,12 +62,14 @@
 .compareCell[data-chosen] > button { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); }
 .receiveLines { display: grid; min-inline-size: 0; }
 .receiveHead, .receiveLine { display: grid; grid-template-columns: minmax(8rem, 1fr) 7rem 8rem 8rem; gap: var(--wd-space-2); align-items: center; }
-.receiveLines[data-inspection] :is(.receiveHead, .receiveLine) { grid-template-columns: minmax(8rem, 1fr) 7rem 8rem; }
+.receiveLines[data-columns="5"] :is(.receiveHead, .receiveLine) { grid-template-columns: minmax(8rem, 1fr) 6rem 7rem 7rem 7rem; }
+.receiveLines[data-columns="3"] :is(.receiveHead, .receiveLine) { grid-template-columns: minmax(8rem, 1fr) 7rem 9rem; }
 .receiveHead { padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .receiveLine { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
 .receiveHead > :nth-child(n+2), .receiveLine > [role="cell"]:nth-child(n+2) { text-align: end; }
 .receiveReason { grid-column: 1 / -1; }
 .late { color: var(--wd-color-danger); }
+.nameCell small.lateText { color: var(--wd-color-danger); }
 .nameCell small.arrived { color: var(--wd-color-text-secondary); }
 .receipts { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
 .receipts > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
@@ -87,6 +89,6 @@
   .pair, .sheets > li { grid-template-columns: minmax(0, 1fr); }
   .importList > li { grid-template-columns: minmax(0, 1fr) auto; }
   .draftLines > li, .draftLines > li:has(> :nth-child(5)) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .receiveHead, .receiveLine, .receiveLines[data-inspection] :is(.receiveHead, .receiveLine) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .receiveHead, .receiveLine, .receiveLines[data-columns] :is(.receiveHead, .receiveLine) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .receiveHead > :first-child, .receiveLine > :first-child { grid-column: 1 / -1; text-align: start; }
 }

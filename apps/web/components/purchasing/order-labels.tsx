@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { DeliverTo, OrderStatus } from "@/lib/purchasing/types";
+import type { DeliverTo, OrderStatus, RejectKind } from "@/lib/purchasing/types";
 import styles from "./purchasing.module.css";
 
 /** "12.0000" → "12": a stored quantity as people write it. */
@@ -15,6 +15,7 @@ export function useOrderLabels() {
   return useMemo(() => ({
     status: { draft: t("Draft"), pending_approval: t("Waiting for approval"), approved: t("Approved"), sent: t("Sent"), confirmed: t("Confirmed"), partly_received: t("Partly received"), received: t("Received"), closed: t("Closed"), cancelled: t("Cancelled") } satisfies Record<OrderStatus, string>,
     deliverTo: { site: t("Project site"), factory: t("Our factory"), warehouse: t("Our warehouse"), pickup: t("We collect"), other: t("Another address") } satisfies Record<DeliverTo, string>,
+    rejectKind: { damaged: t("Damaged"), defective: t("Defective"), wrong_item: t("Wrong item"), wrong_spec: t("Not to spec (colour, finish, size)"), other: t("Other") } satisfies Record<RejectKind, string>,
   }), [t]);
 }
 

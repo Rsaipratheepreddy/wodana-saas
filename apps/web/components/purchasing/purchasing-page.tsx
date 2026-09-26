@@ -32,9 +32,10 @@ export function PurchasingPage({ workspaceId, section }: { workspaceId: string; 
   const openId = params.get("order");
   const requestId = params.get("request");
   const receiptId = params.get("receipt");
-  const go = (next: PurchasingSection, open?: string | null) => {
+  const returnId = params.get("return");
+  const go = (next: PurchasingSection, open?: string | null, key?: "return") => {
     const base = `/workspace/purchasing${next === "to-order" ? "" : `/${next}`}`;
-    router.replace(open ? `${base}?${next === "price-requests" ? "request" : next === "deliveries" ? "receipt" : "order"}=${open}` : base, { scroll: false });
+    router.replace(open ? `${base}?${key ?? (next === "price-requests" ? "request" : next === "deliveries" ? "receipt" : "order")}=${open}` : base, { scroll: false });
   };
   const action = section === "orders" ? <Button variant="primary" onPress={() => setNewOrder(true)}><Plus aria-hidden="true" size={15} />{t("New order")}</Button>
     : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button> : null;
@@ -46,8 +47,8 @@ export function PurchasingPage({ workspaceId, section }: { workspaceId: string; 
       { id: "price-requests", label: t("Price requests"), panel: <PriceRequests api={api} refreshKey={refresh} openId={requestId} onOpen={(id) => go("price-requests", id)}
         onOrder={(id) => { setRefresh((value) => value + 1); go("orders", id); }} /> },
       { id: "orders", label: t("Orders"), panel: <Orders api={api} refreshKey={refresh} openId={openId} onOpen={(id) => go("orders", id)} onReceipt={(id) => go("deliveries", id)} /> },
-      { id: "deliveries", label: t("Deliveries"), panel: <Deliveries api={api} refreshKey={refresh} openId={receiptId} onOpen={(id) => go("deliveries", id)}
-        onOpenOrder={(id) => go("orders", id)} /> },
+      { id: "deliveries", label: t("Deliveries"), panel: <Deliveries api={api} refreshKey={refresh} openId={receiptId} returnId={returnId} onOpen={(id) => go("deliveries", id)}
+        onOpenReturn={(id) => go("deliveries", id, "return")} onOpenOrder={(id) => go("orders", id)} /> },
       { id: "suppliers", label: t("Suppliers"), panel: <Suppliers api={api} adding={addingSupplier} onAddingChange={setAddingSupplier} /> },
     ]} />
     {newOrder ? <CreateOrderDialog api={api} needs={[]} onClose={() => setNewOrder(false)} onCreated={(id) => { setNewOrder(false); setRefresh((value) => value + 1); go("orders", id); }} /> : null}

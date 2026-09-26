@@ -13,6 +13,7 @@ import { processWorkDeadlines } from "./work-reminders";
 import { OrdersService } from "../purchasing/orders.service";
 import { PriceRequestsService } from "../purchasing/price-requests.service";
 import { ReceivingService } from "../purchasing/receiving.service";
+import { SupplierReturnsService } from "../purchasing/returns.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
@@ -865,9 +866,9 @@ integration("projects core (plan §6.10)", () => {
       await expect(new ReceivingService(access(w.designer, [...buying, "stock.inspect"])).inspect(actor, w.workspaceId, first, { lines: [] })).rejects.toThrow(/Someone else inspects/);
       expect(receipt.canInspectThis).toBe(false);
       const waiting = receipt.lines[0];
-      await expect(inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "5", rejected: "1" }] })).rejects.toThrow(/Say why/);
-      await expect(inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "4", rejected: "1", rejectReason: "Chipped" }] })).rejects.toThrow(/add up to 6/);
-      receipt = await inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "5", rejected: "1", rejectReason: "Chipped edge" }] });
+      await expect(inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "5", rejected: "1", rejectKind: "damaged" }] })).rejects.toThrow(/Say why/);
+      await expect(inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "4", rejected: "1", rejectKind: "damaged", rejectReason: "Chipped" }] })).rejects.toThrow(/add up to 6/);
+      receipt = await inspector.inspect(actor, w.workspaceId, first, { lines: [{ id: waiting.id, accepted: "5", rejected: "1", rejectKind: "damaged", rejectReason: "Chipped edge" }] });
       expect(receipt.receipt).toMatchObject({ accepted: "5.0000", rejected: "1.0000", pending: "0.0000", inspectedByName: "Omar Manager" });
       let current = await orders.get(actor, w.workspaceId, order);
       expect(current.lines.map((line) => [line.accepted, line.rejected, line.pending])).toEqual([["5.0000", "1.0000", "0.0000"], ["0.0000", "0.0000", "0.0000"]]);
@@ -987,6 +988,122 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("SAVEPOINT immutable");
       await expect(w.client.query(`UPDATE stock_movements SET quantity = 1 WHERE workspace_id = $1`, [w.workspaceId])).rejects.toThrow(/cannot be changed/);
       await w.client.query("ROLLBACK TO SAVEPOINT immutable");
+    });
+  });
+
+  it("handles delivery problems: missing against the note, wrong spec and defects, line-by-line inspection, returns replaced or credited, and a wrong receipt reversed", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const company = randomUUID(), vendor = randomUUID();
+      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio Furniture','Studio Furniture LLC','AE','AED','en-AE','Asia/Dubai')`, [company, w.workspaceId]);
+      const access = (userId: string, permissions: string[]) => {
+        const run = async (_a: unknown, _w: string, code: string | string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          if (!(Array.isArray(code) ? code : [code]).some((item) => permissions.includes(item))) throw new Error("Not allowed");
+          return fn(w.client, { userId });
+        };
+        return { withPermission: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
+      };
+      const buyerRights = ["vendors.view", "vendors.manage", "purchasing.view", "purchasing.manage", "purchasing.approve", "stock.receive", "stock.inspect", "stock.view", "stock.manage"];
+      const orders = new OrdersService(access(w.manager, buyerRights));
+      const buyer = { receiving: new ReceivingService(access(w.manager, buyerRights)), returns: new SupplierReturnsService(access(w.manager, buyerRights)) };
+      const keeper = new ReceivingService(access(w.designer, ["purchasing.view", "stock.receive"]));
+      await w.client.query(`INSERT INTO workspace_purchasing_settings (workspace_id, approval_threshold, require_material_signoff, require_approved_supplier) VALUES ($1, NULL, false, false)`, [w.workspaceId]);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "10", unit: "m²", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", name: "Lights", supply: "ready_made", version: detail.project.version });
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const lightsLine = scope.lines.find((line) => line.title === "Under-cabinet lights")!;
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [lightsLine.id], packageId: scope.packages.find((item) => item.name === "Lights")!.id, version: detail.project.version });
+      await new SuppliersService(access(w.manager, buyerRights)).save(actor, w.workspaceId, { id: vendor, version: 0, name: "Nile Marble", entityIds: [company] });
+      const needs = (await orders.needs(actor, w.workspaceId)).needs.filter((need) => ["Calacatta slab", "Under-cabinet lights"].includes(need.title));
+      const order = randomUUID();
+      let state = await orders.create(actor, w.workspaceId, { id: order, vendorId: vendor, lines: needs.map((need) => ({ source: need.source,
+        ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: need.required, unitPrice: need.source === "material" ? "350" : "500", discountPercent: "0", taxRate: "0" })) });
+      state = await orders.command(actor, w.workspaceId, order, { action: "submit", version: state.order.version });
+      state = await orders.command(actor, w.workspaceId, order, { action: "send", version: state.order.version });
+      const [slab, lights] = state.lines;
+      const lineStatus = async () => (await orders.get(actor, w.workspaceId, order)).lines.map((line) => [line.accepted, line.rejected, line.pending, line.credited]);
+
+      // A receipt at the wrong place is reversed by its receiver before anyone inspects it; the order goes back to sent.
+      const wrong = await keeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "factory", receivedOn: "2026-09-26", lines: [{ orderLineId: slab.id, received: "10" }] });
+      expect(wrong.canReverseThis).toBe(true);
+      await expect(keeper.reverse(actor, w.workspaceId, wrong.receipt.id, {})).rejects.toThrow(/what was wrong/);
+      const reversed = await keeper.reverse(actor, w.workspaceId, wrong.receipt.id, { reason: "Booked to the factory by mistake" });
+      expect(reversed.receipt).toMatchObject({ reverseReason: "Booked to the factory by mistake", reversedByName: "Dana Designer" });
+      expect((await orders.get(actor, w.workspaceId, order)).order.status).toBe("sent");
+      expect((await buyer.receiving.deliveries(actor, w.workspaceId)).inspection).toEqual([]);
+
+      // The note says 12 m², 10 arrived: 2 are missing and the buyer is told.
+      let receipt = await keeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: slab.id, received: "10", noted: "12" }, { orderLineId: lights.id, received: "1" }] });
+      expect(receipt.receipt).toMatchObject({ number: 2, missing: "2.0000", pending: "11.0000" });
+      const first = receipt.receipt.id;
+
+      // Inspected line by line: the slab now (2 m² not to spec), the lights later.
+      const slabLine = receipt.lines.find((line) => line.orderLineId === slab.id)!;
+      await expect(buyer.receiving.inspect(actor, w.workspaceId, first, { lines: [{ id: slabLine.id, rejected: "2", rejectReason: "Veins don't match the sample" }] })).rejects.toThrow(/what was wrong/);
+      receipt = await buyer.receiving.inspect(actor, w.workspaceId, first, { lines: [{ id: slabLine.id, rejected: "2", rejectKind: "wrong_spec", rejectReason: "Veins don't match the sample" }] });
+      expect(receipt.receipt).toMatchObject({ accepted: "8.0000", rejected: "2.0000", pending: "1.0000", inspectedAt: null });
+      expect(receipt.lines.find((line) => line.id === slabLine.id)).toMatchObject({ rejectKind: "wrong_spec", inspectedByName: "Omar Manager" });
+      expect((await buyer.receiving.deliveries(actor, w.workspaceId)).inspection.map((item) => item.number)).toEqual([2]);
+      receipt = await buyer.receiving.inspect(actor, w.workspaceId, first, { lines: [{ id: receipt.lines.find((line) => line.orderLineId === lights.id)!.id }] });
+      expect(receipt.receipt.inspectedAt).not.toBeNull();
+      expect(await lineStatus()).toEqual([["8.0000", "2.0000", "0.0000", "0.0000"], ["1.0000", "0.0000", "0.0000", "0.0000"]]);
+      expect((await orders.get(actor, w.workspaceId, order)).order.status).toBe("partly_received");
+
+      // The two rejected m² go back to be replaced; they stay owed and never touched stock.
+      const replace = randomUUID();
+      let back = await buyer.returns.create(actor, w.workspaceId, { id: replace, receiptId: first, outcome: "replace", lines: [{ receiptLineId: slabLine.id, source: "rejected", quantity: "3" }] })
+        .catch((error: Error) => error);
+      expect((back as Error).message).toMatch(/At most 2 m²/);
+      back = await buyer.returns.create(actor, w.workspaceId, { id: replace, receiptId: first, outcome: "replace", lines: [{ receiptLineId: slabLine.id, source: "rejected", quantity: "2" }] }) as never;
+      expect((back as { return: { number: number; status: string } }).return).toMatchObject({ number: 1, status: "open" });
+      expect((back as { lines: Array<{ reasonKind: string; reason: string }> }).lines[0]).toMatchObject({ reasonKind: "wrong_spec", reason: "Veins don't match the sample" });
+      await expect(keeper.reverse(actor, w.workspaceId, first, { reason: "x" })).rejects.toThrow(/going back to the supplier/);
+      await expect(orders.command(actor, w.workspaceId, order, { action: "close", reason: "x", version: (await orders.get(actor, w.workspaceId, order)).order.version }))
+        .rejects.toThrow(/waiting to go back/);
+      back = await buyer.returns.command(actor, w.workspaceId, replace, { action: "sent", version: 1 }) as never;
+      expect((back as { return: { status: string } }).return.status).toBe("sent");
+
+      // One accepted m² turns out cracked: it goes back for a credit, leaving stock when collected.
+      const credit = randomUUID();
+      back = await buyer.returns.create(actor, w.workspaceId, { id: credit, receiptId: first, outcome: "credit", note: "Found at cutting",
+        lines: [{ receiptLineId: slabLine.id, source: "accepted", quantity: "1", reasonKind: "defective", reason: "Hairline crack" }] }) as never;
+      expect((back as { return: { credit: string } }).return.credit).toBe("350.0000");
+      expect(await lineStatus()).toEqual([["8.0000", "2.0000", "0.0000", "0.0000"], ["1.0000", "0.0000", "0.0000", "0.0000"]]);
+      await buyer.returns.command(actor, w.workspaceId, credit, { action: "sent", version: 1 });
+      expect(await lineStatus()).toEqual([["7.0000", "2.0000", "0.0000", "1.0000"], ["1.0000", "0.0000", "0.0000", "0.0000"]]);
+      const stockOf = async () => (await w.client.query<{ onHand: string }>(`SELECT sum(on_hand)::text AS "onHand" FROM stock_balances balance JOIN stock_items item ON item.id = balance.item_id
+        WHERE balance.workspace_id = $1 AND item.name = 'Calacatta slab'`, [w.workspaceId])).rows[0].onHand;
+      expect(await stockOf()).toBe("7.0000");
+      const form = await keeper.receiving(actor, w.workspaceId, order);
+      expect(form.lines.map((line) => line.outstanding)).toEqual(["2", "0"]);
+
+      // The replacement arrives; entered twice by mistake, the buyer reverses the second.
+      const replacement = await keeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "warehouse", receivedOn: "2026-09-28", lines: [{ orderLineId: slab.id, received: "2" }] });
+      await buyer.receiving.inspect(actor, w.workspaceId, replacement.receipt.id, { lines: [{ id: replacement.lines[0].id }] });
+      expect((await orders.get(actor, w.workspaceId, order)).order.status).toBe("received");
+      expect(await stockOf()).toBe("9.0000");
+      const reversal = await buyer.receiving.reverse(actor, w.workspaceId, replacement.receipt.id, { reason: "Counted the replacement twice" });
+      expect(reversal.receipt.reversedAt).not.toBeNull();
+      expect(await stockOf()).toBe("7.0000");
+      expect((await orders.get(actor, w.workspaceId, order)).order.status).toBe("partly_received");
+      const again = await keeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order, place: "warehouse", receivedOn: "2026-09-28", lines: [{ orderLineId: slab.id, received: "2" }] });
+      await buyer.receiving.inspect(actor, w.workspaceId, again.receipt.id, { lines: [{ id: again.lines[0].id }] });
+      let current = await orders.get(actor, w.workspaceId, order);
+      expect(current.order.status).toBe("received");
+      expect(current.lines.map((line) => [line.accepted, line.credited, line.returned])).toEqual([["9.0000", "1.0000", "3.0000"], ["1.0000", "0.0000", "0.0000"]]);
+      expect(current.returns.map((item) => [item.number, item.outcome, item.status])).toEqual([[2, "credit", "sent"], [1, "replace", "sent"]]);
+      // Nine accepted plus one credited is the whole line: closing isn't short.
+      current = await orders.command(actor, w.workspaceId, order, { action: "close", version: current.order.version });
+      expect(current.order).toMatchObject({ status: "closed", closeReason: null });
+
+      const notices = (await w.client.query<{ event: string; recipient: string }>(`SELECT event_type AS event, recipient_id AS recipient FROM notifications WHERE workspace_id = $1
+        AND event_type IN ('purchasing.missing', 'purchasing.receipt_reversed') AND channel = 'in_app'`, [w.workspaceId])).rows;
+      expect(notices).toEqual(expect.arrayContaining([{ event: "purchasing.missing", recipient: w.manager }, { event: "purchasing.receipt_reversed", recipient: w.manager },
+        { event: "purchasing.receipt_reversed", recipient: w.designer }]));
     });
   });
 

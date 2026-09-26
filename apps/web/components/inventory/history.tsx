@@ -21,10 +21,10 @@ export function History({ api, itemId, onClearItem, refreshKey }: { api: Invento
   }, [api, itemId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
   const kinds = useMemo(() => ({ receive: t("Delivered"), issue: t("Issued"), return: t("Taken back"), transfer_out: t("Moved out"), transfer_in: t("Moved in"),
-    allocate: t("Reserved"), release: t("Released"), adjust: t("Corrected") } satisfies Record<MovementKind, string>), [t]);
+    allocate: t("Reserved"), release: t("Released"), adjust: t("Corrected"), supplier_return: t("Returned to supplier"), reverse: t("Delivery reversed") } satisfies Record<MovementKind, string>), [t]);
   const source = useCallback((row: MovementRow) => [
-    row.orderNumber ? t("{order}, delivery {number}", { order: row.orderNumber, number: row.receiptNumber ?? "" }) : "",
-    row.transferNumber ? t("Move {number}", { number: row.transferNumber }) : "", row.reason,
+    row.receiptNumber ? t("{order}, delivery {number}", { order: row.orderNumber ?? "", number: row.receiptNumber }) : row.orderNumber ?? "",
+    row.transferNumber ? t("Move {number}", { number: row.transferNumber }) : "", row.returnNumber ? t("Return {number}", { number: row.returnNumber }) : "", row.reason,
   ].filter(Boolean).join(" · "), [t]);
   const shown = (rows ?? []).filter((row) => !search.trim() || `${row.itemName} ${row.locationName} ${row.projectReference ?? ""} ${row.forProjectReference ?? ""} ${row.reason}`
     .toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));

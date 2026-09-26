@@ -5,7 +5,7 @@ import { Dec } from "../catalog-core/decimal";
 
 type Db = Pick<PoolClient, "query">;
 
-export const MOVEMENT_KINDS = ["receive", "issue", "return", "transfer_out", "transfer_in", "allocate", "release", "adjust"] as const;
+export const MOVEMENT_KINDS = ["receive", "issue", "return", "transfer_out", "transfer_in", "allocate", "release", "adjust", "supplier_return", "reverse"] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 
 /** Items without a catalog item are told apart by their name and unit. */
@@ -39,17 +39,19 @@ export async function stockItemFor(db: Db, workspaceId: string, input: { catalog
 
 export type Movement = {
   batchId: string; itemId: string; locationId: string; projectId: string | null; kind: MovementKind; quantity: string; forProjectId?: string | null;
-  unitCost?: string | null; currency?: string | null; receiptLineId?: string | null; transferId?: string | null; reason?: string; movedOn: string; actorId: string;
+  unitCost?: string | null; currency?: string | null; receiptLineId?: string | null; transferId?: string | null; supplierReturnId?: string | null; reason?: string; movedOn: string; actorId: string;
 };
 
 /** Writes one movement; the database keeps the balance and refuses to go below zero. */
 export async function move(db: Db, workspaceId: string, movement: Movement) {
   try {
     await db.query(
-      `INSERT INTO stock_movements (id, workspace_id, batch_id, item_id, location_id, project_id, kind, quantity, for_project_id, unit_cost, currency, receipt_line_id, transfer_id, reason, moved_on, actor_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      `INSERT INTO stock_movements (id, workspace_id, batch_id, item_id, location_id, project_id, kind, quantity, for_project_id, unit_cost, currency, receipt_line_id, transfer_id,
+                                   supplier_return_id, reason, moved_on, actor_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       [randomUUID(), workspaceId, movement.batchId, movement.itemId, movement.locationId, movement.projectId, movement.kind, movement.quantity, movement.forProjectId ?? null,
-        movement.unitCost ?? null, movement.unitCost ? movement.currency ?? null : null, movement.receiptLineId ?? null, movement.transferId ?? null, movement.reason ?? "", movement.movedOn, movement.actorId]);
+        movement.unitCost ?? null, movement.unitCost ? movement.currency ?? null : null, movement.receiptLineId ?? null, movement.transferId ?? null, movement.supplierReturnId ?? null,
+        movement.reason ?? "", movement.movedOn, movement.actorId]);
   } catch (error) {
     if ((error as { constraint?: string }).constraint === "stock_balances_not_negative") throw new ConflictException("There isn't that much in stock there.");
     throw error;
@@ -88,6 +90,7 @@ export async function readStock(db: Db, workspaceId: string, filter: { projectId
 export type MovementRow = {
   id: string; batchId: string; kind: MovementKind; quantity: string; itemId: string; itemName: string; unit: string; locationName: string; projectReference: string | null;
   forProjectReference: string | null; reason: string; movedOn: string; byName: string; at: string; receiptNumber: number | null; orderNumber: string | null; transferNumber: number | null;
+  returnNumber: number | null;
 };
 
 export async function readMovements(db: Db, workspaceId: string, filter: { itemId?: string; locationId?: string; projectId?: string; limit?: number } = {}): Promise<MovementRow[]> {
@@ -99,7 +102,8 @@ export async function readMovements(db: Db, workspaceId: string, filter: { itemI
   return (await db.query<MovementRow>(
     `SELECT movement.id, movement.batch_id AS "batchId", movement.kind, movement.quantity::text AS quantity, item.id AS "itemId", item.name AS "itemName", item.unit,
             location.name AS "locationName", owner.reference AS "projectReference", booked.reference AS "forProjectReference", movement.reason, movement.moved_on::text AS "movedOn",
-            person.display_name AS "byName", movement.created_at AS at, receipt.number AS "receiptNumber", purchase.number AS "orderNumber", transfer.number AS "transferNumber"
+            person.display_name AS "byName", movement.created_at AS at, receipt.number AS "receiptNumber", coalesce(purchase.number, returned.number) AS "orderNumber", transfer.number AS "transferNumber",
+            back.number AS "returnNumber"
        FROM stock_movements movement
        JOIN stock_items item ON item.workspace_id = movement.workspace_id AND item.id = movement.item_id
        JOIN stock_locations location ON location.workspace_id = movement.workspace_id AND location.id = movement.location_id
@@ -110,6 +114,8 @@ export async function readMovements(db: Db, workspaceId: string, filter: { itemI
        LEFT JOIN goods_receipts receipt ON receipt.workspace_id = received.workspace_id AND receipt.id = received.receipt_id
        LEFT JOIN purchase_orders purchase ON purchase.workspace_id = receipt.workspace_id AND purchase.id = receipt.order_id
        LEFT JOIN stock_transfers transfer ON transfer.workspace_id = movement.workspace_id AND transfer.id = movement.transfer_id
+       LEFT JOIN supplier_returns back ON back.workspace_id = movement.workspace_id AND back.id = movement.supplier_return_id
+       LEFT JOIN purchase_orders returned ON returned.workspace_id = back.workspace_id AND returned.id = back.order_id
       WHERE ${where.join(" AND ")}
       ORDER BY movement.seq DESC LIMIT ${filter.limit ?? 500}`, values)).rows;
 }

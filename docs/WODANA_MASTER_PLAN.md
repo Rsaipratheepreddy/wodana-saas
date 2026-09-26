@@ -648,7 +648,20 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - The order becomes partly received or received from its lines.
   - Accepted quantities show in To order and in each scope line's history ("received").
   - The order shows what arrived per line and its deliveries.
-- **Notices:** inspection needed (inspectors), received (the buyer and the receiver), and goods rejected (the buyer).
+- **Delivery problems:**
+  - A rejection says what was wrong (damaged, defective, the wrong item, not to spec such as colour, finish or size, or other) with a note.
+  - A line can record what the supplier's delivery note says came. Anything short is flagged as missing, stays owed, and the buyer is told.
+  - Inspection is line by line: some lines now, the rest later. The delivery counts as inspected once nothing waits.
+  - **Returns to the supplier** (`supplier_returns`) cover rejected goods, and accepted goods found wrong later, from one delivery:
+    - the supplier either *replaces* them (owed again, and the order goes back to partly received) or *credits* them (no longer owed, with the credit at the order line's price recorded for payables);
+    - the supplier can be emailed the return note;
+    - accepted goods leave stock when the supplier collects them;
+    - an open return can be cancelled with a reason, and an order can't close while a return waits for pickup.
+  - A delivery entered by mistake is **reversed** with a reason: it stops counting, exactly what it put into stock comes back out, and the order's status follows (back to confirmed or sent when nothing else arrived).
+    - Its receiver can reverse it before anyone inspects it; a buyer can reverse it at any time.
+    - A delivery can't be reversed once goods from it went back to the supplier.
+  - Still owed on a line = ordered − credited − (accepted − returned after acceptance) − waiting for inspection.
+- **Notices:** inspection needed (inspectors), received (the buyer and the receiver), goods rejected and goods missing (the buyer), a return raised (the buyer), and a delivery reversed (the buyer and the receiver).
 - **Permissions:** `stock.receive` and `stock.inspect`, alongside `purchasing.manage` and `purchasing.approve`.
 - Accepted goods go into stock where they arrived (see Inventory below).
 
@@ -663,7 +676,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Places:** warehouses, factory and other places in Settings; a project's site is made by its first delivery; a place with stock can't be closed.
 - **Notices:** a move is on its way (receivers), a move arrived short (the sender), and stock was corrected (people who adjust stock).
 - **Permissions:** `stock.view`, `stock.manage` and `stock.adjust`.
-- Still to come: delivery problems (reject reasons, missing goods, returns to the supplier, reversing a wrong receipt, inspecting line by line), site deliveries with photo proof, unit conversions, costing (moving average) and payables.
+- Still to come: site deliveries with photo proof, receipts without an order, unit conversions (bought in boxes, stocked in pieces), the late-delivery chase task, costing (moving average) and payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
 
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.
