@@ -374,41 +374,40 @@ One design workspace in Planning, driven by the design package's stages. Reviews
 - **Deliverable states:** `draft → internal_review → internal_approved → client_review → approved | changes_requested`; a new revision supersedes. One lifecycle only (no folder shortcut, one comment model).
 - **Reviews:** Creative Director (the package's reviewer role) approves or sends back with pinned notes; the designer presents a stage's deliverables to the client as one **presentation** (a round). Until the client portal ships, staff record the client's decision with evidence (who, when, how, note).
 - **Rounds:** one count per stage from the package's included revisions. A round beyond them needs the extra-revision fee (Design packages setting) accepted before work starts.
-- **Materials schedule:** a table per room and element (catalog material, finish code, supplier, sample status, client approval). Approved rows become quotation lines at catalog rates.
+- **Materials:** chosen in the Material selection stage as material/finish boards the client approves. The priced list is the quotation's lines (catalog items); the procurement materials schedule (supplier, samples, lead time, order and delivery) lives in the Project and is generated from the accepted quote. One list per stage, never retyped.
 - **Visibility:** drafts and internal review are staff-only; comments are internal or with-client; the project/site team sees approved work after sign-off.
 - **Approvals queue:** Home → Approvals lists pending design reviews and client decisions and opens the drawing in Design. Design is not approved from Agreement.
 - **Notifications:** review requested, sent back, presented to client, client decided, stage overdue, design signed off ("ready to quote").
-- **Sign-off:** freezes the design baseline (approved drawings + materials schedule). The main quote starts from it; later design changes become a new quote revision (or a variation once the project exists). Working drawings continue in the Project.
+- **Sign-off:** freezes the design baseline (approved drawings and material boards). The main quote starts from it; later design changes become a new quote revision (or a variation once the project exists). Working drawings continue in the Project.
 - **Quotes vs design:** the design-fee quote is independent (package × area). The main quote is derived from the design baseline when the route includes design; without design it is built from Requirements.
 - **Edge cases:** the client approves an old revision (rejected, shown the latest); a design change after a WO is released flags affected WOs/tasks "stale drawing"; a moodboard approval never satisfies the technical-drawing gate; a removed room archives its deliverables but keeps history.
 
 ### 6.8 Quotation
-- **Records:** quote_rounds, quotes, quote_sections (per space), quote_lines (variant + snapshot, qty, unit, cost, sell, discount, tax, option group, included/excluded), quote_terms (payment schedule, validity, exclusions), qs_reviews (the approvals row + notes per line), quote_acceptances.
-- **Rules:**
-  - Totals are computed server-side in decimal, with rounding per line and then per document (tenant setting).
-  - Tax per line comes from the tax profile.
-  - Margin is visible only with permission.
-  - An issued quote is immutable; a change makes a new revision.
-  - The client PDF and portal show sell-side fields only.
-- **Edge cases:**
-  - Option groups (choose one of A/B) and optional add-ons.
-  - Partial acceptance of options.
-  - A discount above the threshold needs approval.
-  - A manual line without a catalog item needs a reason and QS attention.
-  - Quantity from a measurement formula (area × waste factor) shows the formula, and the estimator adjusts it with a reason.
-  - Currency differs from the legal entity: rate snapshot.
-  - Validity expired: re-issue.
-  - Client asks for a revision after accepting: new revision plus re-acceptance; the payment already received is carried over.
-  - Two people editing one draft: version conflict with a merge prompt.
-  - A price-unavailable line blocks QS submission.
-- **Screens:** Quote builder, one page:
-  - left: space tree;
-  - center: lines grid (inline edit, catalog picker with search, `⌘K` add);
-  - right: summary (totals, margin if permitted, issues list);
-  - top: one primary action that changes with state (Submit to QS → Issue → Record acceptance).
-  - Plus revision diff view.
-- **AI:** draft quote from requirements, measurements and catalog → proposed lines with evidence; "check my quote" (missing items per room, unusual quantities, lines without price, exclusions).
-- **Tests:** hash invalidates QS; decimal totals; permission-hidden margin; idempotent issue.
+Planning ends in two outcomes: the signed-off design and the accepted quotation. The accepted quotation is the source of truth the Project's BOQ, budget, procurement and payments start from.
+
+- **Shape (one flat list, many views):** every line has an **Area** (a case room from the catalog or typed, or *General*) and a **Work package** (trade: joinery, civil, electrical… from the firm's configurable list). Sections are views, never copies: *By area*, *By trade*, *Area → trade*. The firm kit sets the default (residential: by area; commercial: by trade) and the client document uses the view chosen for it.
+- **Line kinds:** item (catalog product, material or assembly), service (labour or work by unit: point, m², day, lump sum), allowance / provisional sum (a budget spent down later), client-supplied (install only, priced at zero, never a PO), and the site services every fit-out needs: relocate (from area → to area), dismantle, remove and store (per period), dispose. Optional lines and choose-one alternates the client picks.
+- **Line fields:** item + image, description, spec/finish, dimensions → quantity, unit, rate (sell); cost, markup and supplier behind permission; line discount and tax category; internal note.
+- **Money is configuration, not code** (Settings → Quotations, defaults from the region pack):
+  - tax categories and their components from the region/tax profile (VAT, GST split, sales tax, exempt), prices entered inclusive or exclusive, tax after discounts;
+  - discounts on a line, an area/trade or the whole quote, as % or amount, in the order line → section → quote → tax; above the firm's threshold needs approval;
+  - markup defaults firm → category → line, and a margin floor that needs approval;
+  - rounding from the currency's decimals and the firm's policy (line then document, or document only);
+  - payment schedule templates: milestones as % or amount tied to an event (on acceptance, stage start, delivery, handover), must total 100 %, optional retention;
+  - validity days, numbering, internal review on/off, terms and exclusions as template text.
+- **Builder (the USP):** a Notion-clean page with the lines grid in the middle.
+  - **AI first draft:** when design is signed off (or from Requirements when the route has no design), AI compiles requirements, site measurements, moodboard notes and approved designs/material boards into a draft. Every line is a suggestion to accept; rates always come from the catalog and a missing price stays empty and blocks sending.
+  - **Grid:** edit like a spreadsheet; typing in the item cell suggests catalog items and choosing one fills the row (unit, rate, spec, image, trade); Tab/Enter move between cells; `/` or *Add* inserts a line; drag lines between areas; select many to bulk-edit area, trade, markup or discount.
+  - **Prompt:** "add false ceiling 18 m² in Living, gypsum" or "move the TV unit to the Family room" returns a proposed change set shown as a diff to accept or reject; never a silent write.
+  - **Checks:** missing prices, zero quantities, areas with approved designs but no lines, margin below the floor, discounts needing approval.
+  - **Together:** avatars of who is in the quote, live updates of others' edits line by line, and Figma-style comments pinned to a line, a cell, an area or the total, with @mentions, resolve, and client comments from the portal. Each line is version-checked, so two people editing the same cell get a merge prompt, never a lost edit.
+- **Templates are a separate library**, never edited inside a quote: start a quote from a template, insert a template's area or package, or save an area as a template.
+- **Revisions and acceptance:** `draft → internal review (if the firm uses it) → sent (frozen R1) → accepted | changes requested | expired`; a new revision copies the last one and shows a diff (lines added, removed, changed; total and margin change per area/trade). The client accepts one revision on the portal (named signature or OTP) choosing options, or staff record acceptance with evidence. Acceptance starts the Project once the firm's release gates pass (agreement, payment per the schedule).
+- **After acceptance (variations, §6.20):** the accepted revision is the baseline; the live BOQ = baseline + approved variations. A variation holds delta lines: add, omit (references the original line), replace (omit + add), move (area change plus its labour), and draw-downs of allowances. Before acceptance, the same requests are simply a new revision.
+- **Records:** quotes (per case, kind quotation/variation), quote_revisions (frozen snapshot + hash), quote_lines (area_id, work_package_id, kind, catalog snapshot, qty, unit, cost, markup, rate, discount, tax_category, option group, position, version), quote_discounts, quote_payment_milestones, quote_comments (anchor: line/cell/area/total), quote_acceptances; workspace quotation settings. Money is `numeric`; the pricing engine is one shared pure function.
+- **Notifications:** review requested / returned, sent to client, client commented, accepted / changes requested, expiring in N days, variation awaiting approval.
+- **Edge cases:** two editors on one cell; a catalog price changes after the draft (flag, never silently reprice); an area removed with lines in it (move to General); a client accepts an old revision (rejected, shown the latest); validity expired (re-send); a 3-decimal currency; tax-inclusive price entry; an optional line chosen after acceptance (variation).
+- **Tests:** pricing engine (orders, rounding, inclusive tax, currencies); revision freeze and diff; acceptance → project baseline; variation deltas → live BOQ; concurrent line edits.
 
 ### 6.9 Agreements, receivables and deal approval
 - **Records:** deals, agreements, payment_requests (milestones from the schedule), receipts, receipt_allocations, client credits, refunds, commissions (provisional/final), approvals (Finance, Owner).
@@ -638,7 +637,7 @@ One design workspace in Planning, driven by the design package's stages. Reviews
   - A warranty claim after expiry: chargeable job (a new variation round).
 
 ### 6.20 Change orders (variations)
-- **Records:** change_orders (kind `addition | deduction | replacement | schedule | price_correction`), impact assessment snapshot (affected packages, tasks, POs, WOs, bookings, reported work) with an explicit disposition per impact, variation quote rounds.
+- **Records:** change_orders (kind `addition | deduction | replacement | move | schedule | price_correction`), impact assessment snapshot (affected packages, tasks, POs, WOs, bookings, reported work) with an explicit disposition per impact, variation quote rounds.
 - **Rules:**
   - Nothing is released until every linked quote is accepted and paid (per policy).
   - A deduction blocks affected work for replanning and never deletes it.
