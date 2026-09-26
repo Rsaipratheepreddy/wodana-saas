@@ -1,4 +1,4 @@
-import type { NeedsState, OrderState, OrdersState, PurchasingSettings, SupplierImportPlan, SupplierImportRow, SupplierState } from "./types";
+import type { NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, SupplierImportPlan, SupplierImportRow, SupplierState } from "./types";
 
 export class PurchasingRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -29,6 +29,10 @@ export function purchasingApi(workspaceId: string) {
     createOrder: (input: Record<string, unknown>) => request<OrderState>(at("orders"), "POST", input),
     /** One change to an order, version-checked; returns the order as it is now. */
     orderCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<OrderState>(at(`orders/${id}`), "POST", { ...input, action, version }),
+    priceRequests: () => request<PriceRequestsState>(at("price-requests")),
+    priceRequest: (id: string) => request<PriceRequestState>(at(`price-requests/${id}`)),
+    createPriceRequest: (input: Record<string, unknown>) => request<PriceRequestState>(at("price-requests"), "POST", input),
+    priceRequestCommand: (id: string, version: number, action: string, input: Record<string, unknown> = {}) => request<PriceRequestState>(at(`price-requests/${id}`), "POST", { ...input, action, version }),
     settings: () => request<{ settings: PurchasingSettings; canManage: boolean; currency: string | null }>(at("settings")),
     saveSettings: (input: Record<string, unknown>) => request<PurchasingSettings>(at("settings"), "PUT", input),
   };

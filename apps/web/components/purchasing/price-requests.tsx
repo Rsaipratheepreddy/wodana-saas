@@ -1,0 +1,184 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { useT } from "@/lib/i18n/i18n-provider";
+import type { PurchasingApi } from "@/lib/purchasing/client";
+import type { PriceRequestRow, PriceRequestState, PriceRequestsState, PriceRequestStatus } from "@/lib/purchasing/types";
+import { useProjectFormat } from "../project-core/format";
+import { quantityText } from "./order-labels";
+import styles from "./purchasing.module.css";
+
+const numeric = (value: string) => value.replace(/[^\d.]/g, "");
+
+function useRequestLabels() {
+  const t = useT();
+  return useMemo(() => ({ open: t("Waiting for prices"), awarded: t("Awarded"), cancelled: t("Cancelled") } satisfies Record<PriceRequestStatus, string>), [t]);
+}
+
+/** Price requests: what was asked, of how many suppliers, and how many replied. A row opens the comparison. */
+export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { api: PurchasingApi; openId: string | null; onOpen: (id: string | null) => void; onOrder: (orderId: string) => void; refreshKey: number }) {
+  const t = useT();
+  const labels = useRequestLabels();
+  const format = useProjectFormat();
+  const [state, setState] = useState<PriceRequestsState | null>(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const load = useCallback(async () => {
+    try { setState(await api.priceRequests()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The price requests didn't load.")); }
+  }, [api, t]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
+  const rows = (state?.requests ?? []).filter((row) => !search.trim() || `${row.number} ${row.projects.join(" ")}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const columns: DataGridColumn<PriceRequestRow>[] = [
+    { id: "number", header: t("Price request"), accessorFn: (row) => String(row.number), size: 160, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+      <span>{t("Price request {number}", { number: row.number })}</span><small>{row.lines === 1 ? t("1 line") : t("{count} lines", { count: row.lines })}</small></span> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => labels[row.status], size: 160, meta: { renderCell: (row) => <span className={styles.orderStatus} data-status={row.status === "open" ? "pending_approval" : row.status === "awarded" ? "confirmed" : "cancelled"}>{labels[row.status]}</span> } },
+    { id: "replies", header: t("Replies"), accessorFn: (row) => row.replied, size: 120, meta: { renderCell: (row) => t("{replied} of {count}", { replied: row.replied, count: row.suppliers }) } },
+    { id: "projects", header: t("For"), accessorFn: (row) => row.projects.join(", "), size: 160, meta: { mobileHidden: true } },
+    { id: "needed", header: t("Needed by"), accessorFn: (row) => row.neededBy ?? "", size: 130, meta: { mobileHidden: true, renderCell: (row) => format.day(row.neededBy) } },
+    { id: "by", header: t("Asked by"), accessorFn: (row) => row.createdByName, size: 140, meta: { mobileHidden: true } },
+  ];
+  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  return <>
+    <DataGrid<PriceRequestRow> appearance="flush" ariaLabel={t("Price requests")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
+      onSearchChange={setSearch} searchValue={search} searchLabel={t("Search price requests")} rowNumbers={false} selectable={false} wrapText
+      emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No price requests")} description={t("Ask suppliers for prices from what projects need to order.")} />} />
+    {openId ? <PriceRequestSheet api={api} requestId={openId} onChanged={() => void load()} onClose={() => onOpen(null)} onOrder={onOrder} /> : null}
+  </>;
+}
+
+/**
+ * One price request: its lines against each supplier asked, the cheapest per line marked (after
+ * discounts), each supplier's reply recorded as it comes, then each line awarded — with the reason
+ * when it isn't the cheapest — into one draft order per supplier.
+ */
+function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { api: PurchasingApi; requestId: string; onChanged: () => void; onClose: () => void; onOrder: (orderId: string) => void }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const labels = useRequestLabels();
+  const [state, setState] = useState<PriceRequestState | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [replying, setReplying] = useState<string | null>(null);
+  const [award, setAward] = useState<Record<string, { vendorId: string; reason: string }>>({});
+  const [busy, setBusy] = useState(false);
+  // Each line starts awarded to its cheapest supplier; a choice already made stays.
+  const accept = useCallback((next: PriceRequestState) => {
+    setState(next);
+    setAward((current) => Object.fromEntries(next.lines.map((line) => [line.id, current[line.id]?.vendorId ? current[line.id] : { vendorId: next.cheapest[line.id] ?? "", reason: "" }])));
+  }, []);
+  const load = useCallback(async () => {
+    try { accept(await api.priceRequest(requestId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The price request didn't load.")); }
+  }, [api, requestId, accept, t]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  const run = async (action: string, input: Record<string, unknown> = {}) => {
+    if (!state) return null;
+    setNotice(""); setBusy(true);
+    try { const next = await api.priceRequestCommand(requestId, state.request.version, action, input); accept(next); onChanged(); return next; }
+    catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); if (cause instanceof Error && "status" in cause && cause.status === 409) await load(); return null; }
+    finally { setBusy(false); }
+  };
+  const open = state?.request.status === "open" && state.canBuy;
+  const quote = (lineId: string, vendorId: string) => state?.quotes.find((item) => item.lineId === lineId && item.vendorId === vendorId);
+  const complete = state ? state.lines.every((line) => award[line.id]?.vendorId && (award[line.id].vendorId === state.cheapest[line.id] || award[line.id].reason.trim())) : false;
+
+  return <InspectorSheet isOpen size="lg" title={state ? t("Price request {number}", { number: state.request.number }) : t("Price request")} onOpenChange={(value) => { if (!value) onClose(); }}
+    footer={open ? <div className="wd-dialog-actions"><span className={styles.spacer} />
+      <Button variant="primary" isLoading={busy} isDisabled={!complete} onPress={async () => {
+        const next = await run("award", { awards: Object.entries(award).map(([lineId, item]) => ({ lineId, vendorId: item.vendorId, reason: item.reason.trim() })) });
+        if (next?.orders[0]) onOrder(next.orders[0].id);
+      }}>{t("Award and create orders")}</Button></div> : null}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+      <div className={styles.approvalRow}>
+        <span className={styles.orderStatus} data-status={state.request.status === "open" ? "pending_approval" : state.request.status === "awarded" ? "confirmed" : "cancelled"}>{labels[state.request.status]}</span>
+        <span className={styles.muted}>{[state.request.companyName, state.request.neededBy ? t("Needed by {date}", { date: format.day(state.request.neededBy) }) : ""].filter(Boolean).join(" · ")}</span>
+      </div>
+      {notice ? <InlineNotice tone="error" message={notice} /> : null}
+      {state.orders.length ? <InlineNotice tone="success" message={t("Orders: {orders}", { orders: state.orders.map((order) => order.number).join(", ") })} /> : null}
+      <div className={styles.compare} role="table" aria-label={t("Prices")} style={{ "--suppliers": state.suppliers.length } as React.CSSProperties}>
+        <div role="row" className={styles.compareRow}>
+          <span role="columnheader">{t("Item")}</span>
+          {state.suppliers.map((supplier) => <span role="columnheader" key={supplier.vendorId} className={styles.compareHead}>
+            <strong>{supplier.name}</strong>
+            <small>{supplier.status === "replied" ? [supplier.leadTimeDays !== null ? t("{count} days", { count: supplier.leadTimeDays }) : "", supplier.validUntil ? t("valid to {date}", { date: format.day(supplier.validUntil) }) : ""].filter(Boolean).join(" · ") || t("Replied")
+              : supplier.status === "declined" ? t("Declined") : t("Waiting")}</small>
+            {open ? <Button size="compact" variant="quiet" onPress={() => setReplying(supplier.vendorId)}>{supplier.status === "replied" ? t("Change reply") : t("Record reply")}</Button> : null}
+          </span>)}
+        </div>
+        {state.lines.map((line) => <div role="row" key={line.id} className={styles.compareRow}>
+          <span role="cell" className={styles.nameCell}><span>{line.description}</span><small>{[`${quantityText(line.quantity)} ${line.unit}`, line.projectReference].filter(Boolean).join(" · ")}</small></span>
+          {state.suppliers.map((supplier) => {
+            const price = quote(line.id, supplier.vendorId);
+            const cheapest = state.cheapest[line.id] === supplier.vendorId;
+            const chosen = (state.request.status === "open" ? award[line.id]?.vendorId : line.awardedVendorId) === supplier.vendorId;
+            return <span role="cell" key={supplier.vendorId} className={styles.compareCell} data-cheapest={cheapest || undefined} data-chosen={chosen || undefined}>
+              {price ? <button type="button" disabled={!open} aria-pressed={chosen} aria-label={t("Award {item} to {supplier}", { item: line.description, supplier: supplier.name })}
+                onClick={() => setAward({ ...award, [line.id]: { vendorId: supplier.vendorId, reason: award[line.id]?.reason ?? "" } })}>
+                <span className={styles.money}>{format.money(price.net, state.request.currency)}</span>
+                <small>{Number(price.discountPercent) ? t("{price} less {percent}%", { price: format.money(price.unitPrice, state.request.currency), percent: quantityText(price.discountPercent) }) : format.money(price.unitPrice, state.request.currency)}{cheapest ? ` · ${t("Cheapest")}` : ""}</small>
+              </button> : <span className={styles.muted}>—</span>}
+            </span>;
+          })}
+        </div>)}
+        <div role="row" className={styles.compareRow}>
+          <span role="cell"><strong>{t("Total")}</strong></span>
+          {state.suppliers.map((supplier) => <span role="cell" key={supplier.vendorId} className={styles.money}>
+            {state.totals[supplier.vendorId]?.priced ? format.money(state.totals[supplier.vendorId].net, state.request.currency) : "—"}</span>)}
+        </div>
+      </div>
+      {open ? state.lines.filter((line) => award[line.id]?.vendorId && award[line.id].vendorId !== state.cheapest[line.id]).map((line) =>
+        <TextInput key={line.id} label={t("Why {item} isn't going to the cheapest", { item: line.description })} isRequired value={award[line.id].reason}
+          onChange={(reason) => setAward({ ...award, [line.id]: { ...award[line.id], reason } })} />) : null}
+      {state.request.status === "awarded" ? state.lines.filter((line) => line.awardReason).map((line) =>
+        <p key={line.id} className={styles.dialogText}>{t("{item}: {reason}", { item: line.description, reason: line.awardReason })}</p>) : null}
+    </div>}
+    {replying && state ? <ReplyDialog state={state} vendorId={replying} onClose={() => setReplying(null)}
+      onDecline={async (note) => { if (await run("decline", { vendorId: replying, note })) setReplying(null); }}
+      onSave={async (input) => { if (await run("record_reply", { vendorId: replying, ...input })) setReplying(null); }} /> : null}
+  </InspectorSheet>;
+}
+
+/** A supplier's reply: a price (and discount) per line, how long delivery takes, and how long the prices hold. */
+function ReplyDialog({ state, vendorId, onClose, onSave, onDecline }: {
+  state: PriceRequestState; vendorId: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>; onDecline: (note: string) => Promise<void>;
+}) {
+  const t = useT();
+  const supplier = state.suppliers.find((item) => item.vendorId === vendorId)!;
+  const [prices, setPrices] = useState<Record<string, { unitPrice: string; discountPercent: string }>>(() => Object.fromEntries(state.lines.map((line) => {
+    const quote = state.quotes.find((item) => item.lineId === line.id && item.vendorId === vendorId);
+    return [line.id, { unitPrice: quote ? quantityText(quote.unitPrice) : "", discountPercent: quote && Number(quote.discountPercent) ? quantityText(quote.discountPercent) : "" }];
+  })));
+  const [lead, setLead] = useState(supplier.leadTimeDays !== null ? String(supplier.leadTimeDays) : "");
+  const [valid, setValid] = useState<string | null>(supplier.validUntil);
+  const [note, setNote] = useState(supplier.note);
+  const [busy, setBusy] = useState(false);
+  const any = Object.values(prices).some((item) => Number(item.unitPrice) > 0);
+  return <ControlledModalDialog isOpen size="lg" title={supplier.name} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions">
+      <Button variant="quiet" isDisabled={busy} onPress={async () => { setBusy(true); await onDecline(note.trim()); setBusy(false); }}>{t("They declined")}</Button><span className={styles.spacer} />
+      <Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!any} onPress={async () => {
+        setBusy(true);
+        await onSave({ prices: Object.entries(prices).map(([lineId, item]) => ({ lineId, unitPrice: item.unitPrice || null, discountPercent: item.discountPercent || null })), leadTimeDays: lead || null, validUntil: valid, note: note.trim() });
+        setBusy(false);
+      }}>{t("Save")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <ul className={styles.draftLines} aria-label={t("Prices")}>
+        {state.lines.map((line) => <li key={line.id}>
+          <span className={styles.nameCell}><span>{line.description}</span><small>{`${quantityText(line.quantity)} ${line.unit}`}</small></span>
+          <TextInput aria-label={t("Price for {item}", { item: line.description })} label={null} inputMode="decimal" placeholder={t("Price")} suffix={state.request.currency} value={prices[line.id].unitPrice}
+            onChange={(value) => setPrices({ ...prices, [line.id]: { ...prices[line.id], unitPrice: numeric(value) } })} />
+          <TextInput aria-label={t("Discount for {item}", { item: line.description })} label={null} inputMode="decimal" placeholder={t("Discount %")} value={prices[line.id].discountPercent}
+            onChange={(value) => setPrices({ ...prices, [line.id]: { ...prices[line.id], discountPercent: numeric(value) } })} />
+          <span />
+        </li>)}
+      </ul>
+      <div className={styles.pair}>
+        <TextInput label={t("Delivery in days")} inputMode="numeric" value={lead} onChange={(value) => setLead(value.replace(/\D/g, "").slice(0, 4))} />
+        <DateField label={t("Prices valid until")} value={valid ? parseDate(valid) : null} onChange={(value) => setValid(value ? value.toString() : null)} />
+      </div>
+      <TextAreaField label={t("Note")} value={note} onChange={setNote} />
+    </div>
+  </ControlledModalDialog>;
+}

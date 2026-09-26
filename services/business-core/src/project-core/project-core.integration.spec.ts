@@ -11,6 +11,7 @@ import { ProjectCoreService } from "./project-core.service";
 import { ProjectWorkService } from "./project-work.service";
 import { processWorkDeadlines } from "./work-reminders";
 import { OrdersService } from "../purchasing/orders.service";
+import { PriceRequestsService } from "../purchasing/price-requests.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -754,6 +755,54 @@ integration("projects core (plan §6.10)", () => {
       await expect(buyer.orders.command(actor, w.workspaceId, order, { action: "cancel", version: state.order.version })).rejects.toThrow(/Say why/);
       const notices = (await w.client.query<{ event: string; recipient: string }>(`SELECT event_type AS event, recipient_id AS recipient FROM notifications WHERE workspace_id = $1 AND event_type LIKE 'purchasing.%' AND channel = 'in_app'`, [w.workspaceId])).rows;
       expect(notices).toEqual(expect.arrayContaining([{ event: "purchasing.approved", recipient: w.designer }]));
+    });
+  });
+
+  it("asks several suppliers for prices, marks the cheapest after discounts, and awards with a reason into draft orders", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const company = randomUUID();
+      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio Furniture','Studio Furniture LLC','AE','AED','en-AE','Asia/Dubai')`, [company, w.workspaceId]);
+      const everything = ["vendors.view", "vendors.manage", "vendors.approve", "purchasing.view", "purchasing.manage", "purchasing.approve"];
+      const access = {
+        withPermission: async (_a: unknown, _w: string, _code: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId: w.designer }),
+        withAnyPermission: async (_a: unknown, _w: string, _codes: string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId: w.designer }),
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => everything.includes(code),
+      } as never;
+      const orders = new OrdersService(access);
+      const requests = new PriceRequestsService(access, orders);
+      const suppliers = new SuppliersService(access);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "12", unit: "m²", version: detail.project.version });
+      const slab = (await core.materials(actor, w.workspaceId, projectId)).items[0];
+      const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+      for (const [id, name] of [[a, "Siom Marble"], [b, "Nile Marble"], [c, "Lilacs Marble"]] as const) {
+        const saved = await suppliers.save(actor, w.workspaceId, { id, version: 0, name, categories: ["Marble"], entityIds: [company] });
+        if (id !== c) await suppliers.approve(actor, w.workspaceId, id, { version: saved.suppliers.find((item) => item.id === id)!.version, approval: "approved" });
+      }
+      const id = randomUUID();
+      let state = await requests.create(actor, w.workspaceId, { id, vendorIds: [a, b, c], neededBy: "2026-10-15", lines: [{ source: "material", materialItemId: slab.id, quantity: "12" }] });
+      expect(state.request).toMatchObject({ number: 1, status: "open", currency: "AED" });
+      expect(state.lines.map((line) => [line.description, line.quantity, line.unit])).toEqual([["Calacatta slab", "12.0000", "m²"]]);
+      const line = state.lines[0].id;
+      state = await requests.command(actor, w.workspaceId, id, { action: "record_reply", version: state.request.version, vendorId: a, prices: [{ lineId: line, unitPrice: "360" }], leadTimeDays: 7 });
+      state = await requests.command(actor, w.workspaceId, id, { action: "record_reply", version: state.request.version, vendorId: b, prices: [{ lineId: line, unitPrice: "380", discountPercent: "10" }], validUntil: "2026-10-30" });
+      state = await requests.command(actor, w.workspaceId, id, { action: "decline", version: state.request.version, vendorId: c, note: "Out of stock" });
+      // 12 × 380 less 10% = 4,104 beats 12 × 360 = 4,320.
+      expect(state.cheapest[line]).toBe(b);
+      expect(state.totals).toMatchObject({ [a]: { net: "4320.00", priced: 1 }, [b]: { net: "4104.00", priced: 1 }, [c]: { net: "0.00", priced: 0 } });
+      await expect(requests.command(actor, w.workspaceId, id, { action: "award", version: state.request.version, awards: [{ lineId: line, vendorId: c }] })).rejects.toThrow(/hasn't priced it/);
+      await expect(requests.command(actor, w.workspaceId, id, { action: "award", version: state.request.version, awards: [{ lineId: line, vendorId: a }] })).rejects.toThrow(/say why it isn't going to the cheapest/);
+      state = await requests.command(actor, w.workspaceId, id, { action: "award", version: state.request.version, awards: [{ lineId: line, vendorId: a, reason: "Nile can't deliver before the 20th" }] });
+      expect(state.request.status).toBe("awarded");
+      expect(state.lines[0]).toMatchObject({ awardedVendorId: a, awardReason: "Nile can't deliver before the 20th" });
+      expect(state.orders).toEqual([expect.objectContaining({ vendorId: a })]);
+      const order = await orders.get(actor, w.workspaceId, state.orders[0].id);
+      expect(order.order).toMatchObject({ status: "draft", currency: "AED", expectedDate: "2026-10-15", total: "4320.0000" });
+      expect(order.lines[0]).toMatchObject({ source: "material", materialItemId: slab.id, unitPrice: "360.0000", quantity: "12.0000" });
+      await expect(requests.command(actor, w.workspaceId, id, { action: "cancel", reason: "x", version: state.request.version })).rejects.toThrow(/already awarded/);
     });
   });
 

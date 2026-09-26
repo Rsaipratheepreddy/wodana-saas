@@ -86,20 +86,7 @@ export class OrdersService {
       const supplier = await this.supplier(client, workspaceId, body.vendorId);
       const legalEntityId = await this.company(client, workspaceId, supplier, body.legalEntityId);
       const currency = supplier.currency ?? (await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, legalEntityId])).rows[0].currency;
-      const tax = await defaultTaxRate(client, workspaceId, legalEntityId);
-      const discount = supplier.deal === "discount" ? supplier.dealPercent ?? "0" : "0";
-      const lines = await this.lines(client, workspaceId, body.lines, { tax, discount, vendorId: supplier.id, currency });
-      const header = this.header(body);
-      const number = await nextOrderNumber(client, workspaceId, legalEntityId);
-      await client.query(
-        `INSERT INTO purchase_orders (id, workspace_id, number, legal_entity_id, vendor_id, currency, payment_terms, advance_percent, credit_days, terms_note, deliver_to, delivery_address,
-                                      expected_date, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-        [id, workspaceId, number, legalEntityId, supplier.id, currency, supplier.paymentTerms, supplier.advancePercent, supplier.creditDays, supplier.termsNote,
-          header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, user.userId]);
-      await this.writeLines(client, workspaceId, id, lines, currency);
-      await orderEvent(client, workspaceId, id, "created", { number, lines: lines.length }, user.userId);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchase_order.created", entityType: "purchase_order", entityId: id, after: { number, vendorId: supplier.id, lines: lines.length } });
+      await this.createDraft(client, workspaceId, user.userId, { id, supplier, legalEntityId, currency, lines: body.lines, header: this.header(body) });
       return this.detail(client, workspaceId, id, user.userId);
     });
   }
@@ -214,6 +201,40 @@ export class OrdersService {
       return { ...result, delivery };
     });
   }
+
+  /**
+   * Writes a draft order: numbered by the buying company, the supplier's terms, and lines checked for
+   * what they're for (the supplier's discount and the company's tax when a line doesn't say).
+   */
+  async createDraft(client: Db, workspaceId: string, userId: string, input: { id: string; supplier: Supplier; legalEntityId: string; currency: string; lines: unknown;
+    header: { deliverTo: string; deliveryAddress: string; expectedDate: string | null; notes: string }; from?: Record<string, unknown> }) {
+    const { id, supplier, legalEntityId, currency, header } = input;
+    const tax = await defaultTaxRate(client, workspaceId, legalEntityId);
+    const discount = supplier.deal === "discount" ? supplier.dealPercent ?? "0" : "0";
+    const lines = await this.lines(client, workspaceId, input.lines, { tax, discount, vendorId: supplier.id, currency });
+    const number = await nextOrderNumber(client, workspaceId, legalEntityId);
+    await client.query(
+      `INSERT INTO purchase_orders (id, workspace_id, number, legal_entity_id, vendor_id, currency, payment_terms, advance_percent, credit_days, terms_note, deliver_to, delivery_address,
+                                    expected_date, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [id, workspaceId, number, legalEntityId, supplier.id, currency, supplier.paymentTerms, supplier.advancePercent, supplier.creditDays, supplier.termsNote,
+        header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, userId]);
+    await this.writeLines(client, workspaceId, id, lines, currency);
+    await orderEvent(client, workspaceId, id, "created", { number, lines: lines.length, ...(input.from ?? {}) }, userId);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "purchase_order.created", entityType: "purchase_order", entityId: id, after: { number, vendorId: supplier.id, lines: lines.length, ...(input.from ?? {}) } });
+    return { number, lines };
+  }
+
+  /** The same checks as an order's lines, for another purchasing step (a price request). */
+  async checkLines(client: Db, workspaceId: string, value: unknown, currency: string) {
+    return this.lines(client, workspaceId, value, { tax: "0", discount: "0", vendorId: "00000000-0000-4000-8000-000000000000", currency });
+  }
+
+  /** A supplier that can take orders (not archived), for another purchasing step. */
+  async orderableSupplier(client: Db, workspaceId: string, vendorId: string) { return this.supplier(client, workspaceId, vendorId); }
+
+  /** The buying company for a supplier, checked. */
+  async buyingCompany(client: Db, workspaceId: string, supplier: Supplier, value: unknown) { return this.company(client, workspaceId, supplier, value); }
 
   // ---------- helpers ----------
   private async detail(client: Db, workspaceId: string, orderId: string, userId: string) {

@@ -68,3 +68,25 @@ export type OrderState = {
   /** After sending: how the supplier's email went. */
   delivery?: "sent" | "not_configured" | "failed" | null;
 };
+
+export type PriceRequestStatus = "open" | "awarded" | "cancelled";
+export type PriceRequestRow = {
+  id: string; number: number; status: PriceRequestStatus; neededBy: string | null; createdAt: string; createdByName: string; lines: number; suppliers: number; replied: number; projects: string[];
+};
+export type PriceRequestsState = { requests: PriceRequestRow[]; canBuy: boolean };
+export type PriceRequestLine = {
+  id: string; position: number; projectId: string | null; projectReference: string | null; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null;
+  description: string; specification: string; quantity: string; unit: string; awardedVendorId: string | null; awardReason: string; orderId: string | null;
+};
+export type PriceRequestState = {
+  request: { id: string; number: number; status: PriceRequestStatus; neededBy: string | null; notes: string; currency: string; legalEntityId: string; companyName: string;
+    createdByName: string; createdAt: string; awardedAt: string | null; cancelReason: string | null; version: number };
+  suppliers: Array<{ vendorId: string; name: string; approval: Approval; email: string | null; status: "asked" | "replied" | "declined"; askedTo: string | null; leadTimeDays: number | null;
+    validUntil: string | null; note: string; repliedAt: string | null }>;
+  lines: PriceRequestLine[];
+  quotes: Array<{ vendorId: string; lineId: string; unitPrice: string; discountPercent: string; net: string }>;
+  cheapest: Record<string, string | null>;
+  totals: Record<string, { net: string; priced: number }>;
+  orders: Array<{ id: string; number: string; vendorId: string }>;
+  canBuy: boolean;
+};

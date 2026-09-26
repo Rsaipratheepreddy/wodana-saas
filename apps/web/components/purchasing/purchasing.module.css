@@ -47,6 +47,18 @@
 .orderLineHead { padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .orderLine { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
 .orderLineHead > :nth-child(n+2), .orderLine > :nth-child(n+2):not(:last-child) { text-align: end; }
+.compare { display: grid; grid-template-columns: minmax(10rem, 1.4fr) repeat(var(--suppliers, 1), minmax(8rem, 1fr)); min-inline-size: 0; overflow-x: auto; }
+.compareRow { display: contents; }
+.compareRow > * { padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.compareHead { display: grid; align-content: start; gap: var(--wd-space-0-5); }
+.compareHead small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.compareCell > button { display: grid; gap: var(--wd-space-0-5); inline-size: 100%; padding: var(--wd-space-1-5) var(--wd-space-2); border: 1px solid transparent; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.compareCell > button:disabled { cursor: default; }
+.compareCell > button:hover:not(:disabled) { background: var(--wd-color-surface-hover); }
+.compareCell > button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.compareCell > button small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.compareCell[data-cheapest] > button small { color: var(--wd-color-success); }
+.compareCell[data-chosen] > button { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); }
 .totals { display: grid; justify-content: end; gap: var(--wd-space-1); margin: 0; }
 .totals > div { display: grid; grid-template-columns: 6rem 9rem; gap: var(--wd-space-3); font-size: var(--wd-text-sm); }
 .totals dt { color: var(--wd-color-text-tertiary); text-align: end; }

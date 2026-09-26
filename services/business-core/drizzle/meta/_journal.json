@@ -288,6 +288,13 @@
       "when": 1792843200000,
       "tag": "0040_purchase_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792929600000,
+      "tag": "0041_price_requests",
+      "breakpoints": true
     }
   ]
 }

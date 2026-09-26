@@ -5,6 +5,7 @@ import { Button, EmptyState, ErrorState, GroupedTable, SearchInput, SegmentedCon
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, NeedsState } from "@/lib/purchasing/types";
+import { AskPricesDialog } from "./ask-prices-dialog";
 import { CreateOrderDialog } from "./create-order-dialog";
 import { quantityText } from "./order-labels";
 import styles from "./purchasing.module.css";
@@ -17,7 +18,7 @@ const left = (need: Need) => need.remaining === null || Number(need.remaining) >
  * lists and bought or subcontracted scope lines, with what's already ordered and what's left. Select
  * lines (from any projects) to order them from one supplier.
  */
-export function ToOrder({ api, onCreated }: { api: PurchasingApi; onCreated: (orderId: string) => void }) {
+export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCreated: (orderId: string) => void; onAsked: (requestId: string) => void }) {
   const t = useT();
   const [state, setState] = useState<NeedsState | null>(null);
   const [error, setError] = useState("");
@@ -25,6 +26,7 @@ export function ToOrder({ api, onCreated }: { api: PurchasingApi; onCreated: (or
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [ordering, setOrdering] = useState(false);
+  const [asking, setAsking] = useState(false);
   const load = useCallback(async () => {
     try { setState(await api.needs()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("What to order didn't load.")); }
   }, [api, t]);
@@ -60,6 +62,7 @@ export function ToOrder({ api, onCreated }: { api: PurchasingApi; onCreated: (or
       {selected.size ? <div className={styles.filters}>
         <span className={styles.muted}>{t("{count} selected", { count: selected.size })}</span>
         <Button size="compact" variant="quiet" onPress={() => setSelected(new Set())}>{t("Clear")}</Button>
+        <Button size="compact" onPress={() => setAsking(true)}>{t("Ask for prices")}</Button>
         <Button size="compact" variant="primary" onPress={() => setOrdering(true)}>{t("Create order")}</Button>
       </div> : null}
     </div>
@@ -73,6 +76,7 @@ export function ToOrder({ api, onCreated }: { api: PurchasingApi; onCreated: (or
           <GroupedTable<Need> ariaLabel={t("Waiting for the client's sign-off")} columns={columns} sections={waiting} getRowId={(need) => need.key} selectable={false} />
         </section> : null}
       </>}
+    {asking ? <AskPricesDialog api={api} needs={chosen} onClose={() => setAsking(false)} onCreated={(requestId) => { setAsking(false); setSelected(new Set()); onAsked(requestId); }} /> : null}
     {ordering ? <CreateOrderDialog api={api} needs={chosen} onClose={() => setOrdering(false)} onCreated={(orderId) => { setOrdering(false); setSelected(new Set()); onCreated(orderId); }} /> : null}
   </div>;
 }

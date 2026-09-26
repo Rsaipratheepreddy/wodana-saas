@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { OrdersService } from "./orders.service";
+import { PriceRequestsService } from "./price-requests.service";
 import { SuppliersService } from "./suppliers.service";
 
 /** Purchasing: suppliers, what projects need to order, and purchase orders. Bodies are validated in the services. */
@@ -10,7 +11,7 @@ import { SuppliersService } from "./suppliers.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/purchasing")
 export class PurchasingController {
-  constructor(private readonly suppliers: SuppliersService, private readonly orders: OrdersService) {}
+  constructor(private readonly suppliers: SuppliersService, private readonly orders: OrdersService, private readonly requests: PriceRequestsService) {}
 
   @Get("suppliers")
   listSuppliers(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.suppliers.list(actor, workspaceId); }
@@ -52,5 +53,19 @@ export class PurchasingController {
   @Post("orders/:orderId")
   orderCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("orderId", ParseUUIDPipe) orderId: string, @Body() input: Record<string, unknown>) {
     return this.orders.command(actor, workspaceId, orderId, input ?? {});
+  }
+
+  @Get("price-requests")
+  listRequests(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.requests.list(actor, workspaceId); }
+
+  @Post("price-requests")
+  createRequest(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.requests.create(actor, workspaceId, input ?? {}); }
+
+  @Get("price-requests/:requestId")
+  request(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("requestId", ParseUUIDPipe) requestId: string) { return this.requests.get(actor, workspaceId, requestId); }
+
+  @Post("price-requests/:requestId")
+  requestCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("requestId", ParseUUIDPipe) requestId: string, @Body() input: Record<string, unknown>) {
+    return this.requests.command(actor, workspaceId, requestId, input ?? {});
   }
 }
