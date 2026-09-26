@@ -756,7 +756,7 @@ export function DesignReview({
             <dl className={styles.reviewContext}>
               <div><dt>File</dt><dd>{latest.asset.name}</dd></div>
               <div><dt>Design type</dt><dd>{design.documentType}</dd></div>
-              <div><dt>Room</dt><dd>{design.roomName || "Whole project"}</dd></div>
+              <div><dt>Room</dt><dd>{design.roomName || "—"}</dd></div>
               <div><dt>Item</dt><dd>{design.scopeTitle || "General design"}</dd></div>
             </dl>
             <SelectField

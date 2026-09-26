@@ -2,17 +2,18 @@
 
 import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarPlus, Camera, FileText, Pencil, PenLine, Plus, Ruler } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Camera, DoorOpen, FileText, Pencil, PenLine, Plus, Ruler } from "lucide-react";
 import { Badge, Button, EmptyState, InlineNotice, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type ItemDimension, type ScopeEntry } from "@/lib/pre-project/content";
+import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ItemDimension, type ScopeEntry } from "@/lib/pre-project/content";
 import { newSiteRecord, sitePayload, type SiteData, type SiteRecord } from "@/lib/pre-project/site";
 import { AssetMarkup } from "./asset-markup";
+import { RoomPicker } from "./room-manager";
 import { SiteRecordEditor } from "./site-record-editor";
 import styles from "./site-workspace.module.css";
 
 const paths = { visit: "visits", measurement: "measurements", observation: "observations" } as const;
-const WHOLE = "whole";
+const NO_ROOM = "no-room";
 type Area = { id: string; roomId: string | null; name: string };
 type Photo = { entry: ScopeEntry; asset: CaseAsset };
 
@@ -23,7 +24,8 @@ export function roomDimensions(unit = "m"): ItemDimension[] {
 
 /**
  * Site: everything gathered on site, room by room. Photos and plans (drawn on straight after
- * upload), the room's measurements and the issues spotted, with the visits on top.
+ * upload), the room's measurements and the issues spotted, with the visits on top. It starts
+ * empty: the surveyor adds each room (from the catalog) as they reach it.
  */
 export function SiteWorkspace({ initialData, initialSite, locale }: { initialData: CaseContent; initialSite: SiteData; locale?: string }) {
   const t = useT();
@@ -36,14 +38,21 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [started, setStarted] = useState<string[]>([]);
   const upload = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
   const { workspaceId, caseId, canEdit } = data;
   const assetUrl = (asset: CaseAsset, preview = true) => caseApi(workspaceId, caseId, `assets/${asset.id}${preview && asset.hasPreview ? "?preview=1" : ""}`);
 
-  const areas: Area[] = useMemo(() => [...data.rooms.map((room) => ({ id: room.id, roomId: room.id, name: room.name })), { id: WHOLE, roomId: null, name: t("Whole project") }], [data.rooms, t]);
-  const shown = areas.filter((area) => roomFilter === "all" || area.id === roomFilter);
   const files = data.entries.filter((entry) => entry.kind === "file" && !entry.archivedAt);
+  // Only rooms with something captured, or just added here; nothing is listed up front.
+  const areas: Area[] = useMemo(() => {
+    const captured = new Set<string | null>([...files.map((entry) => entry.roomId ?? null), ...site.items.filter((record) => record.kind !== "visit").map((record) => record.roomId ?? null)]);
+    const rooms = data.rooms.filter((room) => captured.has(room.id) || started.includes(room.id)).map((room) => ({ id: room.id, roomId: room.id, name: room.name }));
+    return captured.has(null) ? [...rooms, { id: NO_ROOM, roomId: null, name: t("Not in a room") }] : rooms;
+  }, [data.rooms, files, site.items, started, t]);
+  const shown = areas.filter((area) => roomFilter === "all" || area.id === roomFilter);
   const photosIn = (area: Area): Photo[] => files.filter((entry) => (entry.roomId ?? null) === area.roomId).flatMap((entry) => entry.assets.slice(0, 1).map((asset) => ({ entry, asset })));
   const roomMeasurement = (area: Area) => site.items.find((record) => record.kind === "measurement" && !record.entryId && (record.roomId ?? null) === area.roomId);
   const issuesIn = (area: Area) => site.items.filter((record) => record.kind === "observation" && (record.roomId ?? null) === area.roomId);
@@ -58,7 +67,7 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
 
   /** Upload photos or plans into a room; photos open straight into the drawing tool, one after another. */
   const addFiles = async (list: FileList | null) => {
-    const roomId = uploadTarget.current === WHOLE ? null : uploadTarget.current;
+    const roomId = uploadTarget.current === NO_ROOM ? null : uploadTarget.current;
     if (!list?.length) return;
     setBusy(`upload:${uploadTarget.current}`); setError(""); setNotice("");
     const added: Photo[] = []; const failed: string[] = [];
@@ -92,6 +101,12 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
     const existing = roomMeasurement(area);
     setEditing(existing ?? { ...newSiteRecord("measurement", site.timezone, area.roomId), title: area.name, dimensions: roomDimensions() });
   };
+  const startRoom = (room: CaseRoom) => {
+    setData((current) => current.rooms.some((item) => item.id === room.id) ? current : { ...current, rooms: [...current.rooms, room] });
+    setStarted((current) => current.includes(room.id) ? current : [...current, room.id]);
+    setRoomFilter("all"); setPicking(false);
+    requestAnimationFrame(() => document.getElementById(`site-room-${room.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   const addIssue = (area: Area) => setEditing({ ...newSiteRecord("observation", site.timezone, area.roomId), title: "" });
 
   const dimensionText = (record?: SiteRecord) => (record?.dimensions ?? []).filter((d) => d.measured != null || d.approximate != null).map((d) => `${d.name} ${d.measured ?? d.approximate} ${d.unit}`);
@@ -99,9 +114,10 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
 
   return <section className={styles.page} aria-label={t("Site")}>
     <div className={styles.toolbar}>
-      <SelectField aria-label={t("Room")} accent="neutral" items={[{ id: "all", label: t("All rooms") }, ...areas.map((area) => ({ id: area.id, label: area.name }))]} label={null} onSelectionChange={(key) => setRoomFilter(String(key ?? "all"))} selectedKey={roomFilter} />
+      {areas.length > 1 ? <SelectField aria-label={t("Room")} accent="neutral" items={[{ id: "all", label: t("All rooms") }, ...areas.map((area) => ({ id: area.id, label: area.name }))]} label={null} onSelectionChange={(key) => setRoomFilter(String(key ?? "all"))} selectedKey={roomFilter} /> : null}
       <span className={styles.spacer} />
       {canEdit ? <Button size="compact" onPress={() => setEditing(newSiteRecord("visit", site.timezone))}><CalendarPlus aria-hidden="true" size={14} />{t("Plan visit")}</Button> : null}
+      {canEdit && areas.length ? <Button size="compact" variant="primary" onPress={() => setPicking(true)}><Plus aria-hidden="true" size={14} />{t("Add room")}</Button> : null}
       <input accept="image/*,application/pdf" aria-hidden="true" className={styles.hiddenInput} multiple onChange={(event) => void addFiles(event.target.files)} ref={upload} tabIndex={-1} type="file" />
     </div>
     {error ? <InlineNotice message={error} tone="error" /> : null}
@@ -115,21 +131,19 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       </button>)}
     </section> : null}
 
-    {!data.rooms.length ? <InlineNotice tone="info" message={t("Add the project's rooms in Requirements to capture the site room by room.")} /> : null}
-
     {shown.map((area) => {
       const photos = photosIn(area); const measurement = roomMeasurement(area); const issues = issuesIn(area); const dims = dimensionText(measurement);
       const open = issues.filter((issue) => issue.status !== "resolved").length;
-      return <section className={styles.room} key={area.id} aria-label={area.name}>
+      return <section className={styles.room} key={area.id} id={`site-room-${area.id}`} aria-label={area.name}>
         <header className={styles.roomHead}>
-          <h3>{area.name}</h3>
+          <h3><DoorOpen aria-hidden="true" size={16} />{area.name}</h3>
           <span className={styles.stats}>
             <span data-done={photos.length > 0 || undefined}><Camera aria-hidden="true" size={13} />{photos.length === 1 ? t("1 photo") : t("{count} photos", { count: photos.length })}</span>
             {area.roomId ? <span data-done={dims.length > 0 || undefined}><Ruler aria-hidden="true" size={13} />{dims.length ? t("Measured") : t("Not measured")}</span> : null}
             {issues.length ? <span data-warn={open > 0 || undefined}><AlertTriangle aria-hidden="true" size={13} />{issues.length === 1 ? t("1 issue") : t("{count} issues", { count: issues.length })}</span> : null}
           </span>
           {canEdit ? <span className={styles.actions}>
-            <Button size="compact" variant="primary" isLoading={busy === `upload:${area.id}`} onPress={() => pickFiles(area)}><Camera aria-hidden="true" size={14} />{t("Add photos")}</Button>
+            <Button size="compact" isLoading={busy === `upload:${area.id}`} onPress={() => pickFiles(area)}><Camera aria-hidden="true" size={14} />{t("Add photos")}</Button>
             {area.roomId ? <Button size="compact" onPress={() => measure(area)}><Ruler aria-hidden="true" size={14} />{measurement ? t("Edit measurements") : t("Measure")}</Button> : null}
             <Button size="compact" onPress={() => addIssue(area)}><Plus aria-hidden="true" size={14} />{t("Issue")}</Button>
           </span> : null}
@@ -160,10 +174,12 @@ export function SiteWorkspace({ initialData, initialSite, locale }: { initialDat
       </section>;
     })}
 
-    {!data.rooms.length && !files.length && !site.items.length ? <EmptyState illustration="upload" title={t("Nothing captured on site yet")} description={t("Add photos, plans, measurements and issues as you walk the site.")} /> : null}
+    {!areas.length ? <EmptyState illustration="upload" title={t("Nothing captured on site yet")} description={t("Add each room as you reach it, then its photos, measurements and issues.")}
+      action={canEdit ? <Button size="compact" variant="primary" onPress={() => setPicking(true)}><Plus aria-hidden="true" size={14} />{t("Add room")}</Button> : undefined} /> : null}
+    {picking ? <RoomPicker data={data} exclude={areas.map((area) => area.id)} onClose={() => setPicking(false)} onPick={startRoom} /> : null}
 
     {marking ? <AssetMarkup workspaceId={workspaceId} caseId={caseId} asset={marking.asset} assetUrl={assetUrl} onClose={nextMarkup} onSaved={(marked) => void markupSaved(marking, marked).catch((failure: Error) => setError(failure.message))} /> : null}
-    {editing ? <SiteRecordEditor key={editing.id} initial={editing} data={data} site={site} onClose={() => setEditing(null)}
+    {editing ? <SiteRecordEditor key={editing.id} initial={editing} data={data} site={site} onClose={() => setEditing(null)} onRoomAdded={(room) => setData((current) => ({ ...current, rooms: [...current.rooms, room] }))}
       onSave={async (record, version) => { upsertRecord(await caseRequest<SiteRecord>(workspaceId, caseId, `site/${paths[record.kind]}`, "PUT", sitePayload(record, version))); setEditing(null); setNotice(t("Saved.")); }} /> : null}
   </section>;
 }

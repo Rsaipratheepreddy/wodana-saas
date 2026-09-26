@@ -66,7 +66,7 @@ export function ScopeNoteCards({ entries, workspaceId, caseId, locale, measureme
         const date = entry.updatedAt ? new Date(entry.updatedAt) : null;
         const dateText = date && !Number.isNaN(date.valueOf()) ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(date) : null;
         return <article key={entry.id} className={styles.noteCard} aria-label={entry.title}>
-          <div className={styles.meta}><span>{requirementNotes ? <FileText size={12}/> : <DoorOpen size={12}/>} {requirementNotes ? entry.createdByName || 'Requirement note' : entry.roomName ?? 'Whole project'}</span>{isSample ? <span className={styles.sample}>Sample</span> : dateText && <time dateTime={entry.updatedAt}>{dateText}</time>}</div>
+          <div className={styles.meta}><span>{requirementNotes ? <FileText size={12}/> : <DoorOpen size={12}/>} {requirementNotes ? entry.createdByName || 'Requirement note' : entry.roomName ?? ''}</span>{isSample ? <span className={styles.sample}>Sample</span> : dateText && <time dateTime={entry.updatedAt}>{dateText}</time>}</div>
           <h3><button className={styles.openNote} aria-label={`Open ${entry.title}`} onClick={() => measurements ? onSpecifications(entry, 'dimensions') : onOpen(entry)}>{entry.title}<ArrowUpRight size={14} aria-hidden="true" /></button></h3>
           {preview && <NoteImage key={preview.id} asset={preview} workspaceId={workspaceId} caseId={caseId} url={assetUrl?.(entry, preview, true)} />}
           {!measurements && note && <div className={styles.noteCopy}><span className={styles.noteCaption}>{requirementNotes ? 'Requirement notes' : 'Notes'}</span><p className={styles.noteText} dir="auto">{note}</p></div>}

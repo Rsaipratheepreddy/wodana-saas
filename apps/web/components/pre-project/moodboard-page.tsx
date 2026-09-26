@@ -6,8 +6,9 @@ import { ChevronLeft, ChevronRight, ExternalLink, Heart, ImagePlus, Link2, Maxim
 import { PlatformMark } from "@/components/brand/platform-mark";
 import { Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, MultiSelectField, SegmentedControl, SelectField, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type ScopeEntry } from "@/lib/pre-project/content";
+import { blankEntry, caseApi, caseRequest, entryPayload, type CaseAsset, type CaseContent, type CaseRoom, type ScopeEntry } from "@/lib/pre-project/content";
 import { linkPlatform, pinKind } from "@/lib/pre-project/moodboard";
+import { RoomField } from "./room-manager";
 import styles from "./moodboard.module.css";
 
 type Feeling = "love" | "avoid";
@@ -24,6 +25,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   const { workspaceId, caseId, canEdit } = initialData;
   const [entries, setEntries] = useState(() => initialData.entries.filter((entry) => entry.kind === "inspiration" && !entry.archivedAt));
   const [room, setRoom] = useState("all");
+  const [caseRooms, setCaseRooms] = useState(initialData.rooms);
   const [feeling, setFeeling] = useState("all");
   const [source, setSource] = useState("all");
   const [selected, setSelected] = useState<string | null>(null);
@@ -34,11 +36,11 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
   const upload = useRef<HTMLInputElement>(null);
   const requirements = useMemo(() => initialData.entries.filter((entry) => entry.kind === "requirement" && !entry.archivedAt), [initialData.entries]);
   const requirementName = useMemo(() => new Map(requirements.map((entry) => [entry.id, entry.title])), [requirements]);
-  const roomName = (entry: ScopeEntry) => initialData.rooms.find((item) => item.id === entry.roomId)?.name ?? entry.roomName ?? null;
+  const roomName = (entry: ScopeEntry) => caseRooms.find((item) => item.id === entry.roomId)?.name ?? entry.roomName ?? null;
   const addedBy = (entry: ScopeEntry) => entry.source === "client" ? (clientName || t("Client")) : (entry.createdByName || t("Team"));
   const assetUrl = (asset: CaseAsset, preview = true) => caseApi(workspaceId, caseId, `assets/${asset.id}${preview && asset.hasPreview ? "?preview=1" : ""}`);
 
-  const visible = entries.filter((entry) => (room === "all" || (room === "project" ? !entry.roomId : entry.roomId === room))
+  const visible = entries.filter((entry) => (room === "all" || entry.roomId === room)
     && (feeling === "all" || feelingOf(entry) === feeling)
     && (source === "all" || entry.source === source));
   const filtered = room !== "all" || feeling !== "all" || source !== "all";
@@ -58,7 +60,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
     catch (failure) { replace(entry); setError(failure instanceof Error ? failure.message : t("Could not save.")); }
   };
   const create = async (draft: Partial<ScopeEntry>) => {
-    const entry: ScopeEntry = { ...blankEntry(room === "all" || room === "project" ? null : room), kind: "inspiration", category: "Inspiration", source: "team", requirementIds: [], ...draft };
+    const entry: ScopeEntry = { ...blankEntry(room === "all" ? null : room), kind: "inspiration", category: "Inspiration", source: "team", requirementIds: [], ...draft };
     return saveEntry(entry);
   };
   const uploadPhotos = async (files: FileList | null) => {
@@ -80,7 +82,8 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
 
   const selectedEntry = entries.find((entry) => entry.id === selected) ?? null;
   const viewingEntry = viewing ? entries.find((entry) => entry.id === viewing.entryId) ?? null : null;
-  const rooms = [{ id: "all", label: t("All rooms") }, { id: "project", label: t("Whole project") }, ...initialData.rooms.map((item) => ({ id: item.id, label: item.name }))];
+  // Filter by the rooms pins are in; rooms themselves come from the catalog.
+  const rooms = [{ id: "all", label: t("All rooms") }, ...caseRooms.filter((item) => entries.some((entry) => entry.roomId === item.id)).map((item) => ({ id: item.id, label: item.name }))];
 
   return <section className={styles.page} aria-label={t("Moodboard")}>
     <div className={styles.toolbar}>
@@ -101,7 +104,7 @@ export function MoodboardPage({ initialData, clientName }: { initialData: CaseCo
       : !visible.length ? <div className={styles.empty}><EmptyState illustration="search" title={t("Nothing matches these filters")} description={t("Try another room, feeling or person.")} action={filtered ? <Button size="compact" onPress={() => { setRoom("all"); setFeeling("all"); setSource("all"); }}>{t("Clear filters")}</Button> : undefined} /></div>
       : <div className={styles.content} data-panel={selectedEntry ? "open" : undefined}><div className={styles.grid}>{visible.map((entry) => <PinCard key={entry.id} entry={entry} room={roomName(entry)} addedBy={addedBy(entry)} requirementNames={(entry.requirementIds ?? []).map((id) => requirementName.get(id)).filter((name): name is string => Boolean(name))}
         assetUrl={assetUrl} selected={selected === entry.id} canEdit={canEdit} onOpen={() => setSelected(entry.id)} onView={(index) => setViewing({ entryId: entry.id, index })} onFeeling={(value) => void markFeeling(entry, value)} />)}</div>
-      {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} rooms={initialData.rooms} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
+      {selectedEntry ? <PinPanel key={selectedEntry.id} entry={selectedEntry} roomContext={{ workspaceId, caseId, rooms: caseRooms, canEdit }} onRoomAdded={(added) => setCaseRooms((current) => [...current, added])} requirements={requirements} canEdit={canEdit} addedBy={addedBy(selectedEntry)} assetUrl={assetUrl}
       onClose={() => setSelected(null)} onView={(index) => setViewing({ entryId: selectedEntry.id, index })}
       onFeeling={(value) => void markFeeling(selectedEntry, value)}
       onSave={async (next) => { await saveEntry(next); setSelected(null); }}
@@ -155,8 +158,8 @@ function PinCard({ entry, room, addedBy, requirementNames, assetUrl, selected, c
   </article>;
 }
 
-function PinPanel({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
-  entry: ScopeEntry; rooms: CaseContent["rooms"]; requirements: ScopeEntry[]; canEdit: boolean; addedBy: string; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
+function PinPanel({ entry, roomContext, onRoomAdded, requirements, canEdit, addedBy, assetUrl, onClose, onView, onFeeling, onSave, onRemove }: {
+  entry: ScopeEntry; roomContext: Pick<CaseContent, "workspaceId" | "caseId" | "rooms" | "canEdit">; onRoomAdded: (room: CaseRoom) => void; requirements: ScopeEntry[]; canEdit: boolean; addedBy: string; assetUrl: (asset: CaseAsset, preview?: boolean) => string;
   onClose: () => void; onView: (index: number) => void; onFeeling: (value: Feeling) => void; onSave: (entry: ScopeEntry) => Promise<void>; onRemove: () => Promise<void>;
 }) {
   const t = useT();
@@ -194,7 +197,7 @@ function PinPanel({ entry, rooms, requirements, canEdit, addedBy, assetUrl, onCl
       <TextAreaField isDisabled={!canEdit} label={t("Note")} maxLength={3000} onChange={set("note")} value={draft.note} />
       <TextInput isDisabled={!canEdit} inputType="url" label={t("Link")} maxLength={2000} onChange={set("referenceUrl")} placeholder="https://" value={draft.referenceUrl} errorMessage={!validLink ? t("Paste a full link starting with https://") : undefined} />
       {draft.referenceUrl && validLink ? <a className={styles.openLink} href={draft.referenceUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true" size={13} />{t("Open")} {linkPlatform(draft.referenceUrl).label}</a> : null}
-      <SelectField isDisabled={!canEdit} items={[{ id: "", label: t("Whole project") }, ...rooms.map((item) => ({ id: item.id, label: item.name }))]} label={t("Room")} onSelectionChange={(key) => set("roomId")(key ? String(key) : null)} selectedKey={draft.roomId ?? ""} />
+      <RoomField data={roomContext} isDisabled={!canEdit} value={draft.roomId ?? null} onRoomAdded={onRoomAdded} onChange={(item) => setDraft((current) => ({ ...current, roomId: item.id, roomName: item.name }))} />
       {requirements.length ? <MultiSelectField label={t("Requirements it informs")} items={requirements.map((item) => ({ id: item.id, label: item.title }))} selectedKeys={new Set(draft.requirementIds ?? [])} onSelectionChange={(keys) => { if (canEdit) set("requirementIds")([...keys].map(String)); }} />
         : <p className={styles.hint}>{t("Add requirements to link this pin to them.")}</p>}
     </div>

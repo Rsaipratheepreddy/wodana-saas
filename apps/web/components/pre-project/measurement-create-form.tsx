@@ -20,7 +20,7 @@ type Props = {
 export function MeasurementCreateForm({ data, entries, initialEntryId, initialRoom, onClose, onSaved }: Props) {
   const [entryId, setEntryId] = useState(() => {
     if (initialEntryId) return initialEntryId;
-    const matching = entries.filter(item => initialRoom === 'all' || (item.roomId ?? 'general') === initialRoom);
+    const matching = entries.filter(item => initialRoom === 'all' || item.roomId === initialRoom);
     return matching.length === 1 ? matching[0].id : '';
   });
   const [name, setName] = useState('');
@@ -46,7 +46,7 @@ export function MeasurementCreateForm({ data, entries, initialEntryId, initialRo
       if (baseline.dimensions.length >= 40) { setError('This item already has 40 measurements. Edit an existing measurement.'); return; }
       setSaving(true); setError('');
       try {
-        const item = selected ?? created ?? await caseRequest<ScopeEntry>(data.workspaceId,data.caseId,'entries','PUT',entryPayload({...blankEntry(initialRoom==='all'||initialRoom==='general'?null:initialRoom),id:newId,title:name.trim(),catalogLinks:catalog?[{role:'work',recordId:catalog.id,snapshot:catalog}]:[]}));
+        const item = selected ?? created ?? await caseRequest<ScopeEntry>(data.workspaceId,data.caseId,'entries','PUT',entryPayload({...blankEntry(initialRoom==='all'?null:initialRoom),id:newId,title:name.trim(),catalogLinks:catalog?[{role:'work',recordId:catalog.id,snapshot:catalog}]:[]}));
         if(!selected) setCreated(item);
         const saved = await caseRequest<ItemSpecification>(data.workspaceId, data.caseId, `specifications/${item.id}`, 'PUT', specificationPayload({ ...baseline, dimensions: [...baseline.dimensions, { ...dimension, name: dimension.name.trim(), evidence: dimension.evidence.trim() }] }));
         onSaved(item, saved);

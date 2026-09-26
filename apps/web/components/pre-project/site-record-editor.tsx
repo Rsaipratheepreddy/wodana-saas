@@ -3,13 +3,15 @@ import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { parseDateTime, today } from '@internationalized/date';
 import { Button, ComboboxField, DateField, SelectField } from '@/design-system';
-import { type CaseContent, type ItemDimension } from '@/lib/pre-project/content';
+import { type CaseContent, type CaseRoom, type ItemDimension } from '@/lib/pre-project/content';
 import { type SiteData, type SiteRecord, siteLabels, visitInstant, visitWallTime } from '@/lib/pre-project/site';
 import { AssetFiles, AssetUpload, CaseModal } from './case-controls';
+import { RoomField } from './room-manager';
 import styles from './case-content.module.css';
 import siteStyles from './site.module.css';
 
-export function SiteRecordEditor({initial,data,site,onClose,onSave}:{initial:SiteRecord;data:CaseContent;site:SiteData;onClose:()=>void;onSave:(record:SiteRecord,specificationVersion:number)=>Promise<void>}) {
+export function SiteRecordEditor({initial,data:initialData,site,onClose,onSave,onRoomAdded}:{initial:SiteRecord;data:CaseContent;site:SiteData;onClose:()=>void;onSave:(record:SiteRecord,specificationVersion:number)=>Promise<void>;onRoomAdded?:(room:CaseRoom)=>void}) {
+ const [rooms,setRooms]=useState(initialData.rooms);const data={...initialData,rooms};
  const [draft,setDraft]=useState(initial);const [step,setStep]=useState(0);const [error,setError]=useState('');const [saving,setSaving]=useState(false);const [uploading,setUploading]=useState(false);
  const [localTime,setLocalTime]=useState(()=>visitWallTime(initial.scheduledAt,initial.timezone??site.timezone));
  const [timezoneSearch,setTimezoneSearch]=useState(initial.timezone??site.timezone);
@@ -35,7 +37,7 @@ export function SiteRecordEditor({initial,data,site,onClose,onSave}:{initial:Sit
  const save=async()=>{if(!validate(true))return;setSaving(true);try{await onSave({...draft,...(visit?{scheduledAt:visitInstant(localTime,draft.timezone??site.timezone)}:{})},selectedEntry?.specification?.version??0);onClose();}catch(e){setError(e instanceof Error?e.message:'Could not save.');}finally{setSaving(false);}};
  const text=(label:string,key:'title'|'location'|'access'|'note'|'outcome'|'resolution',multiline=false,max=3000)=><label>{label}{multiline?<textarea disabled={disabled} rows={3} maxLength={max} value={String(draft[key]??'')} onChange={e=>change({[key]:e.target.value})}/>:<input disabled={disabled} maxLength={max} value={String(draft[key]??'')} onChange={e=>change({[key]:e.target.value})}/>}</label>;
  const locations=<>
-  <SelectField label="Room" isDisabled={disabled||(measurement&&initial.version>0)} selectedKey={draft.roomId??'whole'} items={[{id:'whole',label:'Whole project'},...data.rooms.map(r=>({id:r.id,label:r.name}))]} onSelectionChange={key=>key&&change({roomId:key==='whole'?null:String(key),entryId:null,...(measurement?{dimensions:[]}: {})})}/>
+  <RoomField data={data} isDisabled={disabled||(measurement&&initial.version>0)} value={draft.roomId??null} onRoomAdded={room=>{setRooms(r=>[...r,room]);onRoomAdded?.(room);}} onChange={room=>change({roomId:room.id,entryId:null,...(measurement?{dimensions:[]}: {})})}/>
   <ComboboxField label="Scope item · optional" placeholder="Choose an existing item…" isDisabled={disabled||(measurement&&initial.version>0)} selectedKey={draft.entryId} items={activeItems.map(e=>({id:e.id,label:`${e.title}${e.roomName?` · ${e.roomName}`:''}`}))} onSelectionChange={key=>{const e=data.entries.find(item=>item.id===key);if(e)change({entryId:e.id,roomId:e.roomId,...(measurement?{title:e.title,dimensions:e.specification?.dimensions??[]}: {})});}}/>
   {draft.entryId&&!(measurement&&initial.version>0)&&<Button size="compact" variant="quiet" isDisabled={disabled} onPress={()=>change({entryId:null,...(measurement?{dimensions:[]}: {})})}>Clear item · measure room instead</Button>}
  </>;

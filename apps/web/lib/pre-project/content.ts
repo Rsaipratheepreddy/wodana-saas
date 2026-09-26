@@ -87,3 +87,6 @@ export type DesignFolder={reviewerId?:string|null;approvedVersions?:string[]|nul
 export type DesignOptions={members?:Array<{id:string;name:string}>;folders:DesignFolder[];reviewers:Array<{id:string;name:string}>;actorId:string;canReview:boolean;canRecordClient:boolean;portal?:{enabled:boolean;slug:string|null;hasApprover:boolean}};
 
 export type DesignThread={anchor?:{x:number;y:number}|null;mentions?:string[];id:string;versionId:string;title:string;blocking:boolean;status:string;version:number;createdBy:string;createdByName:string;createdAt:string;resolvedAt:string|null;resolvedByName:string|null;messages:Array<{id:string;body:string;createdBy:string;createdByName:string;createdAt:string}>};
+
+/** Saves a project room (new or renamed); rooms come from the catalog or are typed as custom ones. */
+export function saveCaseRoom(workspaceId:string,caseId:string,room:CaseRoom):Promise<CaseRoom>{return caseRequest<CaseRoom>(workspaceId,caseId,'rooms','PUT',{id:room.id,version:room.version,name:room.name,catalogRecordId:room.catalogRecordId??null});}

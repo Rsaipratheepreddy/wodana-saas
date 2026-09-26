@@ -116,7 +116,7 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
         return <button aria-label={"Open folder " + f.name} className={view.folder} key={f.id} onClick={() => setFolderId(f.id)} type="button">
           <span className={view.folderArtwork} aria-hidden="true"><span /></span>
           <strong>{f.name}</strong>
-          <small>{f.roomName ?? roomName(f.roomId) ?? "Whole home"}{f.scopeTitle ? ` · ${f.scopeTitle}` : ""}</small>
+          <small>{f.roomName ?? roomName(f.roomId) ?? ""}{f.scopeTitle ? ` · ${f.scopeTitle}` : ""}</small>
           <Badge tone={attention ? "warning" : files.length && approved === files.length ? "success" : "neutral"}>{folderReady(f) ? "Ready to send to client" : f.reviewerId ? "In review" : attention ? "Changes requested" : files.length && approved === files.length ? "Approved" : files.length ? "In progress" : "Empty"}</Badge>
           <span className={view.folderOwner} title={ownerName ? `Case owner: ${ownerName}` : 'No case owner assigned'}>{ownerName ? <><Avatar name={ownerName} size="sm"/><span>{ownerName}</span></> : <span>Unassigned</span>}</span>
 
