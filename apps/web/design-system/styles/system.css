@@ -204,6 +204,14 @@
 .wd-tab:hover { color: var(--wd-ink); }
 .wd-tab:focus-visible, .wd-tab[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; box-shadow: none; text-decoration: none; }
 .wd-tab-panel { min-inline-size: 0; padding-block-start: var(--wd-space-4); }
+/* Pill tabs: soft pills, the selected one filled. */
+.wd-pill-tabs { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.wd-pill-tab { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-4); border: 0; border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); white-space: nowrap; cursor: pointer; transition: background var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-pill-tab:hover { background: var(--wd-color-surface-hover); }
+.wd-pill-tab[data-done] svg { color: var(--wd-color-success); }
+.wd-pill-tab[aria-selected="true"] { background: var(--wd-color-text); color: var(--wd-color-text-inverse); }
+.wd-pill-tab[aria-selected="true"] svg { color: inherit; }
+.wd-pill-tab:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 /* Compact segmented navigation: no full-width divider or active underline. */
 .wd-tabs[data-variant="segmented"] > .wd-tab-scroll { border: 0; scrollbar-width: none; }
 .wd-tabs[data-variant="segmented"] > .wd-tab-scroll::-webkit-scrollbar { display: none; }

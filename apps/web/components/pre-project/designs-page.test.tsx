@@ -249,7 +249,7 @@ describe("design folders", () => {
     expect(screen.getByRole('button',{name:'File actions'})).toBeVisible();
     await user.click(screen.getByRole('button',{name:'Open file layout.pdf'}));
     expect(window.location.search).toContain('file=design-wardrobe');
-    expect(screen.getByRole('complementary',{name:'Design comments'})).toBeVisible();
+    expect(screen.getByRole('complementary',{name:'Review'})).toBeVisible();
   });
   it("keeps unfiled drawings reachable without requiring new folders", async () => {
     render(<DesignSystemProvider><DesignsPage initialData={scopedData} initialDesigns={[{...wardrobeDesign,folderId:null}]} options={{...options,folders:[]}} /></DesignSystemProvider>);

@@ -2,8 +2,8 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Check, CircleCheck, CircleDashed, Plus, Upload } from "lucide-react";
-import { Badge, Button, EmptyState, InlineNotice, SelectField, Skeleton, TextAreaField, useDesignSystem } from "@/design-system";
+import { ChevronRight, CircleCheck, CircleDashed, Folder, Plus, Upload } from "lucide-react";
+import { Badge, Button, EmptyState, InlineNotice, PillTabs, SegmentedControl, Skeleton, TextAreaField, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
 import { mergeDesigns } from "@/lib/pre-project/design-workflow";
@@ -11,7 +11,7 @@ import { DESIGN_STATUS_LABEL, designStatusTone, isDeliverableStage, latestOf, ne
 import { CaseModal } from "./case-controls";
 import { DesignActions } from "./design-actions";
 import { FileCover } from "./design-file-preview";
-import { DesignReviewModal } from "./design-review-modal";
+import { DesignViewer } from "./design-viewer";
 import { RoomField } from "./room-manager";
 import styles from "./design-workspace.module.css";
 
@@ -19,7 +19,7 @@ type Listing = DesignOptions & { items: CaseDesign[] };
 const NO_ROOM = "no-room";
 
 /**
- * Design: the package's stages as a compact timeline; each design stage holds its deliverables per
+ * Design: the package's stages as simple tabs; each stage holds its drawings, each tagged with its
  * room. Reviews and approvals happen on the drawing. A stage completes when its deliverables are
  * approved; sign-off hands the design to quoting.
  */
@@ -37,7 +37,8 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const [journey, setJourney] = useState<JourneyView | null>(null);
   const [journeyError, setJourneyError] = useState("");
   const [picked, setPicked] = useState<JourneyStageKey | "other" | null>(null);
-  const [roomFilter, setRoomFilter] = useState("all");
+  const [view, setView] = useState<"folders" | "all">("folders");
+  const [folder, setFolder] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -80,7 +81,10 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const groups = [...new Set(inStage.map((design) => design.roomId ?? NO_ROOM))]
     .sort((a, b) => a === NO_ROOM ? 1 : b === NO_ROOM ? -1 : roomName(a).localeCompare(roomName(b)))
     .map((key) => ({ key, name: key === NO_ROOM ? t("No room") : roomName(key), items: inStage.filter((design) => (design.roomId ?? NO_ROOM) === key) }));
-  const visibleGroups = roomFilter === "all" ? groups : groups.filter((group) => group.key === roomFilter);
+  // Rooms are folders. With one room (or none) there is nothing to group, so the files show straight away.
+  const openGroup = groups.find((group) => group.key === folder) ?? null;
+  const foldered = groups.length > 1 && view === "folders";
+  const files = openGroup ? openGroup.items : inStage;
 
   const openFile = (id: string | null) => {
     const query = new URLSearchParams(params.toString());
@@ -104,21 +108,17 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
     {!journey.journey ? <div className={styles.notStarted}>
       <EmptyState illustration="calendar" title={t("Design hasn't started")} description={t("It starts when the design fee is paid.")}
         action={journey.canStart ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => void stageAction("design-journey/start", {})}>{t("Start design")}</Button> : undefined} />
-    </div> : <ol className={styles.timeline} aria-label={t("Design stages")}>
-      {stages.map((stage) => <li key={stage.stage} data-state={stage.status} data-selected={stage.stage === shown || undefined}>
-        <button type="button" aria-current={stage.stage === shown ? "step" : undefined} onClick={() => { setPicked(stage.stage); setRoomFilter("all"); }}>
-          <span className={styles.dot} aria-hidden="true">{stage.status === "done" ? <Check size={10} strokeWidth={3} /> : null}</span>
-          <span className={styles.stageText}><strong>{t(stage.label as never)}</strong><small data-overdue={stage.overdue || undefined}>{(() => { const detail = stageDetail(stage); return t(detail.key as never, detail.values); })()}</small></span>
-        </button>
-      </li>)}
-    </ol>}
+    </div> : <PillTabs ariaLabel={t("Design stages")} selectedKey={shown} onSelectionChange={(key) => { setPicked(key as JourneyStageKey | "other"); setFolder(null); }}
+      items={[...stages.map((stage) => ({ id: stage.stage, label: t(stage.label as never), done: stage.status === "done" })), ...(unstaged.length ? [{ id: "other", label: t("Other") }] : [])]} />}
 
     {error ? <InlineNotice tone="error" message={error} /> : null}
 
     {shown === "approval" ? <SignOff designs={current} journey={journey} canReview={review.canReview} busy={busy}
       onSignOff={(note) => void stageAction("design-journey/sign-off", { version: stageView?.version ?? 1, note })} /> : <>
       <div className={styles.toolbar}>
-        {groups.length > 1 ? <SelectField aria-label={t("Room")} accent="neutral" label={null} items={[{ id: "all", label: t("All rooms") }, ...groups.map((group) => ({ id: group.key, label: group.name }))]} selectedKey={roomFilter} onSelectionChange={(key) => setRoomFilter(String(key ?? "all"))} /> : null}
+        {stageView && shown !== "other" ? <span className={styles.stageNote} data-overdue={stageView.overdue && stageView.status === "active" || undefined}>{(() => { const detail = stageDetail(stageView); return t(detail.key as never, detail.values); })()}</span> : null}
+        {openGroup ? <nav className={styles.crumbs} aria-label={t("Folders")}><button type="button" onClick={() => setFolder(null)}>{t("All rooms")}</button><ChevronRight aria-hidden="true" size={14} /><span aria-current="page">{openGroup.name}</span></nav>
+          : groups.length > 1 ? <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as "folders" | "all")} options={[{ id: "folders", label: t("Rooms") }, { id: "all", label: t("All files") }]} /> : null}
         <span className={styles.spacer} />
         {review.canReview && stageView?.status === "active" && isDeliverableStage(shown) && !inStage.length ? <Button size="compact" onPress={() => setSkipping(true)}>{t("Not needed")}</Button> : null}
         {data.canEdit && shown !== "other" ? <Button size="compact" variant="primary" onPress={() => setUploading(true)}><Upload aria-hidden="true" size={14} />{t("Upload")}</Button> : null}
@@ -126,34 +126,40 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
       {!inStage.length ? <EmptyState illustration="upload" title={shown === "other" ? t("No other files") : t("Nothing here yet")}
         description={shown === "other" ? undefined : t("Upload this stage's drawings room by room.")}
         action={data.canEdit && shown !== "other" ? <Button size="compact" variant="primary" onPress={() => setUploading(true)}><Plus aria-hidden="true" size={14} />{t("Upload")}</Button> : undefined} />
-        : visibleGroups.map((group) => <section key={group.key} className={styles.room} aria-label={group.name}>
-          <h3>{group.name}<span>{group.items.length}</span></h3>
-          <ul className={styles.cards}>{group.items.map((design) => {
+        : foldered && !openGroup ? <ul className={styles.cards} aria-label={t("Rooms")}>{groups.map((group) => {
+            const approved = group.items.filter((design) => latestOf(design)?.status === "approved").length;
+            return <li key={group.key}><button type="button" className={styles.card} onClick={() => setFolder(group.key)}>
+              <span className={styles.mosaic} data-count={Math.min(group.items.length, 4)}>{group.items.slice(0, 4).map((design) => <FileCover key={design.id} data={data} design={design} />)}</span>
+              <span className={styles.cardBody}>
+                <strong><Folder aria-hidden="true" size={14} />{group.name}</strong>
+                <span className={styles.cardMeta}>{group.items.length === 1 ? t("1 file") : t("{count} files", { count: group.items.length })}<span aria-hidden="true">·</span>{t("{approved} of {total} approved", { approved, total: group.items.length })}</span>
+              </span>
+            </button></li>;
+          })}</ul>
+        : <ul className={styles.cards} aria-label={t("Designs")}>{files.map((design) => {
             const latest = latestOf(design);
             const status = latest?.status ?? "draft";
             return <li key={design.id}><button type="button" className={styles.card} onClick={() => openFile(design.id)}>
               <span className={styles.cover}><FileCover data={data} design={design} /></span>
               <span className={styles.cardBody}>
                 <strong>{design.title}</strong>
-                <span className={styles.cardMeta}><Badge tone={designStatusTone(status)}>{t((DESIGN_STATUS_LABEL[status] ?? status) as never)}</Badge><span>R{latest?.number ?? 1}</span></span>
+                <span className={styles.cardMeta}><Badge tone={designStatusTone(status)}>{t((DESIGN_STATUS_LABEL[status] ?? status) as never)}</Badge><span>R{latest?.number ?? 1}</span>{openGroup ? null : <span className={styles.cardRoom}>{roomName(design.roomId)}</span>}</span>
                 {status === "approved" ? null : <small><CircleDashed aria-hidden="true" size={12} />{status === "client_review" && latest?.clientReviewExpiresAt
                   ? t("Decision due {date}", { date: new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short" }).format(new Date(latest.clientReviewExpiresAt)) })
                   : (() => { const step = nextStep(design, review); return t(step.key as never, step.values); })()}</small>}
               </span>
             </button></li>;
-          })}</ul>
-        </section>)}
-      {shown !== "other" && unstaged.length ? <button type="button" className={styles.otherLink} onClick={() => setPicked("other")}>{unstaged.length === 1 ? t("1 file without a stage") : t("{count} files without a stage", { count: unstaged.length })}</button> : null}
+          })}</ul>}
     </>}
 
-    {uploading && isDeliverableStage(shown) ? <UploadSheet data={data} stage={shown} roomId={roomFilter !== "all" && roomFilter !== NO_ROOM ? roomFilter : null}
+    {uploading && isDeliverableStage(shown) ? <UploadSheet data={data} stage={shown} roomId={openGroup && openGroup.key !== NO_ROOM ? openGroup.key : null}
       onRoomAdded={(room) => setData((value) => ({ ...value, rooms: [...value.rooms, room] }))}
       onClose={() => setUploading(false)} onUploaded={(items) => { setDesigns((value) => mergeDesigns(value, items)); setUploading(false); void loadJourney(); }} /> : null}
     {skipping && stageView ? <CaseModal title={t("{stage} isn't needed", { stage: t(stageView.label as never) })} size="md" onClose={() => setSkipping(false)} busy={busy}
       footer={<SkipFooter busy={busy} onSkip={async (note) => { if (await stageAction(`design-journey/stages/${stageView.stage}/skip`, { version: stageView.version, note })) setSkipping(false); }} />}>
       <p className={styles.muted}>{t("The next stage opens straight away.")}</p>
     </CaseModal> : null}
-    {selected ? <DesignReviewModal data={data} design={selected} options={review} onClose={() => openFile(null)} onUpdate={updated}
+    {selected ? <DesignViewer data={data} design={selected} options={review} onClose={() => openFile(null)} onUpdate={updated}
       actions={<DesignActions data={data} design={selected} options={review} onUpdate={(design) => { if (design.archivedAt) openFile(null); updated(design); }} onRoomAdded={(room) => setData((value) => ({ ...value, rooms: [...value.rooms, room] }))} />} /> : null}
   </section>;
 }

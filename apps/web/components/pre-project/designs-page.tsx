@@ -5,7 +5,7 @@ import { ChevronRight, FolderPlus, Pencil, Upload } from "lucide-react";
 import { Avatar, Badge, Button, MenuButton } from "@/design-system";
 import { mergeDesigns } from "@/lib/pre-project/design-workflow";
 import { caseRequest, type CaseContent, type CaseDesign, type DesignFolder, type DesignOptions } from "@/lib/pre-project/content";
-import { DesignReviewModal } from "./design-review-modal";
+import { DesignViewer } from "./design-viewer";
 import { FileCover } from "./design-file-preview";
 import { DesignUpload, FolderEditor, DesignMetadata, RevisionUpload, type DesignUploadTarget } from "./design-forms";
 import styles from "./case-content.module.css";
@@ -91,7 +91,7 @@ export function DesignsPage({ initialData, initialDesigns, options = emptyOption
 
   const roomName = useCallback((roomId: string | null) => data.rooms.find((room) => room.id === roomId)?.name ?? null, [data.rooms]);
   return <div className={view.board} aria-label="Design board">
-    {selected && <DesignReviewModal data={{...data,canEdit:data.canEdit || Boolean(reviewOptions.canReview && reviewOptions.folders.find(f=>f.id===selected.folderId)?.reviewerId===reviewOptions.actorId)}} design={selected} options={reviewOptions} onClose={() => navigate(null)} onUpdate={update} />}
+    {selected && <DesignViewer data={{...data,canEdit:data.canEdit || Boolean(reviewOptions.canReview && reviewOptions.folders.find(f=>f.id===selected.folderId)?.reviewerId===reviewOptions.actorId)}} design={selected} options={reviewOptions} onClose={() => navigate(null)} onUpdate={update} />}
     {message ? <p role="status" className={styles.notice}>{message}</p> : null}
     {error ? <p role="alert" className={styles.error}>{error}<Button size="compact" isLoading={loading} onPress={()=>void reload()}>Reload designs</Button></p> : null}
     {fileId && !selected ? <p role="alert" className={styles.error}>This file could not be found. Reload designs or choose a row below.</p> : null}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Menu, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Check, ChevronLeft, ChevronRight, Menu, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import Link from "next/link";
 import { Tab, TabList, TabPanel, Tabs as AriaTabs } from "react-aria-components";
 import { Button, IconButton } from "./actions";
@@ -17,6 +17,28 @@ export function ModuleNavigation({ activeId, className, items }: { activeId: str
 
 export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange, variant = "underline" }: { defaultSelectedKey?: string; items: TabItem[]; selectedKey?: string; onSelectionChange?: (key: string) => void; variant?: "underline" | "segmented" }) {
   return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label="Scrollable sections" className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label="Sections" className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" id={item.id}>{item.label}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
+}
+
+export type PillTabItem = { id: string; label: ReactNode; done?: boolean };
+
+/** Simple pill tabs that switch what's shown below; the selected one is filled. Arrow keys move between them. */
+export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void }) {
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
+    const index = items.findIndex((item) => item.id === selectedKey);
+    const step = (event.key === "ArrowRight") !== rtl ? 1 : -1;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + step + items.length) % items.length;
+    onSelectionChange(items[next].id);
+    event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
+  };
+  return <div aria-label={ariaLabel} className="wd-pill-tabs" role="tablist" onKeyDown={move}>
+    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={() => onSelectionChange(item.id)}>
+      {item.done ? <Check aria-hidden="true" size={13} strokeWidth={2.5} /> : null}{item.label}
+    </button>)}
+  </div>;
 }
 
 export function Breadcrumbs({ items }: { items: Array<{ href?: string; label: string }> }) {
