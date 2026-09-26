@@ -124,7 +124,7 @@ describe("WorkspaceShell theme", () => {
     expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("href", `${casePath}/requirements`);
     expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("aria-current", "page");
     expect(navigation.getAllByRole("link").map(link => link.textContent)).toEqual(["Overview", "Requirements", "Site", "Moodboard", "Design", "Quotes", "Agreement"]);
-    expect(navigation.getByRole("link", { name: "Site" })).toHaveAttribute("href", `${casePath}/site-layouts`);
+    expect(navigation.getByRole("link", { name: "Site" })).toHaveAttribute("href", `${casePath}/site`);
     expect(navigation.getByRole("link", { name: "Moodboard" })).toHaveAttribute("href", `${casePath}/inspiration`);
     expect(screen.queryByRole("navigation", { name: "Requirements views" })).not.toBeInTheDocument();
     expect(navigation.queryByRole("link", { name: "Catalog" })).not.toBeInTheDocument();

@@ -19,10 +19,8 @@ export default async function CasePage({ params, searchParams }: {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(await searchParams)) if (typeof value === "string") query.set(key, value);
   if (!section?.length) redirect(caseHref(caseId, query, "requirements"));
-  if (route.section === "measurements" || route.section === "site-layouts") {
-    const destination = caseHref(caseId, query, 'requirements');
-    redirect(`${destination}${destination.includes('?') ? '&' : '?'}tab=${route.section === 'measurements' ? 'measurements' : 'site-plan'}`);
-  }
+  // Site photos, plans and measurements now live together on the Site page.
+  if (route.section === "measurements" || route.section === "site-layouts") redirect(caseHref(caseId, query, "site"));
   const commercialSection = ['boq','quotations','contracts','payment-plan','variations','approvals','execution-release','client-portal'].includes(route.section);
   const needsCommercialState = commercialSection || route.section === "overview";
   const preparation = requirementViews.some(item=>item.section===route.section)||['designs','site','approvals'].includes(route.section);

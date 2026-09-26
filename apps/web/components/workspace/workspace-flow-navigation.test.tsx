@@ -19,10 +19,11 @@ it("opens planning sections within the same project with one active destination"
   expect(screen.getByRole("link",{name:"Change requests"})).toHaveAttribute("href",`${root}/variations`);
   expect(screen.queryByRole("navigation",{name:"Commercial sections"})).not.toBeInTheDocument();
 });
-it("keeps redirected measurement views active and clears their query when leaving",()=>{
+it("shows old measurement links under Site and clears their query when leaving",()=>{
   query="tab=measurements";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/requirements`}/>);
-  expect(screen.getByRole("link",{name:"Measurements"})).toHaveAttribute("aria-current","page");
+  expect(screen.getByRole("link",{name:"Site"})).toHaveAttribute("aria-current","page");
+  expect(screen.getByRole("link",{name:"Site"})).toHaveAttribute("href",`${root}/site`);
   expect(screen.getByRole("link",{name:"Design"})).toHaveAttribute("href",`${root}/designs`);
 });
 it("uses the same compact tab treatment for Sales",()=>{

@@ -44,7 +44,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   const recordRoute = caseRoute(pathname);
   if (recordRoute?.section === "quotations" && searchParams.has("quote")) return null;
   if (recordRoute) {
-    const activeSection = recordRoute.section === "requirements" ? searchParams.get("tab") === "measurements" ? "measurements" : searchParams.get("tab") === "site-plan" ? "site-layouts" : "requirements" : recordRoute.section;
+    const activeSection = recordRoute.section === "requirements" ? (["measurements", "site-plan"].includes(searchParams.get("tab") ?? "") ? "site" : "requirements") : ["measurements", "site-layouts"].includes(recordRoute.section) ? "site" : recordRoute.section;
     const area = planningArea(activeSection);
     const href = (section: string) => {
       const query = new URLSearchParams(searchParams);
