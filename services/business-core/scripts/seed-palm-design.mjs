@@ -1,6 +1,6 @@
 // Local-only demo data for Planning → Design, on the moodboard demo case (run seed-palm-moodboard first).
-// A design journey with inspiration and the site visit done and Concepts in progress; the rooms the
-// drawings belong to, taken from the catalog; and drawings in every review state.
+// A design journey with inspiration and the site visit done and Concepts in progress, and drawings in
+// every review state. No rooms are added: the designer files drawings into rooms from the catalog.
 // Safe to re-run: fixed ids and upserts.
 //   DATABASE_URL=postgresql://…@localhost:5432/wodana PALM_ALLOW_SHARED_LOCAL_SEED=palm-living-demo-only node scripts/seed-palm-design.mjs
 import assert from "node:assert/strict";
@@ -61,14 +61,15 @@ try {
       VALUES($1,$2,$3,$4,$5::varchar,$6,CASE WHEN $5::varchar<>'locked' THEN now()-interval '9 days' END,CASE WHEN $5::varchar='active' THEN now()+interval '6 days' END,CASE WHEN $5::varchar='done' THEN now()-interval '3 days' END)
       ON CONFLICT DO NOTHING`, [ws, caseId, stage, position + 1, status, owner.membershipId]);
 
-  // Rooms the drawings are for, picked from the catalog (the designer adds more the same way).
-  const room = async (n, name) => {
-    const record = (await client.query(`SELECT id, name, code, kind, version, catalog_id FROM workspace_catalog_records WHERE workspace_id=$1 AND kind='room' AND archived=false AND lower(name)=lower($2) LIMIT 1`, [ws, name])).rows[0];
-    await client.query(`INSERT INTO pre_project_rooms(id,workspace_id,case_id,name,catalog_record_id,catalog_snapshot) VALUES($1,$2,$3,$4,$5,$6)
-      ON CONFLICT(id) DO UPDATE SET name=excluded.name`, [id(40 + n), ws, caseId, record?.name ?? name, record?.id ?? null, record ? { id: record.id, name: record.name, code: record.code, kind: record.kind, version: record.version, catalogId: record.catalog_id } : null]);
-    return id(40 + n);
-  };
-  const kitchen = await room(1, "Kitchen"), living = await room(2, "Living room"), master = await room(3, "Master bedroom");
+  // No rooms are pre-filled: the designer adds them from the catalog (or types one) when filing a drawing.
+  // Earlier versions of this seed added three rooms; take them away again if nothing else uses them.
+  await client.query(`UPDATE pre_project_designs SET room_id=NULL WHERE workspace_id=$1 AND case_id=$2 AND room_id = ANY($3::uuid[])`, [ws, caseId, [id(41), id(42), id(43)]]);
+  await client.query("SAVEPOINT seeded_rooms");
+  try {
+    await client.query(`DELETE FROM pre_project_rooms WHERE workspace_id=$1 AND id = ANY($2::uuid[])`, [ws, [id(41), id(42), id(43)]]);
+    await client.query("RELEASE SAVEPOINT seeded_rooms");
+  } catch { await client.query("ROLLBACK TO SAVEPOINT seeded_rooms"); } // still used elsewhere: keep them
+  const kitchen = null, living = null, master = null;
 
   const design = async (n, { title, stage, roomId, type, status, number = 1, svg, due }) => {
     const designId = id(200 + n), assetId = await asset(client, ws, owner.userId, n, `${title}.png`, svg);

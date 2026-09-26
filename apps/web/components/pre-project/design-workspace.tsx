@@ -77,10 +77,10 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   const shown: JourneyStageKey | "other" = picked ?? activeStage ?? stages.find((stage) => isDeliverableStage(stage.stage))?.stage ?? (unstaged.length ? "other" : "concepts");
   const stageView = stages.find((stage) => stage.stage === shown);
   const inStage = shown === "other" ? unstaged : current.filter((design) => design.stage === shown);
-  const roomName = (id: string | null) => id ? data.rooms.find((room) => room.id === id)?.name ?? t("Room") : t("No room");
+  const roomName = (id: string | null) => id ? data.rooms.find((room) => room.id === id)?.name ?? t("Room") : t("General");
   const groups = [...new Set(inStage.map((design) => design.roomId ?? NO_ROOM))]
     .sort((a, b) => a === NO_ROOM ? 1 : b === NO_ROOM ? -1 : roomName(a).localeCompare(roomName(b)))
-    .map((key) => ({ key, name: key === NO_ROOM ? t("No room") : roomName(key), items: inStage.filter((design) => (design.roomId ?? NO_ROOM) === key) }));
+    .map((key) => ({ key, name: key === NO_ROOM ? t("General") : roomName(key), items: inStage.filter((design) => (design.roomId ?? NO_ROOM) === key) }));
   // Rooms are folders. With one room (or none) there is nothing to group, so the files show straight away.
   const openGroup = groups.find((group) => group.key === folder) ?? null;
   const foldered = groups.length > 1 && view === "folders";
