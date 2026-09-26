@@ -9,7 +9,7 @@ export type ProjectRole = { key: string; label: string };
  * What must be true to finish a stage. Checks read from data wherever the data exists; `confirm` is a
  * person confirming something the system doesn't record yet (e.g. "Kickoff meeting held").
  */
-export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified"] as const;
+export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off"] as const;
 export type CheckKind = (typeof CHECK_KINDS)[number];
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
 export type TemplateStage = { key: string; name: string; ownerRole: string | null; checks: StageCheck[] };
@@ -36,7 +36,7 @@ export const DEFAULT_STAGES: TemplateStage[] = [
     { key: "meeting", kind: "confirm", label: "Kickoff meeting held with the client" },
   ] },
   { key: "materials", name: "Material sign-off", ownerRole: "designer", checks: [
-    { key: "signed", kind: "confirm", label: "Client signed off the material list" },
+    { key: "signed", kind: "material_list_signed_off" },
   ] },
   { key: "procurement", name: "Procurement", ownerRole: "procurement", checks: [
     { key: "ordered", kind: "confirm", label: "All materials ordered" },
@@ -126,6 +126,8 @@ export type CheckFacts = {
   confirmed: Set<string>;
   /** Payments marked "before production" on the accepted quote are verified (true when none are marked). */
   productionPaid: boolean;
+  /** The latest material list revision is signed off and unchanged since. */
+  materialsSignedOff: boolean;
 };
 
 /** Whether a check passes, from the facts gathered for the stage. */
@@ -135,5 +137,6 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
     case "lead_assigned": return facts.filledRoles.has(LEAD_ROLE);
     case "role_assigned": return Boolean(check.role && facts.filledRoles.has(check.role));
     case "payment_verified": return facts.productionPaid;
+    case "material_list_signed_off": return facts.materialsSignedOff;
   }
 }

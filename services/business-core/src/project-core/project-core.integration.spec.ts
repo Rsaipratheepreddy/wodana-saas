@@ -167,11 +167,15 @@ integration("projects core (plan §6.10)", () => {
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: kickoff.id, version: detail.project.version });
       expect(detail.stages.map((stage) => stage.status).slice(0, 2)).toEqual(["done", "current"]);
 
-      // The material sign-off belongs to the designer: name them, and they can confirm and finish it.
+      // The material sign-off belongs to the designer: name them; they prepare the list and record the client's sign-off.
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "set_member", role: "designer", membershipId: w.designerMembership, version: detail.project.version });
       const designer = w.as(w.designer, ["projects.view"]);
       const materials = detail.stages[1];
-      detail = await designer.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: materials.id, checkKey: "signed", version: detail.project.version });
+      await expect(designer.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: materials.id, version: detail.project.version })).rejects.toThrow(/Client signed off the material list/);
+      detail = await designer.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", version: detail.project.version });
+      detail = await designer.command(actor, w.workspaceId, projectId, { action: "send_materials", version: detail.project.version });
+      const oak = (await designer.materials(actor, w.workspaceId, projectId)).items[0];
+      detail = await designer.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "in_person", decisions: [{ itemId: oak.id, decision: "approved" }], version: detail.project.version });
       await expect(designer.command(actor, w.workspaceId, projectId, { action: "hold", reason: "Client travelling", version: detail.project.version })).rejects.toThrow(/Only the project manager/);
 
       // On hold: nothing moves until it's resumed.
@@ -299,6 +303,65 @@ integration("projects core (plan §6.10)", () => {
       expect((await manager.line(actor, w.workspaceId, projectId, worktop.id)).history.at(-1)).toMatchObject({ kind: "reduced", detail: { variation: "VO-1", quantity: "1", left: "1.25" } });
       expect((await manager.line(actor, w.workspaceId, projectId, cabinets.id)).history.at(-1)).toMatchObject({ kind: "moved", detail: { variation: "VO-1", from: "Kitchen", to: "Pantry" } });
       expect((await w.builder.apply(actor, w.workspaceId, w.caseId, variationId, { ops: [] }).catch(() => null))).toBeNull();
+    });
+  });
+
+  it("signs off the material list per material; a change after sign-off needs a new revision", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const scope = await manager.scope(actor, w.workspaceId, projectId);
+      const worktop = scope.lines.find((line) => line.title === "Worktop")!;
+      // Suggested from the scope: the worktop's catalog material.
+      const catalog = randomUUID(), quartz = randomUUID();
+      await w.client.query("INSERT INTO catalogs(id,workspace_id,code,name) VALUES($1,$2,'core','Core')", [catalog, w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_units(workspace_id,code,label,kind,to_base) VALUES($1,'sqm','m²','area',1) ON CONFLICT DO NOTHING", [w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_items(id,workspace_id,catalog_id,code,name,item_type,unit_code,description) VALUES($1,$2,$3,'QZ-20','Quartz, Calacatta 20 mm','material','sqm','Honed')", [quartz, w.workspaceId, catalog]);
+      await w.client.query("UPDATE project_boq_lines SET catalog_item_id = $2 WHERE id = $1", [worktop.id, quartz]);
+      let detail = await manager.get(actor, w.workspaceId, projectId);
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "suggest_materials", version: detail.project.version });
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "suggest_materials", version: detail.project.version });
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer, natural", specification: "Crown cut, matt lacquer", boqLineIds: [scope.lines[0].id], version: detail.project.version });
+      let list = await manager.materials(actor, w.workspaceId, projectId);
+      expect(list.state).toBe("draft");
+      expect(list.items.map((item) => [item.name, item.code, item.usedIn.map((line) => line!.title)])).toEqual([
+        ["Quartz, Calacatta 20 mm", "QZ-20", ["Worktop"]], ["Oak veneer, natural", "", ["Kitchen cabinets"]]]);
+
+      // Kickoff done, so the material sign-off is the current stage and reads the list.
+      const kickoff = detail.stages[0];
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: kickoff.id, checkKey: "meeting", version: detail.project.version });
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: kickoff.id, version: detail.project.version });
+      expect(detail.next).toMatchObject({ text: "Client signed off the material list" });
+
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "send_materials", version: detail.project.version });
+      await expect(manager.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Brass handles", version: detail.project.version })).rejects.toThrow(/R1 is with the client/);
+      const [quartzItem, oakItem] = list.items;
+      await expect(manager.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "email", version: detail.project.version,
+        decisions: [{ itemId: quartzItem.id, decision: "approved" }, { itemId: oakItem.id, decision: "rejected" }] })).rejects.toThrow(/what the client wants instead/);
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "email", version: detail.project.version,
+        decisions: [{ itemId: quartzItem.id, decision: "approved" }, { itemId: oakItem.id, decision: "rejected", note: "Wants smoked oak" }] });
+      list = await manager.materials(actor, w.workspaceId, projectId);
+      expect(list.state).toBe("changes_requested");
+      expect(list.items.find((item) => item.id === oakItem.id)!.decision).toMatchObject({ decision: "rejected", note: "Wants smoked oak" });
+      expect(detail.stages[1].ready).toBe(false);
+
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "save_material", id: oakItem.id, name: "Oak veneer, smoked", specification: "Crown cut, matt lacquer", boqLineIds: [scope.lines[0].id], version: detail.project.version });
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "send_materials", version: detail.project.version });
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "signed_document", version: detail.project.version,
+        decisions: [{ itemId: quartzItem.id, decision: "approved" }, { itemId: oakItem.id, decision: "approved" }] });
+      expect((await manager.materials(actor, w.workspaceId, projectId)).state).toBe("signed_off");
+      expect(detail.stages[1].ready).toBe(true);
+      expect((await manager.line(actor, w.workspaceId, projectId, worktop.id)).history.at(-1)).toMatchObject({ kind: "signed_off", detail: { revision: "R2", by: "Maya" } });
+      // A sent revision can't be altered.
+      await w.client.query("SAVEPOINT frozen");
+      await expect(w.client.query("UPDATE project_material_revisions SET snapshot = '[]' WHERE project_id = $1", [projectId])).rejects.toThrow(/cannot be changed/);
+      await w.client.query("ROLLBACK TO SAVEPOINT frozen");
+
+      // Changing the list after sign-off reopens the check until a new revision is signed off.
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Brass handles", version: detail.project.version });
+      expect((await manager.materials(actor, w.workspaceId, projectId)).state).toBe("changed");
+      expect((await manager.get(actor, w.workspaceId, projectId)).stages[1].ready).toBe(false);
     });
   });
 

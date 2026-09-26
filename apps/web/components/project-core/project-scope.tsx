@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Sparkles } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import {
@@ -12,11 +12,13 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { LineHistoryEntry, LiveScope, ScopeLine, ScopePackage, Supply } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
+import { ProjectMaterials } from "./project-materials";
 import { SealedDocument } from "./sealed-document";
 import styles from "./project-core.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
-type View = "items" | "changes" | "sealed";
+type View = "items" | "materials" | "changes" | "sealed";
+const VIEWS: View[] = ["items", "materials", "changes", "sealed"];
 type Group = "package" | "area";
 const SUPPLIES: Supply[] = ["make", "buy", "ready_made", "subcontract", "client", "site_work"];
 const NONE = "__none";
@@ -53,7 +55,8 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
   const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
   const [scope, setScope] = useState<LiveScope | null>(null);
   const [error, setError] = useState("");
-  const [view, setView] = useState<View>("items");
+  const requested = useSearchParams().get("view") as View | null;
+  const [view, setView] = useState<View>(requested && VIEWS.includes(requested) ? requested : "items");
   const [group, setGroup] = useState<Group>("package");
   const [line, setLine] = useState<ScopeLine | null>(null);
   const [editing, setEditing] = useState<ScopePackage | "new" | null>(null);
@@ -99,7 +102,7 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
 
   return <div className={styles.scopeView}>
     <PillTabs ariaLabel={t("Scope")} selectedKey={view} onSelectionChange={(key) => { setView(key as View); setSeal(null); }}
-      items={[{ id: "items", label: t("Items") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
+      items={[{ id: "items", label: t("Items") }, { id: "materials", label: t("Materials") }, { id: "changes", label: t("Changes") }, { id: "sealed", label: t("Sealed") }]} />
 
     {view === "items" ? <>
       <div className={styles.scopeToolbar}>
@@ -121,7 +124,8 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
         onSectionAction={group === "package" && scope.canManage ? (id) => { const found = scope.packages.find((item) => item.id === id); if (found) setEditing(found); } : undefined} />
         : <EmptyState illustration={null} title={t("No items")} />}
       <p className={styles.agreedLine}><span>{t("Agreed value")}</span><strong>{money(agreed)}</strong></p>
-    </> : view === "changes" ? <Changes workspaceId={workspaceId} projectId={projectId} scope={scope} />
+    </> : view === "materials" ? <ProjectMaterials workspaceId={workspaceId} projectId={projectId} version={version} run={run} lines={scope.lines} />
+    : view === "changes" ? <Changes workspaceId={workspaceId} projectId={projectId} scope={scope} />
     : seal ? <SealedDocument workspaceId={workspaceId} projectId={projectId} sealId={seal} onBack={() => setSeal(null)} />
       : <ul className={styles.sealList} aria-label={t("Sealed documents")}>
           {scope.seals.map((item) => <li key={item.id}><button type="button" onClick={() => setSeal(item.id)}>

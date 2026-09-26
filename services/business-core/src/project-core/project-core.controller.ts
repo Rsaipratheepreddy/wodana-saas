@@ -41,6 +41,9 @@ export class ProjectCoreController {
   @Get("projects/:projectId/scope")
   scope(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.scope(actor, workspaceId, projectId); }
 
+  @Get("projects/:projectId/materials")
+  materials(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.materials(actor, workspaceId, projectId); }
+
   @Get("projects/:projectId/seals/:sealId")
   seal(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("sealId", ParseUUIDPipe) sealId: string) { return this.projects.seal(actor, workspaceId, projectId, sealId); }
 

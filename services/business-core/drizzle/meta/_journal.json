@@ -225,6 +225,13 @@
       "when": 1792065600000,
       "tag": "0031_variations",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792152000000,
+      "tag": "0032_material_list",
+      "breakpoints": true
     }
   ]
 }

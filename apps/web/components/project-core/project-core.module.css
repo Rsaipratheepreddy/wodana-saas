@@ -134,6 +134,13 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
 .changes { display: grid; gap: var(--wd-space-3); }
 .errorLine { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 
+.materialStatus { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.materialStatus[data-state="signed_off"] { color: var(--wd-color-success); }
+.materialStatus[data-state="changes_requested"], .materialStatus[data-state="changed"] { color: var(--wd-color-warning); }
+.decisions { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.decisions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-2) var(--wd-space-3); align-items: center; padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.decisions li > :nth-child(3) { grid-column: 1 / -1; }
+
 /* Updates */
 .updates { display: grid; gap: var(--wd-space-4); max-inline-size: 48rem; }
 .composer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: center; }

@@ -8,7 +8,8 @@ export type ProjectNotice =
   | { code: "project.team_added"; membershipId: string; role: string }
   | { code: "project.stage_done"; stage: string; previous: string; memberships: string[] }
   | { code: "project.on_hold" | "project.resumed" | "project.off_track"; note: string; memberships: string[] }
-  | { code: "project.variation_applied"; variation: string; amount: string; memberships: string[] };
+  | { code: "project.variation_applied"; variation: string; amount: string; memberships: string[] }
+  | { code: "project.materials_signed_off" | "project.materials_changes"; revision: string; note: string; memberships: string[] };
 
 /**
  * Who hears about a project: the team when it starts, a person when they're named for a role, the
@@ -44,6 +45,8 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
     for (const person of await users([notice.membershipId])) await tell(person.userId, { role: notice.role }, true);
   } else if (notice.code === "project.stage_done") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { stage: notice.stage, previous: notice.previous }, false);
+  } else if (notice.code === "project.materials_signed_off" || notice.code === "project.materials_changes") {
+    for (const person of await users(notice.memberships)) await tell(person.userId, { revision: notice.revision, note: notice.note }, false);
   } else if (notice.code === "project.variation_applied") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { variation: notice.variation, amount: notice.amount }, false);
   } else {

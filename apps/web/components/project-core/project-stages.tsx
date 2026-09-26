@@ -44,7 +44,7 @@ export function ProjectStages({ detail, run, caseHref, onTeam }: { detail: Proje
               ? <IconMenuButton ariaLabel={t("Stage actions")} onAction={(id) => setReason({ action: id as "skip_stage" | "reopen_stage", stage })}
                   items={[{ id: "skip_stage", label: t("Skip this stage") }, ...(stage.position > 0 ? [{ id: "reopen_stage", label: t("Go back a stage") }] : [])]} /> : null}</div>}
           {expanded && stage.checks.length ? <ul className={styles.checks} aria-label={t("What {stage} needs", { stage: stage.name })}>
-            {stage.checks.map((check) => <CheckRow key={check.key} check={check} stage={stage} run={run} caseHref={caseHref} onTeam={onTeam} roleLabel={roleLabel} running={running} />)}
+            {stage.checks.map((check) => <CheckRow key={check.key} check={check} stage={stage} run={run} caseHref={caseHref} projectHref={`/workspace/projects/${detail.project.id}`} onTeam={onTeam} roleLabel={roleLabel} running={running} />)}
           </ul> : null}
           {stage.status === "current" && stage.canWork && running ? <div className={styles.stageActions}>
             <Button size="compact" variant="primary" isDisabled={!stage.ready} onPress={() => void run("complete_stage", { stageId: stage.id })}>{t("Finish {stage}", { stage: stage.name })}</Button>
@@ -59,8 +59,8 @@ export function ProjectStages({ detail, run, caseHref, onTeam }: { detail: Proje
   </>;
 }
 
-function CheckRow({ check, stage, run, caseHref, onTeam, roleLabel, running }: {
-  check: EvaluatedCheck; stage: ProjectStage; run: Run; caseHref: (section: string) => string; onTeam: () => void; roleLabel: (key: string | null) => string; running: boolean;
+function CheckRow({ check, stage, run, caseHref, projectHref, onTeam, roleLabel, running }: {
+  check: EvaluatedCheck; stage: ProjectStage; run: Run; caseHref: (section: string) => string; projectHref: string; onTeam: () => void; roleLabel: (key: string | null) => string; running: boolean;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -76,9 +76,11 @@ function CheckRow({ check, stage, run, caseHref, onTeam, roleLabel, running }: {
   // Read from the records: never ticked by hand.
   const text = check.kind === "lead_assigned" ? t("Project manager named")
     : check.kind === "role_assigned" ? t("{role} named", { role: roleLabel(check.role ?? null) })
+    : check.kind === "material_list_signed_off" ? t("Client signed off the material list")
     : t("Production payment verified");
   const fix = check.passed || !live ? null
     : check.kind === "payment_verified" ? <Link href={caseHref("payment-plan")}>{t("Open payments")}</Link>
+    : check.kind === "material_list_signed_off" ? <Link href={`${projectHref}/scope?view=materials`}>{t("Open the material list")}</Link>
     : <button type="button" className={styles.linkButton} onClick={onTeam}>{t("Name someone")}</button>;
   return <li data-passed={check.passed || undefined} data-auto>
     <span className={styles.autoMark} aria-hidden="true">{check.passed ? <Check size={13} strokeWidth={2.5} /> : null}</span>

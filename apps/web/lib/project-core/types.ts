@@ -1,7 +1,7 @@
 export type ProjectStatus = "active" | "on_hold" | "completed" | "cancelled" | "archived";
 export type Health = "on_track" | "at_risk" | "off_track";
 export type Priority = "normal" | "high" | "critical";
-export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified";
+export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off";
 
 export type ProjectRole = { key: string; label: string };
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
@@ -93,3 +93,18 @@ export type LiveScope = {
   currency: string; version: number; canManage: boolean; members: Member[]; caseId: string; baselineQuoteId: string;
 };
 export type LineHistoryEntry = { id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string };
+
+export type MaterialDecision = { itemId: string; decision: "approved" | "rejected"; note: string };
+export type MaterialItem = {
+  id: string; position: number; catalogItemId: string | null; name: string; code: string; specification: string; supplier: string;
+  quantity: string | null; unit: string; note: string; boqLineIds: string[]; version: number;
+  usedIn: Array<{ id: string; title: string; areaName: string | null }>; decision: MaterialDecision | null;
+};
+export type MaterialRevision = {
+  id: string; number: number; status: "sent" | "signed_off" | "changes_requested"; sentAt: string; sentByName: string | null;
+  decidedAt: string | null; decidedBy: string | null; method: string | null; note: string;
+};
+export type MaterialsState = {
+  state: "draft" | "sent" | "signed_off" | "changes_requested" | "changed";
+  items: MaterialItem[]; revisions: MaterialRevision[]; version: number; canEdit: boolean;
+};

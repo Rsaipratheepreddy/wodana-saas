@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { financeGatePaymentsReady } from "../commercial/release-integrity";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
+import { materialsSignedOff } from "./project-materials";
 import { checkPasses, DEFAULT_ROLES, DEFAULT_STAGES, LEAD_ROLE, type ProjectRole, type StageCheck, type TemplateStage } from "./project-checks";
 
 type Db = Pick<PoolClient, "query">;
@@ -132,14 +133,16 @@ export async function productionPaid(db: Db, workspaceId: string, caseId: string
 }
 
 /** Each stage's checks with whether they pass, who confirmed them, and whether the stage can finish. */
-export async function evaluateStages(db: Db, workspaceId: string, project: Pick<ProjectRow, "caseId" | "quoteId">, stages: StageRow[], team: TeamMember[]) {
+export async function evaluateStages(db: Db, workspaceId: string, project: Pick<ProjectRow, "id" | "caseId" | "quoteId">, stages: StageRow[], team: TeamMember[]) {
   const confirmations = await readConfirmations(db, workspaceId, stages.map((stage) => stage.id));
   const filledRoles = new Set(team.flatMap((member) => member.roles));
   const needsPayment = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "payment_verified"));
   const paid = needsPayment ? await productionPaid(db, workspaceId, project.caseId, project.quoteId) : false;
+  const needsMaterials = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "material_list_signed_off"));
+  const materialsDone = needsMaterials ? await materialsSignedOff(db, workspaceId, project.id) : false;
   return stages.map((stage) => {
     const mine = confirmations.filter((confirmation) => confirmation.stageId === stage.id);
-    const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid };
+    const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid, materialsSignedOff: materialsDone };
     const checks = stage.checks.map((check) => {
       const confirmation = mine.find((item) => item.checkKey === check.key);
       return { ...check, passed: stage.status === "done" ? true : checkPasses(check, facts), confirmedBy: confirmation?.byName ?? null, confirmedAt: confirmation?.at ?? null, note: confirmation?.note ?? "" };

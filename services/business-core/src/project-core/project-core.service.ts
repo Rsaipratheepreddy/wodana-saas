@@ -19,6 +19,7 @@ import {
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
 import { noticeProject, type ProjectNotice } from "./project-notices";
+import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
 import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq } from "./project-scope";
 
 type Db = PoolClient;
@@ -318,6 +319,16 @@ export class ProjectCoreService {
     });
   }
 
+  /** The material list, where each material is used, and what the client decided. */
+  materials(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { project, all, membershipId } = await this.visible(client, workspaceId, projectId, user);
+      const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+      const onTeam = all || team.some((member) => member.membershipId === membershipId);
+      return { ...(await readMaterials(client, workspaceId, projectId)), version: project.version, canEdit: onTeam && ["active", "on_hold"].includes(project.status) };
+    });
+  }
+
   /** A line's history: agreed, changed by variations, packaged, signed off… */
   line(actor: RequestActor, workspaceId: string, projectId: string, lineId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
@@ -406,6 +417,20 @@ export class ProjectCoreService {
         else if (action === "save_package") audit = { packageId: await savePackage(client, workspaceId, projectId, body) };
         else if (action === "delete_package") { await deletePackage(client, workspaceId, projectId, String(body.packageId ?? "")); audit = { packageId: body.packageId }; }
         else audit = { moved: await assignLines(client, workspaceId, projectId, body.lineIds, body.packageId ?? null, user.userId), packageId: body.packageId ?? null };
+      } else if (["suggest_materials", "save_material", "delete_material", "send_materials", "record_materials_decision"].includes(action)) {
+        // The team prepares the material list; the project manager sees every step in the audit.
+        if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
+        if (action === "suggest_materials") audit = { added: await suggestMaterials(client, workspaceId, projectId) };
+        else if (action === "save_material") audit = { itemId: await saveMaterial(client, workspaceId, projectId, body) };
+        else if (action === "delete_material") { await deleteMaterial(client, workspaceId, projectId, String(body.itemId ?? "")); audit = { itemId: body.itemId }; }
+        else if (action === "send_materials") audit = { revision: await sendMaterials(client, workspaceId, projectId, user.userId) };
+        else {
+          const result = await recordMaterialDecision(client, workspaceId, projectId, body, user.userId);
+          audit = result;
+          notices.push({ key: `materials:${result.number}`, notice: result.signedOff
+            ? { code: "project.materials_signed_off", revision: `R${result.number}`, note: "", memberships: teamIds() }
+            : { code: "project.materials_changes", revision: `R${result.number}`, note: result.note, memberships: teamIds() } });
+        }
       } else if (action === "apply_variation") {
         needManager();
         if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
@@ -608,6 +633,7 @@ function checkLabel(check: Evaluated["checks"][number], roles: Array<{ key: stri
   if (check.kind === "confirm") return check.label ?? "";
   if (check.kind === "lead_assigned") return "Name the project manager";
   if (check.kind === "role_assigned") return `Name the ${roles.find((role) => role.key === check.role)?.label.toLowerCase() ?? "role"}`;
+  if (check.kind === "material_list_signed_off") return "Client signed off the material list";
   return "Production payment verified";
 }
 

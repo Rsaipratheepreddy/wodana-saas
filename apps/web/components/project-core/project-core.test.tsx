@@ -2,14 +2,14 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { LiveScope, ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
+import type { LiveScope, MaterialsState, ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
 import { ProjectPage } from "./project-page";
 import { splitByPercent } from "./sealed-document";
 import { ProjectsPage } from "./projects-page";
 import { StartProjectDialog } from "./start-project-dialog";
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/workspace/projects/p1" }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/workspace/projects/p1", useSearchParams: () => new URLSearchParams() }));
 
 const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const detail = (patch: Partial<ProjectDetail["project"]> = {}, stages?: ProjectDetail["stages"]): ProjectDetail => ({
@@ -170,6 +170,31 @@ describe("projects", () => {
     await userEvent.click(screen.getByRole("button", { name: "New variation" }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith(`/workspace/projects/${PID}/changes/v2`));
     expect(posts(fetcher)).toEqual([{ action: "variation", revision: 7, quoteId: "q1" }]);
+  });
+
+  it("sends the material list and records the client's decision, needing a reason for each rejection", async () => {
+    const live: LiveScope = { lines: [], packages: [], seals: [], variations: [], currency: "AED", version: 4, canManage: true, members: [], caseId: "c1", baselineQuoteId: "q1" };
+    const item = (id: string, name: string) => ({ id, position: 0, catalogItemId: null, name, code: "", specification: "", supplier: "", quantity: null, unit: "", note: "", boqLineIds: [], version: 1, usedIn: [], decision: null });
+    let materials: MaterialsState = { state: "draft", items: [item("m1", "Quartz, Calacatta"), item("m2", "Oak veneer")], revisions: [], version: 4, canEdit: true };
+    const fetcher = mount((url, body) => {
+      if (body?.action === "send_materials") materials = { ...materials, state: "sent", revisions: [{ id: "r1", number: 1, status: "sent", sentAt: "2026-10-01T09:00:00Z", sentByName: "Dana", decidedAt: null, decidedBy: null, method: null, note: "" }] };
+      if (body) return detail({ version: 5 });
+      return url.includes("/materials") ? materials : url.includes("/scope") ? live : detail();
+    });
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("tab", { name: "Materials" }));
+    expect(await screen.findByText("Not sent to the client yet")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the client" }));
+    expect(await screen.findByText(/R1 is with the client/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Record the client's decision" }));
+    const dialog = await screen.findByRole("dialog", { name: "Record the client's decision" });
+    await userEvent.click(within(within(dialog).getByRole("radiogroup", { name: "Decision for Oak veneer" })).getByText("Reject"));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Decided by/ }), "Maya");
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "What they want instead of Oak veneer" }), "Smoked oak");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "record_materials_decision", decidedBy: "Maya", method: "signed_document",
+      decisions: [{ itemId: "m1", decision: "approved", note: "" }, { itemId: "m2", decision: "rejected", note: "Smoked oak" }] }));
   });
 
   it("opens a sealed document from the Sealed list, with what the client didn't choose", async () => {
