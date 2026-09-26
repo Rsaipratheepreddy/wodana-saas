@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { quoteApi } from "@/lib/quotation/client";
 import { money, plain } from "@/lib/quotation/format";
 import type { BuilderState } from "@/lib/quotation/types";
+import { PaymentsPanel } from "./quote-flow";
 import styles from "./quote-builder.module.css";
 
 type Target = { scope: "area" | "trade" | "quote"; target: string; name: string };
@@ -44,6 +45,7 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
         <div className={styles.muted} data-alert={belowFloor || undefined}><dt>{t("Margin")}</dt><dd>{pricing.margin === null ? "—" : `${plain(pricing.margin, locale, 1)}%`}</dd></div>
       </> : null}
     </dl>
+    <PaymentsPanel state={state} api={api} onState={onState} onError={onError} />
     {belowFloor ? <p className={styles.alert} role="status">{t("Margin is below the {floor}% floor.", { floor: plain(floor!, locale) })}</p> : null}
     {discountFor ? <DiscountForm key={`${discountFor.scope}-${discountFor.target}`} target={discountFor} state={state} onClose={() => onDiscountFor(null)}
       onSave={async (input) => {

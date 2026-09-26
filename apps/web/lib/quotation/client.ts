@@ -1,4 +1,4 @@
-import type { BuilderState, CatalogHit, LineOp, QuoteDiscount } from "./types";
+import type { BuilderState, CatalogHit, LineOp, PaymentMilestone, QuoteDiscount } from "./types";
 
 export const quotationPath = (workspaceId: string, path: string, query?: Record<string, string>) =>
   `/api/quotation/${path}?${new URLSearchParams({ workspaceId, ...query })}`;
@@ -23,6 +23,11 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     discount: (input: Omit<QuoteDiscount, "reason"> & { reason?: string }) => request<BuilderState>(quotationPath(workspaceId, `${base}/discounts`), "PUT", input),
     tax: (taxRate: string) => request<BuilderState>(quotationPath(workspaceId, `${base}/tax`), "PUT", { taxRate }),
     search: (q: string, signal?: AbortSignal) => request<{ items: CatalogHit[] }>(quotationPath(workspaceId, `${base}/catalog`, { q }), "GET", undefined, signal),
+    paymentTerms: (terms: PaymentMilestone[]) => request<BuilderState>(quotationPath(workspaceId, `${base}/payment-terms`), "PUT", { terms }),
+    /** A step on the quote's journey (submit, approve, issue, revise, record_decision…), through the commercial case. */
+    step: (action: string, revision: number, extra: Record<string, unknown> = {}) =>
+      request<{ data: { revision: number; quotes: Array<{ id: string; number: number; status: string }> } }>(`/api/commercial/cases/${caseId}?${new URLSearchParams({ workspaceId })}`, "POST", { action, revision, quoteId, ...extra }),
+    loadOther: (otherId: string) => request<BuilderState>(quotationPath(workspaceId, `cases/${caseId}/quotes/${encodeURIComponent(otherId)}`)),
     addTrade: (id: string, name: string) => request<{ id: string; name: string }>(quotationPath(workspaceId, "work-packages"), "POST", { id, name }),
   };
 }

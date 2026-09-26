@@ -5,6 +5,8 @@ import { DesignSystemProvider } from "@/design-system";
 import type { BuilderLine, BuilderState } from "@/lib/quotation/types";
 import { QuoteBuilder } from "./quote-builder";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }));
+
 const KITCHEN = "11111111-1111-4111-8111-111111111111", JOINERY = "44444444-4444-4444-8444-444444444444";
 const line = (fields: Partial<BuilderLine>): BuilderLine => ({
   id: "a", position: 0, version: 3, kind: "item", areaId: KITCHEN, fromAreaId: null, workPackageId: JOINERY, title: "Base cabinets", description: "", unit: "lm", quantity: "4", formula: null, formulaError: null,
@@ -12,7 +14,10 @@ const line = (fields: Partial<BuilderLine>): BuilderLine => ({
   taxCode: null, taxRate: null, optional: null, optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, buildUpComplete: null, updatedAt: "", updatedByName: null, components: [], ...fields,
 });
 const state = (lines: BuilderLine[]): BuilderState => ({
-  quote: { id: "q1", number: 2, title: "Main quote", status: "draft", kind: "quotation", round: "main", currency: "AED", decimals: 2, validUntil: null, taxRate: "5", revision: 1 },
+  quote: { id: "q1", number: 2, title: "Main quote", status: "draft", kind: "quotation", round: "main", currency: "AED", decimals: 2, validUntil: null, taxRate: "5", revision: 1, paymentTerms: [], approvedBy: null, clientDecision: null },
+  family: [{ id: "q1", number: 2, status: "draft", total: "420.00", createdAt: null }],
+  flow: { internalReview: true, reviewAction: "approve", canReview: true, canRecordDecision: true },
+  paymentTemplates: [],
   settings: { defaultView: "area", pricesIncludeTax: false, rounding: "line", defaultMarkupPercent: "0", marginFloorPercent: null, discountApprovalPercent: null, validityDays: 30, internalReview: true, priceBookId: null, version: 0 },
   areas: [{ id: KITCHEN, name: "Kitchen" }], workPackages: [{ id: JOINERY, name: "Joinery" }], taxCodes: [], lines, discounts: [],
   pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
@@ -81,5 +86,40 @@ describe("quotation builder", () => {
     expect(screen.getByText("This quote has been sent. Start a new revision to change it.")).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Quantity" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /Add item/ })).not.toBeInTheDocument();
+  });
+
+  it("sends a draft for review through the case, with the case revision", async () => {
+    const initial = state([line({})]);
+    const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [{ id: "q1", number: 2, status: "internal_review" }] } } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Send for review" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual({ action: "submit", revision: 1, quoteId: "q1" }));
+  });
+
+  it("records the client's decision with how they decided and the options they chose", async () => {
+    const base = state([line({}), line({ id: "o", title: "TV unit", optional: true })]);
+    const initial = { ...base, quote: { ...base.quote, status: "issued" }, canEdit: false };
+    const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [] } } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Record client decision" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Decided by/ }), "Maya Client");
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /TV unit/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ action: "record_decision", decision: "accept", method: "signed_document", clientName: "Maya Client", selectedOptionLineIds: ["o"] })));
+  });
+
+  it("only saves payment milestones that add up to 100%", async () => {
+    const initial = state([line({})]);
+    const fetcher = mount(initial);
+    await userEvent.click(screen.getByRole("button", { name: "Edit payments" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add milestone" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Milestone" }), "Advance");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "When" }), "On acceptance");
+    const percent = within(dialog).getByRole("textbox", { name: "%" });
+    await userEvent.clear(percent); await userEvent.type(percent, "40");
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.clear(percent); await userEvent.type(percent, "100");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url).includes("/payment-terms") && init?.method === "PUT")).toBe(true));
   });
 });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Percent, Plus } from "lucide-react";
-import { Badge, Button, EmptyState, IconButton, InlineNotice, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quoteApi, QuotationRequestError } from "@/lib/quotation/client";
 import { groupLines, money, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
@@ -14,6 +14,8 @@ import type { CaseRoom } from "@/lib/pre-project/content";
 import { LineDetails } from "./line-details";
 import { QuoteRow, type RowColumn } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
+import { FlowActions, RevisionChanges } from "./quote-flow";
+import { useRouter } from "next/navigation";
 import styles from "./quote-builder.module.css";
 
 type Draft = { id: string; areaId: string | null; workPackageId: string | null };
@@ -25,7 +27,8 @@ const STATUS_LABEL: Record<string, string> = { draft: "Draft", internal_review: 
  */
 export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; initial?: BuilderState }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  const { locale, timeZone } = useDesignSystem();
+  const router = useRouter();
   const api = useMemo(() => quoteApi(workspaceId, caseId, quoteId), [workspaceId, caseId, quoteId]);
   const [state, setState] = useState<BuilderState | null>(initial ?? null);
   const [loadError, setLoadError] = useState("");
@@ -124,6 +127,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
     if (ops.length) send(ops);
   };
 
+  const quoteHref = (id: string) => `${backHref.split("?")[0]}?${new URLSearchParams({ quote: id })}`;
   if (loadError && !state) return <EmptyState illustration="error" title={t("The quote didn't load")} description={loadError} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!state) return <Skeleton lines={8} />;
 
@@ -174,11 +178,22 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
       <Link href={backHref} className={styles.back} aria-label={t("All quotes")}><ArrowLeft aria-hidden="true" data-directional="true" size={16} /></Link>
       <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
       <Badge tone={state.quote.status === "accepted" ? "success" : state.quote.status === "draft" ? "neutral" : "info"}>{t((STATUS_LABEL[state.quote.status] ?? state.quote.status) as never)}</Badge>
+      {state.family.length > 1 ? <PillTabs ariaLabel={t("Revisions")} selectedKey={state.quote.id} onSelectionChange={(id) => router.push(quoteHref(id))}
+        items={state.family.map((item) => ({ id: item.id, label: t("R{number}", { number: item.number }) }))} /> : null}
+      {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
       <span className={styles.spacer} />
       <Link className={styles.docLink} href={`${backHref.split("?")[0]}?${new URLSearchParams({ quote: quoteId, view: "document" })}`}>{t("Document")}</Link>
       <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
+      <FlowActions state={state} api={api} caseHref={(section) => backHref.replace(/\/quotations(\?.*)?$/, `/${section}`)} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />
     </header>
+    {state.quote.clientDecision ? <InlineNotice tone={state.quote.status === "accepted" ? "success" : "info"} message={t("{decision} by {name} on {date}{how}", {
+      decision: t((state.quote.clientDecision.decision === "accept" ? "Accepted" : state.quote.clientDecision.decision === "changes" ? "Changes requested" : "Declined") as never),
+      name: state.quote.clientDecision.decidedBy,
+      date: new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(state.quote.clientDecision.decidedAt)),
+      how: state.quote.clientDecision.recordedBy ? t(" · recorded by {name}", { name: state.quote.clientDecision.recordedBy }) : "",
+    }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
+    <RevisionChanges key={state.quote.id} state={state} api={api} />
 
     <div className={styles.toolbar}>
       <SegmentedControl label={t("View")} value={view} onChange={(value) => setView(value as QuoteView)} options={(["area", "trade", "area_trade"] as QuoteView[]).map((id) => ({ id, label: t(VIEW_LABEL[id] as never) }))} />

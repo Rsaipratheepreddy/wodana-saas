@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commercialRepository } from "../commercial/commercial-repository";
 import { totals } from "../commercial/commercial.domain";
 import { QuotationBuilderService } from "./quotation-builder.service";
+import { copyBuilderData } from "./quote-revision";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -132,6 +133,30 @@ integration("quotation builder (plan §6.8)", () => {
     await withQuote(async (client, ids, service) => {
       await client.query("UPDATE commercial_quotes SET status = 'issued' WHERE id = $1", [ids.quoteId]);
       await expect(service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "a", title: "X" } }] })).rejects.toThrow(/new revision/);
+    });
+  });
+
+  it("keeps payment milestones that total 100 % and carries build-ups and discounts into a new revision", async () => {
+    await withQuote(async (client, ids, service) => {
+      await expect(service.setPaymentTerms(actor, ids.workspaceId, ids.caseId, ids.quoteId, { terms: [{ id: "a", title: "Advance", percent: 40, trigger: "On acceptance", requiredForRelease: true }] })).rejects.toThrow(/100%/);
+      const state = await service.setPaymentTerms(actor, ids.workspaceId, ids.caseId, ids.quoteId, { terms: [
+        { id: "a", title: "Advance", percent: 40, trigger: "On acceptance", requiredForRelease: true },
+        { id: "b", title: "Before carpentry", percent: 60, trigger: "Joinery starts", requiredForRelease: false },
+      ] });
+      expect(state.quote.paymentTerms).toHaveLength(2);
+      expect(state.flow).toMatchObject({ internalReview: true, reviewAction: "approve" });
+      expect(state.family.map((item) => item.number)).toEqual([1]);
+
+      await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "catalog", itemId: ids.wardrobe, line: { id: "w", width: "1", height: "2" } }] });
+      await service.setDiscount(actor, ids.workspaceId, ids.caseId, ids.quoteId, { scope: "quote", target: "", kind: "percent", value: "5" });
+      const next = randomUUID();
+      await client.query(`INSERT INTO commercial_quotes(workspace_id,case_id,id,sort_order,number,kind,round,family_id,status,title,currency) VALUES($1,$2,$3,1,2,'quotation','main',$4,'draft','Main quote','AED')`, [ids.workspaceId, ids.caseId, next, ids.quoteId]);
+      await client.query(`INSERT INTO commercial_quote_lines(workspace_id,case_id,quote_id,id,sort_order,title,quantity,unit,unit_cost,rate,pricing_mode,width,height) SELECT workspace_id,case_id,$3,id,sort_order,title,quantity,unit,unit_cost,rate,pricing_mode,width,height FROM commercial_quote_lines WHERE case_id=$1 AND quote_id=$2`, [ids.caseId, ids.quoteId, next]);
+      await copyBuilderData(client, ids.workspaceId, ids.caseId, ids.quoteId, next);
+      const revised = await service.builder(actor, ids.workspaceId, ids.caseId, next);
+      expect(revised.lines[0].components).toHaveLength(2);
+      expect(revised.discounts).toEqual([expect.objectContaining({ scope: "quote", kind: "percent", value: "5" })]);
+      expect(revised.family.map((item) => item.number)).toEqual([1, 2]);
     });
   });
 });

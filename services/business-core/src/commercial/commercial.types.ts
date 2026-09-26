@@ -239,6 +239,9 @@ export type QuoteDecisionEvidence = {
   decidedAt: string;
   decidedBy: string;
   note?: string;
+  /** Set when staff recorded the decision (signed copy, email…), not the client on the portal. */
+  recordedBy?: string;
+  method?: "signed_document" | "email" | "in_person" | "phone" | "message";
 };
 export type Quote = {
   /** Separate client and payment rounds for Palm's design and main proposal. */

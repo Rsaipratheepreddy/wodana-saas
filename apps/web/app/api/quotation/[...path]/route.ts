@@ -12,7 +12,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 4) return method === "GET";
   if (path.length === 5 && path[4] === "catalog") return method === "GET";
   if (path.length === 5 && path[4] === "lines") return method === "POST";
-  if (path.length === 5 && ["discounts", "tax"].includes(path[4])) return method === "PUT";
+  if (path.length === 5 && ["discounts", "tax", "payment-terms"].includes(path[4])) return method === "PUT";
   return false;
 }
 

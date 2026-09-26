@@ -1,4 +1,6 @@
 import { DesignPackagesService } from "../design/design-packages.service";
+import { copyBuilderData } from "../quotation/quote-revision";
+import { noticeQuoteStep } from "../quotation/quote-notices";
 import { effectivePortalBrand, portalOwnedBrand } from "./effective-brand";
 import { commercialRepository } from "./commercial-repository";
 import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
@@ -86,12 +88,14 @@ import {
   parsePaymentTerms,
   parseQuotePresentation,
   phone,
+  quoteDecisionEvidence,
   text,
   totals,
 } from "./commercial.domain";
 import type {
   CommercialData,
   CommercialState,
+  QuoteDecisionEvidence,
   PortalSettings,
   Quote,
   QuotationTemplate,
@@ -133,6 +137,7 @@ export function commercialCommandPermission(action: string) {
   if (["verify_payment", "verify_credit", "review_deal_finance"].includes(action))
     return "commercial.finance.verify";
   if (action === "decide_owner_review") return "commercial.deal.approve";
+  if (action === "record_decision") return "commercial.approve";
   if (["approve", "execute_agreement"].includes(action))
     return "commercial.approve";
   if (action === "release") return "commercial.release";
@@ -3391,6 +3396,24 @@ export class CommercialService {
             data,
           );
           data.release.projectId = project.id;
+        } else if (action === "record_decision") {
+          // Staff record the client's decision on the sent quote (a signed copy, an email, in person).
+          if (!q) throw new NotFoundException("Quotation not found.");
+          if (q.kind !== "quotation") throw new ConflictException("Record a variation's decision from its change case.");
+          actionable(q);
+          const decision = text(b.decision, 20, true);
+          if (!["accept", "changes", "decline"].includes(decision)) throw new BadRequestException("Choose accept, changes or decline.");
+          const method = text(b.method, 20, true);
+          if (!["signed_document", "email", "in_person", "phone", "message"].includes(method)) throw new BadRequestException("Choose how the client decided.");
+          const note = text(b.note ?? "", 6000, decision !== "accept");
+          const clientName = text(b.clientName ?? record.customerName ?? "", 160, true);
+          const typed = decision as "accept" | "changes" | "decline";
+          q.decidedAt = now;
+          q.decidedBy = clientName;
+          q.clientDecision = { ...quoteDecisionEvidence(q, typed, b.selectedOptionLineIds ?? [], clientName, now, note), recordedBy: user.displayName, method: method as NonNullable<QuoteDecisionEvidence["method"]> };
+          if (typed === "accept") validateDeduction(data, q);
+          q.status = typed === "accept" ? "accepted" : typed === "changes" ? "changes_requested" : "declined";
+          if (typed === "changes") newRequest(data, `Changes to quotation V${q.number}`, note, q.id);
         } else throw new BadRequestException("Unknown commercial action.");
         await this.persist(
           client,
@@ -3405,6 +3428,11 @@ export class CommercialService {
         );
         if (["submit_owner_review", "review_deal_finance", "decide_owner_review"].includes(action))
           await this.notifyDealReview(client, workspaceId, caseId, data, action, user.userId);
+        // A new revision starts from the previous one: carry each line's build-up and the discounts.
+        if (action === "revise" && typeof b.quoteId === "string" && q && q.id !== b.quoteId)
+          await copyBuilderData(client, workspaceId, caseId, b.quoteId, q.id);
+        if (q && ["submit", "return", "record_decision"].includes(action))
+          await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined });
         return { data };
       },
     );

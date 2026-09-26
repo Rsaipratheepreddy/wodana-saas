@@ -35,10 +35,19 @@ export type Pricing = {
   cost: string | null; margin: string | null; optionalTotal: string;
 };
 
+export type PaymentMilestone = { id: string; title: string; percent: number; trigger: string; requiredForRelease: boolean; requiredForProduction?: boolean };
+
 export type QuoteDiscount = { scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: string; reason: string };
 
 export type BuilderState = {
-  quote: { id: string; number: number; title: string; status: string; kind: string; round: string | null; currency: string; decimals: number; validUntil: string | null; taxRate: string; revision: number };
+  quote: {
+    id: string; number: number; title: string; status: string; kind: string; round: string | null; currency: string; decimals: number; validUntil: string | null; taxRate: string; revision: number;
+    paymentTerms: PaymentMilestone[]; approvedBy: string | null;
+    clientDecision: { decision: string; decidedBy: string; decidedAt: string; note: string; method: string | null; recordedBy: string | null } | null;
+  };
+  family: Array<{ id: string; number: number; status: string; total: string; createdAt: string | null }>;
+  flow: { internalReview: boolean; reviewAction: "approve" | "qs_approve"; canReview: boolean; canRecordDecision: boolean };
+  paymentTemplates: Array<{ id: string; name: string; milestones: PaymentMilestone[] }>;
   settings: QuotationSettings;
   areas: Array<{ id: string; name: string }>;
   workPackages: Array<{ id: string; name: string }>;

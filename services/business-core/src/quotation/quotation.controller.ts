@@ -35,6 +35,9 @@ export class QuotationController {
   @Put("cases/:caseId/quotes/:quoteId/discounts")
   discount(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: Record<string, unknown>) { return this.builder.setDiscount(actor, workspaceId, caseId, quoteId, input ?? {}); }
 
+  @Put("cases/:caseId/quotes/:quoteId/payment-terms")
+  paymentTerms(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { terms?: unknown }) { return this.builder.setPaymentTerms(actor, workspaceId, caseId, quoteId, input ?? {}); }
+
   @Put("cases/:caseId/quotes/:quoteId/tax")
   tax(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { taxRate?: unknown }) { return this.builder.setQuoteTax(actor, workspaceId, caseId, quoteId, input ?? {}); }
 }

@@ -5,6 +5,7 @@ import { recordAudit } from "../audit/record-audit";
 import { currencyDecimals } from "../catalog-core/catalog-v2.service";
 import { Dec } from "../catalog-core/decimal";
 import { FormulaError } from "../catalog-core/formula";
+import { parsePaymentTerms } from "../commercial/commercial.domain";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { catalogLine, searchCatalog } from "./quote-catalog";
 import { priceQuote, PricingError, type PricingPolicy, type QuoteDiscountInput } from "./quote-pricing";
@@ -39,7 +40,7 @@ type ComponentRow = {
   id: string; lineId: string; kind: string; catalogItemId: string | null; name: string; quantityFormula: string | null; quantity: string;
   unit: string; unitCost: string | null; rate: string | null; wastePercent: string | null; suppliedByClient: boolean;
 };
-type Quote = { id: string; number: number; title: string; status: string; currency: string; kind: string; round: string | null; taxRate: string; validUntil: string | null; detail: Record<string, unknown> };
+type Quote = { id: string; number: number; title: string; status: string; currency: string; kind: string; round: string | null; familyId: string | null; taxRate: string; validUntil: string | null; detail: Record<string, unknown> };
 
 /**
  * The quotation builder (plan §6.8): one flat list of lines per quote with an area and a trade each,
@@ -241,6 +242,21 @@ export class QuotationBuilderService {
     });
   }
 
+  /** The quote's payment milestones (percent of the total, what triggers each, which must be paid before the project starts). */
+  setPaymentTerms(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: { terms?: unknown }) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      let terms;
+      try { terms = parsePaymentTerms(input.terms, false); }
+      catch (error) { if (error instanceof Error) throw new BadRequestException(error.message); throw error; }
+      await client.query(`UPDATE commercial_quotes SET detail = detail || jsonb_build_object('paymentTerms', $4::jsonb) WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
+        [workspaceId, caseId, quoteId, JSON.stringify(terms)]);
+      await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.payment_terms_changed.v1", entityType: "commercial_case", entityId: caseId, before: quote.detail.paymentTerms ?? [], after: { quoteId, terms } });
+      return this.state(client, workspaceId, caseId, quoteId, user.userId);
+    });
+  }
+
   // ---------- internals ----------
   private async editable(client: Db, workspaceId: string, caseId: string, quoteId: string) {
     const record = (await client.query<{ status: string }>(`SELECT status FROM pre_project_cases WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, caseId])).rows[0];
@@ -326,8 +342,10 @@ export class QuotationBuilderService {
     try { pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)), discounts, policy); }
     catch (error) { if (error instanceof PricingError) throw new BadRequestException(error.message); throw error; }
     await client.query(
-      `UPDATE commercial_quotes SET total = $4, discount = $5, detail = detail || jsonb_build_object('pricing', $6::jsonb) WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
-      [workspaceId, caseId, quote.id, pricing.total, pricing.discounts.total, JSON.stringify(policy)]);
+      `UPDATE commercial_quotes SET total = $4, discount = $5, detail = detail || jsonb_build_object('pricing', $6::jsonb),
+              valid_until = CASE WHEN status = 'draft' THEN (SELECT (now() AT TIME ZONE default_timezone)::date FROM workspaces WHERE id = $1) + $7::int ELSE valid_until END
+        WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
+      [workspaceId, caseId, quote.id, pricing.total, pricing.discounts.total, JSON.stringify(policy), settings.validityDays]);
     // Other commands read the case under its revision; moving it makes them reload instead of overwriting.
     await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
     return pricing;
@@ -345,10 +363,23 @@ export class QuotationBuilderService {
     const discounts = await readDiscounts(client, workspaceId, caseId, quoteId);
     const policy: PricingPolicy = { currencyDecimals: decimals, pricesIncludeTax: settings.pricesIncludeTax, rounding: settings.rounding };
     const pricing = priceQuote(lines.map((line) => pricedInput(line, quote.taxRate)), discounts, policy);
-    const revision = (await client.query<{ revision: number }>(`SELECT revision FROM commercial_cases WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0]?.revision ?? 0;
+    const commercial = (await client.query<{ revision: number; palm: boolean }>(`SELECT revision, content ? 'palmFlow' AND content->'palmFlow' <> 'null'::jsonb AS palm FROM commercial_cases WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId])).rows[0];
+    const revision = commercial?.revision ?? 0;
+    const family = (await client.query<{ id: string; number: number; status: string; total: string; createdAt: string | null }>(
+      `SELECT id, number, status, total::text AS total, detail->>'createdAt' AS "createdAt" FROM commercial_quotes
+        WHERE workspace_id = $1 AND case_id = $2 AND kind = $3 AND coalesce(family_id, id) = coalesce($4, $5) ORDER BY number`,
+      [workspaceId, caseId, quote.kind, quote.familyId, quote.id])).rows;
+    const can = async (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
+    const decision = quote.detail.clientDecision as { decision: string; decidedBy: string; decidedAt: string; note?: string; method?: string; recordedBy?: string } | undefined;
     const hideCost = <T extends { unitCost: string | null }>(row: T) => (canViewCosts ? row : { ...row, unitCost: null });
     return {
-      quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision },
+      quote: { id: quote.id, number: quote.number, title: quote.title, status: quote.status, kind: quote.kind, round: quote.round, currency: quote.currency, decimals, validUntil: quote.validUntil, taxRate: quote.taxRate, revision,
+        paymentTerms: (quote.detail.paymentTerms as unknown[] | undefined) ?? [], approvedBy: (quote.detail.approvedBy as string | undefined) ?? null,
+        clientDecision: decision ? { decision: decision.decision, decidedBy: decision.decidedBy, decidedAt: decision.decidedAt, note: decision.note ?? "", method: decision.method ?? null, recordedBy: decision.recordedBy ?? null } : null },
+      family,
+      flow: { internalReview: settings.internalReview, reviewAction: commercial?.palm && quote.kind === "quotation" ? "qs_approve" : "approve",
+        canReview: await can(commercial?.palm && quote.kind === "quotation" ? "commercial.estimate" : "commercial.approve"), canRecordDecision: await can("commercial.approve") },
+      paymentTemplates: (await client.query<{ id: string; name: string; milestones: unknown }>(`SELECT id, name, milestones FROM commercial_payment_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows,
       settings,
       areas: await caseAreas(client, workspaceId, caseId),
       workPackages: await workPackages(client, workspaceId, false),
@@ -412,7 +443,7 @@ async function taxCodes(db: Db, workspaceId: string, caseId: string) {
 
 async function readQuote(db: Db, workspaceId: string, caseId: string, quoteId: string, lock = false): Promise<Quote> {
   const quote = (await db.query<Quote>(
-    `SELECT id, number, title, status, currency, kind, round, tax_rate::text AS "taxRate", valid_until::text AS "validUntil", detail
+    `SELECT id, number, title, status, currency, kind, round, family_id AS "familyId", tax_rate::text AS "taxRate", valid_until::text AS "validUntil", detail
        FROM commercial_quotes WHERE workspace_id = $1 AND case_id = $2 AND id = $3 ${lock ? "FOR UPDATE" : ""}`, [workspaceId, caseId, quoteId])).rows[0];
   if (!quote) throw new NotFoundException("Quote not found.");
   return quote;
