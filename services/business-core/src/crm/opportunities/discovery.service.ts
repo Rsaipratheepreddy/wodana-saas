@@ -126,13 +126,16 @@ export class OpportunityDiscoveryService {
   }
 
   private async questions(client: PoolClient, workspaceId: string, enquiryType: string | null): Promise<DiscoveryQuestion[]> {
-    return (await client.query<DiscoveryQuestion>(
-      `SELECT question.key, question.label, question.required FROM crm_qualification_forms form
+    return (await client.query<DiscoveryQuestion & { configuration: { options?: unknown } }>(
+      `SELECT question.key, question.label, question.required, question.data_type AS "dataType", question.configuration FROM crm_qualification_forms form
        JOIN crm_qualification_questions question ON question.workspace_id = form.workspace_id AND question.form_id = form.id
        WHERE form.workspace_id = $1 AND form.purpose = 'discovery' AND form.status = 'active'
          AND (form.service_type IS NULL OR form.service_type = $2)
        ORDER BY (form.service_type IS NULL), question.position`, [workspaceId, enquiryType])).rows
-      .filter((question, index, all) => all.findIndex((other) => other.key === question.key) === index);
+      .filter((question, index, all) => all.findIndex((other) => other.key === question.key) === index)
+      .map(({ configuration, ...question }) => ({ ...question, options: Array.isArray(configuration?.options)
+        ? (configuration.options as unknown[]).map((option) => typeof option === "string" ? { id: option, label: option } : option as { id: string; label: string }).filter((option) => option?.id)
+        : undefined }));
   }
 
   private async answers(client: PoolClient, workspaceId: string, opportunityId: string) {

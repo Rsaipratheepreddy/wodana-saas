@@ -1,3 +1,4 @@
+import { areaIn } from "../crm/opportunities/discovery.domain";
 import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
@@ -80,11 +81,12 @@ export class DesignPackagesService {
     });
   }
 
-  quote(actor: RequestActor, workspaceId: string, id: string, measure: { spaces?: number | null; area?: string | null }) {
+  quote(actor: RequestActor, workspaceId: string, id: string, measure: { spaces?: number | null; area?: string | null; areaUnit?: "sqft" | "sqm" | null }) {
     return this.access.withAnyPermission(actor, workspaceId, ["crm.opportunities.view", "crm.settings.manage"], async (client) => {
       const pkg = await this.requirePackage(client, workspaceId, id, false);
       if (pkg.status !== "active") throw new UnprocessableEntityException("This package is no longer offered");
-      return { packageId: pkg.id, fee: designFee(pkg, measure), currency: pkg.currency, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit };
+      const area = measure.area && measure.areaUnit && pkg.areaUnit ? areaIn(measure.area, measure.areaUnit, pkg.areaUnit) : measure.area;
+      return { packageId: pkg.id, fee: designFee(pkg, { spaces: measure.spaces, area }), currency: pkg.currency, pricingMethod: pkg.pricingMethod, areaUnit: pkg.areaUnit };
     });
   }
 

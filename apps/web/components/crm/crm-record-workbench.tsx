@@ -4,6 +4,7 @@ import { ArrowRightLeft, BadgeCheck, CircleX, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { caseHref } from "@/lib/pre-project/types";
+import { OpportunityDiscovery } from "./opportunity-discovery";
 import { RecordAttachments } from "./record-attachments";
 import { SequenceEditor } from "./sequence-editor";
 import { useWoddyRecord } from "./woddy-chat";
@@ -82,7 +83,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
   const amount = Number(live.amount);
   const currency = String(live.currencyCode ?? live.currency_code ?? "");
   const value = live.amount !== null && live.amount !== undefined && Number.isFinite(amount) && /^[A-Z]{3}$/.test(currency)
-    ? new Intl.NumberFormat("en-AE", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount)
+    ? new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount)
     : "Not set";
   const workingStageId = activeWorkingStages.some(stage => stage.id === selectedMoveStageId)
     ? selectedMoveStageId : String(activeWorkingStages[0]?.id ?? "");
@@ -138,6 +139,7 @@ function OpportunityWorkbench({ workspaceId, row, onChanged }: { workspaceId: st
       {live.preProjectCaseId && live.dealFileReference ? <Link className={styles.link} href={`/workspace/pre-projects/cases/${live.preProjectCaseId}/approvals`}>Open Deal File {String(live.dealFileReference)}</Link> : null}
       <p className={styles.opportunityPipeline}>Pipeline: {String(live.pipelineName ?? pipeline?.name ?? "Not set")}</p>
     </div> },
+    { id: "discovery", label: "Discovery", panel: <OpportunityDiscovery workspaceId={workspaceId} opportunityId={row.id} onSaved={saved} /> },
     ...(qualificationEvidence ? [{ id: "qualification", label: "Qualification", panel: <div className={styles.stack}>
       <p>This is the enquiry information captured when this opportunity was created. Later enquiry edits do not change this snapshot.</p>
       <FactList facts={[["Form", qualificationEvidence.form?.name ?? "No configured form"], ["Selection", label(qualificationEvidence.selection)], ["Evaluated", dateText(qualificationEvidence.evaluatedAt)], ["Conversion", label(live.conversionOrigin ?? live.conversion_origin ?? "lead_qualification")]]} />

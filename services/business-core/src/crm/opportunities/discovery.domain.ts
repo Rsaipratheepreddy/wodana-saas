@@ -4,7 +4,7 @@ export type DiscoveryFacts = {
   area: string | null; areaUnit: "sqft" | "sqm" | null; spaces: number | null; propertyLocation: string | null;
   clientEmail: string | null; floorPlanAssetId: string | null; designPackageId: string | null;
 };
-export type DiscoveryQuestion = { key: string; label: string; required: boolean };
+export type DiscoveryQuestion = { key: string; label: string; required: boolean; dataType?: string; options?: Array<{ id: string; label: string }> };
 export type MissingItem = { key: string; label: string };
 
 const SQM_PER_SQFT = "0.09290304";

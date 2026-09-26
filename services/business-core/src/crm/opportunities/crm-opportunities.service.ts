@@ -589,7 +589,7 @@ export class CrmOpportunitiesService {
     }
     // PLM-040: e.g. Design Quote needs the Account Manager's discovery form complete.
     if (requirements.discovery === true && opportunity.id && this.discovery) {
-      for (const item of await this.discovery.missing(client, workspaceId, String(opportunity.id))) missing.push(`discovery:${item.label}`);
+      for (const item of await this.discovery.missing(client, workspaceId, String(opportunity.id))) missing.push(item.label);
     }
     if (missing.length) throw new UnprocessableEntityException({ message: "Stage requirements are not met", missing });
   }

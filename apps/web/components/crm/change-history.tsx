@@ -28,7 +28,7 @@ export function ChangeHistory({ workspaceId, leadId, members }: { workspaceId: s
   };
   if (!resource.data) return <ResourceState {...resource} retry={resource.refresh} />;
   if (!resource.data.length) return <p className={styles.empty}>{t("No changes yet.")}</p>;
-  return <ol aria-label={t("Change history")} className={styles.history}>
+  return <ol aria-label={t("Change history")} className={styles.changeHistory}>
     {resource.data.map((event) => <li key={event.id}>
       <header><strong>{event.by ?? t("Someone")}</strong><small>{dateText(event.at)}</small></header>
       <dl>{event.changes.map((change) => <div key={change.field}>

@@ -10,7 +10,7 @@ const stageFields: FieldSpec[] = [
   { key: "position", label: "Order", type: "number", min: 1, required: true },
   { key: "probability", label: "Probability (%)", type: "number", min: 0, max: 100, required: true },
   { key: "forecastCategory", label: "Forecast category", options: choice(["pipeline", "best_case", "commit", "closed"]), required: true },
-  ...["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders"].map((key) => ({ key, label: key === "owner" ? "Require sales owner" : `Require ${label(key.replace(/([A-Z])/g, " $1")).toLowerCase()}`, type: "checkbox" as const })),
+  ...["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders", "discovery"].map((key) => ({ key, label: key === "owner" ? "Require sales owner" : `Require ${label(key.replace(/([A-Z])/g, " $1")).toLowerCase()}`, type: "checkbox" as const })),
 ];
 
 function stageColumns(pipeline: RecordData, edit: (action: ActionSpec) => void): DataGridColumn<RecordData>[] {
@@ -44,6 +44,6 @@ export function PipelineSettings({ workspaceId }: { workspaceId: string }) {
 }
 
 function stageBody(v: Record<string, unknown>) {
-  const { amount, expectedCloseAt, nextAction, owner, stakeholders, ...rest } = v;
-  return { ...rest, entryRequirements: { amount: Boolean(amount), expectedCloseAt: Boolean(expectedCloseAt), nextAction: Boolean(nextAction), owner: Boolean(owner), stakeholders: Boolean(stakeholders) } };
+  const { amount, expectedCloseAt, nextAction, owner, stakeholders, discovery, ...rest } = v;
+  return { ...rest, entryRequirements: { amount: Boolean(amount), expectedCloseAt: Boolean(expectedCloseAt), nextAction: Boolean(nextAction), owner: Boolean(owner), stakeholders: Boolean(stakeholders), discovery: Boolean(discovery) } };
 }
