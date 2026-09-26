@@ -24,8 +24,9 @@ export class DesignPackagesService {
     return this.access.withAnyPermission(actor, workspaceId, ["crm.opportunities.view", "crm.settings.manage"], (client) => this.load(client, workspaceId));
   }
 
-  saveMinimumDeposit(actor: RequestActor, workspaceId: string, input: { minimumDeposit: { amount: string; currency: string } | null; version?: number }) {
-    const minimum = input.minimumDeposit;
+  saveMinimumDeposit(actor: RequestActor, workspaceId: string, input: { minimumDeposit?: { amount: string; currency: string } | null; timings?: { inspirationDays: number; siteVisitHours: number }; version?: number }) {
+    const minimum = input.minimumDeposit ?? null;
+    const keepMinimum = input.minimumDeposit === undefined;
     if (minimum && (!/^\d{1,12}(\.\d{1,2})?$/.test(minimum.amount ?? "") || !/^[A-Z]{3}$/.test(minimum.currency ?? "")))
       throw new UnprocessableEntityException("Enter the minimum deposit as an amount and currency");
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
@@ -34,12 +35,16 @@ export class DesignPackagesService {
       const before = current.rows[0];
       if (input.version !== undefined && before && before.version !== input.version) throw new ConflictException("Design settings changed in another window. Reload and try again.");
       await client.query(
-        `INSERT INTO workspace_design_settings (workspace_id, minimum_design_deposit, currency, updated_by) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (workspace_id) DO UPDATE SET minimum_design_deposit = excluded.minimum_design_deposit, currency = excluded.currency,
+        `INSERT INTO workspace_design_settings (workspace_id, minimum_design_deposit, currency, inspiration_days, site_visit_hours, updated_by)
+         VALUES ($1, $2, $3, COALESCE($5, 7), COALESCE($6, 72), $4)
+         ON CONFLICT (workspace_id) DO UPDATE SET
+           minimum_design_deposit = CASE WHEN $7 THEN workspace_design_settings.minimum_design_deposit ELSE excluded.minimum_design_deposit END,
+           currency = CASE WHEN $7 THEN workspace_design_settings.currency ELSE excluded.currency END,
+           inspiration_days = COALESCE($5, workspace_design_settings.inspiration_days), site_visit_hours = COALESCE($6, workspace_design_settings.site_visit_hours),
            updated_by = excluded.updated_by, updated_at = now(), version = workspace_design_settings.version + 1`,
-        [workspaceId, minimum?.amount ?? null, minimum?.currency ?? null, user.userId]);
+        [workspaceId, minimum?.amount ?? null, minimum?.currency ?? null, user.userId, input.timings?.inspirationDays ?? null, input.timings?.siteVisitHours ?? null, keepMinimum]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "design.minimum_deposit_changed", entityType: "workspace_design_settings", entityId: workspaceId,
-        before: before ? { amount: before.amount, currency: before.currency } : null, after: minimum });
+        before: before ? { amount: before.amount, currency: before.currency } : null, after: { minimumDeposit: keepMinimum ? undefined : minimum, timings: input.timings } });
       return this.load(client, workspaceId);
     });
   }
@@ -98,10 +103,11 @@ export class DesignPackagesService {
   }
 
   private async load(client: PoolClient, workspaceId: string) {
-    const settings = (await client.query<{ amount: string | null; currency: string | null; version: number }>(
-      `SELECT minimum_design_deposit::text AS amount, currency, version FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
+    const settings = (await client.query<{ amount: string | null; currency: string | null; version: number; inspirationDays: number; siteVisitHours: number }>(
+      `SELECT minimum_design_deposit::text AS amount, currency, version, inspiration_days AS "inspirationDays", site_visit_hours AS "siteVisitHours" FROM workspace_design_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
     const packages = (await client.query<PackageRow>(`SELECT ${PACKAGE_COLUMNS} FROM design_packages WHERE workspace_id = $1 ORDER BY status, position, name`, [workspaceId])).rows;
-    return { minimumDeposit: settings?.amount && settings.currency ? { amount: settings.amount, currency: settings.currency } : null, version: settings?.version ?? 0, packages };
+    return { minimumDeposit: settings?.amount && settings.currency ? { amount: settings.amount, currency: settings.currency } : null, version: settings?.version ?? 0,
+      timings: { inspirationDays: settings?.inspirationDays ?? 7, siteVisitHours: settings?.siteVisitHours ?? 72 }, packages };
   }
 
   private async requirePackage(client: PoolClient, workspaceId: string, id: string, lock: boolean) {

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, RotateCcw } from "lucide-react";
 import { Badge, Button, ControlledModalDialog, DataGrid, InlineNotice, SelectField, SettingsRow, SettingsSection, Skeleton, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { loadDesignSettings, saveDesignPackage, saveMinimumDeposit, setDesignPackageStatus, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
+import { loadDesignSettings, saveDesignPackage, saveDesignTimings, saveMinimumDeposit, setDesignPackageStatus, type DesignPackage, type DesignSettings, type PricingMethod } from "@/lib/design/packages";
 import styles from "./design-packages-settings.module.css";
 
 const amount = (value: string) => value.replace(/[^\d.]/g, "");
@@ -19,7 +19,9 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
   const [minimum, setMinimum] = useState("");
   const [savingMinimum, setSavingMinimum] = useState(false);
   const [editing, setEditing] = useState<Partial<DesignPackage> | null>(null);
-  const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); setMinimum(next.minimumDeposit?.amount ? String(Number(next.minimumDeposit.amount)) : ""); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
+  const [timings, setTimings] = useState({ inspirationDays: "", siteVisitHours: "" });
+  const [savingTimings, setSavingTimings] = useState(false);
+  const load = useCallback(() => loadDesignSettings(workspaceId).then((next) => { setSettings(next); setMinimum(next.minimumDeposit?.amount ? String(Number(next.minimumDeposit.amount)) : ""); setTimings({ inspirationDays: String(next.timings?.inspirationDays ?? 7), siteVisitHours: String(next.timings?.siteVisitHours ?? 72) }); }).catch((error: Error) => setFailure(error.message)), [workspaceId]);
   useEffect(() => { void load(); }, [load]);
 
   const money = (value: string, code: string) => { try { return new Intl.NumberFormat(locale, { style: "currency", currency: code, maximumFractionDigits: 2 }).format(Number(value)); } catch { return `${code} ${value}`; } };
@@ -53,6 +55,21 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
             setSavingMinimum(true);
             await run(() => saveMinimumDeposit(workspaceId, minimum ? { amount: Number(minimum).toFixed(2), currency: settings?.minimumDeposit?.currency ?? currency } : null, settings?.version ?? 0), t("Minimum deposit saved."));
             setSavingMinimum(false);
+          }}>{t("Save")}</Button> : null}
+        </span>
+      </SettingsRow>
+    </SettingsSection>
+    <SettingsSection id="design-timings" title={t("Timings")}>
+      <SettingsRow hint={t("Starts when the client adds their first inspiration.")} label={t("Inspiration")}>
+        <TextInput aria-label={t("Inspiration days")} isDisabled={!canManage} label={null} onChange={(value) => setTimings((current) => ({ ...current, inspirationDays: value.replace(/\D/g, "").slice(0, 2) }))} suffix={t("days")} value={timings.inspirationDays} />
+      </SettingsRow>
+      <SettingsRow hint={t("From the end of inspiration to a completed site visit.")} label={t("Site visit")}>
+        <span className={styles.minimum}>
+          <TextInput aria-label={t("Site visit hours")} isDisabled={!canManage} label={null} onChange={(value) => setTimings((current) => ({ ...current, siteVisitHours: value.replace(/\D/g, "").slice(0, 3) }))} suffix={t("hours")} value={timings.siteVisitHours} />
+          {canManage ? <Button isDisabled={timings.inspirationDays === String(settings?.timings?.inspirationDays ?? 7) && timings.siteVisitHours === String(settings?.timings?.siteVisitHours ?? 72)} isLoading={savingTimings} size="compact" variant="primary" onPress={async () => {
+            setSavingTimings(true);
+            await run(() => saveDesignTimings(workspaceId, { inspirationDays: Number(timings.inspirationDays), siteVisitHours: Number(timings.siteVisitHours) }, settings?.version ?? 0), t("Timings saved."));
+            setSavingTimings(false);
           }}>{t("Save")}</Button> : null}
         </span>
       </SettingsRow>

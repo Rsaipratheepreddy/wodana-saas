@@ -1,5 +1,6 @@
 import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
 import { caseDesigner } from "../crm/opportunities/dedicated-designer";
+import { startJourney } from "../design/design-journey.store";
 import { projectRepository } from "./project-repository";
 import { ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
@@ -54,6 +55,8 @@ export async function openPalmProjectAtDealFile(
     await projectRepository.save(client, workspaceId, project.id, execution);
   }
   await ensureJobForSource(client, workspaceId, { type: "project", id: project.id }, userId);
+  // PLM-047: a paid design route opens the project at Inspiration.
+  if (flow.scope.design) await startJourney(client, workspaceId, caseId, userId);
   await client.query(
     `INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active)
      SELECT workspace_id,$3,membership_id,is_manager,active FROM project_assignments

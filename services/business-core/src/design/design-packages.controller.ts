@@ -7,8 +7,10 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { DesignPackagesService } from "./design-packages.service";
 
 class MinimumDepositDto { @Matches(/^\d{1,12}(\.\d{1,2})?$/) amount!: string; @Matches(/^[A-Z]{3}$/) currency!: string; }
+class DesignTimingsDto { @IsInt() @Min(1) @Max(60) inspirationDays!: number; @IsInt() @Min(1) @Max(720) siteVisitHours!: number; }
 class DesignSettingsDto {
-  @IsOptional() @ValidateNested() @Type(() => MinimumDepositDto) minimumDeposit!: MinimumDepositDto | null;
+  @IsOptional() @ValidateNested() @Type(() => MinimumDepositDto) minimumDeposit?: MinimumDepositDto | null;
+  @IsOptional() @ValidateNested() @Type(() => DesignTimingsDto) timings?: DesignTimingsDto;
   @IsOptional() @IsInt() @Min(0) version?: number;
 }
 class DesignPackageDto {
@@ -41,7 +43,7 @@ export class DesignPackagesController {
 
   @Put("settings")
   saveSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: DesignSettingsDto) {
-    return this.design.saveMinimumDeposit(actor, workspaceId, { minimumDeposit: input.minimumDeposit ?? null, version: input.version });
+    return this.design.saveMinimumDeposit(actor, workspaceId, { ...(input.minimumDeposit !== undefined ? { minimumDeposit: input.minimumDeposit } : {}), timings: input.timings, version: input.version });
   }
 
   @Post("packages")

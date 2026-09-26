@@ -87,6 +87,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
     body: "{{changedBy}} made you the dedicated designer. Reason: {{reason}}",
     variables: ["clientName", "changedBy", "reason"],
   },
+  { code: "design.stage_started", channel: "in_app", subject: "{{stage}} · {{clientName}}", body: "{{stage}} has started. Due {{due}}.", variables: ["stage", "clientName", "due"] },
+  { code: "design.stage_overdue", channel: "in_app", subject: "{{stage}} is overdue · {{clientName}}", body: "It was due {{due}}.", variables: ["stage", "clientName", "due"] },
+  { code: "design.stage_overdue", channel: "email", subject: "{{stage}} is overdue: {{clientName}}", body: "{{stage}} for {{clientName}} was due {{due}}.\n\nOpen the project to catch up.", variables: ["stage", "clientName", "due"] },
+  { code: "design.site_visit_booked", channel: "in_app", subject: "Site visit with {{clientName}}", body: "{{when}} · {{place}}. Booked by {{bookedBy}}.", variables: ["clientName", "when", "place", "bookedBy"] },
+  { code: "design.site_visit_booked", channel: "email", subject: "Invitation: site visit with {{clientName}}", body: "Site visit with {{clientName}}\n\nWhen: {{when}}\nWhere: {{place}}\nBooked by: {{bookedBy}}\n\nRecord every wall's measurements and photos in the project.", variables: ["clientName", "when", "place", "bookedBy"] },
 ];
 
 export async function seedDefaultNotificationTemplates(db: Db, workspaceId: string) {

@@ -4,6 +4,7 @@ import { RequestActor } from "../../auth/actor";
 import { recordAudit } from "../../audit/record-audit";
 import { notifyUserInApp, queueUserEmail } from "../../notifications/default-templates";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
+import { assertMemberFree } from "../shared/calendar-clash";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { assignDesignerToCase } from "./dedicated-designer";
 import { OpportunityDiscoveryService } from "./discovery.service";
@@ -52,7 +53,7 @@ export class IntroMeetingService {
       const changing = Boolean(current && current.membershipId !== designer.membershipId);
       if (changing) await this.assertCanChange(client, workspaceId, user.userId, input.changeReason);
       await this.assertPackageRole(client, workspaceId, opportunityId, designer.membershipId);
-      await this.assertFree(client, workspaceId, designer.membershipId, input.startsAt, input.endsAt);
+      await assertMemberFree(client, workspaceId, designer.membershipId, input.startsAt, input.endsAt, "The designer");
 
       const workspace = (await client.query<{ name: string; locale: string }>(`SELECT name, default_locale AS locale FROM workspaces WHERE id = $1`, [workspaceId])).rows[0];
       const title = `Intro to ${workspace?.name ?? "the studio"}`;
@@ -166,17 +167,6 @@ export class IntroMeetingService {
       `SELECT 1 FROM effective_member_roles assigned JOIN roles role ON role.id = assigned.role_id
         WHERE assigned.workspace_id = $1 AND assigned.membership_id = $2 AND role.code = $3`, [workspaceId, membershipId, required.code]);
     if (!holds.rowCount) throw new UnprocessableEntityException(`${required.name} needs a designer with the ${required.code.replace(/_/g, " ")} role`);
-  }
-
-  private async assertFree(client: PoolClient, workspaceId: string, membershipId: string, startsAt: string, endsAt: string) {
-    const clash = await client.query<{ title: string }>(
-      `SELECT activity.title FROM crm_appointments appointment
-         JOIN crm_activities activity ON activity.workspace_id = appointment.workspace_id AND activity.id = appointment.activity_id
-        WHERE appointment.workspace_id = $1 AND activity.status = 'pending'
-          AND (activity.owner_membership_id = $2 OR appointment.attendee_membership_ids ? $2::text)
-          AND tstzrange(appointment.starts_at, appointment.ends_at) && tstzrange($3::timestamptz, $4::timestamptz) LIMIT 1`,
-      [workspaceId, membershipId, startsAt, endsAt]);
-    if (clash.rowCount) throw new ConflictException(`The designer is busy then (${clash.rows[0].title}). Choose another time.`);
   }
 
   private async member(client: PoolClient, workspaceId: string, membershipId: string) {

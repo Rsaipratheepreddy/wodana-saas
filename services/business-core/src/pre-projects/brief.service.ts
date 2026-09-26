@@ -1,3 +1,4 @@
+import { startInspirationTimer } from "../design/design-journey.store";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { isDeepStrictEqual } from "node:util";
 import { noteDocumentText, validateNoteDocument } from "../crm/leads/note-document";
@@ -206,6 +207,8 @@ export class BriefService {
       for (const assetId of input.assetIds) await client.query(`INSERT INTO pre_project_entry_assets(workspace_id,case_id,entry_id,asset_id) VALUES($1,$2,$3,$4)`, [workspaceId,caseId,input.id,assetId]);
       await this.event(client,workspaceId,caseId,userId,current.rowCount ? "entry_updated" : "entry_added",input.id,{ version: input.version },input);
       await syncOneTreeFromCase(client, workspaceId, caseId, userId);
+      // PLM-077: the inspiration week starts with the first inspiration on the case.
+      if (input.kind === "inspiration" && !archived) await startInspirationTimer(client, workspaceId, caseId);
       return this.entry(client,workspaceId,caseId,input.id);
   }
 

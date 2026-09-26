@@ -134,6 +134,13 @@
       "when": 1791025200000,
       "tag": "0018_intro_meeting_designer",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791111600000,
+      "tag": "0019_design_journey",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import { CaseOverview } from "./case-overview";
 
 const { caseRequest } = vi.hoisted(() => ({ caseRequest: vi.fn() }));
 vi.mock("@/lib/pre-project/content", () => ({ caseRequest }));
+vi.mock("./design-journey", () => ({ DesignJourney: () => null }));
 
 const initial: PreProjectCase = {
   id: "case-1", title: "Villa interiors", description: null, status: "active",

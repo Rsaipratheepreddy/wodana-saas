@@ -7,6 +7,7 @@ import type { DefinitionPageData } from "@/lib/pre-project/definition";
 import type { PreProjectCase } from "@/lib/pre-project/types";
 import type { CommercialState } from "@/lib/commercial/types";
 import styles from "./case-overview.module.css";
+import { DesignJourney } from "./design-journey";
 
 type Action = "hold" | "resume" | "cancel" | "reopen" | "set_phase";
 const phases = ["discover", "define", "design", "price", "agree", "release"] as const;
@@ -108,6 +109,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
       <div><dt>Owner</dt><dd>{record.engagementOwnerName ?? "Unassigned"}</dd></div>
       <div><dt>Target</dt><dd>{record.targetDate ? new Date(`${record.targetDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Not set"}</dd></div>
     </dl>}
+    <DesignJourney workspaceId={workspaceId} caseId={record.id} />
     <span id="case-controls" />
     <ControlledModalDialog isOpen={Boolean(action)} title={action ? actionLabel[action] : "Case action"} isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) { setAction(null); setReason(""); } }} footer={<div className={styles.formActions}><Button isDisabled={busy} onPress={() => { setAction(null); setReason(""); }}>Close</Button><Button type="submit" form="case-lifecycle" variant="primary" isLoading={busy} isDisabled={action === "set_phase" && phase === record.phase}>{action ? actionLabel[action] : "Save"}</Button></div>}>
       <Form id="case-lifecycle" className={styles.form} onSubmit={(event) => void transition(event)}>

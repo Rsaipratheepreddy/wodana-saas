@@ -4,7 +4,8 @@ export type DesignPackage = {
   includedRevisions: number; includesSpacePlanning: boolean; includesRenders: boolean; requiredRoleCode: string | null; inclusions: string | null;
   position: number; status: "active" | "archived"; version: number;
 };
-export type DesignSettings = { minimumDeposit: { amount: string; currency: string } | null; version: number; packages: DesignPackage[] };
+export type DesignTimings = { inspirationDays: number; siteVisitHours: number };
+export type DesignSettings = { minimumDeposit: { amount: string; currency: string } | null; version: number; timings?: DesignTimings; packages: DesignPackage[] };
 
 async function call<T>(workspaceId: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/workspace/design/${path}?workspaceId=${workspaceId}`, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
@@ -16,6 +17,8 @@ async function call<T>(workspaceId: string, path: string, init?: RequestInit): P
 export const loadDesignSettings = (workspaceId: string) => call<DesignSettings>(workspaceId, "settings");
 export const saveMinimumDeposit = (workspaceId: string, minimumDeposit: DesignSettings["minimumDeposit"], version: number) =>
   call<DesignSettings>(workspaceId, "settings", { method: "PUT", body: JSON.stringify({ minimumDeposit, version }) });
+export const saveDesignTimings = (workspaceId: string, timings: DesignTimings, version: number) =>
+  call<DesignSettings>(workspaceId, "settings", { method: "PUT", body: JSON.stringify({ timings, version }) });
 export const saveDesignPackage = (workspaceId: string, value: Partial<DesignPackage>) =>
   call<DesignPackage>(workspaceId, "packages", { method: "POST", body: JSON.stringify(value) });
 export const setDesignPackageStatus = (workspaceId: string, id: string, status: DesignPackage["status"], version: number) =>
