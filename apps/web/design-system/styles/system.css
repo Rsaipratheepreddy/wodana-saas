@@ -488,6 +488,11 @@
 .wd-grouped-table col:not(.wd-grouped-select-column) { inline-size: var(--wd-grouped-column-width); }
 .wd-grouped-table th, .wd-grouped-table td { block-size: 3rem; border-block-end: 1px solid var(--wd-line); padding-inline: var(--wd-space-2); color: var(--wd-ink); font-size: var(--wd-text-xs); text-align: start; vertical-align: middle; }
 .wd-grouped-table th { color: var(--wd-muted); font-size: var(--wd-text-xs); font-weight: 500; }
+.wd-grouped-table-row[data-actionable] { cursor: pointer; }
+.wd-grouped-table-row[data-actionable]:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.wd-grouped-table-section-button { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--wd-weight-semibold); text-align: start; cursor: pointer; }
+.wd-grouped-table-section-button:hover { text-decoration: underline; }
+.wd-grouped-table-section-button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-2xs); }
 .wd-grouped-table th:first-child, .wd-grouped-table td:first-child { padding-inline: 0 var(--wd-space-1); }
 .wd-grouped-table tbody:not(:first-of-type) .wd-grouped-table-heading th { block-size: 3.6rem; padding-block-start: var(--wd-space-2); }
 .wd-grouped-table-heading th:nth-child(2) { color: var(--wd-ink); font-weight: 600; }

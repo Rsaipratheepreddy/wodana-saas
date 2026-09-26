@@ -2,9 +2,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
+import type { LiveScope, ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
 import { ProjectPage } from "./project-page";
-import { splitByPercent } from "./project-scope";
+import { splitByPercent } from "./sealed-document";
 import { ProjectsPage } from "./projects-page";
 import { StartProjectDialog } from "./start-project-dialog";
 
@@ -133,8 +133,34 @@ describe("projects", () => {
     expect(posts(fetcher)[0]).toMatchObject({ quoteId: "q1", templateId: "t1", name: "Villa 12", leadMembershipId: "m1" });
   });
 
-  it("shows the sealed scope with what the client didn't choose", async () => {
-    const scope: SealedScope = {
+  it("shows the live scope by package, moves items between packages and opens a line's history", async () => {
+    const live: LiveScope = {
+      lines: [
+        { id: "a", position: 0, kind: "item", areaId: "k", areaName: "Kitchen", workPackageId: null, tradeName: null, title: "Kitchen cabinets", description: "", unit: "m", quantity: "6.5000", rate: "4200", net: "27300.0000", status: "active", packageId: "p1", origin: "R3", catalogImageId: null, imageAssetId: null },
+        { id: "b", position: 1, kind: "item", areaId: "k", areaName: "Kitchen", workPackageId: null, tradeName: null, title: "Quartz worktop", description: "", unit: "m²", quantity: "4.2000", rate: "1850", net: "7770.0000", status: "active", packageId: null, origin: "R3", catalogImageId: null, imageAssetId: null },
+      ],
+      packages: [{ id: "p1", name: "Kitchen joinery", supply: "make", ownerMembershipId: "m2", ownerName: "Dana Karim", dueDate: null, version: 1 }],
+      seals: [{ id: "s1", kind: "baseline", revisionLabel: "R3", quoteNumber: 14, total: "35070.00", currency: "AED", acceptedAt: "2026-09-20T10:00:00Z", acceptedBy: "Maya Rahman" }],
+      currency: "AED", version: 4, canManage: true, members: [{ membershipId: "m2", name: "Dana Karim" }],
+    };
+    const fetcher = mount((url, body) => (body ? detail({ version: 5 }) : url.includes("/lines/") ? { history: [{ id: "h1", kind: "agreed", detail: { revision: "R3", quantity: "6.5" }, byName: "Omar", at: "2026-09-22T09:00:00Z" }] } : url.includes("/scope") ? live : detail()));
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    const table = await screen.findByRole("table", { name: "Scope items" });
+    expect(within(table).getByText("Made in our factory")).toBeInTheDocument();
+    expect(within(table).getByText("Not in a package")).toBeInTheDocument();
+    expect(screen.getByText("AED 35,070.00")).toBeInTheDocument();
+    await userEvent.click(within(table).getByRole("checkbox", { name: "Select Quartz worktop" }));
+    await userEvent.click(screen.getByRole("button", { name: /Move to/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Kitchen joinery" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "assign_lines", lineIds: ["b"], packageId: "p1", version: 4 })]));
+    await userEvent.click(within(table).getByText("Kitchen cabinets"));
+    expect(await screen.findByText("Agreed in R3 · 6.5 m")).toBeInTheDocument();
+  });
+
+  it("opens a sealed document from the Sealed list, with what the client didn't choose", async () => {
+    const live: LiveScope = { lines: [], packages: [], currency: "AED", version: 4, canManage: false, members: [],
+      seals: [{ id: "s1", kind: "baseline", revisionLabel: "R3", quoteNumber: 14, total: "27300.00", currency: "AED", acceptedAt: "2026-09-20T10:00:00Z", acceptedBy: "Maya Rahman" }] };
+    const sealed: SealedScope = {
       snapshot: { quote: { id: "q1", number: 14, title: "Main quote", currency: "AED", decimals: 2 }, revisionLabel: "R3",
         lines: [{ id: "a", position: 0, kind: "item", areaId: "k", fromAreaId: null, workPackageId: null, title: "Kitchen cabinets", description: "", unit: "m", quantity: "6.5", rate: "4200", net: "27300.00", total: "27300.00", catalogImageId: null, imageAssetId: null }],
         declinedOptions: [{ id: "d", title: "Wine fridge", total: "3150.00" }], areas: [{ id: "k", name: "Kitchen" }], trades: [],
@@ -142,11 +168,12 @@ describe("projects", () => {
         paymentTerms: [], terms: "", exclusions: "", acceptance: { decidedBy: "Maya Rahman", decidedAt: "2026-09-20T10:00:00Z", method: "signed_document", recordedBy: null, note: "" }, agreement: null },
       contentHash: "a".repeat(64), sealedAt: "2026-09-22T09:00:00Z", sealedBy: "Omar", intact: true,
     };
-    mount((url) => (url.includes("/scope") ? scope : detail()));
+    mount((url) => (url.includes("/seals/") ? sealed : url.includes("/scope") ? live : detail()));
     render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="scope" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("tab", { name: "Sealed" }));
+    await userEvent.click(await screen.findByRole("button", { name: /R3 Accepted quotation/ }));
     expect(await screen.findByText("Unchanged")).toBeInTheDocument();
     expect(screen.getByText(/Sealed R3 · accepted by Maya Rahman/)).toBeInTheDocument();
-    expect(screen.getByText("Kitchen cabinets")).toBeInTheDocument();
     expect(screen.getByText("Options the client didn't choose")).toBeInTheDocument();
     expect(screen.getByText("Wine fridge")).toBeInTheDocument();
   });
@@ -156,5 +183,14 @@ describe("projects", () => {
     expect(parts).toEqual(["333.30", "333.30", "333.41"]);
     expect(parts.reduce((sum, part) => sum + Math.round(Number(part) * 100), 0)).toBe(100001);
     expect(splitByPercent("100", [50, 50], 3)).toEqual(["50.000", "50.000"]);
+  });
+});
+
+describe("amounts", () => {
+  it("adds decimal amounts exactly", async () => {
+    const { addAmounts } = await import("./project-scope");
+    expect(addAmounts(["0.1000", "0.2000"])).toBe("0.3000");
+    expect(addAmounts(["27300.0000", "7770.0000", "-650.5"])).toBe("34419.5000");
+    expect(addAmounts([])).toBe("0.0000");
   });
 });

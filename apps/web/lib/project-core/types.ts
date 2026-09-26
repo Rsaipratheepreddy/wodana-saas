@@ -78,3 +78,14 @@ export type StartState = {
   canManage: boolean;
 };
 export type ReadyCase = { caseId: string; name: string; clientName: string; quoteNumber: number; total: string; currency: string };
+
+export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
+export type ScopeLine = {
+  id: string; position: number; kind: string; areaId: string | null; areaName: string | null; workPackageId: string | null; tradeName: string | null;
+  title: string; description: string; unit: string; quantity: string; rate: string; net: string; status: "active" | "omitted"; packageId: string | null;
+  origin: string; catalogImageId: string | null; imageAssetId: string | null;
+};
+export type ScopePackage = { id: string; name: string; supply: Supply; ownerMembershipId: string | null; ownerName: string | null; dueDate: string | null; version: number };
+export type SealSummary = { id: string; kind: "baseline" | "variation"; revisionLabel: string; quoteNumber: number; total: string; currency: string; acceptedAt: string; acceptedBy: string };
+export type LiveScope = { lines: ScopeLine[]; packages: ScopePackage[]; seals: SealSummary[]; currency: string; version: number; canManage: boolean; members: Member[] };
+export type LineHistoryEntry = { id: string; kind: string; detail: Record<string, unknown>; byName: string | null; at: string };

@@ -211,6 +211,13 @@
       "when": 1791892800000,
       "tag": "0029_project_core",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791979200000,
+      "tag": "0030_project_scope",
+      "breakpoints": true
     }
   ]
 }

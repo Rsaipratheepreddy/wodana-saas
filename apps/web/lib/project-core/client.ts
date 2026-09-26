@@ -1,4 +1,4 @@
-import type { ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState } from "./types";
+import type { LineHistoryEntry, LiveScope, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -20,7 +20,9 @@ export function projectApi(workspaceId: string) {
     list: () => request<{ projects: ProjectRow[]; canStart: boolean }>(path("projects")),
     ready: () => request<{ cases: ReadyCase[] }>(path("ready")),
     get: (projectId: string) => request<ProjectDetail>(path(`projects/${projectId}`)),
-    scope: (projectId: string) => request<SealedScope>(path(`projects/${projectId}/scope`)),
+    scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
+    seal: (projectId: string, sealId: string) => request<SealedScope>(path(`projects/${projectId}/seals/${sealId}`)),
+    line: (projectId: string, lineId: string) => request<{ history: LineHistoryEntry[] }>(path(`projects/${projectId}/lines/${lineId}`)),
     /** One change to the project, version-checked; returns the project as it is now. */
     command: (projectId: string, version: number, action: string, input: Record<string, unknown> = {}) =>
       request<ProjectDetail>(path(`projects/${projectId}`), "POST", { ...input, action, version }),

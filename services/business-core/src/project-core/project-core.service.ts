@@ -19,6 +19,7 @@ import {
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
 import { noticeProject, type ProjectNotice } from "./project-notices";
+import { assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq } from "./project-scope";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -214,13 +215,17 @@ export class ProjectCoreService {
            status = 'active', started_at = now(), started_by = EXCLUDED.started_by, version = delivery_projects.version + 1, updated_at = now()
          RETURNING id`,
         [workspaceId, caseId, name, user.userId, reference, quote.id, template.id, template.name, startDate, promiseDate, scope.quote.currency])).rows[0].id;
+      const sealId = randomUUID();
       await client.query(
         `INSERT INTO project_scope_seals (id, workspace_id, project_id, kind, quote_id, quote_number, revision_label, quote_hash, snapshot, content_hash, currency, total,
            accepted_at, accepted_by_name, acceptance_method, recorded_by_name, agreement_reference, sealed_by)
          VALUES ($1, $2, $3, 'baseline', $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-        [randomUUID(), workspaceId, projectId, quote.id, quote.number, snapshot.revisionLabel, decision.quoteHash, JSON.stringify(snapshot), contentHash,
+        [sealId, workspaceId, projectId, quote.id, quote.number, snapshot.revisionLabel, decision.quoteHash, JSON.stringify(snapshot), contentHash,
           scope.quote.currency, scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null,
           snapshot.agreement?.reference ?? null, user.userId]);
+      // The live BOQ starts as the sealed scope, grouped into suggested packages.
+      await seedBoq(client, workspaceId, projectId, { id: sealId, revisionLabel: snapshot.revisionLabel }, scope.lines, user.userId);
+      await proposePackages(client, workspaceId, projectId, user.userId);
       for (const [position, stage] of template.stages.entries())
         await client.query(
           `INSERT INTO project_stages (id, workspace_id, project_id, position, key, name, owner_role, checks, status, started_at)
@@ -289,16 +294,35 @@ export class ProjectCoreService {
     return this.access.asMember(actor, workspaceId, async (client, user) => this.detail(client, workspaceId, projectId, user));
   }
 
-  /** The sealed scope exactly as the client accepted it, with a fresh check that it's untouched. */
+  /** The live BOQ, its packages and the sealed documents it comes from. */
   scope(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { all, membershipId, project } = await this.visible(client, workspaceId, projectId, user);
+      const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
+      const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
+      return { ...(await readScope(client, workspaceId, projectId)), currency: project.currency, version: project.version,
+        canManage: manager && ["active", "on_hold"].includes(project.status), members: manager ? await activeMembers(client, workspaceId) : [] };
+    });
+  }
+
+  /** One sealed document exactly as the client accepted it, with a fresh check that it's untouched. */
+  seal(actor: RequestActor, workspaceId: string, projectId: string, sealId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
       await this.visible(client, workspaceId, projectId, user);
-      const seal = (await client.query<{ snapshot: Record<string, unknown>; contentHash: string; sealedAt: string; sealedBy: string }>(
-        `SELECT seal.snapshot, seal.content_hash AS "contentHash", seal.sealed_at AS "sealedAt", sealer.display_name AS "sealedBy"
+      const seal = (await client.query<{ snapshot: Record<string, unknown>; contentHash: string; sealedAt: string; sealedBy: string; kind: string }>(
+        `SELECT seal.snapshot, seal.content_hash AS "contentHash", seal.sealed_at AS "sealedAt", sealer.display_name AS "sealedBy", seal.kind
            FROM project_scope_seals seal JOIN users sealer ON sealer.id = seal.sealed_by
-          WHERE seal.workspace_id = $1 AND seal.project_id = $2 AND seal.kind = 'baseline'`, [workspaceId, projectId])).rows[0];
-      if (!seal) throw new NotFoundException("Project not found.");
+          WHERE seal.workspace_id = $1 AND seal.project_id = $2 AND seal.id = $3`, [workspaceId, projectId, sealId])).rows[0];
+      if (!seal) throw new NotFoundException("Sealed document not found.");
       return { ...seal, intact: canonicalHash(seal.snapshot) === seal.contentHash };
+    });
+  }
+
+  /** A line's history: agreed, changed by variations, packaged, signed off… */
+  line(actor: RequestActor, workspaceId: string, projectId: string, lineId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.visible(client, workspaceId, projectId, user);
+      return { history: await lineHistory(client, workspaceId, projectId, lineId) };
     });
   }
 
@@ -375,6 +399,13 @@ export class ProjectCoreService {
         if (project.status !== "on_hold") throw new ConflictException("The project isn't on hold.");
         await client.query(`UPDATE delivery_projects SET status = 'active', hold_reason = NULL, hold_review_on = NULL, held_at = NULL, held_by = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId]);
         notices.push({ key: `resume:${project.version}`, notice: { code: "project.resumed", note: "", memberships: teamIds() } });
+      } else if (["propose_packages", "save_package", "delete_package", "assign_lines"].includes(action)) {
+        needManager();
+        if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
+        if (action === "propose_packages") audit = { created: await proposePackages(client, workspaceId, projectId, user.userId) };
+        else if (action === "save_package") audit = { packageId: await savePackage(client, workspaceId, projectId, body) };
+        else if (action === "delete_package") { await deletePackage(client, workspaceId, projectId, String(body.packageId ?? "")); audit = { packageId: body.packageId }; }
+        else audit = { moved: await assignLines(client, workspaceId, projectId, body.lineIds, body.packageId ?? null, user.userId), packageId: body.packageId ?? null };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {
         running();
         const stages = await readStages(client, workspaceId, [projectId]);

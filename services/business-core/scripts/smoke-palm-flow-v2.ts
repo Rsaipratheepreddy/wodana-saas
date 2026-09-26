@@ -459,7 +459,9 @@ try {
   assert.match(project.project.reference, /^PRJ-\d{4}$/);
   const acceptedMain = afterMain.data.quotes.find((quote: { id: string }) => quote.id === mainQuoteId);
   assert(Math.abs(Number(project.project.total) - acceptedMain.clientDecision.acceptedTotal) < 0.01, "The sealed total must equal the accepted total");
-  const sealed = await request(`${projects}/projects/${started.projectId}/scope`);
+  const live = await request(`${projects}/projects/${started.projectId}/scope`);
+  assert(live.lines.length > 0 && live.lines.every((line: { packageId: string | null }) => line.packageId), "The live BOQ starts from the sealed scope, grouped into packages");
+  const sealed = await request(`${projects}/projects/${started.projectId}/seals/${live.seals[0].id}`);
   assert.equal(sealed.intact, true, "The sealed scope must verify against its fingerprint");
   assert.equal(project.stages[0].status, "current");
   assert.equal((await tenantQuery<{ status: string }>(`SELECT status FROM pre_project_cases WHERE workspace_id=$1 AND id=$2`, [workspaceId, designCase])).rows[0].status, "released",

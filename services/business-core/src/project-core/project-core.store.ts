@@ -62,12 +62,12 @@ const PROJECT_SELECT = `SELECT project.id, project.case_id AS "caseId", project.
   project.template_name AS "templateName", project.priority, project.health, project.start_date::text AS "startDate", project.promise_date::text AS "promiseDate",
   project.currency, project.started_at AS "startedAt", project.hold_reason AS "holdReason", project.hold_review_on::text AS "holdReviewOn", project.held_at AS "heldAt",
   project.version, coalesce(party.display_name, opportunity.title) AS "clientName", opportunity.id AS "opportunityId", opportunity.reference AS "opportunityReference",
-  seal.total::text AS total
+  -- Agreed value: the sealed baseline plus every sealed variation.
+  (SELECT sum(seal.total)::text FROM project_scope_seals seal WHERE seal.workspace_id = project.workspace_id AND seal.project_id = project.id) AS total
   FROM delivery_projects project
   JOIN pre_project_cases pre_case ON pre_case.workspace_id = project.workspace_id AND pre_case.id = project.case_id
   JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
-  LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
-  JOIN project_scope_seals seal ON seal.workspace_id = project.workspace_id AND seal.project_id = project.id AND seal.kind = 'baseline'`;
+  LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id`;
 
 export async function readProject(db: Db, workspaceId: string, projectId: string, lock = false): Promise<ProjectRow | undefined> {
   if (lock) await db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, projectId]);

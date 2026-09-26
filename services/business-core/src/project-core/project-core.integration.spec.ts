@@ -113,7 +113,8 @@ integration("projects core (plan §6.10)", () => {
       expect(detail.stages[0]).toMatchObject({ key: "kickoff", status: "current" });
       expect(detail.next).toMatchObject({ text: "Kickoff meeting held with the client", owner: "Omar Manager" });
 
-      const scope = await service.scope(actor, w.workspaceId, started.projectId);
+      const live = await service.scope(actor, w.workspaceId, started.projectId);
+      const scope = await service.seal(actor, w.workspaceId, started.projectId, live.seals[0].id);
       expect(scope.intact).toBe(true);
       const snapshot = scope.snapshot as { lines: Array<{ id: string }>; declinedOptions: Array<{ title: string }>; pricing: { total: string }; revisionLabel: string; acceptance: { decidedBy: string } };
       expect(snapshot.lines.map((line) => line.id)).toEqual(["a", "b", "c"]);
@@ -208,6 +209,40 @@ integration("projects core (plan §6.10)", () => {
       expect(detail.next).toMatchObject({ text: "Production payment verified", owner: null });
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: production.id, checkKey: "done", version: detail.project.version });
       await expect(manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: production.id, version: detail.project.version })).rejects.toThrow(/Production payment verified/);
+    });
+  });
+
+  it("starts the live BOQ from the sealed scope, suggests packages and keeps each line's history", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      let scope = await manager.scope(actor, w.workspaceId, projectId);
+      expect(scope.lines.map((line) => [line.title, line.quantity, line.origin])).toEqual([
+        ["Kitchen cabinets", "4.5000", "R1"], ["Worktop", "2.2500", "R1"], ["Under-cabinet lights", "1.0000", "R1"]]);
+      // The kitchen lines are bought materials by default; the lights have no area.
+      expect(scope.packages.map((item) => [item.name, item.supply])).toEqual([["Kitchen", "buy"], ["General", "buy"]]);
+      expect(scope.lines.every((line) => line.packageId)).toBe(true);
+
+      let detail = await manager.get(actor, w.workspaceId, projectId);
+      const kitchen = scope.packages[0];
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "save_package", id: kitchen.id, name: "Kitchen joinery", supply: "make", ownerMembershipId: w.designerMembership, dueDate: "2026-11-30", version: detail.project.version });
+      const lights = scope.lines.find((line) => line.title === "Under-cabinet lights")!;
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [lights.id], packageId: kitchen.id, version: detail.project.version });
+      await expect(manager.command(actor, w.workspaceId, projectId, { action: "delete_package", packageId: kitchen.id, version: detail.project.version })).rejects.toThrow(/Move this package's items/);
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "delete_package", packageId: scope.packages[1].id, version: detail.project.version });
+      scope = await manager.scope(actor, w.workspaceId, projectId);
+      expect(scope.packages).toEqual([expect.objectContaining({ name: "Kitchen joinery", supply: "make", ownerName: "Dana Designer", dueDate: "2026-11-30" })]);
+      const history = await manager.line(actor, w.workspaceId, projectId, lights.id);
+      expect(history.history.map((entry) => [entry.kind, entry.detail])).toEqual([
+        ["agreed", { revision: "R1", quantity: "1" }], ["packaged", { package: "General" }], ["packaged", { package: "Kitchen joinery" }]]);
+      // History is never edited.
+      await w.client.query("SAVEPOINT history");
+      await expect(w.client.query("UPDATE project_boq_events SET kind = 'x' WHERE line_id = $1", [lights.id])).rejects.toThrow(/history cannot be changed/);
+      await w.client.query("ROLLBACK TO SAVEPOINT history");
+      // Only the project manager arranges packages.
+      await expect(w.as(w.designer, ["projects.view"]).command(actor, w.workspaceId, projectId, { action: "propose_packages", version: detail.project.version }))
+        .rejects.toThrow(/Only the project manager/);
     });
   });
 

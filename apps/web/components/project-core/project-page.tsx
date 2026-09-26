@@ -101,7 +101,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
 
     <Tabs selectedKey={section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
       { id: "overview", label: t("Overview"), panel: <ProjectStages detail={detail} run={run} caseHref={(part) => `/workspace/pre-projects/cases/${project.caseId}/${part}`} onTeam={() => setDialog("team")} /> },
-      { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} /> },
+      { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
       { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} /> },
     ]} />
 

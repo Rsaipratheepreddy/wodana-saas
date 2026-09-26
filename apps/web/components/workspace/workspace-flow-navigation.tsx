@@ -1,10 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ProjectPipelineNavigation } from "../projects/project-pipeline-navigation";
 import { caseRoute, caseHref } from "@/lib/pre-project/types";
 import { planningAreas, planningArea } from "@/lib/pre-project/sections";
-import { realProjectRoute } from "@/lib/projects/routing";
 import { useState } from "react";
 import { Button as AriaButton, Tooltip, TooltipTrigger } from "react-aria-components";
 import { useSearchParams } from "next/navigation";
@@ -31,15 +29,9 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   const t = useT();
   const section = searchParams.get("section");
   if (pathname === "/workspace/tasks" || pathname === "/workspace/approvals") return null;
-  if (["/workspace/projects/purchasing", "/workspace/projects/inventory", "/workspace/projects/factory"].includes(pathname)) return null;
-  if (pathname.startsWith("/workspace/projects/new/")) return null;
-  if (pathname === "/workspace/integrations" || pathname.startsWith("/workspace/integrations/")) return null;
-  if (pathname === "/workspace/projects") return null;
-  const projectRoute = realProjectRoute(pathname);
-  if (module.id === "projects" && projectRoute) {
-    const available = new Set(module.navigation.flatMap(group => group.items).map(item => item.href.split("/").at(-1) ?? ""));
-    return <ProjectPipelineNavigation root={projectRoute.root} section={projectRoute.section} available={available}/>;
-  }
+  if (pathname.startsWith("/workspace/integrations/") || pathname === "/workspace/integrations") return null;
+  // Projects have no section bar: the list is one page and a project page has its own tabs.
+  if (pathname === "/workspace/projects" || pathname.startsWith("/workspace/projects/")) return null;
 
   const recordRoute = caseRoute(pathname);
   if (recordRoute?.section === "quotations" && searchParams.has("quote")) return null;
