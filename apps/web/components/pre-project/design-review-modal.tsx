@@ -6,7 +6,7 @@ import {caseApi,caseRequest,type CaseContent,type CaseDesign,type DesignOptions}
 import {CaseModal} from './case-controls';
 import {FileCover} from './design-file-preview';
 import s from './design-review-modal.module.css';
-export function DesignReviewModal({data,design,options,onClose,onUpdate}:{data:CaseContent;design:CaseDesign;options:DesignOptions;onClose:()=>void;onUpdate:(d:CaseDesign)=>void}) {
+export function DesignReviewModal({data,design,options,onClose,onUpdate,actions}:{data:CaseContent;design:CaseDesign;options:DesignOptions;onClose:()=>void;onUpdate:(d:CaseDesign)=>void;actions?:React.ReactNode}) {
  const [revisionId,setRevisionId]=useState(design.versions[0]?.id);
  const revision=design.versions.find(item=>item.id===revisionId)??design.versions[0];
  const [expanded,setExpanded]=useState<string[]>([]);
@@ -59,6 +59,7 @@ export function DesignReviewModal({data,design,options,onClose,onUpdate}:{data:C
     {writable&&pinnable&&<small className={s.hint}>{commentMode?'Click any point on the image, then write your comment.':'Choose Add comment to pin feedback on the image.'}</small>}
    </div>
    <aside className={s.comments} aria-label="Design comments">
+    {actions}
     <h3>Comments <span className={s.count}>({threads.reduce((n,t)=>n+t.messages.length,0)+design.activity.filter(a=>a.action==='comment'&&a.versionId===revision?.id).length})</span></h3>
     {writable?<div className={s.composerRow}><Avatar name={members.find(m=>m.id===options.actorId)?.name??"You"} size="md"/><form className={s.composer} onSubmit={e=>{e.preventDefault();void post();}}>
      {point&&<div className={s.pendingPin}><MapPin size={12}/><span>Image comment</span><button type="button" aria-label="Remove pin" disabled={busy} onClick={()=>setPoint(null)}><X size={12}/></button></div>}

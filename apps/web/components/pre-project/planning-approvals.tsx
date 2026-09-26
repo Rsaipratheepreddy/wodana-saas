@@ -11,7 +11,6 @@ import type { CommercialState } from "@/lib/commercial/types";
 import { statusLabel } from "@/lib/commercial/client";
 import { usePreProject } from "./pre-project-context";
 import { DefinitionPage } from "./definition-page";
-import { DesignFileDetails } from "./design-file-details";
 import { CommercialPage } from "../commercial/commercial-page";
 import s from "./planning-approvals.module.css";
 import tableStyles from "../workspace/workspace.module.css";
@@ -27,6 +26,8 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
   useEffect(() => { setSelected({ record, search }); }, [record, search, setSelected]);
   const root = `/workspace/pre-projects/cases/${record.id}`;
   const href = (item?: string) => {
+    // Designs are reviewed and approved on the drawing, in Design.
+    if (item?.startsWith("design:")) return `${root}/designs?file=${item.slice(7)}`;
     const query = new URLSearchParams(search);
     query.delete("review");
     if (item) query.set("review", item);
@@ -43,14 +44,12 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
     ...designs.map(item => ({ id: `design:${item.id}`, type: "Designs", title: item.title, version: item.versions[0] ? `V${item.versions[0].number}` : "No file", status: designStatus[item.versions[0]?.status ?? "no_file"] ?? "Needs review", ready: item.versions[0]?.status === "internal_approved", done: item.versions[0]?.status === "approved" })),
     ...quotes.map(item => ({ id: `quote:${item.id}`, type: "Quotations", title: item.title || (item.kind === "quotation" ? "Project quotation" : "Change quotation"), version: `V${item.number}`, status: statusLabel[item.status] ?? item.status, ready: item.status === "internal_approved", done: item.status === "accepted" })),
   ];
-  const selectedDesign = designs.find(item => review === `design:${item.id}`);
   const selectedQuote = quotes.find(item => review === `quote:${item.id}`);
-  const detail = review === "scope" ? <DefinitionPage initial={definition} /> : selectedDesign && "data" in content && content.designOptions
-    ? <DesignFileDetails key={`${selectedDesign.id}-${selectedDesign.version}`} data={content.data} design={selectedDesign} options={content.designOptions} folderName={content.designOptions.folders.find(folder => folder.id === selectedDesign.folderId)?.name ?? "Designs"} backLabel="Approvals" onClose={() => router.push(href())} onUpdate={() => router.refresh()} onReviewed={() => router.refresh()} />
+  const detail = review === "scope" ? <DefinitionPage initial={definition} />
     : selectedQuote ? <CommercialPage reviewOnly key={selectedQuote.id} initial={commercial} record={record} section="quotations" quotationId={selectedQuote.id} search={search} /> : null;
   return <section className={s.page}>
     <h1 className={s.visuallyHidden}>Approvals</h1>
-    {review ? <>{!selectedDesign && <Link className={s.back} href={href()}>← All approvals</Link>}{detail ?? <Callout tone="warning" title="Review unavailable">This item may have been archived or replaced. Return to the queue for its current version.</Callout>}</> : <>
+    {review ? <>{<Link className={s.back} href={href()}>← All approvals</Link>}{detail ?? <Callout tone="warning" title="Review unavailable">This item may have been archived or replaced. Return to the queue for its current version.</Callout>}</> : <>
       {"error" in content && <Callout tone="warning" title="Designs could not be loaded">{content.error}</Callout>}
       {"error" in definition && <Callout tone="warning" title="Requirements could not be loaded">{definition.error}</Callout>}
       <div className={tableStyles.recordTablePanel}>
