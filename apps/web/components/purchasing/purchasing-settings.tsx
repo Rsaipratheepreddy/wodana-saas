@@ -1,0 +1,66 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { purchasingApi } from "@/lib/purchasing/client";
+import type { PurchasingSettings } from "@/lib/purchasing/types";
+import styles from "./purchasing.module.css";
+
+/** Settings → Purchasing: from what amount an order needs approval, and what must be true before one is placed. */
+export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string }) {
+  const t = useT();
+  const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
+  const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean } | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
+    setData(next);
+    const value = next.settings.approvalThreshold;
+    setForm({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
+      signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier });
+  };
+  const load = useCallback(async () => {
+    try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
+  }, [api, t]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (!data || !form) return <Skeleton lines={6} />;
+  const readOnly = !data.canManage;
+  const threshold = !form.approval ? null : form.always ? "0" : form.threshold;
+  const save = async () => {
+    setBusy(true); setError("");
+    try {
+      const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved });
+      accept({ ...data, settings });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
+    setBusy(false);
+  };
+  return <SettingsPage title={t("Purchasing")}>
+    {error ? <InlineNotice tone="error" message={error} /> : null}
+    <SettingsSection id="approval" title={t("Approval")}>
+      <SettingsRow label={t("Orders need approval")} hint={t("Someone other than the buyer approves before an order goes to the supplier.")}>
+        <Switch aria-label={t("Orders need approval")} isDisabled={readOnly} isSelected={form.approval} onChange={(approval) => setForm({ ...form, approval })} />
+      </SettingsRow>
+      {form.approval ? <SettingsRow label={t("Every order")} hint={t("Off: only orders from an amount need approval.")}>
+        <Switch aria-label={t("Every order")} isDisabled={readOnly} isSelected={form.always} onChange={(always) => setForm({ ...form, always })} />
+      </SettingsRow> : null}
+      {form.approval && !form.always ? <SettingsRow label={t("From this amount")} hint={t("Orders in another currency always need approval.")}>
+        <TextInput aria-label={t("From this amount")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix={data.currency ?? undefined} value={form.threshold}
+          onChange={(value) => setForm({ ...form, threshold: value.replace(/[^\d.]/g, "") })} />
+      </SettingsRow> : null}
+    </SettingsSection>
+    <SettingsSection id="before" title={t("Before an order is placed")}>
+      <SettingsRow label={t("Client signed off the material list")} hint={t("Nothing for a project is ordered until its client signs off the materials.")}>
+        <Switch aria-label={t("Client signed off the material list")} isDisabled={readOnly} isSelected={form.signoff} onChange={(signoff) => setForm({ ...form, signoff })} />
+      </SettingsRow>
+      <SettingsRow label={t("Supplier approved")} hint={t("Orders go only to approved suppliers.")}>
+        <Switch aria-label={t("Supplier approved")} isDisabled={readOnly} isSelected={form.approved} onChange={(approved) => setForm({ ...form, approved })} />
+      </SettingsRow>
+    </SettingsSection>
+    {readOnly ? null : <div className={styles.actions}>
+      <Button size="compact" variant="primary" isLoading={busy} isDisabled={form.approval && !form.always && !(Number(form.threshold) > 0)} onPress={() => void save()}>{t("Save")}</Button>
+    </div>}
+  </SettingsPage>;
+}

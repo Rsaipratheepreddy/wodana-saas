@@ -1,7 +1,7 @@
 export type ProjectStatus = "active" | "on_hold" | "completed" | "cancelled" | "archived";
 export type Health = "on_track" | "at_risk" | "off_track";
 export type Priority = "normal" | "high" | "critical";
-export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off";
+export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off" | "everything_ordered";
 
 export type ProjectRole = { key: string; label: string };
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };

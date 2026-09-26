@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 
-/** Purchasing: the supplier register (and, as they land, what to order and purchase orders). */
+/** Purchasing: suppliers, what projects need to order, purchase orders and their settings. */
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "suppliers") return ["GET", "POST"].includes(method);
   if (path.length === 2 && path[0] === "suppliers" && path[1] === "import") return method === "POST";
   if (path.length === 3 && path[0] === "suppliers" && UUID.test(path[1]) && ["approval", "archive"].includes(path[2])) return method === "POST";
+  if (path.length === 1 && path[0] === "needs") return method === "GET";
+  if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
+  if (path.length === 1 && path[0] === "orders") return ["GET", "POST"].includes(method);
+  if (path.length === 2 && path[0] === "orders" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
   return false;
 }
 
@@ -19,4 +23,4 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   return workspaceJsonResponse(`/workspaces/${workspaceId}/purchasing/${path.join("/")}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, "Could not save.");
 }
-export { handle as GET, handle as POST };
+export { handle as GET, handle as POST, handle as PUT };

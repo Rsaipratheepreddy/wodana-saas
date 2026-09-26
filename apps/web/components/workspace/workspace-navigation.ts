@@ -121,6 +121,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/design-packages", icon: "designs", id: "design-packages", label: "Design packages" },
           { href: "/workspace/settings/quotations", icon: "commercial", id: "quotation-settings", label: "Quotations" },
           { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: "Projects" },
+          { href: "/workspace/settings/purchasing", icon: "procurement", id: "purchasing-settings", label: "Purchasing" },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },

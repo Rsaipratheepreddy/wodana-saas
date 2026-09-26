@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Upload } from "lucide-react";
-import { Button, DataGrid, EmptyState, ErrorState, MenuButton, NoResultsState, PageHeader, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { Upload } from "lucide-react";
+import { Button, DataGrid, EmptyState, ErrorState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { formatPhoneForDisplay } from "@/lib/phone";
 import type { PurchasingApi } from "@/lib/purchasing/client";
@@ -18,7 +18,7 @@ type Show = "active" | "archived";
  * The supplier register: who supplies what, whether they're approved, on what terms, and who to call.
  * A row opens the supplier; suppliers already kept in a spreadsheet can be imported.
  */
-export function Suppliers({ api }: { api: PurchasingApi }) {
+export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi; adding: boolean; onAddingChange: (adding: boolean) => void }) {
   const t = useT();
   const labels = useSupplierLabels();
   const [state, setState] = useState<SupplierState | null>(null);
@@ -30,7 +30,6 @@ export function Suppliers({ api }: { api: PurchasingApi }) {
   const [company, setCompany] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     try { setState(await api.suppliers()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The suppliers didn't load.")); }
@@ -56,13 +55,11 @@ export function Suppliers({ api }: { api: PurchasingApi }) {
     { id: "companies", header: t("Buys"), accessorFn: (row) => row.entityIds.map((id) => companies.get(id)?.code ?? "").join(", "), size: 110, meta: { mobileHidden: true } },
   ], [t, labels, companies]);
 
-  const header = <PageHeader title={t("Suppliers")} actions={state?.canManage ? <Button variant="primary" onPress={() => setAdding(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button> : null} />;
-  if (error && !state) return <>{header}<ErrorState description={error} onRetry={() => void load()} /></>;
+  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   const filtered = category || approval || company;
   const current = state?.suppliers.find((item) => item.id === open) ?? null;
 
   return <>
-    {header}
     <DataGrid<Supplier>
       appearance="flush"
       ariaLabel={t("Suppliers")}
@@ -92,8 +89,8 @@ export function Suppliers({ api }: { api: PurchasingApi }) {
       selectable={false}
       wrapText
     />
-    {state && (current || adding) ? <SupplierSheet api={api} state={state} supplier={adding ? null : current} onState={setState}
-      onClose={() => { setOpen(null); setAdding(false); }} /> : null}
+    {state && (current || (adding && state.canManage)) ? <SupplierSheet api={api} state={state} supplier={adding ? null : current} onState={setState}
+      onClose={() => { setOpen(null); onAddingChange(false); }} /> : null}
     {importing && state ? <SupplierImport api={api} state={state} onClose={() => setImporting(false)} onImported={(next) => { setState(next); setImporting(false); }} /> : null}
   </>;
 }

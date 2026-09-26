@@ -2,8 +2,11 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { Supplier, SupplierImportPlan, SupplierState } from "@/lib/purchasing/types";
-import { PurchasingPage } from "./purchasing-page";
+import type { Need, OrderState, Supplier, SupplierImportPlan, SupplierState } from "@/lib/purchasing/types";
+import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
+
+const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn() }), usePathname: () => "/workspace/purchasing", useSearchParams: () => new URLSearchParams(nav.query) }));
 
 const supplier = (patch: Partial<Supplier>): Supplier => ({
   id: "s1", code: "NILE", name: "Nile Marble & Granite", legalName: null, categories: ["Marble", "Travertine"], approval: "approved", preferredFor: ["Marble"], approvalNote: "",
@@ -27,7 +30,7 @@ const mount = (respond: (url: string, body: Record<string, unknown> | undefined)
   return fetcher;
 };
 const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
-const page = () => render(<DesignSystemProvider><PurchasingPage workspaceId="w" /></DesignSystemProvider>);
+const page = (section: PurchasingSection = "suppliers") => render(<DesignSystemProvider><PurchasingPage workspaceId="w" section={section} /></DesignSystemProvider>);
 
 describe("suppliers", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -115,5 +118,94 @@ describe("suppliers", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.body.commit).toBe(true));
     const rows = posts(fetcher).at(-1)!.body.rows;
     expect(rows[0]).toMatchObject({ name: "SIOM Marble", categories: "Marble", approval: "APPROVED MARBLE SUPPLIER", terms: "Payment Upfront", contactName: "Ramiz", phone: "+971 52 846 6806", entityId: "f" });
+  });
+});
+
+describe("ordering", () => {
+  afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
+  const need = (patch: Partial<Need>): Need => ({ key: "material:m1", source: "material", sourceId: "m1", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12",
+    title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
+    supply: null, blocked: null, ...patch });
+  const needs = { needs: [need({}), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
+    supplierHint: "", packageName: "Lights" }), need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", blocked: "material_signoff" })],
+    settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, version: 1 }, canBuy: true, canApprove: true };
+  const orderState = (patch: Partial<OrderState["order"]> = {}, rights: Partial<OrderState> = {}): OrderState => ({
+    order: { id: "o1", number: "FAC-PO-2026-00001", status: "draft", vendorId: "s1", supplierName: "Nile Marble & Granite", legalEntityId: "f", companyCode: "FAC", currency: "AED",
+      total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
+      revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
+      subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", createdBy: "u1", submittedBy: null, approvedByName: null, approvedAt: null, sentAt: null, sentTo: null,
+      confirmedAt: null, cancelledAt: null, cancelReason: null, companyName: "Studio Furniture", ...patch },
+    lines: [
+      { id: "a", position: 0, projectId: "p1", projectReference: "PRJ-0007", source: "material", materialItemId: "m1", boqLineId: null, description: "Calacatta slab", specification: "CAL-20",
+        quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000" },
+      { id: "b", position: 1, projectId: "p1", projectReference: "PRJ-0007", source: "line", materialItemId: null, boqLineId: "l1", description: "Under-cabinet lights", specification: "",
+        quantity: "1.0000", unit: "nos", unitPrice: "500.0000", discountPercent: "10.00", taxRate: "5.0000", net: "450.0000", tax: "22.5000", total: "472.5000" }],
+    events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
+    supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
+    canBuy: true, canApprove: true, canApproveThis: false, ...rights,
+  });
+  const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
+
+  it("lists what projects need, keeps unsigned lists apart, and orders the chosen lines from one supplier", async () => {
+    const fetcher = mount((url, body) => (url.includes("/needs") ? needs : url.includes("/suppliers") ? state() : body ? orderState() : ordersList));
+    page("to-order");
+    const table = await screen.findByRole("table", { name: "To order" }).catch(() => screen.findByRole("grid", { name: "To order" }));
+    expect(table).toHaveTextContent("PRJ-0007 · Villa 12");
+    expect(table).not.toHaveTextContent("Oak veneer");
+    expect(screen.getByRole("region", { name: "Waiting for the client's sign-off" })).toHaveTextContent("Oak veneer");
+    await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
+    await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Under-cabinet lights" }));
+    await userEvent.click(screen.getByRole("button", { name: "Create order" }));
+    const dialog = await screen.findByRole("dialog", { name: "New order" });
+    // The material names its supplier, so it's chosen; quantities start at what's left.
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: /Supplier/ })).toHaveTextContent("Nile Marble & Granite"));
+    expect(within(dialog).getByRole("textbox", { name: "Quantity for Calacatta slab" })).toHaveValue("12");
+    // Nile only supplies the furniture company, so it buys.
+    expect(within(dialog).queryByRole("button", { name: /Buying company/ })).toBeNull();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Price for Calacatta slab" }), "350");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/purchasing/orders?"));
+    expect(posts(fetcher).at(-1)!.body).toMatchObject({ vendorId: "s1", legalEntityId: "f", lines: [
+      { source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350" }, { source: "line", boqLineId: "l1", quantity: "1" }] });
+    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/orders?order=o1", { scroll: false });
+  });
+
+  it("edits a draft with live exact totals and sends it for approval", async () => {
+    nav.query = "order=o1";
+    let current = orderState();
+    const fetcher = mount((url, body) => {
+      if (body?.action === "save") current = orderState({ version: 2, total: "4441.5000" });
+      if (body?.action === "submit") current = orderState({ version: 3, status: "pending_approval" });
+      return url.includes("/orders/o1") ? current : ordersList;
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    const quantity = await within(sheet).findByRole("textbox", { name: "Quantity for Calacatta slab" });
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, "12");
+    // 12 × 350 less 10% = 3,780 + 5% tax = 3,969; plus the lights 472.50 = 4,441.50
+    expect(within(sheet).getByText(/4,441\.50/)).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Send for approval" }));
+    await waitFor(() => expect(posts(fetcher).map((post) => [post.body.action, post.body.version])).toEqual([["save", 1], ["submit", 2]]));
+    expect(posts(fetcher)[0].body.lines[0]).toMatchObject({ id: "a", source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350", discountPercent: "10", taxRate: "5" });
+  });
+
+  it("lets someone else approve, then sends it to the supplier and says if the email couldn't go", async () => {
+    nav.query = "order=o1";
+    let current = orderState({ status: "pending_approval", submittedBy: "u1" }, { canApproveThis: true });
+    const fetcher = mount((url, body) => {
+      if (body?.action === "approve") current = orderState({ status: "approved", version: 2, approvedByName: "Dara Director", approvedAt: "2026-09-27T10:00:00Z" });
+      if (body?.action === "send") current = { ...orderState({ status: "sent", version: 3, sentTo: body.to as string, sentAt: "2026-09-27T11:00:00Z" }), delivery: "not_configured" };
+      return url.includes("/orders/o1") ? current : ordersList;
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Approve" }));
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Send to supplier" }));
+    const send = await screen.findByRole("dialog", { name: "Send to supplier" });
+    expect(within(send).getByRole("textbox", { name: "Email" })).toHaveValue("orders@nile.example");
+    await userEvent.click(within(send).getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(fetcher).map((post) => post.body.action)).toEqual(["approve", "send"]));
+    expect(await within(sheet).findByText("Email isn't set up here. Send the order to the supplier yourself.")).toBeInTheDocument();
   });
 });

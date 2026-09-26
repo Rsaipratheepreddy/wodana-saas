@@ -9,7 +9,7 @@ export type ProjectRole = { key: string; label: string };
  * What must be true to finish a stage. Checks read from data wherever the data exists; `confirm` is a
  * person confirming something the system doesn't record yet (e.g. "Kickoff meeting held").
  */
-export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off"] as const;
+export const CHECK_KINDS = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered"] as const;
 export type CheckKind = (typeof CHECK_KINDS)[number];
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
 export type TemplateStage = { key: string; name: string; ownerRole: string | null; checks: StageCheck[] };
@@ -39,7 +39,7 @@ export const DEFAULT_STAGES: TemplateStage[] = [
     { key: "signed", kind: "material_list_signed_off" },
   ] },
   { key: "procurement", name: "Procurement", ownerRole: "procurement", checks: [
-    { key: "ordered", kind: "confirm", label: "All materials ordered" },
+    { key: "ordered", kind: "everything_ordered" },
   ] },
   { key: "drawings", name: "Technical drawings", ownerRole: "technical_designer", checks: [
     { key: "approved", kind: "confirm", label: "Client approved the drawings" },
@@ -128,6 +128,8 @@ export type CheckFacts = {
   productionPaid: boolean;
   /** The latest material list revision is signed off and unchanged since. */
   materialsSignedOff: boolean;
+  /** Every material and bought scope line is covered by placed purchase orders. */
+  everythingOrdered: boolean;
 };
 
 /** Whether a check passes, from the facts gathered for the stage. */
@@ -138,5 +140,6 @@ export function checkPasses(check: StageCheck, facts: CheckFacts) {
     case "role_assigned": return Boolean(check.role && facts.filledRoles.has(check.role));
     case "payment_verified": return facts.productionPaid;
     case "material_list_signed_off": return facts.materialsSignedOff;
+    case "everything_ordered": return facts.everythingOrdered;
   }
 }

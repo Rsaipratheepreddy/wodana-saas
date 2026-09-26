@@ -10,6 +10,8 @@ import { QuotationBuilderService } from "../quotation/quotation-builder.service"
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectWorkService } from "./project-work.service";
 import { processWorkDeadlines } from "./work-reminders";
+import { OrdersService } from "../purchasing/orders.service";
+import { SuppliersService } from "../purchasing/suppliers.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -662,6 +664,96 @@ integration("projects core (plan §6.10)", () => {
         ["work.overdue", "in_app", "designer", "#2 Shop drawings is late"],
         ["work.overdue", "in_app", "manager", "#2 Shop drawings is late"],
       ].sort());
+    });
+  });
+
+  it("buys what the project needs: signed-off materials and bought lines, priced exactly, approved by someone else, sent, confirmed and changed", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      const company = randomUUID(), profile = randomUUID();
+      await w.client.query(`INSERT INTO legal_entities(id,workspace_id,code,display_name,registered_name,country_code,base_currency,locale,timezone) VALUES($1,$2,'FAC','Studio Furniture','Studio Furniture LLC','AE','AED','en-AE','Asia/Dubai')`, [company, w.workspaceId]);
+      await w.client.query(`INSERT INTO tax_profiles(id,workspace_id,legal_entity_id,name,jurisdiction_code,scheme,prices_include_tax,effective_from,version) VALUES($1,$2,$3,'VAT','AE','vat',false,now(),1)`, [profile, w.workspaceId, company]);
+      await w.client.query(`INSERT INTO tax_rates(workspace_id,tax_profile_id,code,label,rate,is_default) VALUES($1,$2,'standard','Standard','5',true)`, [w.workspaceId, profile]);
+      const everything = ["vendors.view", "vendors.manage", "vendors.approve", "purchasing.view", "purchasing.manage", "purchasing.approve", "workspace.settings.manage", "projects.manage", "projects.view"];
+      const access = (userId: string, permissions: string[]) => {
+        const run = async (_a: unknown, _w: string, code: string | string[], fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          const codes = Array.isArray(code) ? code : [code];
+          if (!codes.some((item) => permissions.includes(item))) throw new Error("Not allowed");
+          return fn(w.client, { userId });
+        };
+        return { withPermission: run, withAnyPermission: run, asMember: (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId }),
+          hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never;
+      };
+      const buyer = { orders: new OrdersService(access(w.designer, everything)), suppliers: new SuppliersService(access(w.designer, everything)) };
+      const approver = { orders: new OrdersService(access(w.manager, everything)), suppliers: new SuppliersService(access(w.manager, everything)) };
+
+      // The material list, and the lights bought ready-made.
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", code: "CAL-20", quantity: "12", unit: "m²", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", name: "Lights", supply: "ready_made", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", name: "Joinery", supply: "make", version: detail.project.version });
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const lights = scope.packages.find((item) => item.name === "Lights")!;
+      // Cabinets and the worktop are made in the factory: their materials are on the list, the lines aren't bought.
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: scope.lines.filter((line) => line.title !== "Under-cabinet lights").map((line) => line.id),
+        packageId: scope.packages.find((item) => item.name === "Joinery")!.id, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [(await core.scope(actor, w.workspaceId, projectId)).lines.find((line) => line.title === "Under-cabinet lights")!.id], packageId: lights.id, version: detail.project.version });
+      let needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      expect(needs.map((need) => [need.title, need.required, need.remaining, need.blocked])).toEqual([["Calacatta slab", "12.0000", "12.0000", "material_signoff"], ["Under-cabinet lights", "1.0000", "1.0000", "material_signoff"]]);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "send_materials", version: detail.project.version });
+      const slab = (await core.materials(actor, w.workspaceId, projectId)).items[0];
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "email", decisions: [{ itemId: slab.id, decision: "approved" }], version: detail.project.version });
+      needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      expect(needs.every((need) => need.blocked === null)).toBe(true);
+
+      // A supplier with a 10% discount, approved by someone who approves suppliers.
+      const vendor = randomUUID();
+      let register = await buyer.suppliers.save(actor, w.workspaceId, { id: vendor, version: 0, name: "Nile Marble", categories: ["Marble"], deal: "discount", dealPercent: "10", entityIds: [company], email: "orders@nile.example" });
+      const order = randomUUID();
+      const lines = needs.map((need, index) => ({ source: need.source, ...(need.source === "material" ? { materialItemId: need.sourceId } : { boqLineId: need.sourceId }), quantity: index ? "1" : "10", unitPrice: index ? "500" : "350" }));
+      let state = await buyer.orders.create(actor, w.workspaceId, { id: order, vendorId: vendor, lines, expectedDate: "2026-10-20" });
+      expect(state.order).toMatchObject({ number: `FAC-PO-${new Date().getFullYear()}-00001`, status: "draft", currency: "AED", subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", total: "3780.0000" });
+      expect(state.lines.map((line) => [line.description, line.specification, line.quantity, line.unit, line.discountPercent, line.taxRate, line.net, line.tax, line.total])).toEqual([
+        ["Calacatta slab", "CAL-20", "10.0000", "m²", "10.00", "5.0000", "3150.0000", "157.5000", "3307.5000"],
+        ["Under-cabinet lights", "", "1.0000", "nos", "10.00", "5.0000", "450.0000", "22.5000", "472.5000"]]);
+      expect((await buyer.orders.create(actor, w.workspaceId, { id: order, vendorId: vendor, lines })).order.number).toBe(state.order.number);
+      needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      expect(needs.map((need) => [need.placed, need.drafted, need.remaining])).toEqual([["0", "10.0000", "2.0000"], ["0", "1.0000", "0.0000"]]);
+
+      await expect(buyer.orders.command(actor, w.workspaceId, order, { action: "submit", version: state.order.version })).rejects.toThrow(/isn't approved as a supplier/);
+      register = await approver.suppliers.approve(actor, w.workspaceId, vendor, { version: register.suppliers[0].version, approval: "approved" });
+      state = await buyer.orders.command(actor, w.workspaceId, order, { action: "submit", version: state.order.version });
+      expect(state.order.status).toBe("pending_approval");
+      await expect(buyer.orders.command(actor, w.workspaceId, order, { action: "approve", version: state.order.version })).rejects.toThrow(/Someone else approves/);
+      await expect(approver.orders.command(actor, w.workspaceId, order, { action: "return", version: state.order.version })).rejects.toThrow(/Say what needs to change/);
+      state = await approver.orders.command(actor, w.workspaceId, order, { action: "approve", version: state.order.version });
+      expect(state.order).toMatchObject({ status: "approved", approvedByName: "Omar Manager" });
+      state = await buyer.orders.command(actor, w.workspaceId, order, { action: "send", to: "orders@nile.example", version: state.order.version });
+      expect(state).toMatchObject({ order: { status: "sent", sentTo: "orders@nile.example" }, delivery: "not_configured" });
+      const history = await core.line(actor, w.workspaceId, projectId, needs[1].sourceId);
+      expect(history.history.at(-1)).toMatchObject({ kind: "ordered", detail: { order: state.order.number, quantity: "1.0000" } });
+      state = await buyer.orders.command(actor, w.workspaceId, order, { action: "confirm", promisedDate: "2026-10-18", supplierReference: "SO-551", version: state.order.version });
+      expect(state.order).toMatchObject({ status: "confirmed", promisedDate: "2026-10-18", supplierReference: "SO-551" });
+
+      // Two m² short, so procurement isn't done; the order is changed to 12 and approved again.
+      const { everythingOrdered } = await import("../purchasing/orders");
+      expect(await everythingOrdered(w.client, w.workspaceId, projectId)).toBe(false);
+      await expect(buyer.orders.command(actor, w.workspaceId, order, { action: "change", version: state.order.version })).rejects.toThrow(/Say what's changing/);
+      state = await buyer.orders.command(actor, w.workspaceId, order, { action: "change", reason: "Two more slabs for the splashback", version: state.order.version });
+      expect(state.order).toMatchObject({ status: "draft", revision: 1 });
+      expect(state.revisions).toEqual([expect.objectContaining({ revision: 0, reason: "Two more slabs for the splashback" })]);
+      state = await buyer.orders.command(actor, w.workspaceId, order, { action: "save", version: state.order.version,
+        lines: state.lines.map((line, index) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, quantity: index ? line.quantity : "12",
+          unitPrice: line.unitPrice, discountPercent: line.discountPercent, taxRate: line.taxRate, specification: line.specification })) });
+      expect(state.order.total).toBe("4441.5000");
+      state = await buyer.orders.command(actor, w.workspaceId, order, { action: "submit", version: state.order.version });
+      state = await approver.orders.command(actor, w.workspaceId, order, { action: "approve", version: state.order.version });
+      expect(await everythingOrdered(w.client, w.workspaceId, projectId)).toBe(true);
+      await expect(buyer.orders.command(actor, w.workspaceId, order, { action: "cancel", version: state.order.version })).rejects.toThrow(/Say why/);
+      const notices = (await w.client.query<{ event: string; recipient: string }>(`SELECT event_type AS event, recipient_id AS recipient FROM notifications WHERE workspace_id = $1 AND event_type LIKE 'purchasing.%' AND channel = 'in_app'`, [w.workspaceId])).rows;
+      expect(notices).toEqual(expect.arrayContaining([{ event: "purchasing.approved", recipient: w.designer }]));
     });
   });
 

@@ -582,6 +582,18 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Screens:** Suppliers grid · Supplier inspector (details, documents, rate contracts, POs, invoices, scorecard).
 
 ### 6.14 Purchasing (RFQ → PO)
+**Built (Operations → Purchasing: To order · Orders · Suppliers; Settings → Purchasing):**
+- **To order** lists, for every running project, the materials on its material list and the scope lines of bought (ready-made, bought materials) and subcontracted packages: needed, on placed orders, in draft, and left. It's derived from the records, not kept by hand. Projects whose client hasn't signed off the material list are shown apart and can't be ordered (a setting). Lines from several projects go on one order to one supplier.
+- **Orders** (`purchase_orders`, `purchase_order_lines`, append-only `purchase_order_events`, frozen `purchase_order_revisions`):
+  - Numbered by the buying company's numbering (`FAC-PO-2026-00001`).
+  - Each line is for a material, a scope line or a free item.
+  - Price comes from the supplier's catalog price when left empty. Discount defaults to the supplier's deal; tax defaults to the buying company's rate.
+  - Amounts are exact: net = qty × price less discount, tax on net, each rounded to the currency's minor units; totals are sums of the lines.
+  - Draft → waiting for approval (at or above the workspace's approval amount; other currencies always) → approved by someone other than the buyer → sent (branded email to the supplier, or marked sent; the delivery result is recorded) → confirmed (promised date and supplier reference).
+  - *Change* on an approved order keeps what was approved and sends it through approval again. *Cancel* asks why.
+  - Orders only go to approved suppliers (a setting). Sending records "ordered" in each scope line's history. The Procurement stage's check *Everything is ordered* reads the orders.
+- **Notices:** approval needed (approvers, in-app and email), approved or sent back (the buyer).
+
 - **Records:** rfqs, rfq_lines, rfq_suppliers (sent/viewed/responded), supplier_quotes + lines (price, qty, lead time, validity, alternate item), purchase_orders (kind `standard | blanket | service`, revision), po_lines (ship-to **per line**: warehouse, factory or site), po_line_allocations (line → requirement/project, qty), po_revisions, po_acknowledgements (per line; partial allowed), blanket_releases, supplier advances.
 - **PO states:** `draft → pending_approval → approved → sent → acknowledged | partly_acknowledged → partly_received → received → closed`, plus `cancelled` and `short_closed`.
 - **Rules:**
