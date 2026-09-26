@@ -57,6 +57,20 @@ export class SaveBriefEntryDto {
   @IsString() @MaxLength(3000) avoid!: string;
   @IsIn(["team", "client"]) source!: string;
   @IsArray() @ArrayMaxSize(20) @ArrayUnique() @IsUUID(undefined, { each: true }) assetIds!: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(30) @ArrayUnique() @IsUUID(undefined, { each: true }) requirementIds?: string[];
+}
+
+export class MoodboardPinDto {
+  @IsUUID() entryId!: string;
+  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(-20000) @Max(20000) x!: number;
+  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(-20000) @Max(20000) y!: number;
+  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(120) @Max(960) width!: number;
+  @IsInt() @Min(0) @Max(100000) z!: number;
+  @IsIn(["love", "avoid"]) sentiment!: "love" | "avoid";
+}
+
+export class MoodboardLayoutDto {
+  @IsArray() @ArrayMaxSize(300) @ValidateNested({ each: true }) @Type(() => MoodboardPinDto) pins!: MoodboardPinDto[];
 }
 
 export class ArchiveBriefEntryDto {

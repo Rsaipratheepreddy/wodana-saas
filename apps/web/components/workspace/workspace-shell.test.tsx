@@ -121,12 +121,12 @@ describe("WorkspaceShell theme", () => {
     route.pathname = `${casePath}/requirements`;
     view.rerender(<WorkspaceShell {...shellProps}><p>Case content</p></WorkspaceShell>);
     const navigation = within(screen.getByRole("navigation", { name: "Planning sections" }));
-    expect(navigation.getByRole("link", { name: "Brief" })).toHaveAttribute("href", `${casePath}/requirements`);
-    expect(navigation.getByRole("link", { name: "Brief" })).toHaveAttribute("aria-current", "page");
-    expect(navigation.getAllByRole("link").map(link => link.textContent)).toEqual(["Overview", "Brief", "Design", "Quotes", "Agreement"]);
-    const requirementViews = within(screen.getByRole("navigation", { name: "Brief views" }));
-    expect(requirementViews.getByRole("link", { name: "Measurements" })).toHaveAttribute("href", `${casePath}/measurements`);
-    expect(requirementViews.getByRole("link", { name: "Scope confirmation" })).toHaveAttribute("href", `${casePath}/definition`);
+    expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("href", `${casePath}/requirements`);
+    expect(navigation.getByRole("link", { name: "Requirements" })).toHaveAttribute("aria-current", "page");
+    expect(navigation.getAllByRole("link").map(link => link.textContent)).toEqual(["Overview", "Requirements", "Site", "Moodboard", "Design", "Quotes", "Agreement"]);
+    expect(navigation.getByRole("link", { name: "Site" })).toHaveAttribute("href", `${casePath}/site-layouts`);
+    expect(navigation.getByRole("link", { name: "Moodboard" })).toHaveAttribute("href", `${casePath}/inspiration`);
+    expect(screen.queryByRole("navigation", { name: "Requirements views" })).not.toBeInTheDocument();
     expect(navigation.queryByRole("link", { name: "Catalog" })).not.toBeInTheDocument();
     const sidebar = within(screen.getByRole("navigation", { name: "Main navigation" }));
     expect(sidebar.getByRole("link", { name: "Planning" })).toHaveAttribute("aria-current", "page");

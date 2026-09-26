@@ -19,12 +19,14 @@ test("project entry and client planning sequence stay usable on desktop and mobi
   const navigation = page.getByRole("navigation", { name: "Planning sections" });
   const sequence = [
     ["Overview", "overview"],
-    ["Brief", "requirements"],
+    ["Requirements", "requirements"],
+    ["Site", "site-layouts"],
+    ["Moodboard", "inspiration"],
     ["Design", "designs"],
     ["Quotes", "boq"],
     ["Agreement", "contracts"],
   ] as const;
-  await expect(navigation.getByRole("link")).toHaveCount(5);
+  await expect(navigation.getByRole("link")).toHaveCount(7);
   for (const [label, section] of sequence) {
     const link = navigation.getByRole("link", { name: label });
     await expect(link).toHaveAttribute("href", `${root}/${section}`);

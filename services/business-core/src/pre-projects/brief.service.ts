@@ -9,7 +9,7 @@ import { RequestActor } from "../auth/actor";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
-import { ArchiveBriefEntryDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
+import { ArchiveBriefEntryDto, MoodboardPinDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
 import { syncOneTreeFromCase } from "../jobs/one-tree.store";
 import { discoveryCoverage } from "./discovery-coverage";
 
@@ -38,6 +38,8 @@ const entrySelect = `SELECT (SELECT content || jsonb_build_object('version',s.ve
   e.room_id AS "roomId",r.name AS "roomName",e.scope_status AS "scopeStatus",e.review_status AS "reviewStatus",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('role',l.role,'recordId',l.record_id,'snapshot',l.snapshot)) FROM pre_project_scope_links l WHERE l.workspace_id=e.workspace_id AND l.entry_id=e.id),'[]'::jsonb) AS "catalogLinks",
   e.quantity::float AS quantity,e.unit,e.reference_url AS "referenceUrl",e.avoid,
+  COALESCE((SELECT jsonb_agg(rl.requirement_id ORDER BY rl.created_at) FROM pre_project_entry_requirement_links rl WHERE rl.workspace_id=e.workspace_id AND rl.entry_id=e.id),'[]'::jsonb) AS "requirementIds",
+  (SELECT jsonb_build_object('x',mp.x,'y',mp.y,'width',mp.width,'z',mp.z,'sentiment',mp.sentiment) FROM pre_project_moodboard_pins mp WHERE mp.workspace_id=e.workspace_id AND mp.entry_id=e.id) AS board,
   e.created_at AS "createdAt",e.updated_at AS "updatedAt",e.archived_at AS "archivedAt",
   u.display_name AS "createdByName",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL) ORDER BY a.created_at,a.id)
@@ -130,6 +132,12 @@ export class BriefService {
     });
   }
   async writeEntry(client:PoolClient,workspaceId:string,caseId:string,userId:string,input:SaveBriefEntryDto) {
+      if (input.requirementIds?.length) {
+        // Moodboard pins can inform specific requirements of the same case.
+        if (input.kind !== 'inspiration') throw new BadRequestException('Only moodboard items link to requirements.');
+        const found = await client.query(`SELECT id FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND kind='requirement' AND archived_at IS NULL AND id=ANY($3::uuid[])`, [workspaceId,caseId,input.requirementIds]);
+        if (found.rowCount !== input.requirementIds.length) throw new BadRequestException('Choose requirements from this project.');
+      }
       const current = await client.query(`SELECT id,version,archived_at,note,note_document,pinned FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND id=$3`, [workspaceId, caseId, input.id]);
       if (input.version > 0 && !current.rowCount) throw new NotFoundException("Record not found");
       const original = current.rows[0];
@@ -203,6 +211,10 @@ export class BriefService {
       await client.query(`UPDATE pre_project_designs SET room_id=$4,version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND scope_entry_id=$3 AND room_id IS DISTINCT FROM $4::uuid`,[workspaceId,caseId,input.id,input.roomId??null]);
       await client.query(`DELETE FROM pre_project_scope_links WHERE workspace_id=$1 AND entry_id=$2`,[workspaceId,input.id]);
       for(const link of resolved) await client.query(`INSERT INTO pre_project_scope_links(workspace_id,case_id,entry_id,role,record_id,snapshot) VALUES($1,$2,$3,$4,$5,$6)`,[workspaceId,caseId,input.id,link.role,link.recordId,link.snapshot]);
+      if (input.requirementIds !== undefined) {
+        await client.query(`DELETE FROM pre_project_entry_requirement_links WHERE workspace_id=$1 AND entry_id=$2`, [workspaceId,input.id]);
+        for (const requirementId of input.requirementIds) await client.query(`INSERT INTO pre_project_entry_requirement_links(workspace_id,case_id,entry_id,requirement_id) VALUES($1,$2,$3,$4)`, [workspaceId,caseId,input.id,requirementId]);
+      }
       await client.query(`DELETE FROM pre_project_entry_assets WHERE workspace_id=$1 AND case_id=$2 AND entry_id=$3`, [workspaceId,caseId,input.id]);
       for (const assetId of input.assetIds) await client.query(`INSERT INTO pre_project_entry_assets(workspace_id,case_id,entry_id,asset_id) VALUES($1,$2,$3,$4)`, [workspaceId,caseId,input.id,assetId]);
       await this.event(client,workspaceId,caseId,userId,current.rowCount ? "entry_updated" : "entry_added",input.id,{ version: input.version },input);
@@ -212,6 +224,21 @@ export class BriefService {
       return this.entry(client,workspaceId,caseId,input.id);
   }
 
+  /** Moodboard layout: where each pin sits and whether it's something to love or avoid. Moving a pin never rewrites the pin. */
+  saveMoodboardLayout(actor: RequestActor, workspaceId: string, caseId: string, pins: MoodboardPinDto[]) {
+    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+      const ids = [...new Set(pins.map((pin) => pin.entryId))];
+      const found = ids.length ? await client.query(`SELECT id FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND kind='inspiration' AND id=ANY($3::uuid[])`, [workspaceId, caseId, ids]) : { rowCount: 0 };
+      if (found.rowCount !== ids.length) throw new BadRequestException('Choose moodboard items from this project.');
+      for (const pin of pins) {
+        await client.query(`INSERT INTO pre_project_moodboard_pins(workspace_id,case_id,entry_id,x,y,width,z,sentiment,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          ON CONFLICT (workspace_id,entry_id) DO UPDATE SET x=excluded.x,y=excluded.y,width=excluded.width,z=excluded.z,sentiment=excluded.sentiment,updated_by=excluded.updated_by,updated_at=now()`,
+          [workspaceId, caseId, pin.entryId, Math.round(pin.x), Math.round(pin.y), Math.round(pin.width), pin.z, pin.sentiment, userId]);
+      }
+      await this.event(client, workspaceId, caseId, userId, 'moodboard_arranged', caseId, {}, { pins: pins.length });
+      return { saved: pins.length };
+    });
+  }
   archiveEntry(actor: RequestActor, workspaceId: string, caseId: string, id: string, input: ArchiveBriefEntryDto) {
     return this.edit(actor,workspaceId,caseId,async (client,userId) => {
       const current = await this.entry(client,workspaceId,caseId,id);

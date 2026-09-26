@@ -14,7 +14,7 @@ it("opens planning sections within the same project with one active destination"
   query="";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/contracts`}/>);
   const nav=screen.getByRole("navigation",{name:"Planning sections"});
-  expect(within(nav).getAllByRole("link")).toHaveLength(5);
+  expect(within(nav).getAllByRole("link")).toHaveLength(7);
   expect(within(nav).getByRole("link",{name:"Agreement"})).toHaveAttribute("aria-current","page");
   expect(screen.getByRole("link",{name:"Change requests"})).toHaveAttribute("href",`${root}/variations`);
   expect(screen.queryByRole("navigation",{name:"Commercial sections"})).not.toBeInTheDocument();
@@ -61,8 +61,8 @@ it("follows the client planning order and clears review selection when changing 
   query="review=scope";
   render(<WorkspaceFlowNavigation module={workspaceModules[2]} pathname={`${root}/approvals`}/>);
   const links=within(screen.getByRole("navigation",{name:"Planning sections"})).getAllByRole("link");
-  expect(links.map(link=>link.textContent)).toEqual(["Overview","Brief","Design","Quotes","Agreement"]);
+  expect(links.map(link=>link.textContent)).toEqual(["Overview","Requirements","Site","Moodboard","Design","Quotes","Agreement"]);
   expect(screen.getByRole("link",{name:"Approvals"})).toHaveAttribute("aria-current","page");
-  expect(screen.getByRole("link",{name:"Brief"})).toHaveAttribute("href",`${root}/requirements`);
+  expect(screen.getByRole("link",{name:"Requirements"})).toHaveAttribute("href",`${root}/requirements`);
   expect(screen.getByRole("link",{name:"Approvals"})).not.toHaveAttribute("href",expect.stringContaining("review="));
 });

@@ -52,10 +52,10 @@ export function WorkspaceFlowNavigation({ module, pathname, canPreExecution = fa
       query.delete("review");
       return caseHref(recordRoute.id, query, section);
     };
-    const areaLabels: Record<string, string> = { overview: t("Overview"), brief: t("Brief"), design: t("Design"), quotes: t("Quotes"), agreement: t("Agreement") };
+    const areaLabels: Record<string, string> = { overview: t("Overview"), requirements: t("Requirements"), site: t("Site"), moodboard: t("Moodboard"), design: t("Design"), quotes: t("Quotes"), agreement: t("Agreement") };
     const viewLabels: Record<string, string> = {
       "client-portal": t("Client access"), "execution-release": t("Release readiness"), requirements: t("Requirements"), measurements: t("Measurements"),
-      "site-layouts": t("Site plans"), inspiration: t("Inspiration"), definition: t("Scope confirmation"), boq: t("Design quote"), quotations: t("Fit-out quote"),
+      "site-layouts": t("Photos & plans"), site: t("Visits"), inspiration: t("Moodboard"), definition: t("Scope"), boq: t("Design quote"), quotations: t("Fit-out quote"),
       contracts: t("Agreement"), "payment-plan": t("Payments"), approvals: t("Approvals"), variations: t("Change requests"),
     };
     const views = area.id === "overview" ? [] : area.sections;

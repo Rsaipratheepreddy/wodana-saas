@@ -3,7 +3,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
-import { ArchiveBriefEntryDto, BulkBriefEntriesDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
+import { ArchiveBriefEntryDto, BulkBriefEntriesDto, MoodboardLayoutDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
 import { BRIEF_MAX_BYTES, BriefService } from "./brief.service";
 import { FolderReviewerDto, ApproveFolderDto, AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
 import { DesignService } from "./design.service";
@@ -26,6 +26,7 @@ export class CaseContentController {
  @Put('rooms') room(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:SaveRoomDto) {return this.brief.saveRoom(a,w,c,b);}
  @Put('entries') entry(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:SaveBriefEntryDto) {return this.brief.saveEntry(a,w,c,b);}
  @Post('entries/bulk') bulk(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:BulkBriefEntriesDto) {return this.brief.bulkEntries(a,w,c,b.entries);}
+ @Put('moodboard/layout') moodboard(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Body() b:MoodboardLayoutDto) {return this.brief.saveMoodboardLayout(a,w,c,b.pins);}
  @Patch('entries/:id') archive(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Param('id',ParseUUIDPipe) id:string,@Body() b:ArchiveBriefEntryDto) {return this.brief.archiveEntry(a,w,c,id,b);}
  @Get('catalog-options') catalog(@CurrentActor() a:RequestActor,@Param('workspaceId',ParseUUIDPipe) w:string,@Param('caseId',ParseUUIDPipe) c:string,@Query('kind') kind='work',@Query('search') search='',@Query('relation') relation='',@Query('relatedId') relatedId='') {return this.brief.catalogOptions(a,w,c,kind,search,relation,relatedId);}
  @Post('assets/:id') @UseInterceptors(FileInterceptor('file',{limits:{fileSize:BRIEF_MAX_BYTES,files:1,fields:0}}))

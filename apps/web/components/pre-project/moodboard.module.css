@@ -1,0 +1,64 @@
+.page { position: relative; display: flex; flex-direction: column; gap: var(--wd-space-3); min-block-size: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.toolbar :global(.wd-field) { inline-size: auto; min-inline-size: 10rem; }
+.spacer { flex: 1 1 auto; }
+.addGroup { display: flex; gap: var(--wd-space-2); }
+.hiddenInput { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.empty { padding-block: var(--wd-phi-5); border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-md); }
+
+/* The board: an endless dotted canvas you can pan and zoom. */
+.canvas {
+  position: relative; overflow: hidden; block-size: calc(100dvh - 15rem); min-block-size: 28rem;
+  border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md);
+  background-color: var(--wd-color-canvas);
+  background-image: radial-gradient(var(--wd-color-border) 1px, transparent 1px);
+  background-size: var(--wd-space-6) var(--wd-space-6);
+  cursor: grab; touch-action: none; user-select: none;
+}
+.canvas[data-dragging] { cursor: grabbing; }
+.world { position: absolute; inset-block-start: 0; inset-inline-start: 0; transform-origin: 0 0; }
+.pin { position: absolute; inset-block-start: 0; inset-inline-start: 0; cursor: default; }
+.resize { position: absolute; inset-block-end: calc(var(--wd-space-2) * -1); inset-inline-end: calc(var(--wd-space-2) * -1); inline-size: var(--wd-space-4); block-size: var(--wd-space-4); border-radius: var(--wd-radius-round); background: var(--wd-color-surface); border: 2px solid var(--wd-color-action-primary); cursor: nwse-resize; opacity: 0; transition: opacity 120ms ease; }
+.pin:hover .resize, .pin:focus-within .resize { opacity: 1; }
+.zoom { position: absolute; inset-block-end: var(--wd-space-3); inset-inline-end: var(--wd-space-3); display: flex; align-items: center; gap: var(--wd-space-1); padding: var(--wd-space-1); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.zoom > span { min-inline-size: 3rem; text-align: center; }
+
+/* Grid view: masonry columns for scanning. */
+.grid { columns: 15rem; column-gap: var(--wd-space-4); }
+.grid > .card { inline-size: 100%; margin-block-end: var(--wd-space-4); break-inside: avoid; }
+
+/* Pins */
+.card { display: flex; flex-direction: column; inline-size: 100%; padding: 0; overflow: hidden; border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); text-align: start; font: inherit; cursor: pointer; }
+.card:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.card[data-selected] { border-color: var(--wd-color-action-primary); box-shadow: 0 0 0 2px var(--wd-color-action-primary); }
+.card[data-kind="note"] { background: var(--wd-color-warning-subtle); }
+.card[data-avoid] .photo { filter: grayscale(1); opacity: .7; }
+.photo { display: block; inline-size: 100%; block-size: auto; max-block-size: 60rem; object-fit: cover; pointer-events: none; }
+.link { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); padding: var(--wd-space-4) var(--wd-space-3); background: var(--wd-color-surface-subtle); border-block-end: 1px solid var(--wd-color-border); }
+.link > .platformIcon { grid-row: span 2; }
+.platformIcon { display: grid; place-items: center; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); border: 1px solid var(--wd-color-border); color: var(--wd-color-text); }
+.link[data-platform="instagram"] .platformIcon { background: var(--wd-color-warning-subtle); }
+.link[data-platform="pinterest"] .platformIcon, .link[data-platform="youtube"] .platformIcon { background: var(--wd-color-danger-subtle); }
+.link[data-platform="web"] .platformIcon { background: var(--wd-color-info-subtle); }
+.link small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.caption { display: flex; flex-direction: column; gap: var(--wd-space-1); padding: var(--wd-space-2) var(--wd-space-3) var(--wd-space-3); }
+.caption > strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.noteText { font-size: var(--wd-text-md); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* Inspector: the selected pin's properties, beside the board. */
+.inspector { position: absolute; inset-block-start: calc(var(--wd-space-10) + var(--wd-space-2)); inset-inline-end: var(--wd-space-3); z-index: 5; display: flex; flex-direction: column; gap: var(--wd-space-3); inline-size: min(22rem, calc(100% - var(--wd-space-6))); max-block-size: calc(100dvh - 17rem); overflow: auto; padding: var(--wd-space-4); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-md); }
+.inspectorHead, .inspectorFoot { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); }
+.inspectorFoot { justify-content: flex-end; padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-border); }
+.inspectorPhotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr)); gap: var(--wd-space-2); }
+.inspectorPhotos img { display: block; inline-size: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--wd-radius-sm); border: 1px solid var(--wd-color-border); }
+.feeling { display: flex; gap: var(--wd-space-2); }
+.openLink { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-decoration: none; }
+.openLink:hover { color: var(--wd-color-action-primary); }
+.provenance { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.form { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+
+@media (max-width: 48rem) {
+  .inspector { position: fixed; inset: auto 0 0 0; inline-size: 100%; max-block-size: 70dvh; border-radius: var(--wd-radius-lg) var(--wd-radius-lg) 0 0; }
+  .canvas { block-size: 70dvh; }
+}

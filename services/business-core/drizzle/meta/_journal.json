@@ -141,6 +141,13 @@
       "when": 1791111600000,
       "tag": "0019_design_journey",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791198000000,
+      "tag": "0020_moodboard",
+      "breakpoints": true
     }
   ]
 }
