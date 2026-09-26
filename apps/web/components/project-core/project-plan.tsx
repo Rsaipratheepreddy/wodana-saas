@@ -10,9 +10,10 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
-import type { WorkBoard, WorkItem, WorkStatus, WorkType } from "@/lib/project-core/types";
+import type { PackagePlan, WorkBoard, WorkItem, WorkStatus, WorkType } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
 import { PlanTimeline } from "./plan-timeline";
+import { useSupplyLabels } from "./project-scope";
 import { BOARD_STATUSES, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import { WorkSheet } from "./work-sheet";
 import styles from "./work.module.css";
@@ -41,6 +42,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const view: View = requested === "board" || requested === "timeline" ? requested : "list";
   const format = useProjectFormat();
   const [baselining, setBaselining] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const open = params.get("item");
 
   const load = useCallback(async () => {
@@ -75,6 +77,11 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   const people = board.people.length ? board.people : [...new Map(board.items.filter((item) => item.assigneeId).map((item) => [item.assigneeId!, { membershipId: item.assigneeId!, name: item.assigneeName ?? "" }])).values()];
   const whoLabel = who === "everyone" ? t("Everyone") : who === "me" ? t("Assigned to me") : who === "none" ? t("No one") : people.find((person) => person.membershipId === who)?.name ?? t("Everyone");
   const empty = !board.items.some((item) => item.status !== "cancelled");
+  const unplanned = board.packages.filter((item) => !item.planned);
+  const menu = [
+    ...(board.canEdit && unplanned.length ? [{ id: "package", label: t("Plan a package") }] : []),
+    ...(board.canManage && !empty ? [{ id: "baseline", label: board.baseline ? t("Reset the baseline") : t("Set the baseline") }] : []),
+  ];
   // When the open work runs past the handover date, say by how much.
   const planEnd = board.items.filter((item) => isOpen(item.status)).map((item) => item.dueDate ?? item.startDate).filter((value): value is string => Boolean(value)).sort().at(-1);
   const overrun = planEnd && board.promiseDate && planEnd > board.promiseDate
@@ -92,15 +99,15 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
         <SegmentedControl label={t("View")} value={view} onChange={(value) => navigate({ view: value as View })}
           options={[{ id: "list", label: t("List") }, { id: "board", label: t("Board") }, { id: "timeline", label: t("Timeline") }]} />
         {board.canEdit ? <Button size="compact" variant="primary" onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("New task")}</Button> : null}
-        {board.canManage && !empty ? <IconMenuButton ariaLabel={t("Plan actions")} onAction={() => setBaselining(true)}
-          items={[{ id: "baseline", label: board.baseline ? t("Reset the baseline") : t("Set the baseline") }]} /> : null}
+        {menu.length ? <IconMenuButton ariaLabel={t("Plan actions")} onAction={(id) => (id === "baseline" ? setBaselining(true) : setPlanning(true))} items={menu} /> : null}
       </div>
     </div>
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
     {overrun ? <p className={styles.risk}>{t("The plan ends {date}, {count} days after the handover date.", { date: format.day(planEnd!), count: overrun })}</p> : null}
 
     {empty ? <EmptyState illustration={null} title={t("No work planned yet")} description={t("Break the project into tasks, give each one to someone and set when it's due.")}
-        action={board.canEdit ? <Button variant="primary" onPress={() => setCreating(true)}>{t("New task")}</Button> : undefined} />
+        action={!board.canEdit ? undefined : unplanned.length ? <Button variant="primary" onPress={() => setPlanning(true)}>{t("Plan a package")}</Button>
+          : <Button variant="primary" onPress={() => setCreating(true)}>{t("New task")}</Button>} />
       : !filtered.length ? <EmptyState illustration={null} title={t("Nothing matches")} action={<Button onPress={() => { setSearch(""); setWho("everyone"); }}>{t("Clear filters")}</Button>} />
       : view === "list" ? <PlanList board={board} items={filtered} onOpen={(item) => navigate({ item: item.id })} />
       : view === "timeline" ? <PlanTimeline board={board} items={filtered} onOpen={(id) => navigate({ item: id })} />
@@ -121,6 +128,11 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
         ? t("Today's dates replace the baseline set on {date} by {name}.", { date: format.when(board.baseline.at), name: board.baseline.byName ?? "" })
         : t("Today's dates become the plan you measure slips against.")}</p>
     </ControlledModalDialog> : null}
+    {planning ? <PlanPackageDialog board={board} load={(packageId, startDate) => api.packagePlan(projectId, packageId, startDate)} onClose={() => setPlanning(false)}
+      onSave={async (packageId, startDate) => {
+        try { setBoard(await api.workCommand(projectId, "plan_package", { packageId, startDate })); return true; }
+        catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
+      }} /> : null}
     {creating ? <NewWorkDialog board={board} onClose={() => setCreating(false)} onCreate={async (input) => {
       try { setBoard(await api.workCommand(projectId, "create", input)); return true; }
       catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
@@ -229,6 +241,57 @@ function NewWorkDialog({ board, onClose, onCreate }: { board: WorkBoard; onClose
       </div>
       {board.packages.length ? <SelectField label={t("Package")} placeholder={t("None")} selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
         items={board.packages.map((item) => ({ id: item.id, label: item.name }))} /> : null}
+    </div>
+  </ControlledModalDialog>;
+}
+
+/**
+ * Plans a package from the standard work for how it's delivered: the tasks in order on working days,
+ * who does each (from the project team's roles) and its stage. Shown before anything is created.
+ */
+function PlanPackageDialog({ board, load, onClose, onSave }: {
+  board: WorkBoard; load: (packageId: string, startDate: string | null) => Promise<PackagePlan>; onClose: () => void; onSave: (packageId: string, startDate: string) => Promise<boolean>;
+}) {
+  const t = useT();
+  const format = useProjectFormat();
+  const supplies = useSupplyLabels();
+  const options = board.packages.filter((item) => !item.planned);
+  const [packageId, setPackageId] = useState<string | null>(options[0]?.id ?? null);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [plan, setPlan] = useState<PackagePlan | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!packageId) return;
+    let alive = true;
+    load(packageId, startDate).then((next) => { if (alive) { setPlan(next); setError(""); } }).catch((cause: Error) => { if (alive) setError(cause.message); });
+    return () => { alive = false; };
+  }, [load, packageId, startDate]);
+  const shown = plan && plan.package.id === packageId ? plan : null;
+  return <ControlledModalDialog isOpen size="lg" title={t("Plan a package")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!shown || !shown.tasks.length} onPress={async () => {
+        if (!shown) return;
+        setBusy(true);
+        if (await onSave(shown.package.id, shown.startDate)) onClose();
+        setBusy(false);
+      }}>{t("Save")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <div className={styles.pair}>
+        <SelectField label={t("Package")} selectedKey={packageId} onSelectionChange={(key) => setPackageId(key === null ? null : String(key))}
+          items={options.map((item) => ({ id: item.id, label: `${item.name} · ${supplies[item.supply]}` }))} />
+        <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
+      </div>
+      {error ? <InlineNotice tone="error" message={error} />
+        : !shown ? <Skeleton lines={4} />
+        : !shown.tasks.length ? <EmptyState illustration={null} title={t("No standard tasks for this kind of package")} description={t("Add them in Settings → Projects → Standard tasks.")} />
+        : <ol className={styles.planList} aria-label={t("Tasks")}>
+            {shown.tasks.map((task, index) => <li key={index}>
+              <span>{task.title}</span>
+              <span className={styles.muted}>{format.short(task.startDate)}{task.dueDate !== task.startDate ? ` – ${format.short(task.dueDate)}` : ""}</span>
+              <span className={task.assigneeName ? undefined : styles.muted}>{task.assigneeName ?? (task.roleLabel ? t("No {role} named", { role: task.roleLabel.toLocaleLowerCase() }) : "—")}</span>
+            </li>)}
+          </ol>}
     </div>
   </ControlledModalDialog>;
 }

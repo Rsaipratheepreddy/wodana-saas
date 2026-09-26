@@ -1,4 +1,4 @@
-import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, PackagePlan, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -37,6 +37,8 @@ export function projectApi(workspaceId: string) {
     },
     /** One change to the project's work (items are version-checked one by one); returns the work as it is now. */
     workCommand: (projectId: string, action: string, input: Record<string, unknown> = {}) => request<WorkBoard>(path(`projects/${projectId}/work`), "POST", { ...input, action }),
+    packagePlan: (projectId: string, packageId: string, startDate?: string | null) =>
+      request<PackagePlan>(`${path(`projects/${projectId}/work/packages/${packageId}/plan`)}${startDate ? `&${new URLSearchParams({ startDate })}` : ""}`),
     openWork: (view: "mine" | "all") => request<OpenWork>(`${path("work")}&${new URLSearchParams({ view })}`),
     startState: (caseId: string) => request<StartState>(path(`start/${caseId}`)),
     start: (caseId: string, input: { quoteId: string; templateId?: string; name: string; leadMembershipId: string; startDate?: string | null; promiseDate?: string | null }) =>
@@ -44,6 +46,7 @@ export function projectApi(workspaceId: string) {
     settings: () => request<SettingsState>(path("settings")),
     saveSettings: (input: Record<string, unknown>) => request<SettingsState>(path("settings"), "PUT", input),
     saveRoute: (input: Record<string, unknown>) => request<SettingsState>(path("routes"), "POST", input),
+    saveWorkTemplate: (supply: string, input: Record<string, unknown>) => request<SettingsState>(path(`work-templates/${supply}`), "PUT", input),
     archiveRoute: (id: string) => request<SettingsState>(path(`routes/${id}/archive`), "POST", {}),
   };
 }

@@ -12,6 +12,8 @@
 .stageList { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
 .stageList > li { display: grid; gap: var(--wd-space-2); padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .stageRow { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 12rem) auto; gap: var(--wd-space-2); align-items: center; }
+.taskRow { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 8rem) auto; gap: var(--wd-space-2); align-items: center; }
+.taskDetails { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: center; padding-inline-start: var(--wd-space-8); }
 .stageNumber { inline-size: var(--wd-space-6); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; text-align: center; }
 .rowTools { display: inline-flex; }
 .checkList { display: grid; gap: var(--wd-space-1-5); margin: 0; padding: 0; padding-inline-start: var(--wd-space-8); list-style: none; }
@@ -22,4 +24,6 @@
   .rowTools { grid-column: 2; }
   .checkList { padding-inline-start: 0; }
   .checkList li { grid-template-columns: minmax(0, 1fr) auto; }
+  .taskRow { grid-template-columns: auto minmax(0, 1fr) minmax(0, 6rem); }
+  .taskDetails { grid-template-columns: minmax(0, 1fr); padding-inline-start: 0; }
 }

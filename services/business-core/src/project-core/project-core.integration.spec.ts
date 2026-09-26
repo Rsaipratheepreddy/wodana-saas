@@ -515,6 +515,50 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("plans a package from its standard work: tasks in order on working days, owned by the team's roles, in their stages, once", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership, startDate: "2026-10-01" });
+      let project = await core.get(actor, w.workspaceId, projectId);
+      project = await core.command(actor, w.workspaceId, projectId, { action: "set_member", version: project.project.version, role: "technical_designer", membershipId: w.designerMembership });
+      await core.command(actor, w.workspaceId, projectId, { action: "save_package", version: project.project.version, name: "Kitchen joinery", supply: "make" });
+      const pkg = (await core.scope(actor, w.workspaceId, projectId)).packages.find((item) => item.name === "Kitchen joinery")!;
+
+      // The firm shortens its factory template: drawings, then production with delivery alongside.
+      const settings = await core.settings(actor, w.workspaceId);
+      const make = settings.workTemplates.find((item) => item.supply === "make")!;
+      expect(make.tasks.map((item) => item.title)).toContain("Shop drawings");
+      await expect(core.saveWorkTemplate(actor, w.workspaceId, "make", { version: make.version, tasks: [{ title: "Shop drawings", days: 0 }] })).rejects.toThrow(/whole number/);
+      await expect(core.saveWorkTemplate(actor, w.workspaceId, "make", { version: make.version, tasks: [{ title: "Shop drawings", days: 2, role: "astronaut" }] })).rejects.toThrow(/team roles/);
+      await core.saveWorkTemplate(actor, w.workspaceId, "make", { version: make.version, tasks: [
+        { title: "Shop drawings", days: 3, role: "technical_designer", stage: "drawings" },
+        { title: "Production", days: 5, role: "quantity_surveyor", stage: "production" },
+        { title: "Book the delivery", days: 1, role: "project_manager", stage: "installation", withPrevious: true },
+      ] });
+      await expect(core.saveSettings(actor, w.workspaceId, { version: settings.settings.version, roles: settings.settings.roles.filter((role) => role.key !== "quantity_surveyor") })).rejects.toThrow(/task template still uses/);
+
+      const lead = w.work(w.manager);
+      const preview = await lead.packagePlan(actor, w.workspaceId, projectId, pkg.id);
+      expect(preview.startDate).toBe("2026-10-01");
+      expect(preview.tasks.map(({ title, startDate, dueDate, assigneeName, stageName }) => [title, startDate, dueDate, assigneeName, stageName])).toEqual([
+        ["Shop drawings", "2026-10-01", "2026-10-05", "Dana Designer", "Technical drawings"], // Thu, Fri, Mon
+        ["Production", "2026-10-06", "2026-10-12", null, "Production"],
+        ["Book the delivery", "2026-10-06", "2026-10-06", "Omar Manager", "Delivery and installation"],
+      ]);
+      const state = await lead.command(actor, w.workspaceId, projectId, { action: "plan_package", packageId: pkg.id, startDate: "2026-10-01" });
+      const tasks = state.items.filter((item) => item.packageId === pkg.id);
+      expect(tasks.map((item) => [item.number, item.title, item.startDate, item.dueDate])).toEqual([
+        [1, "Shop drawings", "2026-10-01", "2026-10-05"], [2, "Production", "2026-10-06", "2026-10-12"], [3, "Book the delivery", "2026-10-06", "2026-10-06"]]);
+      expect(tasks[1].blockedBy.map((item) => item.number)).toEqual([1]);
+      const detail = await lead.item(actor, w.workspaceId, projectId, tasks[2].id);
+      expect(detail.before).toEqual([expect.objectContaining({ number: 2, kind: "ss" })]);
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "plan_package", packageId: pkg.id })).rejects.toThrow(/already planned/);
+      const planned = (await w.client.query<{ subject: string; body: string }>(`SELECT subject, body FROM notifications WHERE workspace_id = $1 AND event_type = 'work.planned' AND recipient_id = $2`, [w.workspaceId, w.designer])).rows;
+      expect(planned).toEqual([{ subject: "Kitchen joinery is planned", body: "Omar Manager gave you 1 task on PRJ-0001 · Villa 12. First due Oct 5, 2026." }]);
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

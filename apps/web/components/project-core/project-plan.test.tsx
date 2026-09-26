@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { OpenWork as OpenWorkState, WorkBoard, WorkDetail, WorkItem } from "@/lib/project-core/types";
+import type { OpenWork as OpenWorkState, PackagePlan, SettingsState, WorkBoard, WorkDetail, WorkItem } from "@/lib/project-core/types";
 import { OpenWork } from "./open-work";
 import { ProjectPlan } from "./project-plan";
+import { ProjectSettingsPage } from "./project-settings";
 
 // The URL is the plan's state (?view=board, ?item=…): a tiny store stands in for the router.
 const nav = vi.hoisted(() => {
@@ -37,7 +38,7 @@ const sheet = item({ id: "i2", number: 2, title: "Elevation sheet", packageId: "
 const marble = item({ id: "i3", number: 3, title: "Marble thickness", type: "blocker", assigneeId: "m1", assigneeName: "Omar Haddad" });
 const handles = item({ id: "i4", number: 4, title: "Order handles", status: "done", completedAt: "2026-09-20T10:00:00Z" });
 const board = (items: WorkItem[] = [drawings, sheet, marble, handles], extra: Partial<WorkBoard> = {}): WorkBoard => ({
-  items, packages: [{ id: "k1", name: "Kitchen joinery" }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
+  items, packages: [{ id: "k1", name: "Kitchen joinery", supply: "make", planned: true }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
   people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, canManage: true, item: null,
   calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, ...extra,
 });
@@ -181,6 +182,24 @@ describe("project plan", () => {
     await waitFor(() => expect(posts(fetcher)).toEqual([{ action: "set_baseline" }]));
   });
 
+  it("plans a package from its standard tasks after showing the dates and who does each", async () => {
+    const preview: PackagePlan = { package: { id: "k2", name: "Wardrobes", supply: "make" }, startDate: "2099-10-01", planned: false, tasks: [
+      { title: "Shop drawings", days: 3, withPrevious: false, startDate: "2099-10-01", dueDate: "2099-10-05", role: "technical_designer", roleLabel: "Technical designer", assigneeId: "m2", assigneeName: "Dana Karim", stageId: "s1", stageName: "Technical drawings" },
+      { title: "Production", days: 10, withPrevious: false, startDate: "2099-10-06", dueDate: "2099-10-19", role: "factory_lead", roleLabel: "Factory lead", assigneeId: null, assigneeName: null, stageId: null, stageName: null },
+    ] };
+    const packages = [{ id: "k1", name: "Kitchen joinery", supply: "make" as const, planned: true }, { id: "k2", name: "Wardrobes", supply: "make" as const, planned: false }];
+    const fetcher = mount((url, body) => (url.includes("/packages/k2/plan") ? preview : board(body ? undefined : undefined, { packages })));
+    plan();
+    await userEvent.click(await screen.findByRole("button", { name: "Plan actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Plan a package" }));
+    const dialog = await screen.findByRole("dialog", { name: "Plan a package" });
+    expect(await within(dialog).findByText("Shop drawings")).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("No factory lead named");
+    expect(dialog).toHaveTextContent("Dana Karim");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([{ action: "plan_package", packageId: "k2", startDate: "2099-10-01" }]));
+  });
+
   it("shows an empty plan with the first action", async () => {
     mount(() => board([]));
     plan();
@@ -208,5 +227,37 @@ describe("open work", () => {
     await userEvent.click(screen.getByRole("radio", { name: "Everyone" }));
     expect(await screen.findByText("Paint samples")).toBeInTheDocument();
     expect(fetcher.mock.calls.at(-1)![0]).toContain("view=all");
+  });
+});
+
+describe("standard tasks", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("edits the standard tasks for a way of delivering a package", async () => {
+    const state: SettingsState = {
+      settings: { requireAgreement: true, requirePayment: true, requireApproval: false, requireVariationPayment: false, referencePrefix: "PRJ", version: 2,
+        roles: [{ key: "project_manager", label: "Project manager" }, { key: "factory_lead", label: "Factory lead" }] },
+      templates: [{ id: "r1", name: "Standard", isDefault: true, version: 1, stages: [{ key: "production", name: "Production", ownerRole: "factory_lead", checks: [] }] }],
+      workTemplates: [{ supply: "make", version: 3, tasks: [{ title: "Production", days: 15, role: "factory_lead", stage: "production", withPrevious: false }] },
+        { supply: "buy", version: 1, tasks: [] }],
+      canManage: true,
+    };
+    const fetcher = mount(() => state);
+    render(<DesignSystemProvider><ProjectSettingsPage workspaceId="w" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("radio", { name: "Standard tasks" }).catch(() => screen.findByRole("tab", { name: "Standard tasks" })));
+    await userEvent.click(await screen.findByRole("button", { name: /Made in our factory/ }));
+    const sheet = await screen.findByRole("dialog", { name: "Made in our factory" });
+    const days = within(sheet).getByRole("textbox", { name: "Working days" });
+    await userEvent.clear(days);
+    await userEvent.type(days, "12");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add task" }));
+    const titles = within(sheet).getAllByRole("textbox", { name: "Task" });
+    await userEvent.type(titles[1], "Quality check");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetcher.mock.calls.find(([url, init]) => String(url).includes("/work-templates/make") && init?.method === "PUT")).toBeTruthy());
+    const put = fetcher.mock.calls.find(([url, init]) => String(url).includes("/work-templates/make") && init?.method === "PUT")!;
+    expect(JSON.parse(String(put[1]!.body))).toEqual({ version: 3, tasks: [
+      { title: "Production", days: 12, role: "factory_lead", stage: "production", withPrevious: false },
+      { title: "Quality check", days: 1, role: null, stage: null, withPrevious: false }] });
   });
 });

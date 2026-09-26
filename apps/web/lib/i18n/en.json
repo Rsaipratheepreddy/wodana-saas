@@ -1939,5 +1939,22 @@
   "This pushes {count} items later": "This pushes {count} items later",
   "Only this one": "Only this one",
   "Move them too": "Move them too",
-  "Items that move": "Items that move"
+  "Items that move": "Items that move",
+  "Plan a package": "Plan a package",
+  "No standard tasks for this kind of package": "No standard tasks for this kind of package",
+  "Add them in Settings → Projects → Standard tasks.": "Add them in Settings → Projects → Standard tasks.",
+  "Tasks": "Tasks",
+  "No {role} named": "No {role} named",
+  "Standard tasks": "Standard tasks",
+  "No tasks": "No tasks",
+  "Working days": "Working days",
+  "task": "task",
+  "Who does it": "Who does it",
+  "No one yet": "No one yet",
+  "No stage": "No stage",
+  "Starts with the task before": "Starts with the task before",
+  "Add task": "Add task",
+  "Before a change is applied": "Before a change is applied",
+  "Change payment verified": "Change payment verified",
+  "A variation's payments due before its work starts are verified by finance.": "A variation's payments due before its work starts are verified by finance."
 }

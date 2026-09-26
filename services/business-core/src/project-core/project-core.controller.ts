@@ -18,6 +18,11 @@ export class ProjectCoreController {
   @Put("settings")
   saveSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.projects.saveSettings(actor, workspaceId, input ?? {}); }
 
+  @Put("work-templates/:supply")
+  saveWorkTemplate(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supply") supply: string, @Body() input: Record<string, unknown>) {
+    return this.projects.saveWorkTemplate(actor, workspaceId, supply, input ?? {});
+  }
+
   @Post("routes")
   saveRoute(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.projects.saveTemplate(actor, workspaceId, input ?? {}); }
 
@@ -62,6 +67,10 @@ export class ProjectCoreController {
 
   @Get("projects/:projectId/work/:itemId")
   workItem(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("itemId", ParseUUIDPipe) itemId: string) { return this.work.item(actor, workspaceId, projectId, itemId); }
+
+  @Get("projects/:projectId/work/packages/:packageId/plan")
+  packagePlan(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("packageId", ParseUUIDPipe) packageId: string,
+    @Query("startDate") startDate?: string) { return this.work.packagePlan(actor, workspaceId, projectId, packageId, startDate); }
 
   @Get("projects/:projectId/work/:itemId/ripple")
   workRipple(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("itemId", ParseUUIDPipe) itemId: string,

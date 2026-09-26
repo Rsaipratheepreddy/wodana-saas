@@ -34,6 +34,9 @@
 .cardMeta { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-xs); font-size: var(--wd-text-xs); }
 .cardMeta > * { white-space: nowrap; }
 
+.planList { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.planList > li { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 12rem); gap: var(--wd-space-3); align-items: baseline; padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); counter-increment: step; }
+.planList > li > :first-child::before { content: counter(step) ". "; color: var(--wd-color-text-tertiary); }
 .risk { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 .dialogText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 
@@ -80,5 +83,7 @@
 @media (max-width: 640px) {
   .pair { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: 6rem minmax(0, 1fr); }
+  .planList > li { grid-template-columns: minmax(0, 1fr) auto; }
+  .planList > li > :last-child { grid-column: 1 / -1; }
   .openWork { padding: var(--wd-space-4); }
 }

@@ -20,7 +20,8 @@ import {
 } from "./project-core.store";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
-import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq } from "./project-scope";
+import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq, SUPPLY, type Supply } from "./project-scope";
+import { ensureWorkTemplates, parseTemplateTasks } from "./work-templates";
 
 type Db = PoolClient;
 const SETTINGS = ["workspace.settings.manage"];
@@ -40,11 +41,30 @@ export class ProjectCoreService {
 
   // ---------- settings ----------
   settings(actor: RequestActor, workspaceId: string) {
-    return this.access.asMember(actor, workspaceId, async (client, user) => ({
-      settings: await ensureSettings(client, workspaceId),
-      templates: await ensureTemplates(client, workspaceId, user.userId),
-      canManage: await this.any(client, workspaceId, user.userId, SETTINGS),
-    }));
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const settings = await ensureSettings(client, workspaceId);
+      return {
+        settings,
+        templates: await ensureTemplates(client, workspaceId, user.userId),
+        workTemplates: await ensureWorkTemplates(client, workspaceId, settings.roles),
+        canManage: await this.any(client, workspaceId, user.userId, SETTINGS),
+      };
+    });
+  }
+
+  /** The standard work for one way of delivering a package. */
+  saveWorkTemplate(actor: RequestActor, workspaceId: string, supply: string, body: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, SETTINGS, async (client, user) => {
+      if (!SUPPLY.includes(supply as Supply)) throw new NotFoundException("Template not found.");
+      const settings = await ensureSettings(client, workspaceId);
+      const current = (await ensureWorkTemplates(client, workspaceId, settings.roles)).find((item) => item.supply === supply)!;
+      if (body.version !== current.version) throw new ConflictException("Someone else changed this template. Reload to see their changes.");
+      const tasks = parseTemplateTasks(body.tasks, settings.roles);
+      await client.query(`UPDATE work_templates SET tasks = $3::jsonb, version = version + 1, updated_by = $4, updated_at = now() WHERE workspace_id = $1 AND supply = $2`,
+        [workspaceId, supply, JSON.stringify(tasks), user.userId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.work_template_changed", entityType: "work_template", entityId: workspaceId, before: current, after: { supply, tasks } });
+      return { settings, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, settings.roles), canManage: true };
+    });
   }
 
   saveSettings(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
@@ -58,6 +78,9 @@ export class ProjectCoreService {
           WHERE stage.workspace_id = $1 AND template.status = 'active' AND (stage.owner_role = ANY($2::varchar[]) OR EXISTS (SELECT 1 FROM jsonb_array_elements(stage.checks) item WHERE item->>'role' = ANY($2::varchar[]))) LIMIT 1`,
           [workspaceId, removed])).rowCount;
         if (used) throw new ConflictException("A stage still uses a role you removed. Change the stage first.");
+        const inTemplate = (await client.query(`SELECT 1 FROM work_templates template, jsonb_array_elements(template.tasks) item WHERE template.workspace_id = $1 AND item->>'role' = ANY($2::varchar[]) LIMIT 1`,
+          [workspaceId, removed])).rowCount;
+        if (inTemplate) throw new ConflictException("A task template still uses a role you removed. Change the template first.");
       }
       const prefix = body.referencePrefix === undefined ? current.referencePrefix : String(body.referencePrefix).trim().toUpperCase();
       if (!/^[A-Z][A-Z0-9]{0,11}$/.test(prefix)) throw new BadRequestException("Use up to 12 letters or digits for the project number, starting with a letter.");
@@ -67,7 +90,8 @@ export class ProjectCoreService {
                 require_variation_payment = $8, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
         [workspaceId, flag("requireAgreement"), flag("requirePayment"), flag("requireApproval"), prefix, JSON.stringify(roles), user.userId, flag("requireVariationPayment")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.settings_changed", entityType: "workspace_project_settings", entityId: workspaceId, before: current, after: { ...body, roles } });
-      return { settings: await ensureSettings(client, workspaceId), templates: await readTemplates(client, workspaceId), canManage: true };
+      const saved = await ensureSettings(client, workspaceId);
+      return { settings: saved, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, saved.roles), canManage: true };
     });
   }
 
@@ -90,7 +114,7 @@ export class ProjectCoreService {
       const defaults = (await client.query(`SELECT 1 FROM project_templates WHERE workspace_id = $1 AND is_default`, [workspaceId])).rowCount;
       if (!defaults) await client.query(`UPDATE project_templates SET is_default = true WHERE workspace_id = $1 AND id = $2`, [workspaceId, templateId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: id ? "project.route_changed" : "project.route_created", entityType: "project_template", entityId: templateId, after: { name, stages } });
-      return { settings, templates: await readTemplates(client, workspaceId), canManage: true };
+      return { settings, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, settings.roles), canManage: true };
     });
   }
 
@@ -101,7 +125,8 @@ export class ProjectCoreService {
       if (template.isDefault) throw new ConflictException("Make another route the default first.");
       await client.query(`UPDATE project_templates SET status = 'archived', updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, templateId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "project.route_archived", entityType: "project_template", entityId: templateId });
-      return { settings: await ensureSettings(client, workspaceId), templates: await readTemplates(client, workspaceId), canManage: true };
+      const settings = await ensureSettings(client, workspaceId);
+      return { settings, templates: await readTemplates(client, workspaceId), workTemplates: await ensureWorkTemplates(client, workspaceId, settings.roles), canManage: true };
     });
   }
 

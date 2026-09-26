@@ -1,15 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { activeMembers, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
+import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
 import {
   ensureProjectAccess, OPEN, readActivity, readItem, readItems, readLinks, readOpenWork, readProjectLinks, WORK_PRIORITIES, WORK_STATUSES, WORK_TYPES, wouldCycle, workEvent,
   type WorkItem, type WorkStatus,
 } from "./project-work";
 import { readCalendar, ripple, type PlanMove } from "./work-calendar";
+import { ensureWorkTemplates, schedulePackage } from "./work-templates";
 
 type Db = PoolClient;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -50,6 +52,14 @@ export class ProjectWorkService {
     });
   }
 
+  /** A package's standard work laid out from a start date: what planning it would create. */
+  packagePlan(actor: RequestActor, workspaceId: string, projectId: string, packageId: string, startDate?: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const context = await this.context(client, workspaceId, projectId, user);
+      return this.layout(client, workspaceId, context, packageId, startDate ? date(startDate, "Start date") : null);
+    });
+  }
+
   /** Open work across projects: the person's own, or (for someone who sees every project) everyone's. */
   open(actor: RequestActor, workspaceId: string, view: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
@@ -77,6 +87,33 @@ export class ProjectWorkService {
         await client.query(`UPDATE delivery_projects SET plan_baseline_at = now(), plan_baseline_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, user.userId]);
         itemId = null;
         audit = { items: saved };
+      } else if (action === "plan_package") {
+        const packageId = uuid(body.packageId, "Package");
+        await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, projectId]);
+        const plan = await this.layout(client, workspaceId, context, packageId, body.startDate ? date(body.startDate, "Start date") : null);
+        if (plan.planned) throw new ConflictException(`${plan.package.name} is already planned.`);
+        if (!plan.tasks.length) throw new ConflictException("This kind of package has no standard tasks yet. Add them in Settings → Projects.");
+        let number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
+        const ids: string[] = [];
+        for (const [index, task] of plan.tasks.entries()) {
+          const id = randomUUID();
+          await client.query(
+            `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, stage_id, title, assignee_membership_id, start_date, due_date, created_by, template_key)
+             VALUES ($1, $2, $3, $4, 'task', $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [id, workspaceId, projectId, number++, packageId, task.stageId, task.title, task.assigneeId, task.startDate, task.dueDate, user.userId, `${plan.package.supply}:${index}`]);
+          await workEvent(client, workspaceId, id, "created", { template: plan.package.name }, user.userId);
+          if (ids.length) await client.query(`INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, $5, 0, $6)`,
+            [workspaceId, projectId, ids.at(-1), id, task.withPrevious ? "ss" : "fs", user.userId]);
+          ids.push(id);
+        }
+        // One notice per person for the whole package, pointing at their first task.
+        const byPerson = new Map<string, Array<{ id: string; dueDate: string }>>();
+        plan.tasks.forEach((task, index) => { if (task.assigneeId) byPerson.set(task.assigneeId, [...(byPerson.get(task.assigneeId) ?? []), { id: ids[index], dueDate: task.dueDate }]); });
+        for (const [membershipId, mine] of byPerson)
+          notices.push({ key: `${packageId}:${membershipId}`, notice: { code: "work.planned", item: { id: mine[0].id, number: 0, title: plan.package.name, dueDate: mine[0].dueDate },
+            note: String(mine.length), memberships: [membershipId] } });
+        itemId = null;
+        audit = { packageId, startDate: plan.startDate, tasks: ids.length };
       } else if (action === "create") {
         const id = uuid(body.id, "Item");
         const existing = (await client.query<{ projectId: string }>(`SELECT project_id AS "projectId" FROM work_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
@@ -264,7 +301,10 @@ export class ProjectWorkService {
   private async state(client: Db, workspaceId: string, context: Context, itemId: string | null) {
     const { project } = context;
     const items = await readItems(client, workspaceId, project.id);
-    const packages = await client.query<{ id: string; name: string }>(`SELECT id, name FROM project_packages WHERE workspace_id = $1 AND project_id = $2 ORDER BY position, name`, [workspaceId, project.id]);
+    const packages = await client.query<{ id: string; name: string; supply: string; planned: boolean }>(
+      `SELECT package.id, package.name, package.supply,
+              EXISTS (SELECT 1 FROM work_items item WHERE item.workspace_id = package.workspace_id AND item.package_id = package.id AND item.template_key IS NOT NULL) AS planned
+         FROM project_packages package WHERE package.workspace_id = $1 AND package.project_id = $2 ORDER BY package.position, package.name`, [workspaceId, project.id]);
     const stages = await client.query<{ id: string; name: string; status: string }>(`SELECT id, name, status FROM project_stages WHERE workspace_id = $1 AND project_id = $2 ORDER BY position`, [workspaceId, project.id]);
     const lines = await client.query<{ id: string; title: string; areaName: string | null; packageId: string | null }>(
       `SELECT line.id, line.title, room.name AS "areaName", line.package_id AS "packageId" FROM project_boq_lines line
@@ -306,6 +346,28 @@ export class ProjectWorkService {
     const lead = all || Boolean((await client.query(
       `SELECT 1 FROM project_assignments WHERE workspace_id = $1 AND project_id = $2 AND membership_id = $3 AND active AND is_manager`, [workspaceId, projectId, membershipId])).rowCount);
     return { project, membershipId, canEdit: EDITABLE.includes(project.status), manager: lead };
+  }
+
+  /** The package's template scheduled on working days, with who does each task and its stage. */
+  private async layout(client: Db, workspaceId: string, context: Context, packageId: string, requested: string | null) {
+    const pkg = (await client.query<{ id: string; name: string; supply: "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work" }>(
+      `SELECT id, name, supply FROM project_packages WHERE workspace_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`, [workspaceId, context.project.id, packageId])).rows[0];
+    if (!pkg) throw new NotFoundException("Package not found.");
+    const settings = await ensureSettings(client, workspaceId);
+    const template = (await ensureWorkTemplates(client, workspaceId, settings.roles)).find((item) => item.supply === pkg.supply)!;
+    const planned = Boolean((await client.query(`SELECT 1 FROM work_items WHERE workspace_id = $1 AND package_id = $2 AND template_key IS NOT NULL LIMIT 1`, [workspaceId, packageId])).rowCount);
+    const today = (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(default_timezone, 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
+    const startDate = requested ?? (context.project.startDate && context.project.startDate > today ? context.project.startDate : today);
+    const team = (await readTeam(client, workspaceId, [context.project.id])).get(context.project.id) ?? [];
+    const stages = (await client.query<{ id: string; key: string; name: string }>(`SELECT id, key, name FROM project_stages WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, context.project.id])).rows;
+    const tasks = schedulePackage(template.tasks, startDate, await readCalendar(client, workspaceId)).map((task) => {
+      const member = task.role ? team.find((item) => item.roles.includes(task.role!)) : undefined;
+      const stage = task.stage ? stages.find((item) => item.key === task.stage) : undefined;
+      return { title: task.title, days: task.days, withPrevious: task.withPrevious, startDate: task.startDate, dueDate: task.dueDate,
+        role: task.role, roleLabel: settings.roles.find((role) => role.key === task.role)?.label ?? null,
+        assigneeId: member?.membershipId ?? null, assigneeName: member?.name ?? null, stageId: stage?.id ?? null, stageName: stage?.name ?? null };
+    });
+    return { package: pkg, startDate, planned, tasks };
   }
 
   private async ripple(client: Db, workspaceId: string, projectId: string, changed: { id: string; startDate: string | null; dueDate: string | null }) {

@@ -9,9 +9,12 @@ export type RouteStage = { key: string; name: string; ownerRole: string | null; 
 export type ProjectRoute = { id: string; name: string; isDefault: boolean; version: number; stages: RouteStage[] };
 
 export type ProjectSettings = {
-  requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
+  requireAgreement: boolean; requirePayment: boolean; requireApproval: boolean; requireVariationPayment: boolean; referencePrefix: string; roles: ProjectRole[]; version: number;
 };
-export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; canManage: boolean };
+export type SettingsState = { settings: ProjectSettings; templates: ProjectRoute[]; workTemplates: WorkTemplate[]; canManage: boolean };
+/** One step of a package's standard work: working days, the role that does it, its stage, and whether it runs with the step before. */
+export type TemplateTask = { title: string; days: number; role: string | null; stage: string | null; withPrevious: boolean };
+export type WorkTemplate = { supply: Supply; tasks: TemplateTask[]; version: number };
 
 export type NextStep = { stage: string; kind: CheckKind | "finish"; text: string; role: string | null; owner: string | null };
 
@@ -130,7 +133,7 @@ export type WorkDetail = WorkItem & {
   subtaskIds: string[]; before: WorkLink[]; after: WorkLink[]; activity: WorkActivity[];
 };
 export type WorkBoard = {
-  items: WorkItem[]; packages: Array<{ id: string; name: string }>; stages: Array<{ id: string; name: string; status: string }>;
+  items: WorkItem[]; packages: Array<{ id: string; name: string; supply: Supply; planned: boolean }>; stages: Array<{ id: string; name: string; status: string }>;
   lines: Array<{ id: string; title: string; areaName: string | null; packageId: string | null }>;
   people: Member[]; me: string | null; canEdit: boolean; canManage: boolean; item: WorkDetail | null;
   /** The working week (0 = Sunday) and days off, for scheduling. */
@@ -141,3 +144,9 @@ export type WorkBoard = {
 export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };
 export type OpenWorkItem = WorkItem & { projectReference: string; projectName: string };
 export type OpenWork = { items: OpenWorkItem[]; me: string | null; view: "mine" | "all" };
+/** A package's standard work laid out from a start date, before it's created. */
+export type PackagePlan = {
+  package: { id: string; name: string; supply: Supply }; startDate: string; planned: boolean;
+  tasks: Array<{ title: string; days: number; withPrevious: boolean; startDate: string; dueDate: string; role: string | null; roleLabel: string | null;
+    assigneeId: string | null; assigneeName: string | null; stageId: string | null; stageName: string | null }>;
+};

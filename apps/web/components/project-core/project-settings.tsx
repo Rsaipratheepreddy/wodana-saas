@@ -7,15 +7,17 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
-import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck } from "@/lib/project-core/types";
+import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
+import { useSupplyLabels } from "./project-scope";
 import styles from "./project-settings.module.css";
 
-type Tab = "start" | "roles" | "routes";
+type Tab = "start" | "roles" | "routes" | "work";
 const LEAD = "project_manager";
 
 /**
- * Settings → Projects: what must be true before a project starts, the roles on a project team, and
- * the routes (stages, who owns each, what each needs). Nothing here is fixed in code.
+ * Settings → Projects: what must be true before a project starts, the roles on a project team, the
+ * routes (stages, who owns each, what each needs) and the standard tasks for each way a package is
+ * delivered. Nothing here is fixed in code.
  */
 export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
@@ -24,6 +26,8 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("start");
   const [editing, setEditing] = useState<ProjectRoute | "new" | null>(null);
+  const [editingWork, setEditingWork] = useState<WorkTemplate | null>(null);
+  const supplies = useSupplyLabels();
   const load = useCallback(async () => {
     try { setData(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
@@ -37,7 +41,7 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
   };
   return <SettingsPage title={t("Projects")}>
     <PillTabs ariaLabel={t("Project settings")} selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)}
-      items={[{ id: "start", label: t("Starting a project") }, { id: "roles", label: t("Team roles") }, { id: "routes", label: t("Routes") }]} />
+      items={[{ id: "start", label: t("Starting a project") }, { id: "roles", label: t("Team roles") }, { id: "routes", label: t("Routes") }, { id: "work", label: t("Standard tasks") }]} />
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {tab === "start" ? <StartRules key={data.settings.version} data={data} onSave={(input) => save(() => api.saveSettings(input))} /> : null}
     {tab === "roles" ? <Roles key={data.settings.version} data={data} onSave={(roles) => save(() => api.saveSettings({ version: data.settings.version, roles }))} /> : null}
@@ -49,6 +53,17 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
         </button>
       </li>)}</ul>
     </SettingsSection> : null}
+    {tab === "work" ? <SettingsSection id="work" title={t("Standard tasks")}>
+      <ul className={styles.routes}>{data.workTemplates.map((template) => <li key={template.supply}>
+        <button type="button" onClick={() => setEditingWork(template)}>
+          <span className={styles.routeName}>{supplies[template.supply]}</span>
+          <span className={styles.muted}>{template.tasks.length ? template.tasks.map((task) => task.title).join(" → ") : t("No tasks")}</span>
+        </button>
+      </li>)}</ul>
+    </SettingsSection> : null}
+    {editingWork ? <WorkTemplateEditor template={editingWork} title={supplies[editingWork.supply]} roles={data.settings.roles} stages={routeStages(data.templates)}
+      readOnly={!data.canManage} onClose={() => setEditingWork(null)}
+      onSave={async (tasks) => { if (await save(() => api.saveWorkTemplate(editingWork.supply, { version: editingWork.version, tasks }))) setEditingWork(null); }} /> : null}
     {editing ? <RouteEditor route={editing === "new" ? null : editing} roles={data.settings.roles} readOnly={!data.canManage} onClose={() => setEditing(null)}
       onSave={async (input) => { if (await save(() => api.saveRoute(input))) setEditing(null); }}
       onArchive={async (id) => { if (await save(() => api.archiveRoute(id))) setEditing(null); }} /> : null}
@@ -76,9 +91,14 @@ function StartRules({ data, onSave }: { data: SettingsState; onSave: (input: Rec
         <TextInput aria-label={t("Project numbers")} label={null} isReadOnly={readOnly} value={form.referencePrefix} onChange={(value) => setForm({ ...form, referencePrefix: value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12) })} />
       </SettingsRow>
     </SettingsSection>
+    <SettingsSection id="variations" title={t("Before a change is applied")}>
+      <SettingsRow label={t("Change payment verified")} hint={t("A variation's payments due before its work starts are verified by finance.")}>
+        <Switch aria-label={t("Change payment verified")} isDisabled={readOnly} isSelected={form.requireVariationPayment} onChange={(value) => setForm({ ...form, requireVariationPayment: value })} />
+      </SettingsRow>
+    </SettingsSection>
     {readOnly ? null : <div className={styles.actions}>
       <Button size="compact" variant="primary" isLoading={busy} isDisabled={!dirty || !/^[A-Z]/.test(form.referencePrefix)}
-        onPress={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, referencePrefix: form.referencePrefix }); setBusy(false); }}>{t("Save")}</Button>
+        onPress={async () => { setBusy(true); await onSave({ version: data.settings.version, requireAgreement: form.requireAgreement, requirePayment: form.requirePayment, requireApproval: form.requireApproval, requireVariationPayment: form.requireVariationPayment, referencePrefix: form.referencePrefix }); setBusy(false); }}>{t("Save")}</Button>
     </div>}
   </>;
 }
@@ -161,6 +181,57 @@ function RouteEditor({ route, roles, readOnly, onClose, onSave, onArchive }: {
         </li>)}
       </ol>
       {readOnly ? null : <Button size="compact" variant="quiet" onPress={() => setStages([...stages, { key: "", name: "", ownerRole: null, checks: [] }])}><Plus aria-hidden="true" size={14} />{t("Add stage")}</Button>}
+    </div>
+  </InspectorSheet>;
+}
+
+/** Every stage the firm's routes use, by key, so a task can land in the project's matching stage. */
+function routeStages(routes: ProjectRoute[]) {
+  const seen = new Map<string, string>();
+  for (const route of routes) for (const stage of route.stages) if (stage.key && !seen.has(stage.key)) seen.set(stage.key, stage.name);
+  return [...seen].map(([id, label]) => ({ id, label }));
+}
+
+/** The standard work for one way of delivering a package: each task's working days, role and stage. */
+function WorkTemplateEditor({ template, title, roles, stages, readOnly, onClose, onSave }: {
+  template: WorkTemplate; title: string; roles: ProjectRole[]; stages: Array<{ id: string; label: string }>; readOnly: boolean;
+  onClose: () => void; onSave: (tasks: TemplateTask[]) => Promise<void>;
+}) {
+  const t = useT();
+  const [tasks, setTasks] = useState<TemplateTask[]>(template.tasks);
+  const [busy, setBusy] = useState(false);
+  const update = (index: number, patch: Partial<TemplateTask>) => setTasks(tasks.map((task, at) => (at === index ? { ...task, ...patch } : task)));
+  const move = (index: number, step: number) => { const next = [...tasks]; const [item] = next.splice(index, 1); next.splice(index + step, 0, item); setTasks(next.map((task, at) => (at === 0 ? { ...task, withPrevious: false } : task))); };
+  const valid = tasks.every((task) => task.title.trim() && Number.isInteger(task.days) && task.days >= 1 && task.days <= 365);
+  return <InspectorSheet isOpen size="lg" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={readOnly ? null : <div className="wd-dialog-actions">
+      <Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => { setBusy(true); await onSave(tasks.map((task) => ({ ...task, title: task.title.trim() }))); setBusy(false); }}>{t("Save")}</Button>
+    </div>}>
+    <div className={styles.editor}>
+      <ol className={styles.stageList} aria-label={t("Tasks")}>
+        {tasks.map((task, index) => <li key={index}>
+          <div className={styles.taskRow}>
+            <span className={styles.stageNumber}>{index + 1}</span>
+            <TextInput aria-label={t("Task")} label={null} placeholder={t("Task")} isReadOnly={readOnly} value={task.title} onChange={(value) => update(index, { title: value })} />
+            <TextInput aria-label={t("Working days")} label={null} inputMode="numeric" isReadOnly={readOnly} value={String(task.days || "")} suffix={t("days")}
+              onChange={(value) => update(index, { days: Number(value.replace(/\D/g, "").slice(0, 3)) })} />
+            {readOnly ? null : <span className={styles.rowTools}>
+              <IconButton aria-label={t("Move up")} size="compact" variant="quiet" isDisabled={index === 0} onPress={() => move(index, -1)}><ArrowUp aria-hidden="true" size={14} /></IconButton>
+              <IconButton aria-label={t("Move down")} size="compact" variant="quiet" isDisabled={index === tasks.length - 1} onPress={() => move(index, 1)}><ArrowDown aria-hidden="true" size={14} /></IconButton>
+              <IconButton aria-label={t("Remove {name}", { name: task.title || t("task") })} size="compact" variant="quiet" onPress={() => setTasks(tasks.filter((_, at) => at !== index).map((item, at) => (at === 0 ? { ...item, withPrevious: false } : item)))}><Trash2 aria-hidden="true" size={14} /></IconButton>
+            </span>}
+          </div>
+          <div className={styles.taskDetails}>
+            <SelectField aria-label={t("Who does it")} label={null} accent="neutral" isDisabled={readOnly} placeholder={t("Who does it")} selectedKey={task.role ?? ""}
+              onSelectionChange={(key) => update(index, { role: key ? String(key) : null })} items={[{ id: "", label: t("No one yet") }, ...roles.map((role) => ({ id: role.key, label: role.label }))]} />
+            <SelectField aria-label={t("Stage")} label={null} accent="neutral" isDisabled={readOnly} placeholder={t("Stage")} selectedKey={task.stage ?? ""}
+              onSelectionChange={(key) => update(index, { stage: key ? String(key) : null })} items={[{ id: "", label: t("No stage") }, ...stages]} />
+            {index > 0 ? <Switch isDisabled={readOnly} isSelected={task.withPrevious} onChange={(value) => update(index, { withPrevious: value })}>{t("Starts with the task before")}</Switch> : <span />}
+          </div>
+        </li>)}
+      </ol>
+      {readOnly || tasks.length >= 30 ? null : <Button size="compact" variant="quiet" onPress={() => setTasks([...tasks, { title: "", days: 1, role: null, stage: null, withPrevious: false }])}><Plus aria-hidden="true" size={14} />{t("Add task")}</Button>}
     </div>
   </InspectorSheet>;
 }
