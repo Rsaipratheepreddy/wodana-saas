@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Check, ChevronLeft, ChevronRight, Images, Mail, MapPin, MessageCircle, Phone, Plus, Search, ShoppingBag, Star, X } from "lucide-react";
 import { PublicEnquiryFormView } from "@/components/crm/public-enquiry-form";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { GalleryContent, GalleryItem, GallerySectionKey } from "@/lib/gallery/types";
+import { DEFAULT_DISPLAY, type GalleryContent, type GalleryItem, type GallerySectionKey } from "@/lib/gallery/types";
 import { documentVariables, styleById } from "@/lib/quotation/document-styles";
 import styles from "./gallery.module.css";
 
@@ -25,6 +25,7 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
   // A little branding: the firm's colour is the accent unless the owner picked another.
   const vars = documentVariables(style, brand.primaryColor, settings.accent ?? brand.primaryColor) as CSSProperties;
   const storageKey = `wodana.gallery.${settings.slug}`;
+  const show = { ...DEFAULT_DISPLAY, ...(settings.display ?? {}) };
   const [list, setList] = useState<string[]>([]);
   const [listOpen, setListOpen] = useState(false);
   const [sent, setSent] = useState(false);
@@ -66,14 +67,14 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
   return <div className={styles.gallery} style={vars} data-preview={preview || undefined}>
     <header className={styles.bar}>
       <a className={styles.brand} href="#top">{brand.logo ? <img src={brand.logo} alt={brand.name} /> : <strong>{brand.name}</strong>}</a>
-      <label className={styles.search}>
+      {show.search ? <label className={styles.search}>
         <Search aria-hidden="true" size={16} />
         <input type="search" aria-label={t("Search the gallery")} placeholder={t("Search kitchens, wardrobes, finishes…")} value={query} onChange={(event) => setQuery(event.target.value)} />
         {query ? <button type="button" aria-label={t("Clear search")} onClick={() => setQuery("")}><X aria-hidden="true" size={14} /></button> : null}
-      </label>
-      <button type="button" className={styles.listButton} onClick={() => setListOpen(true)} aria-label={t("My list, {count} items", { count: list.length })}>
+      </label> : <span className={styles.barSpacer} />}
+      {show.list ? <button type="button" className={styles.listButton} onClick={() => setListOpen(true)} aria-label={t("My list, {count} items", { count: list.length })}>
         <ShoppingBag aria-hidden="true" size={16} /><span>{t("My list")}</span>{list.length ? <b>{list.length}</b> : null}
-      </button>
+      </button> : null}
     </header>
 
     <section id="top" className={styles.intro}>
@@ -82,20 +83,20 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
         <h1>{settings.headline || brand.name}</h1>
         {settings.intro ? <p>{settings.intro}</p> : null}
       </div>
-      <div className={styles.quick}>
+      {show.contact ? <div className={styles.quick}>
         {whatsapp ? <a href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer"><MessageCircle aria-hidden="true" size={15} />{t("WhatsApp")}</a> : null}
         {settings.contactPhone ? <a href={`tel:${settings.contactPhone.replace(/[^\d+]/g, "")}`}><Phone aria-hidden="true" size={15} />{t("Call")}</a> : null}
-      </div>
+      </div> : null}
     </section>
 
-    <nav className={styles.chips} role="radiogroup" aria-label={t("Show")}>
+    {show.chips ? <nav className={styles.chips} role="radiogroup" aria-label={t("Show")}>
       {chip({ kind: "all" }, t("All"), browsable.length)}
       {shownKinds.filter((kind) => kind !== "testimonial" && browsable.some((item) => item.kind === kind)).map((kind) => chip({ kind: "type", value: kind }, t(KIND_LABEL[kind] as never), browsable.filter((item) => item.kind === kind).length))}
       {labels.map((label) => chip({ kind: "label", value: label }, label))}
-    </nav>
+    </nav> : null}
 
     <main className={styles.wall} aria-label={t("Gallery")}>
-      {shown.map((item) => <Tile key={item.id} item={item} imageUrl={imageUrl} price={price(item)} inList={list.includes(item.id)} onOpen={() => setOpenId(item.id)} onToggle={() => toggle(item.id)} />)}
+      {shown.map((item) => <Tile key={item.id} item={item} imageUrl={imageUrl} price={price(item)} canAdd={show.list} inList={list.includes(item.id)} onOpen={() => setOpenId(item.id)} onToggle={() => toggle(item.id)} />)}
       {!shown.length ? <p className={styles.empty}>{query ? t("Nothing matches “{query}”.", { query }) : t("Nothing here yet.")}</p> : null}
     </main>
 
@@ -122,8 +123,9 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
       <small>{t("Powered by Wodana")}</small>
     </footer>
 
-    {opened ? <Detail item={opened} all={shown.length ? shown : browsable} imageUrl={imageUrl} price={price} inList={list.includes(opened.id)} listIds={list}
-      onToggle={toggle} onOpen={setOpenId} onClose={() => setOpenId(null)} /> : null}
+    {opened?.kind === "project" ? <ProjectView project={opened} imageUrl={imageUrl} descriptions={show.descriptions} onClose={() => setOpenId(null)} />
+      : opened ? <Detail item={opened} all={(shown.length ? shown : browsable).filter((item) => item.kind !== "project")} imageUrl={imageUrl} price={price} inList={list.includes(opened.id)} listIds={list}
+        canAdd={show.list} descriptions={show.descriptions} onToggle={toggle} onOpen={setOpenId} onClose={() => setOpenId(null)} /> : null}
 
     {listOpen ? <div className={styles.scrim} onClick={() => setListOpen(false)}>
       <aside className={styles.drawer} role="dialog" aria-modal="true" aria-label={t("My list")} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") setListOpen(false); }}>
@@ -144,7 +146,7 @@ export function GalleryView({ content, imageUrl, submitTo, preview = false, loca
 }
 
 /** One picture tile: tap to open; the round button adds it to the list without opening. */
-function Tile({ item, imageUrl, price, inList, onOpen, onToggle }: { item: GalleryItem; imageUrl: ImageUrl; price: string | null; inList: boolean; onOpen: () => void; onToggle: () => void }) {
+function Tile({ item, imageUrl, price, canAdd, inList, onOpen, onToggle }: { item: GalleryItem; imageUrl: ImageUrl; price: string | null; canAdd: boolean; inList: boolean; onOpen: () => void; onToggle: () => void }) {
   const t = useT();
   const cover = item.images[0];
   const project = item.kind === "project";
@@ -157,15 +159,15 @@ function Tile({ item, imageUrl, price, inList, onOpen, onToggle }: { item: Galle
       </span>
       {project && item.images.length > 1 ? <span className={styles.count}><Images aria-hidden="true" size={12} />{item.images.length}</span> : null}
     </button>
-    {project ? null : <button type="button" className={styles.quickAdd} aria-pressed={inList} aria-label={inList ? t("Remove {name} from your list", { name: item.title }) : t("Add {name} to your list", { name: item.title })} onClick={onToggle}>
+    {project || !canAdd ? null : <button type="button" className={styles.quickAdd} aria-pressed={inList} aria-label={inList ? t("Remove {name} from your list", { name: item.title }) : t("Add {name} to your list", { name: item.title })} onClick={onToggle}>
       {inList ? <Check aria-hidden="true" size={16} /> : <Plus aria-hidden="true" size={16} />}
     </button>}
   </article>;
 }
 
 /** The item up close: its pictures, words and price, and more like it to keep browsing. */
-function Detail({ item, all, imageUrl, price, inList, listIds, onToggle, onOpen, onClose }: {
-  item: GalleryItem; all: GalleryItem[]; imageUrl: ImageUrl; price: (item: GalleryItem) => string | null; inList: boolean; listIds: string[];
+function Detail({ item, all, imageUrl, price, inList, listIds, canAdd, descriptions, onToggle, onOpen, onClose }: {
+  item: GalleryItem; all: GalleryItem[]; imageUrl: ImageUrl; price: (item: GalleryItem) => string | null; inList: boolean; listIds: string[]; canAdd: boolean; descriptions: boolean;
   onToggle: (id: string) => void; onOpen: (id: string) => void; onClose: () => void;
 }) {
   const t = useT();
@@ -191,8 +193,8 @@ function Detail({ item, all, imageUrl, price, inList, listIds, onToggle, onOpen,
         {item.subtitle ? <small className={styles.eyebrow}>{item.kind === "project" ? <MapPin aria-hidden="true" size={13} /> : null}{item.subtitle}</small> : null}
         <h2>{item.title}</h2>
         {price(item) ? <p className={styles.detailPrice}>{price(item)}</p> : null}
-        {item.body ? <p>{item.body}</p> : null}
-        {item.kind === "project" ? null : <button type="button" className={styles.addLarge} aria-pressed={inList} onClick={() => onToggle(item.id)}>
+        {descriptions && item.body ? <p>{item.body}</p> : null}
+        {!canAdd ? null : <button type="button" className={styles.addLarge} aria-pressed={inList} onClick={() => onToggle(item.id)}>
           {inList ? <><Check aria-hidden="true" size={16} />{t("In your list")}</> : <><Plus aria-hidden="true" size={16} />{t("Add to list")}</>}
         </button>}
       </div>
@@ -204,5 +206,32 @@ function Detail({ item, all, imageUrl, price, inList, listIds, onToggle, onOpen,
         </button>)}</div>
       </section> : null}
     </div>
+  </div>;
+}
+
+/** A project opened: its own picture wall with its name (and words, if the firm shows them). Tap a picture to see it large. */
+function ProjectView({ project, imageUrl, descriptions, onClose }: { project: GalleryItem; imageUrl: ImageUrl; descriptions: boolean; onClose: () => void }) {
+  const t = useT();
+  const [large, setLarge] = useState<number | null>(null);
+  const images = project.images;
+  const step = (by: number) => setLarge((current) => current === null ? null : (current + by + images.length) % images.length);
+  return <div className={styles.project} role="dialog" aria-modal="true" aria-label={project.title} tabIndex={-1}
+    onKeyDown={(event) => { if (event.key === "Escape") { if (large !== null) setLarge(null); else onClose(); } if (large !== null && event.key === "ArrowRight") step(1); if (large !== null && event.key === "ArrowLeft") step(-1); }}>
+    <header className={styles.projectHead}>
+      <div>{project.subtitle ? <small className={styles.eyebrow}><MapPin aria-hidden="true" size={13} />{project.subtitle}</small> : null}<h2>{project.title}</h2></div>
+      <button type="button" className={styles.close} aria-label={t("Close")} onClick={onClose}><X aria-hidden="true" size={20} /></button>
+    </header>
+    {descriptions && project.body ? <p className={styles.projectBody}>{project.body}</p> : null}
+    <div className={styles.projectWall}>{images.map((image, index) => <button key={image.id} type="button" aria-label={t("Picture {number}", { number: index + 1 })} onClick={() => setLarge(index)}>
+      <img src={imageUrl(image.id, true, image.source)} alt="" loading="lazy" />
+    </button>)}</div>
+    {large !== null && images[large] ? <div className={styles.lightbox} onClick={() => setLarge(null)}>
+      <img src={imageUrl(images[large].id, false, images[large].source)} alt={`${project.title} · ${large + 1}`} onClick={(event) => event.stopPropagation()} />
+      {images.length > 1 ? <>
+        <button type="button" className={styles.prev} aria-label={t("Previous")} onClick={(event) => { event.stopPropagation(); step(-1); }}><ChevronLeft aria-hidden="true" data-directional="true" size={20} /></button>
+        <button type="button" className={styles.next} aria-label={t("Next")} onClick={(event) => { event.stopPropagation(); step(1); }}><ChevronRight aria-hidden="true" data-directional="true" size={20} /></button>
+      </> : null}
+      <button type="button" className={styles.detailClose} aria-label={t("Close")} onClick={() => setLarge(null)}><X aria-hidden="true" size={18} /></button>
+    </div> : null}
   </div>;
 }

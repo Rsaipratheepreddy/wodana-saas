@@ -16,11 +16,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const STYLES = ["atelier", "minimal", "noir", "terrazzo", "nordic", "botanical", "coastal", "monochrome", "heritage", "linen", "studio", "marble"];
 const KINDS = ["service", "product", "project", "testimonial"] as const;
 const SECTION_KEYS = ["services", "products", "projects", "testimonials", "about", "contact"] as const;
+const DISPLAY_KEYS = ["descriptions", "list", "search", "chips", "contact"] as const;
 
 type Settings = {
   slug: string; status: "draft" | "published"; style: string; accent: string | null; headline: string; intro: string; about: string; heroImageId: string | null;
   contactPhone: string; contactEmail: string; contactWhatsapp: string; contactAddress: string; leadFormId: string | null;
   enquirySource: string | null; enquiryChannel: string | null; showPrices: boolean; sections: Array<{ key: string; visible: boolean }>; version: number; publishedAt: string | null;
+  display: Record<(typeof DISPLAY_KEYS)[number], boolean>;
 };
 type Item = {
   id: string; kind: (typeof KINDS)[number]; title: string; subtitle: string; body: string; priceFrom: string | null; priceUnit: string; catalogItemId: string | null;
@@ -82,6 +84,15 @@ export class GalleryService {
         next.accent = input.accent as string | null;
       }
       if (input.showPrices !== undefined) { if (typeof input.showPrices !== "boolean") throw new BadRequestException("Expected yes or no."); next.showPrices = input.showPrices; }
+      if (input.display !== undefined) {
+        if (!input.display || typeof input.display !== "object") throw new BadRequestException("Choose what visitors see.");
+        const display = { ...next.display };
+        for (const key of DISPLAY_KEYS) {
+          const value = (input.display as Record<string, unknown>)[key];
+          if (value !== undefined) { if (typeof value !== "boolean") throw new BadRequestException("Expected yes or no."); display[key] = value; }
+        }
+        next.display = display;
+      }
       if (input.leadFormId !== undefined) {
         next.leadFormId = input.leadFormId === null ? null : String(input.leadFormId);
         if (next.leadFormId && !(await client.query(`SELECT 1 FROM crm_lead_forms WHERE workspace_id = $1 AND id = $2`, [workspaceId, next.leadFormId])).rowCount) throw new BadRequestException("Choose one of your enquiry forms.");
@@ -109,10 +120,11 @@ export class GalleryService {
       await client.query(
         `UPDATE workspace_galleries SET slug = $2, status = $3, style = $4, accent = $5, headline = $6, intro = $7, about = $8, hero_image_id = $9, contact_phone = $10,
                 contact_email = $11, contact_whatsapp = $12, contact_address = $13, lead_form_id = $14, enquiry_source = $15, enquiry_channel = $16, show_prices = $17,
-                sections = $18::jsonb, version = version + 1, updated_by = $19, updated_at = now(), published_at = CASE WHEN $20 THEN now() ELSE published_at END
+                sections = $18::jsonb, version = version + 1, updated_by = $19, updated_at = now(), published_at = CASE WHEN $20 THEN now() ELSE published_at END,
+                display = $21::jsonb
           WHERE workspace_id = $1`,
         [workspaceId, next.slug, next.status, next.style, next.accent, next.headline, next.intro, next.about, next.heroImageId, next.contactPhone, next.contactEmail,
-          next.contactWhatsapp, next.contactAddress, next.leadFormId, next.enquirySource, next.enquiryChannel, next.showPrices, JSON.stringify(next.sections), user.userId, published]);
+          next.contactWhatsapp, next.contactAddress, next.leadFormId, next.enquirySource, next.enquiryChannel, next.showPrices, JSON.stringify(next.sections), user.userId, published, JSON.stringify(next.display)]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "gallery.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       if (published) await this.tellPublished(client, workspaceId, user.userId);
       return ensureGallery(client, workspaceId);
@@ -255,7 +267,7 @@ export class GalleryService {
     const workspaceId = await this.published(slug);
     const content = await this.database.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const settings = await ensureGallery(client, workspaceId);
-      const form = settings.leadFormId ? (await client.query<{ token: string }>(`SELECT token FROM crm_lead_forms WHERE workspace_id = $1 AND id = $2 AND status = 'published'`, [workspaceId, settings.leadFormId])).rows[0] : undefined;
+      const form = settings.leadFormId && settings.display.list !== false ? (await client.query<{ token: string }>(`SELECT token FROM crm_lead_forms WHERE workspace_id = $1 AND id = $2 AND status = 'published'`, [workspaceId, settings.leadFormId])).rows[0] : undefined;
       const { leadFormId: _form, enquirySource: _source, enquiryChannel: _channel, version: _version, status: _status, ...visible } = settings;
       return {
         settings: visible, items: await readItems(client, workspaceId, true), brand: await effectivePortalBrand(client, workspaceId, null),
@@ -282,9 +294,9 @@ export class GalleryService {
       const titles = Array.isArray(input.selection) ? (await client.query<{ title: string }>(
         `SELECT title FROM workspace_gallery_items WHERE workspace_id = $1 AND visible AND id = ANY($2::uuid[]) ORDER BY kind, position`,
         [workspaceId, input.selection.filter((id): id is string => typeof id === "string" && UUID.test(id)).slice(0, 50)])).rows.map((row) => row.title) : [];
-      return { token, titles, source: settings.enquirySource, channel: settings.enquiryChannel };
+      return { token, titles, source: settings.enquirySource, channel: settings.enquiryChannel, list: settings.display.list !== false };
     });
-    if (!found.token) throw new NotFoundException("This gallery isn't taking enquiries right now.");
+    if (!found.token || !found.list) throw new NotFoundException("This gallery isn't taking enquiries right now.");
     if (typeof input.requestId !== "string" || !UUID.test(input.requestId) || typeof input.revision !== "string" || !input.answers || typeof input.answers !== "object") throw new BadRequestException("Fill in the form and try again.");
     return this.forms.submit(found.token, {
       requestId: input.requestId, revision: input.revision, answers: input.answers as Record<string, unknown>,
@@ -326,7 +338,7 @@ async function ensureGallery(client: PoolClient, workspaceId: string): Promise<S
   const read = () => client.query<Settings>(
     `SELECT slug, status, style, accent, headline, intro, about, hero_image_id AS "heroImageId", contact_phone AS "contactPhone", contact_email AS "contactEmail",
             contact_whatsapp AS "contactWhatsapp", contact_address AS "contactAddress", lead_form_id AS "leadFormId", enquiry_source AS "enquirySource",
-            enquiry_channel AS "enquiryChannel", show_prices AS "showPrices", sections, version, published_at AS "publishedAt"
+            enquiry_channel AS "enquiryChannel", show_prices AS "showPrices", sections, display, version, published_at AS "publishedAt"
        FROM workspace_galleries WHERE workspace_id = $1`, [workspaceId]);
   const found = (await read()).rows[0];
   if (found) return found;

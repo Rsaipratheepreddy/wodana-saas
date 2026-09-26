@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Copy, ExternalLink, ImagePlus, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, ControlledModalDialog, EmptyState, IconButton, InlineNotice, PageHeader, PillTabs, SearchInput, SelectField, Skeleton, Switch, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { GalleryEditorData, GalleryItem, GalleryKind, GallerySectionKey, GallerySettings } from "@/lib/gallery/types";
+import { DEFAULT_DISPLAY, type GalleryEditorData, type GalleryItem, type GalleryKind, type GallerySectionKey, type GallerySettings } from "@/lib/gallery/types";
 import { catalogImageUrl } from "@/lib/quotation/client";
 import { DOCUMENT_STYLES, documentVariables } from "@/lib/quotation/document-styles";
 import { GalleryView } from "./gallery-view";
@@ -108,7 +108,10 @@ export function GalleryEditor({ workspaceId, origin }: { workspaceId: string; or
             description={t("Visitors send their list through this form; it arrives in Sales like any enquiry.")}
             onSelectionChange={(key) => change({ leadFormId: key ? String(key) : null }, true)}
             items={data.forms.map((form) => ({ id: form.id, label: form.status === "published" ? form.title : t("{name} (not published)", { name: form.title }) }))} />
-          <Switch isDisabled={readOnly} isSelected={settings.showPrices} onChange={(on) => change({ showPrices: on })}>{t("Show starting prices")}</Switch>
+          <h3 className={styles.subhead}>{t("What visitors see")}</h3>
+          <Switch isDisabled={readOnly} isSelected={settings.showPrices} onChange={(on) => change({ showPrices: on })}>{t("Starting prices")}</Switch>
+          {([["descriptions", "Descriptions"], ["list", "My list and enquiries"], ["search", "Search"], ["chips", "Filter chips"], ["contact", "Contact buttons at the top"]] as const).map(([key, label]) =>
+            <Switch key={key} isDisabled={readOnly} isSelected={(settings.display ?? DEFAULT_DISPLAY)[key]} onChange={(on) => change({ display: { ...(settings.display ?? DEFAULT_DISPLAY), [key]: on } }, true)}>{t(label as never)}</Switch>)}
         </section> : null}
       </aside>
       <div className={styles.preview} aria-label={t("Preview")}>

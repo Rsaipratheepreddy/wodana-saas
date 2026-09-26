@@ -62,6 +62,13 @@ integration("company gallery", () => {
       expect(sent.input.selection).toEqual(["Full home interiors"]);
       expect(sent.input.link.placement).toBe("gallery");
 
+      // Switching off "My list" closes enquiries from the gallery.
+      settings = await service.saveSettings(actor, ws, { version: settings.version, display: { list: false, search: false } });
+      expect(settings.display).toMatchObject({ list: false, search: false, descriptions: true });
+      expect((await service.publicGallery("palm-studio-gallery")).form).toBeNull();
+      await expect(service.publicEnquiry("palm-studio-gallery", { requestId: randomUUID(), revision: "r", answers: {}, serviceConsent: true })).rejects.toThrow(/isn't taking enquiries/);
+      await expect(service.saveSettings(actor, ws, { version: settings.version, display: { list: "yes" } })).rejects.toThrow(/yes or no/);
+
       await service.saveSettings(actor, ws, { version: settings.version, status: "draft" });
       await expect(service.publicGallery("palm-studio-gallery")).rejects.toThrow(/not found/);
     } finally {

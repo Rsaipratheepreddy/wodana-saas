@@ -7,7 +7,11 @@ export type GallerySettings = {
   slug: string; status: "draft" | "published"; style: DocumentStyleId; accent: string | null; headline: string; intro: string; about: string; heroImageId: string | null;
   contactPhone: string; contactEmail: string; contactWhatsapp: string; contactAddress: string; leadFormId: string | null;
   enquirySource: string | null; enquiryChannel: string | null; showPrices: boolean; sections: Array<{ key: GallerySectionKey; visible: boolean }>; version: number; publishedAt: string | null;
+  /** What visitors see; anything off is hidden. */
+  display: GalleryDisplay;
 };
+export type GalleryDisplay = { descriptions: boolean; list: boolean; search: boolean; chips: boolean; contact: boolean };
+export const DEFAULT_DISPLAY: GalleryDisplay = { descriptions: true, list: true, search: true, chips: true, contact: true };
 export type GalleryItem = {
   id: string; kind: GalleryKind; title: string; subtitle: string; body: string; priceFrom: string | null; priceUnit: string; catalogItemId: string | null;
   rating: number | null; position: number; visible: boolean; version: number; images: Array<{ id: string; source: "gallery" | "catalog" }>;

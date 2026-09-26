@@ -8,9 +8,10 @@ import { GalleryView } from "./gallery-view";
 const item = (fields: Partial<GalleryItem>): GalleryItem => ({ id: crypto.randomUUID(), kind: "service", title: "", subtitle: "", body: "", priceFrom: null, priceUnit: "", catalogItemId: null, rating: null, position: 0, visible: true, version: 1, images: [], ...fields });
 const kitchens = item({ id: "11111111-1111-4111-8111-111111111111", title: "Kitchens", priceFrom: "38000", priceUnit: "kitchen", images: [{ id: "i1", source: "gallery" }] });
 const content: GalleryContent = {
-  settings: { slug: "palm-studio", style: "atelier", accent: null, headline: "Homes made calm", intro: "Design and build.", about: "", heroImageId: null, contactPhone: "+971 4 000 0000", contactEmail: "", contactWhatsapp: "+971 50 000 0000", contactAddress: "", showPrices: true,
+  settings: { slug: "palm-studio", style: "atelier", accent: null, headline: "Homes made calm", intro: "Design and build.", about: "", heroImageId: null, contactPhone: "+971 4 000 0000", contactEmail: "", contactWhatsapp: "+971 50 000 0000", contactAddress: "", showPrices: true, display: { descriptions: true, list: true, search: true, chips: true, contact: true },
     sections: [{ key: "services", visible: true }, { key: "products", visible: true }, { key: "projects", visible: true }, { key: "testimonials", visible: true }, { key: "about", visible: true }, { key: "contact", visible: true }], publishedAt: null },
-  items: [kitchens, item({ kind: "testimonial", title: "Maya R.", body: "Calm and on time.", rating: 5 }), item({ kind: "product", title: "Hidden", visible: false })],
+  items: [kitchens, item({ kind: "testimonial", title: "Maya R.", body: "Calm and on time.", rating: 5 }), item({ kind: "product", title: "Hidden", visible: false }),
+    item({ kind: "project", title: "Jumeirah villa", subtitle: "Jumeirah", body: "Warm oak.", priceFrom: "1", images: [{ id: "p1", source: "gallery" }, { id: "p2", source: "gallery" }] })],
   brand: { name: "Palm Studio", logo: "", primaryColor: "#1f6f5c", accentColor: "#1f6f5c" }, currency: "AED",
   form: { title: "Enquiry", description: "", revision: "r1", questions: [{ id: "q1", type: "text", title: "Your name", required: true, field: "displayName", options: [] }], defaultCountryCode: "AE" } as never,
 };
@@ -50,5 +51,27 @@ describe("company gallery", () => {
     expect(body).toMatchObject({ selection: [kitchens.id], revision: "r1", serviceConsent: true });
     expect(await within(drawer).findByText("Thank you")).toBeInTheDocument();
     expect(window.localStorage.getItem("wodana.gallery.palm-studio")).toBe("[]");
+  });
+
+  it("opens a project as its own picture wall, with no price or list button", async () => {
+    render(<DesignSystemProvider><GalleryView content={content} imageUrl={(id) => `/img/${id}`} locale="en" /></DesignSystemProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Open Jumeirah villa" }));
+    const project = screen.getByRole("dialog", { name: "Jumeirah villa" });
+    expect(within(project).getAllByRole("button", { name: /Picture/ })).toHaveLength(2);
+    expect(project).not.toHaveTextContent("AED");
+    expect(within(project).queryByRole("button", { name: /Add to list/ })).not.toBeInTheDocument();
+    await userEvent.click(within(project).getByRole("button", { name: "Picture 2" }));
+    expect(within(project).getByRole("img", { name: "Jumeirah villa · 2" })).toBeInTheDocument();
+  });
+
+  it("hides whatever the firm switches off", () => {
+    const quiet = { ...content, settings: { ...content.settings, showPrices: false, display: { descriptions: false, list: false, search: false, chips: false, contact: false } } };
+    render(<DesignSystemProvider><GalleryView content={quiet} imageUrl={(id) => `/img/${id}`} locale="en" /></DesignSystemProvider>);
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /My list/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /to your list/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/From AED/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /WhatsApp/ })).toHaveLength(1); // footer contact stays
   });
 });

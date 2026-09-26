@@ -19,6 +19,8 @@ CREATE TABLE workspace_galleries (
   enquiry_source varchar(80),
   enquiry_channel varchar(80),
   show_prices boolean NOT NULL DEFAULT false,
+  -- What visitors see (configuration): descriptions, "My list" and enquiries, search, filter chips, contact buttons.
+  display jsonb NOT NULL DEFAULT '{"descriptions":true,"list":true,"search":true,"chips":true,"contact":true}'::jsonb,
   -- Section order and visibility (configuration): services, products, projects, testimonials, about, contact.
   sections jsonb NOT NULL DEFAULT '[{"key":"services","visible":true},{"key":"products","visible":true},{"key":"projects","visible":true},{"key":"testimonials","visible":true},{"key":"about","visible":true},{"key":"contact","visible":true}]'::jsonb,
   version integer NOT NULL DEFAULT 1,
