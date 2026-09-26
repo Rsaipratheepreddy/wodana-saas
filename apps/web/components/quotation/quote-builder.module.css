@@ -215,3 +215,7 @@
 .mentionList { position: absolute; z-index: 6; inset-inline: 0; inset-block-end: calc(100% + var(--wd-space-1)); display: flex; flex-direction: column; margin: 0; padding: var(--wd-space-1); list-style: none; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-md); }
 .mentionList li { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-1-5); border-radius: var(--wd-radius-xs); font-size: var(--wd-text-sm); cursor: pointer; }
 .mentionList li[aria-selected="true"] { background: var(--wd-color-surface-hover); }
+
+.templateLines { display: flex; flex-direction: column; gap: var(--wd-space-1); margin: 0; padding: var(--wd-space-2) var(--wd-space-3); list-style: none; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); font-size: var(--wd-text-sm); }
+.templateLines li { display: flex; justify-content: space-between; gap: var(--wd-space-3); }
+.templateLines small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }

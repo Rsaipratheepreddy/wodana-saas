@@ -25,6 +25,12 @@ export class QuotationController {
   @Patch("work-packages/:id")
   updateWorkPackage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() input: { name?: string; archived?: boolean }) { return this.builder.updateWorkPackage(actor, workspaceId, id, input ?? {}); }
 
+  @Get("templates")
+  templates(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.builder.templates(actor, workspaceId); }
+
+  @Post("cases/:caseId/quotes/:quoteId/templates")
+  saveTemplate(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: Record<string, unknown>) { return this.builder.saveTemplate(actor, workspaceId, caseId, quoteId, input ?? {}); }
+
   @Get("cases/:caseId/quotes/:quoteId")
   get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.builder.builder(actor, workspaceId, caseId, quoteId); }
 

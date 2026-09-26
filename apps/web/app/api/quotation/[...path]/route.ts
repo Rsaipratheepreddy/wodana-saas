@@ -7,6 +7,7 @@ const QUOTE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "work-packages") return method === "POST";
+  if (path.length === 1 && path[0] === "templates") return method === "GET";
   if (path.length === 2 && path[0] === "work-packages" && UUID.test(path[1])) return method === "PATCH";
   if (path[0] !== "cases" || !UUID.test(path[1] ?? "") || path[2] !== "quotes" || !QUOTE_ID.test(path[3] ?? "")) return false;
   if (path.length === 4) return method === "GET";
@@ -16,6 +17,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 6 && path[4] === "ai" && ["draft", "edit"].includes(path[5])) return method === "POST";
   if (path.length === 5 && path[4] === "comments") return ["GET", "POST"].includes(method);
   if (path.length === 5 && path[4] === "pulse") return method === "POST";
+  if (path.length === 5 && path[4] === "templates") return method === "POST";
   if (path.length === 7 && path[4] === "comments" && UUID.test(path[5]) && ["replies", "status"].includes(path[6])) return method === "POST";
   return false;
 }

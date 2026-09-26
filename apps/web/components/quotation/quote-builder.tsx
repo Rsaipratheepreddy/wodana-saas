@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Percent, Plus } from "lucide-react";
+import { ArrowLeft, Bookmark, Percent, Plus } from "lucide-react";
 import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quoteApi, QuotationRequestError } from "@/lib/quotation/client";
@@ -16,6 +16,7 @@ import { QuoteRow, type RowColumn } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, RevisionChanges } from "./quote-flow";
 import { DocumentStudio } from "./document-studio";
+import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteAssistant } from "./quote-assistant";
 import { CommentButton, CommentPanel, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import { useRouter } from "next/navigation";
@@ -43,6 +44,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const [dragged, setDragged] = useState<string | null>(null);
   const [addingArea, setAddingArea] = useState(false);
   const [tab, setTab] = useState<"items" | "document">(initialTab);
+  const [inserting, setInserting] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState<{ scope: "area" | "trade"; target: string; name: string } | null>(null);
   const [threads, setThreads] = useState<QuoteThread[]>([]);
   const [members, setMembers] = useState<Array<{ id: string; name: string }>>([]);
   const [commentAt, setCommentAt] = useState<{ anchor: QuoteAnchor; title: string } | null>(null);
@@ -178,6 +181,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
           {section ? money(section.net, currency, decimals, locale) : null}
           {depth === 0 && view !== "area_trade" ? <CommentButton threads={threadsAt(threads, { kind: view === "trade" ? "trade" : "area", key: group.key })} label={t("Comments on {name}", { name: group.name })}
             onOpen={() => openComments({ kind: view === "trade" ? "trade" : "area", key: group.key }, group.name)} /> : null}
+          {state.canEdit && depth === 0 && view !== "area_trade" && group.lines.length ? <IconButton aria-label={t("Save {name} as a template", { name: group.name })} size="compact" variant="quiet"
+            onPress={() => setSavingTemplate({ scope: view === "trade" ? "trade" : "area", target: group.key, name: group.name })}><Bookmark aria-hidden="true" size={13} /></IconButton> : null}
           {state.canEdit && depth === 0 && view !== "area_trade" && group.lines.length ? <IconButton aria-label={t("Discount on {name}", { name: group.name })} size="compact" variant="quiet"
             onPress={() => setDiscountFor({ scope: view === "trade" ? "trade" : "area", target: group.key, name: group.name })}><Percent aria-hidden="true" size={13} /></IconButton> : null}
         </span>
@@ -234,6 +239,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <span className={styles.spacer} />
       {state.canEdit && view !== "trade" ? <Button size="compact" variant="quiet" onPress={() => setAddingArea(true)}><Plus aria-hidden="true" size={14} />{t("Area")}</Button> : null}
       {state.canEdit && view !== "area" ? <Button size="compact" variant="quiet" onPress={() => void newTrade()}><Plus aria-hidden="true" size={14} />{t("Work package")}</Button> : null}
+      {state.canEdit ? <Button size="compact" variant="quiet" onPress={() => setInserting(true)}><Bookmark aria-hidden="true" size={14} />{t("Insert template")}</Button> : null}
     </div>
 
     {state.canEdit ? <QuoteAssistant state={state} api={api} starting={!state.lines.length} onApply={(ops) => send(ops)} onError={setError} /> : null}
@@ -272,6 +278,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     </div>
 
     </>}
+    {inserting ? <InsertTemplate state={state} api={api} onInsert={(ops) => send(ops)} onClose={() => setInserting(false)} /> : null}
+    {savingTemplate ? <SaveTemplate api={api} scope={savingTemplate.scope} target={savingTemplate.target} name={savingTemplate.name} onClose={() => setSavingTemplate(null)} onError={setError} /> : null}
     {addingArea ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
       onClose={() => setAddingArea(false)} onPick={() => { setAddingArea(false); void load(); }} /> : null}
     {openLine ? <LineDetails key={`${openLine.id}-${openLine.version}`} line={openLine} state={state} onClose={() => setOpen(null)}

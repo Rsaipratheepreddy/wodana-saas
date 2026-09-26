@@ -165,8 +165,9 @@ describe("quotation builder", () => {
     const panel = screen.getByRole("region", { name: "Comments on Base cabinets" });
     await userEvent.type(within(panel).getByRole("textbox"), "@Da");
     await userEvent.click(within(panel).getByRole("option", { name: /Dana/ }));
-    await userEvent.type(within(panel).getByRole("textbox"), "check hinges{Enter}");
-    await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ anchorKind: "line", anchorKey: "a", body: "@Dana check hinges", mentions: ["u2"] })));
+    await new Promise((resolve) => requestAnimationFrame(resolve)); // the cursor moves after the name
+    await userEvent.type(within(panel).getByRole("textbox"), "check hinges{Enter}", { skipClick: true });
+    await waitFor(() => expect(posted(fetcher).find((body) => body.anchorKind)).toMatchObject({ anchorKind: "line", anchorKey: "a", body: "@Dana check hinges", mentions: ["u2"] }));
     expect(await within(panel).findByText("@Dana check hinges")).toBeInTheDocument();
   });
 });

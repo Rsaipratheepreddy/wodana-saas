@@ -99,3 +99,10 @@ export type QuoteDocument = {
   title: string; subtitle: string; intro: string; terms: string; exclusions: string;
   itemsView: QuoteView; itemsDetail: "lines" | "totals"; showRates: boolean; showDescriptions: boolean; coverAssetId: string | null;
 };
+
+export type TemplateLine = {
+  title: string; description: string; unit: string; quantity: string; rate: string; unitCost: string | null; kind: string; formula: string | null;
+  length: string | null; width: string | null; height: string | null; count: string | null; markupPercent: string | null; pricingMode: "rate" | "build_up";
+  catalogItemId: string | null; workPackageId: string | null; optional: boolean; components: Array<Partial<BuildUpRow>>;
+};
+export type QuoteTemplate = { id: string; name: string; lines: TemplateLine[] };

@@ -1,3 +1,4 @@
+import { randomUUID as randomUUIDv4 } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
@@ -273,6 +274,48 @@ export class QuotationBuilderService {
       await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.document_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, style: next.style } });
       return this.state(client, workspaceId, caseId, quoteId, user.userId);
+    });
+  }
+
+  /** The firm's quote templates, each line ready to insert (builder templates keep formulas and build-ups; older ones keep name, quantity and rate). */
+  templates(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => {
+      const canCosts = await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.view") || await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.manage");
+      const rows = (await client.query<{ id: string; name: string; content: { builder?: boolean; lines?: Array<Record<string, unknown>> } }>(
+        `SELECT id, name, content FROM commercial_quotation_templates WHERE workspace_id = $1 AND status = 'active' ORDER BY name`, [workspaceId])).rows;
+      return { templates: rows.map((row) => ({ id: row.id, name: row.name, lines: (row.content.lines ?? []).slice(0, 300).map((line) => templateLine(line, Boolean(row.content.builder), canCosts)) })) };
+    });
+  }
+
+  /** Saves the lines of one area (or trade, or the whole quote) as a reusable template. */
+  saveTemplate(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      await readQuote(client, workspaceId, caseId, quoteId);
+      const id = uuid(input.id, "Template");
+      const name = text(input.name, "Template name", 160);
+      const scope = oneOf(input.scope, ["area", "trade", "quote"] as const, "what to save");
+      const target = String(input.target ?? "");
+      const lines = (await readLines(client, workspaceId, caseId, quoteId)).filter((line) => scope === "quote" || (scope === "area" ? (line.areaId ?? "general") === target : (line.workPackageId ?? "none") === target));
+      if (!lines.length) throw new BadRequestException("There are no lines to save.");
+      const parts = await readComponents(client, workspaceId, caseId, quoteId, null);
+      const content = {
+        builder: true, rooms: [],
+        lines: lines.map((line) => ({
+          id: randomUUIDv4(), room: "", title: line.title, description: line.description, specification: line.description, material: "", finish: "",
+          quantity: Number(line.quantity), unit: line.unit, rate: Number(line.rate), unitCost: line.unitCost === null ? null : Number(line.unitCost),
+          kind: line.kind, formula: line.formula, length: line.length, width: line.width, height: line.height, count: line.count, markupPercent: line.markupPercent,
+          pricingMode: line.pricingMode === "build_up" ? "build_up" : "item", catalogItemId: line.catalogItemId, workPackageId: line.workPackageId, optional: line.optional ?? false,
+          components: parts.filter((part) => part.lineId === line.id).map(({ id: _id, lineId: _lineId, ...part }) => part),
+        })),
+      };
+      const existing = (await client.query(`SELECT 1 FROM commercial_quotation_templates WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount;
+      if (!existing) {
+        if ((await client.query(`SELECT 1 FROM commercial_quotation_templates WHERE workspace_id = $1 AND lower(name) = lower($2)`, [workspaceId, name])).rowCount)
+          throw new ConflictException("A template with this name already exists.");
+        await client.query(`INSERT INTO commercial_quotation_templates (id, workspace_id, name, content) VALUES ($1, $2, $3, $4::jsonb)`, [id, workspaceId, name, JSON.stringify(content)]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.template_saved.v1", entityType: "quotation_template", entityId: id, after: { name, lines: content.lines.length } });
+      }
+      return { id, name, lines: content.lines.length };
     });
   }
 
@@ -695,4 +738,18 @@ function documentOf(quote: Quote, settings: QuotationSettings): QuoteDocument {
   const stored = quote.detail.document as Partial<QuoteDocument> | undefined;
   const base = defaultDocument({ terms: typeof quote.detail.terms === "string" ? quote.detail.terms : "", exclusions: typeof quote.detail.exclusions === "string" ? quote.detail.exclusions : "", view: settings.defaultView });
   return stored ? { ...base, ...stored, sections: { ...base.sections, ...(stored.sections ?? {}) } } : base;
+}
+
+/** A template line as the builder inserts it. */
+function templateLine(line: Record<string, unknown>, builder: boolean, canCosts: boolean) {
+  const str = (value: unknown) => (typeof value === "string" ? value : value === null || value === undefined ? null : String(value));
+  return {
+    title: str(line.title) ?? "", description: str(builder ? line.description : line.specification) ?? "", unit: str(line.unit) ?? "",
+    quantity: str(line.quantity) ?? "1", rate: str(line.rate) ?? "0", unitCost: canCosts ? str(line.unitCost) : null,
+    kind: builder ? str(line.kind) ?? "item" : "item", formula: builder ? str(line.formula) : null,
+    length: builder ? str(line.length) : null, width: builder ? str(line.width) : null, height: builder ? str(line.height) : null, count: builder ? str(line.count) : null,
+    markupPercent: builder && canCosts ? str(line.markupPercent) : null, pricingMode: builder && line.pricingMode === "build_up" ? "build_up" : "rate",
+    catalogItemId: builder ? str(line.catalogItemId) : null, workPackageId: builder ? str(line.workPackageId) : null, optional: line.optional === true,
+    components: builder && Array.isArray(line.components) ? (line.components as Array<Record<string, unknown>>).map((part) => ({ ...part, unitCost: canCosts ? part.unitCost ?? null : null })) : [],
+  };
 }

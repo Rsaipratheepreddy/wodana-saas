@@ -1522,5 +1522,18 @@
   "Ivory, deep green, classic": "Ivory, deep green, classic",
   "Soft taupe, light type": "Soft taupe, light type",
   "Bold colour block in your brand": "Bold colour block in your brand",
-  "White stone, fine serif": "White stone, fine serif"
+  "White stone, fine serif": "White stone, fine serif",
+  "Save {name} as a template": "Save {name} as a template",
+  "Insert template": "Insert template",
+  "Insert a template": "Insert a template",
+  "Insert {count} lines": "Insert {count} lines",
+  "Insert": "Insert",
+  "No templates yet. Save an area as a template from its heading.": "No templates yet. Save an area as a template from its heading.",
+  "Template": "Template",
+  "Into": "Into",
+  "and {count} more": "and {count} more",
+  "Catalog items are priced from today's catalog; other lines keep the template's rate.": "Catalog items are priced from today's catalog; other lines keep the template's rate.",
+  "Saved “{name}” with {count} lines.": "Saved “{name}” with {count} lines.",
+  "Save as template": "Save as template",
+  "Template name": "Template name"
 }

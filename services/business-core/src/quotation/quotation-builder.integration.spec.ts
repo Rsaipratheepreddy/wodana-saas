@@ -159,4 +159,23 @@ integration("quotation builder (plan §6.8)", () => {
       expect(revised.family.map((item) => item.number)).toEqual([1, 2]);
     });
   });
+
+  it("saves an area as a template and lists it ready to insert", async () => {
+    await withQuote(async (_client, ids, service) => {
+      await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [
+        { op: "catalog", itemId: ids.wardrobe, line: { id: "w", areaId: ids.kitchen, width: "1", height: "2" } },
+        { op: "upsert", line: { id: "p", title: "Paint walls", unit: "sqm", formula: "wall", length: "4", height: "2.7", rate: "18", areaId: ids.kitchen } },
+        { op: "upsert", line: { id: "x", title: "Elsewhere", rate: "1", areaId: ids.living } },
+      ] });
+      const id = randomUUID();
+      await service.saveTemplate(actor, ids.workspaceId, ids.caseId, ids.quoteId, { id, name: "Kitchen basics", scope: "area", target: ids.kitchen });
+      await expect(service.saveTemplate(actor, ids.workspaceId, ids.caseId, ids.quoteId, { id: randomUUID(), name: "Kitchen basics", scope: "area", target: ids.kitchen })).rejects.toThrow(/already exists/);
+      const { templates } = await service.templates(actor, ids.workspaceId);
+      const saved = templates.find((template) => template.id === id)!;
+      expect(saved.lines.map((line) => line.title)).toEqual(["Wardrobe", "Paint walls"]);
+      expect(saved.lines[0]).toMatchObject({ catalogItemId: ids.wardrobe, pricingMode: "build_up", width: "1", height: "2" });
+      expect(saved.lines[0].components).toHaveLength(2);
+      expect(saved.lines[1]).toMatchObject({ formula: "wall", length: "4", height: "2.7", rate: "18" });
+    });
+  });
 });
