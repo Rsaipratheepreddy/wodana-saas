@@ -401,7 +401,10 @@ Planning ends in two outcomes: the signed-off design and the accepted quotation.
   - **Prompt:** "add false ceiling 18 m² in Living, gypsum" or "move the TV unit to the Family room" returns a proposed change set shown as a diff to accept or reject; never a silent write.
   - **Checks:** missing prices, zero quantities, areas with approved designs but no lines, margin below the floor, discounts needing approval.
   - **Together:** avatars of who is in the quote, live updates of others' edits line by line, and Figma-style comments pinned to a line, a cell, an area or the total, with @mentions, resolve, and client comments from the portal. Each line is version-checked, so two people editing the same cell get a merge prompt, never a lost edit.
-- **Templates are a separate library**, never edited inside a quote: start a quote from a template, insert a template's area or package, or save an area as a template.
+- **Templates are a separate library**, never edited inside a quote: insert a template into an area (catalog items re-priced from today's catalog), save an area, a trade or the whole quote as a template; a whole-quote template keeps its area names and recreates missing areas in another project.
+- **Pictures:** catalog items carry pictures; a line shows its catalog item's picture or its own (uploaded into the quote); an optional Pictures column in the builder and in the client document.
+- **Nothing blocks:** a typed item can be added to the catalog in one step (unit, price in the quote's currency, picture), any custom line can be added later, and a new area can be created from a line's area picker.
+- **Document studio:** 12 designed styles (fonts, paper, cover layout, table style; accent from the style or the firm's brand), editable cover, letter, terms and exclusions, sections on/off, items by area or trade (lines or totals, rates, descriptions, pictures), print or save as PDF. Items and money always come from the quote.
 - **Revisions and acceptance:** `draft → internal review (if the firm uses it) → sent (frozen R1) → accepted | changes requested | expired`; a new revision copies the last one and shows a diff (lines added, removed, changed; total and margin change per area/trade). The client accepts one revision on the portal (named signature or OTP) choosing options, or staff record acceptance with evidence. Acceptance starts the Project once the firm's release gates pass (agreement, payment per the schedule).
 - **After acceptance (variations, §6.20):** the accepted revision is the baseline; the live BOQ = baseline + approved variations. A variation holds delta lines: add, omit (references the original line), replace (omit + add), move (area change plus its labour), and draw-downs of allowances. Before acceptance, the same requests are simply a new revision.
 - **Records:** quotes (per case, kind quotation/variation), quote_revisions (frozen snapshot + hash), quote_lines (area_id, work_package_id, kind, catalog snapshot, qty, unit, cost, markup, rate, discount, tax_category, option group, position, version), quote_discounts, quote_payment_milestones, quote_comments (anchor: line/cell/area/total), quote_acceptances; workspace quotation settings. Money is `numeric`; the pricing engine is one shared pure function.
@@ -792,6 +795,16 @@ Attendance, leave and calendars stay. People appear in planning only as **availa
   - A delivery outside the site window: warning before booking.
 - **Landed cost:** freight, customs and handling on a shipment are allocated to its lines (by value, weight or qty; tenant setting). This updates moving-average cost and project cost.
 - **Tests:** POD creates receipts exactly once; multi-stop line conservation (Σ dropped = Σ loaded); delay creates exactly one expediting task; the client projection hides supplier and cost.
+
+### 6.30a Company gallery (brochure)
+A branded, shareable catalog of the firm's work, edited by the owner and opened by one link (`/gallery/{link}`); also linked from the client portal while published.
+- **Content:** services and products (from the catalog with pictures and prices, or typed), recent projects (a picture wall each), client feedback with ratings, about and contact; the section order and visibility are the owner's.
+- **Browsing:** Pinterest-like: search first, filter chips (types and the firm's labels), a masonry wall of pictures, a detail view with previous/next and "More like this"; projects open as their own picture wall with no prices.
+- **My list → enquiry:** visitors add items to a list kept on their device and send it through the firm's own published enquiry form; the picked items are added to the enquiry's summary and it arrives in Sales like any enquiry (assignment notifications, duplicates, returning customers). Source and channel can be set for gallery enquiries.
+- **Branding and style:** the tenant logo and brand colour (accent), one of the 12 styles for fonts and paper; "Powered by Wodana" only in the footer.
+- **What visitors see:** starting prices, descriptions, My list and enquiries, search, chips and contact buttons each switch on or off.
+- **Rules:** only a published gallery is readable, by its link (security-definer lookup); links are unique across tenants; publishing needs a published enquiry form; public pictures only for visible items; a gallery with My list off takes no enquiries.
+- **Notifications:** gallery published (in-app to managers); gallery enquiries follow the enquiry intake's notifications.
 
 ### 6.31 Document builder (PDF and other formats) — built last, used everywhere
 - **Purpose:** one engine for every document, with brand- and entity-aware templates that a tenant admin can adjust without code. Until it ships, R1 uses the existing quotation print.
