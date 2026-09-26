@@ -17,15 +17,18 @@ export function normalKey(name: string, unit: string) {
 export async function stockItemFor(db: Db, workspaceId: string, input: { catalogItemId: string | null; name: string; unit: string; code?: string }) {
   let catalogItemId = input.catalogItemId;
   if (catalogItemId) {
-    const catalog = (await db.query<{ name: string; unit: string; code: string }>(
-      `SELECT name, unit_code AS unit, code FROM catalog_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, catalogItemId])).rows[0];
-    // Bought in another unit than the catalog keeps it apart, so quantities never mix units.
-    if (!catalog || (input.unit.trim() && catalog.unit.trim().toLocaleLowerCase() !== input.unit.trim().toLocaleLowerCase())) catalogItemId = null;
+    const catalog = (await db.query<{ name: string; unit: string; label: string | null; code: string }>(
+      `SELECT item.name, item.unit_code AS unit, unit.label, item.code FROM catalog_items item
+         LEFT JOIN catalog_units unit ON unit.workspace_id = item.workspace_id AND unit.code = item.unit_code
+        WHERE item.workspace_id = $1 AND item.id = $2`, [workspaceId, catalogItemId])).rows[0];
+    // The catalog's unit, by its code ("sqm") or its label ("m²"); bought in another unit keeps it apart, so quantities never mix units.
+    const same = (unit: string | null) => Boolean(unit) && unit!.trim().toLocaleLowerCase() === input.unit.trim().toLocaleLowerCase();
+    if (!catalog || (input.unit.trim() && !same(catalog.unit) && !same(catalog.label))) catalogItemId = null;
     else {
       await db.query(
         `INSERT INTO stock_items (id, workspace_id, catalog_item_id, name, unit, code, normal_key) VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (workspace_id, catalog_item_id) WHERE catalog_item_id IS NOT NULL DO NOTHING`,
-        [randomUUID(), workspaceId, catalogItemId, catalog.name, catalog.unit, catalog.code ?? "", normalKey(catalog.name, catalog.unit)]);
+        [randomUUID(), workspaceId, catalogItemId, catalog.name, catalog.label || catalog.unit, catalog.code ?? "", normalKey(catalog.name, catalog.label || catalog.unit)]);
       return (await db.query<{ id: string }>(`SELECT id FROM stock_items WHERE workspace_id = $1 AND catalog_item_id = $2`, [workspaceId, catalogItemId])).rows[0].id;
     }
   }

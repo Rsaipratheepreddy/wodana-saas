@@ -377,30 +377,32 @@ export class ProjectCoreService {
       const action = String(body.action ?? "");
       const needManager = () => { if (!manager) throw new ForbiddenException("Only the project manager can do this."); };
       const running = () => { if (project.status !== "active") throw new ConflictException(project.status === "on_hold" ? "The project is on hold. Resume it first." : "The project is closed."); };
+      // A completed or cancelled project is a record: its details, team and status don't change any more.
+      const open = () => { if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed."); };
       const notices: Array<{ key: string; notice: ProjectNotice }> = [];
       const teamIds = () => team.map((member) => member.membershipId);
       let audit: Record<string, unknown> = {};
 
       if (action === "rename") {
-        needManager();
+        needManager(); open();
         const name = typeof body.name === "string" ? body.name.trim() : "";
         if (!name || name.length > 240) throw new BadRequestException("Name the project.");
         await client.query(`UPDATE delivery_projects SET name = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, name]);
         audit = { name };
       } else if (action === "set_priority") {
-        needManager();
+        needManager(); open();
         const priority = oneOf(body.priority, PRIORITIES, "Priority");
         await client.query(`UPDATE delivery_projects SET priority = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, priority]);
         audit = { priority };
       } else if (action === "set_dates") {
-        needManager();
+        needManager(); open();
         const startDate = body.startDate === undefined ? project.startDate : optionalDate(body.startDate, "Start date");
         const promiseDate = body.promiseDate === undefined ? project.promiseDate : optionalDate(body.promiseDate, "Handover date");
         if (startDate && promiseDate && promiseDate < startDate) throw new BadRequestException("The handover date can't be before the start date.");
         await client.query(`UPDATE delivery_projects SET start_date = $3, promise_date = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, startDate, promiseDate]);
         audit = { startDate, promiseDate };
       } else if (action === "set_member") {
-        needManager();
+        needManager(); open();
         const role = settings.roles.find((item) => item.key === body.role);
         if (!role) throw new BadRequestException("Choose a role.");
         const next = body.membershipId === null || body.membershipId === "" ? null : String(body.membershipId);
@@ -412,7 +414,7 @@ export class ProjectCoreService {
         if (next) notices.push({ key: `role:${role.key}:${next}:${project.version}`, notice: { code: "project.team_added", membershipId: next, role: role.label } });
         audit = { role: role.key, from: holder, to: next };
       } else if (action === "post_update") {
-        needManager();
+        needManager(); open();
         const health = oneOf(body.health, HEALTH, "Status");
         const note = typeof body.note === "string" ? body.note.trim().slice(0, 2000) : "";
         if (health !== "on_track" && !note) throw new BadRequestException("Say in one line what's wrong.");
@@ -500,7 +502,9 @@ export class ProjectCoreService {
           const previous = [...stages].reverse().find((stage) => (stage.status === "done" || stage.status === "skipped") && (!current || stage.position < current.position));
           if (!previous) throw new ConflictException("There's no earlier stage to go back to.");
           if (current) await client.query(`UPDATE project_stages SET status = 'upcoming', started_at = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, current.id]);
-          await client.query(`UPDATE project_stages SET status = 'current', completed_at = NULL, completed_by = NULL, skip_reason = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, previous.id]);
+          // A stage skipped before it ever started starts now.
+          await client.query(`UPDATE project_stages SET status = 'current', started_at = coalesce(started_at, now()), completed_at = NULL, completed_by = NULL, skip_reason = NULL
+            WHERE workspace_id = $1 AND id = $2`, [workspaceId, previous.id]);
           audit = { stage: previous.key, reason };
         } else {
           const stage = stages.find((item) => item.id === body.stageId);
