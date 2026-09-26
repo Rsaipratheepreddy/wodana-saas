@@ -56,6 +56,7 @@ export type BuilderState = {
   discounts: QuoteDiscount[];
   pricing: Pricing;
   checks: QuoteCheck[];
+  me: string;
   canEdit: boolean; canEditCosts: boolean; canViewCosts: boolean;
 };
 
@@ -79,3 +80,11 @@ export type LineOp =
 
 export const GENERAL = "general";
 export const NO_TRADE = "none";
+
+export type QuoteAnchor = { kind: "line" | "area" | "trade" | "total"; key: string; field?: string | null };
+export type QuoteThread = {
+  id: string; anchorKind: QuoteAnchor["kind"]; anchorKey: string; anchorField: string | null; status: "open" | "resolved"; version: number;
+  createdBy: string; createdByName: string; createdAt: string; resolvedByName: string | null; resolvedAt: string | null;
+  messages: Array<{ id: string; body: string; mentions: string[]; createdBy: string; createdByName: string; createdAt: string }>;
+};
+export type QuotePerson = { userId: string; name: string; lineId: string | null; field: string | null };

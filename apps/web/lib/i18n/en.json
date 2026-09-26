@@ -1462,5 +1462,12 @@
   "{name}: some parts have no price": "{name}: some parts have no price",
   "{name} has approved designs but no items": "{name} has approved designs but no items",
   "Margin is below the {floor}% floor": "Margin is below the {floor}% floor",
-  "Add the payment milestones": "Add the payment milestones"
+  "Add the payment milestones": "Add the payment milestones",
+  "Comments on {name}": "Comments on {name}",
+  "Comments on the total": "Comments on the total",
+  "Also here: {names}": "Also here: {names}",
+  "Hide resolved": "Hide resolved",
+  "On {field}": "On {field}",
+  "Write a comment · @ to mention": "Write a comment · @ to mention",
+  "Send": "Send"
 }

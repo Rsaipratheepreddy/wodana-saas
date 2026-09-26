@@ -7,7 +7,7 @@ import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, Segmente
 import { useT } from "@/lib/i18n/i18n-provider";
 import { quoteApi, QuotationRequestError } from "@/lib/quotation/client";
 import { groupLines, money, VIEW_LABEL, type LineGroup } from "@/lib/quotation/format";
-import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteView } from "@/lib/quotation/types";
+import type { BuilderLine, BuilderState, CatalogHit, LineOp, QuoteAnchor, QuoteThread, QuoteView } from "@/lib/quotation/types";
 import { GENERAL, NO_TRADE } from "@/lib/quotation/types";
 import { RoomPicker } from "@/components/pre-project/room-manager";
 import type { CaseRoom } from "@/lib/pre-project/content";
@@ -16,6 +16,7 @@ import { QuoteRow, type RowColumn } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, RevisionChanges } from "./quote-flow";
 import { QuoteAssistant } from "./quote-assistant";
+import { CommentButton, CommentPanel, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import { useRouter } from "next/navigation";
 import styles from "./quote-builder.module.css";
 
@@ -40,6 +41,10 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
   const [open, setOpen] = useState<string | null>(null);
   const [dragged, setDragged] = useState<string | null>(null);
   const [addingArea, setAddingArea] = useState(false);
+  const [threads, setThreads] = useState<QuoteThread[]>([]);
+  const [members, setMembers] = useState<Array<{ id: string; name: string }>>([]);
+  const [commentAt, setCommentAt] = useState<{ anchor: QuoteAnchor; title: string } | null>(null);
+  const focus = useRef<{ lineId: string | null; field: string | null }>({ lineId: null, field: null });
   const [discountFor, setDiscountFor] = useState<{ scope: "area" | "trade" | "quote"; target: string; name: string } | null>(null);
   const latest = useRef(state);
   useEffect(() => { latest.current = state; }, [state]);
@@ -86,6 +91,22 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
   };
   const addDraft = (group: { areaId: string | null; workPackageId: string | null }) => setDrafts((current) => [...current, { id: crypto.randomUUID(), ...group }]);
 
+  const loadThreads = useCallback(async () => {
+    try { const result = await api.threads(); setThreads(result.threads ?? []); setMembers(result.members ?? []); } catch { /* comments load again on the next change */ }
+  }, [api]);
+  useEffect(() => {
+    let alive = true;
+    api.threads().then((result) => { if (alive) { setThreads(result.threads ?? []); setMembers(result.members ?? []); } }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [api]);
+  // Someone else changed the quote: reload it when nothing of ours is waiting to be saved.
+  const people = usePulse(api, focus, {
+    revision: state?.quote.revision ?? 0,
+    onRevision: () => { if (!sending.current && !queue.current.length) void load(); },
+    onComments: () => void loadThreads(),
+  });
+  const openComments = (anchor: QuoteAnchor, title: string) => setCommentAt({ anchor, title });
+
   const search = useCallback(async (text: string, signal: AbortSignal) => (await api.search(text, signal)).items, [api]);
 
   const newTrade = async (line?: BuilderLine) => {
@@ -100,6 +121,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
 
   const menu = (line: BuilderLine, action: string) => {
     if (action === "details") setOpen(line.id);
+    else if (action === "comment") openComments({ kind: "line", key: line.id }, line.title);
     else if (action === "optional") changeLine(line, { optional: !line.optional });
     else if (action === "delete") {
       setState((current) => current ? { ...current, lines: current.lines.filter((item) => item.id !== line.id) } : current);
@@ -152,6 +174,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
         <span className={styles.groupTotal}>
           {discount ? <Badge tone="success">−{discount.kind === "percent" ? `${discount.value}%` : money(discount.value, currency, decimals, locale)}</Badge> : null}
           {section ? money(section.net, currency, decimals, locale) : null}
+          {depth === 0 && view !== "area_trade" ? <CommentButton threads={threadsAt(threads, { kind: view === "trade" ? "trade" : "area", key: group.key })} label={t("Comments on {name}", { name: group.name })}
+            onOpen={() => openComments({ kind: view === "trade" ? "trade" : "area", key: group.key }, group.name)} /> : null}
           {state.canEdit && depth === 0 && view !== "area_trade" && group.lines.length ? <IconButton aria-label={t("Discount on {name}", { name: group.name })} size="compact" variant="quiet"
             onPress={() => setDiscountFor({ scope: view === "trade" ? "trade" : "area", target: group.key, name: group.name })}><Percent aria-hidden="true" size={13} /></IconButton> : null}
         </span>
@@ -159,6 +183,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
       {group.children ? group.children.map((child) => renderGroup(child, { ...context, workPackageId: child.key === NO_TRADE ? null : child.key }, depth + 1)) : <>
         {group.lines.map((line) => <QuoteRow key={line.id} line={line} column={column} areas={state.areas} trades={state.workPackages} amount={amountOf.get(line.id) ?? null}
           currency={currency} decimals={decimals} canEdit={state.canEdit} search={search}
+          comments={threadsAt(threads, { kind: "line", key: line.id })} editingBy={people.filter((person) => person.lineId === line.id)}
+          onComments={() => openComments({ kind: "line", key: line.id }, line.title)}
           onChange={(fields) => changeLine(line, fields)}
           onCatalog={(hit) => send([{ op: "catalog", itemId: hit.id, line: { id: line.id } }])}
           onOpen={() => setOpen(line.id)} onMenu={(action) => menu(line, action)} onDragStart={() => setDragged(line.id)}
@@ -183,6 +209,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
         items={state.family.map((item) => ({ id: item.id, label: t("R{number}", { number: item.number }) }))} /> : null}
       {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
+      <PeopleHere people={people} />
       <span className={styles.spacer} />
       <Link className={styles.docLink} href={`${backHref.split("?")[0]}?${new URLSearchParams({ quote: quoteId, view: "document" })}`}>{t("Document")}</Link>
       <strong className={styles.total}>{money(state.pricing.total, currency, decimals, locale)}</strong>
@@ -208,7 +235,13 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
     {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
     <div className={styles.body}>
-      <div role="grid" aria-label={t("Quote lines")} className={styles.grid} data-column={column ?? "none"}>
+      <div role="grid" aria-label={t("Quote lines")} className={styles.grid} data-column={column ?? "none"}
+        onFocusCapture={(event) => {
+          const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
+          const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
+          focus.current = { lineId: row?.dataset.lineId ?? null, field: ({ Item: "title", Quantity: "quantity", Unit: "unit", Rate: "rate", Area: "area", "Work package": "trade" } as Record<string, string>)[label] ?? null };
+        }}
+        onBlurCapture={() => { focus.current = { lineId: null, field: null }; }}>
         <div role="row" className={styles.columns}>
           <span role="columnheader" />
           <span role="columnheader">{t("Item")}</span>
@@ -224,7 +257,12 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial }
           : { areaId: group.key === GENERAL ? null : group.key, workPackageId: null }, 0))}
         {!state.lines.length && !state.canEdit ? <EmptyState title={t("No items yet")} /> : null}
       </div>
-      <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor} />
+      <div className={styles.side}>
+        {commentAt ? <CommentPanel key={`${commentAt.anchor.kind}:${commentAt.anchor.key}`} anchor={commentAt.anchor} title={commentAt.title} threads={threads} members={members} api={api} meId={state.me}
+          onThreads={setThreads} onClose={() => setCommentAt(null)} onError={setError} /> : null}
+        <QuoteSummary state={state} api={api} onState={setState} onError={setError} discountFor={discountFor} onDiscountFor={setDiscountFor}
+          totalComments={<CommentButton threads={threadsAt(threads, { kind: "total", key: "" })} label={t("Comments on the total")} onOpen={() => openComments({ kind: "total", key: "" }, t("Total"))} />} />
+      </div>
     </div>
 
     {addingArea ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}

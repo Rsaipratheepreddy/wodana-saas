@@ -183,6 +183,13 @@
       "when": 1791547200000,
       "tag": "0025_quotation_builder",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791633600000,
+      "tag": "0026_quotation_comments",
+      "breakpoints": true
     }
   ]
 }

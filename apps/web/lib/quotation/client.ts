@@ -1,4 +1,4 @@
-import type { AiProposal, BuilderState, CatalogHit, LineOp, PaymentMilestone, QuoteDiscount } from "./types";
+import type { AiProposal, BuilderState, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
 
 export const quotationPath = (workspaceId: string, path: string, query?: Record<string, string>) =>
   `/api/quotation/${path}?${new URLSearchParams({ workspaceId, ...query })}`;
@@ -29,6 +29,11 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
       request<{ data: { revision: number; quotes: Array<{ id: string; number: number; status: string }> } }>(`/api/commercial/cases/${caseId}?${new URLSearchParams({ workspaceId })}`, "POST", { action, revision, quoteId, ...extra }),
     aiDraft: () => request<AiProposal>(quotationPath(workspaceId, `${base}/ai/draft`), "POST", {}),
     aiEdit: (text: string) => request<AiProposal>(quotationPath(workspaceId, `${base}/ai/edit`), "POST", { request: text }),
+    threads: () => request<{ threads: QuoteThread[]; members: Array<{ id: string; name: string }> }>(quotationPath(workspaceId, `${base}/comments`)),
+    comment: (id: string, anchor: QuoteAnchor, body: string, mentions: string[]) => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments`), "POST", { id, anchorKind: anchor.kind, anchorKey: anchor.key, anchorField: anchor.field ?? null, body, mentions }),
+    reply: (threadId: string, id: string, body: string, mentions: string[]) => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments/${threadId}/replies`), "POST", { id, body, mentions }),
+    threadStatus: (threadId: string, version: number, status: "open" | "resolved") => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments/${threadId}/status`), "POST", { version, status }),
+    pulse: (lineId: string | null, field: string | null) => request<{ people: QuotePerson[]; revision: number; comments: string }>(quotationPath(workspaceId, `${base}/pulse`), "POST", { lineId, field }),
     loadOther: (otherId: string) => request<BuilderState>(quotationPath(workspaceId, `cases/${caseId}/quotes/${encodeURIComponent(otherId)}`)),
     addTrade: (id: string, name: string) => request<{ id: string; name: string }>(quotationPath(workspaceId, "work-packages"), "POST", { id, name }),
   };

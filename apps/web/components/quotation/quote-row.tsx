@@ -2,10 +2,11 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { GripVertical, Plus, Sigma } from "lucide-react";
-import { Badge, IconMenuButton, useDesignSystem } from "@/design-system";
+import { Avatar, Badge, IconMenuButton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { LINE_KIND_LABEL, money, plain } from "@/lib/quotation/format";
-import type { BuilderLine, CatalogHit } from "@/lib/quotation/types";
+import type { BuilderLine, CatalogHit, QuotePerson, QuoteThread } from "@/lib/quotation/types";
+import { CommentButton } from "./quote-collab";
 import styles from "./quote-builder.module.css";
 
 export type RowColumn = "area" | "trade" | null;
@@ -16,20 +17,22 @@ type Option = { id: string; name: string };
  * quantity, unit and rate in place; Enter saves and moves down, Escape undoes the cell. A formula
  * quantity or a build-up rate opens the line's details instead of being typed over.
  */
-export function QuoteRow({ line, draft, column, areas, trades, amount, currency, decimals, canEdit, search, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade }: {
+export function QuoteRow({ line, draft, column, areas, trades, amount, currency, decimals, canEdit, search, comments = [], editingBy = [], onComments, onChange, onCatalog, onOpen, onMenu, onDragStart, onDropBefore, onNewTrade }: {
   line: BuilderLine; draft?: boolean; column: RowColumn; areas: Option[]; trades: Option[]; amount: string | null; currency: string; decimals: number; canEdit: boolean;
+  comments?: QuoteThread[]; editingBy?: QuotePerson[]; onComments?: () => void;
   search: (text: string, signal: AbortSignal) => Promise<CatalogHit[]>;
   onChange: (fields: Partial<BuilderLine>) => void; onCatalog: (hit: CatalogHit, title: string) => void; onOpen: () => void;
   onMenu: (action: string) => void; onDragStart: () => void; onDropBefore: () => void; onNewTrade: () => void;
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
-  return <div role="row" className={styles.row} data-optional={line.optional || undefined} data-draft={draft || undefined}
+  return <div role="row" className={styles.row} data-line-id={line.id} data-optional={line.optional || undefined} data-draft={draft || undefined} data-busy={editingBy.length ? true : undefined}
     onDragOver={(event) => { if (canEdit) { event.preventDefault(); event.currentTarget.dataset.dropTarget = "true"; } }}
     onDragLeave={(event) => { delete event.currentTarget.dataset.dropTarget; }}
     onDrop={(event) => { event.preventDefault(); delete event.currentTarget.dataset.dropTarget; onDropBefore(); }}>
     <span role="gridcell" className={styles.handleCell}>
-      {canEdit && !draft ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
+      {editingBy.length ? <span className={styles.editing} title={editingBy.map((person) => person.name).join(", ")}><Avatar name={editingBy[0].name} size="sm" /></span> : null}
+      {canEdit && !draft && !editingBy.length ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
     </span>
     <span role="gridcell" className={styles.itemCell}>
       <ItemCell line={line} canEdit={canEdit} search={search} onCommit={(title) => onChange({ title })} onCatalog={onCatalog} autoFocus={draft} />
@@ -63,8 +66,10 @@ export function QuoteRow({ line, draft, column, areas, trades, amount, currency,
     </span>
     <span role="gridcell" className={styles.amountCell}>{draft ? "" : money(amount, currency, decimals, locale)}</span>
     <span role="gridcell" className={styles.menuCell}>
+      {!draft && onComments ? <CommentButton threads={comments} label={t("Comments on {name}", { name: line.title })} onOpen={onComments} /> : null}
       {!draft ? <IconMenuButton ariaLabel={t("Line actions for {name}", { name: line.title })} onAction={onMenu} items={[
         { id: "details", label: t("Details") },
+        { id: "comment", label: t("Comment") },
         ...(canEdit ? [
           { id: "duplicate", label: t("Duplicate") },
           { id: "optional", label: line.optional ? t("Include in total") : t("Make optional") },

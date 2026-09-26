@@ -23,7 +23,7 @@ const state = (lines: BuilderLine[]): BuilderState => ({
   pricing: { lines: lines.map((item) => ({ id: item.id, included: true, gross: "400.00", lineDiscount: "0.00", sectionDiscount: "0.00", quoteDiscount: "0.00", net: "400.00", tax: "20.00", total: "420.00", cost: "240.00" })),
     areas: [{ key: KITCHEN, gross: "400.00", discount: "0.00", net: "400.00" }], trades: [{ key: JOINERY, gross: "400.00", discount: "0.00", net: "400.00" }], subtotal: "400.00",
     discounts: { line: "0.00", section: "0.00", quote: "0.00", total: "0.00" }, net: "400.00", tax: "20.00", taxes: [{ rate: "5", base: "400.00", tax: "20.00" }], total: "420.00", cost: "240.00", margin: "40.00", optionalTotal: "0.00" },
-  checks: [], canEdit: true, canEditCosts: true, canViewCosts: true,
+  checks: [], me: "u1", canEdit: true, canEditCosts: true, canViewCosts: true,
 });
 const mount = (initial: BuilderState, respond: (url: string, body: unknown) => unknown = () => initial) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, init?.body ? JSON.parse(String(init.body)) : undefined) }));
@@ -31,7 +31,7 @@ const mount = (initial: BuilderState, respond: (url: string, body: unknown) => u
   render(<DesignSystemProvider><QuoteBuilder workspaceId="w" caseId="c" quoteId="q1" backHref="/quotes" initial={initial} /></DesignSystemProvider>);
   return fetcher;
 };
-const posted = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(String(init!.body)));
+const posted = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([url, init]) => init?.method === "POST" && !String(url).includes("/pulse")).map(([, init]) => JSON.parse(String(init!.body)));
 
 describe("quotation builder", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -146,5 +146,24 @@ describe("quotation builder", () => {
     const checks = screen.getByRole("region", { name: "To fix before sending" });
     expect(checks).toHaveTextContent("Base cabinets has no price");
     expect(checks).toHaveTextContent("Add the payment milestones");
+  });
+
+  it("opens comments on a line, posts one with a mention, and shows who else is editing", async () => {
+    const initial = state([line({})]);
+    const thread = { id: "t1", anchorKind: "line", anchorKey: "a", anchorField: null, status: "open", version: 1, createdBy: "u1", createdByName: "Sam", createdAt: "2026-09-26T10:00:00Z", resolvedByName: null, resolvedAt: null,
+      messages: [{ id: "t1", body: "@Dana check hinges", mentions: ["u2"], createdBy: "u1", createdByName: "Sam", createdAt: "2026-09-26T10:00:00Z" }] };
+    const fetcher = mount(initial, (url, body) => {
+      if (url.includes("/pulse")) return { people: [{ userId: "u2", name: "Dana Designer", lineId: "a", field: "rate" }], revision: 1, comments: "0:0" };
+      if (url.includes("/comments")) return body ? { threads: [thread] } : { threads: [], members: [{ id: "u1", name: "Sam" }, { id: "u2", name: "Dana" }] };
+      return initial;
+    });
+    expect(await screen.findByLabelText("Also here: Dana Designer")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Comments on Base cabinets" }));
+    const panel = screen.getByRole("region", { name: "Comments on Base cabinets" });
+    await userEvent.type(within(panel).getByRole("textbox"), "@Da");
+    await userEvent.click(within(panel).getByRole("option", { name: /Dana/ }));
+    await userEvent.type(within(panel).getByRole("textbox"), "check hinges{Enter}");
+    await waitFor(() => expect(posted(fetcher)).toContainEqual(expect.objectContaining({ anchorKind: "line", anchorKey: "a", body: "@Dana check hinges", mentions: ["u2"] })));
+    expect(await within(panel).findByText("@Dana check hinges")).toBeInTheDocument();
   });
 });

@@ -13,9 +13,9 @@ import styles from "./quote-builder.module.css";
 type Target = { scope: "area" | "trade" | "quote"; target: string; name: string };
 
 /** The quote's totals, top to bottom in the order they're worked out, with the quote discount and tax. */
-export function QuoteSummary({ state, api, onState, onError, discountFor, onDiscountFor }: {
+export function QuoteSummary({ state, api, onState, onError, discountFor, onDiscountFor, totalComments }: {
   state: BuilderState; api: ReturnType<typeof quoteApi>; onState: (state: BuilderState) => void; onError: (message: string) => void;
-  discountFor: Target | null; onDiscountFor: (target: Target | null) => void;
+  discountFor: Target | null; onDiscountFor: (target: Target | null) => void; totalComments?: React.ReactNode;
 }) {
   const t = useT();
   const { locale } = useDesignSystem();
@@ -38,7 +38,7 @@ export function QuoteSummary({ state, api, onState, onError, discountFor, onDisc
       <div><dt>{state.settings.pricesIncludeTax ? t("Net of tax") : t("Net")}</dt><dd>{m(pricing.net)}</dd></div>
       {state.taxCodes.length ? pricing.taxes.map((tax) => <div key={tax.rate}><dt>{t("Tax {rate}%", { rate: plain(tax.rate, locale) })}</dt><dd>{m(tax.tax)}</dd></div>)
         : <QuoteTax state={state} api={api} onState={onState} onError={onError} value={m(pricing.tax)} />}
-      <div className={styles.grand}><dt>{t("Total")}</dt><dd>{m(pricing.total)}</dd></div>
+      <div className={styles.grand}><dt className={styles.withAction}>{t("Total")}{totalComments}</dt><dd>{m(pricing.total)}</dd></div>
       {Number(pricing.optionalTotal) ? <div className={styles.muted}><dt>{t("Optional extras")}</dt><dd>+{m(pricing.optionalTotal)}</dd></div> : null}
       {state.canViewCosts ? <>
         <div className={styles.muted}><dt>{t("Cost")}</dt><dd>{pricing.cost === null ? t("Some costs missing") : m(pricing.cost)}</dd></div>

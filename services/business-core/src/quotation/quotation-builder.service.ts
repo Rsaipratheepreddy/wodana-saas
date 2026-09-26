@@ -399,6 +399,7 @@ export class QuotationBuilderService {
       discounts,
       pricing: canViewCosts ? pricing : { ...pricing, cost: null, margin: null, lines: pricing.lines.map((line) => ({ ...line, cost: null })) },
       checks,
+      me: userId,
       canEdit, canEditCosts, canViewCosts,
     };
   }

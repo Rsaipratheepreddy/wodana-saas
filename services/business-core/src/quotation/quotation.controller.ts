@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { QuotationAiService } from "./quotation-ai.service";
+import { QuotationCollabService } from "./quotation-collab.service";
 import { QuotationBuilderService } from "./quotation-builder.service";
 
 /** The quotation builder, its settings and the firm's work packages (plan §6.8). Bodies are validated in the service. */
@@ -10,7 +11,7 @@ import { QuotationBuilderService } from "./quotation-builder.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/quotation")
 export class QuotationController {
-  constructor(private readonly builder: QuotationBuilderService, private readonly assistant: QuotationAiService) {}
+  constructor(private readonly builder: QuotationBuilderService, private readonly assistant: QuotationAiService, private readonly collab: QuotationCollabService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.builder.settings(actor, workspaceId); }
@@ -44,6 +45,21 @@ export class QuotationController {
 
   @Post("cases/:caseId/quotes/:quoteId/ai/edit")
   aiEdit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { request?: unknown }) { return this.assistant.edit(actor, workspaceId, caseId, quoteId, input ?? {}); }
+
+  @Get("cases/:caseId/quotes/:quoteId/comments")
+  threads(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string) { return this.collab.threads(actor, workspaceId, caseId, quoteId); }
+
+  @Post("cases/:caseId/quotes/:quoteId/comments")
+  comment(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: Record<string, unknown>) { return this.collab.comment(actor, workspaceId, caseId, quoteId, input ?? {}); }
+
+  @Post("cases/:caseId/quotes/:quoteId/comments/:threadId/replies")
+  reply(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Param("threadId") threadId: string, @Body() input: Record<string, unknown>) { return this.collab.reply(actor, workspaceId, caseId, quoteId, threadId, input ?? {}); }
+
+  @Post("cases/:caseId/quotes/:quoteId/comments/:threadId/status")
+  threadStatus(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Param("threadId") threadId: string, @Body() input: { version?: unknown; status?: unknown }) { return this.collab.setStatus(actor, workspaceId, caseId, quoteId, threadId, input ?? {}); }
+
+  @Post("cases/:caseId/quotes/:quoteId/pulse")
+  pulse(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { lineId?: unknown; field?: unknown }) { return this.collab.pulse(actor, workspaceId, caseId, quoteId, input ?? {}); }
 
   @Put("cases/:caseId/quotes/:quoteId/tax")
   tax(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { taxRate?: unknown }) { return this.builder.setQuoteTax(actor, workspaceId, caseId, quoteId, input ?? {}); }
