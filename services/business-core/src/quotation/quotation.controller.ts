@@ -40,6 +40,9 @@ export class QuotationController {
   @Post("cases/:caseId/quotes/:quoteId/lines")
   apply(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: { ops?: unknown }) { return this.builder.apply(actor, workspaceId, caseId, quoteId, input ?? {}); }
 
+  @Post("cases/:caseId/quotes/:quoteId/lines/:lineId/to-catalog")
+  toCatalog(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Param("lineId") lineId: string, @Body() input: { version?: unknown }) { return this.builder.addToCatalog(actor, workspaceId, caseId, quoteId, lineId, input ?? {}); }
+
   @Put("cases/:caseId/quotes/:quoteId/discounts")
   discount(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string, @Param("quoteId") quoteId: string, @Body() input: Record<string, unknown>) { return this.builder.setDiscount(actor, workspaceId, caseId, quoteId, input ?? {}); }
 

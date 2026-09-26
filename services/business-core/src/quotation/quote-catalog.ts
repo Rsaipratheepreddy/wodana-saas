@@ -6,7 +6,7 @@ type Db = Pick<PoolClient, "query">;
 
 export type CatalogHit = {
   id: string; code: string; name: string; itemType: string; unitCode: string; categoryName: string | null;
-  description: string | null; rate: string | null; hasBuildUp: boolean;
+  description: string | null; rate: string | null; hasBuildUp: boolean; imageId: string | null;
 };
 
 /**
@@ -19,6 +19,7 @@ export async function searchCatalog(db: Db, workspaceId: string, input: { search
   const rows = await db.query<CatalogHit & { method: string | null; price: string | null; entryRate: string | null; cost: string | null; markup: string | null }>(
     `SELECT item.id, item.code, item.name, item.item_type AS "itemType", item.unit_code AS "unitCode", category.name AS "categoryName",
             item.description, EXISTS (SELECT 1 FROM catalog_components component WHERE component.parent_item_id = item.id) AS "hasBuildUp",
+            (SELECT image.id FROM catalog_item_images image WHERE image.workspace_id = item.workspace_id AND image.item_id = item.id ORDER BY image.sort_order, image.created_at LIMIT 1) AS "imageId",
             entry.method, entry.price::text AS price, entry.rate::text AS "entryRate", entry.cost::text AS cost, entry.markup_percent::text AS markup
        FROM catalog_items item
        LEFT JOIN catalog_categories category ON category.id = item.category_id
@@ -43,7 +44,7 @@ export async function searchCatalog(db: Db, workspaceId: string, input: { search
 
 export type CatalogLine = {
   snapshot: { itemId: string; code: string; name: string; itemType: string; unitCode: string; categoryName: string | null; priceBookId: string | null; method: string | null; version: number; pricedAt: string };
-  title: string; description: string; unit: string; kind: "item" | "service";
+  title: string; description: string; unit: string; kind: "item" | "service"; imageId: string | null;
   rate: string | null; unitCost: string | null; priceReason: string | null;
   /** Priced as the sum of its parts: labour per unit and margin on top. */
   rollup: { labour: string | null; marginPercent: string | null } | null;
@@ -109,6 +110,7 @@ export async function catalogLine(db: Db, workspaceId: string, input: { itemId: 
   return {
     snapshot: { itemId: item.id, code: item.code, name: item.name, itemType: item.itemType, unitCode: item.unitCode, categoryName: item.categoryName, priceBookId: book?.id ?? null, method: entry?.method ?? null, version: item.version, pricedAt: new Date().toISOString() },
     title: item.name, description: item.description ?? "", unit: item.unitCode, kind: item.itemType === "service" ? "service" : "item",
+    imageId: (await db.query<{ id: string }>(`SELECT id FROM catalog_item_images WHERE workspace_id = $1 AND item_id = $2 ORDER BY sort_order, created_at LIMIT 1`, [workspaceId, item.id])).rows[0]?.id ?? null,
     rate, unitCost: entry?.cost ?? await supplierCost(item.id), priceReason: reason, components,
     rollup: entry?.method === "assembly_rollup" || (!entry && components.length) ? { labour: entry?.labour ?? null, marginPercent: entry?.marginPercent ?? null } : null,
   };

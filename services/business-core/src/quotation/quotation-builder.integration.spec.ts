@@ -9,7 +9,7 @@ import { copyBuilderData } from "./quote-revision";
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
-type Ids = { workspaceId: string; caseId: string; quoteId: string; kitchen: string; living: string; plywood: string; wardrobe: string; fitting: string };
+type Ids = { workspaceId: string; caseId: string; quoteId: string; kitchen: string; living: string; plywood: string; wardrobe: string; fitting: string; photo: string };
 const actor = { subject: "t", provider: "local", email: "t@example.com", displayName: "T" } as never;
 
 integration("quotation builder (plan §6.8)", () => {
@@ -23,7 +23,7 @@ integration("quotation builder (plan §6.8)", () => {
 
   async function withQuote(work: (client: PoolClient, ids: Ids, service: QuotationBuilderService) => Promise<void>, permissions: { costs?: boolean } = {}) {
     const client = await pool.connect();
-    const ids: Ids = { workspaceId: randomUUID(), caseId: randomUUID(), quoteId: randomUUID(), kitchen: randomUUID(), living: randomUUID(), plywood: randomUUID(), wardrobe: randomUUID(), fitting: randomUUID() };
+    const ids: Ids = { workspaceId: randomUUID(), caseId: randomUUID(), quoteId: randomUUID(), kitchen: randomUUID(), living: randomUUID(), plywood: randomUUID(), wardrobe: randomUUID(), fitting: randomUUID(), photo: randomUUID() };
     const user = randomUUID(), membership = randomUUID(), party = randomUUID(), opportunity = randomUUID(), catalog = randomUUID(), book = randomUUID();
     try {
       await client.query("BEGIN");
@@ -52,7 +52,11 @@ integration("quotation builder (plan §6.8)", () => {
         [ids.workspaceId, book, ids.plywood, ids.fitting, ids.wardrobe]);
       await client.query("SET LOCAL session_replication_role = origin");
       const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(client, { userId: user });
-      const service = new QuotationBuilderService({ withPermission: run, withPermissions: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code.startsWith("commercial.costs") ? permissions.costs !== false : true } as never);
+      const files = new Map<string, Buffer>();
+      const storage = { put: async (key: string, body: Buffer) => { files.set(key, body); }, read: async (key: string) => ({ body: files.get(key)! }) };
+      files.set("case/photo/original", Buffer.from("png-bytes"));
+      await client.query(`INSERT INTO pre_project_brief_assets(id,workspace_id,case_id,original_name,mime_type,byte_size,object_key,preview_key,sha256,created_by) VALUES($1,$2,$3,'tv.png','image/png',9,'case/photo/original',NULL,repeat('c',64),$4)`, [ids.photo, ids.workspaceId, ids.caseId, user]);
+      const service = new QuotationBuilderService({ withPermission: run, withPermissions: run, withAnyPermission: run, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code.startsWith("commercial.costs") ? permissions.costs !== false : true } as never, storage as never);
       await work(client, ids, service);
     } finally {
       await client.query("ROLLBACK");
@@ -176,6 +180,27 @@ integration("quotation builder (plan §6.8)", () => {
       expect(saved.lines[0]).toMatchObject({ catalogItemId: ids.wardrobe, pricingMode: "build_up", width: "1", height: "2" });
       expect(saved.lines[0].components).toHaveLength(2);
       expect(saved.lines[1]).toMatchObject({ formula: "wall", length: "4", height: "2.7", rate: "18" });
+    });
+  });
+
+  it("gives a line a picture and adds a custom line to the catalog, picture and price included", async () => {
+    await withQuote(async (client, ids, service) => {
+      let state = await service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "tv", title: "Walnut TV unit", unit: "Nos", rate: "6400", unitCost: "4000", imageAssetId: ids.photo, areaId: ids.living } }] });
+      expect(state.lines[0].imageAssetId).toBe(ids.photo);
+      await expect(service.apply(actor, ids.workspaceId, ids.caseId, ids.quoteId, { ops: [{ op: "upsert", line: { id: "x", title: "X", imageAssetId: randomUUID() } }] })).rejects.toThrow(/Upload the picture/);
+      state = await service.addToCatalog(actor, ids.workspaceId, ids.caseId, ids.quoteId, "tv", { version: state.lines[0].version });
+      const line = state.lines.find((item) => item.id === "tv")!;
+      expect(line.catalogItemId).toBeTruthy();
+      expect(line.catalogImageId).toBeTruthy();
+      const item = (await client.query(`SELECT item.code, item.name, item.unit_code, entry.price::text AS price FROM catalog_items item JOIN price_entries entry ON entry.item_id = item.id WHERE item.id = $1`, [line.catalogItemId])).rows[0];
+      expect(item).toMatchObject({ code: "WALNUT-TV-UNIT", name: "Walnut TV unit", unit_code: "nos" });
+      expect(Number(item.price)).toBe(6400);
+      // Next time it's in the catalog, with its picture.
+      const hits = await service.search(actor, ids.workspaceId, ids.caseId, ids.quoteId, "walnut");
+      expect(hits.items[0]).toMatchObject({ name: "Walnut TV unit", rate: "6400.000000", imageId: line.catalogImageId });
+      // Doing it again changes nothing.
+      const again = await service.addToCatalog(actor, ids.workspaceId, ids.caseId, ids.quoteId, "tv", { version: line.version });
+      expect(again.lines.find((item) => item.id === "tv")!.catalogItemId).toBe(line.catalogItemId);
     });
   });
 });

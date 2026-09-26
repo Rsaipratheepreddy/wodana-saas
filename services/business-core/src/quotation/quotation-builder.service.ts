@@ -1,5 +1,5 @@
 import { randomUUID as randomUUIDv4 } from "node:crypto";
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -10,6 +10,8 @@ import { parsePaymentTerms } from "../commercial/commercial.domain";
 import { effectivePortalBrand } from "../commercial/effective-brand";
 import { defaultDocument, parseDocument, type QuoteDocument } from "./quote-document";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { storeImage } from "../catalog-core/catalog-item-images";
 import { catalogLine, searchCatalog } from "./quote-catalog";
 import { priceQuote, PricingError, type PricingPolicy, type QuoteDiscountInput } from "./quote-pricing";
 import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
@@ -38,6 +40,7 @@ type LineRow = {
   pricingMode: "rate" | "build_up"; discountKind: "percent" | "amount" | null; discountValue: string | null; taxCode: string | null;
   taxRate: string | null; optional: boolean | null; optionGroup: string | null; note: string; catalogItemId: string | null;
   catalogSnapshot: Record<string, unknown> | null; updatedAt: string; updatedByName: string | null;
+  imageAssetId: string | null; catalogImageId: string | null;
 };
 type ComponentRow = {
   id: string; lineId: string; kind: string; catalogItemId: string | null; name: string; quantityFormula: string | null; quantity: string;
@@ -54,7 +57,7 @@ type Quote = { id: string; number: number; title: string; status: string; curren
  */
 @Injectable()
 export class QuotationBuilderService {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  constructor(private readonly access: WorkspaceAccessService, private readonly storage: BrandAssetStorageService) {}
 
   // ---------- settings and trades ----------
   settings(actor: RequestActor, workspaceId: string) {
@@ -298,10 +301,11 @@ export class QuotationBuilderService {
       const lines = (await readLines(client, workspaceId, caseId, quoteId)).filter((line) => scope === "quote" || (scope === "area" ? (line.areaId ?? "general") === target : (line.workPackageId ?? "none") === target));
       if (!lines.length) throw new BadRequestException("There are no lines to save.");
       const parts = await readComponents(client, workspaceId, caseId, quoteId, null);
+      const areaNames = new Map((await caseAreas(client, workspaceId, caseId)).map((area) => [area.id, area.name]));
       const content = {
         builder: true, rooms: [],
         lines: lines.map((line) => ({
-          id: randomUUIDv4(), room: "", title: line.title, description: line.description, specification: line.description, material: "", finish: "",
+          id: randomUUIDv4(), room: scope === "quote" && line.areaId ? areaNames.get(line.areaId) ?? "" : "", title: line.title, description: line.description, specification: line.description, material: "", finish: "",
           quantity: Number(line.quantity), unit: line.unit, rate: Number(line.rate), unitCost: line.unitCost === null ? null : Number(line.unitCost),
           kind: line.kind, formula: line.formula, length: line.length, width: line.width, height: line.height, count: line.count, markupPercent: line.markupPercent,
           pricingMode: line.pricingMode === "build_up" ? "build_up" : "item", catalogItemId: line.catalogItemId, workPackageId: line.workPackageId, optional: line.optional ?? false,
@@ -316,6 +320,67 @@ export class QuotationBuilderService {
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.template_saved.v1", entityType: "quotation_template", entityId: id, after: { name, lines: content.lines.length } });
       }
       return { id, name, lines: content.lines.length };
+    });
+  }
+
+  /**
+   * Adds a quote line to the catalog so it can be picked next time: a catalog item with the line's
+   * name, unit and description, priced at the line's rate in the quote's currency, with its picture.
+   * The line then points at it. Needs catalog permission.
+   */
+  addToCatalog(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, lineId: string, input: { version?: unknown }) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      if (!(await this.access.hasPermission(client, workspaceId, user.userId, "catalog.manage"))) throw new ForbiddenException("Only people who manage the catalog can add items to it.");
+      const { quote } = await this.editable(client, workspaceId, caseId, quoteId);
+      const line = await readLine(client, workspaceId, caseId, quoteId, lineId, true);
+      if (!line) throw new NotFoundException("Line not found.");
+      if (line.catalogItemId) return this.state(client, workspaceId, caseId, quoteId, user.userId);
+      if (Number(input.version) !== line.version) throw conflict(line);
+      const settings = await readSettings(client, workspaceId);
+      // The catalog and price book: the firm's chosen book, else the newest active one in this currency, else a new one.
+      let book = (await client.query<{ id: string; catalogId: string }>(
+        `SELECT id, catalog_id AS "catalogId" FROM price_books WHERE workspace_id = $1 AND (($2::uuid IS NOT NULL AND id = $2::uuid) OR ($2::uuid IS NULL AND status = 'active' AND currency = $3))
+          ORDER BY effective_from DESC LIMIT 1`, [workspaceId, settings.priceBookId, quote.currency])).rows[0];
+      if (!book) {
+        let catalogId = (await client.query<{ id: string }>(`SELECT id FROM catalogs WHERE workspace_id = $1 AND status = 'active' AND purpose = 'sell' ORDER BY created_at LIMIT 1`, [workspaceId])).rows[0]?.id;
+        if (!catalogId) {
+          catalogId = randomUUIDv4();
+          await client.query(`INSERT INTO catalogs (id, workspace_id, code, name, purpose, created_by) VALUES ($1, $2, 'quote-items', 'Quote items', 'sell', $3) ON CONFLICT (workspace_id, code) DO NOTHING`, [catalogId, workspaceId, user.userId]);
+          catalogId = (await client.query<{ id: string }>(`SELECT id FROM catalogs WHERE workspace_id = $1 AND code = 'quote-items'`, [workspaceId])).rows[0].id;
+        }
+        const bookId = randomUUIDv4();
+        await client.query(`INSERT INTO price_books (id, workspace_id, catalog_id, name, currency, status) VALUES ($1, $2, $3, $4, $5, 'active')`, [bookId, workspaceId, catalogId, `Prices ${quote.currency}`, quote.currency]);
+        book = { id: bookId, catalogId };
+      }
+      const unit = (line.unit.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "nos").replace(/^(\d)/, "u$1").slice(0, 16);
+      await client.query(`INSERT INTO catalog_units (workspace_id, code, label, kind, to_base) VALUES ($1, $2, $3, 'count', 1) ON CONFLICT DO NOTHING`, [workspaceId, unit, line.unit || unit]);
+      const base = line.title.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "ITEM";
+      let code = base;
+      for (let n = 2; (await client.query(`SELECT 1 FROM catalog_items WHERE catalog_id = $1 AND code = $2`, [book.catalogId, code])).rowCount; n += 1) code = `${base}-${n}`.slice(0, 80);
+      const itemId = randomUUIDv4();
+      const itemType = ["service", "relocate", "dismantle", "remove_store", "dispose"].includes(line.kind) ? "service" : "product";
+      await client.query(`INSERT INTO catalog_items (id, workspace_id, catalog_id, code, name, item_type, unit_code, description, created_by, updated_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+        [itemId, workspaceId, book.catalogId, code, line.title.slice(0, 200), itemType, unit, line.description || null, user.userId]);
+      if (!Dec.of(line.rate).isZero())
+        await client.query(`INSERT INTO price_entries (workspace_id, price_book_id, item_id, method, price, cost, status, created_by, updated_by) VALUES ($1, $2, $3, 'fixed', $4, $5, 'active', $6, $6)`,
+          [workspaceId, book.id, itemId, line.rate, line.unitCost, user.userId]);
+      let imageId: string | null = null;
+      if (line.imageAssetId) {
+        const asset = (await client.query<{ name: string; mimeType: string; objectKey: string; previewKey: string | null; sha256: string }>(
+          `SELECT original_name AS name, mime_type AS "mimeType", object_key AS "objectKey", preview_key AS "previewKey", sha256 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`,
+          [workspaceId, caseId, line.imageAssetId])).rows[0];
+        if (asset?.mimeType.startsWith("image/")) {
+          const body = (await this.storage.read(asset.objectKey)).body, preview = asset.previewKey ? (await this.storage.read(asset.previewKey)).body : null;
+          imageId = randomUUIDv4();
+          await storeImage(client, this.storage, { workspaceId, itemId, imageId, userId: user.userId, name: asset.name, mimeType: asset.mimeType, body: await toBuffer(body), preview: preview ? await toBuffer(preview) : null, sha256: asset.sha256 });
+        }
+      }
+      const snapshot = { itemId, code, name: line.title, itemType, unitCode: unit, categoryName: null, priceBookId: book.id, method: "fixed", version: 1, pricedAt: new Date().toISOString(), priceReason: null };
+      await client.query(`UPDATE commercial_quote_lines SET catalog_item_id = $5, catalog_snapshot = $6::jsonb, catalog_image_id = coalesce($7, catalog_image_id), version = version + 1, updated_by = $8, updated_at = now()
+        WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND id = $4`, [workspaceId, caseId, quoteId, lineId, itemId, JSON.stringify(snapshot), imageId, user.userId]);
+      await client.query(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2`, [workspaceId, caseId]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.line_added_to_catalog.v1", entityType: "catalog_item", entityId: itemId, after: { quoteId, lineId, code } });
+      return this.state(client, workspaceId, caseId, quoteId, user.userId);
     });
   }
 
@@ -341,7 +406,7 @@ export class QuotationBuilderService {
     return {
       ...line,
       kind: item.kind === "service" && line.kind === "item" ? "service" : line.kind,
-      title: item.title, description: item.description, unit: item.unit, catalogItemId: item.snapshot.itemId,
+      title: item.title, description: item.description, unit: item.unit, catalogItemId: item.snapshot.itemId, catalogImageId: item.imageId,
       catalogSnapshot: { ...item.snapshot, priceReason: item.priceReason },
       rate: item.rate ?? "0", unitCost: item.unitCost,
       pricingMode: buildUpMode ? "build_up" as const : "rate" as const,
@@ -366,23 +431,27 @@ export class QuotationBuilderService {
       line.unitCost = built.cost;
     }
     if (line.kind === "client_supplied") line.rate = "0";
+    if (line.imageAssetId && line.imageAssetId !== current?.imageAssetId
+      && !(await client.query(`SELECT 1 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3 AND mime_type LIKE 'image/%'`, [workspaceId, caseId, line.imageAssetId])).rowCount)
+      throw new BadRequestException("Upload the picture to this project first.");
     const room = line.areaId ? areas.get(line.areaId) ?? "" : "";
     await client.query(
       `INSERT INTO commercial_quote_lines (workspace_id, case_id, quote_id, id, sort_order, room, title, quantity, unit, unit_cost, rate, optional,
          kind, description, pricing_mode, note, area_id, from_area_id, work_package_id, catalog_item_id, catalog_snapshot, formula, length, width, height,
-         count, dimension_unit, markup_percent, discount_kind, discount_value, tax_code, tax_rate, option_group, version, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now())
+         count, dimension_unit, markup_percent, discount_kind, discount_value, tax_code, tax_rate, option_group, version, updated_by, updated_at, image_asset_id, catalog_image_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, 1, $34, now(), $35, $36)
        ON CONFLICT (case_id, quote_id, id) DO UPDATE SET sort_order = excluded.sort_order, room = excluded.room, title = excluded.title, quantity = excluded.quantity,
          unit = excluded.unit, unit_cost = excluded.unit_cost, rate = excluded.rate, optional = excluded.optional, kind = excluded.kind, description = excluded.description,
          pricing_mode = excluded.pricing_mode, note = excluded.note, area_id = excluded.area_id, from_area_id = excluded.from_area_id, work_package_id = excluded.work_package_id,
          catalog_item_id = excluded.catalog_item_id, catalog_snapshot = excluded.catalog_snapshot, formula = excluded.formula, length = excluded.length, width = excluded.width,
          height = excluded.height, count = excluded.count, dimension_unit = excluded.dimension_unit, markup_percent = excluded.markup_percent,
          discount_kind = excluded.discount_kind, discount_value = excluded.discount_value, tax_code = excluded.tax_code, tax_rate = excluded.tax_rate,
-         option_group = excluded.option_group, version = commercial_quote_lines.version + 1, updated_by = excluded.updated_by, updated_at = now()`,
+         option_group = excluded.option_group, version = commercial_quote_lines.version + 1, updated_by = excluded.updated_by, updated_at = now(),
+         image_asset_id = excluded.image_asset_id, catalog_image_id = excluded.catalog_image_id`,
       [workspaceId, caseId, quoteId, line.id, line.position, room, line.title.trim(), line.quantity, line.unit, line.unitCost, line.rate, line.optional || null,
         line.kind, line.description, line.pricingMode, line.note, line.areaId, line.fromAreaId, line.workPackageId, line.catalogItemId,
         line.catalogSnapshot ? JSON.stringify(line.catalogSnapshot) : null, line.formula, line.length, line.width, line.height, line.count, line.dimensionUnit,
-        line.markupPercent, line.discountKind, line.discountValue, line.taxCode, line.taxRate, line.optionGroup, userId]);
+        line.markupPercent, line.discountKind, line.discountValue, line.taxCode, line.taxRate, line.optionGroup, userId, line.imageAssetId, line.catalogImageId]);
     if (line.components) {
       await client.query(`DELETE FROM commercial_quote_line_components WHERE workspace_id = $1 AND case_id = $2 AND quote_id = $3 AND line_id = $4`, [workspaceId, caseId, quoteId, line.id]);
       for (const [position, component] of line.components.entries())
@@ -529,7 +598,7 @@ const LINE_SELECT = `SELECT line.id, line.sort_order AS position, line.version, 
   line.rate::text AS rate, line.unit_cost::text AS "unitCost", line.markup_percent::text AS "markupPercent", line.pricing_mode AS "pricingMode",
   line.discount_kind AS "discountKind", line.discount_value::text AS "discountValue", line.tax_code AS "taxCode", line.tax_rate::text AS "taxRate",
   line.optional, line.option_group AS "optionGroup", line.note, line.catalog_item_id AS "catalogItemId", line.catalog_snapshot AS "catalogSnapshot",
-  line.updated_at AS "updatedAt", editor.display_name AS "updatedByName"
+  line.updated_at AS "updatedAt", editor.display_name AS "updatedByName", line.image_asset_id AS "imageAssetId", line.catalog_image_id AS "catalogImageId"
   FROM commercial_quote_lines line LEFT JOIN users editor ON editor.id = line.updated_by`;
 
 async function readLines(db: Db, workspaceId: string, caseId: string, quoteId: string) {
@@ -572,7 +641,7 @@ const blankLine = (id: string): LineRow => ({
   id, position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "",
   quantity: "1", formula: null, length: null, width: null, height: null, count: null, dimensionUnit: null, rate: "0", unitCost: null,
   markupPercent: null, pricingMode: "rate", discountKind: null, discountValue: null, taxCode: null, taxRate: null, optional: null,
-  optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null,
+  optionGroup: null, note: "", catalogItemId: null, catalogSnapshot: null, updatedAt: "", updatedByName: null, imageAssetId: null, catalogImageId: null,
 });
 
 /** Validates and applies the editor's fields to a line. Costs and markup change only with cost permission. */
@@ -617,6 +686,8 @@ function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fie
     }
   }
   if (has("optional")) next.optional = bool(fields.optional) || null;
+  if (has("imageAssetId")) next.imageAssetId = fields.imageAssetId === null ? null : uuid(fields.imageAssetId, "Image");
+  if (has("catalogImageId")) { if (fields.catalogImageId !== null) throw new BadRequestException("A catalog picture comes from the catalog item."); next.catalogImageId = null; }
   if (has("optionGroup")) next.optionGroup = fields.optionGroup === null || fields.optionGroup === "" ? null : text(fields.optionGroup, "Option group", 80);
   if (has("components")) {
     if (!Array.isArray(fields.components) || fields.components.length > 60) throw new BadRequestException("Use up to 60 rows in a build-up.");
@@ -750,6 +821,15 @@ function templateLine(line: Record<string, unknown>, builder: boolean, canCosts:
     length: builder ? str(line.length) : null, width: builder ? str(line.width) : null, height: builder ? str(line.height) : null, count: builder ? str(line.count) : null,
     markupPercent: builder && canCosts ? str(line.markupPercent) : null, pricingMode: builder && line.pricingMode === "build_up" ? "build_up" : "rate",
     catalogItemId: builder ? str(line.catalogItemId) : null, workPackageId: builder ? str(line.workPackageId) : null, optional: line.optional === true,
+    areaName: str(line.room) || null, imageAssetId: null,
     components: builder && Array.isArray(line.components) ? (line.components as Array<Record<string, unknown>>).map((part) => ({ ...part, unitCost: canCosts ? part.unitCost ?? null : null })) : [],
   };
+}
+
+async function toBuffer(body: unknown): Promise<Buffer> {
+  if (Buffer.isBuffer(body)) return body;
+  if (body instanceof Uint8Array) return Buffer.from(body);
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Buffer | string>) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  return Buffer.concat(chunks);
 }
