@@ -10,7 +10,7 @@ const pack = (patch: Partial<HandoverPack> = {}): HandoverPack => ({
   id: "k1", revision: 1, title: "Kitchen handover", areaIds: ["a1"], status: "draft", replacesId: null, contentHash: null, issuedAt: null, issuedByName: null, decidedOn: null, decidedByName: null,
   decisionMethod: null, decisionNote: "", version: 2, documents: [{ id: "d1", kind: "warranty", title: "Hinge warranty", name: "warranty.pdf", size: 120, sha256: "a".repeat(64) }], ...patch,
 });
-const state = (patch: Partial<HandoverState> = {}): HandoverState => ({ packs: [pack()], areas: [{ id: "a1", name: "Kitchen" }, { id: "a2", name: "Bedroom" }], covered: false, canManage: true, ...patch });
+const state = (patch: Partial<HandoverState> = {}): HandoverState => ({ packs: [pack()], areas: [{ id: "a1", name: "Kitchen" }, { id: "a2", name: "Bedroom" }], covered: false, canManage: true, open: { stages: [], snags: [] }, ...patch });
 const mount = (respond: (url: string, init?: RequestInit) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => ({ ok: true, status: 200, json: async () => respond(url, init) }));
   vi.stubGlobal("fetch", fetcher);
@@ -34,6 +34,21 @@ describe("handover", () => {
     await waitFor(() => expect(uploads(fetcher)).toEqual([expect.stringMatching(/\/handover\/k1\/documents\/[0-9a-f-]+\?workspaceId=w&kind=warranty&title=Oven\+manual$/)]));
     await userEvent.click(within(packs).getByRole("button", { name: "Issue" }));
     await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "issue", packId: "k1", version: 2 }));
+  });
+
+  it("issues a pack with stages or snags still open only after listing them and asking why", async () => {
+    const fetcher = mount(() => state({ open: { stages: ["4. Production", "5. Installation"], snags: ["#7 Scratched door (major)"] } }));
+    handover();
+    const packs = await screen.findByRole("list", { name: "Handover packs" });
+    await userEvent.click(within(packs).getByRole("button", { name: "Issue" }));
+    const dialog = await screen.findByRole("dialog", { name: "Issue with work still open" });
+    expect(dialog).toHaveTextContent("Stages not finished: 4. Production, 5. Installation");
+    expect(dialog).toHaveTextContent("Snags open: #7 Scratched door (major)");
+    expect(within(dialog).getByRole("button", { name: "Issue anyway" })).toBeDisabled();
+    expect(posts(fetcher).some((body) => body.action === "issue")).toBe(false);
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Why hand over with work still open" }), "Client moves in Monday; snag fixed under warranty");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Issue anyway" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ action: "issue", packId: "k1", version: 2, confirmOpen: true, openReason: "Client moves in Monday; snag fixed under warranty" }));
   });
 
   it("records the client's acceptance with what's still outstanding, or a refusal with why", async () => {

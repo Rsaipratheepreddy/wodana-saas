@@ -9,7 +9,7 @@ import { membershipOf, readProject } from "../project-core/project-core.store";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { decideHandoverPack, handedOver } from "./handover";
+import { decideHandoverPack, handedOver, openWork, openWorkMessage } from "./handover";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -67,6 +67,17 @@ export class HandoverService {
         if (action === "update_pack" || action === "remove_document" || action === "issue") {
           if (pack.status !== "draft") throw new ConflictException("An issued pack doesn't change; a refusal makes a new revision.");
         } else if (pack.status !== "issued") throw new ConflictException("Only an issued pack is accepted or refused.");
+        // A handover while stages or snags are still open is real, but it's confirmed on purpose, with why, and the audit trail keeps what was open.
+        let confirmedOpen: { stages: string[]; snags: string[]; reason: string } | null = null;
+        if (action === "issue" || action === "accept") {
+          const open = await openWork(client, workspaceId, projectId);
+          const message = openWorkMessage(action, open);
+          if (message) {
+            const reason = text(body.openReason, 500);
+            if (body.confirmOpen !== true || !reason) throw new ConflictException(message);
+            confirmedOpen = { ...open, reason };
+          }
+        }
         if (action === "update_pack") {
           const title = text(body.title, 200);
           if (!title) throw new BadRequestException("Name the pack.");
@@ -107,6 +118,7 @@ export class HandoverService {
           }
         } else throw new BadRequestException("Unknown action.");
         if (!Object.keys(audit).length) audit = { packId: pack.id };
+        if (confirmedOpen) audit = { ...audit, openWork: confirmedOpen };
       }
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `handover.${action}`, entityType: "project", entityId: projectId, after: audit });
       return this.read(client, workspaceId, projectId, user.userId);
@@ -163,7 +175,8 @@ export class HandoverService {
     const who = await this.who(client, workspaceId, projectId, userId);
     const areas = await this.areas(client, workspaceId, projectId);
     const packs = await this.packs(client, workspaceId, projectId);
-    return { packs, areas, covered: handedOver(packs, areas.map((area) => area.id)), canManage: who.manager && ["active", "on_hold"].includes(who.status) };
+    return { packs, areas, covered: handedOver(packs, areas.map((area) => area.id)), canManage: who.manager && ["active", "on_hold"].includes(who.status),
+      open: await openWork(client, workspaceId, projectId) };
   }
 
   private async packs(client: Db, workspaceId: string, projectId: string, id: string | null = null): Promise<Pack[]> {
