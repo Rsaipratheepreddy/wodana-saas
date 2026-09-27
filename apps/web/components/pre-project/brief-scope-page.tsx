@@ -97,7 +97,8 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
   const visible = allEntries.filter(item => (archived ? Boolean(item.archivedAt) : !item.archivedAt)
     && (room === 'all' || item.roomId === room)
     && `${item.title} ${item.note} ${item.roomName ?? ''}`.toLowerCase().includes(search.toLowerCase()));
-  const rows = visible.filter(item => view === 'requirement' ? ['requirement', 'note', 'file', 'inspiration'].includes(item.kind) : item.kind === view);
+  // Moodboard pins and site photos have their own tabs; Requirements lists only what the client asked for.
+  const rows = visible.filter(item => view === 'requirement' ? ['requirement', 'note'].includes(item.kind) : item.kind === view);
   const measurementRows: MeasurementRow[] = visible.filter(storedRequirement).flatMap(value => value.specification?.dimensions.length
     ? value.specification.dimensions.map(dimension => ({ id: `${value.id}:${dimension.id}`, entry: value, dimension }))
     : []);
