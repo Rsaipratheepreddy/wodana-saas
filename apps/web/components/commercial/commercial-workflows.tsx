@@ -812,8 +812,11 @@ export function ApprovalRelease({
           ) : <>
             <div className={s.controlSummary}>
               <div><small>Accepted quotation</small><strong>V{accepted.number} · {money(acceptedQuoteValue(accepted), accepted.currency)}</strong></div>
-              <div><small>Internal cost</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
-              <div><small>Gross margin</small><strong>{acceptedQuoteTotals(accepted).margin.toFixed(1)}%</strong></div>
+              {/* Costs are stripped for people who can't see them; showing 0 and 100% would mislead. */}
+              {state.canViewCosts ? <>
+                <div><small>Internal cost</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
+                <div><small>Gross margin</small><strong>{acceptedQuoteTotals(accepted).margin.toFixed(1)}%</strong></div>
+              </> : null}
               <div><small>Internal approval</small><strong>{d.ownerReview ? statusLabel[d.ownerReview.status] ?? d.ownerReview.status : "Not submitted"}</strong></div>
             </div>
             {d.dealFile && <div className={s.dealBanner}><div><small>DEAL FILE</small><strong>{d.dealFile.reference}</strong><span>Approved {d.dealFile.approvedAt.slice(0,10)} by {d.dealFile.approvedBy}</span></div><div><small>Current round</small><strong>{d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? "Design" : "Main quotation" : "Design approved · main pending"}</strong></div><div><small>Frozen evidence</small><strong>{d.dealFile.designEvidence?.links?.length ?? 0} files · {d.dealFile.materialEvidence?.length ?? 0} materials</strong></div><div><small>Deal value</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div></div>}
