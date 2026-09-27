@@ -3,7 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { Illustration, type IllustrationName } from "./illustration";
 import { createContext, useCallback, useContext, useMemo, useState, type HTMLAttributes, type ReactNode } from "react";
-import { AlertCircle, CheckCircle2, Inbox, Info, LoaderCircle, TriangleAlert, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Info, LoaderCircle, Lock, TriangleAlert, X } from "lucide-react";
 import { Button, IconButton } from "./actions";
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
@@ -73,9 +73,19 @@ export function NoResultsState({ onClear }: { onClear?: () => void }) {
   const t = useT();
   return <EmptyState action={onClear ? <Button onPress={onClear} variant="quiet">{t("Clear filters")}</Button> : null} description={t("Try a different word or clear the filters.")} illustration="search" title={t("No matches")} />;
 }
-export function NoAccessState() {
+/** A page (or a whole tab) the person's role can't use. No Retry: asking for access is the only next step. */
+export function NoAccessState({ area }: { area?: string }) {
   const t = useT();
-  return <EmptyState description={t("Ask a workspace admin for access.")} illustration="locked" title={t("You don't have access to this")} />;
+  return <EmptyState description={t("Ask your workspace admin for access.")} illustration="locked" title={area ? t("You don't have access to {area}", { area }) : t("You don't have access to this")} />;
+}
+
+/** The inline form for one part of a page (a panel, or one of several sources), next to content the person can use. */
+export function NoAccessNotice({ area, className }: { area: string; className?: string }) {
+  const t = useT();
+  return <div className={["wd-inline-notice", className].filter(Boolean).join(" ")} data-tone="neutral" data-visible="true" role="status">
+    <Lock aria-hidden="true" size={16} />
+    <span><strong>{t("You don't have access to {area}", { area })}</strong><span>{t("Ask your workspace admin for access.")}</span></span>
+  </div>;
 }
 export function OfflineState() {
   const t = useT();

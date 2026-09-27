@@ -174,6 +174,10 @@
 .wd-inline-notice[data-tone="error"] { border-color: color-mix(in srgb, var(--wd-color-danger) 38%, var(--wd-color-border)); }
 .wd-inline-notice[data-tone="error"] > svg { color: var(--wd-color-danger); }
 .wd-inline-notice[data-tone="success"] > svg { color: var(--wd-color-success); }
+.wd-inline-notice[data-tone="neutral"] > svg { color: var(--wd-color-text-secondary); }
+.wd-person-name { min-inline-size: 0; overflow-wrap: anywhere; text-transform: none; }
+.wd-person-chip { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; max-inline-size: 100%; }
+.wd-person-chip > .wd-person-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wd-empty-state { min-block-size: 14rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--wd-space-2); padding: var(--wd-space-6); text-align: center; }
 .wd-empty-state p { max-inline-size: 28rem; margin: 0; color: var(--wd-muted); }
 .wd-empty-icon { display: grid; place-items: center; inline-size: 2.75rem; block-size: 2.75rem; border-radius: 50%; background: var(--wd-color-surface-muted); color: var(--wd-muted); }
