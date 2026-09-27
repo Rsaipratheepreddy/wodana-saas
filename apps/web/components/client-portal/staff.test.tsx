@@ -21,14 +21,14 @@ const settings: PortalSettings = {
   progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, welcomeTitle: "Welcome home", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
 };
 const contact: PortalContact = { id: G, name: "Maya", confirmedName: null, phone: "+12025550123", email: "maya@example.com", role: "approver", active: true,
-  testContact: false, lastSignedInAt: "2026-09-26T09:00:00.000Z", version: 2, signedIn: true };
+  testContact: false, demoCode: false, lastSignedInAt: "2026-09-26T09:00:00.000Z", version: 2, signedIn: true };
 const client = (patch: Partial<ClientAccess> = {}): ClientAccess => ({
   name: "Maya Client", phone: "+12025550123", email: "maya@example.com", grantId: null, partyId: PARTY, status: "not_invited", invitedAt: null, expiresAt: null, delivery: null,
-  lastVisitAt: null, version: 0, resendAfter: 0, blocked: null, ...patch,
+  lastVisitAt: null, version: 0, resendAfter: 0, blocked: null, demoCode: false, ...patch,
 });
 const portalOf = (patch: Partial<ProjectPortal> = {}): ProjectPortal => ({
   enabled: true, sections: ["progress", "decisions", "payments"], access: { sections: null, paused: false, pausedAt: null, version: 0 }, contacts: [contact], caseId: C, canManage: true,
-  portalUrl: PORTAL_URL, client: client(), ...patch,
+  canSetDemoCode: false, portalUrl: PORTAL_URL, client: client(), ...patch,
 });
 
 function mount(respond: (url: string, method: string, body: Record<string, unknown> | null) => unknown) {
@@ -148,5 +148,49 @@ describe("inviting the project's client", () => {
     expect(await screen.findByText("Access revoked")).toBeInTheDocument();
     expect(screen.getByText("Maya Client can't sign in any more.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Invite client" })).toBeInTheDocument();
+  });
+
+  it("lets a workspace admin set a demonstration code for the client with one safe command, shows Demo access, then clears it", async () => {
+    const invited = client({ grantId: G, status: "invited", invitedAt: "2026-09-27T10:00:00.000Z", delivery: "sent", version: 1 });
+    let demo = false;
+    const fetcher = mount((url, method, body) => {
+      if (url.includes("/demo-code")) { demo = body?.code !== null; return { contacts: [{ ...contact, demoCode: demo }], canManage: true, demo: false }; }
+      if (url.includes("/contacts")) return contactsReply;
+      return portalOf({ canSetDemoCode: true, client: { ...invited, demoCode: demo, version: demo ? 2 : 1 } });
+    });
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><ProjectPortalControl workspaceId={W} projectId={P} /></DesignSystemProvider>);
+    expect(await screen.findByText("Invited")).toBeInTheDocument();
+    expect(screen.queryByText("Demo access")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More client portal actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Clear demo code" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("menuitem", { name: "Set demo code" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set demo code for Maya Client" });
+    const save = within(dialog).getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    await user.type(within(dialog).getByRole("textbox", { name: "Demo code" }), "12a3456");
+    expect(save).toBeEnabled();
+    await user.click(save);
+    await waitFor(() => expect(writes(fetcher)).toEqual([{ url: `/api/client-portal-admin/cases/${C}/contacts/${G}/demo-code?workspaceId=${W}`, method: "POST",
+      body: { commandId: expect.any(String), version: 1, code: "123456" } }]));
+    expect(await screen.findByText("Maya Client signs in with the demo code.")).toBeInTheDocument();
+    expect(screen.getByText("Demo access")).toBeInTheDocument();
+    // Clearing is one action away and version-checked against the contact as it is now.
+    await user.click(screen.getByRole("button", { name: "More client portal actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Clear demo code" }));
+    await waitFor(() => expect(writes(fetcher).at(-1)).toEqual({ url: `/api/client-portal-admin/cases/${C}/contacts/${G}/demo-code?workspaceId=${W}`, method: "POST",
+      body: { commandId: expect.any(String), version: 2, code: null } }));
+    expect(await screen.findByText("The demo code was cleared.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Demo access")).not.toBeInTheDocument());
+  });
+
+  it("offers no demo code to someone without the portal admin permission", async () => {
+    mount((url) => (url.includes("/contacts") ? contactsReply : portalOf({ client: client({ grantId: G, status: "invited", version: 1 }) })));
+    const user = userEvent.setup();
+    render(<DesignSystemProvider><ProjectPortalControl workspaceId={W} projectId={P} /></DesignSystemProvider>);
+    expect(await screen.findByText("Invited")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More client portal actions" }));
+    expect(await screen.findByRole("menuitem", { name: "Revoke access" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Set demo code" })).not.toBeInTheDocument();
   });
 });

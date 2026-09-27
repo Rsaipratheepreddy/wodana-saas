@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, Checkbox, ControlledModalDialog, IconMenuButton, InlineNotice, Switch, formatDate, useDesignSystem } from "@/design-system";
+import { Badge, Button, Checkbox, ControlledModalDialog, IconMenuButton, InlineNotice, Switch, TextInput, formatDate, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, staffPortalApi } from "@/lib/client-portal/client";
 import type { ClientAccess, PortalSection, ProjectPortal } from "@/lib/client-portal/types";
@@ -15,8 +15,8 @@ type Notice = { tone: "success" | "error"; message: string };
 /**
  * A project's place in the client portal: which of the workspace's sections this client sees, pausing it,
  * who can sign in, and the client's own access: invite them (an email with the portal address and how to
- * sign in), see whether they were invited or have been in, copy the portal link, take access away.
- * Shown on the project's Updates.
+ * sign in), see whether they were invited or have been in, copy the portal link, take access away, and (a
+ * workspace admin) set or clear a demonstration sign-in code for them. Shown on the project's Updates.
  */
 export function ProjectPortalControl({ workspaceId, projectId, locale }: { workspaceId: string; projectId: string; locale?: string }) {
   const t = useT();
@@ -31,6 +31,8 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [demoCode, setDemoCode] = useState("");
   const load = useCallback(async () => {
     try { setPortal(await api.project(projectId)); } catch { setPortal(null); }
   }, [api, projectId]);
@@ -67,9 +69,17 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
     try { await navigator.clipboard.writeText(portal.portalUrl); setNotice({ tone: "success", message: t("Portal link copied.") }); }
     catch { setNotice({ tone: "error", message: t("Couldn't copy. Open the portal and copy its address.") }); }
   };
+  // The demonstration code: set on this client's contact by a workspace admin, or cleared; then the project is read again.
+  const demo = (code: string | null) => run(async () => {
+    await api.demoCode(portal.caseId, client.grantId!, { commandId: commandId(), version: client.version, code });
+    return api.project(projectId);
+  }, () => { setDemoOpen(false); setDemoCode(""); return { tone: "success", message: code ? t("{name} signs in with the demo code.", { name }) : t("The demo code was cleared.") }; });
+  const canDemo = portal.canSetDemoCode && Boolean(client.grantId) && client.status !== "revoked";
   const menu = [
     ...(portal.enabled ? [{ id: "copy", label: t("Copy portal link") }] : []),
     ...(canInvite && client.status === "active" ? [{ id: "resend", label: t("Resend invite") }] : []),
+    ...(canDemo && !client.demoCode ? [{ id: "demo", label: t("Set demo code") }] : []),
+    ...(canDemo && client.demoCode ? [{ id: "clear-demo", label: t("Clear demo code") }] : []),
     ...(portal.canManage && client.grantId && client.status !== "revoked" ? [{ id: "revoke", label: t("Revoke access") }] : []),
   ];
   return <div className={styles.control} data-tour="portal-control">
@@ -83,12 +93,13 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
       {canInvite && client.status === "invited"
         ? <Button size="compact" isLoading={busy} isDisabled={client.resendAfter > 0} onPress={() => void invite()}>{t("Resend invite")}</Button> : null}
       {menu.length ? <IconMenuButton ariaLabel={t("More client portal actions")} items={menu}
-        onAction={(id) => (id === "copy" ? void copy() : id === "resend" ? void invite() : setConfirmRevoke(true))} /> : null}
+        onAction={(id) => (id === "copy" ? void copy() : id === "resend" ? void invite() : id === "demo" ? setDemoOpen(true) : id === "clear-demo" ? void demo(null) : setConfirmRevoke(true))} /> : null}
       <Button size="compact" data-tour="portal-manage" data-tour-safe onPress={edit}>{portal.canManage ? t("Manage") : t("View")}</Button>
     </div>
     <div className={styles.client}>
       <span className={styles.clientName}>{name || t("No client")}</span>
       <ClientStatus client={client} locale={region.locale} timeZone={region.timeZone} />
+      {client.demoCode ? <Badge tone="warning">{t("Demo access")}</Badge> : null}
     </div>
     {notice ? <InlineNotice className={styles.notice} tone={notice.tone} message={notice.message} /> : null}
     {open ? <ControlledModalDialog isOpen onOpenChange={setOpen} size="lg" title={t("Client portal")}
@@ -104,6 +115,12 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
         </fieldset>
         <ClientContacts workspaceId={workspaceId} caseId={portal.caseId} portalUrl={portal.portalUrl} portalEnabled={portal.enabled} locale={locale} onChanged={load} />
       </div>
+    </ControlledModalDialog> : null}
+    {demoOpen ? <ControlledModalDialog isOpen onOpenChange={(next) => { if (!next) setDemoOpen(false); }} title={t("Set demo code for {name}", { name })}
+      description={t("They sign in with this code and their mobile number; no code is sent to them. For demonstrations only.")}
+      footer={<div className="wd-dialog-actions"><Button onPress={() => setDemoOpen(false)}>{t("Cancel")}</Button>
+        <Button variant="primary" isLoading={busy} isDisabled={demoCode.length !== 6} onPress={() => void demo(demoCode)}>{t("Save")}</Button></div>}>
+      <TextInput label={t("Demo code")} value={demoCode} onChange={(value) => setDemoCode(value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" maxLength={6} autoFocus />
     </ControlledModalDialog> : null}
     {confirmRevoke ? <ControlledModalDialog isOpen onOpenChange={(next) => { if (!next) setConfirmRevoke(false); }} title={t("Revoke access for {name}?", { name })}
       description={t("They are signed out everywhere and can't sign in until invited again.")}

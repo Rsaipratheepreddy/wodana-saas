@@ -749,4 +749,52 @@ integration("client portal (plan §6.22)", () => {
       await expect(w.admin.inviteClient(actor, w.workspaceId, projectId, { commandId: randomUUID(), version: 3 })).rejects.toThrow(/off for the workspace/);
     });
   });
+
+  it("signs a demonstration contact in with the code an admin set, sends them nothing, and keeps every other number as it was", async () => {
+    await world(async (w) => {
+      const { approver, viewer } = await open(w);
+      // A workspace admin sets the code on one contact: six digits, once per command, version-checked, audited.
+      await expect(w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: randomUUID(), version: approver.version, code: "12345" })).rejects.toThrow(/six-digit/);
+      await expect(w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: randomUUID(), version: approver.version + 5, code: "123456" })).rejects.toThrow(/Reload/);
+      const set = randomUUID();
+      let contacts = await w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: set, version: approver.version, code: "123456" });
+      let demo = contacts.contacts.find((contact) => contact.id === approver.id)!;
+      expect([demo.demoCode, demo.version]).toEqual([true, approver.version + 1]);
+      expect((await w.client.query("SELECT demo_code_hash, demo_code_set_by FROM client_portal_grants WHERE id = $1", [approver.id])).rows[0])
+        .toEqual({ demo_code_hash: expect.stringMatching(/^[0-9a-f]{64}$/), demo_code_set_by: w.manager });
+      // The same command again is a no-op; a different body under the same id is refused.
+      expect((await w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: set, version: approver.version, code: "123456" })).contacts.find((contact) => contact.id === approver.id)!.version).toBe(demo.version);
+      await expect(w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: set, version: approver.version, code: "654321" })).rejects.toThrow(/different details/);
+      expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.demo_code_set'", [w.workspaceId])).rows[0].n).toBe(1);
+
+      // Signing in: no WhatsApp or email goes to the demonstration contact; their code opens the session; a wrong one doesn't.
+      const sentBefore = w.sent.length;
+      const challenge = await w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7");
+      expect(w.sent).toHaveLength(sentBefore);
+      await expect(w.portal.login(w.slug, { challengeId: challenge.challengeId, code: "111111" })).rejects.toThrow(/isn't right/);
+      const session = await w.portal.login(w.slug, { challengeId: challenge.challengeId, code: "123456" });
+      expect(session.token).toBeTruthy();
+      expect((await w.portal.view(w.slug, session.token)).contact.phone).toBe(APPROVER);
+      // Another number (a contact without a demonstration code, or a stranger) with 123456 fails.
+      for (const phone of [VIEWER, STRANGER]) {
+        await w.client.query("UPDATE client_portal_challenges SET created_at = created_at - interval '1 minute' WHERE workspace_id = $1", [w.workspaceId]);
+        const other = await w.portal.challenge(w.slug, { phone }, "", "203.0.113.7");
+        await expect(w.portal.login(w.slug, { challengeId: other.challengeId, code: "123456" })).rejects.toThrow(/isn't right/);
+      }
+      expect(viewer.demoCode).toBe(false);
+
+      // Clearing the code ends the demonstration: their sessions end and 123456 no longer signs them in.
+      contacts = await w.admin.demoCode(actor, w.workspaceId, w.caseId, approver.id, { commandId: randomUUID(), version: demo.version, code: null });
+      demo = contacts.contacts.find((contact) => contact.id === approver.id)!;
+      expect(demo.demoCode).toBe(false);
+      await expect(w.portal.view(w.slug, session.token)).rejects.toThrow(/signed out/);
+      await w.client.query("UPDATE client_portal_challenges SET created_at = created_at - interval '1 minute' WHERE workspace_id = $1", [w.workspaceId]);
+      const again = await w.portal.challenge(w.slug, { phone: APPROVER }, "", "203.0.113.7");
+      await expect(w.portal.login(w.slug, { challengeId: again.challengeId, code: "123456" })).rejects.toThrow(/isn't right/);
+      expect(w.sent.at(-1)).toMatchObject({ channel: "whatsapp", to: APPROVER });
+      expect((await w.client.query("SELECT count(*)::int AS n FROM audit_events WHERE workspace_id = $1 AND action = 'client_portal.demo_code_cleared'", [w.workspaceId])).rows[0].n).toBe(1);
+      expect((await w.client.query("SELECT demo_code_hash, demo_code_set_by, demo_code_set_at FROM client_portal_grants WHERE id = $1", [approver.id])).rows[0])
+        .toEqual({ demo_code_hash: null, demo_code_set_by: null, demo_code_set_at: null });
+    });
+  });
 });

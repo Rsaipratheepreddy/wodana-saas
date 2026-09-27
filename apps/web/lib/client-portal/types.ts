@@ -108,6 +108,8 @@ export type PortalSettings = {
 export type PortalContact = {
   id: string; name: string; confirmedName: string | null; phone: string; email: string | null; role: "approver" | "viewer"; active: boolean; testContact: boolean;
   lastSignedInAt: string | null; version: number; signedIn: boolean;
+  /** They sign in with a demonstration code an admin set; no code is sent to them. */
+  demoCode: boolean;
 };
 
 export type InviteDelivery = "sent" | "not_configured" | "failed" | "suppressed";
@@ -120,11 +122,13 @@ export type ClientAccess = {
   name: string | null; phone: string | null; email: string | null; grantId: string | null; partyId: string | null;
   status: ClientAccessStatus; invitedAt: string | null; expiresAt: string | null; delivery: InviteDelivery | null; lastVisitAt: string | null;
   version: number; resendAfter: number; blocked: InviteBlock | null;
+  /** They sign in with a demonstration code an admin set; no code is sent to them. */
+  demoCode: boolean;
 };
 
 export type ProjectPortal = {
   enabled: boolean; sections: PortalSection[]; access: { sections: PortalSection[] | null; paused: boolean; pausedAt: string | null; version: number };
-  contacts: PortalContact[]; caseId: string; canManage: boolean; portalUrl: string; client: ClientAccess;
+  contacts: PortalContact[]; caseId: string; canManage: boolean; canSetDemoCode: boolean; portalUrl: string; client: ClientAccess;
 };
 
 /** What an invitation link opens: the client's number ready to sign in, or a link that no longer works. */

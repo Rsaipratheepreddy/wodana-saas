@@ -53,6 +53,9 @@ export function staffPortalApi(workspaceId: string, t: Translate = untranslated)
     contacts: (caseId: string) => call<Contacts>(t, at(`cases/${caseId}/contacts`)),
     saveContact: (caseId: string, input: Record<string, unknown>) => call<Contacts>(t, at(`cases/${caseId}/contacts`), "PUT", input),
     signOut: (caseId: string, contactId: string) => call<Contacts>(t, at(`cases/${caseId}/contacts/${contactId}/sign-out`), "POST", {}),
+    /** Sets (six digits) or clears (null) one contact's demonstration sign-in code; the command id makes a retry safe. */
+    demoCode: (caseId: string, contactId: string, input: { commandId: string; version: number; code: string | null }) =>
+      call<Contacts>(t, at(`cases/${caseId}/contacts/${contactId}/demo-code`), "POST", input),
   };
 }
 export type StaffPortalApi = ReturnType<typeof staffPortalApi>;

@@ -9,7 +9,7 @@ import type { CommercialData } from "../commercial/commercial.types";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { endSessions, mobileNumber } from "./portal-auth";
+import { demoCodeInput, endSessions, mobileNumber, portalCodes, setDemoCode, type PortalCodes } from "./portal-auth";
 import { inviteClient, readClientAccess, revokeClient, type InviteDelivery } from "./portal-invitations";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
 import { portalUrl, readSite } from "./portal-site";
@@ -17,7 +17,7 @@ import { portalUrl, readSite } from "./portal-site";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Contact = { id: string; name: string; confirmedName: string | null; phone: string; email: string | null; role: "approver" | "viewer"; active: boolean; testContact: boolean;
-  lastSignedInAt: string | null; version: number };
+  demoCode: boolean; lastSignedInAt: string | null; version: number };
 type Command = { id: string; version: number; hash: string };
 
 /**
@@ -26,7 +26,11 @@ type Command = { id: string; version: number; hash: string };
  */
 @Injectable()
 export class ClientPortalAdminService {
-  constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService, private readonly mailer: TransactionalEmailService) {}
+  private readonly codes: PortalCodes;
+
+  constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService, private readonly mailer: TransactionalEmailService) {
+    this.codes = portalCodes(config);
+  }
 
   private get demo() {
     return this.config.get("PORTAL_DEMO_OTP") === "true" && this.config.get("NODE_ENV") !== "production";
@@ -54,28 +58,28 @@ export class ClientPortalAdminService {
   /** A project's portal: which sections its client sees, whether it's paused, and who can sign in. */
   project(actor: RequestActor, workspaceId: string, projectId: string) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
-      return this.readProject(client, workspaceId, projectId, caseId, canManage);
+      const { caseId, canManage, canDemo } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      return this.readProject(client, workspaceId, projectId, caseId, canManage, canDemo);
     });
   }
 
   saveProject(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      const { caseId, canManage, canDemo } = await this.projectRole(client, workspaceId, projectId, user.userId);
       if (!canManage) throw new ForbiddenException("Only the project manager changes what the client sees.");
       const { before, after } = await saveProjectAccess(client, workspaceId, projectId, user.userId, body);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: after.paused && !before.paused ? "client_portal.project_paused"
         : !after.paused && before.paused ? "client_portal.project_resumed" : "client_portal.project_sections", entityType: "project", entityId: projectId, before, after });
-      return this.readProject(client, workspaceId, projectId, caseId, true);
+      return this.readProject(client, workspaceId, projectId, caseId, true, canDemo);
     });
   }
 
-  private async readProject(client: PoolClient, workspaceId: string, projectId: string, caseId: string, canManage: boolean) {
+  private async readProject(client: PoolClient, workspaceId: string, projectId: string, caseId: string, canManage: boolean, canSetDemoCode: boolean) {
     const settings = await readPortalSettings(client, workspaceId);
     const access = await readProjectAccess(client, workspaceId, projectId);
     return {
       enabled: settings.enabled, sections: SECTIONS.filter((section) => settings.sections[section]), access,
-      contacts: await this.readContacts(client, workspaceId, caseId), caseId, canManage,
+      contacts: await this.readContacts(client, workspaceId, caseId), caseId, canManage, canSetDemoCode,
       portalUrl: await portalUrl(client, this.config, workspaceId, settings.slug),
       client: await readClientAccess(client, { workspaceId, projectId, caseId, settings, access }),
     };
@@ -88,7 +92,7 @@ export class ClientPortalAdminService {
    */
   inviteClient(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      const { caseId, canManage, canDemo } = await this.projectRole(client, workspaceId, projectId, user.userId);
       if (!canManage) throw new ForbiddenException("Only the project manager invites the client.");
       const command = this.command(body, { action: "invite_client", projectId });
       if (!(await this.replayed(client, workspaceId, command))) {
@@ -116,14 +120,14 @@ export class ClientPortalAdminService {
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "client_portal.client_invited", entityType: "project", entityId: projectId,
           after: { grantId: result.grantId, invitationId: result.invitationId, email: result.email, delivery: result.delivery, reused: result.reused, commandId: command.id } });
       }
-      return this.readProject(client, workspaceId, projectId, caseId, true);
+      return this.readProject(client, workspaceId, projectId, caseId, true, canDemo);
     });
   }
 
   /** Takes the client's portal access away for this project's case: no sign-in, sessions ended, invitation links dead. */
   revokeClient(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
-      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      const { caseId, canManage, canDemo } = await this.projectRole(client, workspaceId, projectId, user.userId);
       if (!canManage) throw new ForbiddenException("Only the project manager changes the client's access.");
       const command = this.command(body, { action: "revoke_client", projectId });
       if (!(await this.replayed(client, workspaceId, command))) {
@@ -137,7 +141,31 @@ export class ClientPortalAdminService {
         if (result.changed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "client_portal.client_revoked", entityType: "project", entityId: projectId,
           after: { grantId: result.grantId, sessions: result.ended, commandId: command.id } });
       }
-      return this.readProject(client, workspaceId, projectId, caseId, true);
+      return this.readProject(client, workspaceId, projectId, caseId, true, canDemo);
+    });
+  }
+
+  /**
+   * Sets or clears one contact's demonstration sign-in code (a workspace admin only): six digits, stored as a
+   * hash bound to the contact; the same code again changes nothing. One command once (commandId), version-
+   * checked against the contact, audited. A contact with a demonstration code is sent no code at all.
+   */
+  demoCode(actor: RequestActor, workspaceId: string, caseId: string, contactId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "portal.manage", async (client, user) => {
+      const id = this.caseId(caseId);
+      const code = body.code === null || body.code === undefined || body.code === "" ? null : demoCodeInput(body.code);
+      const command = this.command(body, { action: "demo_code", contactId, code: code === null ? null : this.codes.demoHash(contactId, code) });
+      if (!(await this.replayed(client, workspaceId, command))) {
+        const contact = (await client.query<{ version: number }>(
+          `SELECT version FROM client_portal_grants WHERE workspace_id = $1 AND case_id = $2 AND id = $3 FOR UPDATE`, [workspaceId, id, UUID.test(contactId) ? contactId : null])).rows[0];
+        if (!contact) throw new NotFoundException("Contact not found.");
+        if (command.version !== contact.version) throw new ConflictException("Someone else changed this contact. Reload to see their change.");
+        const result = (await setDemoCode(client, workspaceId, this.codes, { grantId: contactId, code, userId: user.userId }))!;
+        await this.remember(client, workspaceId, command, contactId, "demo_code", { changed: result.changed, demo: result.demo, ended: result.ended });
+        if (result.changed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: code ? "client_portal.demo_code_set" : "client_portal.demo_code_cleared",
+          entityType: "pre_project_case", entityId: id, after: { contactId, sessions: result.ended, commandId: command.id } });
+      }
+      return { contacts: await this.readContacts(client, workspaceId, id), canManage: true, demo: this.demo };
     });
   }
 
@@ -172,7 +200,7 @@ export class ClientPortalAdminService {
          JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id
         WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND membership.user_id = $3 AND assignment.active`, [workspaceId, projectId, userId])).rows[0];
     if (!all && !portal && !assignment) throw new NotFoundException("Project not found.");
-    return { caseId: project.caseId, canManage: all || portal || Boolean(assignment?.lead) };
+    return { caseId: project.caseId, canManage: all || portal || Boolean(assignment?.lead), canDemo: portal };
   }
 
   contacts(actor: RequestActor, workspaceId: string, caseId: string) {
@@ -250,7 +278,7 @@ export class ClientPortalAdminService {
   private async readContacts(client: PoolClient, workspaceId: string, caseId: string) {
     return (await client.query<Contact & { signedIn: boolean }>(
       `SELECT grant_row.id, grant_row.name, grant_row.confirmed_name AS "confirmedName", grant_row.phone, grant_row.email, grant_row.role, grant_row.active,
-              grant_row.test_contact AS "testContact", grant_row.last_signed_in_at AS "lastSignedInAt", grant_row.version,
+              grant_row.test_contact AS "testContact", grant_row.demo_code_hash IS NOT NULL AS "demoCode", grant_row.last_signed_in_at AS "lastSignedInAt", grant_row.version,
               EXISTS (SELECT 1 FROM client_portal_sessions session WHERE session.workspace_id = grant_row.workspace_id AND session.phone = grant_row.phone
                         AND session.revoked_at IS NULL AND session.expires_at > now() AND session.last_seen_at > now() - interval '30 days') AS "signedIn"
          FROM client_portal_grants grant_row WHERE grant_row.workspace_id = $1 AND grant_row.case_id = $2 ORDER BY grant_row.created_at`, [workspaceId, caseId])).rows;

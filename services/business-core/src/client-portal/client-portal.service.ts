@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
 import { recordAudit } from "../audit/record-audit";
 import { CommercialService } from "../commercial/commercial.service";
@@ -10,7 +9,7 @@ import { DatabaseService } from "../database/database.service";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { PreProjectDefinitionService } from "../pre-projects/pre-project-definition.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
-import { confirmName, mobileNumber, openSession, PortalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact } from "./portal-auth";
+import { confirmName, mobileNumber, openSession, portalCodes, sendCode, signIn, signOut, useCode, type Channel, type Delivery, type PortalContact, type PortalCodes } from "./portal-auth";
 import {
   answerRequest, assertDecisionOpen, claimWarranty, comment, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor, raiseRequest,
   type DecisionContext,
@@ -49,9 +48,8 @@ export class ClientPortalService {
   ) {
     const production = config.get("NODE_ENV") === "production";
     if (config.get("PORTAL_DEMO_OTP") === "true" && production) throw new Error("PORTAL_DEMO_OTP cannot be enabled in production.");
-    const secret = config.get<string>("PORTAL_OTP_SECRET") ?? "";
-    if (production && secret.length < 32) throw new Error("Set a stable PORTAL_OTP_SECRET of at least 32 characters for production.");
-    this.codes = new PortalCodes(secret || config.get<string>("LOCAL_AUTH_JWT_SECRET") || randomBytes(32).toString("hex"), config.get("PORTAL_DEMO_OTP") === "true" && !production);
+    if (production && (config.get<string>("PORTAL_OTP_SECRET") ?? "").length < 32) throw new Error("Set a stable PORTAL_OTP_SECRET of at least 32 characters for production.");
+    this.codes = portalCodes(config);
   }
 
   private delivery(): Delivery {

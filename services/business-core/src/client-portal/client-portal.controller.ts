@@ -87,6 +87,11 @@ export class ClientPortalAdminController {
     return this.admin.saveContact(actor, workspaceId, caseId, object(body));
   }
 
+  @Post("cases/:caseId/contacts/:contactId/demo-code") demoCode(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("caseId", ParseUUIDPipe) caseId: string, @Param("contactId", ParseUUIDPipe) contactId: string, @Body() body: unknown) {
+    return this.admin.demoCode(actor, workspaceId, caseId, contactId, object(body));
+  }
+
   @Post("cases/:caseId/contacts/:contactId/sign-out") signOut(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Param("caseId", ParseUUIDPipe) caseId: string, @Param("contactId", ParseUUIDPipe) contactId: string) {
     return this.admin.signOutContact(actor, workspaceId, caseId, contactId);

@@ -27,6 +27,8 @@ export type ClientAccess = {
   name: string | null; phone: string | null; email: string | null; grantId: string | null; partyId: string | null;
   status: AccessStatus; invitedAt: string | null; expiresAt: string | null; delivery: InviteDelivery | null; lastVisitAt: string | null;
   version: number; resendAfter: number; blocked: InviteBlock | null;
+  /** They sign in with a demonstration code an admin set; no code is sent to them. */
+  demoCode: boolean;
 };
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -61,13 +63,14 @@ export async function projectClient(db: Db, workspaceId: string, caseId: string)
   return { partyId: row.partyId, name: row.name, phone: e164(row.phone, row.country ?? countryFromLocale(row.locale)), email: row.email && EMAIL.test(row.email) ? row.email : null };
 }
 
-type GrantRow = { id: string; name: string; phone: string; email: string | null; active: boolean; version: number; lastVisitAt: Date | null };
+type GrantRow = { id: string; name: string; phone: string; email: string | null; active: boolean; version: number; lastVisitAt: Date | null; demoCode: boolean };
 type InvitationRow = { id: string; email: string; sentAt: Date; expiresAt: Date; delivery: InviteDelivery; revokedAt: Date | null };
 
 /** The grant that is this client: the one with the client's number, else the one last invited on this project. */
 async function grantOf(db: Db, workspaceId: string, projectId: string, caseId: string, phone: string | null) {
   return (await db.query<GrantRow>(
     `SELECT grant_row.id, coalesce(grant_row.confirmed_name, grant_row.name) AS name, grant_row.phone, grant_row.email, grant_row.active, grant_row.version,
+            grant_row.demo_code_hash IS NOT NULL AS "demoCode",
             coalesce((SELECT max(session.last_seen_at) FROM client_portal_sessions session WHERE session.workspace_id = grant_row.workspace_id AND session.phone = grant_row.phone),
                      grant_row.last_signed_in_at) AS "lastVisitAt"
        FROM client_portal_grants grant_row
@@ -101,6 +104,7 @@ export async function readClientAccess(db: Db, input: { workspaceId: string; pro
     invitedAt: open?.sentAt.toISOString() ?? null, expiresAt: open?.expiresAt.toISOString() ?? null, delivery: open?.delivery ?? null,
     lastVisitAt: grant?.active && grant.lastVisitAt ? grant.lastVisitAt.toISOString() : null,
     version: grant?.version ?? 0, resendAfter: open ? seconds(open.sentAt.getTime() + INVITE_RESEND_SECONDS * 1000) : 0, blocked,
+    demoCode: Boolean(grant?.active && grant.demoCode),
   };
 }
 
