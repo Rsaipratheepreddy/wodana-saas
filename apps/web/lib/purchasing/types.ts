@@ -59,6 +59,8 @@ export type OrderLine = {
   accepted: string; rejected: string; pending: string; credited: string; returned: string;
   promisedDate: string | null; confirmedQuantity: string | null; due: string | null;
   cancelled: string; cancelReason: string | null; replacesLineId: string | null; replacesOrderNumber: string | null;
+  alternateStatus: "offered" | "accepted" | "rejected" | null; alternateDescription: string | null; alternateSpecification: string; alternateUnitPrice: string | null;
+  alternateNote: string; alternateOfferedBy: string | null; originalDescription: string | null; originalSpecification: string | null;
 };
 export type OrderDetail = OrderRow & {
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
@@ -71,6 +73,8 @@ export type OrderState = {
   revisions: Array<{ revision: number; reason: string; at: string; byName: string }>;
   supplier: { id: string; name: string; email: string | null; phone: string | null; contactName: string | null; approval: Approval; deal: Deal; dealPercent: string | null } | null;
   canBuy: boolean; canApprove: boolean; canApproveThis: boolean;
+  /** Who's looking (to tell whether they recorded something someone else decides). */
+  me: string;
   /** Lines taking a project past what it needs, by how much (while the order is a draft or waiting for approval). */
   overOrdered: Array<{ lineId: string; description: string; unit: string; over: string }>;
   /** The supplier's pack size and minimum where a line doesn't fit them, and the quantity that does. */

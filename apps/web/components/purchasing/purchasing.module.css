@@ -44,7 +44,9 @@
 .draftLines > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 8rem) minmax(0, 8rem) auto; gap: var(--wd-space-2); align-items: center; }
 .draftLines > li:has(> :nth-child(5)) { grid-template-columns: minmax(0, 1fr) minmax(0, 7rem) minmax(0, 5rem) minmax(0, 7rem) auto; }
 .orderLines { display: grid; min-inline-size: 0; overflow-x: auto; }
-.orderLineHead, .orderLine { display: grid; grid-template-columns: minmax(8rem, 1fr) 6rem 6rem 4.5rem 4.5rem 7rem 2rem; gap: var(--wd-space-2); align-items: center; }
+.orderLineHead, .orderLine { display: grid; grid-template-columns: minmax(8rem, 1fr) 6rem 6rem 4.5rem 4.5rem 7rem 4rem; gap: var(--wd-space-2); align-items: center; }
+.lineActions { display: flex; justify-content: flex-end; gap: var(--wd-space-0-5); }
+.alternate { display: grid; gap: var(--wd-space-1); padding: var(--wd-space-2); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
 .orderLineHead { padding-block: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .orderLine { padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
 .orderLineHead > :nth-child(n+2), .orderLine > :nth-child(n+2):not(:last-child) { text-align: end; }

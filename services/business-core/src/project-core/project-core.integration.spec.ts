@@ -1593,6 +1593,130 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("handles a supplier's alternative: decided by someone else, never dearer, through the client for what they choose; nothing received until decided", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, manager } = await buying(w);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "3", unit: "sheets", clientChoice: false, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", specification: "Polished", quantity: "4", unit: "m²", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "send_materials", version: detail.project.version });
+      const materials = await core.materials(actor, w.workspaceId, projectId);
+      const slabItem = materials.items.find((item) => item.name === "Calacatta slab")!;
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "email",
+        decisions: [{ itemId: slabItem.id, decision: "approved" }], version: detail.project.version });
+      const needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      const oak = needs.find((need) => need.title === "Oak veneer")!, slab = needs.find((need) => need.title === "Calacatta slab")!;
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: oak.sourceId, quantity: "3", unitPrice: "100" },
+        { source: "material", materialItemId: slab.sourceId, quantity: "4", unitPrice: "350" }]);
+      const [oakLine, slabLine] = order.lines;
+      let state = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "offer_alternate", lineId: oakLine.id, description: "Walnut veneer",
+        specification: "Crown cut", unitPrice: "90", note: "Oak is out until December", version: order.order.version });
+      expect(state.lines[0]).toMatchObject({ alternateStatus: "offered", alternateDescription: "Walnut veneer", alternateUnitPrice: "90.0000" });
+      await expect(manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: oakLine.id, received: "3" }] })).rejects.toThrow(/Decide on the supplier's alternative for Oak veneer/);
+      await expect(buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "decide_alternate", lineId: oakLine.id, decision: "accept", version: state.order.version }))
+        .rejects.toThrow(/Someone else decides/);
+      state = await manager.orders.command(actor, w.workspaceId, order.order.id, { action: "decide_alternate", lineId: oakLine.id, decision: "accept", version: state.order.version });
+      expect(state.lines[0]).toMatchObject({ description: "Walnut veneer", specification: "Crown cut", originalDescription: "Oak veneer", unitPrice: "90.0000", net: "270.0000", alternateStatus: "accepted" });
+      // (270 + 1,400) net and 5% tax.
+      expect(state.order.total).toBe("1753.5000");
+
+      // The slab is the client's choice: a honed finish needs their sign-off first, and a dearer one a changed order.
+      state = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "offer_alternate", lineId: slabLine.id, description: "Calacatta slab", specification: "Honed",
+        unitPrice: "380", note: "Polished finish discontinued", version: state.order.version });
+      await expect(manager.orders.command(actor, w.workspaceId, order.order.id, { action: "decide_alternate", lineId: slabLine.id, decision: "accept", version: state.order.version }))
+        .rejects.toThrow(/The client chooses Calacatta slab/);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", id: slabItem.id, name: "Calacatta slab", specification: "Honed", quantity: "4", unit: "m²",
+        version: (await core.get(actor, w.workspaceId, projectId)).project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "send_materials", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "record_materials_decision", decidedBy: "Maya", method: "email",
+        decisions: [{ itemId: slabItem.id, decision: "approved" }], version: detail.project.version });
+      await expect(manager.orders.command(actor, w.workspaceId, order.order.id, { action: "decide_alternate", lineId: slabLine.id, decision: "accept", version: state.order.version }))
+        .rejects.toThrow(/costs more/);
+      await expect(manager.orders.command(actor, w.workspaceId, order.order.id, { action: "decide_alternate", lineId: slabLine.id, decision: "reject", version: state.order.version }))
+        .rejects.toThrow(/Say why/);
+      state = await manager.orders.command(actor, w.workspaceId, order.order.id, { action: "decide_alternate", lineId: slabLine.id, decision: "reject", note: "Keep polished; find stock",
+        version: state.order.version });
+      expect(state.lines[1]).toMatchObject({ alternateStatus: "rejected", specification: "Polished", unitPrice: "350.0000" });
+      const receipt = await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: oakLine.id, received: "3" }] });
+      expect(receipt.lines[0]).toMatchObject({ description: "Walnut veneer", accepted: "3.0000" });
+    });
+  });
+
+  it("keeps stock in the catalog's unit when bought in another: boxes in, pieces kept, and returns come out the same way", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, manager } = await buying(w);
+      const catalog = randomUUID(), hinge = randomUUID();
+      await w.client.query("INSERT INTO catalogs(id,workspace_id,code,name) VALUES($1,$2,'core','Core')", [catalog, w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_units(workspace_id,code,label,kind,to_base) VALUES($1,'box','box','count',1) ON CONFLICT DO NOTHING", [w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_items(id,workspace_id,catalog_id,code,name,item_type,unit_code) VALUES($1,$2,$3,'HG','Soft-close hinge','material','pcs')", [hinge, w.workspaceId, catalog]);
+      await w.client.query("INSERT INTO catalog_item_conversions(workspace_id,item_id,from_unit,to_unit,factor) VALUES($1,$2,'box','pcs',10)", [w.workspaceId, hinge]);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Soft-close hinge", quantity: "3", unit: "box", clientChoice: false, version: detail.project.version });
+      const need = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((item) => item.title === "Soft-close hinge")!;
+      await w.client.query("UPDATE project_material_items SET catalog_item_id = $2 WHERE id = $1", [need.sourceId, hinge]);
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: need.sourceId, quantity: "3", unitPrice: "50", taxRate: "0" }]);
+      const receipt = await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-27",
+        lines: [{ orderLineId: order.lines[0].id, received: "3" }] });
+      let stock = await buyer.stock.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => [row.itemName, row.unit, row.catalogItemId, row.onHand])).toEqual([["Soft-close hinge", "pcs", hinge, "30.0000"]]);
+      expect((await w.client.query(`SELECT unit_cost::text AS cost FROM stock_movements WHERE workspace_id = $1 AND kind = 'receive'`, [w.workspaceId])).rows).toEqual([{ cost: "5.0000" }]);
+      const back = await buyer.returns.create(actor, w.workspaceId, { id: randomUUID(), receiptId: receipt.receipt.id, outcome: "credit",
+        lines: [{ receiptLineId: receipt.lines[0].id, source: "accepted", quantity: "1", reasonKind: "defective", reason: "Box of broken springs" }] });
+      await buyer.returns.command(actor, w.workspaceId, back.return.id, { action: "sent", version: back.return.version });
+      stock = await buyer.stock.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => row.onHand)).toEqual(["20.0000"]);
+    });
+  });
+
+  it("splits an award across suppliers, one draft order each, and keeps one project's stock off another project's site", async () => {
+    await world(async (w) => {
+      const { core, projectId, company, vendor, buyer, manager, access, all } = await buying(w);
+      const other = randomUUID();
+      const saved = await buyer.suppliers.save(actor, w.workspaceId, { id: other, version: 0, name: "Siom Marble", entityIds: [company] });
+      await manager.suppliers.approve(actor, w.workspaceId, other, { version: saved.suppliers.find((item) => item.id === other)!.version, approval: "approved" });
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "4", unit: "m²", clientChoice: false, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Travertine", quantity: "6", unit: "m²", clientChoice: false, version: detail.project.version });
+      const needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      const requests = new PriceRequestsService(access(w.designer, all), buyer.orders);
+      const requestId = randomUUID();
+      let request = await requests.create(actor, w.workspaceId, { id: requestId, vendorIds: [vendor, other],
+        lines: needs.filter((need) => need.source === "material").map((need) => ({ source: "material", materialItemId: need.sourceId, quantity: need.required })) });
+      const [slabLine, travertineLine] = request.lines;
+      request = await requests.command(actor, w.workspaceId, requestId, { action: "record_reply", version: request.request.version, vendorId: vendor,
+        prices: [{ lineId: slabLine.id, unitPrice: "300" }, { lineId: travertineLine.id, unitPrice: "120" }] });
+      request = await requests.command(actor, w.workspaceId, requestId, { action: "record_reply", version: request.request.version, vendorId: other,
+        prices: [{ lineId: slabLine.id, unitPrice: "320" }, { lineId: travertineLine.id, unitPrice: "95" }] });
+      expect([request.cheapest[slabLine.id], request.cheapest[travertineLine.id]]).toEqual([vendor, other]);
+      request = await requests.command(actor, w.workspaceId, requestId, { action: "award", version: request.request.version,
+        awards: [{ lineId: slabLine.id, vendorId: vendor }, { lineId: travertineLine.id, vendorId: other }] });
+      expect(request.orders.map((order) => order.vendorId).sort()).toEqual([vendor, other].sort());
+      const drafts = [];
+      for (const created of request.orders) drafts.push(await buyer.orders.get(actor, w.workspaceId, created.id));
+      expect(drafts.map((draft) => [draft.order.supplierName, draft.lines.map((line) => [line.description, line.unitPrice])]).sort()).toEqual([
+        ["Nile Marble", [["Calacatta slab", "300.0000"]]], ["Siom Marble", [["Travertine", "95.0000"]]]]);
+
+      // A second project's site: the first project's stock can't be moved there.
+      const second = randomUUID();
+      await w.client.query("SAVEPOINT second");
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO delivery_projects (id, workspace_id, case_id, name, status, created_by, reference, currency, started_at, started_by, quote_id)
+        SELECT $2, workspace_id, $3, 'Marina flat', 'active', created_by, 'PRJ-9999', currency, started_at, started_by, quote_id FROM delivery_projects WHERE id = $1`, [projectId, second, randomUUID()]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      const siteB = randomUUID();
+      await w.client.query("INSERT INTO stock_locations (id, workspace_id, kind, name, project_id) VALUES ($1, $2, 'site', 'Marina flat site', $3)", [siteB, w.workspaceId, second]);
+      const store = randomUUID();
+      await buyer.stock.saveLocation(actor, w.workspaceId, { id: store, kind: "warehouse", name: "Main store" });
+      const stock = await buyer.stock.command(actor, w.workspaceId, { id: randomUUID(), action: "add", name: "Grout", unit: "bags", locationId: store, projectId, quantity: "5", reason: "Opening stock" });
+      const grout = stock.rows[0];
+      await expect(buyer.stock.send(actor, w.workspaceId, { id: randomUUID(), fromLocationId: store, toLocationId: siteB, lines: [{ itemId: grout.itemId, projectId, quantity: "2" }] }))
+        .rejects.toThrow(/can't go to another project's site/);
+      await w.client.query("ROLLBACK TO SAVEPOINT second");
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

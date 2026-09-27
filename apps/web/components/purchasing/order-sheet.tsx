@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Ban, Plus, X } from "lucide-react";
+import { Ban, Plus, Replace, X } from "lucide-react";
 import {
   ActivityFeed, Button, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, SelectField, Skeleton, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
@@ -56,6 +56,8 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const [dialog, setDialog] = useState<Dialog>(null);
   const [overReason, setOverReason] = useState("");
   const [cancelling, setCancelling] = useState<OrderLine | null>(null);
+  const [offering, setOffering] = useState<OrderLine | null>(null);
+  const [refusing, setRefusing] = useState<OrderLine | null>(null);
   const [busy, setBusy] = useState(false);
   const accept = useCallback((next: OrderState) => { setState(next); setForm(formOf(next)); }, []);
   const load = useCallback(async () => {
@@ -106,7 +108,10 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     line.confirmedQuantity !== null && Number(line.confirmedQuantity) < Number(subtractExact(line.quantity, line.cancelled)) ? t("Supplier confirmed {quantity}", { quantity: quantityText(line.confirmedQuantity) }) : "",
     Number(line.cancelled) ? t("{quantity} cancelled: {reason}", { quantity: quantityText(line.cancelled), reason: line.cancelReason ?? "" }) : "",
     line.replacesOrderNumber ? t("Replaces a line on {order}", { order: line.replacesOrderNumber }) : "",
+    line.alternateStatus === "accepted" && line.originalDescription ? t("Instead of {item}", { item: [line.originalDescription, line.originalSpecification].filter(Boolean).join(", ") }) : "",
+    line.alternateStatus === "rejected" ? t("Supplier's alternative refused") : "",
   ].filter(Boolean).join(" · ");
+  const canDecide = (line: OrderLine) => Boolean(state?.canApprove && line.alternateStatus === "offered" && line.alternateOfferedBy !== state?.me);
   /** What has arrived on a line so far, once anything has. */
   const arrived = (line: OrderLine | undefined) => {
     if (!line || !(Number(line.accepted) || Number(line.rejected) || Number(line.pending) || Number(line.credited))) return "";
@@ -184,6 +189,14 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
               <small>{[line.projectReference, line.specification].filter(Boolean).join(" · ")}</small>
               {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
               {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
+              {!draft && state.lines[index]?.alternateStatus === "offered" ? <span className={styles.alternate} role="note">
+                <small>{t("The supplier offers {item} at {price}: {note}", { item: [state.lines[index].alternateDescription, state.lines[index].alternateSpecification].filter(Boolean).join(", "),
+                  price: money(state.lines[index].alternateUnitPrice ?? state.lines[index].unitPrice), note: state.lines[index].alternateNote })}</small>
+                {canDecide(state.lines[index]) ? <span className={styles.filters}>
+                  <Button size="compact" onPress={() => void run("decide_alternate", { lineId: line.id, decision: "accept" })}>{t("Take it")}</Button>
+                  <Button size="compact" variant="quiet" onPress={() => setRefusing(state.lines[index])}>{t("Refuse")}</Button>
+                </span> : <small className={styles.muted}>{t("Waiting for someone who approves orders.")}</small>}
+              </span> : null}
               {draft ? (state.packs ?? []).filter((pack) => pack.lineId === line.id).map((pack) => <small key={pack.lineId} className={styles.packHint}>
                 {pack.packSize && pack.minimum ? t("Sold in packs of {pack}, at least {minimum}", { pack: pack.packSize, minimum: pack.minimum })
                   : pack.packSize ? t("Sold in packs of {pack}", { pack: pack.packSize }) : t("At least {minimum}", { minimum: pack.minimum ?? "" })}
@@ -204,8 +217,11 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
             <span role="cell" className={styles.money}>{priced[index] ? money(priced[index]!.total) : "—"}</span>
             <span role="cell">{draft && form.lines.length > 1 ? <IconButton aria-label={t("Remove {item}", { item: line.description })} size="compact" variant="quiet"
               onPress={() => setForm({ ...form, lines: form.lines.filter((item) => item.id !== line.id) })}><X aria-hidden="true" size={14} /></IconButton>
-              : following && state.lines[index] && stillToCome(state.lines[index]) !== "0" ? <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
-                onPress={() => setCancelling(state.lines[index])}><Ban aria-hidden="true" size={14} /></IconButton> : null}</span>
+              : following && state.lines[index] && stillToCome(state.lines[index]) !== "0" ? <span className={styles.lineActions}>
+                {state.lines[index].alternateStatus !== "offered" ? <IconButton aria-label={t("The supplier offers an alternative for {item}", { item: line.description })} size="compact" variant="quiet"
+                  onPress={() => setOffering(state.lines[index])}><Replace aria-hidden="true" size={14} /></IconButton> : null}
+                <IconButton aria-label={t("Cancel the rest of {item}", { item: line.description })} size="compact" variant="quiet"
+                  onPress={() => setCancelling(state.lines[index])}><Ban aria-hidden="true" size={14} /></IconButton></span> : null}</span>
           </div>)}
         </div>
         {draft ? <Button size="compact" variant="quiet" onPress={() => setForm({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), source: "free", materialItemId: null, boqLineId: null, projectId: null,
@@ -236,6 +252,10 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     {dialog === "confirm" && order && state ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} lines={state.lines} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("confirm", input)) setDialog(null); }} /> : null}
     {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { if (await run("chase", { note, promisedDate })) setDialog(null); }} /> : null}
+    {offering ? <OfferAlternateDialog line={offering} onClose={() => setOffering(null)}
+      onSave={async (input) => { if (await run("offer_alternate", { lineId: offering.id, ...input })) setOffering(null); }} /> : null}
+    {refusing ? <RefuseAlternateDialog onClose={() => setRefusing(null)}
+      onSave={async (note) => { if (await run("decide_alternate", { lineId: refusing.id, decision: "reject", note })) setRefusing(null); }} /> : null}
     {cancelling ? <CancelLineDialog api={api} line={cancelling} left={stillToCome(cancelling)} vendorId={order?.vendorId ?? ""} onClose={() => setCancelling(null)}
       onSave={async (input) => {
         const next = await run("cancel_line", { lineId: cancelling.id, ...input });
@@ -261,6 +281,9 @@ function History({ state }: { state: OrderState }) {
       case "changing": return t("reopened it to change: {reason}", { reason: value("reason") });
       case "cancelled": return t("cancelled it: {reason}", { reason: value("reason") });
       case "chased": return value("promisedDate") ? t("chased it: {note} (new date {date})", { note: value("note"), date: format.day(value("promisedDate")) }) : t("chased it: {note}", { note: value("note") });
+      case "alternate_offered": return t("recorded the supplier's alternative: {item} instead of {original}", { item: value("alternative"), original: value("item") });
+      case "alternate_accepted": return t("took the supplier's alternative: {item}", { item: value("alternative") });
+      case "alternate_rejected": return t("refused the supplier's alternative: {note}", { note: value("note") });
       case "line_cancelled": return t("cancelled {quantity} of {item}: {reason}", { quantity: `${quantityText(value("quantity"))} ${value("unit")}`.trim(), item: value("description"), reason: value("reason") });
       case "received": return t("received delivery {number} at {place}", { number: String(detail.receipt ?? ""), place: value("location") });
       case "inspected": return t("inspected delivery {number}", { number: String(detail.receipt ?? "") });
@@ -354,6 +377,41 @@ function ChaseDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: 
       <TextAreaField label={t("What the supplier said")} isRequired value={note} onChange={setNote} />
       <DateField label={t("New date")} value={date ? parseDate(date) : null} onChange={(value) => setDate(value ? value.toString() : null)} />
     </div>
+  </ControlledModalDialog>;
+}
+
+/** What the supplier offers instead of a line: what, which finish or size, at what price, and why. */
+function OfferAlternateDialog({ line, onClose, onSave }: { line: OrderLine; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
+  const t = useT();
+  const [description, setDescription] = useState(line.description);
+  const [specification, setSpecification] = useState(line.specification);
+  const [price, setPrice] = useState(quantityText(line.unitPrice));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={t("The supplier offers an alternative")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!description.trim() || !note.trim()} onPress={async () => { setBusy(true);
+        await onSave({ description: description.trim(), specification: specification.trim(), unitPrice: price || null, note: note.trim() }); setBusy(false); }}>{t("Save")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <p className={styles.dialogText}>{t("Instead of {item}", { item: [line.description, line.specification].filter(Boolean).join(", ") })}</p>
+      <TextInput label={t("What they offer")} isRequired value={description} onChange={setDescription} />
+      <div className={styles.pair}>
+        <TextInput label={t("Finish or size")} value={specification} onChange={setSpecification} />
+        <TextInput label={t("Price each")} inputMode="decimal" value={price} onChange={(value) => setPrice(numeric(value))} />
+      </div>
+      <TextAreaField label={t("Why they offer it")} isRequired value={note} onChange={setNote} />
+    </div>
+  </ControlledModalDialog>;
+}
+
+function RefuseAlternateDialog({ onClose, onSave }: { onClose: () => void; onSave: (note: string) => Promise<void> }) {
+  const t = useT();
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={t("Refuse the alternative")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={async () => { setBusy(true); await onSave(note.trim()); setBusy(false); }}>{t("Refuse")}</Button></div>}>
+    <TextAreaField label={t("Why it's refused")} isRequired value={note} onChange={setNote} />
   </ControlledModalDialog>;
 }
 

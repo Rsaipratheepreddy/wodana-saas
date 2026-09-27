@@ -166,13 +166,16 @@ export class SupplierReturnsService {
         const batchId = randomUUID();
         // Accepted goods leave stock from where their delivery put them.
         for (const line of lines.filter((item) => item.source === "accepted")) {
-          const posted = (await client.query<{ itemId: string; projectId: string | null }>(
-            `SELECT item_id AS "itemId", project_id AS "projectId" FROM stock_movements WHERE workspace_id = $1 AND receipt_line_id = $2 AND kind = 'receive' LIMIT 1`,
-            [workspaceId, line.receiptLineId])).rows[0];
+          // What went into stock for this delivery line, in stock units: the same share comes back out.
+          const posted = (await client.query<{ itemId: string; projectId: string | null; quantity: string; accepted: string }>(
+            `SELECT movement.item_id AS "itemId", movement.project_id AS "projectId", movement.quantity::text AS quantity, received.accepted::text AS accepted
+               FROM stock_movements movement JOIN goods_receipt_lines received ON received.workspace_id = movement.workspace_id AND received.id = movement.receipt_line_id
+              WHERE movement.workspace_id = $1 AND movement.receipt_line_id = $2 AND movement.kind = 'receive' LIMIT 1`, [workspaceId, line.receiptLineId])).rows[0];
           if (!posted) continue;
+          const perUnit = Dec.of(posted.accepted).isZero() ? Dec.of(1) : Dec.of(posted.quantity).div(posted.accepted);
           try {
             await move(client, workspaceId, { batchId, itemId: posted.itemId, locationId: current.locationId, projectId: posted.projectId, kind: "supplier_return",
-              quantity: Dec.of(line.quantity).neg().toString(), forProjectId: posted.projectId, supplierReturnId: returnId, reason: line.reason, movedOn: sentOn, actorId: user.userId });
+              quantity: Dec.of(line.quantity).mul(perUnit).round(4).neg().toString(), forProjectId: posted.projectId, supplierReturnId: returnId, reason: line.reason, movedOn: sentOn, actorId: user.userId });
           } catch (error) {
             if (error instanceof ConflictException) throw new ConflictException(`${line.description} isn't at the place it arrived any more. Bring it back first.`);
             throw error;

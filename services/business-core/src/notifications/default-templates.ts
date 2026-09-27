@@ -143,6 +143,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "purchasing.late", channel: "in_app", subject: "{{order}} is late", body: "{{supplier}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.late", channel: "email", subject: "{{order}} from {{supplier}} is late", body: "{{note}}\n\nChase the supplier and record their new date on the order.", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.unmatched", channel: "in_app", subject: "Goods arrived without an order", body: "{{actor}} received goods from {{supplier}} at {{note}}. Match them to an order or send them back.", variables: ["supplier", "actor", "note"] },
+  { code: "purchasing.alternate_offered", channel: "in_app", subject: "{{supplier}} offers an alternative on {{order}}", body: "{{actor}}: {{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "purchasing.alternate_decided", channel: "in_app", subject: "Alternative on {{order}}: {{note}}", body: "{{actor}} decided on {{supplier}}'s alternative.", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "stock.transfer_sent", channel: "in_app", subject: "Stock on its way to {{to}}", body: "{{actor}} sent move {{transfer}} from {{from}}.", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.transfer_short", channel: "in_app", subject: "Move {{transfer}} arrived short", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },
   { code: "stock.adjusted", channel: "in_app", subject: "Stock corrected at {{to}}", body: "{{actor}}: {{note}}", variables: ["transfer", "from", "to", "actor", "note"] },

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ConflictException } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
+import { convert, STANDARD_UNITS, type ItemConversion, type Unit } from "../catalog-core/units";
 
 type Db = Pick<PoolClient, "query">;
 
@@ -38,6 +39,44 @@ export async function stockItemFor(db: Db, workspaceId: string, input: { catalog
      ON CONFLICT (workspace_id, normal_key) WHERE catalog_item_id IS NULL DO NOTHING`,
     [randomUUID(), workspaceId, input.name.trim().slice(0, 240), input.unit.trim().slice(0, 40), (input.code ?? "").slice(0, 80), key]);
   return (await db.query<{ id: string }>(`SELECT id FROM stock_items WHERE workspace_id = $1 AND catalog_item_id IS NULL AND normal_key = $2`, [workspaceId, key])).rows[0].id;
+}
+
+/** Common ways people write units, mapped to the catalog's codes. */
+const UNIT_ALIASES: Record<string, string> = {
+  "m²": "sqm", m2: "sqm", "sq m": "sqm", "sq.m": "sqm", "ft²": "sqft", ft2: "sqft", "sq ft": "sqft", "sq.ft": "sqft", "m³": "cum", m3: "cum",
+  nos: "pcs", no: "pcs", "no.": "pcs", pc: "pcs", piece: "pcs", pieces: "pcs", ltr: "l", litre: "l", liter: "l", kgs: "kg", rm: "m", "r.m": "m", rmt: "m",
+};
+
+/** The catalog's code for a unit as written (its code, its label, or a common way of writing it), or null. */
+async function unitCode(db: Db, workspaceId: string, written: string): Promise<{ code: string | null; units: Unit[] }> {
+  const custom = (await db.query<Unit>(`SELECT code, label, kind, to_base::text AS "toBase" FROM catalog_units WHERE workspace_id = $1`, [workspaceId])).rows;
+  const units = [...STANDARD_UNITS, ...custom.filter((unit) => !STANDARD_UNITS.some((standard) => standard.code === unit.code))];
+  const value = written.trim().toLocaleLowerCase();
+  const found = [...custom, ...units].find((unit) => unit.code.toLocaleLowerCase() === value || unit.label.toLocaleLowerCase() === value);
+  return { code: found?.code ?? UNIT_ALIASES[value] ?? null, units };
+}
+
+/**
+ * The stock item for goods bought in one unit and kept in the catalog item's unit (bought in boxes,
+ * stocked in pieces), with how many stock units one bought unit is. Without a catalog item, or when
+ * the units can't be converted, the goods are kept as bought (factor 1).
+ */
+export async function stockItemInCatalogUnit(db: Db, workspaceId: string, input: { catalogItemId: string | null; name: string; unit: string; code?: string }) {
+  if (input.catalogItemId && input.unit.trim()) {
+    const catalog = (await db.query<{ unit: string }>(`SELECT unit_code AS unit FROM catalog_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.catalogItemId])).rows[0];
+    const { code, units } = await unitCode(db, workspaceId, input.unit);
+    if (catalog && code && code !== catalog.unit) {
+      const conversions = (await db.query<ItemConversion>(`SELECT from_unit AS "from", to_unit AS "to", factor::text AS factor FROM catalog_item_conversions WHERE workspace_id = $1 AND item_id = $2`,
+        [workspaceId, input.catalogItemId])).rows;
+      try {
+        const factor = convert("1", code, catalog.unit, units, conversions);
+        // An empty unit means "the catalog item's own unit".
+        return { itemId: await stockItemFor(db, workspaceId, { ...input, unit: "" }), factor };
+      } catch { /* units that can't be converted keep the goods as bought */ }
+    }
+    if (catalog && code === catalog.unit) return { itemId: await stockItemFor(db, workspaceId, { ...input, unit: "" }), factor: Dec.of(1) };
+  }
+  return { itemId: await stockItemFor(db, workspaceId, input), factor: Dec.of(1) };
 }
 
 export type Movement = {
@@ -179,9 +218,10 @@ export async function stockFromReceipt(db: Db, workspaceId: string, input: { rec
          LEFT JOIN project_packages package ON package.workspace_id = scope.workspace_id AND package.id = scope.package_id
         WHERE received.workspace_id = $1 AND received.id = $2`, [workspaceId, line.receiptLineId])).rows[0];
     if (!origin || origin.supply === "subcontract" || origin.supply === "site_work") continue;
-    const itemId = await stockItemFor(db, workspaceId, { catalogItemId: origin.catalogItemId, name: origin.name, unit: origin.unit, code: origin.code });
-    const unitCost = Dec.of(origin.quantity).isZero() ? null : Dec.of(origin.net).div(origin.quantity).round(4).toFixed(4);
-    await move(db, workspaceId, { batchId, itemId, locationId: receipt.locationId, projectId: origin.projectId, kind: "receive", quantity: Dec.of(line.accepted).toString(),
+    // Bought in one unit, kept in the catalog item's (boxes in, pieces kept): the quantity converts and the cost follows.
+    const { itemId, factor } = await stockItemInCatalogUnit(db, workspaceId, { catalogItemId: origin.catalogItemId, name: origin.name, unit: origin.unit, code: origin.code });
+    const unitCost = Dec.of(origin.quantity).isZero() ? null : Dec.of(origin.net).div(origin.quantity).div(factor).round(4).toFixed(4);
+    await move(db, workspaceId, { batchId, itemId, locationId: receipt.locationId, projectId: origin.projectId, kind: "receive", quantity: Dec.of(line.accepted).mul(factor).round(4).toString(),
       forProjectId: origin.projectId, unitCost, currency: unitCost ? receipt.currency : null, receiptLineId: line.receiptLineId, movedOn: receipt.receivedOn, actorId: input.actorId });
   }
 }

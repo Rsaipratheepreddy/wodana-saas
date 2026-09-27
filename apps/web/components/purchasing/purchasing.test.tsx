@@ -143,14 +143,16 @@ describe("ordering", () => {
       { id: "a", position: 0, projectId: "p1", projectReference: "PRJ-0007", source: "material", materialItemId: "m1", boqLineId: null, description: "Calacatta slab", specification: "CAL-20",
         quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000",
         accepted: "0.0000", rejected: "0.0000", pending: "0.0000", credited: "0.0000", returned: "0.0000",
-        promisedDate: null, confirmedQuantity: null, due: null, cancelled: "0.0000", cancelReason: null, replacesLineId: null, replacesOrderNumber: null },
+        promisedDate: null, confirmedQuantity: null, due: null, cancelled: "0.0000", cancelReason: null, replacesLineId: null, replacesOrderNumber: null,
+        alternateStatus: null, alternateDescription: null, alternateSpecification: "", alternateUnitPrice: null, alternateNote: "", alternateOfferedBy: null, originalDescription: null, originalSpecification: null },
       { id: "b", position: 1, projectId: "p1", projectReference: "PRJ-0007", source: "line", materialItemId: null, boqLineId: "l1", description: "Under-cabinet lights", specification: "",
         quantity: "1.0000", unit: "nos", unitPrice: "500.0000", discountPercent: "10.00", taxRate: "5.0000", net: "450.0000", tax: "22.5000", total: "472.5000",
         accepted: "0.0000", rejected: "0.0000", pending: "0.0000", credited: "0.0000", returned: "0.0000",
-        promisedDate: null, confirmedQuantity: null, due: null, cancelled: "0.0000", cancelReason: null, replacesLineId: null, replacesOrderNumber: null }],
+        promisedDate: null, confirmedQuantity: null, due: null, cancelled: "0.0000", cancelReason: null, replacesLineId: null, replacesOrderNumber: null,
+        alternateStatus: null, alternateDescription: null, alternateSpecification: "", alternateUnitPrice: null, alternateNote: "", alternateOfferedBy: null, originalDescription: null, originalSpecification: null }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], ...rights,
+    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], me: "u2", ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 
@@ -308,6 +310,34 @@ describe("ordering", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel the rest" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "cancel_line", lineId: "a", quantity: "2", reason: "Only 8 m² in the block", reorderVendorId: "s2" }));
     await waitFor(() => expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/orders?order=o2", { scroll: false }));
+  });
+
+  it("records the supplier's alternative for a line, and someone else takes it", async () => {
+    nav.query = "order=o1";
+    const sent = orderState({ status: "confirmed", sentAt: "2026-09-27T11:00:00Z", confirmedAt: "2026-09-27T12:00:00Z", version: 7 });
+    const offered = orderState({ status: "confirmed", sentAt: "2026-09-27T11:00:00Z", confirmedAt: "2026-09-27T12:00:00Z", version: 8 });
+    offered.lines[0] = { ...offered.lines[0], alternateStatus: "offered", alternateDescription: "Calacatta Oro", alternateSpecification: "Honed", alternateUnitPrice: "340.0000",
+      alternateNote: "Polished is discontinued", alternateOfferedBy: "u1" };
+    let current = sent;
+    const fetcher = mount((url, body) => {
+      if (body?.action === "offer_alternate") current = offered;
+      return url.includes("/orders/o1") ? current : ordersList;
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "The supplier offers an alternative for Calacatta slab" }));
+    const dialog = await screen.findByRole("dialog", { name: "The supplier offers an alternative" });
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: /What they offer/ }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /What they offer/ }), "Calacatta Oro");
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Finish or size" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Finish or size" }), "Honed");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why they offer it/ }), "Polished is discontinued");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "offer_alternate", lineId: "a", description: "Calacatta Oro", specification: "Honed", unitPrice: "350",
+      note: "Polished is discontinued" }));
+    expect(await within(sheet).findByText(/The supplier offers Calacatta Oro, Honed at .*340\.00: Polished is discontinued/)).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Take it" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "decide_alternate", lineId: "a", decision: "accept" }));
   });
 
   it("offers the supplier's pack size on a draft line", async () => {

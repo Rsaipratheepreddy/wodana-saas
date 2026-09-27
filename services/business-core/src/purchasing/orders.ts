@@ -139,6 +139,9 @@ export type OrderLine = {
   due: string | null;
   /** The rest of the line that won't come (with why), and the line on another order this one replaces. */
   cancelled: string; cancelReason: string | null; replacesLineId: string | null; replacesOrderNumber: string | null;
+  /** The supplier's alternative for the line, if they offered one, and what was ordered first once one was taken. */
+  alternateStatus: "offered" | "accepted" | "rejected" | null; alternateDescription: string | null; alternateSpecification: string; alternateUnitPrice: string | null;
+  alternateNote: string; alternateOfferedBy: string | null; originalDescription: string | null; originalSpecification: string | null;
 };
 
 export type OrderDetail = OrderRow & {
@@ -172,7 +175,10 @@ export async function readOrderLines(db: Db, workspaceId: string, orderId: strin
             coalesce(back.returned, 0)::numeric(18, 4)::text AS returned,
             line.promised_date::text AS "promisedDate", line.confirmed_quantity::text AS "confirmedQuantity",
             coalesce(line.promised_date, purchase.promised_date, purchase.expected_date)::text AS due,
-            line.cancelled_quantity::text AS cancelled, line.cancel_reason AS "cancelReason", line.replaces_line_id AS "replacesLineId", replaced.number AS "replacesOrderNumber"
+            line.cancelled_quantity::text AS cancelled, line.cancel_reason AS "cancelReason", line.replaces_line_id AS "replacesLineId", replaced.number AS "replacesOrderNumber",
+            line.alternate_status AS "alternateStatus", line.alternate_description AS "alternateDescription", line.alternate_specification AS "alternateSpecification",
+            line.alternate_unit_price::text AS "alternateUnitPrice", line.alternate_note AS "alternateNote", line.alternate_offered_by AS "alternateOfferedBy",
+            line.original_description AS "originalDescription", line.original_specification AS "originalSpecification"
        FROM purchase_order_lines line
        JOIN purchase_orders purchase ON purchase.workspace_id = line.workspace_id AND purchase.id = line.order_id
        LEFT JOIN delivery_projects project ON project.workspace_id = line.workspace_id AND project.id = line.project_id

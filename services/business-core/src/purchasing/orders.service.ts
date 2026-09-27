@@ -219,6 +219,62 @@ export class OrdersService {
         } else await set(`notes = notes`, []);
         await orderEvent(client, workspaceId, orderId, "chased", { note, promisedDate: promised }, user.userId);
         audit = { note, promised };
+      } else if (action === "offer_alternate") {
+        // The supplier offers something else for a line (another make, finish or size): recorded, then decided by someone else.
+        await need("purchasing.manage", "You can't change purchase orders.");
+        status("approved", "sent", "confirmed", "partly_received");
+        const line = (await readOrderLines(client, workspaceId, orderId)).find((item) => item.id === body.lineId);
+        if (!line) throw new BadRequestException("A line isn't on this order.");
+        if (outstanding(line).isZero()) throw new ConflictException(`Nothing more of ${line.description} is still to come.`);
+        if (line.alternateStatus === "offered") throw new ConflictException(`An alternative for ${line.description} is already waiting for a decision.`);
+        const description = text(body.description, 500, "Alternative");
+        if (!description) throw new BadRequestException("Say what the supplier offers instead.");
+        const specification = text(body.specification, 1000, "Specification");
+        const price = body.unitPrice === undefined || body.unitPrice === null || body.unitPrice === "" ? null : amount(body.unitPrice, "Price");
+        const note = text(body.note, 500, "Note");
+        if (!note) throw new BadRequestException("Say why the supplier offers it.");
+        await client.query(
+          `UPDATE purchase_order_lines SET alternate_status = 'offered', alternate_description = $3, alternate_specification = $4, alternate_unit_price = $5, alternate_note = $6,
+                  alternate_offered_by = $7, alternate_decided_by = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, description, specification, price, note, user.userId]);
+        await set(`notes = notes`, []);
+        await orderEvent(client, workspaceId, orderId, "alternate_offered", { item: line.description, alternative: description, specification, unitPrice: price, note }, user.userId);
+        await this.tell(client, workspaceId, order, "purchasing.alternate_offered", (await this.approvers(client, workspaceId)), user.userId, `${line.description} → ${description}: ${note}`.slice(0, 480));
+        audit = { line: line.id, description, specification, price, note };
+      } else if (action === "decide_alternate") {
+        // Someone other than whoever recorded it takes or refuses the supplier's alternative.
+        await need("purchasing.approve", "You can't decide on alternatives.");
+        const line = (await readOrderLines(client, workspaceId, orderId)).find((item) => item.id === body.lineId);
+        if (!line || line.alternateStatus !== "offered") throw new ConflictException("No alternative is waiting for a decision on that line.");
+        if (line.alternateOfferedBy === user.userId) throw new ForbiddenException("Someone else decides on an alternative you recorded.");
+        const decision = body.decision === "accept" ? "accepted" : body.decision === "reject" ? "rejected" : null;
+        if (!decision) throw new BadRequestException("Take or refuse the alternative.");
+        const note = text(body.note, 500, "Note");
+        if (decision === "rejected" && !note) throw new BadRequestException("Say why it's refused.");
+        if (decision === "accepted") {
+          // A material the client chooses changes only through the client: its list is updated and signed off first.
+          if (line.materialItemId) {
+            const material = (await client.query<{ specification: string; name: string; clientChoice: boolean; projectId: string }>(
+              `SELECT specification, name, client_choice AS "clientChoice", project_id AS "projectId" FROM project_material_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.materialItemId])).rows[0];
+            const same = (a: string, b: string) => a.trim().toLocaleLowerCase().replace(/\s+/g, " ") === b.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+            if (material?.clientChoice && (!same(material.specification, line.alternateSpecification) || !(await clientChoicesSignedOff(client, workspaceId, material.projectId))))
+              throw new ConflictException(`The client chooses ${material.name}: change it on the material list and get their sign-off first.`);
+          }
+          const price = line.alternateUnitPrice ?? line.unitPrice;
+          if (Dec.of(price).cmp(line.unitPrice) > 0) throw new ConflictException("The alternative costs more; change the order to take it.");
+          const amounts = priceLine({ quantity: line.quantity, unitPrice: price, discountPercent: line.discountPercent, taxRate: line.taxRate }, currencyDecimals(order.currency));
+          await client.query(
+            `UPDATE purchase_order_lines SET original_description = description, original_specification = specification, description = alternate_description,
+                    specification = alternate_specification, unit_price = $3, net = $4, tax = $5, total = $6, alternate_status = 'accepted', alternate_decided_by = $7
+              WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, price, amounts.net, amounts.tax, amounts.total, user.userId]);
+          await this.refreshTotals(client, workspaceId, orderId, order.currency);
+        } else {
+          await client.query(`UPDATE purchase_order_lines SET alternate_status = 'rejected', alternate_decided_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, user.userId]);
+        }
+        await set(`notes = notes`, []);
+        await orderEvent(client, workspaceId, orderId, decision === "accepted" ? "alternate_accepted" : "alternate_rejected", { item: line.description, alternative: line.alternateDescription, note }, user.userId);
+        await this.tell(client, workspaceId, order, "purchasing.alternate_decided", [order.createdBy, line.alternateOfferedBy], user.userId,
+          decision === "accepted" ? `${line.alternateDescription} taken` : `${line.alternateDescription} refused: ${note}`);
+        audit = { line: line.id, decision, note };
       } else if (action === "cancel_line") {
         // The rest of one line won't come: cancelled with the reason, and optionally ordered from another supplier.
         await need("purchasing.manage", "You can't change purchase orders.");
@@ -350,6 +406,7 @@ export class OrdersService {
       supplier: supplier ? { id: supplier.id, name: supplier.name, email: supplier.email, phone: supplier.phone, contactName: supplier.contactName, approval: supplier.approval, deal: supplier.deal, dealPercent: supplier.dealPercent } : null,
       ...rights,
       canApproveThis: rights.canApprove && order.status === "pending_approval" && order.createdBy !== userId && order.submittedBy !== userId,
+      me: userId,
       overOrdered: ["draft", "pending_approval"].includes(order.status) ? await this.overOrdered(client, workspaceId, orderId) : [],
       packs: await this.packs(client, workspaceId, order),
     };
@@ -554,6 +611,23 @@ export class OrdersService {
       for (const { projectId, reference } of chosen)
         if (!(await clientChoicesSignedOff(client, workspaceId, projectId))) throw new ConflictException(`The client hasn't signed off ${reference}'s material list yet.`);
     }
+  }
+
+  /** Recomputes an order's totals from its lines' own rounded amounts. */
+  private async refreshTotals(client: Db, workspaceId: string, orderId: string, currency: string) {
+    const decimals = currencyDecimals(currency);
+    const totals = orderTotals((await readOrderLines(client, workspaceId, orderId)).map((line) => priceLine(line, decimals)), decimals);
+    await client.query(`UPDATE purchase_orders SET subtotal = $3, discount_total = $4, tax_total = $5, total = $6 WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, orderId, totals.subtotal, totals.discountTotal, totals.taxTotal, totals.total]);
+  }
+
+  private async approvers(client: Db, workspaceId: string) {
+    return (await client.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+         JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'purchasing.approve'
+        WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
   }
 
   private async tellApprovers(client: Db, workspaceId: string, order: OrderDetail, actorId: string) {

@@ -120,6 +120,7 @@ export class ReceivingService {
       const input = (raw ?? {}) as Record<string, unknown>;
       const line = orderLines.find((item) => item.id === input.orderLineId);
       if (!line) throw new BadRequestException("A line isn't on this order.");
+      if (line.alternateStatus === "offered") throw new ConflictException(`Decide on the supplier's alternative for ${line.description} first.`);
       // A project's site holds only that project's goods; another project's lines go to their own site or a store.
       if (location.kind === "site" && line.projectId && line.projectId !== location.projectId)
         throw new BadRequestException(`${line.description} is for ${line.projectReference}; receive it at its own site or a store.`);

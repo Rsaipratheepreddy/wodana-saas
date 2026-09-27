@@ -613,7 +613,8 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - **Late orders:** the buyer hears the first day something still to come is late and then weekly, in the app and by email (in the daily reminder run). *Chase* records what the supplier said and a new date for the late lines.
   - **Cancel the rest of a line** with the reason (never more than is still to come; if nothing on the order would come, the order is cancelled instead). It can go to another supplier as a new draft order whose line is linked to the one it replaces. Still owed = ordered − cancelled − credited − accepted − waiting.
   - **Packs:** where the supplier's catalog price has a pack size or minimum, a draft line that doesn't fit shows the quantity that does, to use in one click (ordering past the need then says why).
-- Still to come: blanket orders, advances and retention (with payables), alternate items offered by the supplier, and vendor portal replies.
+- **Supplier alternatives:** the supplier's alternative for a line (another make, finish or size, with its price and why) is recorded on the line, and nothing on that line is received until it's decided. Someone who approves orders — not whoever recorded it — takes or refuses it (a refusal says why). An alternative never costs more (that's a changed order); for a material the client chooses, the material list is changed and signed off by the client first. Taking it keeps what was ordered first on the line and recomputes the order.
+- Still to come: blanket orders, advances and retention (with payables), and vendor portal replies.
 
 - **Records:** rfqs, rfq_lines, rfq_suppliers (sent/viewed/responded), supplier_quotes + lines (price, qty, lead time, validity, alternate item), purchase_orders (kind `standard | blanket | service`, revision), po_lines (ship-to **per line**: warehouse, factory or site), po_line_allocations (line → requirement/project, qty), po_revisions, po_acknowledgements (per line; partial allowed), blanket_releases, supplier advances.
 - **PO states:** `draft → pending_approval → approved → sent → acknowledged | partly_acknowledged → partly_received → received → closed`, plus `cancelled` and `short_closed`.
@@ -694,7 +695,8 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Places:** warehouses, factory and other places in Settings; a project's site is made by its first delivery; a place with stock can't be closed.
 - **Notices:** a move is on its way (receivers), a move arrived short (the sender), and stock was corrected (people who adjust stock).
 - **Permissions:** `stock.view`, `stock.manage` and `stock.adjust`.
-- Still to come: unit conversions (bought in boxes, stocked in pieces), costing (moving average) and payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
+- **Units:** goods bought in another unit than the catalog item's (boxes of hinges kept as pieces) go into stock converted through the catalog's conversions and standard units (common ways of writing units, such as m² or nos, are understood), with the cost per stock unit; returns take out the same share.
+- Still to come: costing (moving average) and payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
 
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.

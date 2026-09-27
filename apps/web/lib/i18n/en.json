@@ -2438,5 +2438,21 @@
   "Why the goods went back": "Why the goods went back",
   "Match": "Match",
   "{item} is": "{item} is",
-  "{quantity} to come": "{quantity} to come"
+  "{quantity} to come": "{quantity} to come",
+  "Instead of {item}": "Instead of {item}",
+  "Supplier's alternative refused": "Supplier's alternative refused",
+  "The supplier offers {item} at {price}: {note}": "The supplier offers {item} at {price}: {note}",
+  "Take it": "Take it",
+  "Refuse": "Refuse",
+  "The supplier offers an alternative for {item}": "The supplier offers an alternative for {item}",
+  "recorded the supplier's alternative: {item} instead of {original}": "recorded the supplier's alternative: {item} instead of {original}",
+  "took the supplier's alternative: {item}": "took the supplier's alternative: {item}",
+  "refused the supplier's alternative: {note}": "refused the supplier's alternative: {note}",
+  "The supplier offers an alternative": "The supplier offers an alternative",
+  "What they offer": "What they offer",
+  "Finish or size": "Finish or size",
+  "Price each": "Price each",
+  "Why they offer it": "Why they offer it",
+  "Refuse the alternative": "Refuse the alternative",
+  "Why it's refused": "Why it's refused"
 }
