@@ -1,17 +1,15 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { caseOf, tellClients } from "../client-portal/portal-notices";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { membershipOf, readProject } from "../project-core/project-core.store";
-import { raiseSnag } from "../project-core/project-work";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { handedOver } from "./handover";
-import { startWarranty } from "./warranty";
+import { decideHandoverPack, handedOver } from "./handover";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -84,47 +82,28 @@ export class HandoverService {
           await client.query(`UPDATE handover_packs SET status = 'issued', snapshot = $3::jsonb, content_hash = $4, issued_by = $5, issued_at = now(), version = version + 1
             WHERE workspace_id = $1 AND id = $2`, [workspaceId, pack.id, JSON.stringify(snapshot), canonicalHash(snapshot), user.userId]);
           audit = { packId: pack.id, revision: pack.revision, hash: canonicalHash(snapshot) };
+          // The client's decision-makers hear the handover is ready for them to accept.
+          await tellClients(client, { workspaceId, caseId: await caseOf(client, workspaceId, projectId), event: "decision_waiting", recordId: `handover:${pack.id}`,
+            title: `${pack.title} (R${pack.revision})` });
         } else if (action === "accept" || action === "refuse") {
           const decidedOn = date(body.decidedOn, "Date");
           const decidedByName = text(body.decidedByName, 200);
           if (!decidedByName) throw new BadRequestException("Say who decided for the client.");
           const method = oneOf(body.method, METHODS, "How");
-          const within = (areaId: string | null) => !pack.areaIds.length || !areaId || pack.areaIds.includes(areaId);
           if (action === "accept") {
-            // No critical snag may be open where the client takes over.
-            const critical = (await client.query<{ number: number; areaId: string | null }>(
-              `SELECT number, area_id AS "areaId" FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND severity = 'critical' AND status NOT IN ('done', 'cancelled')`,
-              [workspaceId, projectId])).rows.filter((snag) => within(snag.areaId));
-            if (critical.length) throw new ConflictException(`Close the critical snag${critical.length === 1 ? "" : "s"} first: ${critical.map((snag) => `#${snag.number}`).join(", ")}.`);
             const outstanding = Array.isArray(body.outstanding) ? body.outstanding.map((item) => text(item, 300)).filter(Boolean) : [];
-            await client.query(`UPDATE handover_packs SET status = 'accepted', decided_on = $3, decided_by_name = $4, decision_method = $5, decision_note = $6, recorded_by = $7, version = version + 1
-              WHERE workspace_id = $1 AND id = $2`, [workspaceId, pack.id, decidedOn, decidedByName, method, outstanding.join("\n").slice(0, 1000), user.userId]);
-            // The warranty of what it covers starts on the day the client accepted it.
-            const started = await startWarranty(client, workspaceId, { projectId, packId: pack.id, areaIds: pack.areaIds, startsOn: decidedOn });
-            // What the client accepted with still to do becomes minor snags from the client.
-            for (const item of outstanding) await raiseSnag(client, workspaceId, { projectId, title: item, description: `Outstanding at handover (R${pack.revision})`, severity: "minor", source: "client",
-              actorId: user.userId });
+            const decided = await decideHandoverPack(client, workspaceId, projectId, pack, { decision: "accept", decidedOn, decidedByName, method, outstanding, reason: "",
+              recordedBy: user.userId, grantId: null, staffId: user.userId });
             await this.tell(client, workspaceId, projectId, "handover.accepted", user.userId,
               `${decidedByName} accepted R${pack.revision}${outstanding.length ? ` with ${outstanding.length} item${outstanding.length === 1 ? "" : "s"} outstanding` : ""}.`, `accepted:${pack.id}`);
-            audit = { packId: pack.id, outstanding: outstanding.length, warrantyStarted: started };
+            audit = { packId: pack.id, outstanding: outstanding.length, warrantyStarted: decided.warrantyStarted };
           } else {
             const reason = text(body.reason, 1000);
             if (!reason) throw new BadRequestException("Say why the client refused it.");
-            await client.query(`UPDATE handover_packs SET status = 'refused', decided_on = $3, decided_by_name = $4, decision_method = $5, decision_note = $6, recorded_by = $7, version = version + 1
-              WHERE workspace_id = $1 AND id = $2`, [workspaceId, pack.id, decidedOn, decidedByName, method, reason, user.userId]);
-            // The reason becomes a snag to fix, and a new revision to issue when it is.
-            await raiseSnag(client, workspaceId, { projectId, title: `Handover refused: ${reason}`.slice(0, 300), description: `R${pack.revision} refused by ${decidedByName}.`, severity: "major", source: "client",
-              actorId: user.userId });
-            const next = randomUUID();
-            const revision = (await client.query<{ next: number }>(`SELECT coalesce(max(revision), 0) + 1 AS next FROM handover_packs WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
-            await client.query(`INSERT INTO handover_packs (id, workspace_id, project_id, revision, title, area_ids, replaces_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-              [next, workspaceId, projectId, revision, pack.title, pack.areaIds, pack.id, user.userId]);
-            await client.query(
-              `INSERT INTO handover_documents (id, workspace_id, pack_id, kind, title, original_name, mime_type, byte_size, object_key, sha256, created_by)
-               SELECT gen_random_uuid(), workspace_id, $3, kind, title, original_name, mime_type, byte_size, object_key, sha256, $4 FROM handover_documents WHERE workspace_id = $1 AND pack_id = $2`,
-              [workspaceId, pack.id, next, user.userId]);
+            const decided = await decideHandoverPack(client, workspaceId, projectId, pack, { decision: "refuse", decidedOn, decidedByName, method, outstanding: [], reason,
+              recordedBy: user.userId, grantId: null, staffId: user.userId });
             await this.tell(client, workspaceId, projectId, "handover.refused", user.userId, reason, `refused:${pack.id}`);
-            audit = { packId: pack.id, reason, next };
+            audit = { packId: pack.id, reason, next: decided.next };
           }
         } else throw new BadRequestException("Unknown action.");
         if (!Object.keys(audit).length) audit = { packId: pack.id };

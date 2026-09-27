@@ -1,7 +1,8 @@
 import { DesignPackagesService } from "../design/design-packages.service";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
-import { effectivePortalBrand, portalOwnedBrand } from "./effective-brand";
+import { effectivePortalBrand } from "./effective-brand";
+import { tellClients } from "../client-portal/portal-notices";
 import { commercialRepository } from "./commercial-repository";
 import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
 import {
@@ -371,90 +372,6 @@ export class CommercialService {
       });
     }
   }
-  async settings(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(
-      actor,
-      workspaceId,
-      "pre_projects.view",
-      async (client, user) => {
-        const saved = await client.query(
-          'SELECT workspace_id AS "workspaceId",slug,enabled,version,brand FROM client_portal_settings WHERE workspace_id=$1',
-          [workspaceId],
-        );
-        const workspace = await client.query(
-          "SELECT name,slug FROM workspaces WHERE id=$1",
-          [workspaceId],
-        );
-        const current = saved.rows[0] ?? {
-          workspaceId,
-          slug: workspace.rows[0].slug,
-          enabled: false,
-          version: 0,
-          brand: defaultBrand(workspace.rows[0].name),
-        };
-        return {
-          ...current,
-          brand: await effectivePortalBrand(client, workspaceId, current.brand),
-          testMode: this.testMode,
-          canManage: await this.access.hasPermission(
-            client,
-            workspaceId,
-            user.userId,
-            "portal.manage",
-          ),
-        } as PortalSettings;
-      },
-    );
-  }
-  async saveSettings(actor: RequestActor, workspaceId: string, input: unknown) {
-    return this.access.withPermission(
-      actor,
-      workspaceId,
-      "portal.manage",
-      async (client) => {
-        const b = object(input),
-          brand = parseBrand(b.brand),
-          version = number(b.version),
-          enabled = b.enabled === true;
-        const workspace = await client.query(
-          "SELECT slug FROM workspaces WHERE id=$1 FOR UPDATE",
-          [workspaceId],
-        );
-        const current = await client.query(
-          "SELECT version FROM client_portal_settings WHERE workspace_id=$1",
-          [workspaceId],
-        );
-        if ((current.rows[0]?.version ?? 0) !== version)
-          throw new ConflictException(
-            "Settings changed. Reload before saving.",
-          );
-        await client.query(
-          `INSERT INTO client_portal_settings(workspace_id,slug,enabled,version,brand) VALUES($1,$2,$3,$4,$5) ON CONFLICT(workspace_id) DO UPDATE SET enabled=$3,version=$4,brand=$5,updated_at=now()`,
-          [
-            workspaceId,
-            workspace.rows[0].slug,
-            enabled,
-            version + 1,
-            JSON.stringify(portalOwnedBrand(brand)),
-          ],
-        );
-        if (!enabled)
-          await client.query(
-            "UPDATE client_portal_sessions SET revoked_at=now() WHERE workspace_id=$1",
-            [workspaceId],
-          );
-        return {
-          workspaceId,
-          slug: workspace.rows[0].slug,
-          enabled,
-          version: version + 1,
-          brand,
-          testMode: this.testMode,
-          canManage: true,
-        };
-      },
-    );
-  }
   async state(
     actor: RequestActor,
     workspaceId: string,
@@ -501,12 +418,12 @@ export class CommercialService {
         }
         const contacts = (
           await client.query(
-            `SELECT id,name,phone,role,active,test_contact AS "testContact" FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 ORDER BY created_at`,
+            `SELECT id,coalesce(confirmed_name,name) AS name,phone,email,role,active,test_contact AS "testContact",version FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 ORDER BY created_at`,
             [workspaceId, caseId],
           )
         ).rows;
         const settings = await client.query(
-          "SELECT slug,brand,enabled FROM client_portal_settings WHERE workspace_id=$1",
+          "SELECT slug,enabled FROM client_portal_settings WHERE workspace_id=$1",
           [workspaceId],
         );
         return {
@@ -517,7 +434,7 @@ export class CommercialService {
           data: commercialDataForCostAccess(data, canViewCosts),
           contacts,
           portalSlug: settings.rows[0]?.slug ?? null,
-          portalBrand: await effectivePortalBrand(client, workspaceId, settings.rows[0]?.brand),
+          portalBrand: await effectivePortalBrand(client, workspaceId),
           portalEnabled: settings.rows[0]?.enabled ?? false,
           testMode: this.testMode,
           releaseReadiness,
@@ -584,73 +501,6 @@ export class CommercialService {
             "portal.manage",
           ),
         };
-      },
-    );
-  }
-  async contact(
-    actor: RequestActor,
-    workspaceId: string,
-    caseId: string,
-    input: unknown,
-  ) {
-    return this.access.withPermission(
-      actor,
-      workspaceId,
-      "portal.manage",
-      async (client, user) => {
-        await this.caseRecord(client, workspaceId, caseId, true);
-        const b = object(input);
-        const mobile = phone(b.phone),
-          name = text(b.name, 160, true),
-          role = b.role === "approver" ? "approver" : "viewer";
-        const old = (
-          await client.query(
-            "SELECT id FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 AND phone=$3",
-            [workspaceId, caseId, mobile],
-          )
-        ).rows[0];
-        if (old) {
-          const data = await this.load(client, workspaceId, caseId);
-          if (
-            data.quotes.some(
-              (q) => q.status === "issued" && q.approverId === old.id,
-            )
-          )
-            throw new ConflictException(
-              "Withdraw the pending quotation before changing its approver access.",
-            );
-        }
-        const active = b.active !== false;
-        await client.query(
-          `INSERT INTO client_portal_grants(workspace_id,case_id,name,phone,role,active,test_contact) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(workspace_id,case_id,phone) DO UPDATE SET name=$3,role=$5,active=$6,test_contact=$7`,
-          [
-            workspaceId,
-            caseId,
-            name,
-            mobile,
-            role,
-            active,
-            this.testMode && b.testContact === true,
-          ],
-        );
-        // A change to any case grant invalidates all current portal sessions for this contact.
-        await client.query(
-          "UPDATE client_portal_sessions SET revoked_at=now() WHERE workspace_id=$1 AND phone=$2",
-          [workspaceId, mobile],
-        );
-        const data = await this.load(client, workspaceId, caseId);
-        await this.persist(
-          client,
-          workspaceId,
-          caseId,
-          data,
-          user.displayName,
-          "Client access updated",
-          undefined,
-          `${name}: ${active ? role : "access removed"}`,
-          user.userId,
-        );
-        return { ok: true };
       },
     );
   }
@@ -2622,7 +2472,7 @@ export class CommercialService {
             q.status = "issued";
             q.issuedAt = now;
             q.approverId = grant.id;
-            q.brand = await effectivePortalBrand(client, workspaceId, settings.brand);
+            q.brand = await effectivePortalBrand(client, workspaceId);
             // Brand is frozen only on issue. It changes the public snapshot,
             // not the QS-reviewed quantities, costs or selling prices.
             if (data.palmFlow && q.kind === "quotation" && q.qsEstimate)
@@ -2645,6 +2495,9 @@ export class CommercialService {
                 ? "awaiting_decision"
                 : "under_review";
             }
+            // The client hears their quotation or variation is ready (once per issued revision).
+            await tellClients(client, { workspaceId, caseId, event: "quote_issued", recordId: `${q.id}:${q.hash}`, title: `${q.title} (V${q.number})`,
+              due: q.validUntil, demo: this.testMode });
           }
         } else if (action === "submit_owner_review") {
           if (record.opportunityStatus !== "won")

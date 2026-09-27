@@ -5,6 +5,7 @@ import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { BriefService } from "./brief.service";
 import { syncDesignStages } from "../design/design-stage-sync";
+import { tellClients } from "../client-portal/portal-notices";
 import { designQueue, noticeDesignMentions, noticeDesignStep } from "./design-notices";
 import { STAGE_LABELS, type JourneyStage } from "../design/design-journey.domain";
 import { AddDesignVersionDto, DesignActivityDto, SaveDesignDto, SaveDesignFolderDto, UploadDesignFilesDto, CreateDesignThreadDto, ReplyDesignThreadDto, ResolveDesignThreadDto } from "./design.dto";
@@ -139,6 +140,8 @@ export class DesignService {
    await this.touch(client,workspaceId,caseId,id);
    await this.event(client,workspaceId,caseId,userId,id,'design_'+input.action,input);
    if(input.action==='approved')await syncDesignStages(client,workspaceId,caseId,userId);
+   // Shared for the client's decision: their decision-makers hear it's waiting in the portal (once per revision).
+   if(input.action==='client_review')await tellClients(client,{workspaceId,caseId,event:'decision_waiting',recordId:`design:${input.versionId}`,title:`${design.title} (V${latest.number})`,due:reviewExpiresAt});
    if(input.action!=='comment')await noticeDesignStep(client,{workspaceId,caseId,designId:id,title:design.title,action:input.action,fromStatus:latest.status,actorUserId:userId,reviewerUserId:input.reviewerId??latest.reviewerId??null,uploaderUserId:latest.createdBy??null,note:input.note,activityId:input.id});
    return this.read(client,workspaceId,caseId,id);
   });

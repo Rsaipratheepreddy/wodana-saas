@@ -162,6 +162,22 @@ export class TransactionalEmailService {
     return this.send({ to: input.to, subject: input.subject, text, html, fromName: brand.name });
   }
 
+  /** A client portal code by email (to sign in, or to confirm a decision), in the tenant's brand. */
+  async sendPortalCode(input: { workspaceId: string; to: string; code: string; purpose: "sign_in" | "decision" }): Promise<EmailDeliveryResult> {
+    const brand = await this.brand({ workspaceId: input.workspaceId });
+    const { html, text } = renderBrandedEmail({
+      brand,
+      preheader: `${input.code} is your ${brand.name} code.`,
+      heading: input.purpose === "sign_in" ? "Your sign-in code" : "Your confirmation code",
+      paragraphs: [
+        input.purpose === "sign_in" ? `Enter this code to open your project page with ${brand.name}:` : "Enter this code to confirm your decision:",
+        input.code,
+      ],
+      footnote: "The code works once and expires in 5 minutes. If you didn't ask for it, you can ignore this email.",
+    });
+    return this.send({ to: input.to, subject: `${input.code} is your ${brand.name} code`, text, html, fromName: brand.name });
+  }
+
   async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
     const apiKey = this.config.get<string>("MAILGUN_API_KEY", "").trim();
     const domain = this.config.get<string>("MAILGUN_DOMAIN", "").trim();

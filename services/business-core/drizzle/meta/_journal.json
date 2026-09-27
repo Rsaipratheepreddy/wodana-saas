@@ -512,6 +512,13 @@
       "when": 1795608000000,
       "tag": "0072_hrms_crews",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795694400000,
+      "tag": "0080_client_portal",
+      "breakpoints": true
     }
   ]
 }

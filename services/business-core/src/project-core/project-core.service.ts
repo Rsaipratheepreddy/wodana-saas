@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
+import { tellClients } from "../client-portal/portal-notices";
 import { Dec } from "../catalog-core/decimal";
 import { acceptedQuoteValue } from "../commercial/commercial.domain";
 import { commercialRepository } from "../commercial/commercial-repository";
@@ -431,11 +432,31 @@ export class ProjectCoreService {
         const health = oneOf(body.health, HEALTH, "Status");
         const note = typeof body.note === "string" ? body.note.trim().slice(0, 2000) : "";
         if (health !== "on_track" && !note) throw new BadRequestException("Say in one line what's wrong.");
-        await client.query(`INSERT INTO project_status_updates (id, workspace_id, project_id, health, note, created_by) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [randomUUID(), workspaceId, projectId, health, note, user.userId]);
+        // Shared with the client on purpose: its words only (never the status), and only when there are words.
+        const share = body.shareWithClient === true;
+        if (share && !note) throw new BadRequestException("Write what the client should read.");
+        const updateId = randomUUID();
+        await client.query(`INSERT INTO project_status_updates (id, workspace_id, project_id, health, note, created_by, shared_at, shared_by)
+          VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $7::boolean THEN now() END, CASE WHEN $7::boolean THEN $6::uuid END)`,
+          [updateId, workspaceId, projectId, health, note, user.userId, share]);
         await client.query(`UPDATE delivery_projects SET health = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, health]);
         if (health === "off_track" && project.health !== "off_track") notices.push({ key: `off:${project.version}`, notice: { code: "project.off_track", note, memberships: teamIds() } });
-        audit = { health, note };
+        if (share) await tellClients(client, { workspaceId, caseId: project.caseId, event: "update_published", recordId: updateId, title: project.name, note });
+        audit = { health, note, shared: share };
+      } else if (action === "share_update") {
+        needManager();
+        const update = (await client.query<{ id: string; note: string; sharedAt: string | null }>(
+          `SELECT id, note, shared_at AS "sharedAt" FROM project_status_updates WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+          [workspaceId, projectId, typeof body.updateId === "string" && /^[0-9a-f-]{36}$/i.test(body.updateId) ? body.updateId : null])).rows[0];
+        if (!update) throw new NotFoundException("Update not found.");
+        const share = body.shared === true;
+        if (share && !update.note.trim()) throw new BadRequestException("An update without words has nothing for the client to read.");
+        await client.query(`UPDATE project_status_updates SET shared_at = CASE WHEN $4::boolean THEN coalesce(shared_at, now()) END,
+          shared_by = CASE WHEN $4::boolean THEN coalesce(shared_by, $5::uuid) END WHERE workspace_id = $1 AND project_id = $2 AND id = $3`,
+          [workspaceId, projectId, update.id, share, user.userId]);
+        // Told once per update, however often it's shared again.
+        if (share) await tellClients(client, { workspaceId, caseId: project.caseId, event: "update_published", recordId: update.id, title: project.name, note: update.note });
+        audit = { updateId: update.id, shared: share };
       } else if (action === "hold") {
         needManager(); running();
         const reason = typeof body.reason === "string" ? body.reason.trim() : "";
@@ -492,7 +513,12 @@ export class ProjectCoreService {
         if (action === "suggest_materials") audit = { added: await suggestMaterials(client, workspaceId, projectId) };
         else if (action === "save_material") audit = { itemId: await saveMaterial(client, workspaceId, projectId, body) };
         else if (action === "delete_material") { await deleteMaterial(client, workspaceId, projectId, String(body.itemId ?? "")); audit = { itemId: body.itemId }; }
-        else if (action === "send_materials") audit = { revision: await sendMaterials(client, workspaceId, projectId, user.userId) };
+        else if (action === "send_materials") {
+          const revision = await sendMaterials(client, workspaceId, projectId, user.userId);
+          // The client's decision-makers hear the list is waiting for them in the portal.
+          await tellClients(client, { workspaceId, caseId: project.caseId, event: "decision_waiting", recordId: `materials:${projectId}:${revision}`, title: `Material list R${revision}` });
+          audit = { revision };
+        }
         else {
           const result = await recordMaterialDecision(client, workspaceId, projectId, body, user.userId);
           audit = result;
@@ -626,8 +652,8 @@ export class ProjectCoreService {
     const team = (await readTeam(client, workspaceId, [projectId])).get(projectId) ?? [];
     const stages = await evaluateStages(client, workspaceId, project, await readStages(client, workspaceId, [projectId]), team);
     const manager = all || team.some((member) => member.membershipId === membershipId && member.lead);
-    const updates = (await client.query<{ id: string; health: string; note: string; byName: string; at: string }>(
-      `SELECT update.id, update.health, update.note, person.display_name AS "byName", update.created_at AS at
+    const updates = (await client.query<{ id: string; health: string; note: string; byName: string; at: string; sharedAt: string | null }>(
+      `SELECT update.id, update.health, update.note, person.display_name AS "byName", update.created_at AS at, update.shared_at AS "sharedAt"
          FROM project_status_updates update JOIN users person ON person.id = update.created_by
         WHERE update.workspace_id = $1 AND update.project_id = $2 ORDER BY update.created_at DESC LIMIT 20`, [workspaceId, projectId])).rows;
     const seal = (await client.query<{ revisionLabel: string; quoteNumber: number; acceptedAt: string; acceptedBy: string; method: string | null; contentHash: string; sealedAt: string }>(

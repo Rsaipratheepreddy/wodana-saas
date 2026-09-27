@@ -23,7 +23,7 @@ type Report = {
   safetyNote: string; forecast: "none" | "watch" | "blocked"; impact: string; recoveryOwnerId: string | null; recoveryOwnerName: string | null; recoveryOn: string | null; noWorkReason: string;
   notes: string; decidedByName: string | null; decisionNote: string; version: number;
   workforce: Array<{ trade: string; people: number }>; lines: Array<{ id: string; boqLineId: string; title: string; unit: string; installed: string; note: string }>;
-  photos: Array<{ id: string; name: string }>;
+  photos: Array<{ id: string; name: string; shared: boolean }>;
 };
 
 /**
@@ -160,6 +160,18 @@ export class SiteService {
           }
         }
         audit = { reportId: id };
+      } else if (action === "share_photo") {
+        // The project manager chooses which photos of an approved report the client sees.
+        if (!who.manager) throw new ForbiddenException("Only the project manager shares photos with the client.");
+        const photo = (await client.query<{ id: string; status: string }>(
+          `SELECT photo.id, report.status FROM site_report_photos photo JOIN site_reports report ON report.workspace_id = photo.workspace_id AND report.id = photo.report_id
+            WHERE photo.workspace_id = $1 AND photo.id = $2 AND report.project_id = $3`, [workspaceId, uuid(body.photoId, "Photo"), projectId])).rows[0];
+        if (!photo) throw new NotFoundException("Photo not found.");
+        const shared = body.shared === true;
+        if (shared && photo.status !== "approved") throw new ConflictException("Approve the report before sharing its photos.");
+        await client.query(`UPDATE site_report_photos SET shared_at = CASE WHEN $3::boolean THEN coalesce(shared_at, now()) END,
+          shared_by = CASE WHEN $3::boolean THEN coalesce(shared_by, $4::uuid) END WHERE workspace_id = $1 AND id = $2`, [workspaceId, photo.id, shared, user.userId]);
+        audit = { photoId: photo.id, shared };
       } else throw new BadRequestException("Unknown action.");
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `site.${action}`, entityType: "project", entityId: projectId, after: audit });
       return this.read(client, workspaceId, projectId, user.userId);
@@ -290,12 +302,12 @@ export class SiteService {
       `SELECT entry.report_id AS "reportId", entry.id, entry.boq_line_id AS "boqLineId", line.title, line.unit, entry.installed::text AS installed, entry.note
          FROM site_report_lines entry JOIN project_boq_lines line ON line.workspace_id = entry.workspace_id AND line.id = entry.boq_line_id
         WHERE entry.workspace_id = $1 AND entry.report_id = ANY($2::uuid[]) ORDER BY line.position`, [workspaceId, ids])).rows;
-    const photos = (await client.query<{ reportId: string; id: string; name: string }>(
-      `SELECT report_id AS "reportId", id, original_name AS name FROM site_report_photos WHERE workspace_id = $1 AND report_id = ANY($2::uuid[]) ORDER BY created_at`, [workspaceId, ids])).rows;
+    const photos = (await client.query<{ reportId: string; id: string; name: string; shared: boolean }>(
+      `SELECT report_id AS "reportId", id, original_name AS name, shared_at IS NOT NULL AS shared FROM site_report_photos WHERE workspace_id = $1 AND report_id = ANY($2::uuid[]) ORDER BY created_at`, [workspaceId, ids])).rows;
     return rows.map((row) => ({ ...row,
       workforce: workforce.filter((item) => item.reportId === row.id).map(({ trade, people }) => ({ trade, people })),
       lines: lines.filter((item) => item.reportId === row.id).map(({ reportId: _reportId, ...item }) => item),
-      photos: photos.filter((item) => item.reportId === row.id).map(({ id: photoId, name }) => ({ id: photoId, name })) }));
+      photos: photos.filter((item) => item.reportId === row.id).map(({ id: photoId, name, shared }) => ({ id: photoId, name, shared })) }));
   }
 
   /** Who this person is on the project: on its team (reports), its manager (starts site work, approves). */

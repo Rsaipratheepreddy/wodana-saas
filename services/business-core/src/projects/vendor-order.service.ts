@@ -98,12 +98,7 @@ export class VendorOrderService {
         if (!row) throw new NotFoundException("Order unavailable.");
         const d = row.content as ProjectData,
           o = get(d.orders, grant.order_id),
-          brand = await effectivePortalBrand(c, grant.workspace_id, (
-            await c.query(
-              "SELECT brand FROM client_portal_settings WHERE workspace_id=$1",
-              [grant.workspace_id],
-            )
-          ).rows[0]?.brand);
+          brand = await effectivePortalBrand(c, grant.workspace_id);
         if (b.action === "submit") {
           if (["closed", "cancelled"].includes(o.status))
             throw new ConflictException("This order is closed.");
