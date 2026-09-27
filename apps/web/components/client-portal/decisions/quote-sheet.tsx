@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { commandId, type PortalApi } from "@/lib/client-portal/client";
 import { documentQuote } from "@/lib/client-portal/document-quote";
 import type { PortalQuote } from "@/lib/client-portal/types";
+import type { PortalBrand } from "@/lib/commercial/types";
 import type { PortalFormat } from "../portal-format";
 import { StateLabel } from "../portal-labels";
 import styles from "../portal.module.css";
@@ -18,8 +19,8 @@ type Decision = "accept" | "changes" | "decline";
  * A quotation or variation exactly as issued. The decision-maker picks the options they want and accepts,
  * asks for changes or declines; a code confirms it for this revision only.
  */
-export function QuoteSheet({ quote, caseId, slug, api, format, channels, onDecided }: {
-  quote: PortalQuote; caseId: string; slug: string; api: PortalApi; format: PortalFormat; channels: Array<"whatsapp" | "email">; onDecided: () => void;
+export function QuoteSheet({ quote, caseId, slug, brand, customer, api, format, channels, onDecided }: {
+  quote: PortalQuote; caseId: string; slug: string; brand: PortalBrand; customer: string; api: PortalApi; format: PortalFormat; channels: Array<"whatsapp" | "email">; onDecided: () => void;
 }) {
   const t = useT();
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -47,7 +48,7 @@ export function QuoteSheet({ quote, caseId, slug, api, format, channels, onDecid
       <StateLabel state={quote.expired && quote.status === "issued" ? "expired" : quote.status} />
       <a className={styles.muted} href={print} rel="noreferrer" target="_blank">{t("Print or save as PDF")}</a>
     </div>
-    <div className={styles.document}><QuotationDocument quote={documentQuote(quote)} /></div>
+    <div className={styles.document}><QuotationDocument quote={documentQuote(quote, brand)} customerName={customer} /></div>
     {quote.canDecide ? <>
       {optional.length ? <fieldset className={styles.options}>
         <legend className={styles.groupTitle}>{t("Options you can add")}</legend>

@@ -25,7 +25,7 @@ export function DecisionsSection({ project, format, open }: SectionProps) {
     { group: t("Designs"), rows: decisions.designs.map((design) => ({ key: design.id, target: { kind: "design" as const, id: design.id }, title: `${design.title} · V${design.number}`,
       meta: [design.room, design.type].filter(Boolean).join(" · "), state: design.status, waiting: design.canDecide })) },
     { group: t("Material list"), rows: decisions.materials ? [{ key: decisions.materials.id, target: { kind: "materials" as const, id: decisions.materials.id },
-      title: t("Material list · R{number}", { number: decisions.materials.number }), meta: t("{count} materials", { count: decisions.materials.items.length }),
+      title: t("Material list · R{number}", { number: decisions.materials.number }), meta: decisions.materials.items.length === 1 ? t("1 material") : t("{count} materials", { count: decisions.materials.items.length }),
       state: decisions.materials.status, waiting: decisions.materials.canDecide }] : [] },
     { group: t("Handover"), rows: decisions.handovers.map((pack) => ({ key: pack.id, target: { kind: "handover" as const, id: pack.id }, title: `${pack.title} · R${pack.revision}`,
       meta: format.date(pack.issuedAt), state: pack.status, waiting: pack.canDecide })) },

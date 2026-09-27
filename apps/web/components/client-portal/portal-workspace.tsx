@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ControlledModalDialog, EmptyState, InlineNotice, PillTabs, SelectField } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalApi } from "@/lib/client-portal/client";
+import { siteBrand } from "@/lib/client-portal/document-quote";
 import { PORTAL_SECTIONS, type PortalProject, type PortalSection, type PortalSite, type PortalView } from "@/lib/client-portal/types";
 import { DefinitionSheet } from "./decisions/definition-sheet";
 import { DesignSheet } from "./decisions/design-sheet";
@@ -54,7 +55,7 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
   const done = (message: string) => async () => { setTarget(null); setNotice(message); await reload(); };
   const props: SectionProps = { project, site, api, format, open: (next) => { setNotice(""); setTarget(next); }, go };
   const Section = SECTIONS[current];
-  const dialog = target ? dialogFor(target, project, { site, api, format, done, reload, t }) : null;
+  const dialog = target ? dialogFor(target, project, { site, customer: view.contact.name, api, format, done, reload, t }) : null;
   return <>
     <div className={styles.projectHead}>
       {view.projects.length > 1 ? <SelectField label={t("Project")} selectedKey={project.id} onSelectionChange={(key) => { if (key) { setProjectId(String(key)); setTab("home"); } }}
@@ -75,17 +76,17 @@ export function PortalWorkspace({ view, site, api, reload }: { view: PortalView;
   </>;
 }
 
-type Tools = { site: PortalSite; api: PortalApi; format: PortalFormat; done: (message: string) => () => Promise<void>; reload: () => Promise<void>; t: ReturnType<typeof useT> };
+type Tools = { site: PortalSite; customer: string; api: PortalApi; format: PortalFormat; done: (message: string) => () => Promise<void>; reload: () => Promise<void>; t: ReturnType<typeof useT> };
 
 /** The dialog for what was opened: a decision at its revision, a conversation or a form. */
-function dialogFor(target: PortalTarget, project: PortalProject, { site, api, format, done, reload, t }: Tools) {
+function dialogFor(target: PortalTarget, project: PortalProject, { site, customer, api, format, done, reload, t }: Tools) {
   const decisions = project.decisions;
   const channels = site.signIn.channels;
   const common = { caseId: project.id, api, format, channels };
   const decided = done(t("Thank you. Your decision was sent to your project team."));
   if (target.kind === "quote") {
     const quote = decisions?.quotes.find((item) => item.id === target.id);
-    return quote ? { title: `${quote.title} · V${quote.number}`, body: <QuoteSheet quote={quote} slug={site.slug} onDecided={decided} {...common} /> } : null;
+    return quote ? { title: `${quote.title} · V${quote.number}`, body: <QuoteSheet quote={quote} slug={site.slug} brand={siteBrand(site)} customer={customer} onDecided={decided} {...common} /> } : null;
   }
   if (target.kind === "design") {
     const design = decisions?.designs.find((item) => item.id === target.id);

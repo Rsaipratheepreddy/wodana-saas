@@ -19,7 +19,7 @@ export function MessagesSection({ project, format, open }: SectionProps) {
     <ul className={styles.list}>{messages.requests.map((request) => <li key={request.id}>
       <button className={`${styles.item} ${styles.itemButton}`} type="button" onClick={() => open({ kind: "thread", id: request.id })}>
         <span className={styles.itemText}><span className={styles.itemTitle}>{request.title}</span>
-          <span className={styles.itemMeta}>{format.date(request.createdAt)}{request.comments.length ? ` · ${t("{count} replies", { count: request.comments.length })}` : ""}</span></span>
+          <span className={styles.itemMeta}>{format.date(request.createdAt)}{request.comments.length ? ` · ${(request.comments.length === 1 ? t("1 reply") : t("{count} replies", { count: request.comments.length }))}` : ""}</span></span>
         <span className={styles.itemEnd}><StateLabel state={request.status} /><ChevronRight aria-hidden="true" size={18} /></span>
       </button>
     </li>)}</ul>

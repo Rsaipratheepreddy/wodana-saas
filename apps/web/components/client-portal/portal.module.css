@@ -128,6 +128,8 @@
 .itemButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .itemText { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
 .itemTitle { overflow-wrap: anywhere; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-medium); }
+.fileName { display: inline-flex; align-items: center; gap: var(--wd-space-2); overflow-wrap: anywhere; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-medium); }
+.fileName svg { flex: none; }
 .itemMeta { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .itemEnd { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -167,7 +169,8 @@
 .preview { display: block; inline-size: 100%; max-block-size: 60vh; object-fit: contain; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
 .document { overflow: auto; max-block-size: 70vh; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
 .choices { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
-.options { display: grid; gap: var(--wd-space-2); }
+.options { display: grid; gap: var(--wd-space-2); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.options > legend { padding: 0; margin-block-end: var(--wd-space-2); }
 .total { display: flex; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); }
 .materialRow { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .materialRow:last-child { border-block-end: 0; }
@@ -185,6 +188,7 @@
 @media (max-width: 640px) {
   .title { font-size: var(--wd-text-2xl); }
   .item { grid-template-columns: minmax(0, 1fr); }
+  .item:has(> .itemEnd > svg:only-child) { grid-template-columns: minmax(0, 1fr) auto; }
   .itemEnd { justify-content: space-between; }
 }
 

@@ -11,7 +11,7 @@ export function QuotationPrint({ quote, customer }: { quote: ClientQuote; custom
   return <main className={styles.page}>
     <div className={styles.actions}><Button variant="primary" onPress={() => window.print()}>{t("Print or save as PDF")}</Button></div>
     <article className={styles.document}>
-      <ClientQuotation quote={{ ...quote, cover: quote.cover ?? { preparedFor: customer, location: "", subtitle: "" } }} />
+      <ClientQuotation quote={{ ...quote, cover: { ...(quote.cover ?? { location: "", subtitle: "" }), preparedFor: quote.cover?.preparedFor || customer } }} />
       <p className={styles.muted}>{t("Reference {id} · V{number}", { id: quote.id, number: quote.number })}{quote.hash ? ` · ${t("Issued snapshot {hash}", { hash: quote.hash.slice(0, 12) })}` : ""}</p>
     </article>
   </main>;

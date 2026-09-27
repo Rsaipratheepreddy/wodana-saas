@@ -36,7 +36,7 @@ export function HandoverSheet({ pack, caseId, api, format, channels, onDecided }
     <ul className={styles.list}>
       {pack.documents.map((document) => <li className={styles.item} key={document.id}>
         <a className={styles.itemText} href={api.file("handover", document.id)} rel="noreferrer" target="_blank">
-          <span className={styles.itemTitle}><FileText aria-hidden="true" size={16} /> {document.title}</span>
+          <span className={styles.fileName}><FileText aria-hidden="true" size={16} /> {document.title}</span>
         </a>
       </li>)}
     </ul>

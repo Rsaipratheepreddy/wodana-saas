@@ -7,7 +7,7 @@ import { Button, SelectField } from "@/design-system";
 import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
 import { LANGUAGE_COOKIE, languages } from "@/lib/i18n/languages";
 import type { PortalSite } from "@/lib/client-portal/types";
-import { whatsappUrl } from "@/lib/phone";
+import { formatPhoneForDisplay, whatsappUrl } from "@/lib/phone";
 import styles from "./portal.module.css";
 
 /** The tenant's own page: their logo and name on top, their contacts at the foot, Wodana only as "Powered by". */
@@ -33,9 +33,9 @@ export function PortalFrame({ site, children, onSignOut }: { site: PortalSite; c
     <main className={styles.main}>{children}</main>
     <footer className={styles.footer}>
       <div className={styles.support}>
-        {site.support.phone ? <a href={`tel:${site.support.phone}`}><Phone aria-hidden="true" size={14} /> {site.support.phone}</a> : null}
+        {site.support.phone ? <a href={`tel:${site.support.phone}`}><Phone aria-hidden="true" size={14} /> <bdi dir="ltr">{formatPhoneForDisplay(site.support.phone)}</bdi></a> : null}
         {whatsapp ? <a href={whatsapp} rel="noreferrer" target="_blank"><MessageCircle aria-hidden="true" size={14} /> {t("WhatsApp")}</a> : null}
-        {site.support.email ? <a href={`mailto:${site.support.email}`}><Mail aria-hidden="true" size={14} /> {site.support.email}</a> : null}
+        {site.support.email ? <a href={`mailto:${site.support.email}`}><Mail aria-hidden="true" size={14} /> <bdi dir="ltr">{site.support.email}</bdi></a> : null}
         {site.gallerySlug ? <a href={`/gallery/${site.gallerySlug}`} rel="noreferrer" target="_blank">{t("Our work")}</a> : null}
       </div>
       <div className={styles.footerEnd}>

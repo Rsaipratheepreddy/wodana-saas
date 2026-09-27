@@ -58,7 +58,7 @@ describe("client portal settings", () => {
       : method === "PUT" ? { ...portal, access: { sections: body?.sections ?? null, paused: body?.paused === true, pausedAt: null, version: 1 } } : portal));
     const user = userEvent.setup();
     render(<DesignSystemProvider><ProjectPortalControl workspaceId={W} projectId={P} /></DesignSystemProvider>);
-    expect(await screen.findByText("Progress, Decisions, Payments · 1 contacts")).toBeInTheDocument();
+    expect(await screen.findByText("Progress, Decisions, Payments · 1 contact")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Manage" }));
     const dialog = await screen.findByRole("dialog", { name: "Client portal" });
     await user.click(within(dialog).getByRole("checkbox", { name: "Payments" }));

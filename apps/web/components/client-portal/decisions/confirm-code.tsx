@@ -5,6 +5,7 @@ import { Button, Form, InlineNotice, Spinner, TextInput } from "@/design-system"
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, type Challenge, type PortalApi } from "@/lib/client-portal/client";
 import styles from "../portal.module.css";
+import { secondsFromNow, useCountdown } from "../use-countdown";
 
 /**
  * A decision that matters (a quotation, a handover, the material list) is confirmed with a fresh code bound
@@ -19,12 +20,19 @@ export function ConfirmCode({ api, purpose, channels, confirmLabel, onConfirm, o
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [resendAt, setResendAt] = useState(0);
+  const wait = useCountdown(resendAt);
   const asked = useRef(false);
   const send = async (channel: "whatsapp" | "email") => {
     setBusy(true); setError(""); setCode("");
-    try { setChallenge(await api.challenge({ purpose, channel })); }
-    catch (cause) { setError((cause as PortalError).message); }
-    finally { setBusy(false); }
+    try {
+      const next = await api.challenge({ purpose, channel });
+      setChallenge(next); setResendAt(secondsFromNow(next.resendAfter));
+    } catch (cause) {
+      const failure = cause as PortalError;
+      if (failure.retryAfter) setResendAt(secondsFromNow(failure.retryAfter));
+      setError(failure.message);
+    } finally { setBusy(false); }
   };
   useEffect(() => {
     if (asked.current) return;
@@ -49,8 +57,9 @@ export function ConfirmCode({ api, purpose, channels, confirmLabel, onConfirm, o
       </div>
     </> : null}
     <div className={styles.links}>
-      <button className={styles.textButton} type="button" disabled={busy} onClick={() => void send(challenge?.channel ?? "whatsapp")}>{t("Send a new code")}</button>
-      {channels.includes("email") && challenge?.channel !== "email" ? <button className={styles.textButton} type="button" disabled={busy} onClick={() => void send("email")}>
+      <button className={styles.textButton} type="button" disabled={busy || wait > 0} onClick={() => void send(challenge?.channel ?? "whatsapp")}>
+        {wait > 0 ? t("Send a new code in {seconds} s", { seconds: wait }) : t("Send a new code")}</button>
+      {channels.includes("email") && challenge?.channel !== "email" ? <button className={styles.textButton} type="button" disabled={busy || wait > 0} onClick={() => void send("email")}>
         {t("Send it by email instead")}</button> : null}
     </div>
     <div className={styles.choices}>

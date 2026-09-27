@@ -35,7 +35,7 @@ export function DesignSheet({ design, caseId, api, format, channels, onDecided }
     {image
       // eslint-disable-next-line @next/next/no-img-element -- a private file streamed through the portal's signed-in route
       ? <img alt={`${design.title} · V${design.number}`} className={styles.preview} src={api.file("design", design.id)} />
-      : <a href={api.file("design", design.id)} rel="noreferrer" target="_blank"><FileText aria-hidden="true" size={16} /> {t("Open the file")}</a>}
+      : <a className={styles.fileName} href={api.file("design", design.id)} rel="noreferrer" target="_blank"><FileText aria-hidden="true" size={16} /> {t("Open the file")}</a>}
     {design.canDecide ? <>
       {design.dueAt ? <p className={styles.muted}>{t("Please decide by {date}", { date: format.date(design.dueAt) })}</p> : null}
       {decision && decision !== "accept" ? <TextAreaField label={decision === "changes" ? t("What would you like changed?") : t("Why are you declining?")} value={note}

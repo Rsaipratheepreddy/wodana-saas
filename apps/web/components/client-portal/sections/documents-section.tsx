@@ -20,7 +20,7 @@ export function DocumentsSection({ project, api, format }: SectionProps) {
         <h2 className={styles.groupTitle}>{kinds[kind]}</h2>
         <ul className={styles.list}>{items.map((document) => <li className={styles.item} key={`${kind}-${document.id}`}>
           <a className={styles.itemText} href={api.file(kind, document.id)} rel="noreferrer" target="_blank">
-            <span className={styles.itemTitle}>{document.mimeType.startsWith("image/") ? <FileImage aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />} {document.title}</span>
+            <span className={styles.fileName}>{document.mimeType.startsWith("image/") ? <FileImage aria-hidden="true" size={16} /> : <FileText aria-hidden="true" size={16} />} {document.title}</span>
             <span className={styles.itemMeta}>{[document.group, format.date(document.date)].filter(Boolean).join(" · ")}</span>
           </a>
         </li>)}</ul>

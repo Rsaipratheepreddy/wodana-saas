@@ -295,6 +295,23 @@
   --wd-record-selected: var(--wd-color-surface-selected);
 }
 
+/* A nested light theme (a design-system provider carrying a tenant's brand, such as the client portal)
+   resolves its actions on its own element, like the dark theme does, so the brand reaches them. */
+[data-wd-theme="light"] {
+  --wd-color-action-primary: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-action-primary-hover: var(--wd-workspace-action-light-hover, #41464c);
+  --wd-color-action-primary-pressed: var(--wd-workspace-action-light-pressed, #191c20);
+  --wd-color-action-primary-subtle: var(--wd-workspace-action-light-subtle, #eef0f2);
+  --wd-color-action-on-primary: var(--wd-workspace-brand-light-on, #ffffff);
+  --wd-color-link: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-link-hover: var(--wd-workspace-action-light-hover, #41464c);
+  --wd-color-focus: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-navigation-selected: color-mix(in oklch, var(--wd-color-action-primary) 14%, var(--wd-color-sidebar));
+  --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
+  --wd-field-focus-border: var(--wd-color-focus);
+  --wd-field-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
+}
+
 [data-theme="dark"],
 [data-wd-theme="dark"] {
   color-scheme: dark;
@@ -453,6 +470,7 @@
    a DesignSystemProvider can override the semantic tokens. */
 [data-theme],
 [data-wd-theme] {
+  --wd-brand-gradient: var(--wd-color-action-primary);
   --wd-illustration-ink: var(--wd-color-text-tertiary);
   --wd-illustration-fill: var(--wd-color-surface-muted);
   --wd-illustration-paper: var(--wd-color-surface);

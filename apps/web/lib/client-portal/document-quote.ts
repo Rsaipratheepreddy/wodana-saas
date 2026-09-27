@@ -1,14 +1,20 @@
-import type { ClientQuote } from "@/lib/commercial/types";
-import type { PortalQuote } from "./types";
+import type { ClientQuote, PortalBrand } from "@/lib/commercial/types";
+import type { PortalQuote, PortalSite } from "./types";
+
+/** The tenant brand as the quotation cover shows it, for quotations issued before a brand was stamped on them. */
+export function siteBrand(site: PortalSite): PortalBrand {
+  return { name: site.brand.name, logo: site.brand.logoUrl ?? "", primaryColor: site.brand.primaryColor ?? "", accentColor: site.brand.secondaryColor ?? "",
+    welcomeTitle: site.welcomeTitle, welcomeText: site.welcomeText, supportPhone: site.support.phone, layout: "minimal" };
+}
 
 /** A portal quotation in the shape the quotation document (screen and print) renders. */
-export function documentQuote(quote: PortalQuote): ClientQuote {
+export function documentQuote(quote: PortalQuote, fallbackBrand?: PortalBrand): ClientQuote {
   const decision = quote.decision;
   return {
     id: quote.id, number: quote.number, kind: quote.kind, direction: quote.direction ?? undefined, status: quote.status, title: quote.title, currency: quote.currency,
     validUntil: quote.validUntil, issuedAt: quote.issuedAt ?? undefined, createdAt: quote.issuedAt ?? "", total: quote.total, discount: quote.discount, taxRate: quote.taxRate,
     terms: quote.terms, exclusions: quote.exclusions, inclusions: quote.inclusions, hash: quote.hash ?? undefined, cover: quote.cover ?? undefined,
-    presentation: quote.presentation ?? undefined, brand: quote.brand ?? undefined, rooms: quote.rooms,
+    presentation: quote.presentation ?? undefined, brand: quote.brand ?? fallbackBrand, rooms: quote.rooms,
     paymentTerms: quote.paymentTerms.map((term) => ({ ...term, requiredForRelease: false })),
     lines: quote.lines.map((line) => ({
       id: line.id, deductsLineId: line.deductsLineId ?? undefined, room: line.room, title: line.title, specification: line.specification, material: line.material,

@@ -41,10 +41,11 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   };
+  const contacts = portal.contacts.filter((contact) => contact.active).length;
   return <div className={styles.control}>
     <div className={styles.controlText}>
       <span className={styles.controlTitle}>{t("Client portal")}</span>
-      <span className={styles.muted}>{summary} · {t("{count} contacts", { count: portal.contacts.filter((contact) => contact.active).length })}</span>
+      <span className={styles.muted}>{summary} · {contacts === 1 ? t("1 contact") : t("{count} contacts", { count: contacts })}</span>
     </div>
     <Button size="compact" onPress={edit}>{portal.canManage ? t("Manage") : t("View")}</Button>
     {open ? <ControlledModalDialog isOpen onOpenChange={setOpen} size="lg" title={t("Client portal")}

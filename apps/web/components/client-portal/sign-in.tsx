@@ -1,30 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button, Form, InlineNotice, PhoneField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { PortalError, type Challenge, type PortalApi } from "@/lib/client-portal/client";
 import type { PortalSite } from "@/lib/client-portal/types";
-import { joinPhone } from "@/lib/phone";
+import { formatPhoneForDisplay, joinPhone } from "@/lib/phone";
 import styles from "./portal.module.css";
+import { secondsFromNow, useCountdown } from "./use-countdown";
 
 type Channel = "whatsapp" | "email";
-
-/** A moment some seconds from now (for when a new code can be asked for). */
-const secondsFromNow = (seconds: number) => Date.now() + seconds * 1000;
-
-/** Seconds left until a new code can be asked for. */
-function useCountdown(until: number) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const tick = () => setNow(Date.now());
-    queueMicrotask(tick);
-    if (until <= Date.now()) return;
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [until]);
-  return Math.max(0, Math.ceil((until - now) / 1000));
-}
 
 /**
  * Sign in with the mobile number the team has for you: a 6-digit code by WhatsApp, or by email when
@@ -42,6 +27,8 @@ export function SignIn({ site, api, onSignedIn }: { site: PortalSite; api: Porta
   const [resendAt, setResendAt] = useState(0);
   const wait = useCountdown(resendAt);
   const phone = joinPhone(country, national);
+  // Isolated so the number keeps its order inside a right-to-left sentence.
+  const shownPhone = `\u2066${formatPhoneForDisplay(phone)}\u2069`;
 
   const send = async (via: Channel) => {
     if (!phone) return setError(t("Enter your mobile number."));
@@ -89,8 +76,8 @@ export function SignIn({ site, api, onSignedIn }: { site: PortalSite; api: Porta
   return <section className={styles.signIn} aria-labelledby="portal-code">
     <div className={styles.intro}>
       <h1 className={styles.title} id="portal-code">{t("Enter your code")}</h1>
-      <p className={styles.lead}>{channel === "whatsapp" ? t("If {phone} has access, a 6-digit code is on its way by WhatsApp.", { phone })
-        : t("If {phone} has access, a 6-digit code is on its way to the email we have for you.", { phone })}</p>
+      <p className={styles.lead}>{channel === "whatsapp" ? t("If {phone} has access, a 6-digit code is on its way by WhatsApp.", { phone: shownPhone })
+        : t("If {phone} has access, a 6-digit code is on its way to the email we have for you.", { phone: shownPhone })}</p>
       {site.signIn.demo ? <p className={styles.muted}>{t("Demo: the code is 123456.")}</p> : null}
     </div>
     <Form className={styles.form} onSubmit={(event) => { event.preventDefault(); void verify(); }}>

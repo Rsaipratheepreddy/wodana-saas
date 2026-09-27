@@ -64,8 +64,8 @@ export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled,
   };
   const columns: DataGridColumn<PortalContact>[] = [
     { id: "name", header: t("Client contact"), accessorFn: (row) => row.confirmedName ?? row.name, meta: { primary: true } },
-    { id: "phone", header: t("Mobile"), accessorFn: (row) => formatPhoneForDisplay(row.phone) },
-    { id: "email", header: t("Email"), accessorFn: (row) => row.email ?? "" },
+    { id: "phone", header: t("Mobile"), accessorFn: (row) => formatPhoneForDisplay(row.phone), cell: ({ row }: { row: { original: PortalContact } }) => <bdi dir="ltr">{formatPhoneForDisplay(row.original.phone)}</bdi> },
+    { id: "email", header: t("Email"), accessorFn: (row) => row.email ?? "", cell: ({ row }: { row: { original: PortalContact } }) => <bdi dir="ltr">{row.original.email ?? ""}</bdi> },
     { id: "role", header: t("Can"), accessorFn: (row) => (row.role === "approver" ? t("Decide") : t("Read")) },
     { id: "access", header: t("Access"), accessorFn: (row) => (!row.active ? t("Off") : row.signedIn ? t("Signed in") : row.lastSignedInAt ? t("Signed out") : t("Not yet")) },
     ...(state.canManage ? [{ id: "actions", header: "", enableSorting: false, cell: ({ row }: { row: { original: PortalContact } }) =>
