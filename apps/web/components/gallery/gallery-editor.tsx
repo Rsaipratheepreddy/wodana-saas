@@ -67,7 +67,7 @@ export function GalleryEditor({ workspaceId, origin }: { workspaceId: string; or
   };
 
   if (loadError && !data) return <EmptyState illustration="error" title={t("The gallery didn't load")} description={loadError} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!data) return <Skeleton lines={8} />;
+  if (!data) return <Skeleton lines={8} shape="rows" />;
   const { settings } = data;
   const readOnly = !data.canManage;
   const link = `${origin}/gallery/${settings.slug}`;
@@ -311,7 +311,7 @@ function CatalogImport({ workspaceId, onClose, onDone, onError }: { workspaceId:
       <Button size="compact" variant="primary" isLoading={busy} isDisabled={!picked.length} onPress={() => void add()}>{picked.length === 1 ? t("Add 1 product") : t("Add {count} products", { count: picked.length })}</Button></div>}>
     <div className={styles.form}>
       <SearchInput label={t("Search the catalog")} value={search} onChange={setSearch} />
-      {rows === null ? <Skeleton lines={4} /> : rows.length ? <ul className={styles.catalog}>{rows.map((row) => <li key={row.id}>
+      {rows === null ? <Skeleton lines={4} shape="rows" /> : rows.length ? <ul className={styles.catalog}>{rows.map((row) => <li key={row.id}>
         <label>
           <input type="checkbox" checked={picked.includes(row.id)} onChange={(event) => setPicked((current) => event.target.checked ? [...current, row.id] : current.filter((id) => id !== row.id))} />
           <span className={styles.thumb}>{row.imageId ? <img src={catalogImageUrl(workspaceId, row.imageId)} alt="" /> : null}</span>

@@ -2,7 +2,7 @@
 
 import { CheckCircle2, History, Pencil, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, InspectorSheet, TextInput } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, InspectorSheet, TextInput, Skeleton } from "@/design-system";
 import type { WorkspaceConfigurationRevision, WorkspaceTerminologyData, WorkspaceTerminologyItem } from "@/lib/workspace/company-profile";
 import styles from "./company-profile.module.css";
 
@@ -228,7 +228,7 @@ export function TerminologyPanel({
       size="sm"
       title={historyTarget ? `${historyTarget.defaultVisibleName} history` : "Workspace language history"}
     >
-      {historyLoading ? <p className={styles.historyStatus}>Loading history…</p> : null}
+      {historyLoading ? <Skeleton lines={3} /> : null}
       {historyError ? <Callout title="History unavailable" tone="danger">{historyError}</Callout> : null}
       {!historyLoading && !historyError && !revisions.length ? <p className={styles.historyStatus}>No changes have been saved yet.</p> : null}
       {revisions.length ? <ol className={styles.revisionList}>

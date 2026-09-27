@@ -31,7 +31,7 @@ export function DesignPackagesSettings({ workspaceId, currency, locale, canManag
     try { await work(); setNotice(success); await load(); } catch (error) { setFailure(error instanceof Error ? error.message : t("Design settings could not be saved.")); }
   };
 
-  if (!settings && !failure) return <Skeleton lines={4} />;
+  if (!settings && !failure) return <Skeleton lines={4} shape="form" />;
   const columns: DataGridColumn<DesignPackage>[] = [
     { accessorKey: "name", header: t("Package"), size: 240, cell: ({ row: { original: pkg } }) => <span className={styles.name}><strong>{pkg.name}</strong>{pkg.inclusions ? <small>{pkg.inclusions}</small> : null}</span> },
     { id: "price", header: t("Price"), size: 170, accessorFn: price },

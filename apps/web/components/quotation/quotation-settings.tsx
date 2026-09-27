@@ -41,7 +41,7 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
   }, [workspaceId]);
 
   if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!data || !form) return <Skeleton lines={6} />;
+  if (!data || !form) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
   const dirty = JSON.stringify(form) !== JSON.stringify(data.settings);
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => { setForm({ ...form, [key]: value }); setSaved(false); };

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useSection } from "@/lib/navigation/use-section";
 import { Plus } from "lucide-react";
 import { Button, PageHeader, Tabs } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -21,9 +22,9 @@ export type { PurchasingSection };
  * Purchasing, for the buyer across all projects: what projects still need to order, price requests,
  * the orders, deliveries, and the suppliers. One thing per tab; a request, an order or a delivery opens in place.
  */
-export function PurchasingPage({ workspaceId, section }: { workspaceId: string; section: PurchasingSection }) {
+export function PurchasingPage({ workspaceId, section: initialSection }: { workspaceId: string; section: PurchasingSection }) {
   const t = useT();
-  const router = useRouter();
+  const [section, move] = useSection(initialSection);
   const params = useSearchParams();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [addingSupplier, setAddingSupplier] = useState(false);
@@ -36,7 +37,7 @@ export function PurchasingPage({ workspaceId, section }: { workspaceId: string; 
   const unmatchedId = params.get("unmatched");
   const go = (next: PurchasingSection, open?: string | null, key?: "return" | "unmatched") => {
     const base = `/workspace/purchasing${next === "to-order" ? "" : `/${next}`}`;
-    router.replace(open ? `${base}?${key ?? (next === "price-requests" ? "request" : next === "deliveries" ? "receipt" : "order")}=${open}` : base, { scroll: false });
+    move(next, open ? `${base}?${key ?? (next === "price-requests" ? "request" : next === "deliveries" ? "receipt" : "order")}=${open}` : base);
   };
   const action = section === "orders" ? <Button variant="primary" onPress={() => setNewOrder(true)}><Plus aria-hidden="true" size={15} />{t("New order")}</Button>
     : section === "suppliers" ? <Button variant="primary" onPress={() => setAddingSupplier(true)}><Plus aria-hidden="true" size={15} />{t("Add supplier")}</Button> : null;

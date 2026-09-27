@@ -24,7 +24,7 @@ export function AccountingSettingsPage({ workspaceId }: { workspaceId: string })
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   if (error && !state) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="form" />;
   return <SettingsPage title={t("Accounting")}>
     {!state.connections.length ? <EmptyState title={t("No accounting connection yet")}
       action={<Link className={styles.link} href="/workspace/integrations">{t("Connect QuickBooks or Zoho Books")}</Link>} /> : state.companies.map((company) =>
@@ -77,7 +77,7 @@ function CompanyAccounting({ api, company, connections, onSaved }: { api: Accoun
     </SettingsRow>
     {connectionId ? <>
       {options === "failed" ? <InlineNotice tone="info" message={t("The accounting system's lists couldn't be read; enter the IDs.")} /> : null}
-      {options === null ? <Skeleton lines={3} /> : <>
+      {options === null ? <Skeleton lines={3} shape="form" /> : <>
         <SettingsRow label={t("Item for invoice lines")} hint={provider === "quickbooks" ? t("QuickBooks needs an item on every invoice line.") : undefined}>
           {choose(t("Item for invoice lines"), "salesItemId", loaded?.items ?? null)}
         </SettingsRow>

@@ -54,7 +54,7 @@ export function Schedule({ api, refreshKey, onOpen }: { api: FactoryApi; refresh
   }, [state, locale, t]);
 
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="rows" />;
   return <div className={styles.stack}>
     <div className={styles.filters}>
       <SegmentedControl label={t("Show")} value={span} onChange={(value) => setSpan(value as "14" | "28" | "56")}

@@ -1,5 +1,7 @@
 "use client";
 
+// Country and currency flags are only shown while a workspace is set up.
+import "flag-icons/css/flag-icons.min.css";
 import Image from "next/image";
 import { IntegrationsPage } from "@/components/workspace/integrations-page";
 import type { IntegrationsPageData } from "@/lib/workspace/integrations";

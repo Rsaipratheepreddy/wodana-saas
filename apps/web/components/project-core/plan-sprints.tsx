@@ -193,7 +193,7 @@ function SprintReport({ api, projectId, sprint, onClose }: { api: ProjectApi; pr
   const [detail, setDetail] = useState<SprintDetail | null>(null);
   useEffect(() => { api.sprint(projectId, sprint.id).then(setDetail).catch(() => setDetail(null)); }, [api, projectId, sprint.id]);
   return <InspectorSheet isOpen size="md" title={sprint.name} onOpenChange={(open) => { if (!open) onClose(); }}>
-    {!detail ? <Skeleton lines={6} /> : <div className={styles.sheet}>
+    {!detail ? <Skeleton lines={6} shape="facts" /> : <div className={styles.sheet}>
       <p className={styles.dialogText}>{[`${format.short(sprint.startDate)} – ${format.short(sprint.endDate)}`, sprint.goal].filter(Boolean).join(" · ")}</p>
       <BurndownChart ariaLabel={t("Burndown")} points={detail.days.map((day) => ({ label: format.short(day.date), remaining: day.remaining, ideal: day.ideal }))}
         summary={t("{done} of {count} committed done", { done: sprint.committedDone, count: sprint.committed })} />

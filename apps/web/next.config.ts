@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
+  experimental: {
+    // Large barrel packages: load only the components a page uses (dev compiles and production bundles).
+    optimizePackageImports: ["react-aria-components", "react-aria"],
+  },
   redirects() {
     return [
       {

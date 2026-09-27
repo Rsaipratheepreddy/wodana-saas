@@ -34,7 +34,7 @@ export function CatalogItemInspector({ workspaceId, catalogId, itemId, locale, c
     return () => { live = false; };
   }, [workspaceId, catalogId, itemId, attempt]);
   if (error) return <ErrorState description={error} onRetry={() => setAttempt((value) => value + 1)} />;
-  if (!item) return <Skeleton lines={5} />;
+  if (!item) return <Skeleton lines={5} shape="facts" />;
   const money = (value: string | null | undefined, currency: string | null) => {
     if (!value) return "—";
     try { return new Intl.NumberFormat(locale, { style: "currency", currency: currency ?? "USD" }).format(Number(value)); } catch { return value; }

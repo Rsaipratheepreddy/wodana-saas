@@ -37,8 +37,7 @@
     "react-aria": "^3.52.0",
     "react-aria-components": "^1.21.0",
     "react-dom": "19.2.8",
-    "read-excel-file": "9.3.10",
-    "simple-icons": "^16.29.0"
+    "read-excel-file": "9.3.10"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

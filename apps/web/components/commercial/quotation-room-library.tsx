@@ -8,6 +8,7 @@ import { roomKey } from '@/lib/commercial/quotation-proposal';
 import { useCatalogOptions } from './catalog-options-cache';
 import type { CommercialCatalogChoice } from './catalog-picker';
 import s from './quotation-workspace.module.css';
+import { Skeleton } from "@/design-system";
 
 export function QuotationRoomLibrary({ quote, workspaceId, caseId, onApply, onCustom, onClose }: { quote: Quote; workspaceId: string; caseId: string; onApply: (quote: Quote) => void; onCustom: () => void; onClose: () => void }) {
   const [search, setSearch] = useState(''), [selected, setSelected] = useState<CommercialCatalogChoice[]>([]);
@@ -32,7 +33,7 @@ export function QuotationRoomLibrary({ quote, workspaceId, caseId, onApply, onCu
   return <ControlledModalDialog title="Add rooms" size="lg" isOpen onOpenChange={open => { if (!open) onClose(); }} footer={<div className={s.modalFooter}><span>{selected.length} selected</span><div><button className={s.button} onClick={onClose}>Cancel</button><button className={s.primary} disabled={!selected.length} onClick={() => { let next = quote; for (const room of selected) { let name = room.name, index = 2; while (roomNames(next).some(value => roomKey(value) === roomKey(name))) name = `${room.name} ${index++}`; next = applyRoom(next, null, name, room, []); } onApply(next); onClose(); }}>Add {selected.length || ''} {selected.length === 1 ? 'room' : 'rooms'}</button></div></div>}>
     <div className={s.library}><label className={s.search}><Search size={15}/><input autoFocus type="search" aria-label="Search rooms" placeholder="Find a room…" value={search} onChange={e => setSearch(e.target.value)}/></label>
       <p className={s.hint}>Select one or more rooms, then configure their items.</p>
-      {loading && <p role="status">Loading rooms…</p>}{error && <p role="alert">{error} <button onClick={refresh}>Retry</button></p>}
+      {loading && <Skeleton lines={4} />}{error && <p role="alert">{error} <button onClick={refresh}>Retry</button></p>}
       <div className={s.libraryGrid}>{items.map(room => { const added = existing.has(roomKey(room.name)), checked = selected.some(value => value.id === room.id); return <button key={room.id} className={s.roomChoice} aria-pressed={checked} disabled={!checked && selected.length >= available} onClick={() => toggle(room)}><span>{room.name}</span>{added && <small>Add another</small>}<span className={s.choiceCheck} data-checked={checked || undefined}>{checked && <Check size={12}/>}</span></button>; })}</div>
       {!loading && !error && !items.length && <p className={s.hint}>{master.catalogId ? 'No matching rooms.' : 'Add rooms to Master Data or create a custom room below.'}</p>}
       <button className={s.linkButton} onClick={onCustom}><Plus size={14}/>Custom room</button>

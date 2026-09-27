@@ -41,7 +41,7 @@ export function ProjectSite({ workspaceId, projectId }: { workspaceId: string; p
     }
   };
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="rows" />;
   const running = Boolean(state.site.startedOn && !state.site.finishedOn);
   const waiting = state.canApprove ? state.reports.filter((report) => report.status === "submitted" && report.authorId !== state.me) : [];
   const safety: Record<Safety, string> = { none: t("No safety issue"), observation: t("Safety observation"), incident: t("Incident") };

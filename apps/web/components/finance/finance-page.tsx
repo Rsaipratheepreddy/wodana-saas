@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useSection } from "@/lib/navigation/use-section";
 import { Button, PageHeader, Tabs } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { payablesApi } from "@/lib/payables/client";
@@ -22,9 +23,10 @@ import styles from "./finance.module.css";
 const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "petty-cash": "claim", "client-invoices": "invoice" };
 
 /** Finance: suppliers' invoices to check and pay, payments and payment runs, what each supplier is owed, petty cash to reimburse, clients' tax invoices, and accounting postings. Records open in place. */
-export function FinancePage({ workspaceId, section, supplierId }: { workspaceId: string; section: FinanceSection; supplierId: string | null }) {
+export function FinancePage({ workspaceId, section: initialSection, supplierId: initialSupplier }: { workspaceId: string; section: FinanceSection; supplierId: string | null }) {
   const t = useT();
-  const router = useRouter();
+  const [route, move] = useSection({ section: initialSection, supplierId: initialSupplier }, `${initialSection}/${initialSupplier ?? ""}`);
+  const { section, supplierId } = route;
   const params = useSearchParams();
   const api = useMemo(() => payablesApi(workspaceId), [workspaceId]);
   const receivables = useMemo(() => receivablesApi(workspaceId), [workspaceId]);
@@ -39,7 +41,8 @@ export function FinancePage({ workspaceId, section, supplierId }: { workspaceId:
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const go = (next: FinanceSection, open?: string | null) => {
     const base = `/workspace/finance${next === "bills" ? "" : `/${next}`}`;
-    router.replace(!open || next === "accounting" ? base : next === "suppliers" ? `${base}/${open}` : `${base}?${OPEN_PARAM[next]}=${open}`, { scroll: false });
+    move({ section: next, supplierId: next === "suppliers" ? open ?? null : null },
+      !open || next === "accounting" ? base : next === "suppliers" ? `${base}/${open}` : `${base}?${OPEN_PARAM[next]}=${open}`);
   };
   const held = state?.bills.filter((bill) => bill.status === "held").length ?? 0;
   const toApprove = state?.canApprove ? state.runs.filter((run) => run.status === "submitted").length : 0;

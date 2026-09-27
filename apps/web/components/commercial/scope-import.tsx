@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Button, Checkbox, DataGrid, ControlledModalDialog } from "@/design-system";
+import { Button, Checkbox, DataGrid, ControlledModalDialog, Skeleton } from "@/design-system";
 import { caseRequest, type CaseContent } from "@/lib/pre-project/content";
 import type { Quote } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -67,7 +67,7 @@ export function ScopeImport({
         <p className={s.muted}>
           Choose the requirements to add. Existing prices stay unchanged; set quantities and prices before review.
         </p>
-        {!content && !error && <p>Loading requirements…</p>}
+        {!content && !error && <Skeleton lines={5} />}
         {included.length > 0 && <DataGrid compactToolbar rowNumbers={false} ariaLabel="Requirement import" data={included} getRowId={row=>row.id} searchLabel="Search requirement import" exportFileName="requirement-import.csv" selectable={false} columns={[{id:"include",header:"Include",size:80,cell:({row:{original:e}})=><Checkbox aria-label={`Include ${e.title}`} isDisabled={busy} isSelected={selected.includes(e.id)} onChange={checked=>setSelected(ids=>checked?[...ids,e.id]:ids.filter(id=>id!==e.id))}/>},{id:"title",header:"Room / item",size:320,accessorFn:(e)=>`${e.roomName ?? "General"} ${e.title}`,cell:({row:{original:e}})=>{return <>
                       <strong>{e.title}</strong>
                       <small className={s.detail}>

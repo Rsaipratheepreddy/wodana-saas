@@ -66,7 +66,7 @@ describe('Requirements tabs and original forms', () => {
  it('shows saved measurements in one compact register without a card switch',async()=>{
   const user=userEvent.setup();
   render(<DesignSystemProvider><BriefScopePage initialData={gatheringData} view="measurements"/></DesignSystemProvider>);
-  await waitFor(()=>expect(screen.queryByText('Loading requirements…')).not.toBeInTheDocument());
+  await waitFor(()=>expect(document.querySelector('.wd-skeleton')).toBeNull());
   expect(screen.queryByRole('button',{name:'Cards view'})).not.toBeInTheDocument();
   expect(screen.getByRole('table',{name:'Measurements'})).toHaveTextContent('2385 mm');
   await user.click(screen.getByRole('button',{name:'Edit measurements for Reception desk'}));
@@ -98,7 +98,7 @@ describe('Requirements tabs and original forms', () => {
   vi.mocked(fetch).mockImplementation(async(url,init)=>({ok:true,json:async()=>String(url).includes('/specifications/')?{...blankSpecification(),...JSON.parse(String(init?.body)),version:2}:{items:[],canEdit:true}} as Response));
   const user=userEvent.setup();
   render(<DesignSystemProvider><BriefScopePage initialData={gatheringData} view="measurements"/></DesignSystemProvider>);
-  await waitFor(()=>expect(screen.queryByText('Loading requirements…')).not.toBeInTheDocument());
+  await waitFor(()=>expect(document.querySelector('.wd-skeleton')).toBeNull());
   await user.click(screen.getByRole('button',{name:'Add measurement'}));
   const dialog=screen.getByRole('dialog',{name:'Add measurement'});
   await user.click(within(dialog).getByRole('button',{name:/Measurement type/}));
@@ -181,7 +181,7 @@ describe('Requirements tabs and original forms', () => {
   vi.mocked(fetch).mockImplementation(async(_url,init)=>({ok:true,json:async()=>init?.method==='PUT'?{...rich,...JSON.parse(String(init.body)),version:2}:{items:[],canEdit:true}} as Response));
   const user=userEvent.setup();
   render(<DesignSystemProvider><BriefScopePage initialData={{...gatheringData,entries:[rich]}}/></DesignSystemProvider>);
-  await waitFor(()=>expect(screen.queryByText('Loading requirements…')).not.toBeInTheDocument());
+  await waitFor(()=>expect(document.querySelector('.wd-skeleton')).toBeNull());
   await user.click(screen.getByRole('button',{name:'Open details for Reception desk'}));
   const notes=screen.getByRole('textbox',{name:'Requirement notes'});
   await user.clear(notes); await user.type(notes,'Revised finish');
@@ -209,7 +209,7 @@ describe('Requirements tabs and original forms', () => {
   vi.mocked(fetch).mockImplementation(async(url,init)=>({ok:true,json:async()=>String(url).includes('/specifications/')?{...blankSpecification(),...JSON.parse(String(init?.body)),version:2}:{items:[],canEdit:true}} as Response));
   const user=userEvent.setup();
   render(<DesignSystemProvider><BriefScopePage initialData={gatheringData} view="measurements"/></DesignSystemProvider>);
-  await waitFor(()=>expect(screen.queryByText('Loading requirements…')).not.toBeInTheDocument());
+  await waitFor(()=>expect(document.querySelector('.wd-skeleton')).toBeNull());
   await user.click(screen.getByRole('button',{name:'Edit measurements for Reception desk'}));
   expect(screen.getByRole('dialog',{name:'Reception desk · Measurements'})).toBeVisible();
   const actual=screen.getByRole('textbox',{name:'Measured size'});

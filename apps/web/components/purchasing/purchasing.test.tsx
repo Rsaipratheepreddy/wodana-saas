@@ -8,6 +8,7 @@ import type {
 import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
+vi.spyOn(window.history, "replaceState");
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn() }), usePathname: () => "/workspace/purchasing", useSearchParams: () => new URLSearchParams(nav.query) }));
 
 const supplier = (patch: Partial<Supplier>): Supplier => ({
@@ -190,7 +191,7 @@ describe("suppliers", () => {
 });
 
 describe("ordering", () => {
-  afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
   const need = (patch: Partial<Need>): Need => ({ key: "material:m1", source: "material", sourceId: "m1", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12",
     title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", received: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
     supply: null, clientChoice: true, blocked: null, neededBy: null, leadDays: 14, orderBy: null, fromStock: "0", packageIds: [], ...patch });
@@ -241,7 +242,7 @@ describe("ordering", () => {
     await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/purchasing/orders?"));
     expect(posts(fetcher).at(-1)!.body).toMatchObject({ vendorId: "s1", legalEntityId: "f", lines: [
       { source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350" }, { source: "line", boqLineId: "l1", quantity: "1" }] });
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/orders?order=o1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/orders?order=o1");
   });
 
   it("edits a draft with live exact totals and sends it for approval", async () => {
@@ -401,7 +402,7 @@ describe("ordering", () => {
     await userEvent.click(await screen.findByRole("option", { name: "Ritver Paints" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel the rest" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "cancel_line", lineId: "a", quantity: "2", reason: "Only 8 m² in the block", reorderVendorId: "s2" }));
-    await waitFor(() => expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/orders?order=o2", { scroll: false }));
+    await waitFor(() => expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/orders?order=o2"));
   });
 
   it("records the supplier's alternative for a line, and someone else takes it", async () => {
@@ -539,7 +540,7 @@ describe("ordering", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Receive" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.url).toContain("/api/purchasing/receipts?"));
     expect(posts(fetcher).at(-1)!.body).toMatchObject({ orderId: "o1", place: "site:p1", deliveryNote: "DN-88", lines: [{ orderLineId: "a", received: "10" }, { orderLineId: "b", received: "1" }] });
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/deliveries?receipt=g1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/deliveries?receipt=g1");
   });
 
   it("inspects a delivery someone else received: accepted by default, a rejection needs its reason", async () => {
@@ -616,7 +617,7 @@ describe("ordering", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Raise return" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ receiptId: "g1", outcome: "replace", send: true, to: "orders@nile.example",
       lines: [{ receiptLineId: "gl1", source: "rejected", quantity: "1", reasonKind: "wrong_spec", reason: "Veins don't match" }] }));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/deliveries?return=r1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/deliveries?return=r1");
   });
 
   it("records the supplier collecting a credited return, with the credit due", async () => {
@@ -672,7 +673,7 @@ describe("ordering", () => {
 });
 
 describe("price requests", () => {
-  afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
   const request = (patch: Partial<PriceRequestState> = {}): PriceRequestState => ({
     request: { id: "r1", number: 3, status: "open", neededBy: "2099-10-15", notes: "", currency: "AED", legalEntityId: "f", companyName: "Studio Furniture", createdByName: "Bina Buyer",
       createdAt: "2026-09-27T09:00:00Z", awardedAt: null, cancelReason: null, version: 4 },
@@ -701,7 +702,7 @@ describe("price requests", () => {
     await userEvent.type(within(sheet).getByRole("textbox", { name: "Why Calacatta slab isn't going to the cheapest" }), "Nile can't deliver in time");
     await userEvent.click(award);
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "award", version: 4, awards: [{ lineId: "l1", vendorId: "a", reason: "Nile can't deliver in time" }] }));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/purchasing/orders?order=o9", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/purchasing/orders?order=o9");
   });
 
   it("records a supplier's reply with a price, a discount and a delivery time", async () => {

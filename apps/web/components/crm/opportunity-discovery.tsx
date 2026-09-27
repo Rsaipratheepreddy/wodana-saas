@@ -65,7 +65,7 @@ export function OpportunityDiscovery({ workspaceId, opportunityId, locale, onSav
   const fee = useFeePreview(workspaceId, packages.find((item) => item.id === draft?.designPackageId), draft);
   const offered = useMemo(() => packages.filter((pkg) => pkg.status === "active" || pkg.id === view?.facts?.designPackageId), [packages, view?.facts?.designPackageId]);
   if (resource.failure) return <InlineNotice message={resource.failure} tone="error" />;
-  if (!view || !draft) return <Skeleton lines={5} />;
+  if (!view || !draft) return <Skeleton lines={5} shape="facts" />;
 
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   const answer = (key: string) => (value: unknown) => setDraft((current) => current ? { ...current, answers: { ...current.answers, [key]: value } } : current);

@@ -86,7 +86,7 @@ function MoveSheet({ api, transferId, onChanged, onClose }: { api: InventoryApi;
       {state?.canCancelThis ? <Button variant="quiet" onPress={() => setCancelling(true)}>{t("Cancel move")}</Button> : null}<span className={styles.spacer} />
       <Button variant="primary" isLoading={busy} isDisabled={Boolean(invalid)} onPress={() => void run("receive", {
         lines: state!.lines.map((line) => ({ id: line.id, received: arrivals[line.id].received, lossReason: arrivals[line.id].reason.trim() })) })}>{t("Receive")}</Button></div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !transfer ? <Skeleton lines={6} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !transfer ? <Skeleton lines={6} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.headRow}><MoveStatus status={transfer.status} short={transfer.short} /><span className={styles.muted}>{`${transfer.fromName} → ${transfer.toName}`}</span></div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {transfer.status === "cancelled" ? <InlineNotice tone="info" message={t("Cancelled: {reason}", { reason: transfer.cancelReason ?? "" })} /> : null}

@@ -11,6 +11,7 @@ import type { PettyCashClaim } from "@/lib/petty-cash/types";
 import { FinancePage } from "./finance-page";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
+vi.spyOn(window.history, "replaceState");
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn() }), usePathname: () => "/workspace/finance", useSearchParams: () => new URLSearchParams(nav.query) }));
 
 const bill = (patch: Partial<Bill> = {}): Bill => ({
@@ -78,7 +79,7 @@ const page = (section: FinanceSection = "bills", supplierId: string | null = nul
 const grid = (name: string) => screen.findByRole("grid", { name }).catch(() => screen.findByRole("table", { name }));
 
 describe("finance", () => {
-  afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
 
   it("lists the invoices still to act on with where each stands, and shows why one is held", async () => {
     mount(() => overview());
@@ -198,7 +199,7 @@ describe("finance", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Client tax number" }), "100200300400003");
     await userEvent.click(within(dialog).getByRole("button", { name: "Issue invoice" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "issue", caseId: "c1", paymentId: "p2", customerTaxNumber: "100200300400003", dueDate: "2099-10-10" }));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/finance/client-invoices?invoice=i1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/client-invoices?invoice=i1");
     view.unmount();
 
     nav.query = "invoice=i1";
@@ -222,7 +223,7 @@ describe("finance", () => {
     expect(table).toHaveTextContent(/278/);
     expect(table).toHaveTextContent(/475.*held/);
     await userEvent.click(within(table).getByText("Nile Marble"));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/finance/suppliers/v1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/suppliers/v1");
     view.unmount();
     page("suppliers", "v1");
     const sheet = await screen.findByRole("dialog", { name: "Nile Marble" });
@@ -316,7 +317,7 @@ describe("finance", () => {
     expect(save.body).toMatchObject({ items: [{ invoiceId: "b4", amount: "100" }, { invoiceId: "b1", amount: "300" }] });
     expect(submit.body).toMatchObject({ id: save.body.id, version: 1 });
     expect(save.body.commandId).not.toBe(submit.body.commandId);
-    await waitFor(() => expect(nav.replace).toHaveBeenLastCalledWith(`/workspace/finance/runs?run=${save.body.id}`, { scroll: false }));
+    await waitFor(() => expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", `/workspace/finance/runs?run=${save.body.id}`));
   });
 
   it("approves a run someone else prepared, downloads it for the bank, and marks it paid with the bank's reference", async () => {
@@ -423,7 +424,7 @@ describe("finance", () => {
     await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "All" }));
     expect(await grid("Petty cash")).toHaveTextContent(/PC-0002.*Reimbursed/);
     await userEvent.click(within(await grid("Petty cash")).getByText("Taxi to the tile supplier"));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/finance/petty-cash?claim=c1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/finance/petty-cash?claim=c1");
   });
 
   it("reimburses an approved claim once, with the payment's reference", async () => {

@@ -124,7 +124,7 @@ export function RunSheet({ api, runId, bills, canManage, onChanged, onCreated, o
       {more.length ? <MenuButton size="compact" label={t("More")} onAction={(key) => openDialog(key as Dialog)} items={more} /> : null}
       <span className={styles.spacer} />{primary}
     </div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : runId && !state ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : runId && !state ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
       {run ? <div className={styles.headRow}><RunStatusLabel status={run.status} /><span className={styles.muted}>{t("Prepared by {name}", { name: run.preparedByName })}</span></div> : null}
       {notice && !dialog ? <InlineNotice tone="error" message={notice} /> : null}
       {run?.status === "draft" && run.returnNote ? <InlineNotice tone="info" message={t("Sent back: {note}", { note: run.returnNote })} /> : null}

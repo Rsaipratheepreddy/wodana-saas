@@ -36,7 +36,7 @@ export function DesignJourney({ workspaceId, caseId, locale }: { workspaceId: st
   useEffect(() => { void load(); }, [load]);
 
   if (failure && !view) return <InlineNotice message={failure} tone="error" />;
-  if (!view) return <Skeleton lines={4} />;
+  if (!view) return <Skeleton lines={4} shape="facts" />;
   const labels: Record<StageCode, string> = {
     inspiration: t("Inspiration"), site_visit: t("Site visit"), concepts: t("Concepts"), space_planning: t("Space planning"),
     material_selection: t("Material selection"), renders: t("3D renders"), approval: t("Design approval"),

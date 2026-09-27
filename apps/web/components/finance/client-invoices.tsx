@@ -102,7 +102,7 @@ function IssueDialog({ api, milestone, onClose, onIssued }: { api: ReceivablesAp
         try { onIssued((await api.issue({ id, caseId: milestone.caseId, paymentId: milestone.paymentId, issueDate, dueDate, customerTaxNumber: taxNumber.trim(), note: note.trim() })).invoice.id); }
         catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
       }}>{t("Issue invoice")}</Button></div>}>
-    {!preview && !error ? <Skeleton lines={6} /> : <div className={styles.dialogBody}>
+    {!preview && !error ? <Skeleton lines={6} shape="facts" /> : <div className={styles.dialogBody}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {preview ? <>
         <dl className={styles.facts}>
@@ -147,7 +147,7 @@ function InvoiceSheet({ api, invoiceId, onChanged, onClose }: { api: Receivables
   const money = (value: string) => (invoice ? format.money(value, invoice.currency) : value);
   return <InspectorSheet isOpen size="lg" title={invoice ? `${invoice.number} · ${invoice.customerName}` : t("Client invoice")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={state?.canCredit ? <div className="wd-dialog-actions"><Button variant="quiet" onPress={() => { setReason(""); setNotice(""); setCrediting(true); }}>{t("Credit invoice")}</Button></div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !invoice ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !invoice ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.headRow}><InvoiceStatus invoice={invoice} /><span className={styles.muted}>{`${invoice.projectReference} · ${invoice.milestoneTitle}`}</span></div>
       {invoice.status === "credited" ? <InlineNotice tone="info" message={t("Credited by {note} on {date}: {reason}", { note: invoice.creditNoteNumber ?? "", date: format.day(invoice.creditedOn),
         reason: invoice.creditReason ?? "" })} /> : null}

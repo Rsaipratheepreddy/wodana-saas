@@ -30,7 +30,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!data || !form) return <Skeleton lines={6} />;
+  if (!data || !form) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
   const threshold = !form.approval ? null : form.always ? "0" : form.threshold;
   const save = async () => {

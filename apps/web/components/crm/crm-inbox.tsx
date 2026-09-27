@@ -8,7 +8,7 @@ import { SampleInbox } from "./sample-inbox";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { ProviderMark } from "@/components/brand/provider-mark";
 import { Globe2 } from "lucide-react";
-import { Avatar, Button, Callout, ControlledModalDialog, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton } from "@/design-system";
+import { Avatar, Button, Callout, ControlledModalDialog, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton, Skeleton } from "@/design-system";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell, crmTime } from "./crm-product-shell";
@@ -165,7 +165,7 @@ function NewChat({ workspaceId, onClose, onOpened }: { workspaceId: string; onCl
       {channel === "portal" ? <Callout title="Client portal"><p>Preview portal conversations in the sample Inbox. Starting a live portal chat is not available yet.</p><Link href="/workspace/settings/client-portal">Open client portal settings</Link></Callout> : <>
       <TextInput label="Search customers" value={search} onChange={setSearch} placeholder={channel === "whatsapp" ? "Name or phone number" : "Name or email"} />
       {failure ? <Callout title="Could not open conversation" tone="warning">{failure}</Callout> : null}
-      {loading ? <p role="status">Loading customers…</p> : !contacts.length ? <p>No matching customers.</p> : <div className={styles.contacts}>{contacts.map((contact) => <Button className={styles.contactItem} key={contact.id} variant="quiet" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { const result = await crmRequest(workspaceId, "conversations", "POST", { channel, partyId: contact.id }, timeout()); onOpened(result.id); } catch (error) { setFailure((error as Error).message); saving.current = false; setBusy(false); } }}><Avatar name={String(contact.displayName)} size="sm" /><span>{String(contact.displayName)}</span><MessageCircle size={16} /></Button>)}</div>}
+      {loading ? <Skeleton lines={6} /> : !contacts.length ? <p>No matching customers.</p> : <div className={styles.contacts}>{contacts.map((contact) => <Button className={styles.contactItem} key={contact.id} variant="quiet" isDisabled={busy} onPress={async () => { if (saving.current) return; saving.current = true; setBusy(true); setFailure(""); try { const result = await crmRequest(workspaceId, "conversations", "POST", { channel, partyId: contact.id }, timeout()); onOpened(result.id); } catch (error) { setFailure((error as Error).message); saving.current = false; setBusy(false); } }}><Avatar name={String(contact.displayName)} size="sm" /><span>{String(contact.displayName)}</span><MessageCircle size={16} /></Button>)}</div>}
       </>}
       <small>Only connected channels can deliver outbound messages. Incoming provider messages appear automatically.</small>
     </div>

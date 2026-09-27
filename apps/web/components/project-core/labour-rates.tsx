@@ -31,7 +31,7 @@ export function LabourRatesSection({ workspaceId }: { workspaceId: string }) {
     try { setData(await api.labourRates()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (!data) return error ? <InlineNotice tone="error" message={error} /> : <Skeleton lines={4} />;
+  if (!data) return error ? <InlineNotice tone="error" message={error} /> : <Skeleton lines={4} shape="form" />;
   const money = (value: string) => format.money(value, data.currency);
   const trade = editing && editing !== "new" ? data.trades.find((item) => item.key === editing.key) ?? editing : null;
   return <SettingsSection id="labour" title={t("Labour rates")}

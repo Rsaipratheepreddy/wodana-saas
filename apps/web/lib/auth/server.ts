@@ -24,6 +24,10 @@ export type AuthProfile = {
     workspaceSecondaryColor: string | null;
     workspaceHeadingFont: string | null;
     workspaceBodyFont: string | null;
+    /** How the workspace formats money, dates and times (optional: older sessions may not carry them). */
+    workspaceLocale?: string | null;
+    workspaceCurrency?: string | null;
+    workspaceTimezone?: string | null;
     accountName?: string | null;
     allowedModules: Array<"workspace" | "crm" | "pre-project" | "projects" | "hrms">;
     allowedPermissions?: string[];

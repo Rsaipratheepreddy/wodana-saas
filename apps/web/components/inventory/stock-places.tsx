@@ -22,7 +22,7 @@ export function StockPlacesSettings({ workspaceId }: { workspaceId: string }) {
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!data) return <Skeleton lines={6} />;
+  if (!data) return <Skeleton lines={6} shape="rows" />;
   const edit = (location: StockLocation) => setDraft({ id: location.id, kind: location.kind, name: location.name, address: location.address, isDefault: location.isDefault, active: location.active, isNew: false });
   return <SettingsPage title={t("Stock places")}>
     <SettingsSection id="places" title={t("Places")}>

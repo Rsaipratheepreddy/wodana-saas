@@ -96,7 +96,7 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
   </div> : null;
 
   return <InspectorSheet isOpen size="lg" title={receipt ? t("Delivery {number}", { number: receipt.number }) : t("Delivery")} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !receipt ? <Skeleton lines={6} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !receipt ? <Skeleton lines={6} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.approvalRow}>
         <ReceiptResult receipt={receipt} />
         <span className={styles.muted}>{receipt.supplierName}</span>

@@ -12,6 +12,7 @@ export * from "./components/forms";
 export * from "./components/navigation";
 export * from "./components/overlays";
 export * from "./components/status";
+export * from "./components/skeleton";
 export * from "./patterns/data-grid";
 export * from "./organisms/record-table";
 export * from "./patterns/page-header";

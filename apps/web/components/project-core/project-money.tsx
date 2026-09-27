@@ -58,7 +58,7 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
   ], [t, format, money, packageName, sources]);
 
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!state) return <Skeleton lines={8} />;
+  if (!state) return <Skeleton lines={8} shape="rows" />;
   const income = state.income;
   const entries = state.entries.filter((entry) => !needle || `${entry.description} ${entry.reference ?? ""} ${entry.packageName ?? ""}`.toLocaleLowerCase().includes(needle));
   const packages = state.packages.filter((row) => !needle || packageName(row.name).toLocaleLowerCase().includes(needle));

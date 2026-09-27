@@ -74,7 +74,7 @@ export function ProjectPlan({ workspaceId, projectId }: { workspaceId: string; p
   }, [board, search, who, sprintFilter]);
 
   if (error && !board) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!board) return <Skeleton lines={6} />;
+  if (!board) return <Skeleton lines={6} shape="rows" />;
 
   const runWork = async (action: string, input: Record<string, unknown> = {}) => {
     setNotice("");
@@ -283,7 +283,7 @@ function PlanPackageDialog({ board, load, onClose, onSave }: {
         <DateField label={t("Start")} value={shown ? parseDate(shown.startDate) : startDate ? parseDate(startDate) : null} onChange={(value) => setStartDate(value ? value.toString() : null)} />
       </div>
       {error ? <InlineNotice tone="error" message={error} />
-        : !shown ? <Skeleton lines={4} />
+        : !shown ? <Skeleton lines={4} shape="rows" />
         : !shown.tasks.length ? <EmptyState illustration={null} title={t("No standard tasks for this kind of package")} description={t("Add them in Settings → Projects → Standard tasks.")} />
         : <ol className={styles.planList} aria-label={t("Tasks")}>
             {shown.tasks.map((task, index) => <li key={index}>

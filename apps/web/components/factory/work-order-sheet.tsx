@@ -74,7 +74,7 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
       {canCheck ? <Button onPress={() => setDialog("check")}>{t("Check quality")}</Button> : null}
       {producing && state.canReport && Number(order.left) > 0 ? <Button variant="primary" onPress={() => setDialog("report")}>{t("Report output")}</Button> : primary}
     </div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !order ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !order ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.headRow}><WorkOrderStatusLabel status={order.status} /><span className={styles.muted}>{`${order.projectReference} · ${order.projectName}`}</span></div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {order.status === "on_hold" ? <InlineNotice tone="info" message={t("On hold: {reason}", { reason: order.holdReason ?? "" })} /> : null}

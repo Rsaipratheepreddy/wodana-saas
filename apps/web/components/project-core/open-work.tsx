@@ -85,7 +85,7 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
         options={[{ id: "mine", label: t("Mine") }, { id: "all", label: t("Everyone") }, ...(canSeeTeam ? [{ id: "team", label: t("Team") }] : [])]} />
     </div>
     {view === "team" ? <TeamInsights api={api} days={days} onPerson={(id, name) => { setWho({ id, name }); setView("all"); setData(null); }} />
-      : !data ? <Skeleton lines={6} />
+      : !data ? <Skeleton lines={6} shape="rows" />
       : !data.items.length ? <EmptyState illustration={null} title={view === "mine" ? t("Nothing on your plate") : t("No open work")}
           description={view === "mine" ? t("Work given to you on any project shows here.") : undefined} />
       : !items.length ? <EmptyState illustration={null} title={t("Nothing matches")} />

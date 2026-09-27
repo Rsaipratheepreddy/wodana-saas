@@ -69,7 +69,7 @@ export function ProjectScope({ workspaceId, projectId, version, run }: { workspa
   useEffect(() => { queueMicrotask(() => void load()); }, [load, version]);
 
   if (error && !scope) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!scope) return <Skeleton lines={6} />;
+  if (!scope) return <Skeleton lines={6} shape="rows" />;
   const money = (value: string) => format.money(value, scope.currency);
   const active = scope.lines.filter((item) => item.status === "active");
   const omitted = scope.lines.filter((item) => item.status === "omitted");

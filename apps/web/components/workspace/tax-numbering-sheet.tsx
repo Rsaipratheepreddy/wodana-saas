@@ -32,7 +32,7 @@ export function TaxNumberingSheet({ workspaceId, entityId, entityName, canManage
   return <SideSheet isOpen={open} onOpenChange={toggle} size="lg" title={t("Tax & numbering")} description={entityName}
     trigger={<Button aria-label={`${t("Tax & numbering")} · ${entityName}`} size="compact" variant="quiet"><Receipt aria-hidden="true" size={14} />{t("Tax & numbering")}</Button>}>
     {loadError ? <Callout title={t("Could not load")} tone="danger" actions={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>}>{loadError}</Callout>
-      : !data ? <Skeleton lines={6} />
+      : !data ? <Skeleton lines={6} shape="form" />
       : <div className={styles.sheet}>
           <TaxSection canManage={canManage} data={data} entityId={entityId} onSaved={setData} workspaceId={workspaceId} />
           <NumberingSection canManage={canManage} data={data} entityId={entityId} onSaved={setData} workspaceId={workspaceId} />

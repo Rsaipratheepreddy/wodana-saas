@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useSection } from "@/lib/navigation/use-section";
 import { Button, PageHeader, Tabs } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
@@ -14,9 +15,9 @@ import { Stock } from "./stock";
 import styles from "./inventory.module.css";
 
 /** Inventory: stock by place and owner, moves between places, and the history of every change. One thing per tab. */
-export function InventoryPage({ workspaceId, section }: { workspaceId: string; section: InventorySection }) {
+export function InventoryPage({ workspaceId, section: initialSection }: { workspaceId: string; section: InventorySection }) {
   const t = useT();
-  const router = useRouter();
+  const [section, move] = useSection(initialSection);
   const params = useSearchParams();
   const api = useMemo(() => inventoryApi(workspaceId), [workspaceId]);
   const [state, setState] = useState<StockState | null>(null);
@@ -31,7 +32,7 @@ export function InventoryPage({ workspaceId, section }: { workspaceId: string; s
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const go = (next: InventorySection, query?: Record<string, string>) => {
     const base = `/workspace/inventory${next === "stock" ? "" : `/${next}`}`;
-    router.replace(query && Object.keys(query).length ? `${base}?${new URLSearchParams(query)}` : base, { scroll: false });
+    move(next, query && Object.keys(query).length ? `${base}?${new URLSearchParams(query)}` : base);
   };
   const changed = () => { setRefresh((value) => value + 1); void load(); };
   const action = state?.canManage && section !== "history" ? <Button variant="primary" onPress={() => setMoving(true)}>{t("Move stock")}</Button> : null;

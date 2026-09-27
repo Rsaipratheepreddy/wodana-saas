@@ -4,7 +4,7 @@ import { parseDate } from "@internationalized/date";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Phone, Plus, StickyNote } from "lucide-react";
-import { Avatar, Button, Callout, IconButton, SelectField, DateField } from "@/design-system";
+import { Avatar, Button, Callout, IconButton, SelectField, DateField, Skeleton } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey } from "@/lib/crm/calendar";
 import { GRID_ORIGIN, HOUR_WIDTH, LANE_HEIGHT, layoutFollowUps } from "./follow-up-layout";
@@ -82,6 +82,6 @@ export function FollowUpTimeline({ workspaceId, day, onDayChange, now, revision,
         </div>
       </div>
     </div>
-    {loading ? <p className={styles.empty} role="status">Loading schedule…</p> : !items.length && !result?.error ? <div className={styles.empty}><CalendarDays size={25} /><h3>A little room for your next conversation</h3><p>Choose a time above or add a follow-up with your notes.</p><Button size="compact" onPress={() => onCreate()}><Plus size={15} />Add follow-up</Button></div> : <p className={styles.legend}>Cards span the scheduled time. Overlapping follow-ups appear in separate rows. Open one for notes and actions.</p>}
+    {loading ? <Skeleton lines={6} shape="rows" /> : !items.length && !result?.error ? <div className={styles.empty}><CalendarDays size={25} /><h3>A little room for your next conversation</h3><p>Choose a time above or add a follow-up with your notes.</p><Button size="compact" onPress={() => onCreate()}><Plus size={15} />Add follow-up</Button></div> : <p className={styles.legend}>Cards span the scheduled time. Overlapping follow-ups appear in separate rows. Open one for notes and actions.</p>}
   </section>;
 }

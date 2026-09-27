@@ -41,7 +41,7 @@ export function TeamInsights({ api, days, onPerson }: { api: ProjectApi; days: 3
   ];
 
   return <div className={styles.team}>
-    {!data ? <Skeleton lines={6} /> : <>
+    {!data ? <Skeleton lines={6} shape="rows" /> : <>
       {data.total ? <div className={styles.kpis}>
         <Kpi label={t("Open")} value={data.total.open} />
         <Kpi label={t("Late")} value={data.total.late} />

@@ -89,7 +89,7 @@ function PriceRequestSheet({ api, requestId, onChanged, onClose, onOrder }: { ap
         const next = await run("award", { awards: Object.entries(award).map(([lineId, item]) => ({ lineId, vendorId: item.vendorId, reason: item.reason.trim() })) });
         if (next?.orders[0]) onOrder(next.orders[0].id);
       }}>{t("Award and create orders")}</Button></div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} shape="rows" /> : <div className={styles.sheet}>
       <div className={styles.approvalRow}>
         <span className={styles.orderStatus} data-status={state.request.status === "open" ? "pending_approval" : state.request.status === "awarded" ? "confirmed" : "cancelled"}>{labels[state.request.status]}</span>
         <span className={styles.muted}>{[state.request.companyName, state.request.neededBy ? t("Needed by {date}", { date: format.day(state.request.neededBy) }) : ""].filter(Boolean).join(" · ")}</span>

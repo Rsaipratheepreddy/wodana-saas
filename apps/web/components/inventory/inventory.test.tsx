@@ -7,6 +7,7 @@ import { InventoryPage } from "./inventory-page";
 import type { InventorySection } from "@/lib/inventory/sections";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
+vi.spyOn(window.history, "replaceState");
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn() }), usePathname: () => "/workspace/inventory", useSearchParams: () => new URLSearchParams(nav.query) }));
 
 const warehouse = { id: "w1", kind: "warehouse" as const, name: "Warehouse", projectId: null, projectReference: null, address: "", isDefault: true, active: true };
@@ -39,7 +40,7 @@ const page = (section: InventorySection = "stock") => render(<DesignSystemProvid
 const rowOf = async (name: string) => (await screen.findByText(name)).closest("tr")!;
 
 describe("inventory", () => {
-  afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
 
   it("lists stock by place and owner, and reserves free stock for a project", async () => {
     const fetcher = mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock()));
@@ -92,7 +93,7 @@ describe("inventory", () => {
     await userEvent.click(await screen.findByRole("option", { name: "PRJ-0007 · Villa 12" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Move" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ fromLocationId: "w1", toLocationId: "s1", lines: [{ itemId: "i2", projectId: "p1", quantity: "10" }] }));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/inventory/moves?move=t1", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/inventory/moves?move=t1");
   });
 
   it("receives a move where it arrived and asks what happened to anything missing", async () => {

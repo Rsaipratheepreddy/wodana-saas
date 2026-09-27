@@ -43,7 +43,6 @@ export function Progress({ label, value, max = 100 }: { label: string; value: nu
 }
 
 export function Spinner({ label = "Loading" }: { label?: string }) { return <LoaderCircle aria-label={label} className="wd-spin" role="status" size={18} />; }
-export function Skeleton({ lines = 1 }: { lines?: number }) { return <div aria-hidden="true" className="wd-skeleton-stack">{Array.from({ length: lines }, (_, index) => <span className="wd-skeleton" key={index} />)}</div>; }
 
 type ToastRecord = { id: number; message: string; tone: StatusTone; title: string };
 type ToastApi = { push: (toast: Omit<ToastRecord, "id">) => void };

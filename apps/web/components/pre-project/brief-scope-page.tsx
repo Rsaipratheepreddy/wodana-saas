@@ -19,6 +19,7 @@ import { NotePreview } from '@/components/crm/note-preview';
 import { DimensionReadout } from './scope-note-cards';
 import tableStyles from '../crm/leads-page.module.css';
 import styles from './case-content.module.css';
+import { Skeleton } from "@/design-system";
 
 type GatheringTab = 'requirement' | 'measurements' | 'file';
 type MeasurementRow = { id: string; entry: ScopeEntry; dimension?: ItemDimension };
@@ -133,7 +134,7 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement',
       {!compact && <Checkbox isSelected={archived} onChange={setArchived}>Archived</Checkbox>}
       {captureActions}
     </div>
-    {view !== 'inspiration' && sharedNotes.loading && <p role="status" className={styles.muted}>Loading requirements…</p>}
+    {view !== 'inspiration' && sharedNotes.loading && <Skeleton lines={4} />}
     {view !== 'inspiration' && sharedNotes.failure && <p className={styles.error} role="alert">{sharedNotes.failure}<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>Retry</Button></p>}
     {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={compact ? workspace.srOnly : styles.notice}>{message}</p>}
     {sharedNotes.loading && !allEntries.length && view !== 'inspiration' ? null : (view === 'requirement' || presentation === 'cards') ? <div className={workspace.cards}>{cardEntries.map(value => {

@@ -21,7 +21,7 @@ import {
   paymentMilestoneAmounts,
 } from "@/lib/commercial/client";
 import { applyQuotationTemplate } from "@/lib/commercial/templates";
-import { Checkbox } from "@/design-system";
+import { Checkbox, Skeleton } from "@/design-system";
 import { QuotationNumberInput } from "./quotation-number-input";
 import s from "./commercial.module.css";
 import d from "./quotation-studio.module.css";
@@ -428,11 +428,7 @@ export function QuotationTemplateLibrary({
           </button>
         </div>
       )}
-      {loading && (
-        <p role="status" className={d.hint}>
-          Loading templates…
-        </p>
-      )}
+      {loading && <Skeleton lines={4} />}
       {!loading && !templates.length && !error && (
         <p className={d.hint}>
           Your saved quotation templates will appear here.

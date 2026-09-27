@@ -33,7 +33,7 @@ export function ProjectMaterials({ workspaceId, projectId, version, run, lines }
   useEffect(() => { queueMicrotask(() => void load()); }, [load, version]);
 
   if (error && !data) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!data) return <Skeleton lines={5} />;
+  if (!data) return <Skeleton lines={5} shape="rows" />;
   const latest = data.revisions[0];
   const status = data.state === "draft" ? t("Not sent to the client yet")
     : data.state === "sent" ? t("R{number} is with the client since {date}", { number: latest.number, date: format.when(latest.sentAt) })

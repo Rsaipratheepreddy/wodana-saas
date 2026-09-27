@@ -102,7 +102,7 @@ export function DesignWorkspace({ initialData, initialDesigns, options = NO_OPTI
   };
 
   if (journeyError && !journey) return <EmptyState illustration="error" title={t("Design didn't load")} description={journeyError} action={<Button size="compact" onPress={() => void loadJourney()}>{t("Retry")}</Button>} />;
-  if (!journey) return <Skeleton lines={6} />;
+  if (!journey) return <Skeleton lines={6} shape="rows" />;
 
   return <section className={styles.page} aria-label={t("Design")}>
     {!journey.journey ? <div className={styles.notStarted}>

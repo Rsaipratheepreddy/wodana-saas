@@ -72,6 +72,8 @@
   --wd-color-surface: var(--wd-neutral-0);
   --wd-color-surface-subtle: var(--wd-neutral-25);
   --wd-color-surface-muted: var(--wd-neutral-100);
+  /* The light that sweeps across loading placeholders. */
+  --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-surface) 78%, transparent);
   --wd-color-surface-hover: #f0f0f0;
   --wd-color-surface-pressed: #e8e8e8;
   --wd-color-surface-selected: var(--wd-color-action-primary-subtle);
@@ -324,6 +326,7 @@
   --wd-color-surface: #191919;
   --wd-color-surface-subtle: #1d1d1d;
   --wd-color-surface-muted: #262626;
+  --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-text) 7%, transparent);
   --wd-color-surface-hover: #2c2c2c;
   --wd-color-surface-pressed: #333333;
   --wd-color-surface-selected: #303030;

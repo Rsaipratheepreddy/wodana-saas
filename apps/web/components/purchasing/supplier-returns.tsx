@@ -67,7 +67,7 @@ export function ReturnSheet({ api, returnId, onChanged, onClose, onOpenOrder }: 
       {state.canCancelThis ? <Button variant="quiet" onPress={() => setCancelling(true)}>{t("Cancel return")}</Button> : null}<span className={styles.spacer} />
       {state.canSendThis ? <Button variant="primary" isLoading={busy} onPress={() => void run("sent")}>{t("Collected by the supplier")}</Button> : null}
     </div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !row ? <Skeleton lines={6} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !row ? <Skeleton lines={6} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.approvalRow}>
         <ReturnStatus row={row} />
         <span className={styles.muted}>{`${row.supplierName} · ${row.outcome === "replace" ? t("Replaces them") : t("Credits them")}`}</span>

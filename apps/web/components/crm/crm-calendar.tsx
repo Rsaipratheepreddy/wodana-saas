@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, SearchInput, SelectField, useDesignSystem } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, SearchInput, SelectField, useDesignSystem, Skeleton } from "@/design-system";
 import { crmRequest, rows, dateText, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
 import { connectedGoogleForMember, crmCalendarEvents, googleCalendarEvents, projectCalendarEvents, type CalendarConnection, type CalendarMember } from "@/lib/crm/calendar-sources";
@@ -147,7 +147,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
     {memberError ? <Callout title="Members unavailable" tone="warning">{memberError}</Callout> : null}
     {scope === "personal" && members.length > 0 && !currentMember ? <Callout title="Personal calendar unavailable" tone="warning">Your workspace membership could not be identified.</Callout> : null}
     {connectionError ? <Callout title="Google connection access" tone="warning">{connectionError} Workspace events are still available.</Callout> : null}
-    {crm?.key === key && crm.error ? <Callout title="Calendar could not load" tone="warning">{crm.error}</Callout> : crm?.key !== key ? <p role="status">Loading activities…</p> : null}
+    {crm?.key === key && crm.error ? <Callout title="Calendar could not load" tone="warning">{crm.error}</Callout> : crm?.key !== key ? <Skeleton lines={6} shape="rows" /> : null}
     {project?.key === key && project.error ? <Callout title="Project schedule unavailable" tone="warning">{project.error}</Callout> : null}
     {connectionIds.length ? google?.key !== googleKey ? <p role="status">Loading Google Calendar…</p> : google.error ? <Callout title="Google Calendar unavailable" tone="warning">{google.error}</Callout> : null : null}
     <section className={styles.calendarFrame} aria-label="Calendar schedule"><div className={styles.periodBar}>

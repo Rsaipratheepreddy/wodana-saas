@@ -20,7 +20,7 @@ export function ToMake({ api, state, error, onReload, onPlanned }: { api: Factor
   const [search, setSearch] = useState("");
   const [planning, setPlanning] = useState<MakeLine | null>(null);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="rows" />;
   const needle = search.trim().toLocaleLowerCase();
   const lines = state.toMake.filter((line) => (show === "all" || Number(line.left) !== 0)
     && (!needle || `${line.title} ${line.specification} ${line.projectReference} ${line.projectName}`.toLocaleLowerCase().includes(needle)));

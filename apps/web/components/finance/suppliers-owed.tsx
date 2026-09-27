@@ -58,7 +58,7 @@ function OwedSheet({ api, vendorId, onChanged, onClose, onOpenBill, onOpenPaymen
   return <InspectorSheet isOpen size="lg" title={state?.supplier.name ?? t("Supplier")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={state?.canManage ? <div className="wd-dialog-actions"><span className={styles.spacer} />
       <Button variant="primary" onPress={() => setPaying(true)}>{t("Record payment")}</Button></div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state ? <Skeleton lines={8} shape="rows" /> : <div className={styles.sheet}>
       {state.supplier.bankChangePending ? <InlineNotice tone="info" message={t("New bank details are waiting for approval. Pay into the approved account.")} /> : null}
       <dl className={styles.facts}>
         {state.balances.map((row) => <div key={`${row.legalEntityId}|${row.currency}`}><dt>{row.companyName}</dt><dd>

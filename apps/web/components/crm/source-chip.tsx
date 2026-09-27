@@ -1,5 +1,5 @@
 import { Globe, Mail, Phone, Users, UserRoundPlus, Building2, Repeat2, FileInput } from "lucide-react";
-import { siFacebook, siInstagram, siWhatsapp } from "simple-icons";
+import { siFacebook, siInstagram, siWhatsapp } from "../brand/brand-icons";
 import { label } from "@/lib/crm/client";
 import styles from "./source-chip.module.css";
 

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain ESM script without types
 import { EXCLUDED, snapCss } from "../scripts/snap-to-tokens.mjs";
@@ -7,7 +7,8 @@ import { EXCLUDED, snapCss } from "../scripts/snap-to-tokens.mjs";
 // Component CSS uses the scale: spacing on the 4px grid (φ tokens for page rhythm), the type scale
 // and the radius scale, so tenant co-branding and density change everything from tokens.css.
 const files = execSync("git ls-files 'app/**/*.css' 'components/**/*.css' 'design-system/**/*.css'", { encoding: "utf8" })
-  .split("\n").filter((file) => file && !(EXCLUDED as RegExp).test(file));
+  // A file deleted in the working tree (not yet staged) has nothing left to check.
+  .split("\n").filter((file) => file && !(EXCLUDED as RegExp).test(file) && existsSync(file));
 
 // Raw hex colours bypass themes (dark mode, tenant brand). Lower this number as modules are rebuilt; never raise it.
 const RAW_HEX_CEILING = 427;

@@ -37,7 +37,7 @@ export function SealedDocument({ workspaceId, projectId, sealId, onBack }: { wor
   }, [scope, t]);
 
   if (error) return <ErrorState description={error} />;
-  if (!scope) return <Skeleton lines={6} />;
+  if (!scope) return <Skeleton lines={6} shape="facts" />;
   const { snapshot } = scope;
   const money = (value: string | number) => format.money(value, snapshot.quote.currency);
   const acceptance = snapshot.acceptance;

@@ -3,7 +3,8 @@
 import { useState, type ReactNode } from "react";
 import { Bot, Check, ChevronRight, RotateCcw, Sparkles, X } from "lucide-react";
 import { Button } from "../components/actions";
-import { Badge, Progress, Skeleton } from "../components/status";
+import { Badge, Progress } from "../components/status";
+import { Skeleton } from "../components/skeleton";
 
 export type AICitation = { id: string; label: string; href?: string };
 export type AIDiffLine = { id: string; kind: "add" | "remove" | "unchanged"; content: string };

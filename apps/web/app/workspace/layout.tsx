@@ -30,10 +30,14 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
       bodyFont: membership.workspaceBodyFont,
     };
   });
-  const appearance = await getMyProfile(activeMembership?.workspaceId);
+  // The rest of what the shell needs is independent: fetch it together, not one after another.
+  const [appearance, cookieStore, region] = await Promise.all([
+    getMyProfile(activeMembership?.workspaceId),
+    cookies(),
+    process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true" ? {} : getWorkspaceRegion(activeMembership?.workspaceId, activeMembership),
+  ]);
   const user = { email: profile.primaryEmail, name: profile.displayName, id: profile.id, avatarUrl: appearance?.photoUrl ?? undefined, avatarPreset: appearance?.avatarPreset ?? "auto" };
-  const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
-  const region = process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true" ? {} : await getWorkspaceRegion(activeMembership?.workspaceId);
+  const language = resolveLanguage(cookieStore.get(LANGUAGE_COOKIE)?.value);
   return (
     <I18nProvider language={language}>
     <WorkspaceRegionProvider {...region}>

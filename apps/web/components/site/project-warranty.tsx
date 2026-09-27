@@ -39,7 +39,7 @@ export function ProjectWarranty({ workspaceId, projectId }: { workspaceId: strin
     }
   };
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="rows" />;
   const statusLabel = { open: t("To decide"), covered: t("Covered"), not_covered: t("Not covered"), chargeable: t("Chargeable") };
   const channels = { phone: t("By phone"), email: t("By email"), visit: t("On a visit"), message: t("By message"), portal: t("In the portal") };
 
@@ -175,7 +175,7 @@ export function WarrantySettingsSection({ workspaceId, supplies }: { workspaceId
     try { accept(await api.get()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (!data) return error ? <InlineNotice tone="error" message={error} /> : <Skeleton lines={4} />;
+  if (!data) return error ? <InlineNotice tone="error" message={error} /> : <Skeleton lines={4} shape="rows" />;
   return <SettingsSection id="warranty" title={t("Warranty")}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     <div className={styles.months}>{(Object.keys(supplies) as Supply[]).map((supply) => <TextInput key={supply} label={supplies[supply]} inputMode="numeric" suffix={t("months")}

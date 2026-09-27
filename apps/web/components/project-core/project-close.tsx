@@ -36,7 +36,7 @@ export function CancelProjectDialog({ api, projectId, onClose, onSave }: { api: 
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
       <Button variant="danger" isLoading={busy} isDisabled={!closeOut || blocked || !reason.trim()}
         onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Cancel the project")}</Button></div>}>
-    {error ? <ErrorState description={error} onRetry={() => setAttempt((value) => value + 1)} /> : !closeOut ? <Skeleton lines={4} /> : <div className={styles.dialogBody}>
+    {error ? <ErrorState description={error} onRetry={() => setAttempt((value) => value + 1)} /> : !closeOut ? <Skeleton lines={4} shape="facts" /> : <div className={styles.dialogBody}>
       {blocked ? <section className={styles.closeGroup} aria-label={t("Settle these first")}>
         <h3>{t("Settle these first")}</h3>
         <ul className={styles.closeList}>

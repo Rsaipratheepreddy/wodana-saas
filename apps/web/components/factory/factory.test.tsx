@@ -8,6 +8,7 @@ import { FactoryPage } from "./factory-page";
 import { FactorySettingsPage } from "./factory-settings";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
+vi.spyOn(window.history, "replaceState");
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, push: vi.fn() }), usePathname: () => "/workspace/factory", useSearchParams: () => new URLSearchParams(nav.query) }));
 
 const settings = { requireDrawing: true, requirePayment: true, requireMaterials: true, requireCheck: true, version: 1 };
@@ -45,7 +46,7 @@ const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter((
 const page = (section: FactorySection = "to-make") => render(<DesignSystemProvider><FactoryPage workspaceId="w" section={section} /></DesignSystemProvider>);
 
 describe("factory", () => {
-  afterEach(() => { vi.unstubAllGlobals(); nav.replace.mockReset(); nav.query = ""; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
 
   it("lists what's left to make by project and plans a work order for part of a line", async () => {
     const fetcher = mount((url, body) => (body ? order({ id: "new" }) : factory()));
@@ -65,7 +66,7 @@ describe("factory", () => {
     await userEvent.type(quantity, "1");
     await userEvent.click(within(dialog).getByRole("button", { name: "Plan work order" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ lineId: "l1", quantity: "1", workcenterId: "c1", plannedStart: "2099-10-05", plannedEnd: "2099-10-16" }));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/factory/orders?order=new", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/factory/orders?order=new");
   });
 
   it("releases a work order only when its checks pass, and records the drawing approval", async () => {
@@ -220,7 +221,7 @@ describe("factory", () => {
     const schedule = screen.getByRole("region", { name: "Schedule" });
     expect(within(schedule).getByRole("region", { name: "Joinery · 8 h a day" })).toBeInTheDocument();
     await userEvent.click(within(schedule).getByRole("button", { name: "WO-0008 Wardrobes, on a day over capacity" }));
-    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/factory/orders?order=w2", { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", "/workspace/factory/orders?order=w2");
   });
 
   it("runs work orders from several projects together as a batch and starts it", async () => {
@@ -237,7 +238,7 @@ describe("factory", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Create batch" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ name: "Oak cutting run", workcenterId: "c1", plannedOn: "2099-10-05", orderIds: ["w1", "w2"] }));
     const created = String(posts(fetcher).at(-1)!.body.id);
-    expect(nav.replace).toHaveBeenLastCalledWith(`/workspace/factory/batches?batch=${created}`, { scroll: false });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(null, "", `/workspace/factory/batches?batch=${created}`);
     unmount();
 
     nav.query = "batch=b1";

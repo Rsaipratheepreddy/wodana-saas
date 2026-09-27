@@ -78,7 +78,7 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
       {more.length ? <MenuButton size="compact" label={t("More")} onAction={(id) => { if (id === "release") openRelease(); else { setText(""); setDialog(id as Dialog); } }} items={more} /> : null}
       <span className={styles.spacer} />{primary}
     </div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !bill ? <Skeleton lines={8} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !bill ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
       <div className={styles.headRow}><BillStatusLabel bill={bill} today={format.today()} /><span className={styles.muted}>{bill.companyName}</span></div>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {bill.status === "held" ? <section className={styles.part} aria-label={t("Why it's held")}>

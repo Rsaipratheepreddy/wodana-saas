@@ -52,7 +52,7 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
 
   return <InspectorSheet isOpen size="md" title={detail ? `#${detail.number} ${detail.title}` : t("Loading")} hideTitle onOpenChange={(open) => { if (!open) onClose(); }}>
     {error && !detail ? <ErrorState description={error} onRetry={() => void load()} />
-      : !detail ? <Skeleton lines={8} />
+      : !detail ? <Skeleton lines={8} shape="facts" />
       : <WorkBody key={`${detail.id}:${detail.version}`} detail={detail} board={board} run={run} notice={notice} onOpenItem={onOpenItem}
           preview={async (dates) => (await api.workRipple(projectId, itemId, dates)).moves}
           photos={{ url: (photoId, small) => api.photoUrl(projectId, photoId, small), upload: async (kind, files) => {

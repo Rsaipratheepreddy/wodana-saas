@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSection } from "@/lib/navigation/use-section";
 import { parseDate } from "@internationalized/date";
-import { Avatar, AvatarGroup, Button, Callout, ControlledModalDialog, DateField, ErrorState, IconMenuButton, InlineNotice, MenuButton, Skeleton, Tabs, TextAreaField, TextInput } from "@/design-system";
+import { Avatar, AvatarGroup, Button, Callout, ControlledModalDialog, DateField, ErrorState, IconMenuButton, InlineNotice, MenuButton, Tabs, TextAreaField, TextInput, PageSkeleton } from "@/design-system";
 import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcrumb";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
@@ -29,9 +29,9 @@ import styles from "./project-core.module.css";
  * the stages and what each needs (Overview), the sealed scope (Scope), the work (Plan) and the lead's
  * updates (Updates).
  */
-export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: string; projectId: string; section: ProjectSection }) {
+export function ProjectPage({ workspaceId, projectId, section: initialSection }: { workspaceId: string; projectId: string; section: ProjectSection }) {
   const t = useT();
-  const router = useRouter();
+  const [section, move] = useSection(initialSection);
   const format = useProjectFormat();
   const statusLabel = useStatusLabel();
   const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
@@ -60,7 +60,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
   }, [api, detail, load, projectId, t]);
 
   if (error && !detail) return <div className={styles.page}><ErrorState description={error} onRetry={() => void load()} /></div>;
-  if (!detail) return <div className={styles.page}><Skeleton lines={8} /></div>;
+  if (!detail) return <div className={styles.page}><PageSkeleton variant="detail" tabs={6} /></div>;
   const { project } = detail;
   const status = statusLabel(project.status, project.health);
   const lead = detail.team.find((role) => role.role === "project_manager")?.member ?? null;
@@ -76,7 +76,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
     ...(project.status === "completed" && detail.canClose ? [{ id: "reopen", label: t("Reopen") }] : []),
   ];
   const priorityLabel: Record<Priority, string> = { normal: t("Normal"), high: t("High"), critical: t("Critical") };
-  const go = (next: ProjectSection) => router.replace(`/workspace/projects/${projectId}${next === "overview" ? "" : `/${next}`}`, { scroll: false });
+  const go = (next: ProjectSection) => move(next, `/workspace/projects/${projectId}${next === "overview" ? "" : `/${next}`}`);
 
   return <div className={styles.page}>
     <header className={styles.projectHead}>

@@ -195,7 +195,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
 
   const quoteHref = hrefOf ?? ((id: string) => `${backHref.split("?")[0]}?${new URLSearchParams({ quote: id })}`);
   if (loadError && !state) return <EmptyState illustration="error" title={t("The quote didn't load")} description={loadError} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!state) return <Skeleton lines={8} />;
+  if (!state) return <Skeleton lines={8} shape="rows" />;
 
   const { currency, decimals } = state.quote;
   const groups = groupLines(state.lines, view, state.areas, state.workPackages, { general: t("General"), noTrade: t("No work package") });

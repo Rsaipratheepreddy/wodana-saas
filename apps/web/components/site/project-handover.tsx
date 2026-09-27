@@ -39,7 +39,7 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
     }
   };
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="rows" />;
   const statusLabel = { draft: t("Draft"), issued: t("Issued"), accepted: t("Accepted"), refused: t("Refused") };
   const areaNames = (pack: HandoverPack) => (pack.areaIds.length ? state.areas.filter((area) => pack.areaIds.includes(area.id)).map((area) => area.name).join(", ") : t("Whole project"));
 

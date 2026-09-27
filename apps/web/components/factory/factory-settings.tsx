@@ -31,7 +31,7 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
-  if (!data) return <Skeleton lines={6} />;
+  if (!data) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
   const flip = async (key: Flag, value: boolean) => {
     setError("");

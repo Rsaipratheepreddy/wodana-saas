@@ -57,7 +57,7 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
     return { id: projectId, label: `${rows[0].projectReference} · ${rows[0].projectName}`, rows, emptyMessage: "" };
   });
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
-  if (!state) return <Skeleton lines={6} />;
+  if (!state) return <Skeleton lines={6} shape="rows" />;
   const ready = sections(false);
   const waiting = sections(true);
   const chosen = state.needs.filter((need) => selected.has(need.key));

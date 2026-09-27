@@ -39,7 +39,7 @@ export function SupplierControls({ api, supplierId, onChanged }: { api: Purchasi
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const accept = (next: SupplierControlsState) => { setState(next); onChanged(); };
   if (error && !state) return <InlineNotice tone="error" message={error} />;
-  if (!state) return <Skeleton lines={4} />;
+  if (!state) return <Skeleton lines={4} shape="form" />;
   return <Tabs items={[
     { id: "documents", label: t("Documents"), panel: <Documents api={api} state={state} onState={accept} /> },
     { id: "bank", label: t("Bank details"), panel: <Bank api={api} state={state} onState={accept} /> },

@@ -9,6 +9,7 @@ import { AssetFiles, AssetUpload, CaseModal } from '../pre-project/case-controls
 import { ScopeNoteCards } from '../pre-project/scope-note-cards';
 import type { NotesModel } from './requirement-notes';
 import styles from './lead-requirement-notes.module.css';
+import { Skeleton } from "@/design-system";
 
 /** The lead drawer uses the same cards as Requirement gathering, not a nested notebook. */
 export function LeadRequirementNotes({ notes, workspaceId, leadId }: { notes: NotesModel & { entries: ScopeEntry[] }; workspaceId: string; leadId: string }) {
@@ -28,7 +29,7 @@ export function LeadRequirementNotes({ notes, workspaceId, leadId }: { notes: No
     </div>
     {message && <p role="status" className={styles.message}>{message}</p>}
     {notes.failure && <p role="alert" className={styles.error}>{notes.failure}<Button size="compact" variant="quiet" onPress={notes.refresh}>Retry</Button></p>}
-    {notes.loading ? <p role="status" className={styles.message}>Loading notes…</p> : <ScopeNoteCards key={`${search}:${archived}`} entries={entries} workspaceId={workspaceId} caseId={leadId} locale={locale} requirementNotes canEdit={notes.canEdit}
+    {notes.loading ? <Skeleton lines={4} /> : <ScopeNoteCards key={`${search}:${archived}`} entries={entries} workspaceId={workspaceId} caseId={leadId} locale={locale} requirementNotes canEdit={notes.canEdit}
       assetUrl={(entry, asset, preview) => notes.fileUrl(byEntry.get(entry.id)!.id, asset.id, preview)}
       emptyTitle={search ? 'No matching notes' : archived ? 'No archived notes' : 'No requirement notes yet'} emptyDescription={search ? 'Try a different search.' : archived ? 'Archived notes remain available here.' : 'Add the client’s requirements, photos or references.'}
       onOpen={entry => { setMessage(''); setEditing(byEntry.get(entry.id)!); }} onSpecifications={() => {}} />}

@@ -5,7 +5,6 @@ import { BlockedSaveBoundary } from "@/design-system/foundations/blocked-save-al
 import { I18nProvider } from "@/lib/i18n/i18n-provider";
 import { LANGUAGE_COOKIE, languageDirection, resolveLanguage } from "@/lib/i18n/languages";
 import { fontVariables } from "./fonts";
-import "flag-icons/css/flag-icons.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

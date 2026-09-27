@@ -1,12 +1,12 @@
 import { useId } from "react";
 import { Globe } from "lucide-react";
-import { siBehance, siHouzz, siInstagram, siPinterest, siTiktok, siYoutube, type SimpleIcon } from "simple-icons";
+import { siBehance, siHouzz, siInstagram, siPinterest, siTiktok, siYoutube, type BrandIcon } from "./brand-icons";
 
 /**
  * The real marks of the platforms clients share inspiration from. Brand colours are the brands'
  * own (from simple-icons), not theme colours; anything else falls back to a neutral globe.
  */
-function Mark({ icon, fill }: { icon: SimpleIcon; fill?: string }) {
+function Mark({ icon, fill }: { icon: BrandIcon; fill?: string }) {
   return <svg aria-hidden="true" role="img" viewBox="0 0 24 24"><path d={icon.path} fill={fill ?? `#${icon.hex}`} /></svg>;
 }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Archive, CalendarClock, Check, GitMerge, Pencil, Plus, ShieldCheck, Trash2, UserRound } from "lucide-react";
-import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs } from "@/design-system";
+import { ActivityFeed, Badge, Button, Callout, ControlledModalDialog, EmptyState, NumericInput, SelectField, TextInput, TextAreaField, Checkbox, Tabs, Skeleton } from "@/design-system";
 import { crmRequest, dateText, label, rows, type RecordData } from "@/lib/crm/client";
 import { clientTimelineItems } from "@/lib/crm/client-timeline";
 import type { ClientTimelineEvent } from "@wodana/contracts";
@@ -81,7 +81,7 @@ export function useCrmResource<T>(workspaceId: string, path: string | null) {
 }
 
 export function ResourceState({ loading, failure, retry }: { loading: boolean; failure: string; retry: () => void }) {
-  return failure ? <Callout title="Could not load this section" tone="warning">{failure} <Button size="compact" onPress={retry}>Retry</Button></Callout> : loading ? <p role="status" className={styles.empty}>Loading…</p> : null;
+  return failure ? <Callout title="Could not load this section" tone="warning">{failure} <Button size="compact" onPress={retry}>Retry</Button></Callout> : loading ? <Skeleton lines={6} shape="rows" /> : null;
 }
 
 export function FactList({ facts }: { facts: Array<[string, ReactNode]> }) {

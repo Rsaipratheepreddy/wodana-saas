@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useSection } from "@/lib/navigation/use-section";
 import { PageHeader, Tabs } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
@@ -14,9 +15,9 @@ import { WorkOrders } from "./work-orders";
 import styles from "./factory.module.css";
 
 /** Factory: what's left to make across running projects, and the work orders. A work order opens in place. */
-export function FactoryPage({ workspaceId, section }: { workspaceId: string; section: FactorySection }) {
+export function FactoryPage({ workspaceId, section: initialSection }: { workspaceId: string; section: FactorySection }) {
   const t = useT();
-  const router = useRouter();
+  const [section, move] = useSection(initialSection);
   const params = useSearchParams();
   const api = useMemo(() => factoryApi(workspaceId), [workspaceId]);
   const [state, setState] = useState<FactoryState | null>(null);
@@ -30,7 +31,7 @@ export function FactoryPage({ workspaceId, section }: { workspaceId: string; sec
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const go = (next: FactorySection, open?: string | null) => {
     const base = `/workspace/factory${next === "to-make" ? "" : `/${next}`}`;
-    router.replace(open ? `${base}?${next === "batches" ? "batch" : "order"}=${open}` : base, { scroll: false });
+    move(next, open ? `${base}?${next === "batches" ? "batch" : "order"}=${open}` : base);
   };
   const open = state?.orders.filter((order) => ["planned", "released", "in_production", "on_hold"].includes(order.status)).length ?? 0;
   return <div className={styles.page}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ErrorState, Skeleton } from "@/design-system";
+import { ErrorState, PageSkeleton } from "@/design-system";
 import { QuoteBuilder } from "@/components/quotation/quote-builder";
 import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcrumb";
 import { projectApi } from "@/lib/project-core/client";
@@ -19,7 +19,7 @@ export function ProjectVariation({ workspaceId, projectId, quoteId }: { workspac
     return () => { alive = false; };
   }, [workspaceId, projectId]);
   if (error) return <div className={styles.page}><ErrorState description={error} /></div>;
-  if (!project) return <div className={styles.page}><Skeleton lines={8} /></div>;
+  if (!project) return <div className={styles.page}><PageSkeleton variant="detail" /></div>;
   return <div className={styles.builderPage}>
     <QuoteBuilder key={quoteId} workspaceId={workspaceId} caseId={project.caseId} quoteId={quoteId}
       backHref={`/workspace/projects/${projectId}/scope`} quoteHref={(id) => `/workspace/projects/${projectId}/changes/${id}`} />

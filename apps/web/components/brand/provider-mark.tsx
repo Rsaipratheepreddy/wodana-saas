@@ -1,8 +1,8 @@
 import { Braces, CreditCard } from "lucide-react";
-import { siAutodesk, siDropbox, siMeta, siQuickbooks, siWhatsapp, siZoho, type SimpleIcon } from "simple-icons";
+import { siAutodesk, siDropbox, siMeta, siQuickbooks, siWhatsapp, siZoho, type BrandIcon } from "./brand-icons";
 import type { ProviderCapabilityState } from "@/lib/workspace/integrations";
 
-function SimpleBrandMark({ color, icon }: { color?: string; icon: SimpleIcon }) {
+function SimpleBrandMark({ color, icon }: { color?: string; icon: BrandIcon }) {
   return <svg aria-hidden="true" fill={color ?? `#${icon.hex}`} role="img" viewBox="0 0 24 24"><path d={icon.path} /></svg>;
 }
 

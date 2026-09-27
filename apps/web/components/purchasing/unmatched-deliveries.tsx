@@ -143,7 +143,7 @@ export function UnmatchedSheet({ api, deliveryId, onChanged, onClose, onOpenRece
       <Button variant="quiet" onPress={() => setDialog("return")}>{t("Sent back")}</Button><span className={styles.spacer} />
       {state.canBuy ? <Button variant="primary" isDisabled={!state.candidates.length} onPress={() => setDialog("match")}>{t("Match to an order")}</Button> : null}
     </div> : null}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !delivery ? <Skeleton lines={6} /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !delivery ? <Skeleton lines={6} shape="facts" /> : <div className={styles.sheet}>
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {delivery.status === "matched" && delivery.receiptId ? <InlineNotice tone="success" message={t("Matched by {name}; now delivery {number}.", { name: delivery.resolvedByName ?? "", number: delivery.receiptNumber ?? "" })} /> : null}
       {delivery.status === "returned" ? <InlineNotice tone="info" message={t("Sent back: {reason}", { reason: delivery.resolutionNote })} /> : null}
