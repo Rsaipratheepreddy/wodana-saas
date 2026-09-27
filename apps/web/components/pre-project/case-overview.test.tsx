@@ -33,7 +33,7 @@ describe("pre-execution case overview", () => {
   it("keeps the overview limited to client and essential project details", () => {
     view({ ...initial, status: "released" });
     expect(screen.getByText("Palm client")).toBeVisible();
-    expect(screen.getByText("Owner", { selector: "dd" })).toBeVisible();
+    expect(screen.getByText("Owner", { selector: "dd bdi" })).toBeVisible();
     expect(screen.queryByText("Client decisions & release")).not.toBeInTheDocument();
     expect(screen.queryByText("Project notes")).not.toBeInTheDocument();
   });

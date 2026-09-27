@@ -14,7 +14,8 @@
 .identity span, .facts dt, .context { color: var(--wd-color-text-secondary); }
 .facts { display:grid; grid-template-columns:minmax(0,1fr); gap:0; margin:0; max-inline-size:640px; }
 .facts > div { display:grid; grid-template-columns:120px minmax(0,1fr); gap:var(--wd-space-4); padding-block:var(--wd-space-3); border-block-end:1px solid var(--wd-color-structural-divider); }
-.facts dd { margin: 0; text-transform: capitalize; overflow-wrap: anywhere; }
+/* Facts are business data (names, emails, dates): shown exactly as entered, never re-cased. */
+.facts dd { margin: 0; overflow-wrap: anywhere; }
 .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3); }
 .formActions { grid-column: 1 / -1; justify-content: flex-end; }
 .context { margin: 0; line-height: 1.5; }

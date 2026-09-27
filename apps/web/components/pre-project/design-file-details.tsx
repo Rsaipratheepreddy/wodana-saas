@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ArrowLeft, Download, Upload } from "lucide-react";
-import { Button, IconMenuButton, SelectField, useConfirmationDialog } from "@/design-system";
+import { Button, IconMenuButton, personDisplayName, SelectField, useConfirmationDialog } from "@/design-system";
 import {
   caseApi,
   caseRequest,
@@ -341,7 +341,7 @@ export function DesignFileDetails({
             <dt>Revision &amp; author</dt>
             <dd>
               {version
-                ? `R${version.number} · ${version.createdByName}`
+                ? `R${version.number} · ${personDisplayName(version.createdByName)}`
                 : "No revision"}
             </dd>
             <dt>Source</dt>
@@ -400,7 +400,7 @@ export function DesignFileDetails({
                 <header>
                   <div>
                     <strong>R{candidate.number}</strong>
-                    <small>{candidate.createdByName}</small>
+                    <small>{personDisplayName(candidate.createdByName)}</small>
                   </div>
                   <span className={view.status} data-status={candidate.status}>
                     {designStateLabels[candidate.status] ?? candidate.status}

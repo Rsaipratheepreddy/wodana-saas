@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarPlus, Check, CheckCircle2, Play } from "lucide-react";
-import { Badge, Button, ControlledModalDialog, EmptyState, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Badge, Button, ControlledModalDialog, EmptyState, InlineNotice, PersonName, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
 import { zonedToUtc } from "@/lib/crm/zoned-time";
@@ -76,7 +76,7 @@ export function DesignJourney({ workspaceId, caseId, locale }: { workspaceId: st
           </div>
           {stage.status === "active" ? <>
             <p className={styles.meta}>
-              {stage.ownerName ? <span>{stage.ownerName}</span> : null}
+              {stage.ownerName ? <span><PersonName person={stage.ownerName} /></span> : null}
               {stage.scheduledAt ? <span>{t("Visit")} {time(stage.scheduledAt)}</span> : null}
               {stage.stage === "inspiration" && !stage.dueAt ? <span>{t("Timer starts with the first inspiration")}</span> : null}
             </p>
