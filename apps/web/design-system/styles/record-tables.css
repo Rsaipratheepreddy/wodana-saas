@@ -26,9 +26,9 @@
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr:not(.wd-grouped-table-heading):hover > td { background: var(--wd-record-hover); }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr[data-selected="true"] > td { background: var(--wd-record-selected); }
   /* Nothing inside a cell truncates: page-level ellipsis rules give way to wrapping. */
-  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr > td :is(span, strong, small, b, div, p, a, time):not(.wd-button, .wd-icon-button) { white-space: normal; text-overflow: clip; overflow-wrap: break-word; }
-  /* Chips wrap instead of clipping. */
-  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) :is(.wd-badge, .wd-tag) { border: 0; border-radius: var(--wd-radius-2xs); padding: var(--wd-space-0-5) var(--wd-space-1-5); min-block-size: 22px; block-size: auto; max-inline-size: 100%; font-size: var(--wd-text-2xs); line-height: 1.25; white-space: normal; overflow-wrap: break-word; text-align: start; }
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr > td :is(span, strong, small, b, div, p, a, time):not(.wd-button, .wd-icon-button, .wd-badge, .wd-tag, [data-chip], [data-chip] *, [data-source-chip], [data-source-chip] *) { white-space: normal; text-overflow: clip; overflow-wrap: break-word; }
+  /* Chips stay on one line and their column grows to fit them (auto table layout); on a phone, where columns are fixed, they wrap. */
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) :is(.wd-badge, .wd-tag) { border: 0; border-radius: var(--wd-radius-2xs); padding: var(--wd-space-0-5) var(--wd-space-1-5); min-block-size: 22px; block-size: auto; max-inline-size: 100%; font-size: var(--wd-text-2xs); line-height: 1.25; white-space: nowrap; text-align: start; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-grid-value { inline-size: 100%; min-block-size: 30px; margin: 0; padding: 0; font: inherit; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-grid-value[data-primary="true"] { font-weight: 500; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-sort-button { min-block-size: var(--wd-record-header-height); gap: var(--wd-space-1-5); font: inherit; }
@@ -89,6 +89,7 @@
   @media (max-width: 48rem) {
     /* On a phone the grouped table sizes to its content and scrolls sideways instead of squeezing every column. */
     .wd-grouped-table-scroll .wd-record-table { inline-size: max-content !important; min-inline-size: 100%; }
+    table:is(.wd-record-table,[data-record-table]) :is(.wd-badge, .wd-tag) { white-space: normal; overflow-wrap: break-word; }
     .wd-data-grid .wd-record-table { inline-size: max-content !important; }
     .wd-data-grid .wd-record-table :is(th,td):not([data-column="__select"]) { inline-size: var(--wd-record-column-size, auto) !important; }
     .wd-data-grid .wd-record-table [data-column="__select"] { display: table-cell; }

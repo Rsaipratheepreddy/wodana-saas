@@ -195,7 +195,8 @@
 .salesHeading { margin-block-end: var(--wd-space-5); }
 .salesHeading h1 { margin: 0 0 var(--wd-space-1-5); font-size: var(--wd-text-xl); font-weight: 600; }
 .salesHeading p { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.sheetLead .clientRequest { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+/* Name on the first line, reference muted on the second (outranks the block rule for the last span above). */
+.sheetLead > span.clientRequest { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; white-space: normal; }
 .clientRequest strong { font-size: var(--wd-text-xs); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .clientRequest small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); overflow: hidden; text-overflow: ellipsis; }
 .sheetLead { min-block-size: 42px; }
@@ -213,7 +214,7 @@
 
 /* Compact, readable cells with one consistent control height. */
 .sheetLead { min-block-size: 36px; gap: var(--wd-space-2); }
-.sheetLead .clientRequest { gap: var(--wd-space-0-5); }
+.sheetLead > span.clientRequest { gap: var(--wd-space-0-5); }
 .clientRequest strong { font-size: var(--wd-text-xs); line-height: 17px; }
 .clientRequest small { line-height: 15px; }
 .sheet .statusSelect :global(.wd-select-button) { min-block-size: 28px; block-size: 28px; font-size: var(--wd-text-xs); border-radius: var(--wd-radius-2xs); padding-inline: var(--wd-space-2); }
