@@ -137,9 +137,6 @@
 .steps h3 { font-size: var(--wd-text-md); color: var(--wd-color-text); }
 .steps p { font-size: var(--wd-text-sm); line-height: 1.6; color: var(--wd-color-text-secondary); }
 .steps small { display: flex; align-items: center; gap: var(--wd-space-1-5); }
-.planned { max-inline-size: 44rem; margin-block-start: var(--wd-space-10); }
-.planned h2 { font-size: var(--wd-text-xl); font-weight: 600; }
-.planned p { color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); line-height: 1.7; }
 .srOnly { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
 .page button:disabled, .dialog button:disabled { opacity: .5; cursor: not-allowed; }
 .page :focus-visible, .casePage :focus-visible, .dialog :focus-visible, .control[data-focus-visible], .search:focus-within { outline: 2px solid var(--pre-accent); outline-offset: 3px; }

@@ -80,7 +80,7 @@ export function WorkspaceNotifications({ workspaceId }: { workspaceId: string })
   const category = (item: Notification) => item.deepLink?.startsWith('/workspace/crm/') ? 'crm' : item.deepLink?.startsWith('/workspace/projects/') || item.deepLink?.startsWith('/workspace/pre-projects/') ? 'projects' : 'other';
   const filters = [{ id: 'all', label: 'View all', count: items.length }, { id: 'unread', label: 'Unread', count: unread }, { id: 'crm', label: 'CRM', count: items.filter(item => category(item) === 'crm').length }, { id: 'projects', label: 'Projects', count: items.filter(item => category(item) === 'projects').length }];
   const visible = items.filter(item => filter === 'all' || (filter === 'unread' ? !item.readAt : category(item) === filter));
-  return <div className={styles.wrap} ref={wrapper}>
+  return <div className={styles.wrap} data-notifications="" ref={wrapper}>
     <button ref={trigger} type="button" className={styles.trigger} aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} aria-expanded={open} aria-haspopup="dialog" onClick={() => { setOpen(value => !value); void load(); }}>
       <Bell aria-hidden="true" size={18} />{unread ? <span className={styles.badge}>{unread > 9 ? "9+" : unread}</span> : null}
     </button>

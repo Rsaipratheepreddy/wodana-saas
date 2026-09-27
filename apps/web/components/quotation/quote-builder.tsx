@@ -27,6 +27,7 @@ import { useColumnWidths } from "./use-column-widths";
 import { ChangeAgreedItem } from "./quote-variation";
 import { CommentButton, CommentPanel, CommentsList, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import styles from "./quote-builder.module.css";
+import { WorkspaceNotifications } from "@/components/workspace/workspace-notifications";
 
 type Draft = { id: string; areaId: string | null; workPackageId: string | null };
 
@@ -477,6 +478,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <IconButton className={styles.withCount} aria-label={openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments")} aria-pressed={panelShown && activePanel === "comments"} onPress={() => (panelShown && activePanel === "comments" ? showSide(false) : openPanel("comments"))}>
         <MessageCircle aria-hidden="true" size={17} />{openThreads ? <span className={styles.countDot}>{openThreads}</span> : null}
       </IconButton>
+      <WorkspaceNotifications workspaceId={workspaceId} />
       {state.canEdit ? <button type="button" className={styles.askAi} aria-pressed={panelShown && activePanel === "assistant"} aria-keyshortcuts="Meta+K Control+K"
         onClick={() => (panelShown && activePanel === "assistant" ? showSide(false) : askAbout(null))}><Sparkles aria-hidden="true" size={15} />{t("Ask AI")}</button> : null}
       <FlowActions state={state} api={api} workspaceId={workspaceId} caseId={caseId} onDone={load} onError={setError} onRevision={(id) => router.push(quoteHref(id))} />

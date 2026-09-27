@@ -21,17 +21,17 @@
 .shell[data-focus] .breadcrumbs,
 .shell[data-focus] .topModuleNav,
 .shell[data-focus] .topModuleMenu,
-.shell[data-focus] .focusTitle,
-.shell[data-focus] .globalUtilities { display: none; }
+.shell[data-focus] .focusTitle { display: none; }
+/* Focus mode keeps the notifications bell; the other utilities wait until it ends. */
+.shell[data-focus] .globalUtilities { margin-inline-start: auto; }
+.shell[data-focus] .globalUtilities > :not(.woddyControl, [data-notifications]) { display: none; }
 .focusBack { display: inline-flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
 .focusBack:hover { color: var(--wd-color-text); }
 .focusTitle { margin-inline-start: var(--wd-space-3); padding-inline-start: var(--wd-space-4); border-inline-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: 600; }
-.shell[data-focus] .woddyControl { margin-inline-start: auto; }
+/* A planning case names itself in the top bar instead of a breadcrumb, and keeps the global utilities. */
 .shell[data-case-workspace] .breadcrumbs,
 .shell[data-case-workspace] .topModuleNav,
-.shell[data-case-workspace] .topModuleMenu,
-.shell[data-case-workspace] .globalUtilities { display: none; }
-.shell[data-case-workspace] .woddyControl { margin-inline-start: auto; }
+.shell[data-case-workspace] .topModuleMenu { display: none; }
 .shell[data-focus] .workspaceArea,
 .shell[data-case-workspace] .workspaceArea { grid-template-rows: 2.25rem minmax(0, 1fr); }
 .shell[data-focus] .topbar,
@@ -1357,8 +1357,10 @@
   .breadcrumbs { display: none; }
   .woddyControl { margin-inline-start: auto; }
   .topbar { gap: var(--wd-space-1-5); }
-  .caseHeader { flex: none; gap: 0; }
-  .caseHeader > div { display: none; }
+  /* On a phone the case keeps its name (the client's name gives way) beside the global utilities. */
+  .caseHeader { flex: 1 1 auto; gap: var(--wd-space-2); }
+  .caseHeader small { display: none; }
+  .caseHeader strong { max-inline-size: none; font-size: var(--wd-text-sm); }
 }
 
 @media (max-width: 23.75rem) {
