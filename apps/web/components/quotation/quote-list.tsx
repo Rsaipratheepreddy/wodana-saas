@@ -12,6 +12,8 @@ import type { CommercialState, Quote } from "@/lib/commercial/types";
 import { money, QUOTE_STATUS } from "@/lib/quotation/format";
 import styles from "./quote-list.module.css";
 
+/** The currency's own number of decimals (AED 2, JPY 0, KWD 3). */
+const currencyDigits = (currency: string, locale: string) => { try { return new Intl.NumberFormat(locale, { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2; } catch { return 2; } };
 const OPEN = ["draft", "internal_review", "internal_approved", "issued", "changes_requested", "accepted"];
 
 /**
@@ -55,12 +57,12 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
   const date = (value: string) => value ? new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00Z`)) : "—";
 
   return <div className={styles.page}>
-    <div className={styles.toolbar}>
+    {replaced.length || action ? <div className={styles.toolbar}>
       {replaced.length ? <Button size="compact" variant="quiet" onPress={() => setShowReplaced((value) => !value)}>
         {showReplaced ? t("Hide earlier versions") : t("Earlier versions · {count}", { count: replaced.length })}</Button> : null}
       <span className={styles.spacer} />
       {action}
-    </div>
+    </div> : null}
     {error && !choosing ? <InlineNotice tone="error" message={error} /> : null}
     {!quotes.length ? <EmptyState title={t("No quotes yet")} action={action ?? undefined} /> : <RecordTable
       ariaLabel={t("Quotes")} data={shown} getRowId={(quote) => quote.id} showToolbar={false} showFooter={false} rowNumbers={false} selectable={false} wrapText
@@ -70,7 +72,7 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
           cell: ({ row: { original: quote } }) => <span className={styles.title}><Link href={hrefOf(quote.id)}>{quote.title}</Link><small>{t("Q-{number}", { number: quote.number })}</small></span> },
         { id: "kind", header: t("Type"), size: 130, accessorFn: kind },
         { id: "total", header: t("Amount"), size: 150, accessorFn: (quote) => quote.total, meta: { align: "end" },
-          cell: ({ row: { original: quote } }) => <span className={styles.amount}>{money(quote.clientDecision?.acceptedTotal ?? quote.total, quote.currency, 2, locale)}</span> },
+          cell: ({ row: { original: quote } }) => <span className={styles.amount}>{money(quote.clientDecision?.acceptedTotal ?? quote.total, quote.currency, currencyDigits(quote.currency, locale), locale)}</span> },
         { id: "status", header: t("Status"), size: 170, accessorFn: (quote) => quote.status,
           cell: ({ row: { original: quote } }) => <Badge tone={QUOTE_STATUS[quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[quote.status]?.label ?? quote.status) as never)}</Badge> },
         { id: "validUntil", header: t("Valid until"), size: 140, accessorFn: (quote) => quote.validUntil, cell: ({ row: { original: quote } }) => date(quote.validUntil) },

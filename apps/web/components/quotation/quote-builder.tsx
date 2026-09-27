@@ -473,7 +473,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <span className={styles.spacer} />
       <PeopleHere people={people} />
       {toFix ? <button type="button" className={styles.toFix} onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
-      <button type="button" className={styles.total} aria-label={t("Totals")} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
+      <button type="button" className={styles.total} aria-label={t("Totals: {amount}", { amount: money(state.pricing.total, currency, decimals, locale) })} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
       <IconButton className={styles.withCount} aria-label={openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments")} aria-pressed={panelShown && activePanel === "comments"} onPress={() => (panelShown && activePanel === "comments" ? showSide(false) : openPanel("comments"))}>
         <MessageCircle aria-hidden="true" size={17} />{openThreads ? <span className={styles.countDot}>{openThreads}</span> : null}
       </IconButton>
@@ -565,7 +565,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             onFocusLine={(id) => highlight([id])} inputRef={chatInput} commandsRef={assistantRef} />
         </div> : null}
         {state.canEdit ? <div className={styles.panelBody} hidden={activePanel !== "catalog"}>
-          <QuoteCatalog search={search} thumb={catalogThumb} areas={state.areas} areaId={catalogArea} onAreaChange={setCatalogArea} onAdd={addFromCatalog} canEdit={state.canEdit} />
+          <QuoteCatalog search={search} thumb={catalogThumb} currency={currency} decimals={decimals} areas={state.areas} areaId={catalogArea} onAreaChange={setCatalogArea} onAdd={addFromCatalog} canEdit={state.canEdit} />
         </div> : null}
         <div className={styles.panelBody} data-scroll hidden={activePanel !== "comments"}>
           {commentAt ? <CommentPanel key={`${commentAt.anchor.kind}:${commentAt.anchor.key}`} anchor={commentAt.anchor} title={commentAt.title} threads={threads} members={members} api={api} meId={state.me}
@@ -588,7 +588,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       createArea={(name) => saveCaseRoom(workspaceId, caseId, { id: crypto.randomUUID(), version: 0, name: name.slice(0, 120), catalogRecordId: null } as never)} /> : null}
     {savingTemplate ? <SaveTemplate api={api} scope={savingTemplate.scope} target={savingTemplate.target} name={savingTemplate.name} onClose={() => setSavingTemplate(null)} onError={setError} /> : null}
     {roomFor ? <RoomPicker data={{ workspaceId, caseId, canEdit: state.canEdit, rooms: state.areas.map((area) => ({ ...area, version: 1 }) as unknown as CaseRoom) }}
-      onClose={() => setRoomFor(null)} onPick={(room) => void roomPicked(room)} /> : null}
+      title={t("Add area")} onClose={() => setRoomFor(null)} onPick={(room) => void roomPicked(room)} /> : null}
     {columnFor ? <ColumnDialog column={columnFor === "new" ? undefined : columnFor} onClose={() => setColumnFor(null)}
       onSave={async ({ name, kind }) => {
         const { columns: next } = columnFor === "new" ? await columnsApi.add(crypto.randomUUID(), name, kind) : await columnsApi.change(columnFor.id, { name, version: columnFor.version });

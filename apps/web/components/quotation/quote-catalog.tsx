@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Image as ImageIcon, Plus } from "lucide-react";
 import { SearchInput, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import { plain } from "@/lib/quotation/format";
+import { money } from "@/lib/quotation/format";
 import type { CatalogHit } from "@/lib/quotation/types";
 import { CellPicker } from "./cell-picker";
 import catalog from "./quote-catalog.module.css";
@@ -13,9 +13,9 @@ import catalog from "./quote-catalog.module.css";
  * The catalog beside the quote: search or browse by category, see each item's picture and price, and
  * add it to an area in one click. Typing in a line's item cell finds the same items.
  */
-export function QuoteCatalog({ search, thumb, areas, areaId, onAreaChange, onAdd, canEdit }: {
+export function QuoteCatalog({ search, thumb, currency, decimals, areas, areaId, onAreaChange, onAdd, canEdit }: {
   search: (text: string, signal: AbortSignal, limit?: number) => Promise<CatalogHit[]>;
-  thumb: (imageId: string) => string;
+  thumb: (imageId: string) => string; currency: string; decimals: number;
   areas: Array<{ id: string; name: string }>; areaId: string | null; onAreaChange: (id: string | null) => void;
   onAdd: (hit: CatalogHit, areaId: string | null) => void; canEdit: boolean;
 }) {
@@ -58,7 +58,7 @@ export function QuoteCatalog({ search, thumb, areas, areaId, onAreaChange, onAdd
             <span>{hit.name}</span>
             <small>{[hit.categoryName, hit.code].filter(Boolean).join(" · ")}</small>
           </span>
-          <span className={catalog.price}>{hit.rate ? <>{plain(hit.rate, locale, 2)}<small> / {hit.unitCode}</small></> : hit.hasBuildUp ? <small>{t("Priced from parts")}</small> : <small>{t("No price")}</small>}</span>
+          <span className={catalog.price}>{hit.rate ? <>{money(hit.rate, currency, decimals, locale)}<small> / {hit.unitCode}</small></> : hit.hasBuildUp ? <small>{t("Priced from parts")}</small> : <small>{t("No price")}</small>}</span>
           {canEdit ? <button type="button" className={catalog.add} aria-label={t("Add {name}", { name: hit.name })} onClick={() => add(hit)} data-done={added === hit.id || undefined}>
             {added === hit.id ? <Check aria-hidden="true" size={15} /> : <Plus aria-hidden="true" size={15} />}
           </button> : null}

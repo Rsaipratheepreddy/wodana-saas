@@ -118,7 +118,7 @@ export function RoomManager({ data, onClose, onSave }: { data: CaseContent; onCl
  * Pick a room to work in: one already in the project, one from the catalog (added to the project)
  * or a custom one typed in. Nothing is pre-filled; the list is the tenant's own catalog.
  */
-export function RoomPicker({ data, exclude = [], onClose, onPick }: { data: RoomContext; exclude?: string[]; onClose: () => void; onPick: (room: CaseRoom) => void }) {
+export function RoomPicker({ data, exclude = [], onClose, onPick, title }: { data: RoomContext; exclude?: string[]; onClose: () => void; onPick: (room: CaseRoom) => void; title?: string }) {
   const t = useT();
   const catalog = useCatalogRooms(data.workspaceId, data.caseId);
   const [search, setSearch] = useState("");
@@ -141,7 +141,7 @@ export function RoomPicker({ data, exclude = [], onClose, onPick }: { data: Room
     {busy === id ? <Check aria-hidden="true" size={13} /> : <Plus aria-hidden="true" size={13} />}{name}
   </button></li>;
 
-  return <CaseModal title={t("Add room")} onClose={onClose} busy={Boolean(busy)} size="md">
+  return <CaseModal title={title ?? t("Add room")} onClose={onClose} busy={Boolean(busy)} size="md">
     <div className={styles.manager}>
       {error ? <InlineNotice message={error} tone="error" /> : null}
       <SearchInput label={t("Find or type a room")} placeholder={t("Find or type a room")} value={search} onChange={setSearch} />

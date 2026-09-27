@@ -4234,5 +4234,9 @@
   "Deleted “{name}”": "Deleted “{name}”",
   "Send {quote} to {client}?": "Send {quote} to {client}?",
   "They'll see it in their portal and get an email.": "They'll see it in their portal and get an email.",
-  "Each milestone needs a name, a share and when it's due": "Each milestone needs a name, a share and when it's due"
+  "Each milestone needs a name, a share and when it's due": "Each milestone needs a name, a share and when it's due",
+  "Totals: {amount}": "Totals: {amount}",
+  "Someone who can send quotes sends the scope": "Someone who can send quotes sends the scope",
+  "Resume the enquiry to send the scope": "Resume the enquiry to send the scope",
+  "Out of date": "Out of date"
 }

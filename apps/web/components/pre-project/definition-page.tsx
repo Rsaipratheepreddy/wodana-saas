@@ -10,7 +10,7 @@ import styles from "./definition-page.module.css";
 import { parseDateTime } from "@internationalized/date";
 import { CaseModal } from "./case-controls";
 
-const HISTORY_LABEL: Record<string, string> = { awaiting_confirmation: "Waiting for the client", confirmed: "Signed off", changes_requested: "Asked for changes", superseded: "Replaced" };
+const HISTORY_LABEL: Record<string, string> = { awaiting_confirmation: "Waiting for the client", confirmed: "Signed off", changes_requested: "Asked for changes", superseded: "Out of date" };
 const localDecisionTime = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000 + 999).toISOString().slice(0, 19);
 
 export function DefinitionPage({ initial }: { initial: DefinitionPageData }) {
@@ -97,7 +97,9 @@ function ScopeSignOff({ initial }: { initial: Extract<DefinitionPageData, { work
       <span className={styles.meta}>{current ? t("Version {number} · sent {date}", { number: current.number, date: date(current.publishedAt) }) : t("{count} in scope", { count: included })}</span>
       <span className={styles.spacer} />
       {canRecord ? <Button size="compact" onPress={() => { setError(""); setDecidedAt(localDecisionTime()); setDecisionOpen(true); }}>{t("Record the client's answer")}</Button> : null}
-      {canPublish ? <Button size="compact" variant="primary" onPress={() => void publish()} isLoading={busy}>{current ? t("Send the updated scope") : t("Send to client for sign-off")}</Button> : null}
+      {canPublish ? <Button size="compact" variant="primary" onPress={() => void publish()} isLoading={busy}>{current ? t("Send the updated scope") : t("Send to client for sign-off")}</Button>
+        : !current?.current && !definition.canPublish ? <span className={styles.meta}>{t("Someone who can send quotes sends the scope")}</span>
+          : !current?.current && definition.caseStatus !== "active" ? <span className={styles.meta}>{t("Resume the enquiry to send the scope")}</span> : null}
     </div>
     {error && !decisionOpen ? <InlineNotice tone="error" message={error} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
