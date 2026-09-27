@@ -9381,5 +9381,6 @@
   "Expand {name}": "Expand {name}",
   "Collapse {name}": "Collapse {name}",
   "Order {name}": "Order {name}",
-  "Selected lines": "Selected lines"
+  "Selected lines": "Selected lines",
+  "Plan work order for {name}": "Plan work order for {name}"
 }

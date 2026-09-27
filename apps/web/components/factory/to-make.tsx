@@ -24,14 +24,17 @@ export function ToMake({ api, state, error, onReload, onPlanned }: { api: Factor
   const needle = search.trim().toLocaleLowerCase();
   const lines = state.toMake.filter((line) => (show === "all" || Number(line.left) !== 0)
     && (!needle || `${line.title} ${line.specification} ${line.projectReference} ${line.projectName}`.toLocaleLowerCase().includes(needle)));
+  const plannable = (line: MakeLine) => Boolean(state.canManage) && Number(line.left) > 0;
   const columns: GroupedTableColumn<MakeLine>[] = [
-    { id: "item", label: t("Item"), width: "46%", render: (line) => <span className={styles.nameCell}><span>{line.title}</span>
+    { id: "item", label: t("Item"), render: (line) => <span className={styles.nameCell}><span>{line.title}</span>
       {line.specification || line.packageName ? <small>{[line.packageName, line.specification].filter(Boolean).join(" · ")}</small> : null}</span> },
-    { id: "quantity", label: t("Quantity"), width: "18%", render: (line) => <span className={styles.number}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span> },
-    { id: "planned", label: t("On work orders"), width: "18%", mobileHidden: true, render: (line) => Number(line.planned) ? <span className={styles.number}>{`${quantityText(line.planned)} ${line.unit}`.trim()}</span> : "—" },
-    { id: "left", label: t("Left"), width: "18%", render: (line) => Number(line.left) > 0 ? <strong className={styles.number}>{`${quantityText(line.left)} ${line.unit}`.trim()}</strong>
+    { id: "quantity", label: t("Quantity"), width: "8rem", align: "end", render: (line) => <span className={styles.number}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span> },
+    { id: "planned", label: t("On work orders"), width: "9.5rem", align: "end", mobileHidden: true, render: (line) => Number(line.planned) ? <span className={styles.number}>{`${quantityText(line.planned)} ${line.unit}`.trim()}</span> : "—" },
+    { id: "left", label: t("Left"), width: "11rem", align: "end", render: (line) => Number(line.left) > 0 ? <strong className={styles.number}>{`${quantityText(line.left)} ${line.unit}`.trim()}</strong>
       : Number(line.left) < 0 ? <span className={styles.lateText}>{t("{quantity} more on work orders than it needs", { quantity: `${quantityText(line.left.replace("-", ""))} ${line.unit}`.trim() })}</span>
       : <span className={styles.muted}>{t("Planned")}</span> },
+    // One clear next action per line; the dialog plans one work order at a time.
+    ...(state.canManage ? [{ id: "action", label: "", width: "9rem", align: "end" as const, render: (line: MakeLine) => plannable(line) ? <Button size="compact" variant="quiet" aria-label={t("Plan work order for {name}", { name: line.title })} onPress={() => setPlanning(line)}>{t("Plan work order")}</Button> : null }] : []),
   ];
   const sections: GroupedTableSection<MakeLine>[] = [...new Set(lines.map((line) => line.projectId))].map((projectId) => {
     const rows = lines.filter((line) => line.projectId === projectId);
@@ -45,7 +48,7 @@ export function ToMake({ api, state, error, onReload, onPlanned }: { api: Factor
     {!sections.length ? <EmptyState illustration={null} title={show === "left" ? t("Nothing left to plan") : t("Nothing to make yet")}
         description={t("Scope lines of packages made in our factory appear here once their project starts.")} />
       : <GroupedTable<MakeLine> ariaLabel={t("To make")} columns={columns} sections={sections} getRowId={(line) => line.lineId} getRowLabel={(line) => `${line.projectReference} ${line.title}`}
-          selectable={false} onRowAction={state.canManage ? (line) => { if (Number(line.left) > 0) setPlanning(line); } : undefined} />}
+          selectable={false} onRowAction={state.canManage ? (line) => { if (plannable(line)) setPlanning(line); } : undefined} />}
     {planning ? <PlanDialog api={api} line={planning} state={state} onClose={() => setPlanning(null)} onPlanned={(id) => { setPlanning(null); onPlanned(id); }} /> : null}
   </div>;
 }
