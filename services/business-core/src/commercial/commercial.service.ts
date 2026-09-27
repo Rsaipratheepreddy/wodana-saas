@@ -3218,7 +3218,8 @@ export class CommercialService {
         if (action === "revise" && typeof b.quoteId === "string" && q && q.id !== b.quoteId)
           await copyBuilderData(client, workspaceId, caseId, b.quoteId, q.id);
         if (q && ["submit", "return", "record_decision"].includes(action))
-          await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined });
+          await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined,
+            reviewPermission: data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
         return { data };
       },
     );

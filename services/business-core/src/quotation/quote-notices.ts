@@ -10,6 +10,8 @@ type Db = Pick<PoolClient, "query">;
  */
 export async function noticeQuoteStep(db: Db, input: {
   workspaceId: string; caseId: string; quoteId: string; number: number; title: string; action: string; actorUserId: string; revision: number; note?: string; decision?: string;
+  /** The permission the review needs: `commercial.estimate` for a QS estimate review, else `commercial.approve` (variations, plain approval). */
+  reviewPermission?: "commercial.approve" | "commercial.estimate";
 }) {
   const facts = (await db.query<{ clientName: string; ownerUserId: string | null }>(
     `SELECT coalesce(party.display_name, opportunity.title) AS "clientName", owner.user_id AS "ownerUserId"
@@ -30,14 +32,15 @@ export async function noticeQuoteStep(db: Db, input: {
     }
   };
   if (input.action === "submit") {
+    // Only the people who can act on this review are told: a QS estimate review goes to estimators, anything else (a variation, a plain approval) to approvers.
     const reviewers = (await db.query<{ userId: string }>(
       `SELECT DISTINCT membership.user_id AS "userId"
          FROM workspace_memberships membership
          JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
          JOIN role_permissions granted ON granted.role_id = assigned.role_id
          JOIN permissions permission ON permission.id = granted.permission_id
-        WHERE membership.workspace_id = $1 AND membership.status = 'active' AND permission.code IN ('commercial.approve', 'commercial.estimate')
-        LIMIT 20`, [input.workspaceId])).rows.map((row) => row.userId);
+        WHERE membership.workspace_id = $1 AND membership.status = 'active' AND permission.code = $2
+        LIMIT 20`, [input.workspaceId, input.reviewPermission ?? "commercial.approve"])).rows.map((row) => row.userId);
     await tell(reviewers, "quotation.review_requested", true);
   } else if (input.action === "return") {
     await tell([facts.ownerUserId, ...await editors(db, input)], "quotation.returned");
