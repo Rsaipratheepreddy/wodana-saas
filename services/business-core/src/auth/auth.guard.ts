@@ -11,7 +11,7 @@ import * as jwt from "jsonwebtoken";
 import { JwtPayload } from "jsonwebtoken";
 import jwksClient, { JwksClient } from "jwks-rsa";
 import { DatabaseService } from "../database/database.service";
-import { sessionDeviceLimit } from "./session-policy";
+import { configuredDeviceLimit, sessionDeviceLimit } from "./session-policy";
 import { RequestActor } from "./actor";
 import { AuthenticatedRequest } from "./authenticated-request";
 import { IS_PUBLIC_KEY } from "./public.decorator";
@@ -186,7 +186,7 @@ export class AuthGuard implements CanActivate {
            AND session.revoked_at IS NULL AND session.expires_at > now()
            AND ($3::integer IS NULL OR (SELECT count(DISTINCT family_id) FROM auth_refresh_sessions
                 WHERE user_id = session.user_id AND revoked_at IS NULL AND expires_at > now()) <= $3)`,
-        [claims.sid, claims.sub, sessionDeviceLimit(claims.sub.replace(/^local:/, ""), this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""))],
+        [claims.sid, claims.sub, sessionDeviceLimit(claims.sub.replace(/^local:/, ""), this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""), configuredDeviceLimit(this.config.get<string>("AUTH_MAX_ACTIVE_DEVICES", "")))],
       );
       if (!active.rowCount) throw new UnauthorizedException("This device was logged out or its session expired.");
       const assurance = active.rows[0];

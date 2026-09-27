@@ -10,7 +10,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import type { PoolClient } from "pg";
-import { MAX_ACTIVE_DEVICES, sessionDeviceLimit } from "./session-policy";
+import { configuredDeviceLimit, sessionDeviceLimit } from "./session-policy";
 import { ConfigService } from "@nestjs/config";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as jwt from "jsonwebtoken";
@@ -993,7 +993,7 @@ export class LocalAuthService {
       const deviceLimit = this.deviceLimit(user.userId);
       if (deviceLimit !== null && sessions.length - (currentFamilyId ? 1 : 0) >= deviceLimit) {
         // Return normally so any chosen logout commits even if more devices still need removal.
-        return { blocked: true as const, sessions };
+        return { blocked: true as const, sessions, deviceLimit };
       }
       if (currentFamilyId) {
         await client.query(
@@ -1018,8 +1018,8 @@ export class LocalAuthService {
     if (result.blocked) {
       throw new ConflictException({
         code: "DEVICE_LIMIT_REACHED",
-        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${MAX_ACTIVE_DEVICES} devices. Log out a device to continue.`,
-        maxActiveDevices: MAX_ACTIVE_DEVICES,
+        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${result.deviceLimit} devices. Log out a device to continue.`,
+        maxActiveDevices: result.deviceLimit,
         sessions: result.sessions,
       });
     }
@@ -1076,7 +1076,7 @@ export class LocalAuthService {
   }
 
   private deviceLimit(userId: string) {
-    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""));
+    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""), configuredDeviceLimit(this.config.get<string>("AUTH_MAX_ACTIVE_DEVICES", "")));
   }
 
   private assertLocalAuthAvailable() {

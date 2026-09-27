@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sessionDeviceLimit } from "./session-policy";
+import { configuredDeviceLimit, sessionDeviceLimit } from "./session-policy";
 import { validateRuntimeConfig } from "../config/runtime-config";
 
 const user = "81000000-0000-4000-8000-000000000001";
@@ -16,5 +16,14 @@ describe("test account device policy", () => {
       expect(() => validateRuntimeConfig({ ...base, AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS: ids })).toThrow("explicit user UUIDs");
     }
     expect(validateRuntimeConfig({ ...base, AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS: user })).toBeTruthy();
+  });
+
+  it("reads the deployment's limit, including no limit for a trial", () => {
+    expect(configuredDeviceLimit("")).toBe(2);
+    expect(configuredDeviceLimit("5")).toBe(5);
+    expect(configuredDeviceLimit(" Unlimited ")).toBeNull();
+    expect(configuredDeviceLimit("0")).toBe(2);
+    expect(configuredDeviceLimit("many")).toBe(2);
+    expect(sessionDeviceLimit("someone", "", configuredDeviceLimit("unlimited"))).toBeNull();
   });
 });
