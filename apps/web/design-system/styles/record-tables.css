@@ -25,7 +25,10 @@
   }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr:not(.wd-grouped-table-heading):hover > td { background: var(--wd-record-hover); }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr[data-selected="true"] > td { background: var(--wd-record-selected); }
-  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-badge { border: 0; border-radius: var(--wd-radius-2xs); padding: var(--wd-space-0-5) var(--wd-space-1-5); min-block-size: 22px; font-size: var(--wd-text-2xs); line-height: 1.25; white-space: nowrap; }
+  /* Nothing inside a cell truncates: page-level ellipsis rules give way to wrapping. */
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr > td :is(span, strong, small, b, div, p, a, time):not(.wd-button, .wd-icon-button) { white-space: normal; text-overflow: clip; overflow-wrap: break-word; }
+  /* Chips wrap instead of clipping. */
+  table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) :is(.wd-badge, .wd-tag) { border: 0; border-radius: var(--wd-radius-2xs); padding: var(--wd-space-0-5) var(--wd-space-1-5); min-block-size: 22px; block-size: auto; max-inline-size: 100%; font-size: var(--wd-text-2xs); line-height: 1.25; white-space: normal; overflow-wrap: break-word; text-align: start; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-grid-value { inline-size: 100%; min-block-size: 30px; margin: 0; padding: 0; font: inherit; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-grid-value[data-primary="true"] { font-weight: 500; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) .wd-sort-button { min-block-size: var(--wd-record-header-height); gap: var(--wd-space-1-5); font: inherit; }
@@ -272,7 +275,7 @@
     box-shadow: none;
     font-size: var(--wd-text-sm);
     color: var(--wd-color-text);
-    white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+    white-space: normal; overflow-wrap: break-word; text-overflow: clip;
   }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > :is(thead, tbody, tfoot) > tr > :is(th, td):last-child { border-inline-end: 0; }
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) > tbody > tr:last-child > :is(th, td) { border-block-end: 0; }
