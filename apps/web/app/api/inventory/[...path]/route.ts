@@ -6,6 +6,7 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && ["stock", "transfers", "locations"].includes(path[0])) return ["GET", "POST"].includes(method);
   if (path.length === 1 && path[0] === "movements") return method === "GET";
   if (path.length === 2 && path[0] === "transfers" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
+  if (path.length === 2 && path[0] === "adjustments" && UUID.test(path[1])) return method === "POST";
   return false;
 }
 

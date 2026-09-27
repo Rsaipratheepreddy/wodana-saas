@@ -24,6 +24,8 @@ export function inventoryApi(workspaceId: string) {
     transfer: (id: string) => request<TransferState>(at(`transfers/${id}`)),
     send: (input: Record<string, unknown>) => request<TransferState>(at("transfers"), "POST", input),
     transferCommand: (id: string, action: string, input: Record<string, unknown> = {}) => request<TransferState>(at(`transfers/${id}`), "POST", { ...input, action }),
+    /** Applies or refuses a stock correction waiting for approval. */
+    decideAdjustment: (id: string, action: "approve" | "reject", note = "") => request<StockState>(at(`adjustments/${id}`), "POST", { action, note }),
     locations: () => request<{ locations: StockLocation[]; canManage: boolean }>(at("locations")),
     saveLocation: (input: Record<string, unknown>) => request<{ locations: StockLocation[] }>(at("locations"), "POST", input),
   };

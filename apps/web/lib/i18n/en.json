@@ -2518,5 +2518,14 @@
   "Pack size, line {number}": "Pack size, line {number}",
   "Pack size": "Pack size",
   "Minimum, line {number}": "Minimum, line {number}",
-  "Minimum": "Minimum"
+  "Minimum": "Minimum",
+  "Value": "Value",
+  "{price} each": "{price} each",
+  "Corrections waiting for approval": "Corrections waiting for approval",
+  "Counted {counted} ({difference}), worth {value}: {reason} — {name}": "Counted {counted} ({difference}), worth {value}: {reason} — {name}",
+  "Someone else approves it.": "Someone else approves it.",
+  "Worth {value}": "Worth {value}",
+  "Refuse the correction": "Refuse the correction",
+  "Corrections needing approval": "Corrections needing approval",
+  "A stock count that changes more than this value waits for someone else. Empty: none do.": "A stock count that changes more than this value waits for someone else. Empty: none do."
 }

@@ -1814,6 +1814,55 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("values stock at moving average cost in the workspace's currency: deliveries converted at the day's rate, moves carrying their cost, and big corrections approved by someone else", async () => {
+    await world(async (w) => {
+      const { core, projectId, company, vendor, buyer, manager, access, all } = await buying(w);
+      const counter = new InventoryService(access(w.designer, all));
+      const checker = new InventoryService(access(w.manager, all));
+      await w.client.query(`INSERT INTO exchange_rates (id, workspace_id, base_currency, quote_currency, rate, effective_at, source, is_manual, created_by) VALUES ($1, $2, 'EUR', 'AED', 4, '2026-09-01', 'manual', true, $3)`,
+        [randomUUID(), w.workspaceId, w.manager]);
+      await w.client.query("UPDATE workspace_purchasing_settings SET stock_adjust_approval_value = 100 WHERE workspace_id = $1", [w.workspaceId]);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, version: detail.project.version });
+      const need = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((item) => item.title === "Oak veneer")!;
+      // An Italian supplier invoices in euros: 10 sheets at 25 EUR = 100 AED each at a rate of 4.
+      const euro = randomUUID();
+      const saved = await buyer.suppliers.save(actor, w.workspaceId, { id: euro, version: 0, name: "Legno Srl", entityIds: [company], currency: "EUR" });
+      await manager.suppliers.approve(actor, w.workspaceId, euro, { version: saved.suppliers.find((item) => item.id === euro)!.version, approval: "approved" });
+      const first = await placeOrder(buyer.orders, w.workspaceId, euro, [{ source: "material", materialItemId: need.sourceId, quantity: "10", unitPrice: "25", taxRate: "0" }]);
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: first.order.id, place: "warehouse", receivedOn: "2026-09-26", lines: [{ orderLineId: first.lines[0].id, received: "10" }] });
+      // Ten more locally at 130 AED: the average is 115.
+      const second = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: need.sourceId, quantity: "10", unitPrice: "130", taxRate: "0" }]);
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: second.order.id, place: "warehouse", receivedOn: "2026-09-27", lines: [{ orderLineId: second.lines[0].id, received: "10" }] });
+      let stock = await counter.stock(actor, w.workspaceId);
+      const oak = stock.rows[0];
+      expect([oak.onHand, oak.value, oak.averageCost, oak.currency]).toEqual(["20.0000", "2300.0000", "115.0000", "AED"]);
+
+      // Moved to another store: the cost goes with it.
+      const store = randomUUID();
+      await counter.saveLocation(actor, w.workspaceId, { id: store, kind: "warehouse", name: "Al Quoz store" });
+      const move = randomUUID();
+      const moveState = await counter.send(actor, w.workspaceId, { id: move, fromLocationId: oak.locationId, toLocationId: store, lines: [{ itemId: oak.itemId, projectId, quantity: "4" }] });
+      await counter.transferCommand(actor, w.workspaceId, move, { action: "receive", lines: [{ id: moveState.lines[0].id, received: "4" }] });
+      stock = await counter.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => [row.locationName, row.onHand, row.value])).toEqual([["Al Quoz store", "4.0000", "460.0000"], ["Warehouse", "16.0000", "1840.0000"]]);
+
+      // A count 2 short is worth 230, over the 100 limit: it waits for someone else.
+      stock = await counter.command(actor, w.workspaceId, { id: randomUUID(), action: "count", itemId: oak.itemId, locationId: oak.locationId, projectId, counted: "14", reason: "Two sheets water-damaged" });
+      expect(stock.rows.find((row) => row.locationName === "Warehouse")!.onHand).toBe("16.0000");
+      expect(stock.pendingAdjustments.map((request) => [request.difference, request.value])).toEqual([["-2.0000", "230.0000"]]);
+      const requestId = stock.pendingAdjustments[0].id;
+      await expect(counter.decideAdjustment(actor, w.workspaceId, requestId, { action: "approve" })).rejects.toThrow(/Someone else approves/);
+      await expect(checker.decideAdjustment(actor, w.workspaceId, requestId, { action: "reject" })).rejects.toThrow(/Say why/);
+      stock = await checker.decideAdjustment(actor, w.workspaceId, requestId, { action: "approve" });
+      expect(stock.rows.find((row) => row.locationName === "Warehouse")).toMatchObject({ onHand: "14.0000", value: "1610.0000" });
+      expect(stock.pendingAdjustments).toEqual([]);
+      // A small count difference applies straight away.
+      stock = await counter.command(actor, w.workspaceId, { id: randomUUID(), action: "count", itemId: oak.itemId, locationId: store, projectId, counted: "3.5", reason: "Half a sheet offcut" });
+      expect(stock.rows.find((row) => row.locationName === "Al Quoz store")).toMatchObject({ onHand: "3.5000", value: "402.5000" });
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

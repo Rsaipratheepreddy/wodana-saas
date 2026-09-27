@@ -100,6 +100,34 @@ export async function move(db: Db, workspaceId: string, movement: Movement) {
   }
 }
 
+/**
+ * An amount in the workspace's currency: as it is, or converted at the latest rate on or before the day
+ * (either direction of the pair). Null when there's no rate to use.
+ */
+export async function inWorkspaceCurrency(db: Db, workspaceId: string, amount: Dec, currency: string, onDay: string) {
+  const home = (await db.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency;
+  if (!home) return null;
+  if (currency === home) return { amount, currency: home };
+  const rate = (await db.query<{ rate: string; direct: boolean }>(
+    `SELECT rate::text AS rate, base_currency = $2 AS direct FROM exchange_rates
+      WHERE workspace_id = $1 AND ((base_currency = $2 AND quote_currency = $3) OR (base_currency = $3 AND quote_currency = $2)) AND rate > 0
+        AND effective_at < ($4::date + 1)
+      ORDER BY effective_at DESC LIMIT 1`, [workspaceId, currency, home, onDay])).rows[0];
+  if (!rate) return null;
+  return { amount: rate.direct ? amount.mul(rate.rate) : amount.div(rate.rate), currency: home };
+}
+
+/** The average cost of one item, place and owner now (in the workspace's currency), or null when it has none. */
+export async function averageCost(db: Db, workspaceId: string, itemId: string, locationId: string, projectId: string | null) {
+  const row = (await db.query<{ onHand: string; value: string; currency: string }>(
+    `SELECT balance.on_hand::text AS "onHand", balance.value::text AS value, workspace.default_currency AS currency
+       FROM stock_balances balance JOIN workspaces workspace ON workspace.id = balance.workspace_id
+      WHERE balance.workspace_id = $1 AND balance.item_id = $2 AND balance.location_id = $3 AND balance.project_id IS NOT DISTINCT FROM $4::uuid`,
+    [workspaceId, itemId, locationId, projectId])).rows[0];
+  if (!row || Dec.of(row.onHand).cmp(0) <= 0) return null;
+  return { unitCost: Dec.of(row.value).div(row.onHand).round(4).toFixed(4), currency: row.currency };
+}
+
 /** What's on hand for one item, place and owner, locked for the rest of the command. */
 export async function onHand(db: Db, workspaceId: string, itemId: string, locationId: string, projectId: string | null) {
   const row = (await db.query<{ onHand: string }>(
@@ -111,6 +139,8 @@ export async function onHand(db: Db, workspaceId: string, itemId: string, locati
 export type StockRow = {
   itemId: string; itemName: string; itemCode: string; unit: string; catalogItemId: string | null; locationId: string; locationName: string; locationKind: string;
   projectId: string | null; projectReference: string | null; projectName: string | null; onHand: string; updatedAt: string;
+  /** Value at moving average cost, and that average, in the workspace's currency. */
+  value: string; averageCost: string | null; currency: string;
 };
 
 export async function readStock(db: Db, workspaceId: string, filter: { projectId?: string } = {}): Promise<StockRow[]> {
@@ -120,8 +150,10 @@ export async function readStock(db: Db, workspaceId: string, filter: { projectId
   return (await db.query<StockRow>(
     `SELECT item.id AS "itemId", item.name AS "itemName", item.code AS "itemCode", item.unit, item.catalog_item_id AS "catalogItemId",
             location.id AS "locationId", location.name AS "locationName", location.kind AS "locationKind",
-            project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", balance.on_hand::text AS "onHand", balance.updated_at AS "updatedAt"
+            project.id AS "projectId", project.reference AS "projectReference", project.name AS "projectName", balance.on_hand::text AS "onHand", balance.updated_at AS "updatedAt",
+            balance.value::text AS value, CASE WHEN balance.on_hand > 0 THEN round(balance.value / balance.on_hand, 4)::text END AS "averageCost", workspace.default_currency AS currency
        FROM stock_balances balance
+       JOIN workspaces workspace ON workspace.id = balance.workspace_id
        JOIN stock_items item ON item.workspace_id = balance.workspace_id AND item.id = balance.item_id
        JOIN stock_locations location ON location.workspace_id = balance.workspace_id AND location.id = balance.location_id
        LEFT JOIN delivery_projects project ON project.workspace_id = balance.workspace_id AND project.id = balance.project_id
@@ -133,6 +165,8 @@ export type MovementRow = {
   id: string; batchId: string; kind: MovementKind; quantity: string; itemId: string; itemName: string; unit: string; locationName: string; projectReference: string | null;
   forProjectReference: string | null; reason: string; movedOn: string; byName: string; at: string; receiptNumber: number | null; orderNumber: string | null; transferNumber: number | null;
   returnNumber: number | null;
+  /** What the movement was worth: its quantity at its cost (in the workspace's currency), when it has one. */
+  unitCost: string | null; currency: string | null;
 };
 
 export async function readMovements(db: Db, workspaceId: string, filter: { itemId?: string; locationId?: string; projectId?: string; limit?: number } = {}): Promise<MovementRow[]> {
@@ -145,7 +179,7 @@ export async function readMovements(db: Db, workspaceId: string, filter: { itemI
     `SELECT movement.id, movement.batch_id AS "batchId", movement.kind, movement.quantity::text AS quantity, item.id AS "itemId", item.name AS "itemName", item.unit,
             location.name AS "locationName", owner.reference AS "projectReference", booked.reference AS "forProjectReference", movement.reason, movement.moved_on::text AS "movedOn",
             person.display_name AS "byName", movement.created_at AS at, receipt.number AS "receiptNumber", coalesce(purchase.number, returned.number) AS "orderNumber", transfer.number AS "transferNumber",
-            back.number AS "returnNumber"
+            back.number AS "returnNumber", movement.unit_cost::text AS "unitCost", movement.currency
        FROM stock_movements movement
        JOIN stock_items item ON item.workspace_id = movement.workspace_id AND item.id = movement.item_id
        JOIN stock_locations location ON location.workspace_id = movement.workspace_id AND location.id = movement.location_id
@@ -220,8 +254,10 @@ export async function stockFromReceipt(db: Db, workspaceId: string, input: { rec
     if (!origin || origin.supply === "subcontract" || origin.supply === "site_work") continue;
     // Bought in one unit, kept in the catalog item's (boxes in, pieces kept): the quantity converts and the cost follows.
     const { itemId, factor } = await stockItemInCatalogUnit(db, workspaceId, { catalogItemId: origin.catalogItemId, name: origin.name, unit: origin.unit, code: origin.code });
-    const unitCost = Dec.of(origin.quantity).isZero() ? null : Dec.of(origin.net).div(origin.quantity).div(factor).round(4).toFixed(4);
+    // The line's net price per stock unit, in the workspace's currency (at the rate on the day it arrived).
+    const cost = Dec.of(origin.quantity).isZero() ? null : await inWorkspaceCurrency(db, workspaceId, Dec.of(origin.net).div(origin.quantity).div(factor), receipt.currency, receipt.receivedOn);
+    const unitCost = cost ? cost.amount.round(4).toFixed(4) : null;
     await move(db, workspaceId, { batchId, itemId, locationId: receipt.locationId, projectId: origin.projectId, kind: "receive", quantity: Dec.of(line.accepted).mul(factor).round(4).toString(),
-      forProjectId: origin.projectId, unitCost, currency: unitCost ? receipt.currency : null, receiptLineId: line.receiptLineId, movedOn: receipt.receivedOn, actorId: input.actorId });
+      forProjectId: origin.projectId, unitCost, currency: cost ? cost.currency : null, receiptLineId: line.receiptLineId, movedOn: receipt.receivedOn, actorId: input.actorId });
   }
 }

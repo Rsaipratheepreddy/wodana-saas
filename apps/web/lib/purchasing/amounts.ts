@@ -64,3 +64,8 @@ export function subtractExact(a: string, b: string) {
   const left = (parse(a || "0") ?? 0n) - (parse(b || "0") ?? 0n);
   return left <= 0n ? "0" : fixed(left, 4).replace(/\.?0+$/, "");
 }
+
+/** Exact a × b of decimal strings, to four places ("2" × "115.5" = "231"). */
+export function multiplyExact(a: string, b: string) {
+  return fixed(mul(parse(a || "0") ?? 0n, parse(b || "0") ?? 0n), 4).replace(/\.?0+$/, "") || "0";
+}

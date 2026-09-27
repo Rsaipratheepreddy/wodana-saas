@@ -34,6 +34,8 @@
 .lineHead > :nth-child(n+2), .line > [role="cell"]:nth-child(n+2) { text-align: end; }
 .lineNote { grid-column: 1 / -1; }
 
+.pending { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
+.subhead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
 .places { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
 .places > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .places > li > .nameCell { flex: 1; }

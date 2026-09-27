@@ -7,7 +7,7 @@ import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { readLocations, type StockLocation } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { move, onHand, readMovements, readStock, readTransfer, readTransfers, stockItemFor } from "./stock";
+import { averageCost, move, onHand, readMovements, readStock, readTransfer, readTransfers, stockItemFor } from "./stock";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -77,12 +77,28 @@ export class InventoryService {
           await need("stock.adjust", "You can't correct stock.");
           const counted = amount(body.counted, "Counted");
           const difference = Dec.of(counted).sub(have);
+          let pending = false;
           if (!difference.isZero()) {
             if (!reason) throw new BadRequestException("Say why the count is different.");
-            await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "adjust", quantity: difference.toString(), forProjectId: owner, reason: `Count: ${reason}` });
-            await this.tellAdjusters(client, workspaceId, user.userId, batchId, location.name, `${difference.cmp(0) > 0 ? "+" : ""}${difference.toString()} · ${reason}`);
+            // A correction worth more than the workspace's limit waits for someone else's approval.
+            const average = await averageCost(client, workspaceId, itemId, location.id, owner);
+            const worth = average ? difference.abs().mul(average.unitCost).round(4) : Dec.of(0);
+            const limit = (await client.query<{ limit: string | null }>(`SELECT stock_adjust_approval_value::text AS "limit" FROM workspace_purchasing_settings WHERE workspace_id = $1`,
+              [workspaceId])).rows[0]?.limit ?? null;
+            if (limit !== null && worth.cmp(limit) > 0) {
+              pending = true;
+              await client.query(
+                `INSERT INTO stock_adjustment_requests (id, workspace_id, item_id, location_id, project_id, counted, difference, value, reason, requested_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [batchId, workspaceId, itemId, location.id, owner, counted, difference.toString(), worth.toFixed(4), reason, user.userId]);
+              const item = (await client.query<{ name: string; unit: string }>(`SELECT name, unit FROM stock_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, itemId])).rows[0];
+              await this.tell(client, workspaceId, "stock.adjustment_needs_approval", await this.holders(client, workspaceId, ["stock.adjust"]), user.userId, `${batchId}:approval`,
+                { transfer: "", from: "", to: location.name, note: `${counted} ${item.unit} of ${item.name} (was ${have.toString()}): ${reason}` }, null);
+            } else {
+              await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "adjust", quantity: difference.toString(), forProjectId: owner, reason: `Count: ${reason}` });
+              await this.tellAdjusters(client, workspaceId, user.userId, batchId, location.name, `${difference.cmp(0) > 0 ? "+" : ""}${difference.toString()} · ${reason}`);
+            }
           }
-          audit = { counted, was: have.toString(), difference: difference.toString(), owner, reason };
+          audit = { counted, was: have.toString(), difference: difference.toString(), owner, reason, pending };
         } else {
           await need("stock.manage", "You can't move stock.");
           const quantity = amount(body.quantity, "Quantity");
@@ -102,20 +118,27 @@ export class InventoryService {
               `SELECT coalesce(sum(-quantity) FILTER (WHERE kind = 'issue'), 0) - coalesce(sum(quantity) FILTER (WHERE kind = 'return'), 0) AS net
                  FROM stock_movements WHERE workspace_id = $1 AND item_id = $2 AND for_project_id = $3 AND kind IN ('issue', 'return')`, [workspaceId, itemId, fromProject])).rows[0].net);
             if (Dec.of(quantity).cmp(issued) > 0) throw new ConflictException(issued.cmp(0) > 0 ? `Only ${issued.toString()} was issued to that project.` : "None of this was issued to that project.");
-            await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "return", quantity, forProjectId: fromProject, reason });
+            // What comes back is valued at what it was last issued at.
+            const issuedAt = (await client.query<{ unitCost: string | null; currency: string | null }>(
+              `SELECT unit_cost::text AS "unitCost", currency FROM stock_movements WHERE workspace_id = $1 AND item_id = $2 AND for_project_id = $3 AND kind = 'issue' AND unit_cost IS NOT NULL
+                ORDER BY seq DESC LIMIT 1`, [workspaceId, itemId, fromProject])).rows[0];
+            await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "return", quantity, forProjectId: fromProject, reason, unitCost: issuedAt?.unitCost, currency: issuedAt?.currency });
             audit = { quantity, owner, fromProject, reason };
           } else if (action === "allocate") {
             if (owner) throw new ConflictException("That stock is already for a project.");
             const project = await this.runningProject(client, workspaceId, body.forProjectId, false);
             takes(quantity);
-            await move(client, workspaceId, { ...base, itemId, projectId: null, kind: "allocate", quantity: Dec.of(quantity).neg().toString(), forProjectId: project, reason });
-            await move(client, workspaceId, { ...base, itemId, projectId: project, kind: "allocate", quantity, forProjectId: project, reason });
+            // Stock changes owner at the cost it has.
+            const cost = await averageCost(client, workspaceId, itemId, location.id, null);
+            await move(client, workspaceId, { ...base, itemId, projectId: null, kind: "allocate", quantity: Dec.of(quantity).neg().toString(), forProjectId: project, reason, unitCost: cost?.unitCost, currency: cost?.currency });
+            await move(client, workspaceId, { ...base, itemId, projectId: project, kind: "allocate", quantity, forProjectId: project, reason, unitCost: cost?.unitCost, currency: cost?.currency });
             audit = { quantity, project };
           } else if (action === "release") {
             if (!owner) throw new ConflictException("That's already free stock.");
             takes(quantity);
-            await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "release", quantity: Dec.of(quantity).neg().toString(), forProjectId: owner, reason });
-            await move(client, workspaceId, { ...base, itemId, projectId: null, kind: "release", quantity, forProjectId: owner, reason });
+            const cost = await averageCost(client, workspaceId, itemId, location.id, owner);
+            await move(client, workspaceId, { ...base, itemId, projectId: owner, kind: "release", quantity: Dec.of(quantity).neg().toString(), forProjectId: owner, reason, unitCost: cost?.unitCost, currency: cost?.currency });
+            await move(client, workspaceId, { ...base, itemId, projectId: null, kind: "release", quantity, forProjectId: owner, reason, unitCost: cost?.unitCost, currency: cost?.currency });
             audit = { quantity, owner };
           } else throw new BadRequestException("Unknown action.");
         }
@@ -205,9 +228,11 @@ export class InventoryService {
             short.push(`${line.itemName} ${Dec.of(line.quantity).sub(received).toString()}: ${lossReason}`);
           }
           await client.query(`UPDATE stock_transfer_lines SET received = $3, loss_reason = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, received, Dec.of(received).cmp(line.quantity) < 0 ? lossReason : ""]);
-          if (Dec.of(received).cmp(0) > 0)
+          if (Dec.of(received).cmp(0) > 0) {
+            const sent = await this.sentCost(client, workspaceId, transferId, line.itemId, line.projectId);
             await move(client, workspaceId, { batchId: transferId, itemId: line.itemId, locationId: transfer.toLocationId, projectId: line.projectId, kind: "transfer_in", quantity: Dec.of(received).toString(),
-              forProjectId: line.projectId, transferId, movedOn: receivedOn, actorId: user.userId });
+              forProjectId: line.projectId, transferId, movedOn: receivedOn, actorId: user.userId, unitCost: sent?.unitCost, currency: sent?.currency });
+          }
         }
         await client.query(`UPDATE stock_transfers SET status = 'received', received_on = $3, received_by = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, transferId, receivedOn, user.userId]);
         if (short.length) await this.tell(client, workspaceId, "stock.transfer_short", [transfer.sentBy], user.userId, `${transferId}:short`,
@@ -217,9 +242,11 @@ export class InventoryService {
         if (!(await this.access.hasPermission(client, workspaceId, user.userId, "stock.manage"))) throw new ForbiddenException("You can't cancel moves.");
         const reason = required(body.reason, 500, "Say why the move is cancelled.");
         const today = await this.today(client, workspaceId);
-        for (const line of lines)
+        for (const line of lines) {
+          const sent = await this.sentCost(client, workspaceId, transferId, line.itemId, line.projectId);
           await move(client, workspaceId, { batchId: transferId, itemId: line.itemId, locationId: transfer.fromLocationId, projectId: line.projectId, kind: "transfer_in", quantity: line.quantity,
-            forProjectId: line.projectId, transferId, reason, movedOn: today, actorId: user.userId });
+            forProjectId: line.projectId, transferId, reason, movedOn: today, actorId: user.userId, unitCost: sent?.unitCost, currency: sent?.currency });
+        }
         await client.query(`UPDATE stock_transfers SET status = 'cancelled', cancel_reason = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, transferId, reason]);
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_cancelled", entityType: "stock_transfer", entityId: transferId, after: { reason } });
       } else throw new BadRequestException("Unknown action.");
@@ -262,7 +289,38 @@ export class InventoryService {
     }));
   }
 
+  /** A stock correction waiting for approval: someone other than whoever counted applies it or refuses it (with why). */
+  decideAdjustment(actor: RequestActor, workspaceId: string, requestId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "stock.adjust", async (client, user) => {
+      const request = (await client.query<{ itemId: string; locationId: string; projectId: string | null; difference: string; reason: string; status: string; requestedBy: string }>(
+        `SELECT item_id AS "itemId", location_id AS "locationId", project_id AS "projectId", difference::text AS difference, reason, status, requested_by AS "requestedBy"
+           FROM stock_adjustment_requests WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, uuid(requestId, "Correction")])).rows[0];
+      if (!request) throw new NotFoundException("Correction not found.");
+      if (request.status !== "pending") throw new ConflictException("This correction is already decided.");
+      if (request.requestedBy === user.userId) throw new ForbiddenException("Someone else approves a correction you counted.");
+      const approve = body.action === "approve";
+      if (!approve && body.action !== "reject") throw new BadRequestException("Unknown action.");
+      const note = text(body.note, 500, "Note");
+      if (!approve && !note) throw new BadRequestException("Say why it's refused.");
+      if (approve)
+        await move(client, workspaceId, { batchId: randomUUID(), itemId: request.itemId, locationId: request.locationId, projectId: request.projectId, kind: "adjust", quantity: request.difference,
+          forProjectId: request.projectId, reason: `Count: ${request.reason}`, movedOn: await this.today(client, workspaceId), actorId: user.userId });
+      await client.query(`UPDATE stock_adjustment_requests SET status = $3, decided_by = $4, decided_at = now(), decision_note = $5 WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, requestId, approve ? "approved" : "rejected", user.userId, note]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: approve ? "stock.adjustment_approved" : "stock.adjustment_rejected", entityType: "stock_item", entityId: request.itemId,
+        after: { requestId, note } });
+      return this.state(client, workspaceId, user.userId);
+    });
+  }
+
   // ---------- helpers ----------
+  /** The cost a move's line left with (in the workspace's currency), so it arrives carrying the same. */
+  private async sentCost(client: Db, workspaceId: string, transferId: string, itemId: string, projectId: string | null) {
+    return (await client.query<{ unitCost: string; currency: string }>(
+      `SELECT unit_cost::text AS "unitCost", currency FROM stock_movements WHERE workspace_id = $1 AND transfer_id = $2 AND item_id = $3 AND project_id IS NOT DISTINCT FROM $4::uuid
+          AND kind = 'transfer_out' AND unit_cost IS NOT NULL ORDER BY seq LIMIT 1`, [workspaceId, transferId, itemId, projectId])).rows[0] ?? null;
+  }
+
   private async firstTime(client: Db, workspaceId: string, id: string, action: string, actorId: string) {
     return Boolean((await client.query(`INSERT INTO stock_commands (workspace_id, id, action, actor_id) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, id) DO NOTHING`,
       [workspaceId, id, action.slice(0, 24), actorId])).rowCount);
@@ -275,6 +333,19 @@ export class InventoryService {
       projects: (await client.query<{ id: string; reference: string; name: string }>(
         `SELECT id, reference, name FROM delivery_projects WHERE workspace_id = $1 AND status IN ('active', 'on_hold') ORDER BY reference`, [workspaceId])).rows,
       inTransit: (await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM stock_transfers WHERE workspace_id = $1 AND status = 'in_transit'`, [workspaceId])).rows[0].count,
+      pendingAdjustments: (await client.query<{ id: string; itemName: string; unit: string; locationName: string; projectReference: string | null; counted: string; difference: string; value: string;
+        reason: string; requestedBy: string; requestedByName: string; requestedAt: string }>(
+        `SELECT request.id, item.name AS "itemName", item.unit, location.name AS "locationName", project.reference AS "projectReference", request.counted::text AS counted,
+                request.difference::text AS difference, request.value::text AS value, request.reason, request.requested_by AS "requestedBy", person.display_name AS "requestedByName",
+                request.requested_at AS "requestedAt"
+           FROM stock_adjustment_requests request
+           JOIN stock_items item ON item.workspace_id = request.workspace_id AND item.id = request.item_id
+           JOIN stock_locations location ON location.workspace_id = request.workspace_id AND location.id = request.location_id
+           LEFT JOIN delivery_projects project ON project.workspace_id = request.workspace_id AND project.id = request.project_id
+           JOIN users person ON person.id = request.requested_by
+          WHERE request.workspace_id = $1 AND request.status = 'pending' ORDER BY request.requested_at`, [workspaceId])).rows,
+      me: userId,
+      currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
       ...(await this.rights(client, workspaceId, userId)),
     };
   }

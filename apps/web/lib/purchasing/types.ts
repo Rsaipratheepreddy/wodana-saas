@@ -35,7 +35,7 @@ export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
 export type PurchasingSettings = {
   approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
-  requireSitePhoto: boolean; version: number;
+  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; version: number;
 };
 
 /** Something a running project still needs to order. */

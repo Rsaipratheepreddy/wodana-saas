@@ -358,6 +358,13 @@
       "when": 1793707200000,
       "tag": "0050_rate_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793793600000,
+      "tag": "0051_stock_costing",
+      "breakpoints": true
     }
   ]
 }

@@ -79,9 +79,12 @@ export class OrdersService {
       const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto") => (body[key] === undefined ? current[key] : body[key] === true);
       const tolerance = body.receiveTolerancePercent === undefined ? current.receiveTolerancePercent : String(body.receiveTolerancePercent || "0");
       if (!NUMBER.test(tolerance) || Dec.of(tolerance).cmp(50) > 0) throw new BadRequestException("Over-delivery is a percentage from 0 to 50.");
+      const adjustLimit = body.stockAdjustApprovalValue === undefined ? current.stockAdjustApprovalValue
+        : body.stockAdjustApprovalValue === null || body.stockAdjustApprovalValue === "" ? null : String(body.stockAdjustApprovalValue);
+      if (adjustLimit !== null && !NUMBER.test(adjustLimit)) throw new BadRequestException("Enter the value above which stock corrections need approval, or leave it empty.");
       await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
-        receive_tolerance_percent = $6, require_site_photo = $8, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
-        [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto")]);
+        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, version = version + 1, updated_by = $7, updated_at = now() WHERE workspace_id = $1`,
+        [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });

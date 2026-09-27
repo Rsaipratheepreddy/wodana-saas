@@ -704,7 +704,12 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Notices:** a move is on its way (receivers), a move arrived short (the sender), and stock was corrected (people who adjust stock).
 - **Permissions:** `stock.view`, `stock.manage` and `stock.adjust`.
 - **Units:** goods bought in another unit than the catalog item's (boxes of hinges kept as pieces) go into stock converted through the catalog's conversions and standard units (common ways of writing units, such as m² or nos, are understood), with the cost per stock unit; returns take out the same share.
-- Still to come: costing (moving average) and payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
+- **Value:** stock is valued at moving average cost per item, place and owner, in the workspace's currency.
+  - Goods in carry their cost: a delivery at its order price converted at that day's exchange rate, opening stock at the cost entered, a move at the cost it left with, a project return at the cost it was issued at.
+  - Goods out leave at the average; taking out everything takes out all the value.
+  - The stock grid shows each row's value and cost each, with the total worth; history shows each change's value.
+- **Corrections needing approval:** a count whose difference is worth more than the workspace's limit (Settings → Purchasing → Stock) waits. Someone else with `stock.adjust` approves it, or refuses it with why; they are told when it waits.
+- Still to come: payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
 
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.

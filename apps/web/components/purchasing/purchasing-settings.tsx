@@ -13,7 +13,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
@@ -21,7 +21,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     const value = next.settings.approvalThreshold;
     setForm({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
       signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
-      tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto });
+      tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto,
+      adjustLimit: next.settings.stockAdjustApprovalValue ? quantityText(next.settings.stockAdjustApprovalValue) : "" });
   };
   const load = useCallback(async () => {
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -35,7 +36,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     setBusy(true); setError("");
     try {
       const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved,
-        requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto });
+        requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto,
+        stockAdjustApprovalValue: form.adjustLimit || null });
       accept({ ...data, settings });
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
@@ -72,6 +74,12 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       <SettingsRow label={t("Over-delivery allowed")} hint={t("How much more than ordered can be received on a line.")}>
         <TextInput aria-label={t("Over-delivery allowed")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix="%" value={form.tolerance}
           onChange={(value) => setForm({ ...form, tolerance: value.replace(/[^\d.]/g, "") })} />
+      </SettingsRow>
+    </SettingsSection>
+    <SettingsSection id="stock" title={t("Stock")}>
+      <SettingsRow label={t("Corrections needing approval")} hint={t("A stock count that changes more than this value waits for someone else. Empty: none do.")}>
+        <TextInput aria-label={t("Corrections needing approval")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix={data.currency ?? undefined} value={form.adjustLimit}
+          onChange={(value) => setForm({ ...form, adjustLimit: value.replace(/[^\d.]/g, "") })} />
       </SettingsRow>
     </SettingsSection>
     {readOnly ? null : <div className={styles.actions}>

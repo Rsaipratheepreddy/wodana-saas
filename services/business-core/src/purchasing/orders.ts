@@ -212,14 +212,16 @@ export async function readOrderEvents(db: Db, workspaceId: string, orderId: stri
 export type PurchasingSettings = {
   approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
   /** A delivery received at a project's site shows as missing its photo until one is added. */
-  requireSitePhoto: boolean; version: number;
+  requireSitePhoto: boolean;
+  /** Stock corrections worth more than this (in the workspace's currency) wait for a second person; none when empty. */
+  stockAdjustApprovalValue: string | null; version: number;
 };
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
   await db.query(`INSERT INTO workspace_purchasing_settings (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING`, [workspaceId]);
   return (await db.query<PurchasingSettings>(
     `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
-            require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", version
+            require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue", version
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

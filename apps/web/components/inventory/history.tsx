@@ -7,6 +7,10 @@ import type { InventoryApi } from "@/lib/inventory/client";
 import type { MovementKind, MovementRow } from "@/lib/inventory/types";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
+import { multiplyExact } from "@/lib/purchasing/amounts";
+
+/** A movement's worth: its quantity at its cost, exactly. */
+const movementValue = (quantity: string, unitCost: string) => multiplyExact(quantity, unitCost);
 import styles from "./inventory.module.css";
 
 /** Every change to stock, newest first: what moved, where, for whom, why, and who did it. The ledger never changes. */
@@ -34,6 +38,8 @@ export function History({ api, itemId, onClearItem, refreshKey }: { api: Invento
     { id: "change", header: t("Change"), accessorFn: (row) => Number(row.quantity), size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.number} data-sign={Number(row.quantity) < 0 ? "out" : "in"}>{`${Number(row.quantity) > 0 ? "+" : ""}${quantityText(row.quantity)} ${row.unit}`.trim()}</span>
       <small>{kinds[row.kind]}</small></span> } },
+    { id: "value", header: t("Value"), accessorFn: (row) => (row.unitCost ? Number(row.quantity) * Number(row.unitCost) : 0), size: 130, meta: { align: "end", mobileHidden: true,
+      renderCell: (row) => (row.unitCost && row.currency ? <span className={styles.number}>{format.money(movementValue(row.quantity, row.unitCost), row.currency)}</span> : "—") } },
     { id: "place", header: t("Place"), accessorFn: (row) => row.locationName, size: 160 },
     { id: "for", header: t("For"), accessorFn: (row) => row.forProjectReference ?? row.projectReference ?? "", size: 130, meta: { renderCell: (row) => row.forProjectReference ?? row.projectReference ?? <span className={styles.muted}>{t("Free stock")}</span> } },
     { id: "source", header: t("From"), accessorFn: (row) => source(row), size: 240, meta: { mobileHidden: true, renderCell: (row) => source(row) } },

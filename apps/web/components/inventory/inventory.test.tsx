@@ -14,10 +14,11 @@ const site = { id: "s1", kind: "site" as const, name: "PRJ-0007 · Villa 12", pr
 const stock = (patch: Partial<StockState> = {}): StockState => ({
   rows: [
     { itemId: "i1", itemName: "Wood glue", itemCode: "", unit: "nos", catalogItemId: null, locationId: "w1", locationName: "Warehouse", locationKind: "warehouse", projectId: null,
-      projectReference: null, projectName: null, onHand: "17.0000", updatedAt: "2026-09-27T10:00:00Z" },
+      projectReference: null, projectName: null, onHand: "17.0000", updatedAt: "2026-09-27T10:00:00Z", value: "204.0000", averageCost: "12.0000", currency: "AED" },
     { itemId: "i2", itemName: "Calacatta slab", itemCode: "CAL-20", unit: "m²", catalogItemId: null, locationId: "w1", locationName: "Warehouse", locationKind: "warehouse", projectId: "p1",
-      projectReference: "PRJ-0007", projectName: "Villa 12", onHand: "10.0000", updatedAt: "2026-09-27T10:00:00Z" }],
-  locations: [warehouse, site], projects: [{ id: "p1", reference: "PRJ-0007", name: "Villa 12" }], inTransit: 1, canManage: true, canAdjust: true, canReceive: true, ...patch,
+      projectReference: "PRJ-0007", projectName: "Villa 12", onHand: "10.0000", updatedAt: "2026-09-27T10:00:00Z", value: "3500.0000", averageCost: "350.0000", currency: "AED" }],
+  locations: [warehouse, site], projects: [{ id: "p1", reference: "PRJ-0007", name: "Villa 12" }], inTransit: 1, canManage: true, canAdjust: true, canReceive: true,
+  pendingAdjustments: [], me: "u1", currency: "AED", ...patch,
 });
 const move = (patch: Partial<TransferState["transfer"]> = {}): TransferState => ({
   transfer: { id: "t1", number: 3, status: "in_transit", fromLocationId: "w1", fromName: "Warehouse", toLocationId: "s1", toName: "PRJ-0007 · Villa 12", note: "", sentOn: "2026-09-27",
@@ -110,6 +111,35 @@ describe("inventory", () => {
     await userEvent.click(receive);
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "receive", lines: [{ id: "l1", received: "9", lossReason: "Cracked in the truck" }] }));
     expect(await within(sheet).findByText("Arrived short")).toBeInTheDocument();
+  });
+
+  it("shows what stock is worth, and lets someone else approve or refuse a large correction", async () => {
+    const request = { id: "a0000000-0000-4000-8000-000000000001", itemName: "Calacatta slab", unit: "m²", locationName: "Warehouse", projectReference: "PRJ-0007", counted: "6.0000",
+      difference: "-4.0000", value: "1400.0000", reason: "Two slabs broken", requestedBy: "u2", requestedByName: "Sam Store", requestedAt: "2026-09-27T09:00:00Z" };
+    const fetcher = mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true }
+      : url.includes("/adjustments/") ? stock() : stock({ pendingAdjustments: [request] })));
+    page();
+    expect(await rowOf("Calacatta slab")).toHaveTextContent(/3,500/);
+    expect(screen.getByText(/Worth .*3,704/)).toBeInTheDocument();
+    const waiting = screen.getByRole("region", { name: "Corrections waiting for approval" });
+    expect(within(waiting).getByText(/Counted 6 m² \(-4\), worth .*1,400(\.00)?: Two slabs broken — Sam Store/)).toBeInTheDocument();
+    await userEvent.click(within(waiting).getByRole("button", { name: "Refuse" }));
+    const dialog = await screen.findByRole("dialog", { name: "Refuse the correction" });
+    expect(within(dialog).getByRole("button", { name: "Refuse" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's refused/ }), "Recount first");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Refuse" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining(`/adjustments/${request.id}`), body: { action: "reject", note: "Recount first" } }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Corrections waiting for approval" })).not.toBeInTheDocument());
+  });
+
+  it("does not let whoever counted approve their own correction", async () => {
+    const request = { id: "a0000000-0000-4000-8000-000000000001", itemName: "Wood glue", unit: "nos", locationName: "Warehouse", projectReference: null, counted: "2.0000",
+      difference: "-15.0000", value: "180.0000", reason: "Dried out", requestedBy: "u1", requestedByName: "Me", requestedAt: "2026-09-27T09:00:00Z" };
+    mount((url) => (url.includes("/transfers") ? { transfers: [], locations: [], canManage: true, canAdjust: true, canReceive: true } : stock({ pendingAdjustments: [request] })));
+    page();
+    const waiting = await screen.findByRole("region", { name: "Corrections waiting for approval" });
+    expect(within(waiting).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(within(waiting).getByText("Someone else approves it.")).toBeInTheDocument();
   });
 
   it("adds opening stock for a new item and says where it comes from", async () => {
