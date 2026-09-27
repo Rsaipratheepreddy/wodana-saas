@@ -210,7 +210,12 @@ export class CommercialService {
        LEFT JOIN crm_leads source_lead ON source_lead.workspace_id=o.workspace_id AND source_lead.id=o.lead_id
        LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id=source_lead.workspace_id AND enquiry.id=source_lead.enquiry_id
        JOIN crm_parties p ON p.workspace_id=o.workspace_id AND p.id=o.party_id
-       LEFT JOIN legal_entities e ON e.workspace_id=o.workspace_id AND e.id=o.legal_entity_id AND e.status='active'
+       -- The opportunity's legal entity; when none was chosen and the firm has only one, that one.
+       LEFT JOIN LATERAL (SELECT entity.* FROM legal_entities entity
+          WHERE entity.workspace_id=o.workspace_id AND entity.status='active'
+            AND (entity.id=o.legal_entity_id OR (o.legal_entity_id IS NULL AND NOT EXISTS (
+              SELECT 1 FROM legal_entities other WHERE other.workspace_id=o.workspace_id AND other.status='active' AND other.id<>entity.id)))
+          LIMIT 1) e ON true
        WHERE c.workspace_id=$1 AND c.id=$2 ${lock ? "FOR UPDATE OF c" : ""}`,
       [workspaceId, caseId],
     );
