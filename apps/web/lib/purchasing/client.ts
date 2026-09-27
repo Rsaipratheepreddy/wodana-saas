@@ -7,6 +7,9 @@ export class PurchasingRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
+/** The person may not see Purchasing (no purchasing permission), as opposed to it failing to load. */
+export const isDenied = (cause: unknown) => cause instanceof PurchasingRequestError && cause.status === 403;
+
 const path = (workspaceId: string, value: string, query: Record<string, string> = {}) => `/api/purchasing/${value}?${new URLSearchParams({ workspaceId, ...query })}`;
 
 async function upload<T>(url: string, file: File): Promise<T> {

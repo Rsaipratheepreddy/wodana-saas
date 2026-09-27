@@ -399,6 +399,25 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("suggests the materials hand-priced lines name, one per name, from the sealed scope", async () => {
+    await world(async (w) => {
+      // The estimator named the material on two lines priced by hand (no catalog item).
+      await w.builder.apply(actor, w.workspaceId, w.caseId, w.quoteId, { ops: [
+        { op: "upsert", line: { id: "a", version: 1, title: "Kitchen cabinets", unit: "m", quantity: "4.5", rate: "1200", material: "MR MDF" } },
+        { op: "upsert", line: { id: "b", version: 1, title: "Worktop", unit: "m²", quantity: "2.25", rate: "800", material: " mr mdf " } },
+      ] });
+      await accept(w);
+      const manager = w.as(w.manager);
+      const { projectId } = await manager.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      let detail = await manager.get(actor, w.workspaceId, projectId);
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "suggest_materials", version: detail.project.version });
+      // Suggesting again adds nothing new.
+      detail = await manager.command(actor, w.workspaceId, projectId, { action: "suggest_materials", version: detail.project.version });
+      const list = await manager.materials(actor, w.workspaceId, projectId);
+      expect(list.items.map((item) => [item.name, item.catalogItemId, item.usedIn.map((line) => line!.title).sort()])).toEqual([["MR MDF", null, ["Kitchen cabinets", "Worktop"]]]);
+    });
+  });
+
   it("signs off the material list per material; a change after sign-off needs a new revision", async () => {
     await world(async (w) => {
       await accept(w);

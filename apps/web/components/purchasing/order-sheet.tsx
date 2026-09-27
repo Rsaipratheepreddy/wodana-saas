@@ -140,6 +140,9 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     : order.status === "pending_approval" && state.canApproveThis ? <div className="wd-dialog-actions"><span className={styles.spacer} />
       <Button onPress={() => setDialog("return")}>{t("Send back")}</Button>
       <Button variant="primary" isLoading={busy} onPress={() => void run("approve")}>{t("Approve")}</Button></div>
+    // While it waits for someone else to approve, the buyer can still call it off (no approver has to act first).
+    : order.status === "pending_approval" && state.canBuy ? <div className="wd-dialog-actions">
+      <Button variant="quiet" onPress={() => setDialog("cancel")}>{t("Cancel order")}</Button><span className={styles.spacer} /></div>
     : ["approved", "sent", "confirmed"].includes(order.status) && (state.canBuy || state.canReceive) ? <div className="wd-dialog-actions">
       {state.canBuy ? <><Button variant="quiet" onPress={() => setDialog("cancel")}>{t("Cancel order")}</Button>
         <Button variant="quiet" onPress={() => setDialog("change")}>{t("Change")}</Button></> : null}<span className={styles.spacer} />

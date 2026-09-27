@@ -35,7 +35,7 @@ const withControls = (respond: (url: string, body: Record<string, unknown> | und
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const value = respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
-    return value instanceof Error ? { ok: false, status: 409, json: async () => ({ message: value.message }) } : { ok: true, status: 200, json: async () => value };
+    return value instanceof Error ? { ok: false, status: (value as Error & { status?: number }).status ?? 409, json: async () => ({ message: value.message }) } : { ok: true, status: 200, json: async () => value };
   });
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
@@ -44,6 +44,23 @@ const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter((
   .map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
 const uploads = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && init.body instanceof FormData).map(([url, init]) => ({ url: String(url), file: (init!.body as FormData).get("file") as File }));
 const page = (section: PurchasingSection = "suppliers") => render(<DesignSystemProvider><PurchasingPage workspaceId="w" section={section} /></DesignSystemProvider>);
+
+describe("access", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("tells someone without purchasing access so, instead of an error with a retry that can't help", async () => {
+    mount(() => Object.assign(new Error("Permissions required: purchasing.view"), { status: 403 }));
+    page("to-order");
+    expect(await screen.findByText("You don't have access to this")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("still offers a retry when Purchasing fails to load", async () => {
+    mount(() => Object.assign(new Error("Something broke"), { status: 500 }));
+    page("orders");
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+});
 
 describe("suppliers", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -263,6 +280,24 @@ describe("ordering", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Send for approval" }));
     await waitFor(() => expect(posts(fetcher).map((post) => [post.body.action, post.body.version])).toEqual([["save", 1], ["submit", 2]]));
     expect(posts(fetcher)[0].body.lines[0]).toMatchObject({ id: "a", source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350", discountPercent: "10", taxRate: "5" });
+  });
+
+  it("lets the buyer call off an order still waiting for someone else's approval", async () => {
+    nav.query = "order=o1";
+    let current = orderState({ status: "pending_approval", submittedBy: "u2", version: 3 });
+    const fetcher = mount((url, body) => {
+      if (body?.action === "cancel") current = orderState({ status: "cancelled", version: 4, cancelReason: "Client changed the finish" });
+      return url.includes("/orders/o1") ? current : ordersList;
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(within(sheet).getByText("Waiting for someone who approves orders.")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Cancel order" }));
+    const dialog = await screen.findByRole("dialog", { name: "Cancel order" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Why it's cancelled" }), "Client changed the finish");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "cancel", version: 3, reason: "Client changed the finish" }));
   });
 
   it("asks why when an order takes a project past what it needs, and shows over-ordered items in To order", async () => {

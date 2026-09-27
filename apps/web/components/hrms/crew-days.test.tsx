@@ -105,6 +105,22 @@ describe("crew days", () => {
     expect(screen.getByRole("button", { name: "Mark crew day" })).toBeInTheDocument();
   });
 
+  it("with no crews at all, offers someone who manages crews the way to add the first one instead of a dead end", async () => {
+    mount(({ path }) => (path === "crews" ? { crews: [], workers: [], canManage: true } : undefined));
+    show();
+    await userEvent.click(await screen.findByRole("radio", { name: "Crew days" }));
+    expect(await screen.findByText("No crews yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New crew" })).toHaveAttribute("href", "/workspace/hrms/crews");
+    expect(screen.queryByRole("button", { name: "Mark crew day" })).not.toBeInTheDocument();
+  });
+
+  it("with no crews and no right to add one, says only that nothing is marked yet", async () => {
+    mount(({ path }) => (path === "crews" ? { crews: [], workers: [], canManage: false } : undefined));
+    show();
+    await openCrewDays();
+    expect(screen.queryByRole("link", { name: "New crew" })).not.toBeInTheDocument();
+  });
+
   it("marks who of the crew was there, with overtime and someone from another crew, and saves it as a draft", async () => {
     let saved: CrewDay | null = null;
     const calls = mount(({ path, method, body }) => {

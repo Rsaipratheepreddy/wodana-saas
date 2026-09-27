@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn } from "@/design-system";
+import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoAccessState, InlineNotice, InspectorSheet, NoResultsState, Skeleton, TextAreaField, TextInput, DateField, type DataGridColumn } from "@/design-system";
 import { parseDate } from "@internationalized/date";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { PurchasingApi } from "@/lib/purchasing/client";
+import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { PriceRequestRow, PriceRequestState, PriceRequestsState, PriceRequestStatus } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "./order-labels";
@@ -24,9 +24,10 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
   const format = useProjectFormat();
   const [state, setState] = useState<PriceRequestsState | null>(null);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState("");
   const load = useCallback(async () => {
-    try { setState(await api.priceRequests()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The price requests didn't load.")); }
+    try { setState(await api.priceRequests()); setError(""); } catch (cause) { setDenied(isDenied(cause)); setError(cause instanceof Error ? cause.message : t("The price requests didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
   const rows = (state?.requests ?? []).filter((row) => !search.trim() || `${row.number} ${row.projects.join(" ")}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
@@ -39,7 +40,7 @@ export function PriceRequests({ api, openId, onOpen, onOrder, refreshKey }: { ap
     { id: "needed", header: t("Needed by"), accessorFn: (row) => row.neededBy ?? "", size: 130, meta: { mobileHidden: true, renderCell: (row) => format.day(row.neededBy) } },
     { id: "by", header: t("Asked by"), accessorFn: (row) => row.createdByName, size: 140, meta: { mobileHidden: true } },
   ];
-  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   return <>
     <DataGrid<PriceRequestRow> appearance="flush" ariaLabel={t("Price requests")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!state} onRowAction={(row) => onOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search price requests")} rowNumbers={false} selectable={false} wrapText
