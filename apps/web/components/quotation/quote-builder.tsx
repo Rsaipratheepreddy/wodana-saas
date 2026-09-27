@@ -373,6 +373,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <Badge tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
       {state.family.length > 1 ? <span className={styles.revisions}><SegmentedControl label={t("Revisions")} value={state.quote.id} onChange={(id) => router.push(quoteHref(id))}
         options={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /></span> : null}
+      <span className={styles.tabs}><SegmentedControl label={t("Quote")} value={tab} onChange={(key) => setTab(key as QuoteTab)}
+        options={[{ id: "items", label: t("Items") }, { id: "terms", label: t("Terms") }, { id: "payments", label: t("Payments") }, { id: "document", label: t("Document") }]} /></span>
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
       <span className={styles.spacer} />
       <PeopleHere people={people} />
@@ -388,11 +390,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
 
     <div className={styles.workbench}>
       <main className={styles.canvas}>
-        <div className={styles.canvasHead}>
-          <SegmentedControl label={t("Quote")} value={tab} onChange={(key) => setTab(key as QuoteTab)}
-            options={[{ id: "items", label: t("Items") }, { id: "terms", label: t("Terms") }, { id: "payments", label: t("Payments") }, { id: "document", label: t("Document") }]} />
+        {tab === "items" ? <div className={styles.canvasHead}>
           <span className={styles.spacer} />
-          {tab === "items" ? <>
+          <>
             {state.quote.validUntil && ["draft", "internal_review", "internal_approved", "issued"].includes(state.quote.status) ? <span className={styles.meta}>{t("Valid until {date}", { date: new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" }).format(new Date(`${state.quote.validUntil}T00:00:00Z`)) })}</span> : null}
             {state.canEdit ? <Button size="compact" variant="quiet" onPress={() => openPanel("catalog")}><Store aria-hidden="true" size={15} />{t("Catalog")}</Button> : null}
             <MenuButton size="compact" label={t(GROUP_LABEL[view] as never)} onAction={(id) => setView(id as QuoteView)}
@@ -412,8 +412,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
               ...(state.lines.length ? [{ id: "save_template", label: t("Save quote as template") }] : []),
               ...(state.quote.kind === "variation" && state.canEdit && state.project ? [{ id: "change", label: t("Change an agreed item") }] : []),
             ]} />
-          </> : null}
-        </div>
+          </>
+        </div> : null}
 
         {state.quote.clientDecision ? <InlineNotice tone={state.quote.status === "accepted" ? "success" : "info"} message={t("{decision} by {name} on {date}{how}", {
           decision: t((state.quote.clientDecision.decision === "accept" ? "Accepted" : state.quote.clientDecision.decision === "changes" ? "Changes requested" : "Declined") as never),

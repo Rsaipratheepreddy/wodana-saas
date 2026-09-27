@@ -59,19 +59,28 @@ export function AlertDialog({ body, confirmLabel, onConfirm, title, trigger }: {
   return <ModalDialog footer={<DialogCloseActions confirmLabel={confirmLabel} onConfirm={onConfirm} />} title={title} trigger={trigger}>{body}</ModalDialog>;
 }
 
+// Open dialogs hold the page still. A count, not saved styles: the dialog library locks the page too,
+// so "putting back what was there" could put its lock back and leave the page unable to scroll.
+let pageLocks = 0;
+function lockPageScroll() {
+  pageLocks += 1;
+  document.body.style.overflow = "hidden";
+  document.documentElement.style.overflow = "hidden";
+}
+function unlockPageScroll() {
+  pageLocks = Math.max(0, pageLocks - 1);
+  if (pageLocks) return;
+  document.body.style.overflow = "";
+  document.documentElement.style.overflow = "";
+}
+
 export function ControlledModalDialog({ children, className, description, footer, hideTitle = false, isDismissable = true, isOpen, onOpenChange, size = "md", title }: ControlledModalDialogProps) {
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   useEffect(() => {
     if (!isOpen) return;
-    const bodyOverflow = document.body.style.overflow;
-    const rootOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = bodyOverflow;
-      document.documentElement.style.overflow = rootOverflow;
-    };
+    lockPageScroll();
+    return unlockPageScroll;
   }, [isOpen]);
   return <ModalOverlay {...portalTheme} dir={direction} className="wd-modal-overlay" isDismissable={isDismissable} isOpen={isOpen} onOpenChange={onOpenChange} UNSTABLE_portalContainer={portalContainer ?? undefined}><Modal className={["wd-modal", className].filter(Boolean).join(" ")} data-size={size}><Dialog className="wd-dialog" aria-label={title}>{() => <><header className={hideTitle ? "wd-dialog-minimal-header" : undefined}>{hideTitle ? null : <div><Heading slot="title">{title}</Heading>{description ? <p>{description}</p> : null}</div>}<IconButton aria-label="Close dialog" onPress={() => onOpenChange(false)}><X size={17} /></IconButton></header><div className="wd-dialog-body">{children}</div>{footer ? <footer>{footer}</footer> : null}</>}</Dialog></Modal></ModalOverlay>;
 }

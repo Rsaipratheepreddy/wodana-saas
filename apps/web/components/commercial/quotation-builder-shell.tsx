@@ -199,7 +199,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
   <aside className={styles.properties}><strong>{title(active)} properties</strong><p>Select text or an image on any page. Double-click text to edit.</p><button type="button" onClick={() => setDetailsOpen(true)}>Client & project details</button><button type="button" onClick={() => (embedded ? embedded.onPayments() : setPaymentEditor(true))}>Payment schedule</button><div ref={setInspectorHost}/></aside>
  </div>;
     return <CatalogOptionsProvider workspaceId={initial.workspaceId} caseId={initial.caseId}>
- <section className={styles.builder} aria-label="Quotation builder">
+ <section className={styles.builder} aria-label="Quotation builder" data-embedded={embedded ? true : undefined}>
   <header className={styles.header} data-embedded={embedded ? true : undefined}>
    {embedded ? <span /> : <Link href={backHref} className={styles.back} onClick={event => { if (busy) {
         event.preventDefault();

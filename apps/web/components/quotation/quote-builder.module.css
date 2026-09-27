@@ -27,7 +27,8 @@
 
 .workbench { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) var(--panel); align-items: start; min-block-size: 0; }
 .builder[data-panel="closed"] .workbench { grid-template-columns: minmax(0, 1fr); }
-.canvas { display: flex; flex-direction: column; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-phi-3) var(--wd-phi-3) var(--wd-phi-5); }
+.canvas { display: flex; flex-direction: column; gap: var(--wd-space-3); min-inline-size: 0; padding: var(--wd-space-3) var(--wd-phi-3) var(--wd-phi-5); }
+.tabs { display: inline-flex; flex: none; margin-inline-start: var(--wd-space-3); }
 .canvasHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 
 .panel { position: sticky; inset-block-start: calc(var(--top) + var(--wd-space-3)); display: flex; flex-direction: column; block-size: calc(100dvh - var(--top) - var(--wd-space-6)); min-inline-size: 0; margin: var(--wd-space-3) var(--wd-space-3) var(--wd-space-3) 0; overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-sm); }
@@ -313,6 +314,8 @@
 .row > .imageCell { justify-content: center; padding: var(--wd-space-1); }
 .thumb { position: relative; display: grid; place-items: center; inline-size: var(--wd-space-20); block-size: var(--wd-space-20); overflow: hidden; border-radius: var(--wd-radius-sm); background: transparent; }
 .thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+/* No picture yet: a small add button, so rows without pictures stay compact. */
+.thumb:not(:has(img)) { inline-size: var(--wd-space-10); block-size: var(--wd-space-10); }
 .thumbButton { position: absolute; inset: 0; display: grid; place-items: center; padding: 0; border: 1px dashed transparent; border-radius: var(--wd-radius-sm); background: none; color: var(--wd-color-text-tertiary); cursor: pointer; }
 .thumbButton[data-empty] { color: var(--wd-color-text-disabled); }
 .row:hover .thumbButton[data-empty] { color: var(--wd-color-text-tertiary); }
@@ -346,4 +349,4 @@
 }
 
 /* The proposal designer inside the Document tab. */
-.proposal { min-inline-size: 0; margin-inline: calc(-1 * var(--wd-phi-3)); }
+.proposal { min-inline-size: 0; margin: calc(-1 * var(--wd-space-3)) calc(-1 * var(--wd-phi-3)) 0; }
