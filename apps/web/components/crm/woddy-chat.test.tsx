@@ -25,13 +25,12 @@ describe("Woddy chat", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("status", { name: "Woddy is typing" })).toBeVisible();
-    expect(within(screen.getByRole("log")).getByRole("img", { name: "Woddy" })).toBeVisible();
-    expect(within(screen.getByRole("log")).getByRole("img", { name: "Woddy" })).toHaveAttribute("src", expect.stringContaining("woddy-mark-v4.png"));
+    expect(within(screen.getByRole("log")).getByRole("img", { name: "Woddy is thinking" })).toHaveAttribute("src", "/brand/woddy/thinking.webp");
     expect(within(screen.getByRole("log")).getByRole("img", { name: "You" })).toBeVisible();
     await act(async () => finish(new Response(JSON.stringify({ answer: "Review your next customer follow-up." }), { status: 200 })));
     expect(await screen.findByRole("article", { name: "Woddy reply" })).toHaveTextContent("Review your next customer follow-up.");
     expect(screen.queryByRole("status", { name: "Woddy is typing" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("log")).getByRole("img", { name: "Woddy" })).toBeVisible();
+    expect(within(screen.getByRole("log")).getByRole("img", { name: "Woddy is celebrating" })).toHaveAttribute("src", "/brand/woddy/celebrating.webp");
     expect(input).toHaveValue("");
     await waitFor(() => expect(input).toHaveFocus());
     expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body)).messages[0].text).toBe("What is next?\nKeep it short.");

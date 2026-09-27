@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
-import { AiSuggestionReview, Button, Callout, type AiDiffItem, type AiEvidenceItem } from "@/design-system";
+import { AiSuggestionReview, Button, Callout, Woddy, woddyPoseFor, type AiDiffItem, type AiEvidenceItem } from "@/design-system";
 import { crmRequest } from "@/lib/crm/client";
 import { useWoddy } from "./woddy-chat";
 import styles from "./crm-workbench.module.css";
@@ -61,7 +60,7 @@ export function WoddyAssist({ workspaceId, leadId }: { workspaceId: string; lead
   };
 
   return <section className={styles.assistant} aria-label="Woddy enquiry assistance">
-    <div className={styles.toolbar}><h3><Sparkles size={15} aria-hidden="true" />Woddy</h3><Button size="compact" onPress={woddy?.open}>Chat with Woddy</Button><Button size="compact" isLoading={busy && !result} onPress={() => void review()}>Review enquiry</Button></div>
+    <div className={styles.toolbar}><h3><Woddy decorative pose={error ? woddyPoseFor.error : busy ? woddyPoseFor.running : result ? woddyPoseFor.done : woddyPoseFor.empty} size={28} />Woddy</h3><Button size="compact" onPress={woddy?.open}>Chat with Woddy</Button><Button size="compact" isLoading={busy && !result} onPress={() => void review()}>Review enquiry</Button></div>
     {result ? <AiSuggestionReview
       busy={busy}
       editedSuggestion={draft}

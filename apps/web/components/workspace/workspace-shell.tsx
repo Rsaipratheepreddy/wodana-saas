@@ -1,12 +1,12 @@
 "use client";
 
 import { ArrowLeft, ChevronRight, Menu, Moon, Settings, Sun } from "lucide-react";
-import { WoddyMark } from "@/components/brand";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
+import { Woddy } from "@/design-system";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
   findWorkspaceModule,
@@ -165,12 +165,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
                 title={t("Ask Woddy")}
                 type="button"
               >
-                <WoddyMark
-                  alt=""
-                  className={styles.woddyAvatar}
-                  priority
-                  size={34}
-                />
+                <Woddy className={styles.woddyAvatar} decorative motion="idle" pose="idle" size={34} />
                 <span className={styles.woddyLabel}>{t("Ask Woddy")}</span>
               </button>
             </div>

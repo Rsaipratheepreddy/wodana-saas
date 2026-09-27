@@ -1019,8 +1019,6 @@
   inline-size: 2.125rem;
   border-radius: 50%;
   object-fit: contain;
-  animation: woddyIdle 3.2s ease-in-out infinite;
-  transform-origin: 50% 58%;
 }
 
 .woddyButton:hover {

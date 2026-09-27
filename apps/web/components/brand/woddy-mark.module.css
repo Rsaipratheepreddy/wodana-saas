@@ -1,5 +1,0 @@
-.mark {
-  block-size: auto;
-  object-fit: contain;
-  filter: grayscale(1) sepia(1) saturate(1.6) hue-rotate(95deg) brightness(.92);
-}
