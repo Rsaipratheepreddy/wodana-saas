@@ -4,11 +4,13 @@ import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { Dec } from "../catalog-core/decimal";
+import { InventoryService } from "../inventory/inventory.service";
 import { move, stockItemFor } from "../inventory/stock";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { productionPaid } from "../project-core/project-core.store";
-import { needsNotIn, readNeeds } from "../purchasing/orders";
-import { readLocations, resolvePlace } from "../purchasing/receiving";
+import { ensurePurchasingSettings, needsNotIn, readNeeds, readOrderLines } from "../purchasing/orders";
+import { OrdersService } from "../purchasing/orders.service";
+import { outstanding, readLocations, resolvePlace } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { readCalendar } from "../project-core/work-calendar";
 import { capacity, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, type WorkOrderRow } from "./factory";
@@ -29,7 +31,7 @@ const MATERIAL_ACTIONS = ["add_material", "set_material", "remove_material", "su
  */
 @Injectable()
 export class FactoryService {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  constructor(private readonly access: WorkspaceAccessService, private readonly orders: OrdersService, private readonly inventory: InventoryService) {}
 
   state(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(actor, workspaceId, VIEW, async (client, user) => ({
@@ -158,7 +160,8 @@ export class FactoryService {
       const need = async (code: string, message: string) => { if (!(await has(code))) throw new ForbiddenException(message); };
       const status = (...allowed: string[]) => { if (!allowed.includes(order.status)) throw new ConflictException(statusMessage(order.status)); };
       // Reports, checks and stock issued or returned carry their own id: sent twice, they're recorded once.
-      const recordId = ["report", "check", "issue_material", "return_material"].includes(action) ? uuid(body.id, action === "report" ? "Report" : action === "check" ? "Check" : "Change") : null;
+      const recordId = ["report", "check", "issue_material", "return_material", "dispatch"].includes(action)
+        ? uuid(body.id, action === "report" ? "Report" : action === "check" ? "Check" : action === "dispatch" ? "Move" : "Change") : null;
       if (recordId && (await client.query(`SELECT 1 FROM factory_commands WHERE workspace_id = $1 AND command_id = $2`, [workspaceId, recordId])).rowCount)
         return this.detail(client, workspaceId, orderId, user.userId);
       if (!recordId && body.version !== order.version) throw new ConflictException("Someone else changed this work order. Reload to see their changes.");
@@ -265,6 +268,9 @@ export class FactoryService {
       } else if (action === "check") {
         await need("factory.approve", "You can't check quality.");
         status("in_production", "ready");
+        // Goods out for a step done elsewhere are checked once they're back.
+        const away = (await this.operations(client, workspaceId, orderId)).find((operation) => operation.out);
+        if (away) throw new ConflictException(`${away.name} isn't back from ${away.supplierName} yet (${away.orderNumber}).`);
         if (!settings.requireCheck) throw new ConflictException("Output passes when it's approved; there's no separate check.");
         const passed = amount(body.passed ?? "0", "Passed");
         const failed = amount(body.failed ?? "0", "Failed");
@@ -302,6 +308,51 @@ export class FactoryService {
         if (!reason) throw new BadRequestException(action === "cancel" ? "Say why it's cancelled." : "Say why the rest won't be made.");
         await set(`status = $3, closed_by = $4, closed_at = now(), close_reason = $5, hold_reason = NULL, held_from = NULL, hold_kind = NULL`, [action === "cancel" ? "cancelled" : "short_closed", user.userId, reason]);
         audit = { reason };
+      } else if (action === "send_out") {
+        // A step done by a supplier: a draft service order for the work order's goods, which the buyer places.
+        await need("factory.manage", "You can't send work out.");
+        status("released", "in_production");
+        const operationId = uuid(body.operationId, "Step");
+        const name = text(body.name, 200);
+        if (!name) throw new BadRequestException("Say what the supplier does (polishing, upholstery…).");
+        const quantity = amount(body.quantity ?? order.quantity, "Quantity");
+        if (Dec.of(quantity).cmp(0) <= 0 || Dec.of(quantity).cmp(order.quantity) > 0) throw new BadRequestException(`Send out up to ${plain(order.quantity)} ${order.unit}.`.replace("  ", " "));
+        const supplier = await this.orders.orderableSupplier(client, workspaceId, uuid(body.vendorId, "Supplier"));
+        if ((await ensurePurchasingSettings(client, workspaceId)).requireApprovedSupplier && supplier.approval !== "approved")
+          throw new ConflictException(`${supplier.name} isn't approved as a supplier yet.`);
+        const legalEntityId = await this.orders.buyingCompany(client, workspaceId, supplier, body.legalEntityId);
+        const currency = supplier.currency ?? (await client.query<{ currency: string }>(`SELECT base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND id = $2`, [workspaceId, legalEntityId])).rows[0].currency;
+        const purchaseId = randomUUID();
+        const reference = `WO-${String(order.number).padStart(4, "0")}`;
+        const created = await this.orders.createDraft(client, workspaceId, user.userId, {
+          id: purchaseId, supplier, legalEntityId, currency, from: { workOrder: reference },
+          header: { deliverTo: "factory", deliveryAddress: "", expectedDate: optionalDate(body.expectedDate, "Back by"), notes: "" },
+          lines: [{ source: "free", projectId: order.projectId, description: `${name} — ${reference} ${order.title}`.slice(0, 500), quantity, unit: order.unit, unitPrice: body.unitPrice ?? "0", taxRate: body.taxRate }],
+        });
+        const line = (await client.query<{ id: string }>(`SELECT id FROM purchase_order_lines WHERE workspace_id = $1 AND order_id = $2`, [workspaceId, purchaseId])).rows[0];
+        await client.query(`UPDATE purchase_order_lines SET work_order_id = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, line.id, orderId]);
+        await client.query(`INSERT INTO work_order_operations (id, workspace_id, work_order_id, name, vendor_id, order_id, order_line_id, quantity, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [operationId, workspaceId, orderId, name, supplier.id, purchaseId, line.id, quantity, user.userId]);
+        await set(`notes = notes`);
+        audit = { operationId, name, vendorId: supplier.id, orderId: purchaseId, number: created.number, quantity };
+      } else if (action === "dispatch") {
+        // Made goods from the factory to the project's site: a move the site receives like any other.
+        if (!(await has("factory.manage")) && !(await has("stock.manage"))) throw new ForbiddenException("You can't send goods to site.");
+        const quantity = amount(body.quantity, "Quantity");
+        if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException("Enter how much goes.");
+        const line = (await client.query<{ catalogItemId: string | null }>(`SELECT catalog_item_id AS "catalogItemId" FROM project_boq_lines WHERE workspace_id = $1 AND id = $2`,
+          [workspaceId, order.boqLineId])).rows[0];
+        const itemId = await stockItemFor(client, workspaceId, { catalogItemId: line?.catalogItemId ?? null, name: order.title, unit: order.unit });
+        const factory = await resolvePlace(client, workspaceId, "factory", [order.projectId], randomUUID);
+        const site = await resolvePlace(client, workspaceId, `site:${order.projectId}`, [order.projectId], randomUUID);
+        if (!factory || !site) throw new ConflictException("The factory or the project's site isn't set up as a place.");
+        const transferId = recordId!;
+        await client.query(`INSERT INTO factory_commands (workspace_id, command_id, entity_id, action, actor_id) VALUES ($1, $2, $3, 'dispatch', $4)`, [workspaceId, transferId, orderId, user.userId]);
+        await this.inventory.sendWith(client, workspaceId, user.userId, { id: transferId, fromLocationId: factory.id, toLocationId: site.id, note: text(body.note, 500),
+          lines: [{ itemId, projectId: order.projectId, quantity }] });
+        await client.query(`UPDATE stock_transfers SET work_order_id = $3 WHERE workspace_id = $1 AND id = $2 AND work_order_id IS NULL`, [workspaceId, transferId, orderId]);
+        await set(`notes = notes`);
+        audit = { transferId, quantity };
       } else if (MATERIAL_ACTIONS.includes(action)) {
         audit = await this.materialCommand(client, workspaceId, order, action, body, recordId, user.userId, notices, need);
       } else {
@@ -604,8 +655,25 @@ export class FactoryService {
     const projectMaterials = (await client.query<{ id: string; name: string; unit: string; lineOnly: boolean }>(
       `SELECT item.id, item.name, item.unit, item.boq_line_ids = ARRAY[$3::uuid] AS "lineOnly" FROM project_material_items item
         WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.position`, [workspaceId, order.projectId, order.boqLineId])).rows;
+    const dispatches = (await client.query<{ id: string; number: number; status: string; sentOn: string; quantity: string; received: string | null; short: boolean }>(
+      `SELECT transfer.id, transfer.number, transfer.status, transfer.sent_on::text AS "sentOn", sum(line.quantity)::text AS quantity,
+              CASE WHEN bool_and(line.received IS NOT NULL) THEN sum(line.received)::text END AS received, bool_or(line.received < line.quantity) AS short
+         FROM stock_transfers transfer JOIN stock_transfer_lines line ON line.workspace_id = transfer.workspace_id AND line.transfer_id = transfer.id
+        WHERE transfer.workspace_id = $1 AND transfer.work_order_id = $2 GROUP BY transfer.id ORDER BY transfer.number`, [workspaceId, orderId])).rows;
+    // What it made that's still at the factory, for the project: what can go to site.
+    const atFactory = (await client.query<{ onHand: string }>(
+      `SELECT coalesce(sum(balance.on_hand), 0)::numeric(18, 4)::text AS "onHand" FROM stock_balances balance
+         JOIN stock_locations place ON place.workspace_id = balance.workspace_id AND place.id = balance.location_id AND place.kind = 'factory'
+        WHERE balance.workspace_id = $1 AND balance.project_id = $3
+          AND balance.item_id IN (SELECT made.item_id FROM stock_movements made WHERE made.workspace_id = $1 AND made.work_order_id = $2 AND made.kind = 'produce')`,
+      [workspaceId, orderId, order.projectId])).rows[0].onHand;
     return {
-      order: { ...order, ...extra }, reports, checks, events, settings, materials,
+      order: { ...order, ...extra }, reports, checks, events, settings, materials, dispatches, atFactory,
+      operations: await this.operations(client, workspaceId, orderId),
+      // Suppliers a step can go to (not archived, approved first).
+      suppliers: (await client.query<{ id: string; name: string; approved: boolean }>(
+        `SELECT id, display_name AS name, approval = 'approved' AS approved FROM workspace_vendors WHERE workspace_id = $1 AND status <> 'archived'
+          ORDER BY approval = 'approved' DESC, lower(display_name) LIMIT 500`, [workspaceId])).rows,
       materialCost: materials.reduce((sum, row) => sum.add(row.issuedValue), Dec.ZERO).toFixed(4),
       currency: (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency ?? "",
       // Materials from the project's list; those used only on this line can be added in one go.
@@ -616,6 +684,25 @@ export class FactoryService {
       workcenters: await readWorkcenters(client, workspaceId),
       ...(await this.rights(client, workspaceId, userId)), me: userId,
     };
+  }
+
+  /** Steps done by suppliers: each with its service order and how much is back. Out while the order is open and something is still to come. */
+  private async operations(client: Db, workspaceId: string, orderId: string) {
+    const rows = (await client.query<{ id: string; name: string; supplierName: string; orderId: string; orderNumber: string; orderStatus: string; orderLineId: string; quantity: string }>(
+      `SELECT operation.id, operation.name, vendor.display_name AS "supplierName", operation.order_id AS "orderId", purchase.number AS "orderNumber", purchase.status AS "orderStatus",
+              operation.order_line_id AS "orderLineId", operation.quantity::text AS quantity
+         FROM work_order_operations operation
+         JOIN workspace_vendors vendor ON vendor.workspace_id = operation.workspace_id AND vendor.id = operation.vendor_id
+         JOIN purchase_orders purchase ON purchase.workspace_id = operation.workspace_id AND purchase.id = operation.order_id
+        WHERE operation.workspace_id = $1 AND operation.work_order_id = $2 ORDER BY operation.created_at`, [workspaceId, orderId])).rows;
+    const result = [];
+    for (const row of rows) {
+      const line = (await readOrderLines(client, workspaceId, row.orderId)).find((item) => item.id === row.orderLineId);
+      const back = line ? line.accepted : "0";
+      const out = !["cancelled", "closed", "received"].includes(row.orderStatus) && Boolean(line) && !outstanding(line!).isZero();
+      result.push({ ...row, back, out });
+    }
+    return result;
   }
 
   private async rights(client: Db, workspaceId: string, userId: string) {

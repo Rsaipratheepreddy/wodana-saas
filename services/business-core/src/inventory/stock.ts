@@ -246,8 +246,9 @@ export async function stockFromReceipt(db: Db, workspaceId: string, input: { rec
   const batchId = randomUUID();
   for (const line of input.lines) {
     if (Dec.of(line.accepted).cmp(0) <= 0) continue;
-    const origin = (await db.query<{ projectId: string | null; name: string; unit: string; code: string; catalogItemId: string | null; supply: string | null; quantity: string; net: string }>(
-      `SELECT ordered.project_id AS "projectId", coalesce(material.name, scope.title, ordered.description) AS name, ordered.unit, coalesce(material.code, '') AS code,
+    const origin = (await db.query<{ projectId: string | null; name: string; unit: string; code: string; catalogItemId: string | null; supply: string | null; quantity: string; net: string;
+      workOrderId: string | null }>(
+      `SELECT ordered.project_id AS "projectId", ordered.work_order_id AS "workOrderId", coalesce(material.name, scope.title, ordered.description) AS name, ordered.unit, coalesce(material.code, '') AS code,
               coalesce(material.catalog_item_id, scope.catalog_item_id) AS "catalogItemId", package.supply, ordered.quantity::text AS quantity, ordered.net::text AS net
          FROM goods_receipt_lines received
          JOIN purchase_order_lines ordered ON ordered.workspace_id = received.workspace_id AND ordered.id = received.order_line_id
@@ -255,7 +256,8 @@ export async function stockFromReceipt(db: Db, workspaceId: string, input: { rec
          LEFT JOIN project_boq_lines scope ON scope.workspace_id = ordered.workspace_id AND scope.id = ordered.boq_line_id
          LEFT JOIN project_packages package ON package.workspace_id = scope.workspace_id AND package.id = scope.package_id
         WHERE received.workspace_id = $1 AND received.id = $2`, [workspaceId, line.receiptLineId])).rows[0];
-    if (!origin || origin.supply === "subcontract" || origin.supply === "site_work") continue;
+    // Services aren't stock, and work done outside on our own goods brings back what was already ours.
+    if (!origin || origin.supply === "subcontract" || origin.supply === "site_work" || origin.workOrderId) continue;
     // Bought in one unit, kept in the catalog item's (boxes in, pieces kept): the quantity converts and the cost follows.
     const { itemId, factor } = await stockItemInCatalogUnit(db, workspaceId, { catalogItemId: origin.catalogItemId, name: origin.name, unit: origin.unit, code: origin.code });
     // The line's net price per stock unit, in the workspace's currency (at the rate on the day it arrived).

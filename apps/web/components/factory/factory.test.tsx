@@ -27,6 +27,7 @@ const order = (patch: Partial<WorkOrderState["order"]> = {}, extra: Partial<Work
   order: row(patch), reports: [], checks: [], events: [], settings, workcenters: [joinery], canManage: true, canReport: true, canApprove: true, canIssue: true, me: "u1",
   materials: [], materialCost: "0.0000", currency: "AED", projectMaterials: [{ id: "pm1", name: "Oak veneer", unit: "sheets" }], canSuggest: false,
   places: [{ id: "f1", kind: "factory", name: "Factory", projectId: null, projectReference: null, address: "", isDefault: true, active: true }],
+  operations: [], suppliers: [{ id: "s1", name: "Nile Marble", approved: true }], dispatches: [], atFactory: "0",
   releaseChecks: patch.status && patch.status !== "planned" ? [] : [
     { key: "running", passed: true, missing: "" }, { key: "drawing", passed: false, missing: "the drawing isn't approved" }, { key: "payment", passed: true, missing: "" },
     { key: "materials", passed: false, missing: "materials aren't in: Oak veneer", detail: ["Oak veneer"] }, { key: "schedule", passed: true, missing: "" }],
@@ -239,6 +240,35 @@ describe("factory", () => {
     expect(within(sheet).getByText("WO-0008 · Wardrobes")).toBeInTheDocument();
     await userEvent.click(within(sheet).getByRole("button", { name: "Start batch" }));
     await waitFor(() => expect(posts(vi.mocked(fetch) as never).at(-1)!.body).toEqual({ id: "b1", action: "start", version: 1 }));
+  });
+
+  it("sends a step out to a supplier, waits for the goods to come back, and sends made goods to site", async () => {
+    nav.query = "order=w1";
+    const producing = { status: "in_production" as const, releasedAt: "2026-09-27T09:00:00Z", made: "3.0000", toCheck: "3.0000" };
+    const fetcher = mount((url) => (url.includes("/orders/w1") ? order(producing, {
+      operations: [{ id: "op1", name: "Polishing", supplierName: "Nile Marble", orderId: "po1", orderNumber: "FAC-PO-2026-00004", orderStatus: "sent", orderLineId: "l1", quantity: "3.0000", back: "1.0000", out: true }],
+      dispatches: [{ id: "t1", number: 5, status: "received", sentOn: "2099-10-08", quantity: "1.0000", received: "0.5000", short: true }], atFactory: "2.0000" }) : factory()));
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    const outside = await within(sheet).findByRole("region", { name: "Done outside" });
+    expect(within(outside).getByText("Polishing at Nile Marble")).toBeInTheDocument();
+    expect(within(outside).getByText("1 of 3 m back")).toBeInTheDocument();
+    expect(within(outside).getByRole("link", { name: "FAC-PO-2026-00004" })).toHaveAttribute("href", "/workspace/purchasing/orders?order=po1");
+    const site = within(sheet).getByRole("region", { name: "To site" });
+    expect(within(site).getByText("1 m · Arrived short: 0.5 m")).toBeInTheDocument();
+    await userEvent.click(within(site).getByRole("button", { name: "Send to site" }));
+    const dialog = await screen.findByRole("dialog", { name: "Send to site" });
+    expect(within(dialog).getByRole("textbox", { name: "Quantity" })).toHaveValue("2");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Send to site" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "dispatch", quantity: "2", id: expect.any(String) }));
+
+    await userEvent.click(within(sheet).getByRole("button", { name: "More" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Send a step out" }));
+    const out = await screen.findByRole("dialog", { name: "Send a step out" });
+    await userEvent.type(within(out).getByRole("textbox", { name: /What the supplier does/ }), "Upholstery");
+    await userEvent.type(within(out).getByRole("textbox", { name: "Price each" }), "120");
+    await userEvent.click(within(out).getByRole("button", { name: "Create service order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "send_out", name: "Upholstery", vendorId: "s1", quantity: "3", unitPrice: "120" }));
   });
 
   it("sets what a work order needs before release and adds a workcenter", async () => {

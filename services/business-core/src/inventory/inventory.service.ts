@@ -160,46 +160,50 @@ export class InventoryService {
 
   /** Sends stock from one place to another: it leaves now and arrives when the other end receives it. */
   send(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
-    return this.access.withPermission(actor, workspaceId, "stock.manage", async (client, user) => {
-      const id = uuid(body.id, "Move");
-      if (!(await this.firstTime(client, workspaceId, id, "send", user.userId))) return this.transferDetail(client, workspaceId, id, user.userId);
-      const from = await this.location(client, workspaceId, body.fromLocationId);
-      const to = await this.location(client, workspaceId, body.toLocationId);
-      if (from.id === to.id) throw new BadRequestException("Choose another place to move it to.");
-      if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Choose what to move.");
-      if (body.lines.length > 200) throw new BadRequestException("A move has up to 200 lines.");
-      const sentOn = body.sentOn ? date(body.sentOn, "Date") : await this.today(client, workspaceId);
-      const seen = new Set<string>();
-      const lines: Array<{ id: string; itemId: string; projectId: string | null; quantity: string }> = [];
-      for (const raw of body.lines as Array<Record<string, unknown>>) {
-        const itemId = await this.item(client, workspaceId, raw?.itemId);
-        const projectId = await this.owner(client, workspaceId, raw?.projectId);
-        const key = `${itemId}:${projectId ?? ""}`;
-        if (seen.has(key)) throw new BadRequestException("The same stock is on the move twice.");
-        seen.add(key);
-        const quantity = amount(raw?.quantity, "Quantity");
-        if (Dec.of(quantity).isZero()) continue;
-        if (to.kind === "site" && projectId && to.projectId !== projectId) throw new BadRequestException("Stock for one project can't go to another project's site.");
-        const have = await onHand(client, workspaceId, itemId, from.id, projectId);
-        if (Dec.of(quantity).cmp(have) > 0) throw new ConflictException(`Only ${have.toString()} of one item at ${from.name}.`);
-        lines.push({ id: randomUUID(), itemId, projectId, quantity });
-      }
-      if (!lines.length) throw new BadRequestException("Choose what to move.");
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('stock_transfers:' || $1::text, 0))`, [workspaceId]);
-      const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM stock_transfers WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
-      await client.query(`INSERT INTO stock_transfers (id, workspace_id, number, from_location_id, to_location_id, note, sent_on, sent_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [id, workspaceId, number, from.id, to.id, text(body.note, 500, "Note"), sentOn, user.userId]);
-      for (const line of lines) {
-        await client.query(`INSERT INTO stock_transfer_lines (id, workspace_id, transfer_id, item_id, project_id, quantity) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [line.id, workspaceId, id, line.itemId, line.projectId, line.quantity]);
-        await move(client, workspaceId, { batchId: id, itemId: line.itemId, locationId: from.id, projectId: line.projectId, kind: "transfer_out", quantity: Dec.of(line.quantity).neg().toString(),
-          forProjectId: line.projectId, transferId: id, movedOn: sentOn, actorId: user.userId });
-      }
-      const receivers = await this.holders(client, workspaceId, ["stock.receive", "stock.manage"]);
-      await this.tell(client, workspaceId, "stock.transfer_sent", receivers, user.userId, `${id}:sent`, { transfer: String(number), from: from.name, to: to.name, note: "" }, id);
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_sent", entityType: "stock_transfer", entityId: id, after: { number, from: from.id, to: to.id, lines } });
-      return this.transferDetail(client, workspaceId, id, user.userId);
-    });
+    return this.access.withPermission(actor, workspaceId, "stock.manage", async (client, user) => this.sendWith(client, workspaceId, user.userId, body));
+  }
+
+  /** Sends a move inside a command already running (the factory sending made goods to site); replayed safely by its id. */
+  async sendWith(client: Db, workspaceId: string, userId: string, body: Record<string, unknown>) {
+    const user = { userId };
+    const id = uuid(body.id, "Move");
+    if (!(await this.firstTime(client, workspaceId, id, "send", user.userId))) return this.transferDetail(client, workspaceId, id, user.userId);
+    const from = await this.location(client, workspaceId, body.fromLocationId);
+    const to = await this.location(client, workspaceId, body.toLocationId);
+    if (from.id === to.id) throw new BadRequestException("Choose another place to move it to.");
+    if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Choose what to move.");
+    if (body.lines.length > 200) throw new BadRequestException("A move has up to 200 lines.");
+    const sentOn = body.sentOn ? date(body.sentOn, "Date") : await this.today(client, workspaceId);
+    const seen = new Set<string>();
+    const lines: Array<{ id: string; itemId: string; projectId: string | null; quantity: string }> = [];
+    for (const raw of body.lines as Array<Record<string, unknown>>) {
+      const itemId = await this.item(client, workspaceId, raw?.itemId);
+      const projectId = await this.owner(client, workspaceId, raw?.projectId);
+      const key = `${itemId}:${projectId ?? ""}`;
+      if (seen.has(key)) throw new BadRequestException("The same stock is on the move twice.");
+      seen.add(key);
+      const quantity = amount(raw?.quantity, "Quantity");
+      if (Dec.of(quantity).isZero()) continue;
+      if (to.kind === "site" && projectId && to.projectId !== projectId) throw new BadRequestException("Stock for one project can't go to another project's site.");
+      const have = await onHand(client, workspaceId, itemId, from.id, projectId);
+      if (Dec.of(quantity).cmp(have) > 0) throw new ConflictException(`Only ${have.toString()} of one item at ${from.name}.`);
+      lines.push({ id: randomUUID(), itemId, projectId, quantity });
+    }
+    if (!lines.length) throw new BadRequestException("Choose what to move.");
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('stock_transfers:' || $1::text, 0))`, [workspaceId]);
+    const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM stock_transfers WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
+    await client.query(`INSERT INTO stock_transfers (id, workspace_id, number, from_location_id, to_location_id, note, sent_on, sent_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, workspaceId, number, from.id, to.id, text(body.note, 500, "Note"), sentOn, user.userId]);
+    for (const line of lines) {
+      await client.query(`INSERT INTO stock_transfer_lines (id, workspace_id, transfer_id, item_id, project_id, quantity) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [line.id, workspaceId, id, line.itemId, line.projectId, line.quantity]);
+      await move(client, workspaceId, { batchId: id, itemId: line.itemId, locationId: from.id, projectId: line.projectId, kind: "transfer_out", quantity: Dec.of(line.quantity).neg().toString(),
+        forProjectId: line.projectId, transferId: id, movedOn: sentOn, actorId: user.userId });
+    }
+    const receivers = await this.holders(client, workspaceId, ["stock.receive", "stock.manage"]);
+    await this.tell(client, workspaceId, "stock.transfer_sent", receivers, user.userId, `${id}:sent`, { transfer: String(number), from: from.name, to: to.name, note: "" }, id);
+    await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_sent", entityType: "stock_transfer", entityId: id, after: { number, from: from.id, to: to.id, lines } });
+    return this.transferDetail(client, workspaceId, id, user.userId);
   }
 
   /** Receives a move where it arrived (anything short says why), or cancels it and puts everything back. */

@@ -2709,5 +2709,19 @@
   "Run together ({count})": "Run together ({count})",
   "Run together": "Run together",
   "Create batch": "Create batch",
-  "Day": "Day"
+  "Day": "Day",
+  "Send a step out": "Send a step out",
+  "Done outside": "Done outside",
+  "{step} at {supplier}": "{step} at {supplier}",
+  "{back} of {quantity} back": "{back} of {quantity} back",
+  "To site": "To site",
+  "{quantity} at the factory": "{quantity} at the factory",
+  "Send to site": "Send to site",
+  "Arrived short: {quantity}": "Arrived short: {quantity}",
+  "Create service order": "Create service order",
+  "What the supplier does": "What the supplier does",
+  "{name} (not approved)": "{name} (not approved)",
+  "Up to {quantity}.": "Up to {quantity}.",
+  "Back by": "Back by",
+  "Only {quantity} at the factory.": "Only {quantity} at the factory."
 }

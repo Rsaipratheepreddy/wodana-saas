@@ -55,5 +55,11 @@ export type WorkOrderState = FactoryRights & {
     closedAt: string | null; releasedAt: string | null; readyAt: string | null };
   reports: OutputReport[]; checks: QualityCheck[]; events: WorkOrderEvent[]; settings: FactorySettings; releaseChecks: ReleaseCheck[]; workcenters: Workcenter[]; me: string;
   materials: WorkOrderMaterial[]; materialCost: string; currency: string; projectMaterials: Array<{ id: string; name: string; unit: string }>; canSuggest: boolean; places: StockLocation[];
+  /** Steps done by suppliers on its goods: out while their service order still waits for something. */
+  operations: Array<{ id: string; name: string; supplierName: string; orderId: string; orderNumber: string; orderStatus: string; orderLineId: string; quantity: string; back: string; out: boolean }>;
+  suppliers: Array<{ id: string; name: string; approved: boolean }>;
+  /** Moves of its made goods to the project's site, and what's still at the factory to send. */
+  dispatches: Array<{ id: string; number: number; status: "in_transit" | "received" | "cancelled"; sentOn: string; quantity: string; received: string | null; short: boolean }>;
+  atFactory: string;
 };
 export type FactorySettingsState = { settings: FactorySettings; workcenters: Workcenter[]; canManage: boolean };

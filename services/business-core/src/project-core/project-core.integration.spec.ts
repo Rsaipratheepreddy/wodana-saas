@@ -2005,8 +2005,8 @@ integration("projects core (plan §6.10)", () => {
     await world(async (w) => {
       const { core, projectId, access, all } = await buying(w);
       const factoryRights = [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"];
-      const maker = new FactoryService(access(w.designer, factoryRights));
-      const checker = new FactoryService(access(w.manager, ["factory.view", "factory.approve"]));
+      const maker = factoryAs(access, w.designer, factoryRights);
+      const checker = factoryAs(access, w.manager, ["factory.view", "factory.approve"]);
       const scope = await core.scope(actor, w.workspaceId, projectId);
       let detail = await core.get(actor, w.workspaceId, projectId);
       detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
@@ -2094,8 +2094,8 @@ integration("projects core (plan §6.10)", () => {
   it("issues materials to work orders: suggested from the material list, covered before release, over-issued only with why, returned, swapped with someone else's approval, and chased when short", async () => {
     await world(async (w) => {
       const { core, projectId, access, all } = await buying(w);
-      const maker = new FactoryService(access(w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]));
-      const checker = new FactoryService(access(w.manager, ["factory.view", "factory.approve"]));
+      const maker = factoryAs(access, w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]);
+      const checker = factoryAs(access, w.manager, ["factory.view", "factory.approve"]);
       const store = new InventoryService(access(w.designer, all));
       const scope = await core.scope(actor, w.workspaceId, projectId);
       const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
@@ -2175,8 +2175,8 @@ integration("projects core (plan §6.10)", () => {
   it("stops work orders a variation reduced or removed until they fit the line, and holds running work when the drawing changes until someone else lets it go on", async () => {
     await world(async (w) => {
       const { core, projectId, access, all } = await buying(w);
-      const maker = new FactoryService(access(w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]));
-      const checker = new FactoryService(access(w.manager, ["factory.view", "factory.approve"]));
+      const maker = factoryAs(access, w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]);
+      const checker = factoryAs(access, w.manager, ["factory.view", "factory.approve"]);
       const scope = await core.scope(actor, w.workspaceId, projectId);
       const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
       const worktop = scope.lines.find((line) => line.title === "Worktop")!;
@@ -2231,7 +2231,7 @@ integration("projects core (plan §6.10)", () => {
   it("books hours on workcenters day by day and flags days over capacity; batches start their released work orders together", async () => {
     await world(async (w) => {
       const { core, projectId, access, all } = await buying(w);
-      const maker = new FactoryService(access(w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]));
+      const maker = factoryAs(access, w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]);
       const scope = await core.scope(actor, w.workspaceId, projectId);
       const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
       let detail = await core.get(actor, w.workspaceId, projectId);
@@ -2264,6 +2264,64 @@ integration("projects core (plan §6.10)", () => {
       expect(batches.batches[0]).toMatchObject({ status: "started", orders: 1 });
       expect(batches.orders.find((order) => order.id === first)).toMatchObject({ status: "in_production", batchName: "Oak cutting run" });
       await expect(maker.saveBatch(actor, w.workspaceId, { id: run, action: "add", orderIds: [second], version: 3 })).rejects.toThrow("Only an open batch takes more work orders.");
+    });
+  });
+
+  /** The factory service as one person, with the purchasing and inventory services it uses. */
+  function factoryAs(access: (userId: string, permissions: string[]) => never, userId: string, permissions: string[]) {
+    return new FactoryService(access(userId, permissions), new OrdersService(access(userId, permissions)), new InventoryService(access(userId, permissions)));
+  }
+
+  it("sends a step out to a supplier on a service order, checks once the goods are back, and dispatches made goods to the site as a move", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, manager, access, all } = await buying(w);
+      const maker = factoryAs(access, w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]);
+      const checker = factoryAs(access, w.manager, ["factory.view", "factory.approve"]);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: false, requirePayment: false, requireMaterials: false });
+      const joinery = randomUUID(), wo = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
+      let order = await maker.plan(actor, w.workspaceId, { id: wo, lineId: cabinets.id, quantity: "3", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-09" });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "release", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "start", version: order.order.version });
+      const made = randomUUID();
+      order = await maker.command(actor, w.workspaceId, wo, { action: "report", id: made, good: "3" });
+      order = await checker.command(actor, w.workspaceId, wo, { action: "decide_report", reportId: made, decision: "approve", version: order.order.version });
+
+      // Polishing is done by a supplier: a draft service order for the buyer, and the check waits for the goods to come back.
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "send_out", operationId: randomUUID(), vendorId: vendor, quantity: "3", unitPrice: "100", version: order.order.version }))
+        .rejects.toThrow(/Say what the supplier does/);
+      order = await maker.command(actor, w.workspaceId, wo, { action: "send_out", operationId: randomUUID(), name: "Polishing", vendorId: vendor, quantity: "3", unitPrice: "100", version: order.order.version });
+      const step = order.operations[0];
+      expect([step.name, step.supplierName, step.orderStatus, step.back, step.out]).toEqual(["Polishing", "Nile Marble", "draft", "0.0000", true]);
+      await expect(checker.command(actor, w.workspaceId, wo, { action: "check", id: randomUUID(), passed: "3" })).rejects.toThrow(`Polishing isn't back from Nile Marble yet (${step.orderNumber}).`);
+      let purchase = await buyer.orders.get(actor, w.workspaceId, step.orderId);
+      expect(purchase.lines.map((line) => [line.description, line.quantity, line.projectId])).toEqual([["Polishing — WO-0001 Kitchen cabinets", "3.0000", projectId]]);
+      purchase = await buyer.orders.command(actor, w.workspaceId, step.orderId, { action: "submit", version: purchase.order.version });
+      purchase = await buyer.orders.command(actor, w.workspaceId, step.orderId, { action: "send", version: purchase.order.version });
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: step.orderId, place: "factory", receivedOn: "2026-09-26", lines: [{ orderLineId: purchase.lines[0].id, received: "3" }] });
+      order = await maker.order(actor, w.workspaceId, wo);
+      expect([order.operations[0].back, order.operations[0].out]).toEqual(["3.0000", false]);
+      order = await checker.command(actor, w.workspaceId, wo, { action: "check", id: randomUUID(), passed: "3" });
+      expect([order.order.status, order.atFactory]).toEqual(["ready", "3.0000"]);
+      // The polishing brought back our own goods: nothing new in stock.
+      const stock = await buyer.stock.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => [row.itemName, row.locationName, row.onHand])).toEqual([["Kitchen cabinets", "Factory", "3.0000"]]);
+
+      // Two go to site now; there's only one left to send.
+      const trip = randomUUID();
+      order = await maker.command(actor, w.workspaceId, wo, { action: "dispatch", id: trip, quantity: "2", note: "First trip" });
+      order = await maker.command(actor, w.workspaceId, wo, { action: "dispatch", id: trip, quantity: "2", note: "First trip" });
+      expect([order.dispatches.map((row) => [row.status, row.quantity, row.received]), order.atFactory]).toEqual([[["in_transit", "2.0000", null]], "1.0000"]);
+      await expect(maker.command(actor, w.workspaceId, wo, { action: "dispatch", id: randomUUID(), quantity: "2" })).rejects.toThrow(/Only 1 of one item at Factory/);
+      const move = await buyer.stock.transfer(actor, w.workspaceId, trip);
+      await buyer.stock.transferCommand(actor, w.workspaceId, trip, { action: "receive", lines: [{ id: move.lines[0].id, received: "2" }] });
+      order = await maker.order(actor, w.workspaceId, wo);
+      expect(order.dispatches.map((row) => [row.status, row.received, row.short])).toEqual([["received", "2.0000", false]]);
     });
   });
 

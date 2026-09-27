@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { Button, ControlledModalDialog, DateField, ErrorState, InlineNotice, InspectorSheet, MenuButton, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -13,7 +14,7 @@ import { WorkOrderMaterials } from "./work-order-materials";
 import styles from "./factory.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
-type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | { refuse: string } | null;
+type Dialog = "schedule" | "drawing" | "revise" | "quantity" | "report" | "check" | "hold" | "cancel" | "short_close" | "send_out" | "dispatch" | { refuse: string } | null;
 
 /**
  * One work order: what it makes and where, whether it can be released (each check with what's missing),
@@ -52,6 +53,7 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
   const more = !order || !state?.canManage ? [] : [
     ...(open ? [{ id: "quantity", label: t("Change quantity") }] : []),
     ...(["released", "in_production", "on_hold"].includes(order.status) ? [{ id: "revise", label: t("Drawing changed") }] : []),
+    ...(["released", "in_production"].includes(order.status) ? [{ id: "send_out", label: t("Send a step out") }] : []),
     ...(["planned", "released", "in_production"].includes(order.status) ? [{ id: "hold", label: t("Put on hold") }] : []),
     ...(open && !(Number(order.made) + Number(order.pending) + Number(order.scrapped)) ? [{ id: "cancel", label: t("Cancel work order") }] : []),
     ...(open && Number(order.made) + Number(order.pending) + Number(order.scrapped) > 0 ? [{ id: "short_close", label: t("Close short") }] : []),
@@ -128,6 +130,29 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
         </li>)}</ul>
       </section> : null}
 
+      {state.operations.length ? <section className={styles.stack} aria-label={t("Done outside")}>
+        <h3 className={styles.subhead}>{t("Done outside")}</h3>
+        <ul className={styles.list}>{state.operations.map((operation) => <li key={operation.id}>
+          <span className={styles.nameCell}><span>{t("{step} at {supplier}", { step: operation.name, supplier: operation.supplierName })}</span>
+            <small><Link href={`/workspace/purchasing/orders?order=${operation.orderId}`}>{operation.orderNumber}</Link></small></span>
+          <small className={operation.out ? undefined : styles.muted}>{operation.out ? t("{back} of {quantity} back", { back: quantityText(operation.back) || "0", quantity: unit(operation.quantity) }) : t("Back")}</small>
+        </li>)}</ul>
+      </section> : null}
+
+      {state.dispatches.length || Number(state.atFactory) > 0 ? <section className={styles.stack} aria-label={t("To site")}>
+        <div className={styles.filters}>
+          <h3 className={styles.subhead}>{t("To site")}</h3>
+          {Number(state.atFactory) > 0 ? <span className={styles.muted}>{t("{quantity} at the factory", { quantity: unit(state.atFactory) })}</span> : null}
+          <span className={styles.spacer} />
+          {Number(state.atFactory) > 0 && (state.canManage || state.canIssue) ? <Button size="compact" onPress={() => setDialog("dispatch")}>{t("Send to site")}</Button> : null}
+        </div>
+        {state.dispatches.length ? <ul className={styles.list}>{state.dispatches.map((trip) => <li key={trip.id}>
+          <span className={styles.nameCell}><Link href={`/workspace/inventory/moves?move=${trip.id}`}>{t("Move {number}", { number: trip.number })}</Link><small>{format.day(trip.sentOn)}</small></span>
+          <small>{`${unit(trip.quantity)} · ${trip.status === "in_transit" ? t("On its way") : trip.status === "cancelled" ? t("Cancelled")
+            : trip.short ? t("Arrived short: {quantity}", { quantity: unit(trip.received ?? "0") }) : t("Arrived")}`}</small>
+        </li>)}</ul> : null}
+      </section> : null}
+
       {state.checks.length ? <section className={styles.stack} aria-label={t("Quality checks")}>
         <h3 className={styles.subhead}>{t("Quality checks")}</h3>
         <ul className={styles.list}>{state.checks.map((check) => <li key={check.id}>
@@ -153,6 +178,10 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
     {state && order && dialog === "quantity" ? <QuantityDialog unit={order.unit} current={order.quantity}
       floor={String(Number(order.passed) + Number(order.toCheck) + Number(order.pending))} onClose={() => setDialog(null)}
       onSave={async (quantity) => { if (await run("set_quantity", { quantity })) setDialog(null); }} /> : null}
+    {state && order && dialog === "send_out" ? <SendOutDialog state={state} onClose={() => setDialog(null)}
+      onSave={async (input) => { if (await run("send_out", { operationId: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
+    {state && order && dialog === "dispatch" ? <DispatchDialog unit={order.unit} available={state.atFactory} onClose={() => setDialog(null)}
+      onSave={async (input) => { if (await run("dispatch", { id: crypto.randomUUID(), ...input })) setDialog(null); }} /> : null}
     {dialog === "hold" ? <TextDialog title={t("Put on hold")} label={t("Why")} action={t("Put on hold")} onClose={() => setDialog(null)}
       onSave={async (reason) => { if (await run("hold", { reason })) setDialog(null); }} /> : null}
     {dialog === "cancel" ? <TextDialog title={t("Cancel work order")} label={t("Why it's cancelled")} action={t("Cancel work order")} onClose={() => setDialog(null)}
@@ -284,5 +313,53 @@ function QuantityDialog({ unit, current, floor, onClose, onSave }: { unit: strin
       <Button variant="primary" isLoading={busy} isDisabled={!(Number(quantity) > 0) || under} onPress={async () => { setBusy(true); await onSave(quantity); setBusy(false); }}>{t("Save")}</Button></div>}>
     <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
       isInvalid={under} errorMessage={under ? t("{quantity} is already made or waiting.", { quantity: `${quantityText(floor)} ${unit}`.trim() }) : undefined} />
+  </ControlledModalDialog>;
+}
+
+/** A step a supplier does on the work order's goods: a draft service order the buyer places; checks wait until the goods are back. */
+function SendOutDialog({ state, onClose, onSave }: { state: WorkOrderState; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
+  const t = useT();
+  const [name, setName] = useState("");
+  const [vendorId, setVendorId] = useState(state.suppliers.find((supplier) => supplier.approved)?.id ?? "");
+  const [quantity, setQuantity] = useState(quantityText(state.order.quantity));
+  const [price, setPrice] = useState("");
+  const [back, setBack] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const over = Number(quantity) > Number(state.order.quantity);
+  return <ControlledModalDialog isOpen size="md" title={t("Send a step out")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!name.trim() || !vendorId || !(Number(quantity) > 0) || over} onPress={async () => {
+        setBusy(true); await onSave({ name: name.trim(), vendorId, quantity, unitPrice: price || "0", expectedDate: back }); setBusy(false);
+      }}>{t("Create service order")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <TextInput label={t("What the supplier does")} isRequired value={name} onChange={setName} />
+      <SelectField label={t("Supplier")} placeholder={t("Choose")} selectedKey={vendorId} onSelectionChange={(key) => setVendorId(key ? String(key) : "")}
+        items={state.suppliers.map((supplier) => ({ id: supplier.id, label: supplier.approved ? supplier.name : t("{name} (not approved)", { name: supplier.name }) }))} />
+      <div className={styles.pair}>
+        <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={state.order.unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
+          isInvalid={over} errorMessage={over ? t("Up to {quantity}.", { quantity: `${quantityText(state.order.quantity)} ${state.order.unit}`.trim() }) : undefined} />
+        <TextInput label={t("Price each")} inputMode="decimal" value={price} onChange={(value) => setPrice(numeric(value))} />
+      </div>
+      <DateField label={t("Back by")} value={back ? parseDate(back) : null} onChange={(value) => setBack(value ? value.toString() : null)} />
+    </div>
+  </ControlledModalDialog>;
+}
+
+/** Made goods from the factory to the project's site: a move the site receives. */
+function DispatchDialog({ unit, available, onClose, onSave }: { unit: string; available: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
+  const t = useT();
+  const [quantity, setQuantity] = useState(quantityText(available));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const over = Number(quantity) > Number(available);
+  return <ControlledModalDialog isOpen size="md" title={t("Send to site")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!(Number(quantity) > 0) || over} onPress={async () => { setBusy(true); await onSave({ quantity, note: note.trim() }); setBusy(false); }}>
+        {t("Send to site")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <TextInput label={t("Quantity")} isRequired inputMode="decimal" suffix={unit || undefined} value={quantity} onChange={(value) => setQuantity(numeric(value))}
+        isInvalid={over} errorMessage={over ? t("Only {quantity} at the factory.", { quantity: `${quantityText(available)} ${unit}`.trim() }) : undefined} />
+      <TextInput label={t("Note")} value={note} onChange={setNote} />
+    </div>
   </ControlledModalDialog>;
 }
