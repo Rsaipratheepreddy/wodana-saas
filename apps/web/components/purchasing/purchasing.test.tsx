@@ -265,6 +265,24 @@ describe("ordering", () => {
     expect(posts(fetcher)[0].body.lines[0]).toMatchObject({ id: "a", source: "material", materialItemId: "m1", quantity: "12", unitPrice: "350", discountPercent: "10", taxRate: "5" });
   });
 
+  it("lets the buyer call off an order still waiting for someone else's approval", async () => {
+    nav.query = "order=o1";
+    let current = orderState({ status: "pending_approval", submittedBy: "u2", version: 3 });
+    const fetcher = mount((url, body) => {
+      if (body?.action === "cancel") current = orderState({ status: "cancelled", version: 4, cancelReason: "Client changed the finish" });
+      return url.includes("/orders/o1") ? current : ordersList;
+    });
+    page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(within(sheet).getByText("Waiting for someone who approves orders.")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Cancel order" }));
+    const dialog = await screen.findByRole("dialog", { name: "Cancel order" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Why it's cancelled" }), "Client changed the finish");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel order" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "cancel", version: 3, reason: "Client changed the finish" }));
+  });
+
   it("asks why when an order takes a project past what it needs, and shows over-ordered items in To order", async () => {
     nav.query = "order=o1";
     const over = orderState({}, { overOrdered: [{ lineId: "a", description: "Calacatta slab", unit: "m²", over: "2.0000" }] });
