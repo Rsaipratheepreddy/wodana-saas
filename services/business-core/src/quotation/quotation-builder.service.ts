@@ -7,7 +7,7 @@ import { recordAudit } from "../audit/record-audit";
 import { currencyDecimals } from "../catalog-core/catalog-v2.service";
 import { Dec } from "../catalog-core/decimal";
 import { FormulaError } from "../catalog-core/formula";
-import { parsePaymentTerms } from "../commercial/commercial.domain";
+import { parsePaymentTerms, parseCover, parseQuotePresentation, text as domainText } from "../commercial/commercial.domain";
 import { effectivePortalBrand } from "../commercial/effective-brand";
 import { defaultDocument, parseDocument, type QuoteDocument } from "./quote-document";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
@@ -344,6 +344,28 @@ export class QuotationBuilderService {
     });
   }
 
+  /**
+   * The proposal document's design — its pages, cover, terms, inclusions and exclusions — saved on its
+   * own. It never touches the lines, so the sheet and the document can be edited side by side.
+   */
+  setProposal(actor: RequestActor, workspaceId: string, caseId: string, quoteId: string, input: Record<string, unknown>) {
+    return this.access.withPermissions(actor, workspaceId, [VIEW, EDIT], async (client, user) => {
+      await this.editable(client, workspaceId, caseId, quoteId);
+      const change: Record<string, unknown> = {};
+      if (input.presentation !== undefined) change.presentation = parseQuotePresentation(input.presentation);
+      if (input.cover !== undefined) change.cover = parseCover(input.cover);
+      if (input.terms !== undefined) change.terms = domainText(input.terms, 10000);
+      if (input.inclusions !== undefined) change.inclusions = domainText(input.inclusions, 6000);
+      if (input.exclusions !== undefined) change.exclusions = domainText(input.exclusions, 6000);
+      if (!Object.keys(change).length) throw new BadRequestException("Nothing to save.");
+      await client.query(`UPDATE commercial_quotes SET detail = detail || $4::jsonb, updated_at = now() WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId, JSON.stringify(change)]);
+      const revision = (await client.query<{ revision: number }>(`UPDATE commercial_cases SET revision = revision + 1, updated_at = now() WHERE workspace_id = $1 AND case_id = $2 RETURNING revision`, [workspaceId, caseId])).rows[0]?.revision ?? 0;
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.proposal_changed.v1", entityType: "commercial_case", entityId: caseId, after: { quoteId, fields: Object.keys(change) } });
+      const quote = (await client.query<{ quote: Record<string, unknown> }>(`SELECT commercial_quote_json(quote) AS quote FROM commercial_quotes quote WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [workspaceId, caseId, quoteId])).rows[0].quote;
+      return { quote, revision };
+    });
+  }
+
   /** The firm's quote templates, each line ready to insert (builder templates keep formulas and build-ups; older ones keep name, quantity and rate). */
   templates(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => {
@@ -622,6 +644,8 @@ export class QuotationBuilderService {
       me: userId,
       assistant: await this.assistant(client, workspaceId, userId),
       document: documentOf(quote, settings),
+      // The words the proposal prints: the same terms and exclusions the client sees.
+      proposal: { terms: typeof quote.detail.terms === "string" ? quote.detail.terms : "", exclusions: typeof quote.detail.exclusions === "string" ? quote.detail.exclusions : "" },
       brand: await effectivePortalBrand(client, workspaceId),
       client: (await client.query<{ name: string; project: string; address: string | null }>(
         `SELECT coalesce(party.display_name, opportunity.title) AS name, opportunity.title AS project,

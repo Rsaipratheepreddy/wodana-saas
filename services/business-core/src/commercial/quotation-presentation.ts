@@ -31,7 +31,8 @@ export function quotationMaterialText(
         link.snapshot.name,
       ]),
   );
-  return line[role]
+  // Lines made in the quote editor may have no material or finish yet.
+  return (line[role] ?? "")
     .split("\n")
     .map((part) => labels.get(part) ?? part)
     .join("\n");

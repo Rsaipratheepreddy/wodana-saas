@@ -19,10 +19,16 @@ import { QuotationPdfExport } from './quotation-pdf-export';
 import { CatalogOptionsProvider } from './catalog-options-cache';
 import styles from './quotation-builder-shell.module.css';
 const labels: Record<string, string> = { cover: 'Cover page', scope: 'Scope & pricing', terms: 'Terms & conditions', summary: 'Summary', payments: 'Payment schedule', acceptance: 'Acceptance' };
-export function QuotationBuilderShell({ backHref, initial, quoteId }: {
+/** Inside the quote editor the designer saves only the document's design, and payments open the editor's own tab. */
+export type EmbeddedProposal = {
+    save: (change: { presentation?: unknown; cover?: unknown; terms?: string; inclusions?: string; exclusions?: string }) => Promise<{ quote: Quote; revision: number }>;
+    onPayments: () => void;
+};
+export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: {
     backHref: string;
     initial: CommercialState;
     quoteId: string;
+    embedded?: EmbeddedProposal;
 }) {
     const router = useRouter();
     const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
@@ -55,6 +61,13 @@ export function QuotationBuilderShell({ backHref, initial, quoteId }: {
         window.addEventListener('beforeunload', warn);
         return () => window.removeEventListener('beforeunload', warn);
     }, [dirty]);
+    // In the quote editor the design saves itself a moment after the last change.
+    useEffect(() => {
+        if (!embedded || !dirty || busy)
+            return;
+        const timer = window.setTimeout(() => void save(), 1200);
+        return () => window.clearTimeout(timer);
+    });
     function change(next: Quote, checkpoint = false) {
         if (readOnly || saving.current)
             return;
@@ -84,6 +97,17 @@ export function QuotationBuilderShell({ backHref, initial, quoteId }: {
         setError('');
         setNotice('');
         try {
+            if (embedded) {
+                // Only the design is sent; the lines stay as the sheet has them.
+                const sent = latest.current;
+                const result = await embedded.save({ presentation: sent.presentation, cover: sent.cover, terms: sent.terms, inclusions: sent.inclusions, exclusions: sent.exclusions });
+                const next = { ...result.quote, presentation: builderPresentation(result.quote, initial.portalBrand?.name ?? '', initial.customerName) };
+                if (latest.current === sent) { setDraft(next); latest.current = next; }
+                setSaved(JSON.stringify(latest.current === sent ? next : { ...latest.current, presentation: next.presentation }));
+                setRevision(result.revision);
+                setNotice('Saved');
+                return true;
+            }
             const result = await jsonRequest<{
                 data: CommercialState['data'];
             }>(commercialPath(initial.workspaceId, `cases/${initial.caseId}`), 'POST', { action: 'save', revision, quoteId: draft.id, quote: draft });
@@ -171,34 +195,34 @@ export function QuotationBuilderShell({ backHref, initial, quoteId }: {
         return; const id = `custom:${crypto.randomUUID()}`; change({ ...draft, presentation: { ...design, pageOrder: [...pages.slice(0, pages.indexOf(active) + 1), id, ...pages.slice(pages.indexOf(active) + 1)], pages: [...design.pages, { ...custom, id, title: `${title(active)} copy`, elements: structuredClone(custom.elements) }] } }, true); setActive(id); }
     const documentPages = quotationPages(draft);
     const canvas = <div className={styles.documentWorkspace}>
-  <div className={styles.pageStack}>{documentPages.map((page, index) => <section key={page.id} id={`document-page-${page.id}`} className={styles.documentPage} aria-label={`Page ${index + 1}`}><header><span>Page {index + 1}{page.id.startsWith('items:') ? ' · Scope & Items' : ''}</span><button type="button" onClick={() => setActive(page.id)}>Edit page</button></header><QuotationPageDesigner pageId={page.id} quote={draft} continuous active={active === page.id} inspectorHost={inspectorHost} onActivate={() => setActive(page.id)} readOnly={readOnly || busy} onChange={change} onEditPayments={() => setPaymentEditor(true)} onEditDetails={() => setDetailsOpen(true)} onEditScope={() => setScopeView(true)}/></section>)}</div>
-  <aside className={styles.properties}><strong>{title(active)} properties</strong><p>Select text or an image on any page. Double-click text to edit.</p><button type="button" onClick={() => setDetailsOpen(true)}>Client & project details</button><button type="button" onClick={() => setPaymentEditor(true)}>Payment schedule</button><div ref={setInspectorHost}/></aside>
+  <div className={styles.pageStack}>{documentPages.map((page, index) => <section key={page.id} id={`document-page-${page.id}`} className={styles.documentPage} aria-label={`Page ${index + 1}`}><header><span>Page {index + 1}{page.id.startsWith('items:') ? ' · Scope & Items' : ''}</span><button type="button" onClick={() => setActive(page.id)}>Edit page</button></header><QuotationPageDesigner pageId={page.id} quote={draft} continuous active={active === page.id} inspectorHost={inspectorHost} onActivate={() => setActive(page.id)} readOnly={readOnly || busy} onChange={change} onEditPayments={() => (embedded ? embedded.onPayments() : setPaymentEditor(true))} onEditDetails={() => setDetailsOpen(true)} onEditScope={() => (embedded ? undefined : setScopeView(true))}/></section>)}</div>
+  <aside className={styles.properties}><strong>{title(active)} properties</strong><p>Select text or an image on any page. Double-click text to edit.</p><button type="button" onClick={() => setDetailsOpen(true)}>Client & project details</button><button type="button" onClick={() => (embedded ? embedded.onPayments() : setPaymentEditor(true))}>Payment schedule</button><div ref={setInspectorHost}/></aside>
  </div>;
     return <CatalogOptionsProvider workspaceId={initial.workspaceId} caseId={initial.caseId}>
  <section className={styles.builder} aria-label="Quotation builder">
-  <header className={styles.header}>
-   <Link href={backHref} className={styles.back} onClick={event => { if (busy) {
+  <header className={styles.header} data-embedded={embedded ? true : undefined}>
+   {embedded ? <span /> : <Link href={backHref} className={styles.back} onClick={event => { if (busy) {
         event.preventDefault();
         return;
     } if (dirty) {
         event.preventDefault();
         requestConfirmation({ title: 'Leave without saving?', body: 'Your unsaved quotation changes will be discarded.', confirmLabel: 'Leave quotation', onConfirm: () => router.push(backHref) });
-    } }}><ArrowLeft size={15}/>Back to quotations</Link>
+    } }}><ArrowLeft size={15}/>Back to quotations</Link>}
 
    <div className={styles.actions}>
     <span role="status">{readOnly ? 'View only' : busy ? 'Saving…' : dirty ? 'Unsaved changes' : notice || 'Saved'}</span>
     <button type="button" aria-label="Undo" disabled={!past.length || readOnly || busy} onClick={undo}><Undo2 size={16}/></button>
     <button type="button" aria-label="Redo" disabled={!future.length || readOnly || busy} onClick={redo}><Redo2 size={16}/></button>
-    {initial.canEdit && draft.kind === 'quotation' && <button type="button" disabled={busy || converting} onClick={() => { setTemplateName(draft.title); setTemplateError(''); setTemplateCreated(false); setTemplateOpen(true); }}>Convert to template</button>}
+    {!embedded && initial.canEdit && draft.kind === 'quotation' && <button type="button" disabled={busy || converting} onClick={() => { setTemplateName(draft.title); setTemplateError(''); setTemplateCreated(false); setTemplateOpen(true); }}>Convert to template</button>}
     <button type="button" disabled={exporting || !documentPages.length} title="Open the print dialog and choose Save as PDF" onClick={() => setExporting(true)}><Download size={15}/>{exporting ? 'Preparing…' : 'Download PDF'}</button>
     <button type="button" aria-pressed={preview} onClick={() => setPreview(!preview)}><Eye size={15}/>{preview ? 'Back to editing' : 'Preview'}</button>
-    {!readOnly && <button type="button" onClick={() => void save()} disabled={busy || !dirty}><Save size={15}/>Save</button>}
-    <button type="button" className={styles.primary} disabled={busy} onClick={async () => { if (await save())
-        router.push(`/workspace/pre-projects/cases/${initial.caseId}/approvals?review=${encodeURIComponent(`quote:${draft.id}`)}`); }}>Review quotation<ArrowRight size={14}/></button>
+    {!readOnly && !embedded && <button type="button" onClick={() => void save()} disabled={busy || !dirty}><Save size={15}/>Save</button>}
+    {!embedded && <button type="button" className={styles.primary} disabled={busy} onClick={async () => { if (await save())
+        router.push(`/workspace/pre-projects/cases/${initial.caseId}/approvals?review=${encodeURIComponent(`quote:${draft.id}`)}`); }}>Review quotation<ArrowRight size={14}/></button>}
    </div>
   </header>
    {!preview && <div className={styles.tabs}>
-    <div className={styles.pageNavigation} aria-label="Quotation pages"><button type="button" aria-pressed={scopeView} onClick={() => setScopeView(true)}>Scope & Items</button><button type="button" aria-pressed={!scopeView} onClick={() => setScopeView(false)}>Document</button>{!scopeView && documentPages.map((page, index) => <button key={page.id} type="button" aria-current={active === page.id ? 'page' : undefined} onClick={() => { setActive(page.id); document.getElementById(`document-page-${page.id}`)?.scrollIntoView({ block: 'start', behavior: 'instant' }); }}>{index + 1}</button>)}</div>
+    <div className={styles.pageNavigation} aria-label="Quotation pages">{embedded ? null : <button type="button" aria-pressed={scopeView} onClick={() => setScopeView(true)}>Scope & Items</button>}<button type="button" aria-pressed={!scopeView} onClick={() => setScopeView(false)}>Document</button>{!scopeView && documentPages.map((page, index) => <button key={page.id} type="button" aria-current={active === page.id ? 'page' : undefined} onClick={() => { setActive(page.id); document.getElementById(`document-page-${page.id}`)?.scrollIntoView({ block: 'start', behavior: 'instant' }); }}>{index + 1}</button>)}</div>
     {!readOnly && <label className={styles.addPage}><Plus size={14}/><select aria-label="Add page" value="" disabled={busy || pages.length >= 40 || design.pages.length >= 40} onChange={event => addPage(event.target.value)}><option value="" disabled>Add page</option><option value="blank">Blank page</option><option value="introduction">Introduction</option><option value="closing">Closing page</option>{['payments', 'acceptance'].filter(id => !pages.includes(id)).map(id => <option key={id} value={id}>{labels[id]}</option>)}</select></label>}
     <details className={styles.pageMenu}><summary>Pages</summary><div><small>Include in preview and document</small>{pages.map(id => <label key={id} className={styles.pageToggle}><input type="checkbox" aria-label={`Include ${title(id)}`} checked={!design.hiddenPages?.includes(id)} disabled={readOnly || busy} onChange={event => change({ ...draft, presentation: { ...design, hiddenPages: event.target.checked ? (design.hiddenPages ?? []).filter(hidden => hidden !== id) : [...(design.hiddenPages ?? []), id] } }, true)}/>{title(id)}</label>)}</div></details>
     {!readOnly && <details className={styles.pageMenu}><summary aria-label="Page options">•••</summary><div>
@@ -211,7 +235,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId }: {
    </div>}
   {error && <p role="alert" className={styles.error}>{error}</p>}
   {preview ? <QuotationBuilderPreview initialPageId={active} allPages fitWidth quote={draft} brand={initial.portalBrand} customerName={initial.customerName}/> : <div id="builder-panel" className={styles.canvas}>
-   {active === 'payments' && <div className={styles.scopeControls}><button type="button" onClick={() => setPaymentEditor(true)}>{readOnly ? 'View payment schedule' : 'Edit payment schedule'}</button><span>{draft.paymentTerms.length} milestones · {draft.paymentTerms.reduce((sum, term) => sum + term.percent, 0).toFixed(2)}% allocated</span></div>}
+   {active === 'payments' && <div className={styles.scopeControls}><button type="button" onClick={() => (embedded ? embedded.onPayments() : setPaymentEditor(true))}>{readOnly ? 'View payment schedule' : 'Edit payment schedule'}</button><span>{draft.paymentTerms.length} milestones · {draft.paymentTerms.reduce((sum, term) => sum + term.percent, 0).toFixed(2)}% allocated</span></div>}
    {scopeView && !readOnly && <div className={styles.scopeControls}><button type="button" disabled={busy} onClick={async () => { if (await save())
             setScopeImport(true); }}>Import requirements</button></div>}
    {scopeView ? <QuotationScopeGrid quote={draft} onChange={change} readOnly={readOnly || busy} workspaceId={initial.workspaceId} caseId={initial.caseId} canOverridePrice={Boolean(initial.canOverridePrice)}/> : canvas}

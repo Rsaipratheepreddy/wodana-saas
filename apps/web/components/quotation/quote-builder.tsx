@@ -17,7 +17,7 @@ import { QuoteRow, type RowColumn, type RowColumns } from "./quote-row";
 import { QuoteSummary } from "./quote-summary";
 import { FlowActions, QuotePayments, RevisionChanges } from "./quote-flow";
 import { QuoteTerms } from "./quote-terms";
-import { DocumentStudio } from "./document-studio";
+import { QuoteProposal } from "./quote-proposal";
 import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteChat, type AssistantCommands } from "./quote-chat";
 import { QuoteCatalog } from "./quote-catalog";
@@ -425,8 +425,9 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         {error ? <InlineNotice tone="error" message={error} /> : null}
         {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
-        {tab === "document" ? <DocumentStudio state={state} api={api} workspaceId={workspaceId} caseId={caseId} onState={setState} onError={setError} />
-          : tab === "terms" ? <QuoteTerms key={`terms:${state.quote.id}`} state={state} api={api} onState={setState} onError={setError} />
+        {tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")} />
+          : tab === "terms" ? <QuoteTerms key={`terms:${state.quote.id}`} state={state} api={api} onError={setError}
+            onSaved={(proposal) => setState((current) => (current ? { ...current, proposal } : current))} />
             : tab === "payments" ? <QuotePayments key={`payments:${state.quote.id}:${JSON.stringify(state.quote.paymentTerms)}`} state={state} api={api} onState={setState} onError={setError} /> : <>
           {empty && state.canEdit ? <div className={styles.starts} aria-label={t("Start the quote")} role="group">
             <button type="button" data-primary onClick={() => { openPanel("assistant"); requestAnimationFrame(() => assistantRef.current?.draft()); }}>

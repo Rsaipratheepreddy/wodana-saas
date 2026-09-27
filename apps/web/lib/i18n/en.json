@@ -4216,5 +4216,6 @@
   "Disqualified": "Disqualified",
   "Abandoned": "Abandoned",
   "On the way": "On the way",
-  "Add “{name}”": "Add “{name}”"
+  "Add “{name}”": "Add “{name}”",
+  "The proposal didn't load": "The proposal didn't load"
 }

@@ -47,6 +47,8 @@ export type PaymentMilestone = { id: string; title: string; percent: number; tri
 export type QuoteDiscount = { scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: string; reason: string };
 
 export type BuilderState = {
+  /** The terms and exclusions the proposal prints. */
+  proposal?: { terms: string; exclusions: string };
   /** The unit sizes are written in unless a line says otherwise ("cm", "in"). */
   sizeUnit?: string;
   /** Choices for the unit and material cells. */

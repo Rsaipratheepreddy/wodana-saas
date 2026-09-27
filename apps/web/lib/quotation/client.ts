@@ -1,3 +1,4 @@
+import type { Quote } from "@/lib/commercial/types";
 import type { AiProposal, BoqPick, BuilderState, QuoteDocument, QuoteTemplate, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
 
 export const quotationPath = (workspaceId: string, path: string, query?: Record<string, string>) =>
@@ -36,6 +37,7 @@ export function quoteApi(workspaceId: string, caseId: string, quoteId: string) {
     reply: (threadId: string, id: string, body: string, mentions: string[]) => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments/${threadId}/replies`), "POST", { id, body, mentions }),
     threadStatus: (threadId: string, version: number, status: "open" | "resolved") => request<{ threads: QuoteThread[] }>(quotationPath(workspaceId, `${base}/comments/${threadId}/status`), "POST", { version, status }),
     pulse: (lineId: string | null, field: string | null) => request<{ people: QuotePerson[]; revision: number; comments: string }>(quotationPath(workspaceId, `${base}/pulse`), "POST", { lineId, field }),
+    proposal: (change: Record<string, unknown>) => request<{ quote: Quote; revision: number }>(quotationPath(workspaceId, `${base}/proposal`), "PUT", change),
     document: (change: Partial<QuoteDocument>) => request<BuilderState>(quotationPath(workspaceId, `${base}/document`), "PUT", change),
     templates: () => request<{ templates: QuoteTemplate[] }>(quotationPath(workspaceId, "templates")),
     saveTemplate: (id: string, name: string, scope: "area" | "trade" | "quote", target: string) => request<{ id: string; name: string; lines: number }>(quotationPath(workspaceId, `${base}/templates`), "POST", { id, name, scope, target }),

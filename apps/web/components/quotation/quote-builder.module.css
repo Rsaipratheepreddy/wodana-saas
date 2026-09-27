@@ -344,3 +344,6 @@
   .starts { grid-template-columns: minmax(0, 1fr); }
   .meta, .saving { display: none; }
 }
+
+/* The proposal designer inside the Document tab. */
+.proposal { min-inline-size: 0; margin-inline: calc(-1 * var(--wd-phi-3)); }
