@@ -9368,5 +9368,12 @@
   "{used} of {total}": "{used} of {total}",
   "{percent}% of your allowance": "{percent}% of your allowance",
   "No limit set": "No limit set",
-  "Storage by area": "Storage by area"
+  "Storage by area": "Storage by area",
+  "Waiting for {who}": "Waiting for {who}",
+  "For {line}": "For {line}",
+  "Stages not finished": "Stages not finished",
+  "Snags open": "Snags open",
+  "Issue with work still open": "Issue with work still open",
+  "Why hand over with work still open": "Why hand over with work still open",
+  "Issue anyway": "Issue anyway"
 }

@@ -64,12 +64,14 @@ export function ProjectSite({ workspaceId, projectId, projectName = "" }: { work
   const safety: Record<Safety, string> = { none: t("No safety issue"), observation: t("Safety observation"), incident: t("Incident") };
   const outlook: Record<Outlook, string> = { none: "", watch: t("At risk"), blocked: t("Blocked") };
   const statusLabel = { draft: t("Draft"), submitted: t("Waiting for approval"), approved: t("Approved"), returned: t("Sent back") };
+  // A submitted report says who it waits for.
+  const statusOf = (report: SiteReport) => (report.status === "submitted" && report.waitingFor?.length ? t("Waiting for {who}", { who: report.waitingFor.join(", ") }) : statusLabel[report.status]);
 
   const card = (report: SiteReport) => <li key={report.id} className={styles.report}>
     <div className={styles.reportHead}>
       <strong>{format.day(report.reportDate)}</strong>
       <span className={styles.muted}>{report.authorName}</span>
-      <span className={styles.status} data-status={report.status}>{statusLabel[report.status]}</span>
+      <span className={styles.status} data-status={report.status}>{statusOf(report)}</span>
       <span className={styles.spacer} />
       {report.authorId === state.me && ["draft", "returned"].includes(report.status) && state.canReport ? <Button size="compact" onPress={() => setEditing(report)}>{t("Open")}</Button> : null}
     </div>

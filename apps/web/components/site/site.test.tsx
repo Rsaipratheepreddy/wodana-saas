@@ -8,7 +8,7 @@ import { ProjectSite } from "./project-site";
 const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const report = (patch: Partial<SiteReport> = {}): SiteReport => ({
   id: "r1", reportDate: "2026-09-25", authorId: "u2", authorName: "Dana Karim", status: "submitted", weather: "Hot", safety: "none", safetyNote: "", forecast: "none", impact: "",
-  recoveryOwnerId: null, recoveryOwnerName: null, recoveryOn: null, noWorkReason: "", notes: "", decidedByName: null, decisionNote: "", version: 3,
+  recoveryOwnerId: null, recoveryOwnerName: null, recoveryOn: null, noWorkReason: "", notes: "", decidedByName: null, decisionNote: "", version: 3, waitingFor: ["Maya Haddad"],
   workforce: [{ trade: "Carpenters", people: 4 }], lines: [{ id: "e1", boqLineId: "l1", title: "Kitchen cabinets", unit: "m", installed: "3.0000", note: "" }],
   photos: [{ id: "ph1", name: "kitchen.jpg" }], ...patch,
 });
@@ -36,6 +36,8 @@ describe("site", () => {
     const fetcher = mount(() => state());
     site();
     const waiting = await screen.findByRole("region", { name: "Waiting for your approval" });
+    // A submitted report says who it waits for.
+    expect(within(waiting).getByText("Waiting for Maya Haddad")).toBeInTheDocument();
     expect(within(waiting).getByText("Carpenters 4")).toBeInTheDocument();
     expect(within(waiting).getByText("Kitchen cabinets: 3 m installed")).toBeInTheDocument();
     expect(within(waiting).getByRole("img", { name: "kitchen.jpg" })).toBeInTheDocument();
