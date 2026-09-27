@@ -55,7 +55,7 @@ try {
   });
   process.stdout.write(`\ncreated ${result.created.length} · reused ${result.reused.length} · skipped ${result.skipped.length}\n`);
   for (const skipped of result.skipped) process.stdout.write(`  skipped  ${skipped.stage}: ${skipped.reason}\n`);
-  process.stdout.write(`${JSON.stringify(result.ids, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(result.scenarios, null, 2)}\n`);
 } catch (error) {
   failed = true;
   process.stderr.write(`Seed failed: ${error instanceof Error ? error.message : String(error)}\n`);
