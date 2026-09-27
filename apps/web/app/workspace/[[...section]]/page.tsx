@@ -24,6 +24,7 @@ import styles from "./workspace-screen.module.css";
 import { NoAccessState } from "@/design-system";
 import { canOpen, SALES_SECTION_ACCESS } from "@/lib/workspace/access";
 import { serverTranslator } from "@/lib/i18n/server";
+import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
 
 export default async function WorkspaceScreen({
   params,
@@ -98,7 +99,10 @@ export default async function WorkspaceScreen({
   }
   if (checkAccess && !canOpen(screen.id, access)) {
     const t = await serverTranslator();
-    return <NoAccessState area={t(screen.label as never)} />;
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(await searchParams)) if (typeof value === "string") query.set(key, value);
+    // Named as the route map names the page (Calendar, Campaigns…), like its breadcrumb.
+    return <NoAccessState area={t(resolveWorkspaceRoute(pathname, query).label as never)} />;
   }
 
   if (screen.id === "company") {

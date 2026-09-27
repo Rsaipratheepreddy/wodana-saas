@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { SessionMonitor } from "@/components/workspace/session-monitor";
 import { WorkspaceShell, workspaceModules } from "@/components/workspace";
 import { cookies } from "next/headers";
@@ -8,6 +9,10 @@ import { WorkspaceRegionProvider } from "@/design-system";
 import { getWorkspaceRegion } from "@/lib/workspace/region.server";
 import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
 import { scopeWorkspaceNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
+
+// Workspace pages are titled "{Page} · {Workspace}" by the shell from the route map; a static
+// title here would replace it once metadata streams in.
+export const metadata: Metadata = { title: null };
 
 export default async function WorkspaceLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const profile = await getAuthenticatedProfile();
