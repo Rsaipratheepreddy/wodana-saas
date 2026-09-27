@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
 import type { CrewDay, CrewPresence, HrmsBootstrap, HrmsCrewState } from "@wodana/contracts";
@@ -10,6 +11,7 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type CrewDayList, type HrmsApi } from "@/lib/hrms/api";
+import { hrmsHref } from "@/lib/hrms/sections";
 import { HrmsError } from "@/lib/hrms/client";
 import { dayCost, lineCost } from "@/lib/hrms/crew-cost";
 import { CameraCapture, PositionStatus, usePosition, type Photo } from "./check-in";
@@ -89,11 +91,15 @@ export function ProjectCrewDays({ workspaceId, projectId, openId, switcher, me, 
   const needle = search.trim().toLocaleLowerCase();
   const rows = (data?.list.days ?? []).filter((day) => !needle || `${day.crewName} ${day.trade} ${day.markedByName}`.toLocaleLowerCase().includes(needle));
   const mark = markable.length ? <Button variant="primary" onPress={() => setOpen("new")}><Plus aria-hidden="true" size={14} />{t("Mark crew day")}</Button> : undefined;
+  // With no crews at all there's nothing to mark: the next step is adding the first crew, where crews are kept.
+  const noCrews = Boolean(data && !data.crews.crews.some((crew) => crew.active));
+  const empty = noCrews && data?.crews.canManage
+    ? <EmptyState title={t("No crews yet")} action={<Link className="wd-button" data-variant="primary" href={hrmsHref("crews")}>{t("New crew")}</Link>} />
+    : <EmptyState title={t("No crew days yet")} />;
   return <>
     <DataGrid<CrewDay> appearance="flush" ariaLabel={t("Crew days")} columns={columns} data={rows} getRowId={(row) => row.id} isLoading={!data} onRowAction={(row) => setOpen(row.id)}
       onSearchChange={setSearch} searchValue={search} searchLabel={t("Search crew days")} rowNumbers={false} selectable={false} wrapText toolbarLeading={switcher} toolbarActions={mark}
-      emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} />
-        : <EmptyState title={t("No crew days yet")} />} />
+      emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : empty} />
     {data && viewer && open ? <CrewDayPanel api={api} data={data} viewer={viewer} projectId={projectId} markable={markable} open={open} showPlace={false}
       onOpen={setOpen} onChanged={changed} /> : null}
   </>;
