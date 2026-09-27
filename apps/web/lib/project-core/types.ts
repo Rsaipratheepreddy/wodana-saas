@@ -49,8 +49,23 @@ export type ProjectDetail = {
   members: Member[];
   canManage: boolean;
   canClose: boolean;
+  /** Whether this person sees the project's costs (the Money tab). */
+  canSeeMoney: boolean;
   /** Whole percent of the work done, packages weighed by value; null before any work is planned. */
   progress: number | null;
+};
+
+export type CostSource = "stock" | "service" | "price_difference" | "charge";
+/** One cost the project carries, in the workspace's currency, from the record that caused it. */
+export type CostEntry = { key: string; on: string; source: CostSource; description: string; reference: string | null; packageId: string | null; packageName: string | null; amount: string };
+/** A package's budget against what's spent and still committed; `id` null for costs not in a package. */
+export type PackageMoney = { id: string | null; name: string | null; budget: string | null; budgetVersion: number; budgetNote: string; spent: string; committed: string; forecast: string; over: boolean };
+/** A project's money: the client side in the project's currency, costs in the workspace's. */
+export type ProjectMoney = {
+  currency: string;
+  income: { currency: string; agreed: string; agreedNet: string; requested: string; received: string };
+  spent: string; committed: string; forecast: string; budget: string | null; margin: string | null; available: string | null;
+  packages: PackageMoney[]; entries: CostEntry[]; uncosted: number; canManage: boolean;
 };
 
 /** An order or price request never sent. */

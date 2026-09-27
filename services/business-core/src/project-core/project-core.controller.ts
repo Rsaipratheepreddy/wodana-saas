@@ -7,6 +7,7 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { ProjectCoreService } from "./project-core.service";
+import { ProjectMoneyService } from "./project-money.service";
 import { ProjectWorkService } from "./project-work.service";
 
 /** Projects: start from an accepted quotation, then stages, team and status. Bodies are validated in the service. */
@@ -14,7 +15,7 @@ import { ProjectWorkService } from "./project-work.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/project-core")
 export class ProjectCoreController {
-  constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService) {}
+  constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService, private readonly money: ProjectMoneyService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.projects.settings(actor, workspaceId); }
@@ -53,6 +54,17 @@ export class ProjectCoreController {
 
   @Get("projects/:projectId/materials")
   materials(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.materials(actor, workspaceId, projectId); }
+
+  @Get("projects/:projectId/money")
+  projectMoney(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.money.read(actor, workspaceId, projectId);
+  }
+
+  @Put("projects/:projectId/money/budgets")
+  saveBudget(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Body() input: Record<string, unknown>) {
+    return this.money.saveBudget(actor, workspaceId, projectId, input ?? {});
+  }
 
   @Get("projects/:projectId/seals/:sealId")
   seal(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("sealId", ParseUUIDPipe) sealId: string) { return this.projects.seal(actor, workspaceId, projectId, sealId); }

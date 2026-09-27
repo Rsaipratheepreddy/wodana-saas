@@ -33,6 +33,8 @@ import { WarrantyService } from "../site/warranty.service";
 import { processWarrantyExpiry } from "../site/site-reminders";
 import { processSiteReports } from "../site/site-reminders";
 import { PayablesService } from "../purchasing/payables.service";
+import { ProjectMoneyService } from "./project-money.service";
+import { processProjectBudgets } from "./project-money";
 import { processPayablesDue } from "../purchasing/purchasing-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -2932,6 +2934,102 @@ integration("projects core (plan §6.10)", () => {
       // The delivery charge falls due too: one more notice, naming both.
       await w.client.query(`UPDATE supplier_invoices SET due_date = invoice_date WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, freight]);
       expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 1 });
+    });
+  });
+
+  it("reads what a project costs from what caused it, what's still committed, its budgets per package, and its margin", async () => {
+    await world(async (w) => {
+      const { core, projectId, company, vendor, buyer, manager, access, all } = await buying(w, { signoff: false });
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "10", unit: "sheets", clientChoice: false, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", name: "Lights", supply: "ready_made", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", name: "Fitting", supply: "subcontract", version: detail.project.version });
+      let scope = await core.scope(actor, w.workspaceId, projectId);
+      const lightsPackage = scope.packages.find((item) => item.name === "Lights")!, fitting = scope.packages.find((item) => item.name === "Fitting")!;
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [scope.lines.find((line) => line.title === "Under-cabinet lights")!.id], packageId: lightsPackage.id,
+        version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "assign_lines", lineIds: [scope.lines.find((line) => line.title === "Kitchen cabinets")!.id], packageId: fitting.id,
+        version: detail.project.version });
+      scope = await core.scope(actor, w.workspaceId, projectId);
+      const needs = (await buyer.orders.needs(actor, w.workspaceId)).needs;
+      const need = (title: string) => needs.find((item) => item.title === title)!;
+      // Oak at 100 less 10% (90 net), the lights at 500, fitting the cabinets as a service at 200 a metre; no tax to keep it plain.
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [
+        { source: "material", materialItemId: need("Oak veneer").sourceId, quantity: "10", unitPrice: "100", discountPercent: "10", taxRate: "0" },
+        { source: "line", boqLineId: need("Under-cabinet lights").sourceId, quantity: "1", unitPrice: "500", taxRate: "0" },
+        { source: "line", boqLineId: need("Kitchen cabinets").sourceId, quantity: "4.5", unitPrice: "200", taxRate: "0" }]);
+      const [oak, lights, cabinets] = ["Oak veneer", "Under-cabinet lights", "Kitchen cabinets"].map((title) => order.lines.find((line) => line.description === title)!);
+      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view", "commercial.costs.manage"]));
+      const read = () => money.read(actor, w.workspaceId, projectId);
+      let state = await read();
+      expect(state).toMatchObject({ currency: "AED", spent: "0.0000", committed: "2300.0000", forecast: "2300.0000", budget: null, uncosted: 0 });
+
+      // Six sheets, the lights and two metres of fitting arrive: stock at its price, the service as received.
+      const receipt = await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-25",
+        lines: [{ orderLineId: oak.id, received: "6" }, { orderLineId: lights.id, received: "1" }, { orderLineId: cabinets.id, received: "2" }] });
+      state = await read();
+      expect(state.entries.map((entry) => [entry.source, entry.amount, entry.packageName])).toEqual(expect.arrayContaining([
+        ["stock", "540.0000", null], ["stock", "500.0000", "Lights"], ["service", "400.0000", "Fitting"]]));
+      expect(state).toMatchObject({ spent: "1440.0000", committed: "860.0000" });
+
+      // Using its own stock on its own work changes nothing; a cracked sheet credited back takes its cost off.
+      const oakStock = (await w.client.query<{ itemId: string; locationId: string }>(`SELECT item_id AS "itemId", location_id AS "locationId" FROM stock_balances
+        WHERE workspace_id = $1 AND project_id = $2 AND on_hand > 0 AND value = 540`, [w.workspaceId, projectId])).rows[0];
+      await buyer.stock.command(actor, w.workspaceId, { id: randomUUID(), action: "issue", itemId: oakStock.itemId, locationId: oakStock.locationId, projectId, forProjectId: projectId, quantity: "2" });
+      const back = await buyer.returns.create(actor, w.workspaceId, { id: randomUUID(), receiptId: receipt.receipt.id, outcome: "credit",
+        lines: [{ receiptLineId: receipt.lines.find((line) => line.orderLineId === oak.id)!.id, source: "accepted", quantity: "1", reasonKind: "defective", reason: "Cracked" }] });
+      await buyer.returns.command(actor, w.workspaceId, back.return.id, { action: "sent", version: 1 });
+
+      // General stock issued to the project counts at its cost; what comes back unused comes off.
+      const yard = randomUUID();
+      await buyer.stock.saveLocation(actor, w.workspaceId, { id: yard, kind: "warehouse", name: "Main store" });
+      const glue = (await buyer.stock.command(actor, w.workspaceId, { id: randomUUID(), action: "add", name: "Wood glue", unit: "nos", locationId: yard, quantity: "10", unitCost: "4",
+        reason: "Opening stock" })).rows.find((row) => row.itemName === "Wood glue")!;
+      await buyer.stock.command(actor, w.workspaceId, { id: randomUUID(), action: "issue", itemId: glue.itemId, locationId: yard, forProjectId: projectId, quantity: "3" });
+      await buyer.stock.command(actor, w.workspaceId, { id: randomUUID(), action: "return", itemId: glue.itemId, locationId: yard, forProjectId: projectId, quantity: "1", reason: "Unused" });
+
+      // The lights invoiced at 520 (held and approved), and a delivery charge for the project.
+      const payer = new PayablesService(access(w.designer, [...all, "payables.view", "payables.manage", "payables.approve"]));
+      const approver = new PayablesService(access(w.manager, [...all, "payables.view", "payables.manage", "payables.approve"]));
+      const bill = randomUUID();
+      let entered = await payer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "save", id: bill, vendorId: vendor, legalEntityId: company, currency: "AED",
+        number: "INV-L", invoiceDate: "2026-09-26", lines: [{ orderLineId: lights.id, quantity: "1", unitPrice: "520", taxRate: "0" },
+          { description: "Delivery", quantity: "1", unitPrice: "50", taxRate: "0", projectId }] }) as { bill: { version: number } };
+      entered = await payer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "submit", id: bill, version: entered.bill.version }) as never;
+      await approver.command(actor, w.workspaceId, { commandId: randomUUID(), action: "approve", id: bill, version: entered.bill.version, note: "Price went up" });
+
+      state = await read();
+      // Stock 540 + 500 − 90 (credited) + 12 − 4 (glue), service 400, price difference 20, charge 50.
+      expect(state.entries.map((entry) => [entry.source, entry.amount])).toEqual(expect.arrayContaining([
+        ["stock", "-90.0000"], ["stock", "12.0000"], ["stock", "-4.0000"], ["price_difference", "20.0000"], ["charge", "50.0000"]]));
+      expect(state.entries.filter((entry) => entry.source === "stock" && entry.description.startsWith("Issued") && entry.description.includes("Oak"))).toEqual([]);
+      expect(state).toMatchObject({ spent: "1428.0000", committed: "860.0000", forecast: "2288.0000" });
+
+      // Budgets per package, and the costs not in one; over budget when spent and committed pass it.
+      await expect(money.saveBudget(actor, w.workspaceId, projectId, { packageId: lightsPackage.id, amount: "500.005", version: 0 })).rejects.toThrow(/more decimals/);
+      state = await money.saveBudget(actor, w.workspaceId, projectId, { packageId: lightsPackage.id, amount: "500", version: 0 });
+      await expect(money.saveBudget(actor, w.workspaceId, projectId, { packageId: lightsPackage.id, amount: "600", version: 0 })).rejects.toThrow(/Someone else/);
+      state = await money.saveBudget(actor, w.workspaceId, projectId, { packageId: fitting.id, amount: "1000", version: 0 });
+      state = await money.saveBudget(actor, w.workspaceId, projectId, { packageId: null, amount: "600", version: 0 });
+      expect(state.packages.map((row) => [row.name, row.budget, row.spent, row.committed, row.over])).toEqual(expect.arrayContaining([
+        ["Lights", "500.0000", "520.0000", "0.0000", true], ["Fitting", "1000.0000", "400.0000", "500.0000", false], [null, "600.0000", "508.0000", "360.0000", true]]));
+      expect(state.budget).toBe("2100.0000");
+      // The project manager hears once per package over budget, until the budget changes.
+      expect(await processProjectBudgets(w.client, w.workspaceId)).toEqual({ sent: 2 });
+      expect(await processProjectBudgets(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      const notices = (await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'project.over_budget' ORDER BY body`, [w.workspaceId])).rows;
+      expect(notices.map((notice) => notice.body)).toEqual([
+        "Lights: AED 520.00 spent and committed against a budget of AED 500.00.", "Not in a package: AED 868.00 spent and committed against a budget of AED 600.00."]);
+      state = await money.saveBudget(actor, w.workspaceId, projectId, { packageId: lightsPackage.id, amount: "550", version: 1 });
+      expect(await processProjectBudgets(w.client, w.workspaceId)).toEqual({ sent: 0 });
+
+      // The client side: agreed from the sealed scope, received from the verified payments; margin before tax.
+      const agreed = 4.5 * 1200 + 2.25 * 800 + 650;
+      expect(state.income).toMatchObject({ currency: "AED", agreed: `${agreed.toFixed(2)}00`, received: `${(agreed / 2).toFixed(2)}00` });
+      expect(state.margin).toBe((Number(state.income.agreedNet) - 2288).toFixed(4));
+      expect(state.available).toBe((agreed / 2 - 2288).toFixed(4));
+      await expect(new ProjectMoneyService(access(w.designer, all)).read(actor, w.workspaceId, projectId)).rejects.toThrow(/Not allowed/);
+      expect((await core.get(actor, w.workspaceId, projectId)).canSeeMoney).toBe(false);
     });
   });
 });

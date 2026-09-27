@@ -870,6 +870,20 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - A multi-entity tenant: each invoice belongs to one entity with its base currency.
   - Exchange rate changes between PO and invoice: variance recorded.
 - **Screens:** Money tab per project · Finance area (Receivables, Payables, Approvals, Postings).
+- **Built (project → Money, for people who see costs; budgets by people who manage costs):**
+  - **Costs are read from what caused them, never typed:**
+    - stock entering or leaving the project's ownership at its moving-average cost: received for it, allocated, issued from general or another project's stock, returned, released, corrected, sent back to the supplier, or a reversed delivery;
+    - its own stock used on its own work, moves inside its stock, and factory output (whose materials were counted when issued) change nothing;
+    - services and outside work as received, at the order's net price;
+    - approved supplier invoices: the price difference on order lines, and charges not on an order;
+    - other currencies at the rate of their day; entries with no cost or rate are counted and shown as not costed.
+  - **Committed:** the rest of each line on placed, open orders (and goods not yet inspected) at the order's net price.
+  - **Client side:**
+    - agreed = the sealed baseline plus sealed variations (in total and before tax);
+    - received = finance-verified payments on those quotations.
+  - **Summary:** margin = agreed before tax − spent − committed, and cash in hand = received − spent − committed, both only when the project and the workspace share a currency.
+  - **Budgets:** one per package, plus one for costs not in a package; version-checked and audited. A package whose spent + committed passes its budget tells the project managers and cost managers once per budget version.
+  - **Still to come:** labour and petty cash costs, and the spending guard on new commitments.
 
 ### 6.22 Client portal
 - **Access:** passwordless (email/phone OTP), per deal and project grants, multiple client contacts with roles (decision-maker vs viewer).

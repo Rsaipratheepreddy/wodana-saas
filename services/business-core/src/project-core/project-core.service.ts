@@ -650,6 +650,8 @@ export class ProjectCoreService {
       members: manager ? await activeMembers(client, workspaceId) : [],
       canManage: manager,
       canClose: all,
+      // The Money tab is for people who see costs.
+      canSeeMoney: await this.access.hasPermission(client, workspaceId, user.userId, "commercial.costs.view"),
       progress: (await readProgress(client, workspaceId, projectId)).project,
     };
   }

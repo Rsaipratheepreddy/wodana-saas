@@ -14,6 +14,7 @@ import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
 import { ProjectPlan } from "./project-plan";
 import { ProjectHandover } from "../site/project-handover";
 import { ProjectWarranty } from "../site/project-warranty";
+import { ProjectMoney } from "./project-money";
 import { ProjectSite } from "../site/project-site";
 import { ProjectScope } from "./project-scope";
 import { ProjectStages } from "./project-stages";
@@ -120,10 +121,11 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
 
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
 
-    <Tabs selectedKey={section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
+    <Tabs selectedKey={section === "money" && !detail.canSeeMoney ? "overview" : section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
       { id: "overview", label: t("Overview"), panel: <ProjectStages detail={detail} run={run} caseHref={(part) => `/workspace/pre-projects/cases/${project.caseId}/${part}`} onTeam={() => setDialog("team")} /> },
       { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
       { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },
+      ...(detail.canSeeMoney ? [{ id: "money", label: t("Money"), panel: <ProjectMoney workspaceId={workspaceId} projectId={projectId} /> }] : []),
       { id: "site", label: t("Site"), panel: <ProjectSite workspaceId={workspaceId} projectId={projectId} /> },
       { id: "handover", label: t("Handover"), panel: <ProjectHandover workspaceId={workspaceId} projectId={projectId} /> },
       { id: "warranty", label: t("Warranty"), panel: <ProjectWarranty workspaceId={workspaceId} projectId={projectId} /> },

@@ -1,4 +1,4 @@
-import type { CloseOut, LineHistoryEntry, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { CloseOut, LineHistoryEntry, ProjectMoney, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -32,6 +32,11 @@ export function projectApi(workspaceId: string) {
     scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
     materials: (projectId: string) => request<MaterialsState>(path(`projects/${projectId}/materials`)),
     seal: (projectId: string, sealId: string) => request<SealedScope>(path(`projects/${projectId}/seals/${sealId}`)),
+    /** What the project was agreed at and received, what it cost and still has committed, and its budgets. */
+    money: (projectId: string) => request<ProjectMoney>(path(`projects/${projectId}/money`)),
+    /** Sets one package's cost budget (packageId null: costs not in a package); version-checked. */
+    saveBudget: (projectId: string, input: { packageId: string | null; amount: string; note?: string; version: number }) =>
+      request<ProjectMoney>(path(`projects/${projectId}/money/budgets`), "PUT", input),
     /** What cancelling the project needs settled first, and what it does by itself. */
     closeOut: (projectId: string) => request<CloseOut>(path(`projects/${projectId}/close-out`)),
     line: (projectId: string, lineId: string) => request<{ history: LineHistoryEntry[] }>(path(`projects/${projectId}/lines/${lineId}`)),

@@ -13,7 +13,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 1 && (path[0] === "projects" || path[0] === "work")) return method === "GET";
   if (path.length === 2 && path[0] === "work" && path[1] === "insights") return method === "GET";
   if (path.length === 2 && path[0] === "projects" && UUID.test(path[1])) return ["GET", "POST"].includes(method);
-  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "close-out"].includes(path[2])) return method === "GET";
+  if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && ["scope", "materials", "close-out", "money"].includes(path[2])) return method === "GET";
+  if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "money" && path[3] === "budgets") return method === "PUT";
   if (path.length === 3 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work") return ["GET", "POST"].includes(method);
   if (path.length === 4 && path[0] === "projects" && UUID.test(path[1]) && ["seals", "lines", "work"].includes(path[2]) && UUID.test(path[3])) return method === "GET";
   if (path.length === 5 && path[0] === "projects" && UUID.test(path[1]) && path[2] === "work" && UUID.test(path[3]) && path[4] === "ripple") return method === "GET";
