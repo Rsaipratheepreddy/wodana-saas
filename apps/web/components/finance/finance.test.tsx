@@ -140,6 +140,50 @@ describe("finance", () => {
       reference: "CHQ-7", allocations: [{ invoiceId: "b1", amount: "367" }] }));
   });
 
+  it("issues a client's tax invoice for a milestone from what it will say, then credits it with why", async () => {
+    const invoice = { id: "i1", legalEntityId: "e1", projectId: "p1", projectReference: "PRJ-0007", caseId: "c1", paymentId: "p2", number: "FAC-INV-2026-00002", issueDate: "2026-09-27",
+      dueDate: "2026-10-10", currency: "AED", net: "3738.1000", tax: "186.9000", total: "3925.0000", milestoneTitle: "Before production", customerName: "Maya Client", customerAddress: "",
+      customerTaxNumber: "100200300400003", companyName: "Studio Furniture LLC", companyAddress: "", companyTaxNumber: "100999", note: "", status: "issued" as const, issuedByName: "Omar",
+      issuedAt: "2026-09-27T10:00:00Z", version: 1, creditNoteId: null, creditNoteNumber: null, creditReason: null, creditedOn: null, paid: "0.0000", balance: "3925.0000", overdue: false };
+    const milestone = { projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12", caseId: "c1", paymentId: "p2", title: "Before production", amount: "3925.0000", currency: "AED",
+      dueDate: "2099-10-10", clientName: "Maya Client", paid: "0.0000" };
+    let current = { invoice, lines: [{ id: "l1", position: 0, description: "Before production", taxRate: "5.0000", net: "3738.1000", tax: "186.9000", total: "3925.0000" }], canManage: true, canCredit: true };
+    const fetcher = mount((url, body) => {
+      if (url.includes("/api/receivables/milestones/c1/p2")) return { milestone, currency: "AED", net: "3738.1000", tax: "186.9000", total: "3925.0000", pricesIncludeTax: false,
+        lines: [{ description: "Before production", rate: "5", net: "3738.1000", tax: "186.9000", total: "3925.0000" }], customer: { name: "Maya Client", address: "" },
+        company: { name: "Studio Furniture LLC", address: "", taxNumber: "100999" } };
+      if (url.includes("/api/receivables/invoices/i1")) return current;
+      if (url.includes("/api/receivables/state")) {
+        if (body?.action === "credit") current = { ...current, invoice: { ...invoice, status: "credited" as never, version: 2, creditNoteNumber: "FAC-CN-2026-00001", creditReason: String(body.reason),
+          creditedOn: "2026-09-27", balance: "0.0000" }, canCredit: false };
+        if (body) return current;
+        return { invoices: [invoice], toInvoice: [milestone], canManage: true };
+      }
+      return overview();
+    });
+    const view = page("client-invoices");
+    const table = await grid("Milestones to invoice");
+    expect(table).toHaveTextContent("Maya Client · PRJ-0007 · Villa 12");
+    await userEvent.click(within(table).getByRole("button", { name: "Issue invoice" }));
+    const dialog = await screen.findByRole("dialog", { name: /Issue invoice/ });
+    expect(await within(dialog).findByText(/tax .*186.90 at 5%/)).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Client tax number" }), "100200300400003");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Issue invoice" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "issue", caseId: "c1", paymentId: "p2", customerTaxNumber: "100200300400003", dueDate: "2099-10-10" }));
+    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/finance/client-invoices?invoice=i1", { scroll: false });
+    view.unmount();
+
+    nav.query = "invoice=i1";
+    page("client-invoices");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-INV-2026-00002 · Maya Client" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Credit invoice" }));
+    const credit = await screen.findByRole("dialog", { name: "Credit invoice" });
+    await userEvent.type(within(credit).getByRole("textbox", { name: /Why it's credited/ }), "Wrong client name");
+    await userEvent.click(within(credit).getByRole("button", { name: "Credit invoice" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "credit", id: "i1", version: 1, reason: "Wrong client name" }));
+    expect(await within(sheet).findByText(/Credited by FAC-CN-2026-00001 on .*: Wrong client name/)).toBeInTheDocument();
+  });
+
   it("shows what each supplier is owed, overdue first, with debit notes on their account", async () => {
     mount((url) => (url.includes("/suppliers/v1") ? { ...supplier({ bank: { id: "a1", bankName: "Emirates NBD", last4: "4321", currency: "AED" } }),
       debitNotes: [{ orderLineId: "ol1", orderId: "o1", orderNumber: "FAC-PO-2026-00001", description: "Oak veneer", unit: "sheets", legalEntityId: "e1", currency: "AED", quantity: "2", amount: "189.0000" }] }

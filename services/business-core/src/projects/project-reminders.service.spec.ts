@@ -33,7 +33,7 @@ describe("ProjectRemindersService smart rules", () => {
     const queueScheduledEmail = vi.fn().mockResolvedValue({ queued: true });
     const service = new ProjectRemindersService(db as never, { queueScheduledEmail } as never);
 
-    await expect(service.send()).resolves.toEqual({ created: 4, dueReminders: 0, decisionReminders: 2, weeklySummaries: 2, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, overBudget: 0, failedWorkspaces: 0 });
+    await expect(service.send()).resolves.toEqual({ created: 4, dueReminders: 0, decisionReminders: 2, weeklySummaries: 2, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, overBudget: 0, receivablesOverdue: 0, failedWorkspaces: 0 });
     expect(queueScheduledEmail).toHaveBeenCalledTimes(1);
     expect(queueScheduledEmail).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "workspace-email", eventType: "project.weekly_progress" }));
   });

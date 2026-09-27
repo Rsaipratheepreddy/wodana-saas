@@ -3228,6 +3228,17 @@ export class CommercialService {
             throw new ConflictException(
               "Submitted or verified payment records cannot be edited.",
             );
+          // An issued tax invoice fixes what the milestone asks for until it's credited.
+          const invoiced = existing
+            ? (await client.query<{ number: string }>(
+                `SELECT number FROM client_invoices WHERE workspace_id = $1 AND case_id = $2 AND payment_id = $3 AND status = 'issued'`,
+                [workspaceId, caseId, existing.id],
+              )).rows[0]
+            : undefined;
+          if (invoiced && (roundAmount(b.amount) !== existing!.amount || text(b.title, 160, true) !== existing!.title))
+            throw new ConflictException(
+              `Tax invoice ${invoiced.number} is issued for this milestone. Credit it before changing its amount or title.`,
+            );
           if (!existing && data.payments.some((p) => p.sourceQuoteId))
             throw new ConflictException(
               "This schedule comes from the accepted quotation. Use an approved variation for extra payments.",

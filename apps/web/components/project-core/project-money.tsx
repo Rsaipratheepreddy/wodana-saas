@@ -65,7 +65,7 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
     options={[{ id: "packages", label: t("By package") }, { id: "entries", label: t("Every cost") }]} />;
   return <div className={styles.money}>
     <dl className={styles.facts}>
-      <div><dt>{t("Received")}</dt><dd>{money(income.received, income.currency)}<small>{t("of {amount} requested", { amount: money(income.requested, income.currency) })}</small></dd></div>
+      <div><dt>{t("Received")}</dt><dd>{money(income.received, income.currency)}<small>{t("{invoiced} invoiced of {requested} requested", { invoiced: money(income.invoiced, income.currency), requested: money(income.requested, income.currency) })}</small></dd></div>
       <div><dt>{t("Spent")}</dt><dd>{money(state.spent)}<small>{t("{amount} committed", { amount: money(state.committed) })}</small></dd></div>
       <div><dt>{t("Budget")}</dt><dd>{money(state.budget)}{state.budget !== null ? <small className={Number(state.forecast) > Number(state.budget) ? styles.over : undefined}>
         {t("{amount} expected", { amount: money(state.forecast) })}</small> : null}</dd></div>

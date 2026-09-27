@@ -63,7 +63,7 @@ export type PackageMoney = { id: string | null; name: string | null; budget: str
 /** A project's money: the client side in the project's currency, costs in the workspace's. */
 export type ProjectMoney = {
   currency: string;
-  income: { currency: string; agreed: string; agreedNet: string; requested: string; received: string };
+  income: { currency: string; agreed: string; agreedNet: string; requested: string; invoiced: string; received: string };
   spent: string; committed: string; forecast: string; budget: string | null; margin: string | null; available: string | null;
   packages: PackageMoney[]; entries: CostEntry[]; uncosted: number; canManage: boolean;
 };

@@ -35,6 +35,8 @@ import { processSiteReports } from "../site/site-reminders";
 import { PayablesService } from "../purchasing/payables.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { processProjectBudgets } from "./project-money";
+import { ReceivablesService, processReceivablesOverdue } from "../receivables/receivables.service";
+import { CommercialService } from "../commercial/commercial.service";
 import { processPayablesDue } from "../purchasing/purchasing-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -3094,6 +3096,75 @@ integration("projects core (plan §6.10)", () => {
       const warned = (await w.client.query<{ recipient: string }>(`SELECT recipient_id::text AS recipient FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.over_funds'`,
         [w.workspaceId])).rows.map((row) => row.recipient);
       expect(warned).toContain(w.manager);
+    });
+  });
+
+  it("issues tax invoices for project milestones, numbered per company and split by tax, credits them in full, and reminds when they're overdue", async () => {
+    await world(async (w) => {
+      const { projectId, access, all } = await buying(w, { signoff: false });
+      const finance = new ReceivablesService(access(w.manager, [...all, "receivables.view", "receivables.manage"]));
+      const viewer = new ReceivablesService(access(w.designer, ["receivables.view"]));
+      const send = (body: Record<string, unknown>) => finance.command(actor, w.workspaceId, { commandId: randomUUID(), ...body });
+      const half = (4.5 * 1200 + 2.25 * 800 + 650) / 2;
+
+      // Both milestones of the accepted quotation are there to invoice; the advance is already paid.
+      let overview = await finance.overview(actor, w.workspaceId);
+      expect(overview.toInvoice.map((item) => [item.paymentId, item.title, Number(item.amount), item.paid])).toEqual([
+        ["p1", "Advance", half, `${half.toFixed(2)}00`], ["p2", "Before production", half, "0.0000"]]);
+      const preview = await finance.preview(actor, w.workspaceId, w.caseId, "p1");
+      expect(preview).toMatchObject({ currency: "AED", total: `${half.toFixed(2)}00`, customer: { name: "Maya Client" }, company: { name: "Studio Furniture LLC" } });
+      await expect(viewer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "p1" })).rejects.toThrow(/Not allowed/);
+
+      // The advance's invoice: numbered by the company's sequence, paid already.
+      const advance = randomUUID();
+      await expect(send({ action: "issue", id: advance, caseId: w.caseId, paymentId: "p1", issueDate: "2099-01-01" })).rejects.toThrow(/in the future/);
+      let state = await send({ action: "issue", id: advance, caseId: w.caseId, paymentId: "p1", customerTaxNumber: "100200300400003" });
+      const year = new Date().getFullYear();
+      expect(state.invoice).toMatchObject({ number: `FAC-INV-${year}-00001`, status: "issued", total: `${half.toFixed(2)}00`, paid: `${half.toFixed(2)}00`, balance: "0.0000",
+        customerName: "Maya Client", customerTaxNumber: "100200300400003", companyName: "Studio Furniture LLC", milestoneTitle: "Advance", overdue: false });
+      expect(state.lines.map((line) => [line.description, line.total])).toEqual([["Advance", `${half.toFixed(2)}00`]]);
+      expect((await send({ action: "issue", id: advance, caseId: w.caseId, paymentId: "p1" })).invoice.number).toBe(`FAC-INV-${year}-00001`);
+      await expect(send({ action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "p1" })).rejects.toThrow(/already issued/);
+      await expect(send({ action: "issue", id: randomUUID(), caseId: w.caseId, paymentId: "nope" })).rejects.toThrow(/isn't on a started project/);
+
+      // The second milestone, invoiced; its amount is now fixed on the deal until the invoice is credited.
+      const second = randomUUID();
+      state = await send({ action: "issue", id: second, caseId: w.caseId, paymentId: "p2" });
+      expect(state.invoice).toMatchObject({ number: `FAC-INV-${year}-00002`, paid: "0.0000", balance: `${half.toFixed(2)}00` });
+      const run = (_a: unknown, _w: string, _p: unknown, fn: (c: PoolClient, u: { userId: string; displayName: string }) => unknown) => fn(w.client, { userId: w.manager, displayName: "Omar Manager" });
+      const commercial = new CommercialService({ withPermissions: run, withPermission: run, hasPermission: async () => true } as never, {} as never, {} as never, {} as never);
+      const revision = (await commercialRepository.load(w.client, w.workspaceId, w.caseId))!.revision;
+      await expect(commercial.command(actor, w.workspaceId, w.caseId, { action: "payment", revision, paymentId: "p2", title: "Before production", amount: half + 100, dueDate: "",
+        requiredForRelease: false, requiredForProduction: true })).rejects.toThrow(/Tax invoice FAC-INV-\d+-00002 is issued for this milestone/);
+
+      // Credited in full with why; issued documents never change or go away; the milestone is invoiced again.
+      await expect(send({ action: "credit", id: second, version: state.invoice.version })).rejects.toThrow(/Say why/);
+      await expect(send({ action: "credit", id: second, version: 99, reason: "x" })).rejects.toThrow(/Someone else/);
+      state = await send({ action: "credit", id: second, version: state.invoice.version, reason: "Wrong client name" });
+      expect(state.invoice).toMatchObject({ status: "credited", creditNoteNumber: `FAC-CN-${year}-00001`, creditReason: "Wrong client name", balance: "0.0000" });
+      expect(state.canCredit).toBe(false);
+      await expect(send({ action: "credit", id: second, version: state.invoice.version, reason: "again" })).rejects.toThrow(/already credited/);
+      await w.client.query("SAVEPOINT guard");
+      await expect(w.client.query(`UPDATE client_invoices SET total = total + 1, net = net + 1 WHERE id = $1`, [advance])).rejects.toThrow(/only changes by being credited/);
+      await w.client.query("ROLLBACK TO SAVEPOINT guard");
+      await expect(w.client.query(`DELETE FROM client_invoice_lines WHERE invoice_id = $1`, [advance])).rejects.toThrow(/never deleted/);
+      await w.client.query("ROLLBACK TO SAVEPOINT guard");
+      const again = randomUUID();
+      state = await send({ action: "issue", id: again, caseId: w.caseId, paymentId: "p2", issueDate: "2026-01-05", dueDate: "2026-01-20" });
+      expect(state.invoice).toMatchObject({ number: `FAC-INV-2026-00003`, dueDate: "2026-01-20", overdue: true });
+
+      // The Money tab counts what's invoiced; the list shows every invoice with where it stands.
+      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view"]));
+      expect((await money.read(actor, w.workspaceId, projectId)).income).toMatchObject({ invoiced: `${(half * 2).toFixed(2)}00` });
+      overview = await viewer.overview(actor, w.workspaceId);
+      expect(overview.invoices.map((item) => [item.number, item.status, item.overdue])).toEqual(expect.arrayContaining([
+        [`FAC-INV-${year}-00001`, "issued", false], [`FAC-INV-${year}-00002`, "credited", false], ["FAC-INV-2026-00003", "issued", true]]));
+      expect(overview.toInvoice).toEqual([]);
+      expect(overview.canManage).toBe(false);
+
+      // Overdue: the project's manager hears once per invoice.
+      expect(await processReceivablesOverdue(w.client, w.workspaceId)).toEqual({ sent: 1 });
+      expect(await processReceivablesOverdue(w.client, w.workspaceId)).toEqual({ sent: 0 });
     });
   });
 });

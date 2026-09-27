@@ -196,7 +196,11 @@ export async function readProjectIncome(db: Db, workspaceId: string, project: { 
   const exact = (value: number) => Dec.of(value).round(currencyDecimals(project.currency));
   const requested = payments.reduce((sum, payment) => sum.add(exact(payment.amount)), Dec.ZERO);
   const received = payments.filter((payment) => data && paymentHasFinanceVerifiedReceipt(data, payment)).reduce((sum, payment) => sum.add(exact(payment.amount)), Dec.ZERO);
-  return { currency: project.currency, agreed: agreed.toFixed(4), agreedNet: agreedNet.toFixed(4), requested: requested.toFixed(4), received: received.toFixed(4) };
+  // Tax invoices issued and not credited.
+  const invoiced = (await db.query<{ total: string }>(
+    `SELECT coalesce(sum(total), 0)::text AS total FROM client_invoices WHERE workspace_id = $1 AND project_id = $2 AND status = 'issued'`, [workspaceId, project.id])).rows[0].total;
+  return { currency: project.currency, agreed: agreed.toFixed(4), agreedNet: agreedNet.toFixed(4), requested: requested.toFixed(4), invoiced: Dec.of(invoiced).toFixed(4),
+    received: received.toFixed(4) };
 }
 
 export type BudgetRow = { id: string; packageId: string | null; amount: string; currency: string; note: string; version: number; updatedByName: string; updatedAt: string };

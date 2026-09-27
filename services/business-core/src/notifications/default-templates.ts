@@ -173,6 +173,8 @@ export const DEFAULT_NOTIFICATION_TEMPLATES: DefaultTemplate[] = [
   { code: "purchasing.order_late", channel: "email", subject: "Order now for {{project}}", body: "These should have been ordered by now to arrive when they're needed:\n\n{{note}}", variables: ["project", "note"] },
   { code: "purchasing.over_funds", channel: "in_app", subject: "Ordered beyond the money in hand: {{order}}", body: "{{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
   { code: "purchasing.funds_blocked", channel: "in_app", subject: "Order waiting for money: {{order}}", body: "{{note}}", variables: ["order", "supplier", "amount", "actor", "note"] },
+  { code: "receivables.overdue", channel: "in_app", subject: "Client invoice overdue: {{invoice}}", body: "{{note}}", variables: ["invoice", "client", "amount", "actor", "note"] },
+  { code: "receivables.credited", channel: "in_app", subject: "Invoice credited: {{invoice}}", body: "{{note}}", variables: ["invoice", "client", "amount", "actor", "note"] },
   { code: "payables.held", channel: "in_app", subject: "Supplier invoice held: {{supplier}} {{invoice}}", body: "{{note}}", variables: ["supplier", "invoice", "amount", "actor", "note"] },
   { code: "payables.due", channel: "in_app", subject: "Supplier invoices due · {{supplier}}", body: "{{note}}", variables: ["supplier", "invoice", "amount", "actor", "note"] },
   { code: "purchasing.unmatched", channel: "in_app", subject: "Goods arrived without an order", body: "{{actor}} received goods from {{supplier}} at {{note}}. Match them to an order or send them back.", variables: ["supplier", "actor", "note"] },

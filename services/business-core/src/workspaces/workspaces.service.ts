@@ -4399,8 +4399,8 @@ export class WorkspacesService {
     legalEntityId: string,
     entityCode: string,
   ): Promise<void> {
-    for (const documentType of ["QUOTATION", "INVOICE", "PURCHASE_ORDER"]) {
-      const shortCode = documentType === "PURCHASE_ORDER" ? "PO" : documentType.slice(0, 3);
+    for (const documentType of ["QUOTATION", "INVOICE", "CREDIT_NOTE", "PURCHASE_ORDER"]) {
+      const shortCode = documentType === "PURCHASE_ORDER" ? "PO" : documentType === "CREDIT_NOTE" ? "CN" : documentType.slice(0, 3);
       await client.query(
         `INSERT INTO document_sequences
           (workspace_id, legal_entity_id, document_type, prefix)

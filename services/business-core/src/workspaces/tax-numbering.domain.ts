@@ -2,7 +2,7 @@ import { UnprocessableEntityException } from "@nestjs/common";
 
 export type TaxModel = { model: "vat" | "gst" | "sales_tax" | "none" | string; label: string | null; registrationLabel: string | null };
 export type TaxRateInput = { code: string; label: string; rate: string | number; isDefault: boolean };
-export const DOCUMENT_TYPES = ["QUOTATION", "INVOICE", "PURCHASE_ORDER"] as const;
+export const DOCUMENT_TYPES = ["QUOTATION", "INVOICE", "CREDIT_NOTE", "PURCHASE_ORDER"] as const;
 
 /** Rates are strings of up to 4 decimals between 0 and 100; exactly one default; codes unique. */
 export function validateTaxRates(model: TaxModel, rates: TaxRateInput[]) {

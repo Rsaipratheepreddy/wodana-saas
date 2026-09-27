@@ -6,7 +6,7 @@ import type { ProjectMoney as Money } from "@/lib/project-core/types";
 import { ProjectMoney } from "./project-money";
 
 const state = (patch: Partial<Money> = {}): Money => ({
-  currency: "AED", income: { currency: "AED", agreed: "7850.0000", agreedNet: "7850.0000", requested: "7850.0000", received: "3925.0000" },
+  currency: "AED", income: { currency: "AED", agreed: "7850.0000", agreedNet: "7850.0000", requested: "7850.0000", invoiced: "3925.0000", received: "3925.0000" },
   spent: "1428.0000", committed: "860.0000", forecast: "2288.0000", budget: "1500.0000", margin: "5562.0000", available: "1637.0000",
   packages: [
     { id: "k1", name: "Lights", budget: "500.0000", budgetVersion: 1, budgetNote: "", spent: "520.0000", committed: "0.0000", forecast: "520.0000", over: true },

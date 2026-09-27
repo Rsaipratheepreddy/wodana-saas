@@ -870,6 +870,17 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - A multi-entity tenant: each invoice belongs to one entity with its base currency.
   - Exchange rate changes between PO and invoice: variance recorded.
 - **Screens:** Money tab per project · Finance area (Receivables, Payables, Approvals, Postings).
+- **Built (Business → Finance → Client invoices):**
+  - A tax invoice is issued for a started project's payment milestone (baseline or variation quotation sealed into the project):
+    - numbered by its company's invoice sequence (Settings → tax and numbering);
+    - split exactly by the sealed quotation's tax rates — each rate's share of the milestone follows its share of the quotation's total, tax is carved out of the amount the client pays, and the shares add up to the milestone;
+    - the client, their address and tax number, and the company (name, address, tax number) as they were on the day.
+  - One live invoice per milestone. Issued invoices, their lines and credit notes never change or go away (database guard).
+  - A correction credits the invoice in full with a numbered credit note and why; the milestone can then be invoiced again. Price changes go through a variation, never a partial credit.
+  - An invoiced milestone's amount and title are fixed on the deal until the invoice is credited.
+  - Paid comes from the finance-verified receipts allocated to the milestone.
+  - Notices: overdue invoices tell the people who issue invoices and the project's managers (once per invoice); a credit tells the project's managers.
+  - The Money tab shows what's invoiced.
 - **Built (project → Money, for people who see costs; budgets by people who manage costs):**
   - **Costs are read from what caused them, never typed:**
     - stock entering or leaving the project's ownership at its moving-average cost: received for it, allocated, issued from general or another project's stock, returned, released, corrected, sent back to the supplier, or a reversed delivery;
