@@ -141,7 +141,8 @@ export class HrmsTimeService {
           `INSERT INTO hrms_timesheets(workspace_id,membership_id,owner_user_id,week_start) VALUES($1,$2,$3,$4) RETURNING id`,
           [workspaceId, ctx.membershipId, ctx.userId, weekStart],
         )).rows[0].id;
-      else await ctx.client.query(`UPDATE hrms_timesheets SET status='draft',version=version+1 WHERE workspace_id=$1 AND id=$2`, [workspaceId, id]);
+      // A week sent back is a draft again, keeping what the manager asked for.
+      else await ctx.client.query(`UPDATE hrms_timesheets SET status='draft',decided_by=NULL,decided_at=NULL,version=version+1 WHERE workspace_id=$1 AND id=$2`, [workspaceId, id]);
       await ctx.client.query(`DELETE FROM hrms_time_entries WHERE workspace_id=$1 AND timesheet_id=$2`, [workspaceId, id]);
       for (const entry of input.entries)
         await ctx.client.query(

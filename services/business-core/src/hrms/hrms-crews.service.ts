@@ -232,9 +232,12 @@ export class HrmsCrewsService {
       );
       if (clash.rowCount) throw new ConflictException("This crew already has a sheet for that day and place.");
       if (before)
+        // Whoever changes the sheet marks it (and submits it), so the approver is always someone else; a
+        // day sent back becomes a draft again, keeping what the approver asked for.
         await ctx.client.query(
-          `UPDATE hrms_crew_days SET crew_id=$3,project_id=$4,work_date=$5,note=$6,status='draft',version=version+1 WHERE workspace_id=$1 AND id=$2`,
-          [workspaceId, id, input.crewId, input.projectId ?? null, input.workDate, input.note.trim()],
+          `UPDATE hrms_crew_days SET crew_id=$3,project_id=$4,work_date=$5,note=$6,status='draft',marked_by=$7,marked_membership_id=$8,capture_id=NULL,
+                  decided_by=NULL,decided_at=NULL,version=version+1 WHERE workspace_id=$1 AND id=$2`,
+          [workspaceId, id, input.crewId, input.projectId ?? null, input.workDate, input.note.trim(), ctx.userId, ctx.membershipId],
         );
       else
         await ctx.client.query(

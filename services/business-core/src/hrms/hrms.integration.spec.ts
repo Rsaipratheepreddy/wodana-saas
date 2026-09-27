@@ -445,10 +445,56 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       const row = payroll.people.find((person: { membershipId: string }) => person.membershipId === w.designerMember);
       expect(row).toMatchObject({ employeeCode: "D-1", workedDays: 0, paidLeaveDays: 0, unpaidLeaveDays: 0 });
       expect(row.scheduledDays).toBeGreaterThan(0);
-      expect(row.absentDays).toBe(row.scheduledDays);
+      // Days away count only once they're over.
+      const now = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const over = Array.from({ length: 30 }, (_, index) => `2026-09-${String(index + 1).padStart(2, "0")}`)
+        .filter((date) => date < now && [1, 2, 3, 4, 5].includes(new Date(`${date}T12:00:00Z`).getUTCDay())).length;
+      expect(row.absentDays).toBe(over);
       const csv = await owner.payroll.export(actor, w.workspaceId, "2026-09", "employees");
       expect(csv.startsWith("\ufeff\"Employee\",\"Code\"")).toBe(true);
       await expect(designer.payroll.month(actor, w.workspaceId, "2026-09")).rejects.toThrow("You do not have access");
+    });
+  });
+  it("a crew day or a week sent back is edited and submitted again; whoever changes a crew day marks it", async () => {
+    await world(async (w) => {
+      const project = randomUUID(), today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Villa 9','P-4',$5,now(),$4)", [project, w.workspaceId, randomUUID(), w.owner, randomUUID()]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      await w.client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,true,true,'{project_manager}'),($1,$2,$4,false,true,'{site_supervisor}')",
+        [w.workspaceId, project, w.ownerMember, w.supervisorMember]);
+      const owner = w.as(w.owner), supervisor = w.as(w.supervisor);
+      const crew = (await owner.crews.saveCrew(actor, w.workspaceId, { version: 0, name: "Paint crew", trade: "Painter", leadMembershipId: w.supervisorMember, active: true })).crews[0].id;
+      const worker = (await owner.crews.saveWorker(actor, w.workspaceId, { version: 0, name: "Imran", trade: "Painter", crewId: crew, workerCode: "", phone: "", active: true })).workers[0].id;
+      const day = randomUUID();
+      await supervisor.crews.saveDay(actor, w.workspaceId, day, { version: 0, crewId: crew, projectId: project, workDate: today, note: "", workers: [{ workerId: worker, presence: "present", overtimeHours: 0 }] });
+      await supervisor.crews.submitDay(actor, w.workspaceId, day, { version: 1, exceptionReason: "No phone signal on site" });
+      await expect(owner.crews.decideDay(actor, w.workspaceId, day, { version: 2, decision: "return", note: "" })).rejects.toThrow("Say what to change.");
+      const returned = await owner.crews.decideDay(actor, w.workspaceId, day, { version: 2, decision: "return", note: "Imran was on the other site in the afternoon" });
+      expect(returned).toMatchObject({ status: "returned", decisionNote: "Imran was on the other site in the afternoon" });
+      expect(await notices(w, "hrms.crew_day_returned", w.supervisor)).toHaveLength(1);
+      // The project manager fixes it: now they marked it, so they can't approve it themselves.
+      const fixed = await owner.crews.saveDay(actor, w.workspaceId, day, { version: 3, crewId: crew, projectId: project, workDate: today, note: "Afternoon elsewhere", workers: [{ workerId: worker, presence: "half_day", overtimeHours: 0 }] });
+      expect(fixed).toMatchObject({ status: "draft", markedByName: "Olivia Owner", present: 0.5 });
+      await expect(supervisor.crews.submitDay(actor, w.workspaceId, day, { version: 4, exceptionReason: "Resubmitting" })).rejects.toThrow("The person who marked the day submits it.");
+      await owner.crews.submitDay(actor, w.workspaceId, day, { version: 4, exceptionReason: "Resubmitting" });
+      await expect(owner.crews.decideDay(actor, w.workspaceId, day, { version: 5, decision: "approve", note: "" })).rejects.toThrow("Someone else approves");
+
+      // A week sent back is a draft again.
+      const people = await owner.settings.people(actor, w.workspaceId);
+      const dana = people.find((person: { membershipId: string }) => person.membershipId === w.designerMember);
+      await owner.settings.saveEmployee(actor, w.workspaceId, w.designerMember, { ...dana, version: dana.version, managerId: w.ownerMember });
+      const designer = w.as(w.designer);
+      const week = await designer.time.saveWeek(actor, w.workspaceId, "2026-09-14", { version: 0, entries: [{ workDate: "2026-09-14", minutes: 480, note: "Studio" }] });
+      await designer.time.submit(actor, w.workspaceId, week.timesheet!.id, { version: 1 });
+      await owner.time.decide(actor, w.workspaceId, week.timesheet!.id, { version: 2, decision: "return", note: "Split it by project" });
+      const again = await designer.time.saveWeek(actor, w.workspaceId, "2026-09-14", { version: 3, entries: [{ workDate: "2026-09-14", minutes: 420, note: "Studio" }] });
+      expect(again.timesheet).toMatchObject({ status: "draft", decisionNote: "Split it by project" });
+      await designer.time.submit(actor, w.workspaceId, again.timesheet!.id, { version: 4 });
+      await owner.time.decide(actor, w.workspaceId, again.timesheet!.id, { version: 5, decision: "approve", note: "" });
+      await w.client.query("SAVEPOINT frozen");
+      await expect(w.client.query("DELETE FROM hrms_time_entries WHERE timesheet_id=$1", [again.timesheet!.id])).rejects.toThrow("cannot change");
+      await w.client.query("ROLLBACK TO SAVEPOINT frozen");
     });
   });
 });

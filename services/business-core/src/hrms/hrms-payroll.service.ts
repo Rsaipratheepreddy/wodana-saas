@@ -4,7 +4,7 @@ import { Dec } from "../catalog-core/decimal";
 import { currencyDecimals } from "../purchasing/orders";
 import { HrmsAccessService } from "./hrms-access.service";
 import { HrmsAttendanceService } from "./hrms-attendance.service";
-import { addDays, csvCell, LeaveUnit } from "./hrms-domain";
+import { addDays, csvCell, LeaveUnit, localDate } from "./hrms-domain";
 import { scheduledMinutes } from "./hrms-time.service";
 
 const hours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
@@ -27,6 +27,9 @@ export class HrmsPayrollService {
       const from = `${month}-01`;
       const to = addDays(number === 12 ? `${year + 1}-01-01` : `${year}-${String(number + 1).padStart(2, "0")}-01`, -1);
       const history = await this.attendance.historyIn(ctx, { from, to, scope: "team" });
+      // Days away count only once they're over: a month run part-way through doesn't count what's ahead.
+      const zone = (await ctx.client.query<{ zone: string | null }>(`SELECT default_timezone AS zone FROM workspaces WHERE id=$1`, [workspaceId])).rows[0]?.zone || "UTC";
+      const today = localDate(new Date(), zone);
       const employees = (await ctx.client.query<{ membershipId: string; name: string; employeeCode: string; designation: string; department: string }>(
         `SELECT e.membership_id AS "membershipId", u.display_name AS name, e.employee_code AS "employeeCode", e.designation, e.department
            FROM hrms_employees e JOIN workspace_memberships m ON m.workspace_id=e.workspace_id AND m.id=e.membership_id JOIN users u ON u.id=m.user_id
@@ -53,7 +56,7 @@ export class HrmsPayrollService {
           if (day.workedMinutes > 0) workedDays += 1;
           workedMinutes += day.workedMinutes;
           beyondMinutes += Math.max(0, day.workedMinutes - Math.round(expected * (1 - away)));
-          if (expected && day.workedMinutes === 0 && day.status !== "checked_in" && day.status !== "missing_checkout") absentDays += Math.max(0, 1 - away);
+          if (expected && day.date < today && day.workedMinutes === 0 && day.status !== "checked_in" && day.status !== "missing_checkout") absentDays += Math.max(0, 1 - away);
         }
         people.push({
           ...employee, scheduledDays, workedDays, workedHours: hours(workedMinutes), overtimeHours: hours(beyondMinutes),
