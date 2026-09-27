@@ -73,9 +73,9 @@ function secretPrompt(label) {
 const database = new pg.Client({ connectionString: databaseUrl });
 await database.connect();
 try {
+  // The login address is readable before any tenant context; the workspace itself is not (forced RLS).
   const workspace = (await database.query(
-    `SELECT branding.workspace_id AS id, workspace.name FROM tenant_login_branding branding
-       JOIN workspaces workspace ON workspace.id = branding.workspace_id WHERE branding.login_slug = $1`, [slug])).rows[0];
+    `SELECT workspace_id AS id, display_name AS name FROM tenant_login_branding WHERE login_slug = $1`, [slug])).rows[0];
   assert.ok(workspace, `No workspace has the login address "${slug}"`);
   // The tenant's own rows are visible only inside its context (forced RLS), for the app role as for the owner.
   await database.query("SELECT set_config('app.current_workspace_id', $1, false)", [workspace.id]);
