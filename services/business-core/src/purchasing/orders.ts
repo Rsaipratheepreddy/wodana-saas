@@ -51,6 +51,8 @@ export type Need = {
   fromStock: string;
   /** The packages whose work uses it (none: used anywhere in the project). */
   packageIds: string[];
+  /** For a material, the scope lines it's bought for (those lines aren't listed on their own). */
+  scopeLines: string[];
 };
 
 /**
@@ -97,6 +99,7 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
               item.catalog_item_id AS "catalogItemId", item.supplier AS "supplierHint", NULL::text AS "packageName", NULL::text AS supply, item.position AS sort,
               item.client_choice AS "clientChoice",
               ARRAY(SELECT DISTINCT line.package_id FROM project_boq_lines line WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids) AND line.package_id IS NOT NULL) AS "packageIds",
+              ARRAY(SELECT line.title FROM project_boq_lines line WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids) AND line.status = 'active' ORDER BY line.position) AS "scopeLines",
               coalesce((SELECT min(needed.needed_by) FROM project_boq_lines line JOIN needed ON NOT needed.whole AND needed.package_id = line.package_id
                          WHERE line.workspace_id = item.workspace_id AND line.id = ANY(item.boq_line_ids)),
                        (SELECT needed.needed_by FROM needed WHERE needed.project_id = item.project_id AND needed.whole
@@ -105,16 +108,18 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
         WHERE item.workspace_id = $1
        UNION ALL
        SELECT 'line:' || line.id, 'line', line.id, projects.id, projects.reference, projects.name, line.title, line.description, line.unit, line.quantity,
-              line.catalog_item_id, '', package.name, package.supply, 100000 + line.position, false, ARRAY[package.id],
+              line.catalog_item_id, '', package.name, package.supply, 100000 + line.position, false, ARRAY[package.id], ARRAY[]::text[],
               (SELECT needed.needed_by FROM needed WHERE NOT needed.whole AND needed.package_id = package.id)
          FROM project_boq_lines line JOIN projects ON projects.id = line.project_id
          JOIN project_packages package ON package.workspace_id = line.workspace_id AND package.id = line.package_id
         WHERE line.workspace_id = $1 AND line.status = 'active' AND package.supply IN ('buy', 'ready_made', 'subcontract')
+          -- One line per thing to buy: a scope line whose materials are on the material list is bought through those materials.
+          AND NOT EXISTS (SELECT 1 FROM project_material_items item WHERE item.workspace_id = line.workspace_id AND item.project_id = line.project_id AND line.id = ANY(item.boq_line_ids))
      )
      SELECT needs.key, needs.source, needs."sourceId", needs."projectId", needs."projectReference", needs."projectName", needs.title, needs.detail, needs.unit,
             needs.required::text AS required, coalesce(ordered.placed, 0)::text AS placed, coalesce(ordered.drafted, 0)::text AS drafted, coalesce(ordered.received, 0)::text AS received,
             (needs.required - coalesce(ordered.placed, 0) - coalesce(ordered.drafted, 0))::text AS remaining,
-            needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply, needs."clientChoice", needs."neededBy"::text AS "neededBy", needs."packageIds",
+            needs."catalogItemId", needs."supplierHint", needs."packageName", needs.supply, needs."clientChoice", needs."neededBy"::text AS "neededBy", needs."packageIds", needs."scopeLines",
             -- The supplier's lead time when the catalog knows it (the preferred supplier's, else the longest), else the workspace's.
             coalesce((SELECT link.lead_time_days FROM catalog_supplier_links link WHERE link.workspace_id = $1 AND link.item_id = needs."catalogItemId" AND link.lead_time_days IS NOT NULL
                        ORDER BY link.preferred DESC, link.lead_time_days DESC LIMIT 1),

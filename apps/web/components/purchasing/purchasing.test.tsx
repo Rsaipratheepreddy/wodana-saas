@@ -211,8 +211,8 @@ describe("ordering", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.mocked(window.history.replaceState).mockClear(); nav.query = ""; });
   const need = (patch: Partial<Need>): Need => ({ key: "material:m1", source: "material", sourceId: "m1", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12",
     title: "Calacatta slab", detail: "CAL-20", unit: "m²", required: "12.0000", placed: "0", drafted: "0", received: "0", remaining: "12.0000", catalogItemId: null, supplierHint: "Nile", packageName: null,
-    supply: null, clientChoice: true, blocked: null, neededBy: null, leadDays: 14, orderBy: null, fromStock: "0", packageIds: [], ...patch });
-  const needs = { needs: [need({}), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
+    supply: null, clientChoice: true, blocked: null, neededBy: null, leadDays: 14, orderBy: null, fromStock: "0", packageIds: [], scopeLines: [], ...patch });
+  const needs = { needs: [need({ scopeLines: ["Kitchen worktop"] }), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
     supplierHint: "", packageName: "Lights" }), need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", blocked: "material_signoff" })],
     settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, requireInspection: true, receiveTolerancePercent: "0.00", requireSitePhoto: true, version: 1 }, canBuy: true, canApprove: true };
   const orderState = (patch: Partial<OrderState["order"]> = {}, rights: Partial<OrderState> = {}): OrderState => ({
@@ -243,6 +243,8 @@ describe("ordering", () => {
     page("to-order");
     const table = await screen.findByRole("table", { name: "To order" }).catch(() => screen.findByRole("grid", { name: "To order" }));
     expect(table).toHaveTextContent("PRJ-0007 · Villa 12");
+    // A material is one line to buy, linked to the scope line it's for.
+    expect(table).toHaveTextContent("For Kitchen worktop");
     expect(table).not.toHaveTextContent("Oak veneer");
     expect(screen.getByRole("region", { name: "Waiting for the client's sign-off" })).toHaveTextContent("Oak veneer");
     await userEvent.click(within(table).getByRole("checkbox", { name: "Select PRJ-0007 Calacatta slab" }));
