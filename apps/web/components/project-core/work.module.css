@@ -107,3 +107,6 @@
   .planList > li > :last-child { grid-column: 1 / -1; }
   .openWork { padding: var(--wd-space-4); }
 }
+.snagPhotos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); }
+.snagPhotoGroup { display: grid; gap: var(--wd-space-2); align-content: start; justify-items: start; }
+@media (max-width: 640px) { .snagPhotos { grid-template-columns: minmax(0, 1fr); } }

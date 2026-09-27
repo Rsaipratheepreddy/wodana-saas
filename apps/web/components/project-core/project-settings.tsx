@@ -125,7 +125,8 @@ function Roles({ data, onSave }: { data: SettingsState; onSave: (roles: ProjectR
   </>;
 }
 
-const CHECK_KINDS: CheckKind[] = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made"];
+const CHECK_KINDS: CheckKind[] = ["confirm", "lead_assigned", "role_assigned", "payment_verified", "material_list_signed_off", "everything_ordered", "everything_made", "snags_closed",
+  "no_critical_snags"];
 
 function RouteEditor({ route, roles, readOnly, onClose, onSave, onArchive }: {
   route: ProjectRoute | null; roles: ProjectRole[]; readOnly: boolean; onClose: () => void;
@@ -137,7 +138,7 @@ function RouteEditor({ route, roles, readOnly, onClose, onSave, onArchive }: {
   const [stages, setStages] = useState<RouteStage[]>(route?.stages ?? [{ key: "", name: "", ownerRole: LEAD, checks: [] }, { key: "", name: "", ownerRole: LEAD, checks: [] }]);
   const [busy, setBusy] = useState(false);
   const kindLabel: Record<CheckKind, string> = { confirm: t("Someone confirms"), lead_assigned: t("Project manager named"), role_assigned: t("A role is named"), payment_verified: t("Production payment verified"), material_list_signed_off: t("Client signed off the material list"), everything_ordered: t("Everything is ordered"),
-    everything_made: t("Everything is made and checked") };
+    everything_made: t("Everything is made and checked"), snags_closed: t("All snags closed"), no_critical_snags: t("No critical snag open") };
   const roleItems = roles.map((role) => ({ id: role.key, label: role.label }));
   const update = (index: number, patch: Partial<RouteStage>) => setStages(stages.map((stage, at) => (at === index ? { ...stage, ...patch } : stage)));
   const move = (index: number, step: number) => { const next = [...stages]; const [item] = next.splice(index, 1); next.splice(index + step, 0, item); setStages(next); };

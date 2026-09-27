@@ -1,7 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Request, Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { sendMedia } from "../gallery/gallery.controller";
+import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectWorkService } from "./project-work.service";
 
@@ -86,6 +90,21 @@ export class ProjectCoreController {
   @Get("projects/:projectId/work/:itemId/ripple")
   workRipple(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("itemId", ParseUUIDPipe) itemId: string,
     @Query("startDate") startDate?: string, @Query("dueDate") dueDate?: string) { return this.work.preview(actor, workspaceId, projectId, itemId, { startDate, dueDate }); }
+
+  @Post("projects/:projectId/work/:itemId/photos/:photoId")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  workPhoto(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("itemId", ParseUUIDPipe) itemId: string, @Param("photoId", ParseUUIDPipe) photoId: string, @Query("kind") kind: string, @UploadedFile() file: ReferenceUpload) {
+    return this.work.uploadPhoto(actor, workspaceId, projectId, itemId, photoId, kind, file);
+  }
+
+  @Get("projects/:projectId/photos/:photoId")
+  async photo(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Param("photoId", ParseUUIDPipe) photoId: string, @Query("preview") preview: string, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.work.photo(actor, workspaceId, projectId, photoId, preview === "1");
+    response.setHeader("Cache-Control", "private, max-age=300");
+    return sendMedia(file, request, response);
+  }
 
   @Post("projects/:projectId/work")
   workCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Body() input: Record<string, unknown>) { return this.work.command(actor, workspaceId, projectId, input ?? {}); }

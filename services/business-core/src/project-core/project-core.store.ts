@@ -149,10 +149,13 @@ export async function evaluateStages(db: Db, workspaceId: string, project: Pick<
   const ordered = needsOrders ? await everythingOrdered(db, workspaceId, project.id) : false;
   const needsMade = stages.some((stage) => stage.status === "current" && stage.checks.some((check) => check.kind === "everything_made"));
   const made = needsMade ? await everythingMade(db, workspaceId, project.id) : false;
+  const snags = (await db.query<{ open: number; critical: number }>(
+    `SELECT count(*)::int AS open, count(*) FILTER (WHERE severity = 'critical')::int AS critical FROM work_items
+      WHERE workspace_id = $1 AND project_id = $2 AND type = 'snag' AND status NOT IN ('done', 'cancelled')`, [workspaceId, project.id])).rows[0];
   return stages.map((stage) => {
     const mine = confirmations.filter((confirmation) => confirmation.stageId === stage.id);
     const facts = { filledRoles, confirmed: new Set(mine.map((confirmation) => confirmation.checkKey)), productionPaid: paid, materialsSignedOff: materialsDone, everythingOrdered: ordered,
-      everythingMade: made };
+      everythingMade: made, openSnags: snags.open, openCriticalSnags: snags.critical };
     const checks = stage.checks.map((check) => {
       const confirmation = mine.find((item) => item.checkKey === check.key);
       return { ...check, passed: stage.status === "done" ? true : checkPasses(check, facts), confirmedBy: confirmation?.byName ?? null, confirmedAt: confirmation?.at ?? null, note: confirmation?.note ?? "" };

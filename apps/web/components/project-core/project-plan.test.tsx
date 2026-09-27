@@ -30,7 +30,7 @@ const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const item = (patch: Partial<WorkItem> & Pick<WorkItem, "id" | "number" | "title">): WorkItem => ({
   projectId: PID, type: "task", parentId: null, packageId: null, boqLineId: null, stageId: null, sprintId: null, status: "todo", priority: "normal",
   assigneeId: null, assigneeName: null, startDate: null, dueDate: null, baselineStart: null, baselineDue: null, completedAt: null, createdBy: "u1", version: 1,
-  subtasks: 0, subtasksDone: 0, comments: 0, blockedBy: [], needsMaterials: false, ...patch,
+  subtasks: 0, subtasksDone: 0, comments: 0, blockedBy: [], needsMaterials: false, severity: null, source: null, areaId: null, fixedBy: null, ...patch,
 });
 const drawings = item({ id: "i1", number: 1, title: "Kitchen shop drawings", packageId: "k1", assigneeId: "m2", assigneeName: "Dana Karim", dueDate: "2099-10-10", priority: "high", subtasks: 1,
   blockedBy: [{ id: "i3", number: 3, title: "Marble thickness", type: "blocker", status: "todo" }], version: 3 });
@@ -40,13 +40,13 @@ const handles = item({ id: "i4", number: 4, title: "Order handles", status: "don
 const board = (items: WorkItem[] = [drawings, sheet, marble, handles], extra: Partial<WorkBoard> = {}): WorkBoard => ({
   items, packages: [{ id: "k1", name: "Kitchen joinery", supply: "make", planned: true }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
   people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, canManage: true, item: null,
-  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], critical: { finish: null, float: {} }, progress: { project: 40, packages: { k1: 40 } }, materials: {}, ...extra,
+  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], critical: { finish: null, float: {} }, progress: { project: 40, packages: { k1: 40 } }, materials: {}, areas: [], ...extra,
 });
 const detail = (base: WorkItem, patch: Partial<WorkDetail> = {}): WorkDetail => ({
   ...base, description: "", createdByName: "Omar Haddad", createdAt: "2026-09-22T09:00:00Z", startedAt: null, subtaskIds: base.id === "i1" ? ["i2"] : [],
   before: base.id === "i1" ? [{ ...marble, kind: "fs", lagDays: 0 }] : [], after: [],
   activity: [{ id: "e1", kind: "created", detail: {}, by: "Omar Haddad", at: "2026-09-22T09:00:00Z" }, { id: "c1", kind: "comment", body: "Waiting on the marble.", by: "Dana Karim", at: "2026-09-23T09:00:00Z" }],
-  ...patch,
+  photos: [], ...patch,
 });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -56,7 +56,8 @@ const mount = (respond: (url: string, body: Record<string, unknown> | undefined)
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 };
-const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(String(init!.body)));
+const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && typeof init.body === "string").map(([, init]) => JSON.parse(String(init!.body)));
+const uploads = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && init.body instanceof FormData).map(([url, init]) => ({ url: String(url), file: (init!.body as FormData).get("file") as File }));
 const plan = () => render(<DesignSystemProvider><ProjectPlan workspaceId="w" projectId={PID} /></DesignSystemProvider>);
 
 describe("project plan", () => {
@@ -151,6 +152,29 @@ describe("project plan", () => {
     expect(await screen.findByText("2 materials not in")).toBeInTheDocument();
     await userEvent.click(screen.getByText("Kitchen shop drawings"));
     expect(await within(await screen.findByRole("dialog")).findByText("Not in yet: Oak veneer, Brass handles")).toBeInTheDocument();
+  });
+
+  it("shows a snag's severity, source and photos, uploads a photo after, and reopens a closed one only with why", async () => {
+    const snag = item({ id: "i9", number: 9, title: "Scratch on the wardrobe door", type: "snag", severity: "critical", source: "client", status: "done", completedAt: "2026-09-27T10:00:00Z", version: 5 });
+    const fetcher = mount((url, body) => (url.includes("/work/i9") && !body && !url.includes("/photos/") ? detail(snag, { photos: [{ id: "ph1", kind: "after", name: "fixed.jpg", byName: "Dana Karim", at: "2026-09-27T09:00:00Z" }] })
+      : board([drawings, snag], { item: body ? detail({ ...snag, version: 6 }) : null })));
+    plan();
+    await userEvent.click(await screen.findByText("Scratch on the wardrobe door"));
+    const panel = await screen.findByRole("dialog");
+    expect(await within(panel).findByRole("button", { name: "Critical" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Client" })).toBeInTheDocument();
+    const photos = within(panel).getByRole("region", { name: "Photos" });
+    expect(within(photos).getByRole("img", { name: "fixed.jpg" })).toHaveAttribute("src", expect.stringContaining("/photos/ph1"));
+    await userEvent.upload(within(photos).getByLabelText("Add a photo after"), new File(["x"], "after.jpg", { type: "image/jpeg" }));
+    await waitFor(() => expect(uploads(fetcher)).toEqual([{ url: expect.stringMatching(/\/work\/i9\/photos\/[0-9a-f-]+\?workspaceId=w&kind=after$/), file: expect.objectContaining({ name: "after.jpg" }) }]));
+
+    await userEvent.click(within(panel).getByRole("button", { name: /Done/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "To do" }));
+    const dialog = await screen.findByRole("dialog", { name: "Open the snag again" });
+    expect(within(dialog).getByRole("button", { name: "Open again" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's open again/ }), "Still visible in daylight");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Open again" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toMatchObject({ action: "update", itemId: "i9", status: "todo", reason: "Still visible in daylight", version: 5 }));
   });
 
   it("creates a task given to the person by default", async () => {

@@ -2725,5 +2725,19 @@
   "Back by": "Back by",
   "Only {quantity} at the factory.": "Only {quantity} at the factory.",
   "Everything is made and checked": "Everything is made and checked",
-  "Open the factory": "Open the factory"
+  "Open the factory": "Open the factory",
+  "Minor": "Minor",
+  "Major": "Major",
+  "Found by the team": "Found by the team",
+  "Inspection": "Inspection",
+  "Warranty": "Warranty",
+  "Severity": "Severity",
+  "Add a photo before": "Add a photo before",
+  "Add a photo after": "Add a photo after",
+  "Open the snag again": "Open the snag again",
+  "Open again": "Open again",
+  "Why it's open again": "Why it's open again",
+  "All snags closed": "All snags closed",
+  "No critical snag open": "No critical snag open",
+  "Open the plan": "Open the plan"
 }

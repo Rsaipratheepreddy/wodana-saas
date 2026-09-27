@@ -39,6 +39,7 @@ function Meta({ row, parent, waiting }: { row: WorkRow; parent?: WorkItem; waiti
     parent ? t("Subtask of #{number}", { number: parent.number }) : "",
     row.subtasks ? t("{done} of {count} subtasks", { done: row.subtasksDone, count: row.subtasks }) : "",
     row.priority === "urgent" || row.priority === "high" ? labels.priority[row.priority] : "",
+    row.type === "snag" && row.severity && row.severity !== "minor" ? labels.severity[row.severity] : "",
   ].filter(Boolean);
   const blocked = row.blockedBy.length > 0 && isOpen(row.status);
   if (!parts.length && !blocked && !waiting) return null;

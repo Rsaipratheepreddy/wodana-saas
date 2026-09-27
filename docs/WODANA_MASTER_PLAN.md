@@ -810,6 +810,12 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - A snag belongs to the supplier's product: vendor return or claim.
   - A snag reopened after closure keeps its history.
 
+- **Snags (built, on the task system):**
+  - A snag is project work of type *Snag* with a severity (minor, major, critical), where it came from (the team, an inspection, a delivery, the client, a warranty claim) and the area it's in; the list shows major and critical ones.
+  - Photos before and after (up to 10 each). Moving it to *In review* records who fixed it and tells the project manager and whoever raised it; someone other than the fixer or its assignee closes it, and only with a photo after. A closed snag opens again only with why (the assignee is told); its history keeps both.
+  - A move that arrives short at a project's site raises a major snag from the delivery, in the package and scope line of the work order it came from.
+  - Stage checks *All snags closed* (the default Snagging stage) and *No critical snag open* (the default Handover stage) read them.
+
 ### 6.19 Handover, final account and aftercare
 - **Records:** handover_packs (revision, frozen contents: drawings, warranties, manuals, care guides, as-built photos), handover_items (outstanding), client_acceptances (portal, OTP), final_account (agreed + variations − deductions − received = balance), warranty_terms (per package/item, from the handover date), warranty_claims → snag/task.
 - **Rules:**

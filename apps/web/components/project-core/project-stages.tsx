@@ -79,12 +79,15 @@ function CheckRow({ check, stage, run, caseHref, projectHref, onTeam, roleLabel,
     : check.kind === "material_list_signed_off" ? t("Client signed off the material list")
     : check.kind === "everything_ordered" ? t("Everything is ordered")
     : check.kind === "everything_made" ? t("Everything is made and checked")
+    : check.kind === "snags_closed" ? t("All snags closed")
+    : check.kind === "no_critical_snags" ? t("No critical snag open")
     : t("Production payment verified");
   const fix = check.passed || !live ? null
     : check.kind === "payment_verified" ? <Link href={caseHref("payment-plan")}>{t("Open payments")}</Link>
     : check.kind === "material_list_signed_off" ? <Link href={`${projectHref}/scope?view=materials`}>{t("Open the material list")}</Link>
     : check.kind === "everything_ordered" ? <Link href="/workspace/purchasing">{t("Open what to order")}</Link>
     : check.kind === "everything_made" ? <Link href="/workspace/factory">{t("Open the factory")}</Link>
+    : check.kind === "snags_closed" || check.kind === "no_critical_snags" ? <Link href={`${projectHref}/plan`}>{t("Open the plan")}</Link>
     : <button type="button" className={styles.linkButton} onClick={onTeam}>{t("Name someone")}</button>;
   return <li data-passed={check.passed || undefined} data-auto>
     <span className={styles.autoMark} aria-hidden="true">{check.passed ? <Check size={13} strokeWidth={2.5} /> : null}</span>

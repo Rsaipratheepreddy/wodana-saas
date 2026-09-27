@@ -7,6 +7,7 @@ import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { readLocations, type StockLocation } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { raiseSnag } from "../project-core/project-work";
 import { averageCost, move, onHand, readMovements, readStock, readTransfer, readTransfers, stockItemFor } from "./stock";
 
 type Db = PoolClient;
@@ -239,6 +240,17 @@ export class InventoryService {
           }
         }
         await client.query(`UPDATE stock_transfers SET status = 'received', received_on = $3, received_by = $4 WHERE workspace_id = $1 AND id = $2`, [workspaceId, transferId, receivedOn, user.userId]);
+        // Goods that didn't arrive whole at a project's site become a snag on the project, so they're followed up.
+        const site = (await client.query<{ projectId: string | null; workOrderId: string | null }>(
+          `SELECT place.project_id AS "projectId", moved.work_order_id AS "workOrderId" FROM stock_transfers moved
+             JOIN stock_locations place ON place.workspace_id = moved.workspace_id AND place.id = moved.to_location_id
+            WHERE moved.workspace_id = $1 AND moved.id = $2`, [workspaceId, transferId])).rows[0];
+        if (short.length && site?.projectId) {
+          const made = site.workOrderId ? (await client.query<{ packageId: string | null; boqLineId: string }>(
+            `SELECT package_id AS "packageId", boq_line_id AS "boqLineId" FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, site.workOrderId])).rows[0] : null;
+          await raiseSnag(client, workspaceId, { projectId: site.projectId, title: `Move ${transfer.number} arrived short`, description: short.join("\n"), severity: "major", source: "delivery",
+            packageId: made?.packageId ?? null, boqLineId: made?.boqLineId ?? null, actorId: user.userId });
+        }
         if (short.length) await this.tell(client, workspaceId, "stock.transfer_short", [transfer.sentBy], user.userId, `${transferId}:short`,
           { transfer: String(transfer.number), from: transfer.fromName, to: transfer.toName, note: short.join("; ").slice(0, 480) }, transferId);
         await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "stock.transfer_received", entityType: "stock_transfer", entityId: transferId, after: { receivedOn, short } });

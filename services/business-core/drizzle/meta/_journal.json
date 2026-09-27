@@ -414,6 +414,13 @@
       "when": 1794398400000,
       "tag": "0058_factory_outside",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794484800000,
+      "tag": "0059_snags",
+      "breakpoints": true
     }
   ]
 }

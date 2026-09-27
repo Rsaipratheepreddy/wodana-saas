@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { needsNotIn, readNeeds } from "../purchasing/orders";
+import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
@@ -17,6 +19,8 @@ import { MISS_REASONS, readSprintDetail, readSprints, type MissReason } from "./
 
 type Db = PoolClient;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const SEVERITIES = ["minor", "major", "critical"] as const;
+const SNAG_SOURCES = ["internal", "inspection", "delivery", "client", "warranty"] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EDITABLE = ["active", "on_hold"];
 
@@ -28,7 +32,55 @@ const EDITABLE = ["active", "on_hold"];
  */
 @Injectable()
 export class ProjectWorkService {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly storage?: BrandAssetStorageService) {}
+
+  /** A photo of a snag before or after it's fixed (up to 10 each); replayed safely by its id. */
+  async uploadPhoto(actor: RequestActor, workspaceId: string, projectId: string, itemId: string, photoId: string, kind: string, file?: ReferenceUpload) {
+    const prepared = await prepareReferenceUpload(file);
+    if (!prepared.mimeType.startsWith("image/")) throw new BadRequestException("Choose a photo (JPG, PNG, WebP or HEIC).");
+    const storage = this.storage;
+    if (!storage) throw new ConflictException("Photos can't be stored here yet.");
+    const photoKind = oneOf(kind, ["before", "after"] as const, "Photo");
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const context = await this.context(client, workspaceId, projectId, user);
+      if (!context.canEdit) throw new ConflictException("The project is closed.");
+      const item = await this.own(client, workspaceId, projectId, itemId, true);
+      if (item.type !== "snag") throw new BadRequestException("Photos before and after are for snags.");
+      const id = uuid(photoId, "Photo");
+      const existing = (await client.query<{ sha256: string }>(`SELECT sha256 FROM work_item_photos WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
+      if (existing && existing.sha256 !== prepared.digest) throw new ConflictException("This upload id belongs to another photo.");
+      if (!existing) {
+        const count = (await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM work_item_photos WHERE workspace_id = $1 AND work_item_id = $2 AND kind = $3`,
+          [workspaceId, itemId, photoKind])).rows[0].count;
+        if (count >= 10) throw new BadRequestException("A snag takes up to 10 photos before and 10 after.");
+        const key = `projects/snags/${workspaceId}/${id}`;
+        await storage.put(`${key}/original`, prepared.body, prepared.mimeType);
+        if (prepared.preview) await storage.put(`${key}/preview.webp`, prepared.preview, "image/webp");
+        await client.query(
+          `INSERT INTO work_item_photos (id, workspace_id, work_item_id, kind, original_name, mime_type, byte_size, object_key, preview_key, sha256, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [id, workspaceId, itemId, photoKind, prepared.name, prepared.mimeType, prepared.body.length, `${key}/original`, prepared.preview ? `${key}/preview.webp` : null, prepared.digest, user.userId]);
+        await workEvent(client, workspaceId, itemId, "photo", { kind: photoKind }, user.userId);
+      }
+      return this.state(client, workspaceId, context, itemId);
+    });
+  }
+
+  /** One snag photo (or its preview) for someone on the project. */
+  photo(actor: RequestActor, workspaceId: string, projectId: string, photoId: string, preview: boolean) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      await this.context(client, workspaceId, projectId, user);
+      const row = (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string }>(
+        `SELECT photo.object_key AS "objectKey", photo.preview_key AS "previewKey", photo.mime_type AS "mimeType"
+           FROM work_item_photos photo JOIN work_items item ON item.workspace_id = photo.workspace_id AND item.id = photo.work_item_id
+          WHERE photo.workspace_id = $1 AND photo.id = $2 AND item.project_id = $3`, [workspaceId, uuid(photoId, "Photo"), projectId])).rows[0];
+      if (!row || !this.storage) throw new NotFoundException("Photo not found.");
+      const key = preview && row.previewKey ? row.previewKey : row.objectKey;
+      const stored = await this.storage.read(key).catch(() => null);
+      if (!stored) throw new NotFoundException("Photo not found.");
+      return { body: stored.body, contentType: key === row.previewKey ? "image/webp" : row.mimeType };
+    });
+  }
 
   /** Every item on the project, with what the plan needs to group and assign them. */
   board(actor: RequestActor, workspaceId: string, projectId: string) {
@@ -218,14 +270,16 @@ export class ProjectWorkService {
     if (startDate && dueDate && dueDate < startDate) throw new BadRequestException("The due date can't be before the start date.");
     const priority = oneOf(body.priority ?? "normal", WORK_PRIORITIES, "Priority");
     const description = text(body.description, 10000, "Description");
+    const snag = type === "snag" ? { severity: oneOf(body.severity ?? "minor", SEVERITIES, "Severity"), source: oneOf(body.source ?? "internal", SNAG_SOURCES, "Source"),
+      areaId: body.areaId ? await this.area(client, workspaceId, projectId, body.areaId) : null } : null;
     await client.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, projectId]);
     const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId])).rows[0].next;
     await client.query(
       `INSERT INTO work_items (id, workspace_id, project_id, number, type, parent_id, package_id, boq_line_id, stage_id, title, description, priority, assignee_membership_id, start_date, due_date, created_by,
-                               needs_materials)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+                               needs_materials, severity, source, area_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
       [id, workspaceId, projectId, number, type, parent?.id ?? null, packageId, line?.id ?? null, stageId, title, description, priority, assigneeId, startDate, dueDate, userId,
-        body.needsMaterials === true]);
+        body.needsMaterials === true, snag?.severity ?? null, snag?.source ?? null, snag?.areaId ?? null]);
     await workEvent(client, workspaceId, id, "created", { type, parent: parent ? parent.number : null }, userId);
     if (blocks) {
       await client.query(`INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, 'fs', 0, $5)`,
@@ -254,11 +308,27 @@ export class ProjectWorkService {
       const description = text(body.description, 10000, "Description");
       set("description", description);
     }
+    let type = item.type;
     if (body.type !== undefined && body.type !== item.type) {
       if (item.parentId) throw new BadRequestException("A subtask is always a task.");
-      const type = oneOf(body.type, WORK_TYPES, "Type");
+      type = oneOf(body.type, WORK_TYPES, "Type");
       set("type", type);
+      // A snag carries how serious it is and where it came from; other work doesn't.
+      if (type === "snag") { set("severity", "minor"); set("source", "internal"); }
+      if (item.type === "snag") { set("severity", null); set("source", null); set("area_id", null); set("fixed_by", null); }
       await workEvent(client, workspaceId, itemId, "type", { from: item.type, to: type }, userId);
+    }
+    if (type === "snag") {
+      if (body.severity !== undefined && body.severity !== item.severity) {
+        const severity = oneOf(body.severity, SEVERITIES, "Severity");
+        set("severity", severity);
+        await workEvent(client, workspaceId, itemId, "severity", { from: item.severity, to: severity }, userId);
+      }
+      if (body.source !== undefined && body.source !== item.source) set("source", oneOf(body.source, SNAG_SOURCES, "Source"));
+      if (body.areaId !== undefined) {
+        const areaId = body.areaId ? await this.area(client, workspaceId, projectId, body.areaId) : null;
+        if (areaId !== item.areaId) set("area_id", areaId);
+      }
     }
     if (body.priority !== undefined && body.priority !== item.priority) {
       const priority = oneOf(body.priority, WORK_PRIORITIES, "Priority");
@@ -315,6 +385,30 @@ export class ProjectWorkService {
         await client.query(`UPDATE work_items SET status = 'cancelled', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, child.id]);
         await workEvent(client, workspaceId, child.id, "status", { from: child.status, to: "cancelled", because: item.number }, userId);
       }
+      if (type === "snag") {
+        // Whoever fixed it marks it ready; someone else closes it, with a photo after.
+        if (status === "in_review") set("fixed_by", userId);
+        if (status === "done") {
+          const fixer = item.fixedBy;
+          const assignee = item.assigneeId ? (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM workspace_memberships WHERE workspace_id = $1 AND id = $2`,
+            [workspaceId, item.assigneeId])).rows[0]?.userId : null;
+          if (fixer === userId || assignee === userId) throw new ForbiddenException("Someone other than who fixed it closes a snag.");
+          const after = (await client.query(`SELECT 1 FROM work_item_photos WHERE workspace_id = $1 AND work_item_id = $2 AND kind = 'after' LIMIT 1`, [workspaceId, itemId])).rowCount;
+          if (!after) throw new ConflictException("Add a photo of it fixed before closing it.");
+        }
+        if (item.status === "done" && OPEN(status)) {
+          const reason = text(body.reason, 500, "Reason");
+          if (!reason) throw new BadRequestException("Say why the snag is open again.");
+          set("fixed_by", null);
+          await workEvent(client, workspaceId, itemId, "reopened", { reason }, userId);
+          if (item.assigneeId) notices.push({ key: `reopen:${itemId}:${item.version}`, notice: { code: "work.snag_reopened", item, note: reason, memberships: [item.assigneeId] } });
+        }
+        if (status === "in_review") {
+          const checkers = ((await readTeam(client, workspaceId, [projectId])).get(projectId) ?? []).filter((member) => member.lead).map((member) => member.membershipId);
+          const raiser = await this.reporter(client, workspaceId, item);
+          notices.push({ key: `ready:${itemId}:${item.version}`, notice: { code: "work.snag_ready", item, note: "", memberships: [...checkers, ...(raiser ? [raiser] : [])] } });
+        }
+      }
       set("status", status);
       set("completed_at", status === "done" ? new Date().toISOString() : null);
       set("completed_by", status === "done" ? userId : null);
@@ -368,6 +462,9 @@ export class ProjectWorkService {
       critical: { finish: path.finish, float: Object.fromEntries(path.float) },
       progress: await readProgress(client, workspaceId, project.id),
       materials: await this.materialsWaiting(client, workspaceId, project.id, items),
+      // The project's areas, for where a snag is.
+      areas: (await client.query<{ id: string; name: string }>(`SELECT id, name FROM pre_project_rooms WHERE workspace_id = $1 AND case_id = $2 ORDER BY name`,
+        [workspaceId, project.caseId])).rows,
       baseline: baseline?.at ? baseline : null,
       item: itemId ? await this.detail(client, workspaceId, project.id, itemId) : null,
     };
@@ -392,7 +489,11 @@ export class ProjectWorkService {
     const extra = await client.query<{ description: string; createdByName: string; createdAt: string; startedAt: string | null }>(
       `SELECT item.description, creator.display_name AS "createdByName", item.created_at AS "createdAt", item.started_at AS "startedAt"
          FROM work_items item JOIN users creator ON creator.id = item.created_by WHERE item.workspace_id = $1 AND item.id = $2`, [workspaceId, itemId]);
-    return { ...item, ...extra.rows[0], subtaskIds: subtasks.rows.map((row) => row.id), before: links.before, after: links.after, activity };
+    const photos = (await client.query<{ id: string; kind: "before" | "after"; name: string; byName: string; at: string }>(
+      `SELECT photo.id, photo.kind, photo.original_name AS name, person.display_name AS "byName", photo.created_at AS at
+         FROM work_item_photos photo JOIN users person ON person.id = photo.created_by WHERE photo.workspace_id = $1 AND photo.work_item_id = $2 ORDER BY photo.created_at`,
+      [workspaceId, itemId])).rows;
+    return { ...item, ...extra.rows[0], subtaskIds: subtasks.rows.map((row) => row.id), before: links.before, after: links.after, activity, photos };
   }
 
   private async context(client: Db, workspaceId: string, projectId: string, user: ActorUser): Promise<Context> {
@@ -549,6 +650,16 @@ export class ProjectWorkService {
 
   private async ripple(client: Db, workspaceId: string, projectId: string, changed: { id: string; startDate: string | null; dueDate: string | null }) {
     return ripple(await readItems(client, workspaceId, projectId), await readProjectLinks(client, workspaceId, projectId), changed, await readCalendar(client, workspaceId));
+  }
+
+  /** An area of the project (a room of its planning record). */
+  private async area(client: Db, workspaceId: string, projectId: string, value: unknown) {
+    const id = uuid(value, "Area");
+    const found = (await client.query(
+      `SELECT 1 FROM pre_project_rooms room JOIN delivery_projects project ON project.workspace_id = room.workspace_id AND project.case_id = room.case_id
+        WHERE room.workspace_id = $1 AND project.id = $2 AND room.id = $3`, [workspaceId, projectId, id])).rowCount;
+    if (!found) throw new BadRequestException("Choose one of the project's areas.");
+    return id;
   }
 
   private async own(client: Db, workspaceId: string, projectId: string, itemId: string, lock = false): Promise<WorkItem> {

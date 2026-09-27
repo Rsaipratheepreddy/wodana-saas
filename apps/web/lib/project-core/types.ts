@@ -1,7 +1,8 @@
 export type ProjectStatus = "active" | "on_hold" | "completed" | "cancelled" | "archived";
 export type Health = "on_track" | "at_risk" | "off_track";
 export type Priority = "normal" | "high" | "critical";
-export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off" | "everything_ordered" | "everything_made";
+export type CheckKind = "confirm" | "lead_assigned" | "role_assigned" | "payment_verified" | "material_list_signed_off" | "everything_ordered" | "everything_made"
+  | "snags_closed" | "no_critical_snags";
 
 export type ProjectRole = { key: string; label: string };
 export type StageCheck = { key: string; kind: CheckKind; label?: string; role?: string };
@@ -146,7 +147,11 @@ export type WorkItem = {
   subtasks: number; subtasksDone: number; comments: number; blockedBy: WorkRef[];
   /** Its package's materials must be there when it starts: purchasing counts back from its start. */
   needsMaterials: boolean;
+  /** For a snag: how serious, where it came from, its area, and who marked it fixed. */
+  severity: Severity | null; source: SnagSource | null; areaId: string | null; fixedBy: string | null;
 };
+export type Severity = "minor" | "major" | "critical";
+export type SnagSource = "internal" | "inspection" | "delivery" | "client" | "warranty";
 export type WorkLink = WorkRef & { kind: "fs" | "ss"; lagDays: number };
 export type WorkActivity =
   | { id: string; kind: "comment"; body: string; by: string; at: string }
@@ -154,6 +159,8 @@ export type WorkActivity =
 export type WorkDetail = WorkItem & {
   description: string; createdByName: string; createdAt: string; startedAt: string | null;
   subtaskIds: string[]; before: WorkLink[]; after: WorkLink[]; activity: WorkActivity[];
+  /** A snag's photos before and after it's fixed. */
+  photos: Array<{ id: string; kind: "before" | "after"; name: string; byName: string; at: string }>;
 };
 export type WorkBoard = {
   items: WorkItem[]; packages: Array<{ id: string; name: string; supply: Supply; planned: boolean }>; stages: Array<{ id: string; name: string; status: string }>;
@@ -168,6 +175,8 @@ export type WorkBoard = {
   progress: { project: number | null; packages: Record<string, number> };
   /** For open work that needs its package's materials: those not in yet, by item id. */
   materials: Record<string, string[]>;
+  /** The project's areas, for where a snag is. */
+  areas: Array<{ id: string; name: string }>;
 };
 /** An item pushed later because something it waits on moved. */
 export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };

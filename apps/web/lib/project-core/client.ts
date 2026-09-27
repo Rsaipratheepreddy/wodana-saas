@@ -6,6 +6,15 @@ export class ProjectRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
+async function upload<T>(url: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.set("file", file);
+  const response = await fetch(url, { method: "POST", body: form, cache: "no-store" });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new ProjectRequestError(typeof data?.message === "string" ? data.message : "The photo could not be uploaded.", response.status);
+  return data as T;
+}
+
 async function request<T>(url: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store" });
   const data = await response.json().catch(() => null);
@@ -39,6 +48,10 @@ export function projectApi(workspaceId: string) {
     },
     /** One change to the project's work (items are version-checked one by one); returns the work as it is now. */
     workCommand: (projectId: string, action: string, input: Record<string, unknown> = {}) => request<WorkBoard>(path(`projects/${projectId}/work`), "POST", { ...input, action }),
+    /** A snag photo before or after it's fixed; replayed safely by its id. */
+    uploadWorkPhoto: (projectId: string, itemId: string, photoId: string, kind: "before" | "after", file: File) =>
+      upload<WorkBoard>(`${path(`projects/${projectId}/work/${itemId}/photos/${photoId}`)}&${new URLSearchParams({ kind })}`, file),
+    photoUrl: (projectId: string, photoId: string, preview = true) => `${path(`projects/${projectId}/photos/${photoId}`)}${preview ? "&preview=1" : ""}`,
     packagePlan: (projectId: string, packageId: string, startDate?: string | null) =>
       request<PackagePlan>(`${path(`projects/${projectId}/work/packages/${packageId}/plan`)}${startDate ? `&${new URLSearchParams({ startDate })}` : ""}`),
     sprint: (projectId: string, sprintId: string) => request<SprintDetail>(path(`projects/${projectId}/work/sprints/${sprintId}`)),

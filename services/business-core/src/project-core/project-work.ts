@@ -16,6 +16,8 @@ export type WorkItem = {
   startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
   /** The package's materials must be there when it starts: purchasing counts back from its start. */
   needsMaterials: boolean;
+  /** For a snag: how serious, where it came from, the area it's in, and who marked it fixed. */
+  severity: "minor" | "major" | "critical" | null; source: "internal" | "inspection" | "delivery" | "client" | "warranty" | null; areaId: string | null; fixedBy: string | null;
   subtasks: number; subtasksDone: number; comments: number;
   /** What it's waiting on: a predecessor not yet finished (finish-to-start) or not yet started (start-to-start). */
   blockedBy: WorkRef[];
@@ -25,7 +27,7 @@ const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number
   item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.sprint_id AS "sprintId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
   coalesce(assignee.display_name, assignee.primary_email) AS "assigneeName", item.start_date::text AS "startDate", item.due_date::text AS "dueDate",
   item.baseline_start::text AS "baselineStart", item.baseline_due::text AS "baselineDue", item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
-  item.needs_materials AS "needsMaterials",
+  item.needs_materials AS "needsMaterials", item.severity, item.source, item.area_id AS "areaId", item.fixed_by AS "fixedBy",
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status <> 'cancelled') AS subtasks,
   (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status = 'done') AS "subtasksDone",
   (SELECT count(*)::int FROM work_item_comments comment WHERE comment.workspace_id = item.workspace_id AND comment.work_item_id = item.id) AS comments,
@@ -205,4 +207,20 @@ export async function readProgress(db: Db, workspaceId: string, projectId: strin
   const total = packages.reduce((sum, item) => sum + item.value, 0);
   const weight = (item: { value: number }) => (total > 0 ? item.value / total : 1 / packages.length);
   return { project: percent(packages.reduce((sum, item) => sum + (share.get(item.id) ?? 0) * weight(item), 0)), packages: byPackage };
+}
+
+/**
+ * Raises a snag on a project from another record (a delivery that arrived short at site): numbered like
+ * any work, in the package and scope line it concerns, told to no one yet — the project's lists show it.
+ */
+export async function raiseSnag(db: Db, workspaceId: string, input: { projectId: string; title: string; description: string; severity: "minor" | "major" | "critical";
+  source: "delivery" | "inspection" | "client" | "warranty"; packageId?: string | null; boqLineId?: string | null; actorId: string }) {
+  await db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, input.projectId]);
+  const number = (await db.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, input.projectId])).rows[0].next;
+  const id = (await db.query<{ id: string }>(
+    `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, boq_line_id, title, description, severity, source, created_by)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'snag', $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    [workspaceId, input.projectId, number, input.packageId ?? null, input.boqLineId ?? null, input.title.slice(0, 300), input.description.slice(0, 10000), input.severity, input.source, input.actorId])).rows[0].id;
+  await workEvent(db, workspaceId, id, "created", { type: "snag", source: input.source }, input.actorId);
+  return { id, number };
 }

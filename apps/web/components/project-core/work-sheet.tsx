@@ -5,11 +5,12 @@ import { parseDate } from "@internationalized/date";
 import { ArrowRight, Plus, X } from "lucide-react";
 import {
   ActivityFeed, Avatar, Button, Checkbox, ControlledModalDialog, DateField, ErrorState, IconButton, InlineNotice, InspectorSheet, MenuButton, SegmentedControl, SelectField, Skeleton,
-  Switch, TextAreaField, TextInput, type ActivityItem,
+  FileUploader, Switch, TextAreaField, TextInput, type ActivityItem,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { ProjectApi } from "@/lib/project-core/client";
-import type { WorkActivity, WorkBoard, WorkDetail, WorkItem, WorkMove, WorkType } from "@/lib/project-core/types";
+import type { WorkActivity, WorkBoard, WorkDetail, WorkItem, WorkMove, WorkStatus, WorkType } from "@/lib/project-core/types";
+import { SavedPhotos } from "../purchasing/delivery-photos";
 import { useProjectFormat } from "./format";
 import { ALL_STATUSES, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import styles from "./work.module.css";
@@ -53,11 +54,23 @@ export function WorkSheet({ api, projectId, itemId, board, onBoard, onOpenItem, 
     {error && !detail ? <ErrorState description={error} onRetry={() => void load()} />
       : !detail ? <Skeleton lines={8} />
       : <WorkBody key={`${detail.id}:${detail.version}`} detail={detail} board={board} run={run} notice={notice} onOpenItem={onOpenItem}
-          preview={async (dates) => (await api.workRipple(projectId, itemId, dates)).moves} />}
+          preview={async (dates) => (await api.workRipple(projectId, itemId, dates)).moves}
+          photos={{ url: (photoId, small) => api.photoUrl(projectId, photoId, small), upload: async (kind, files) => {
+            setNotice("");
+            try {
+              let next = null;
+              for (const file of files) next = await api.uploadWorkPhoto(projectId, itemId, crypto.randomUUID(), kind, file);
+              if (next) { onBoard(next); if (next.item?.id === itemId) setDetail(next.item); else await load(); }
+            } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("The photo could not be uploaded.")); }
+          } }} />}
   </InspectorSheet>;
 }
 
-function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail: WorkDetail; board: WorkBoard; run: Run; notice: string; onOpenItem: (id: string) => void; preview: Preview }) {
+type Photos = { url: (photoId: string, preview?: boolean) => string; upload: (kind: "before" | "after", files: File[]) => Promise<void> };
+
+function WorkBody({ detail, board, run, notice, onOpenItem, preview, photos }: {
+  detail: WorkDetail; board: WorkBoard; run: Run; notice: string; onOpenItem: (id: string) => void; preview: Preview; photos: Photos;
+}) {
   const t = useT();
   const labels = useWorkLabels();
   const format = useProjectFormat();
@@ -70,6 +83,9 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail:
   const packageName = board.packages.find((item) => item.id === detail.packageId)?.name;
   const stageName = board.stages.find((item) => item.id === detail.stageId)?.name;
   const typeOptions: WorkType[] = ["task", "client_request", "snag", "blocker"];
+  const [reopening, setReopening] = useState<string | null>(null);
+  const snag = detail.type === "snag";
+  const areaName = board.areas.find((area) => area.id === detail.areaId)?.name;
   const due = detail.dueDate && isOpen(detail.status) ? format.until(detail.dueDate) : null;
   const slack = isOpen(detail.status) ? board.critical.float[detail.id] : undefined;
   const slip = detail.dueDate && detail.baselineDue && detail.dueDate > detail.baselineDue
@@ -93,9 +109,11 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail:
 
     <dl className={styles.facts}>
       <div><dt>{t("Status")}</dt><dd>
-        {edit ? <MenuButton size="compact" label={<StatusLabel status={detail.status} />} onAction={(id) => void update({ status: id })}
+        {edit ? <MenuButton size="compact" label={<StatusLabel status={detail.status} />}
+          onAction={(id) => { if (snag && detail.status === "done" && isOpen(id as WorkStatus)) setReopening(id); else void update({ status: id }); }}
           items={ALL_STATUSES.filter((status) => status !== detail.status).map((status) => ({ id: status, label: labels.status[status] }))} /> : <StatusLabel status={detail.status} />}
         {detail.blockedBy.length && isOpen(detail.status) ? <span className={styles.blocked}>{t("Blocked")}</span> : null}
+        {reopening ? <ReopenDialog onClose={() => setReopening(null)} onSave={async (reason) => { if (await update({ status: reopening, reason })) setReopening(null); }} /> : null}
       </dd></div>
       <div><dt>{t("Assignee")}</dt><dd>
         {edit ? <MenuButton size="compact" label={detail.assigneeName ? <span className={styles.person}><Avatar name={detail.assigneeName} size="sm" />{detail.assigneeName}</span> : t("No one")}
@@ -107,6 +125,24 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail:
         {edit ? <MenuButton size="compact" label={labels.priority[detail.priority]} onAction={(id) => void update({ priority: id })}
           items={PRIORITIES.filter((priority) => priority !== detail.priority).map((priority) => ({ id: priority, label: labels.priority[priority] }))} /> : labels.priority[detail.priority]}
       </dd></div>
+      {snag ? <>
+        <div><dt>{t("Severity")}</dt><dd>
+          {edit ? <MenuButton size="compact" label={<span data-severity={detail.severity ?? undefined} className={detail.severity === "critical" ? styles.blocked : undefined}>{labels.severity[detail.severity ?? "minor"]}</span>}
+            onAction={(id) => void update({ severity: id })}
+            items={(["minor", "major", "critical"] as const).filter((value) => value !== detail.severity).map((value) => ({ id: value, label: labels.severity[value] }))} />
+            : labels.severity[detail.severity ?? "minor"]}
+        </dd></div>
+        <div><dt>{t("From")}</dt><dd>
+          {edit ? <MenuButton size="compact" label={labels.source[detail.source ?? "internal"]} onAction={(id) => void update({ source: id })}
+            items={(["internal", "inspection", "delivery", "client", "warranty"] as const).filter((value) => value !== detail.source).map((value) => ({ id: value, label: labels.source[value] }))} />
+            : labels.source[detail.source ?? "internal"]}
+        </dd></div>
+        {board.areas.length ? <div><dt>{t("Area")}</dt><dd>
+          {edit ? <MenuButton size="compact" label={areaName ?? t("None")} onAction={(id) => void update({ areaId: id === "none" ? null : id })}
+            items={[...(detail.areaId ? [{ id: "none", label: t("None") }] : []), ...board.areas.filter((area) => area.id !== detail.areaId).map((area) => ({ id: area.id, label: area.name }))]} />
+            : areaName ?? "—"}
+        </dd></div> : null}
+      </> : null}
       {!detail.parentId ? <div><dt>{t("Type")}</dt><dd>
         {edit ? <MenuButton size="compact" label={<span className={styles.person}><TypeIcon type={detail.type} />{labels.type[detail.type]}</span>} onAction={(id) => void update({ type: id })}
           items={typeOptions.filter((type) => type !== detail.type).map((type) => ({ id: type, label: labels.type[type] }))} /> : labels.type[detail.type]}
@@ -144,6 +180,15 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview }: { detail:
           : board.lines.find((line) => line.id === detail.boqLineId)?.title ?? "—"}
       </dd></div> : null}
     </dl>
+
+    {snag ? <section className={styles.snagPhotos} aria-label={t("Photos")}>
+      {(["before", "after"] as const).map((kind) => <div key={kind} className={styles.snagPhotoGroup}>
+        <span className={styles.muted}>{kind === "before" ? t("Before") : t("After")}</span>
+        <SavedPhotos photos={detail.photos.filter((photo) => photo.kind === kind)} url={photos.url} />
+        {edit ? <FileUploader appearance="button" accept="image/*" label={kind === "before" ? t("Add a photo before") : t("Add a photo after")}
+          onFiles={(files) => void photos.upload(kind, files.filter((file) => file.type.startsWith("image/")).slice(0, 10))} /> : null}
+      </div>)}
+    </section> : null}
 
     {edit ? <TextAreaField label={t("Description")} value={description} onChange={setDescription}
         onBlur={() => { if (description.trim() !== detail.description) void update({ description }); }} />
@@ -305,4 +350,16 @@ function useActivityText() {
       default: return t("changed it");
     }
   };
+}
+
+/** A closed snag opens again only with why; its history keeps both. */
+function ReopenDialog({ onClose, onSave }: { onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={t("Open the snag again")} onOpenChange={(open) => { if (!open) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Open again")}</Button></div>}>
+    <TextAreaField label={t("Why it's open again")} isRequired value={reason} onChange={setReason} />
+  </ControlledModalDialog>;
 }

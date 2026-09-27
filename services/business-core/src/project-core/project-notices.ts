@@ -60,7 +60,7 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
 
 export type WorkNotice =
   | { code: "work.assigned" | "work.done"; item: { id: string; number: number; title: string; dueDate?: string | null }; memberships: string[] }
-  | { code: "work.commented" | "work.blocked"; item: { id: string; number: number; title: string }; note: string; memberships: string[] }
+  | { code: "work.commented" | "work.blocked" | "work.snag_ready" | "work.snag_reopened"; item: { id: string; number: number; title: string }; note: string; memberships: string[] }
   | { code: "work.moved" | "work.planned" | "work.sprint_started" | "work.sprint_closed"; item: { id: string; number: number; title: string; dueDate?: string | null }; note: string; memberships: string[] };
 
 /**

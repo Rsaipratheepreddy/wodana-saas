@@ -1392,7 +1392,8 @@ integration("projects core (plan §6.10)", () => {
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "reopen_stage", reason: "Two snags reopened by the client", version: detail.project.version });
       expect(detail.stages.filter((stage) => stage.status === "current").map((stage) => stage.key)).toEqual(["snagging"]);
       const snagging = detail.stages.find((stage) => stage.key === "snagging")!;
-      detail = await manager.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: snagging.id, checkKey: "closed", version: detail.project.version });
+      // No snag is open, so "All snags closed" passes by itself.
+      expect(snagging.checks.find((check) => check.kind === "snags_closed")?.passed).toBe(true);
       detail = await manager.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: snagging.id, version: detail.project.version });
       const handover = detail.stages.find((stage) => stage.key === "handover")!;
       expect(handover.status).toBe("current");
@@ -2268,6 +2269,64 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("follows snags: how serious and where from, fixed by one person and closed by another with a photo after, reopened with why, and a critical one holding handover", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "designer", membershipId: w.designerMembership, version: detail.project.version });
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-snags-")) }));
+      const run = (userId: string) => ({ asMember: (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId }),
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => ["projects.manage", "projects.view"].includes(code) } as never);
+      const lead = new ProjectWorkService(run(w.manager), storage);
+      const fixer = new ProjectWorkService(run(w.designer), storage);
+      const kitchen = (await w.client.query("SELECT id FROM pre_project_rooms WHERE case_id = $1", [w.caseId])).rows[0].id;
+      const snag = randomUUID();
+      let board = await lead.command(actor, w.workspaceId, projectId, { action: "create", id: snag, type: "snag", title: "Scratch on the wardrobe door", severity: "critical", source: "client",
+        areaId: kitchen, assigneeId: w.designerMembership });
+      let item = board.items.find((row) => row.id === snag)!;
+      expect([item.type, item.severity, item.source, item.areaId]).toEqual(["snag", "critical", "client", kitchen]);
+      expect(board.areas).toEqual([{ id: kitchen, name: "Kitchen" }]);
+
+      // A critical snag holds handover.
+      await w.client.query("UPDATE project_stages SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND key <> 'handover'", [projectId, w.manager]);
+      await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
+      detail = await core.get(actor, w.workspaceId, projectId);
+      expect(detail.stages.find((stage) => stage.key === "handover")!.checks.find((check) => check.kind === "no_critical_snags")!.passed).toBe(false);
+
+      // The designer fixes it; they can't close it themselves, and closing needs a photo after.
+      board = await fixer.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag, version: item.version, status: "in_review" });
+      item = board.items.find((row) => row.id === snag)!;
+      expect(item.fixedBy).toBe(w.designer);
+      const ready = (await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'work.snag_ready'", [w.workspaceId])).rows;
+      expect(ready).toEqual([{ id: w.manager }]);
+      await expect(fixer.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag, version: item.version, status: "done" })).rejects.toThrow("Someone other than who fixed it closes a snag.");
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag, version: item.version, status: "done" })).rejects.toThrow("Add a photo of it fixed before closing it.");
+      const png = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "fixed.png", mimetype: "image/png", size: 0 };
+      await expect(fixer.uploadPhoto(actor, w.workspaceId, projectId, snag, randomUUID(), "during", png)).rejects.toThrow();
+      const after = randomUUID();
+      board = await fixer.uploadPhoto(actor, w.workspaceId, projectId, snag, after, "after", png);
+      board = await fixer.uploadPhoto(actor, w.workspaceId, projectId, snag, after, "after", png);
+      expect(board.item!.photos.map((photo) => [photo.kind, photo.name])).toEqual([["after", "fixed.png"]]);
+      expect((await lead.photo(actor, w.workspaceId, projectId, after, false)).contentType).toBe("image/png");
+      item = board.items.find((row) => row.id === snag)!;
+      board = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag, version: item.version, status: "done" });
+      detail = await core.get(actor, w.workspaceId, projectId);
+      expect(detail.stages.find((stage) => stage.key === "handover")!.checks.find((check) => check.kind === "no_critical_snags")!.passed).toBe(true);
+
+      // Reopened with why; its history keeps both.
+      item = board.items.find((row) => row.id === snag)!;
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag, version: item.version, status: "todo" })).rejects.toThrow("Say why the snag is open again.");
+      board = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag, version: item.version, status: "todo", reason: "Scratch still visible in daylight" });
+      expect(board.items.find((row) => row.id === snag)).toMatchObject({ status: "todo", fixedBy: null });
+      const history = (await lead.item(actor, w.workspaceId, projectId, snag)).activity.map((entry) => entry.kind);
+      expect(history).toEqual(expect.arrayContaining(["created", "status", "photo", "reopened"]));
+      const reopened = (await w.client.query("SELECT recipient_id AS id, body FROM notifications WHERE workspace_id = $1 AND event_type = 'work.snag_reopened'", [w.workspaceId])).rows;
+      expect(reopened).toEqual([{ id: w.designer, body: "Omar Manager: Scratch still visible in daylight" }]);
+    });
+  });
+
   /** The factory service as one person, with the purchasing and inventory services it uses. */
   function factoryAs(access: (userId: string, permissions: string[]) => never, userId: string, permissions: string[]) {
     return new FactoryService(access(userId, permissions), new OrdersService(access(userId, permissions)), new InventoryService(access(userId, permissions)));
@@ -2323,6 +2382,14 @@ integration("projects core (plan §6.10)", () => {
       await buyer.stock.transferCommand(actor, w.workspaceId, trip, { action: "receive", lines: [{ id: move.lines[0].id, received: "2" }] });
       order = await maker.order(actor, w.workspaceId, wo);
       expect(order.dispatches.map((row) => [row.status, row.received, row.short])).toEqual([["received", "2.0000", false]]);
+      // The last one arrives damaged: half is short, and the project gets a snag for it.
+      const last = randomUUID();
+      await maker.command(actor, w.workspaceId, wo, { action: "dispatch", id: last, quantity: "1" });
+      const second = await buyer.stock.transfer(actor, w.workspaceId, last);
+      await buyer.stock.transferCommand(actor, w.workspaceId, last, { action: "receive", lines: [{ id: second.lines[0].id, received: "0.5", lossReason: "Corner chipped in the truck" }] });
+      const snags = (await w.client.query<{ title: string; description: string; severity: string; source: string; lineId: string }>(
+        `SELECT title, description, severity, source, boq_line_id AS "lineId" FROM work_items WHERE project_id = $1 AND type = 'snag'`, [projectId])).rows;
+      expect(snags).toEqual([{ title: `Move ${second.transfer.number} arrived short`, description: "Kitchen cabinets 0.5: Corner chipped in the truck", severity: "major", source: "delivery", lineId: cabinets.id }]);
     });
   });
 
