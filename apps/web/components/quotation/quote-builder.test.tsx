@@ -117,6 +117,16 @@ describe("quotation builder", () => {
     await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: expect.objectContaining({ title: "Site protection", areaId: KITCHEN }) }] }]));
   });
 
+  it("adds a line to an area that has none yet", async () => {
+    const fetcher = mount(state([]));
+    const kitchen = screen.getAllByRole("button", { name: "New line" })[0];
+    await userEvent.click(kitchen);
+    const cell = screen.getAllByRole("combobox", { name: "Item" }).at(-1)!;
+    await userEvent.type(cell, "Tall pantry unit");
+    fireEvent.blur(cell);
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: expect.objectContaining({ title: "Tall pantry unit", areaId: KITCHEN }) }] }]));
+  });
+
   it("reads numbers the workspace's way and puts back anything that isn't one", async () => {
     const fetcher = mount(state([line({})]));
     const quantity = screen.getByRole("textbox", { name: "Quantity" });
