@@ -2455,12 +2455,21 @@ export class CommercialService {
               throw new ConflictException(
                 "Enable the client portal in Workspace settings first.",
               );
-            const grant = (
-              await client.query(
-                `SELECT id FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 AND id=$3 AND active=true AND role='approver'`,
-                [workspaceId, caseId, text(b.approverId, 80, true)],
+            // The quote goes to the case's client approver; with only one, the sender needn't pick them.
+            const approvers = (
+              await client.query<{ id: string }>(
+                `SELECT id FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 AND active=true AND role='approver' ORDER BY created_at`,
+                [workspaceId, caseId],
               )
-            ).rows[0];
+            ).rows;
+            const chosen = b.approverId === undefined || b.approverId === null || b.approverId === ""
+              ? (approvers.length === 1 ? approvers[0].id : "")
+              : text(b.approverId, 80, true);
+            if (!chosen)
+              throw new ConflictException(approvers.length
+                ? "Choose which client approver receives this quote."
+                : "Add the client as an approver in the client portal first.");
+            const grant = approvers.find((approver) => approver.id === chosen);
             if (!grant)
               throw new ConflictException("Choose an active client approver.");
             if (q.validUntil < now.slice(0, 10))
