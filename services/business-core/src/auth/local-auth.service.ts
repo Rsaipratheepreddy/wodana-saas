@@ -20,6 +20,7 @@ import { RequestActor } from "./actor";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { hashOpaqueToken, hashPassword, verifyPassword } from "./local-password";
 import { MfaService, MfaSessionAssurance } from "./mfa.service";
+import { PLATFORM_OPERATOR_ROLES } from "./platform-operator-policy";
 
 interface LoginMetadata {
   ipAddress?: string;
@@ -219,10 +220,11 @@ export class LocalAuthService {
   async verifyPlatformCredentials(email: string, password: string) {
     this.assertLocalAuthAvailable();
     const user = await this.verifyLocalPassword(email, password);
+    // Every scoped operator role signs in; what each one may do is enforced per route by its policy.
     const administrator = await this.database.query(
       `SELECT 1 FROM platform_administrators
-       WHERE user_id = $1 AND status = 'active' AND role = 'administrator'`,
-      [user.id],
+       WHERE user_id = $1 AND status = 'active' AND role = ANY($2::text[])`,
+      [user.id, [...PLATFORM_OPERATOR_ROLES]],
     );
     if (!administrator.rowCount) throw new UnauthorizedException("Email or password is incorrect");
     await this.recordSuccessfulPasswordLogin(user.id);
