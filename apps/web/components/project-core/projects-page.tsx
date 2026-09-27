@@ -52,7 +52,7 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
 
   const columns = useMemo<DataGridColumn<ProjectRow>[]>(() => [
     { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference}`, size: 240, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
-      <Link href={`/workspace/projects/${row.id}`}>{row.name}</Link><small>{row.reference}</small></span> } },
+      <Link data-tour="project-open" href={`/workspace/projects/${row.id}`}>{row.name}</Link><small>{row.reference}</small></span> } },
     { id: "client", header: t("Client"), accessorFn: (row) => row.clientName, size: 160 },
     { id: "stage", header: t("Stage"), accessorFn: (row) => row.stage?.name ?? "", size: 170, meta: { renderCell: (row) => row.stage
       ? <span className={styles.stageCell}>{row.stage.name}<small>{t("{position} of {count}", { position: row.stage.position, count: row.stage.count })}</small></span> : null } },
@@ -70,7 +70,7 @@ export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: stri
 
   if (error && !rows) return <div className={styles.page}><PageHeader title={t("Projects")} /><ErrorState description={error} onRetry={() => void load()} /></div>;
 
-  return <div className={styles.page}>
+  return <div className={styles.page} data-tour="project-list">
     <PageHeader title={t("Projects")} actions={canStart ? <Button variant="primary" onPress={() => setPicking(true)}><Play aria-hidden="true" size={15} />{t("Start project")}</Button> : null} />
     <DataGrid<ProjectRow>
       appearance="flush"

@@ -97,7 +97,7 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
       {[project.closedAt ? format.when(project.closedAt) : null, project.closedByName].filter(Boolean).join(" · ")}
     </Callout> : null}
 
-    <dl className={styles.properties}>
+    <dl className={styles.properties} data-tour="project-properties">
       <div><dt>{t("Client")}</dt><dd>{project.clientName}</dd></div>
       <div><dt>{t("Project number")}</dt><dd>{project.reference}</dd></div>
       <div><dt>{t("Stage")}</dt><dd>{current ? <>{current.name} <span className={styles.muted}>{t("{position} of {count}", { position: current.position + 1, count: detail.stages.length })}</span></> : status.label}</dd></div>
@@ -122,7 +122,7 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
 
     {notice ? <InlineNotice tone="error" message={notice} /> : null}
 
-    <Tabs selectedKey={section === "money" && !detail.canSeeMoney ? "overview" : section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
+    <Tabs tour="project-tab" selectedKey={section === "money" && !detail.canSeeMoney ? "overview" : section} onSelectionChange={(key) => go(key as ProjectSection)} items={[
       { id: "overview", label: t("Overview"), panel: <ProjectStages detail={detail} run={run} caseHref={(part) => `/workspace/pre-projects/cases/${project.caseId}/${part}`} onTeam={() => setDialog("team")} /> },
       { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
       { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },

@@ -56,7 +56,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
     const views = area.id === "overview" ? [] : area.sections;
     return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">
       <nav aria-label={t("Planning sections")} className={styles.flowTabs}>
-        <div className={styles.flowTabScroll}>{planningAreas.map(item => <Link key={item.id} href={href(item.section)} className={styles.salesTab} aria-current={item === area ? "page" : undefined}><span>{areaLabels[item.id]}</span></Link>)}</div>
+        <div className={styles.flowTabScroll}>{planningAreas.map(item => <Link key={item.id} href={href(item.section)} className={styles.salesTab} data-tour={`case-tab-${item.id}`} aria-current={item === area ? "page" : undefined}><span>{areaLabels[item.id]}</span></Link>)}</div>
       </nav>
       {views.length > 1 && <nav aria-label={t("{area} views", { area: areaLabels[area.id] })} className={styles.commercialTabs}>
         {views.map(tab => <Link key={tab.id} href={href(tab.id)} className={styles.commercialSegment} aria-current={tab.id === activeSection ? "page" : undefined}>{viewLabels[tab.id] ?? t(tab.label as never)}</Link>)}
@@ -84,7 +84,7 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
     // A single tab says nothing the page doesn't: each bar shows only when there is a choice.
     const showSettingsTabs = settings && settingsTabs.length > 1;
     if (tabs.length < 2 && !showSettingsTabs) return null;
-    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">{tabs.length > 1 ? <nav aria-label={t("Sales sections")} className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} aria-current={tab.active ? "page" : undefined}><span>{t(tab.label as never)}</span></Link>)}</div></nav> : null}{showSettingsTabs && <nav aria-label={t("Sales settings")} className={styles.commercialTabs}>{settingsTabs.map(tab => <Link key={tab.key} href={`/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={section === tab.key ? "page" : undefined}>{tab.label}</Link>)}</nav>}</div>;
+    return <div className={styles.flowHeader} data-module="crm" data-navigation="chips">{tabs.length > 1 ? <nav aria-label={t("Sales sections")} className={styles.flowTabs}><div className={styles.flowTabScroll}>{tabs.map(tab => <Link key={tab.label} href={tab.href} className={styles.salesTab} data-section={tab.label} data-tour={`sales-tab-${tab.id}`} aria-current={tab.active ? "page" : undefined}><span>{t(tab.label as never)}</span></Link>)}</div></nav> : null}{showSettingsTabs && <nav aria-label={t("Sales settings")} className={styles.commercialTabs}>{settingsTabs.map(tab => <Link key={tab.key} href={`/workspace/crm/leads?section=${tab.key}`} className={styles.commercialSegment} aria-current={section === tab.key ? "page" : undefined}>{tab.label}</Link>)}</nav>}</div>;
   }
   const items = module.navigation.flatMap((section) => section.items).filter((item) => item.showInSidebar !== false && item.id !== "integrations" && item.id !== "crm-attachments" && (String(module.id) !== "crm" || ["crm-overview", "leads", "opportunities", "follow-ups", "automations", "crm-attachments"].includes(item.id)));
   if (String(module.id) === "crm") items.push(

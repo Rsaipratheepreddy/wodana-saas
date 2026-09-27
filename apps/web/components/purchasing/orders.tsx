@@ -34,7 +34,7 @@ export function Orders({ api, openId, onOpen, onReceipt, refreshKey }: {
     && (!search.trim() || `${order.number} ${order.supplierName} ${order.projects.map((project) => project.reference).join(" ")}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))),
   [state, show, status, search]);
   const columns = useMemo<DataGridColumn<OrderRow>[]>(() => [
-    { id: "number", header: t("Order"), accessorFn: (row) => `${row.number} ${row.supplierName}`, size: 230, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
+    { id: "number", header: t("Order"), accessorFn: (row) => `${row.number} ${row.supplierName}`, size: 230, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell} data-tour="order-row" data-tour-safe>
       <span>{row.number}{row.revision ? ` · ${t("change {number}", { number: row.revision })}` : ""}</span><small>{row.supplierName}</small></span> } },
     { id: "status", header: t("Status"), accessorFn: (row) => labels.status[row.status], size: 170, meta: { renderCell: (row) => <OrderStatusLabel status={row.status} /> } },
     { id: "projects", header: t("For"), accessorFn: (row) => row.projects.map((project) => project.reference).join(", "), size: 160, meta: { mobileHidden: true } },

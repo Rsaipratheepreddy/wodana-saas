@@ -69,7 +69,7 @@ export function QuoteList({ initial, baseHref }: { initial: CommercialState; bas
       onRowAction={(quote) => router.push(hrefOf(quote.id))}
       columns={[
         { id: "title", header: t("Quote"), size: 320, accessorFn: (quote) => quote.title, meta: { primary: true },
-          cell: ({ row: { original: quote } }) => <span className={styles.title}><Link href={hrefOf(quote.id)}>{quote.title}</Link><small>{t("Q-{number}", { number: quote.number })}</small></span> },
+          cell: ({ row: { original: quote } }) => <span className={styles.title}><Link data-tour="quote-open" href={hrefOf(quote.id)}>{quote.title}</Link><small>{t("Q-{number}", { number: quote.number })}</small></span> },
         { id: "kind", header: t("Type"), size: 130, accessorFn: kind },
         { id: "total", header: t("Amount"), size: 150, accessorFn: (quote) => quote.total, meta: { align: "end" },
           cell: ({ row: { original: quote } }) => <span className={styles.amount}>{money(quote.clientDecision?.acceptedTotal ?? quote.total, quote.currency, currencyDigits(quote.currency, locale), locale)}</span> },

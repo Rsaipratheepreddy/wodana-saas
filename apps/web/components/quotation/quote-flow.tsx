@@ -56,7 +56,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   let actions: React.ReactNode = null;
   if (status === "draft" && state.canEdit) {
     const direct = !flow.internalReview && flow.canReview;
-    actions = <Button size="compact" variant="primary" isLoading={Boolean(busy)} isDisabled={!state.lines.length || blocking > 0}
+    actions = <Button data-tour="quote-send" size="compact" variant="primary" isLoading={Boolean(busy)} isDisabled={!state.lines.length || blocking > 0}
       onPress={() => (direct ? confirmSend("send", [["submit"], [flow.reviewAction], ["issue"]]) : void run("send", [["submit"]]))}>{direct ? t("Send to client") : t("Send for review")}</Button>;
   } else if (status === "internal_review") {
     actions = flow.canReview ? <>

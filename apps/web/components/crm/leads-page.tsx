@@ -267,7 +267,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
   const statusText = (lead: CrmLeadListItem) => lead.isConverted ? t("Converted") : lead.status === "duplicate" ? t("Duplicate") : lead.status === "qualified" ? t("Qualified") : lead.status === "disqualified" ? t("Not interested") : listOf(lead.status) === "come_back" ? t("Come back later") : listOf(lead.status) === "contacted" ? t("Contacted") : t("New");
   const statusTone = (lead: CrmLeadListItem): "success" | "info" | "warning" | "neutral" | "danger" => lead.isConverted || lead.status === "qualified" ? "success" : lead.status === "disqualified" ? "neutral" : listOf(lead.status) === "come_back" ? "warning" : listOf(lead.status) === "new" ? "info" : "neutral";
   const columns: DataGridColumn<CrmLeadListItem>[] = [
-    { accessorKey: "partyName", header: t("Customer"), size: 220, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <button type="button" className={styles.sheetLead} onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}><Avatar name={name} roles={["client"]} seed={lead.id} size="sm" /><span className={styles.clientRequest}><strong>{name}</strong>{lead.reference ? <small>{lead.reference}</small> : null}</span></button>; } },
+    { accessorKey: "partyName", header: t("Customer"), size: 220, meta: { headerIcon: <ContactRound size={14}/> }, cell: ({row:{original:lead}}) => { const name = customerDisplayName(lead.partyName); return <button type="button" className={styles.sheetLead} data-tour={!lead.isConverted && !["disqualified", "paused"].includes(lead.status) && hasResolvedEnquiryType(lead.serviceType) ? "enquiry-customer" : undefined} data-tour-safe onClick={() => setCardLead(lead)} aria-label={t("Open {name}", { name })} title={name}><Avatar name={name} roles={["client"]} seed={lead.id} size="sm" /><span className={styles.clientRequest}><strong>{name}</strong>{lead.reference ? <small>{lead.reference}</small> : null}</span></button>; } },
     { accessorKey: "title", header: t("Enquiry title"), size: 240, meta: { headerIcon: <Type size={14}/> }, cell: ({getValue}) => <span className={styles.sheetText} title={String(getValue())}>{String(getValue())}</span> },
     { id: "status", header: t("Status"), size: 140, accessorFn: lead => statusText(lead), meta: { headerIcon: <CheckCircle2 size={14}/> }, cell: ({row:{original:lead}}) => <Badge tone={statusTone(lead)}>{statusText(lead)}</Badge> },
     { id: "source", header: t("Source"), size: 150, accessorFn: lead => sourceLabel(lead.source), filterFn: "equalsString", meta: { headerIcon: <Globe size={14}/>, filterOptions: sources.map(source=>({id:sourceLabel(source),label:sourceLabel(source)})) }, cell: ({row:{original:lead}}) => <SourceChip source={lead.source} displayLabel={sourceLabel(lead.source)} /> },
@@ -299,7 +299,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
       ? <Button size="compact" variant="quiet" onPress={() => setCardLead(lead)}>{t("View opportunity")}</Button>
       : ["disqualified", "paused"].includes(lead.status) ? <span className={styles.sheetText}>—</span>
       : !hasResolvedEnquiryType(lead.serviceType) ? <Button size="compact" className={styles.createDeal} isDisabled={busy} aria-label={t("Choose enquiry type for {name}", { name: customerDisplayName(lead.partyName) })} onPress={() => setCardLead(lead)}>{t("Choose type")}</Button>
-      : <Button size="compact" className={styles.createDeal} isDisabled={busy} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => setQualificationLead(lead)}>{t("Convert")}</Button> },
+      : <Button size="compact" className={styles.createDeal} data-tour="enquiry-convert" data-tour-safe isDisabled={busy} aria-label={t("Convert {name} to opportunity", { name: customerDisplayName(lead.partyName) })} onPress={() => setQualificationLead(lead)}>{t("Convert")}</Button> },
   ];
   const pendingLead = pendingMove ? items.find((lead) => lead.id === pendingMove.leadId) : undefined;
   const workspaceArea = activeSection === "leads" ? "work" : activeSection === "forms" || activeSection === "sources" ? "capture" : activeSection === "assignment" || activeSection === "sla" ? "response" : "performance";
@@ -317,7 +317,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, integrati
 
         <div className={styles.sections}>
           {activeSection === "leads" ? <>
-        <section data-sales-grid aria-label={t("Enquiries")} className={`${styles.boardRegion} ${styles.sheet}`}>
+        <section data-sales-grid data-tour="enquiry-list" aria-label={t("Enquiries")} className={`${styles.boardRegion} ${styles.sheet}`}>
           {autoProgress && <section className={styles.assignmentSummary} aria-label={t("Assignment results")}>
             <div className={styles.assignmentSummaryHeader}>
               <strong role="status">{autoBusy ? t("Assigning enquiries… {completed}/{total}", { completed: autoProgress.completed, total: autoProgress.total }) : autoProgress.remaining.length ? t("{count} enquiries need an owner", { count: autoProgress.remaining.length }) : t("{count} enquiries assigned", { count: autoProgress.assigned })}</strong>

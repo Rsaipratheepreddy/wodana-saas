@@ -335,6 +335,7 @@ export function WorkspaceSidebar({
                               aria-current={active ? "page" : undefined}
                               className={styles.navigationItem}
                               data-active={active || undefined}
+                              data-tour={`nav-${item.id}`}
                               href={item.href}
                               onClick={onNavigate}
                               tabIndex={isOpen ? undefined : -1}

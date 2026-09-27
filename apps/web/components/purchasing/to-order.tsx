@@ -67,7 +67,7 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
   const waiting = sections(true);
   const chosen = state.needs.filter((need) => selected.has(need.key));
 
-  return <div className={styles.stack}>
+  return <div className={styles.stack} data-tour="purchasing-to-order">
     <div className={styles.toolbar}>
       <div className={styles.filters}>
         <SearchInput label={t("Search what to order")} placeholder={t("Search")} value={search} onChange={setSearch} />

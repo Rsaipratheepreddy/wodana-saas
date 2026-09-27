@@ -160,7 +160,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     </div> : null;
 
   return <InspectorSheet isOpen size="lg" title={order ? order.number : t("Order")} onOpenChange={(open) => { if (!open) onClose(); }} footer={footer}>
-    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !order || !form ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet}>
+    {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !order || !form ? <Skeleton lines={8} shape="facts" /> : <div className={styles.sheet} data-tour="order-detail">
       <div className={styles.approvalRow}>
         <OrderStatusLabel status={order.status} />
         <span className={styles.muted}>{[order.supplierName, order.companyName, order.revision ? t("Change {number}", { number: order.revision }) : ""].filter(Boolean).join(" · ")}</span>

@@ -81,7 +81,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
   const enquiryReference = String(enquiry?.reference ?? lead.reference ?? "").trim();
   const enquiryTitle = String(enquiry?.title ?? lead.title ?? "").trim();
   const showEnquiryTitle = Boolean(enquiryTitle && enquiryTitle !== enquiryReference && enquiryTitle.toLowerCase() !== "enquiry");
-  return <div className={`${styles.workbench} ${styles.enquiryDetail}`}>
+  return <div className={`${styles.workbench} ${styles.enquiryDetail}`} data-tour="enquiry-detail">
     <ResourceState {...resource} retry={resource.refresh} />
     <header className={styles.recordHeader}>
       <div className={styles.enquiryIdentity}>{enquiryReference && <span className={styles.enquiryReference}>{enquiryReference}</span>}<h2>{customerDisplayName(lead.partyName)}</h2>{showEnquiryTitle && <p>{enquiryTitle}</p>}</div>
@@ -90,7 +90,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
         <Button size="compact" isDisabled={!detail} onPress={() => setEditing(true)}>{t("Edit details")}</Button>
       </div>
     </header>
-    <dl className={styles.properties} aria-label={t("Enquiry properties")}>
+    <dl className={styles.properties} aria-label={t("Enquiry properties")} data-tour="enquiry-properties">
       <div><dt><CircleDot size={14} aria-hidden="true" />{t("Stage")}</dt><dd className={styles.quietSelect}><SelectField label={null} aria-label={t("Enquiry stage")} selectedKey={String(live.status)} items={[{ id: String(live.status), label: t(leadStageLabel(String(live.status))) }, ...stageOptions.filter(item => item.id !== String(live.status)).map(item => ({ ...item, label: t(item.label) }))]} isDisabled={!detail || Boolean(opportunities.length) || !stageOptions.length} onSelectionChange={key => { if (key) { const changed = String(key) !== String(live.status); setSelectedStage(changed ? String(key) : ""); setStageEditing(changed); } }} /></dd></div>
       <div><dt><UserRound size={14} aria-hidden="true" />{t("Owner")}</dt><dd><Button size="compact" variant="quiet" isDisabled={!detail || !active} onPress={() => setAssigning(true)}><span>{owner ?? t("Assign owner")}</span><ChevronDown size={14} aria-hidden="true" /></Button></dd></div>
       <div><dt><CalendarDays size={14} aria-hidden="true" />{t("Next follow-up")}</dt><dd>{live.nextActionAt ? <span>{dateText(live.nextActionAt)}</span> : active && !live.isConverted ? <Button size="compact" variant="quiet" isDisabled={!detail} onPress={() => setScheduling(true)}>{t("Schedule")}</Button> : <span>{t("Not scheduled")}</span>}</dd></div>
@@ -160,7 +160,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
       { id: "attachments", label: t("Files"), panel: <RecordAttachments workspaceId={workspaceId} leadId={lead.id} /> },
       { id: "notes", label: t("Requirements"), panel: <RequirementNotes workspaceId={workspaceId} leadId={lead.id} /> },
     ]} /></main></div>
-    {(opportunities.length > 0 || (canCreateDeal && onQualify)) && <section className={`${styles.dealNextStep} ${opportunities.length ? "" : styles.dealNextStepSticky}`}>
+    {(opportunities.length > 0 || (canCreateDeal && onQualify)) && <section className={`${styles.dealNextStep} ${opportunities.length ? "" : styles.dealNextStepSticky}`} data-tour="enquiry-next-step">
       {opportunities.length ? <><strong>{opportunities.length === 1 ? t("Linked opportunity") : t("Linked opportunities")}</strong>{opportunities.map(opportunity => <div key={opportunity.id} className={styles.linkedOpportunity}><Link className={styles.link} href={`/workspace/crm/opportunities?record=${opportunity.id}`}><span className={styles.dealLinkText}>{opportunity.title && String(opportunity.title) !== enquiryReference ? String(opportunity.title) : t("Open opportunity")}</span><ArrowUpRight size={13} aria-hidden="true" /></Link>{opportunity.preProjectCaseId && opportunity.dealFileReference ? <Link className={styles.link} href={`/workspace/pre-projects/cases/${opportunity.preProjectCaseId}/approvals`}>{t("Deal File {reference}", { reference: String(opportunity.dealFileReference) })} <ArrowUpRight size={13} aria-hidden="true" /></Link> : null}</div>)}</> : <>
         <div><strong>{needsEnquiryType ? t("Choose an enquiry type") : t("Ready to move forward?")}</strong><p>{needsEnquiryType ? t("Replace Not Sure Yet with the actual enquiry type before qualification or conversion.") : qualificationState?.form && !qualificationState.ready ? t("Complete qualification before conversion.") : t("Convert to an opportunity when the client's requirements are clear.")}</p></div>
         {questions.length ? <Button size="compact" isDisabled={!detail || live.status === "qualified"} onPress={() => setAction({ title: qualificationState?.form?.name ?? t("Qualification"), path: `leads/${lead.id}/qualification`, method: "PUT", initial: initialQualificationValues(questions, answers), fields: configuredFields, transform: values => ({ version, values: qualificationValues(questions, values) }) })}>{t("Qualification")}</Button> : null}

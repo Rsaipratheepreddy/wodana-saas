@@ -72,7 +72,7 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
     ...(canInvite && client.status === "active" ? [{ id: "resend", label: t("Resend invite") }] : []),
     ...(portal.canManage && client.grantId && client.status !== "revoked" ? [{ id: "revoke", label: t("Revoke access") }] : []),
   ];
-  return <div className={styles.control}>
+  return <div className={styles.control} data-tour="portal-control">
     <div className={styles.controlText}>
       <span className={styles.controlTitle}>{t("Client portal")}</span>
       <span className={styles.muted}>{summary} · {contacts === 1 ? t("1 contact") : t("{count} contacts", { count: contacts })}</span>
@@ -84,7 +84,7 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
         ? <Button size="compact" isLoading={busy} isDisabled={client.resendAfter > 0} onPress={() => void invite()}>{t("Resend invite")}</Button> : null}
       {menu.length ? <IconMenuButton ariaLabel={t("More client portal actions")} items={menu}
         onAction={(id) => (id === "copy" ? void copy() : id === "resend" ? void invite() : setConfirmRevoke(true))} /> : null}
-      <Button size="compact" onPress={edit}>{portal.canManage ? t("Manage") : t("View")}</Button>
+      <Button size="compact" data-tour="portal-manage" data-tour-safe onPress={edit}>{portal.canManage ? t("Manage") : t("View")}</Button>
     </div>
     <div className={styles.client}>
       <span className={styles.clientName}>{name || t("No client")}</span>
@@ -97,7 +97,7 @@ export function ProjectPortalControl({ workspaceId, projectId, locale }: { works
       <div className={styles.stack}>
         {error ? <InlineNotice tone="error" message={error} /> : null}
         <Switch isDisabled={!portal.canManage} isSelected={paused} onChange={setPaused}>{t("Pause for this project")}</Switch>
-        <fieldset className={styles.sections} disabled={paused || !portal.canManage}>
+        <fieldset className={styles.sections} data-tour="portal-sections" disabled={paused || !portal.canManage}>
           <legend>{t("This client sees")}</legend>
           {portal.sections.map((section) => <Checkbox key={section} isDisabled={paused || !portal.canManage} isSelected={sections.includes(section)}
             onChange={(on) => setSections((current) => (on ? [...current, section] : current.filter((item) => item !== section)))}>{labels.sections[section]}</Checkbox>)}
