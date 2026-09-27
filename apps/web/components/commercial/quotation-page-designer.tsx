@@ -6,7 +6,7 @@ import type { Quote, QuoteCanvasElement, QuoteCanvasPage } from '@/lib/commercia
 import type { Editor } from '@tiptap/react';
 import { QuotationRichTextEditor, QuoteRichText } from './quotation-rich-text';
 import { QuotationLinkedBlock } from './quotation-linked-block';
-import { referenceItemPage } from '@/lib/commercial/quotation-reference-template';
+import { isReferenceLayout, referenceItemPage } from '@/lib/commercial/quotation-reference-template';
 import styles from './quotation-page-designer.module.css';
 const WIDTH = 940, HEIGHT = 1329;
 export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEditPayments, continuous = false, active = true, onActivate, inspectorHost, onEditDetails, onEditScope }: {
@@ -23,7 +23,7 @@ export function QuotationPageDesigner({ quote, pageId, readOnly, onChange, onEdi
     onEditScope?: () => void;
 }) {
     const design = quote.presentation!;
-    const page = (design.pages.find(page => page.id === pageId) ?? (design.template === 'palm-reference-v1' && pageId.startsWith('items:') ? referenceItemPage(Number(pageId.slice(6))) : undefined))!;
+    const page = (design.pages.find(page => page.id === pageId) ?? (isReferenceLayout(design.template) && pageId.startsWith('items:') ? referenceItemPage(Number(pageId.slice(6))) : undefined))!;
     const [richEditor, setRichEditor] = useState<Editor | null>(null);
     const [selected, setSelected] = useState('__page__'), [editing, setEditing] = useState(''), [zoom, setZoom] = useState(.6), [error, setError] = useState('');
     const [moving, setMoving] = useState<QuoteCanvasElement | null>(null), [uploading, setUploading] = useState(false);

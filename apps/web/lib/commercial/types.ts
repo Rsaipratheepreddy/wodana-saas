@@ -17,6 +17,7 @@ export type {
   CommercialState,
   PortalSettings,
   PortalBrand,
+  ProposalKit,
   PortalGrant,
   ChangeRequest,
   ControlledChangeKind,

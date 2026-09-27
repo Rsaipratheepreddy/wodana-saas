@@ -6,7 +6,6 @@ import s from './quotation-linked-block.module.css';
 import {Fragment, useContext} from 'react';
 import {ProposalColumnsContext, ProposalFactsContext} from '@/lib/commercial/proposal-columns';
 import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
-import artwork from '@/lib/commercial/proposal-reference.json';
 export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
  const extra=useContext(ProposalColumnsContext);
  const facts=useContext(ProposalFactsContext);
@@ -24,15 +23,17 @@ export function QuotationLinkedBlock({id,quote}:{id:string;quote:Quote}){
   date:stored.date||facts?.date||'',
   clientPhone:stored.clientPhone||facts?.phone||'', clientEmail:stored.clientEmail||facts?.email||'',
   location:stored.location||facts?.address||'', manager:stored.manager||facts?.approvedBy||''};
+ // The firm's own logo (or its name, set large, when it has none) — never another firm's artwork.
+ if(id==='data:company-logo')return details.companyLogo?<img className={s.companyLogo} src={details.companyLogo} alt={details.companyName||''}/>:<div className={s.companyName}>{details.companyName}</div>;
  if(id==='data:cover-client')return <div className={s.coverClient}>Client: {details.clientName||quote.cover?.preparedFor||''}<br/>Quote No: {details.reference}</div>;
  if(id==='data:client-logo')return details.clientLogo?<img className={s.logo} src={details.clientLogo} alt="Client logo"/>:null;
  if(id==='data:prepared-by')return <>{details.preparedBy}<br/>{details.companyName}</>;
  if(id==='data:issued-date')return <>Date: {details.date}</>;
- if(id==='data:validity')return <>This quotation is valid {quote.validUntil?`until ${facts?.validUntil||quote.validUntil.slice(0,10)}`:'for 7 days from date of issue'}. Payment terms follow the agreed payment schedule.</>;
- if(id==='data:project-details')return <>Project: {details.projectName||quote.title}<br/>Location: {details.location||'—'}</>;
- if(id==='data:estimate')return <>The total estimated amount is {money(totals.subtotal,quote.currency)} exclusive of tax. For your convenience, we have attached a detailed breakdown.</>;
- if(id==='data:proposal-totals')return <div className={s.proposalTotals}>{[['SUB TOTAL',totals.subtotal],['LESS DISCOUNT',discount],['TOTAL AMOUNT',net],[`${quote.taxRate}% TAX`,totals.tax],['TOTAL AMOUNT',totals.total]].map(([label,value],index)=><div key={index}><span>{label}:</span><span>{money(Number(value),quote.currency)}</span></div>)}</div>;
- if(id==='data:item-letterhead')return <div className={s.letterhead}><div className={s.letterheadBrand}>{/palm living/i.test(details.companyName??'')?<img src={artwork.tableLogo} alt={details.companyName}/>:details.companyName}{details.clientLogo&&<img src={details.clientLogo} alt="Client logo"/>}</div><div className={s.letterheadColumns}><div>Client Full Name: {details.clientName}<br/>Contact Number: {details.clientPhone||'—'}<br/>Delivery Address: {details.location||'—'}<br/>Email Address: {details.clientEmail||'—'}<br/>Project Name: {details.projectName}</div><div>Interior Designer / Sales: {details.preparedBy||'—'}<br/>Estimator: {details.estimator||'—'}<br/>Manager Approval: {details.manager||'—'}</div><div>Ref. Estimate Number: {details.reference}<br/>Date: {details.date}</div></div></div>;
+ if(id==='data:validity')return <>{quote.validUntil?`This quotation is valid until ${facts?.validUntil||quote.validUntil.slice(0,10)}. `:''}Payment terms follow the agreed payment schedule.</>;
+ if(id==='data:project-details')return <>Project: {details.projectName||quote.title}{details.location?<><br/>Location: {details.location}</>:null}</>;
+ if(id==='data:estimate')return <>The total estimated amount is {money(net,quote.currency)} exclusive of tax. For your convenience, we have attached a detailed breakdown.</>;
+ if(id==='data:proposal-totals')return <div className={s.proposalTotals}>{[['SUB TOTAL',totals.subtotal],['LESS DISCOUNT',discount],['NET AMOUNT',net],[`${(quote.cover?.taxLabel||'Tax').toUpperCase()} ${quote.taxRate}%`,totals.tax],['TOTAL AMOUNT',totals.total]].map(([label,value],index)=><div key={index}><span>{label}:</span><span>{money(Number(value),quote.currency)}</span></div>)}</div>;
+ if(id==='data:item-letterhead')return <div className={s.letterhead}><div className={s.letterheadBrand}>{details.companyLogo?<img src={details.companyLogo} alt={details.companyName||''}/>:details.companyName}{details.clientLogo&&<img src={details.clientLogo} alt="Client logo"/>}</div><div className={s.letterheadColumns}><div>Client Full Name: {details.clientName}<br/>Contact Number: {details.clientPhone||'—'}<br/>Delivery Address: {details.location||'—'}<br/>Email Address: {details.clientEmail||'—'}<br/>Project Name: {details.projectName}</div><div>Interior Designer / Sales: {details.preparedBy||'—'}<br/>Estimator: {details.estimator||'—'}<br/>Manager Approval: {details.manager||'—'}</div><div>Ref. Estimate Number: {details.reference}<br/>Date: {details.date}</div></div></div>;
  if(id.startsWith('data:reference-items:')){
   const start=Number(id.slice('data:reference-items:'.length))||0,count=referenceItemGroups(quote.lines).find(group=>group.start===start)?.count??7,lines=quote.lines.slice(start,start+count);
   // The columns: the firm's schedule, with its own client-visible columns before the quantity. Widths share the page, so more columns means narrower ones (and smaller type past ten).

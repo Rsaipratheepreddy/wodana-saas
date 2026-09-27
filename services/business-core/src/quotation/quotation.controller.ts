@@ -19,6 +19,12 @@ export class QuotationController {
   @Put("settings")
   saveSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.builder.saveSettings(actor, workspaceId, input ?? {}); }
 
+  @Get("proposal-kit")
+  proposalKit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.builder.proposalKit(actor, workspaceId); }
+
+  @Put("proposal-kit")
+  saveProposalKit(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() body: Record<string, unknown>) { return this.builder.saveProposalKit(actor, workspaceId, body); }
+
   @Post("work-packages")
   addWorkPackage(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: { id?: string; name?: string }) { return this.builder.addWorkPackage(actor, workspaceId, input ?? {}); }
 

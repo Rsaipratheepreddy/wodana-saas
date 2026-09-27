@@ -6,7 +6,7 @@
 .summary { font-size:var(--wd-text-xl); }.summary>div { display:flex; justify-content:space-between; border-bottom:1px solid var(--wd-color-structural-divider); padding:var(--wd-space-6) 0; }.summary>div:last-child{font-size:var(--wd-text-3xl);border-top:2px solid currentColor;}
 
 .scopeTotals { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--wd-space-5); padding:var(--wd-space-6) 0; font-size:var(--wd-text-lg); }.scopeTotals strong { font-size:var(--wd-text-xl); }
-.coverClient{text-align:center;}.logo{height:100%;width:100%;object-fit:contain!important;}
+.coverClient{text-align:center;}.companyLogo{height:100%;width:100%;object-fit:contain!important;}.companyName{display:flex;align-items:center;justify-content:center;height:100%;text-align:center;overflow-wrap:anywhere;line-height:var(--wd-leading-tight);}.logo{height:100%;width:100%;object-fit:contain!important;}
 .proposalTotals>div{display:grid;grid-template-columns:190px 1fr;gap:var(--wd-space-2);line-height:1.4;}
 .letterhead{height:100%;background:var(--wd-color-surface);color:var(--wd-color-text);padding:var(--wd-space-1) var(--wd-space-2);box-sizing:border-box;font-size:var(--wd-text-2xs);line-height:1.8;}
 .letterheadBrand{height:56px;display:flex;align-items:center;justify-content:space-between;font-size:var(--wd-text-lg);letter-spacing:2px;color:var(--wd-color-text-tertiary);}.letterheadBrand img{height:45px!important;width:100px!important;object-fit:contain!important;}

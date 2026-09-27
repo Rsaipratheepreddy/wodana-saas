@@ -8,7 +8,7 @@ import { commercialPath, jsonRequest } from '@/lib/commercial/client';
 import { QuotationBuilderPreview } from './quotation-builder-preview';
 import { QuotationPageDesigner } from './quotation-page-designer';
 import { builderPresentation } from '@/lib/commercial/quotation-builder-document';
-import { referencePresentation, referenceTerms, referenceTermsFor } from '@/lib/commercial/quotation-reference-template';
+import { referencePresentation, referenceTermsFor } from '@/lib/commercial/quotation-reference-template';
 import { QuotationDocumentDetails } from './quotation-document-details';
 import { quotationPages } from './quotation-document-page';
 import { QuotationScopeGrid } from './quotation-scope-grid';
@@ -33,7 +33,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
     const router = useRouter();
     const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
     const original = initial.data.quotes.find(quote => quote.id === quoteId)!;
-    const [draft, setDraft] = useState<Quote>(() => ({ ...original, ...(!original.presentation ? { terms: referenceTermsFor(original) } : {}), presentation: builderPresentation(original, initial.portalBrand?.name ?? '', initial.customerName,initial) }));
+    const [draft, setDraft] = useState<Quote>(() => ({ ...original, ...(!original.presentation ? { terms: referenceTermsFor(original, initial.proposalKit) } : {}), presentation: builderPresentation(original, initial.portalBrand?.name ?? '', initial.customerName,initial) }));
     // The baseline is the draft as opened (normalised), so opening the document doesn't count as a change.
     const [saved, setSaved] = useState(() => JSON.stringify(draft));
     const [revision, setRevision] = useState(initial.data.revision);
@@ -227,7 +227,7 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
     {!readOnly && <label className={styles.addPage}><Plus size={14}/><select aria-label="Add page" value="" disabled={busy || pages.length >= 40 || design.pages.length >= 40} onChange={event => addPage(event.target.value)}><option value="" disabled>Add page</option><option value="blank">Blank page</option><option value="introduction">Introduction</option><option value="closing">Closing page</option>{['payments', 'acceptance'].filter(id => !pages.includes(id)).map(id => <option key={id} value={id}>{labels[id]}</option>)}</select></label>}
     <details className={styles.pageMenu}><summary>Pages</summary><div><small>Include in preview and document</small>{pages.map(id => <label key={id} className={styles.pageToggle}><input type="checkbox" aria-label={`Include ${title(id)}`} checked={!design.hiddenPages?.includes(id)} disabled={readOnly || busy} onChange={event => change({ ...draft, presentation: { ...design, hiddenPages: event.target.checked ? (design.hiddenPages ?? []).filter(hidden => hidden !== id) : [...(design.hiddenPages ?? []), id] } }, true)}/>{title(id)}</label>)}</div></details>
     {!readOnly && <details className={styles.pageMenu}><summary aria-label="Page options">•••</summary><div>
-     <button type="button" disabled={busy} onClick={() => requestConfirmation({ title: 'Apply the sample proposal layout?', body: 'This replaces the page designs and terms with the supplied sample. Your scope, quantities, prices and payment schedule stay unchanged. You can undo this change.', confirmLabel: 'Apply sample layout', onConfirm: () => { const next = { ...draft, terms: referenceTerms }; change({ ...next, presentation: referencePresentation(next, initial.portalBrand?.name ?? '', initial.customerName, initial) }, true); setActive('cover'); setScopeView(false); } })}>Use sample layout</button>
+     <button type="button" disabled={busy} onClick={() => requestConfirmation({ title: 'Use the standard layout?', body: 'This replaces the page designs with the standard layout, filled from your brand and proposal kit. Your scope, prices, terms and payment schedule stay unchanged. You can undo this change.', confirmLabel: 'Use standard layout', onConfirm: () => { const next = { ...draft, terms: referenceTermsFor(draft, initial.proposalKit) }; change({ ...next, presentation: referencePresentation(next, initial.portalBrand?.name ?? '', initial.customerName, initial) }, true); setActive('cover'); setScopeView(false); } })}>Use standard layout</button>
      <button type="button" disabled={busy || pages.indexOf(active) === 0} onClick={() => move(-1)}><ArrowLeft size={14}/>Move earlier</button>
      <button type="button" disabled={busy || pages.indexOf(active) === pages.length - 1} onClick={() => move(1)}><ArrowRight size={14}/>Move later</button>
      {custom && <button type="button" disabled={busy || pages.length >= 40 || design.pages.length >= 40} onClick={duplicate}><Copy size={14}/>Duplicate page</button>}

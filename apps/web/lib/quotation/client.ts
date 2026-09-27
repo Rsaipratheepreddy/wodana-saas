@@ -1,10 +1,16 @@
-import type { Quote } from "@/lib/commercial/types";
+import type { ProposalKit, Quote } from "@/lib/commercial/types";
 import type { AiProposal, BoqPick, BuilderState, QuoteColumn, QuoteDocument, QuoteTemplate, CatalogHit, LineOp, PaymentMilestone, QuoteAnchor, QuoteDiscount, QuotePerson, QuoteThread } from "./types";
 
 /** The firm's own quote columns (workspace-wide). */
 export const quoteColumnsApi = (workspaceId: string) => ({
   add: (id: string, name: string, kind: "text" | "number") => request<{ columns: QuoteColumn[] }>(quotationPath(workspaceId, "columns"), "POST", { id, name, kind }),
   change: (id: string, change: { name?: string; archived?: boolean; showInProposal?: boolean; version: number }) => request<{ columns: QuoteColumn[] }>(quotationPath(workspaceId, `columns/${id}`), "PATCH", change),
+});
+
+/** The firm's proposal kit (workspace-wide): read by anyone who sees quotes, changed field by field. */
+export const proposalKitApi = (workspaceId: string) => ({
+  get: () => request<{ kit: ProposalKit; canManage: boolean }>(quotationPath(workspaceId, "proposal-kit")),
+  change: (change: Partial<Omit<ProposalKit, "version">> & { version: number }) => request<ProposalKit>(quotationPath(workspaceId, "proposal-kit"), "PUT", change),
 });
 
 export const quotationPath = (workspaceId: string, path: string, query?: Record<string, string>) =>

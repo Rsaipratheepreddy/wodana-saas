@@ -584,6 +584,13 @@ export function parsePaymentTerms(
   return rows;
 }
 
+/** The firm's logo on a proposal: an embedded picture, or the tenant's own logo address (never an outside link). */
+function companyLogo(value: unknown): string {
+  const logo = text(value ?? "", 500000);
+  if (!logo || /^\/api\/auth\/tenant-logo\/[a-z0-9-]+\?v=[0-9a-f-]+$/i.test(logo) || /^data:image\/(png|jpeg|webp);base64,[a-z\d+/=]+$/i.test(logo)) return logo;
+  throw new BadRequestException("Use the firm's own logo on the proposal.");
+}
+
 export function parseCover(input: unknown) {
   const c = object(input);
   const image = (key: string) => {
@@ -719,7 +726,7 @@ export function parseQuotePresentation(input: unknown): QuotePresentation {
   return {
     version: 1,
     ...(value.template === 'palm-reference-v1' ? {template: 'palm-reference-v1' as const} : {}),
-    ...(value.details !== undefined ? {details: Object.fromEntries(Object.entries(object(value.details)).filter(([key]) => ['companyName','clientName','clientPhone','clientEmail','projectName','location','reference','date','preparedBy','estimator','manager','clientLogo'].includes(key)).map(([key, content]) => [key, key === 'clientLogo' ? image(content) : text(content, 500)]))} : {}),
+    ...(value.details !== undefined ? {details: Object.fromEntries(Object.entries(object(value.details)).filter(([key]) => ['companyName','clientName','clientPhone','clientEmail','projectName','location','reference','date','preparedBy','estimator','manager','clientLogo','companyLogo'].includes(key)).map(([key, content]) => [key, key === 'clientLogo' ? image(content) : key === 'companyLogo' ? companyLogo(content) : text(content, 500)]))} : {}),
     ...(pageOrder ? { pageOrder } : {}),
     ...(hiddenPages ? { hiddenPages } : {}),
     ...(scopeColumns ? { scopeColumns } : {}),

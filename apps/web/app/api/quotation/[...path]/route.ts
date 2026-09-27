@@ -5,7 +5,7 @@ const QUOTE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** The quotation builder API: settings, work packages and one quote's lines, discounts and tax. */
 function allowed(path: string[], method: string) {
-  if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
+  if (path.length === 1 && ["settings", "proposal-kit"].includes(path[0])) return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "work-packages") return method === "POST";
   if (path.length === 1 && path[0] === "templates") return method === "GET";
   if (path.length === 2 && path[0] === "work-packages" && UUID.test(path[1])) return method === "PATCH";

@@ -1,11 +1,11 @@
 import type {Quote,QuoteCanvasElement,QuotePresentation,CommercialState} from './types';
-import {referencePresentation} from './quotation-reference-template';
+import {isReferenceLayout,referencePresentation} from './quotation-reference-template';
 
 /** Editable cover elements; pricing remains in the quote's controlled line items. */
 export function builderPresentation(quote:Quote,company:string,customer:string,context?:CommercialState):QuotePresentation {
  const existing=quote.presentation;
  if(!existing)return referencePresentation(quote,company,customer,context);
- if(existing.template==='palm-reference-v1')return {...existing,details:{...referencePresentation(quote,company,customer,context).details,...existing.details}};
+ if(isReferenceLayout(existing.template))return {...existing,details:{...referencePresentation(quote,company,customer,context).details,...existing.details}};
  const cover=existing?.pages.find(page=>page.id==='cover');
  const text=(id:string,value:string,x:number,y:number,width:number,height:number,fontSize:number,color='#26382f'):QuoteCanvasElement=>({id:`cover-${id}`,type:'text',text:value,x,y,width,height,fontSize,color,align:'left'});
  const elements:QuoteCanvasElement[]=[

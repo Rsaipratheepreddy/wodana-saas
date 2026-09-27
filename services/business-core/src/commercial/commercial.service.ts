@@ -2,6 +2,7 @@ import { DesignPackagesService } from "../design/design-packages.service";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { effectivePortalBrand } from "./effective-brand";
+import { newQuoteDefaults } from "./quote-defaults";
 import { tellClients } from "../client-portal/portal-notices";
 import { commercialRepository } from "./commercial-repository";
 import { DEAL_FIRST_WORKFLOW_CODE } from "../projects/deal-first-workflow";
@@ -1792,6 +1793,7 @@ export class CommercialService {
               (await resolvedProjectWorkflowTemplate(client, workspaceId)).code === DEAL_FIRST_WORKFLOW_CODE &&
               !data.palmFlow)
             throw new ConflictException("Choose the enquiry's service path before preparing its quotation.");
+          const defaults = await newQuoteDefaults(client, workspaceId, caseId);
           q = {
             id: randomUUID(),
             number: Math.max(0, ...data.quotes.map((q) => q.number)) + 1,
@@ -1817,16 +1819,14 @@ export class CommercialService {
               ? structuredClone(q.presentation)
               : undefined,
             inclusions: q?.inclusions ?? "",
-            currency: q?.currency ?? record.currency ?? "AED",
-            validUntil: new Date(Date.now() + 30 * 86400000)
+            currency: q?.currency ?? record.currency ?? defaults.currency ?? undefined,
+            validUntil: new Date(Date.now() + defaults.validityDays * 86400000)
               .toISOString()
               .slice(0, 10),
             discount: action === "variation" ? 0 : (q?.discount ?? 0),
-            taxRate: q?.taxRate ?? 0,
-            terms:
-              q?.terms ??
-              "Payment terms and delivery dates are subject to the agreed contract.",
-            exclusions: q?.exclusions ?? "",
+            taxRate: q?.taxRate ?? defaults.taxRate,
+            terms: q?.terms ?? defaults.terms,
+            exclusions: q?.exclusions ?? defaults.exclusions,
             lines:
               action === "variation" ? [] : structuredClone(q?.lines ?? []),
             requestIds: [],

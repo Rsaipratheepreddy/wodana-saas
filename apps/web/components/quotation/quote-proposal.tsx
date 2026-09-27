@@ -5,7 +5,7 @@ import { ErrorState, Skeleton } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { commercialPath, jsonRequest } from "@/lib/commercial/client";
 import { caseApi } from "@/lib/pre-project/content";
-import { catalogImageUrl } from "@/lib/quotation/client";
+import { catalogImageUrl, proposalKitApi } from "@/lib/quotation/client";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { quoteApi } from "@/lib/quotation/client";
 import { QuotationBuilderShell } from "@/components/commercial/quotation-builder-shell";
@@ -31,8 +31,12 @@ export function QuoteProposal({ workspaceId, caseId, quoteId, api, sizeUnit, col
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
-    jsonRequest<CommercialState>(commercialPath(workspaceId, `cases/${caseId}`))
-      .then((next) => { if (alive) { setState(next); setError(""); } })
+    // The firm's proposal kit fills the standard layout; if it can't load, the proposal still opens without it.
+    Promise.all([
+      jsonRequest<CommercialState>(commercialPath(workspaceId, `cases/${caseId}`)),
+      proposalKitApi(workspaceId).get().then((result) => result.kit).catch(() => undefined),
+    ])
+      .then(([next, proposalKit]) => { if (alive) { setState({ ...next, proposalKit }); setError(""); } })
       .catch((cause: Error) => { if (alive) setError(cause.message); });
     return () => { alive = false; };
   }, [workspaceId, caseId, attempt]);

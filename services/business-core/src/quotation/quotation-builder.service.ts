@@ -16,6 +16,7 @@ import { storeImage } from "../catalog-core/catalog-item-images";
 import { catalogLine, searchCatalog } from "./quote-catalog";
 import { priceQuote, PricingError, type PricingPolicy, type QuoteDiscountInput } from "./quote-pricing";
 import { buildUp, checkFormula, lineQuantity } from "./quote-quantity";
+import { auditableKit, changeProposalKit, readProposalKit, writeProposalKit } from "./proposal-kit";
 
 type Db = PoolClient;
 const VIEW = "pre_projects.view", EDIT = "pre_projects.edit";
@@ -112,6 +113,26 @@ export class QuotationBuilderService {
           next.discountApprovalPercent, next.validityDays, next.internalReview, next.priceBookId, user.userId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.settings_changed.v1", entityType: "workspace", entityId: workspaceId, before: current, after: next });
       return readSettings(client, workspaceId);
+    });
+  }
+
+  /** The firm's proposal kit: anyone who can see quotes reads it; settings managers change it. */
+  proposalKit(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, VIEW, async (client, user) => ({
+      kit: await readProposalKit(client, workspaceId),
+      canManage: await this.anyPermission(client, workspaceId, user.userId, SETTINGS),
+    }));
+  }
+
+  saveProposalKit(actor: RequestActor, workspaceId: string, input: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, SETTINGS, async (client, user) => {
+      const current = await readProposalKit(client, workspaceId);
+      if (Number(input.version) !== current.version) throw new ConflictException("Someone changed the proposal kit. Reload to see the latest.");
+      const next = changeProposalKit(current, input);
+      await writeProposalKit(client, workspaceId, next, user.userId);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "quotation.proposal_kit_changed.v1", entityType: "workspace", entityId: workspaceId,
+        before: auditableKit(current), after: auditableKit(next) });
+      return readProposalKit(client, workspaceId);
     });
   }
 

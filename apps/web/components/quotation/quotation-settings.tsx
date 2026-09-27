@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { quotationPath } from "@/lib/quotation/client";
 import { VIEW_LABEL } from "@/lib/quotation/format";
 import type { QuotationSettings as Settings, QuoteView } from "@/lib/quotation/types";
+import { ProposalKitSettings } from "./proposal-kit-settings";
 import styles from "./quotation-settings.module.css";
 
 type Loaded = { settings: Settings; workPackages: Array<{ id: string; name: string; archived: boolean }>; priceBooks: Array<{ id: string; name: string; currency: string; status: string }>; canManage: boolean };
@@ -20,7 +21,7 @@ async function call<T>(url: string, method = "GET", body?: unknown): Promise<T> 
 
 /**
  * Settings → Quotations: how this firm prices (tax-inclusive or not, rounding, markup, margin floor,
- * the discount that needs approval, validity) and its work packages. Nothing here is fixed in code.
+ * the discount that needs approval, validity), its proposal kit and its work packages. Nothing here is fixed in code.
  */
 export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
@@ -104,6 +105,8 @@ export function QuotationSettingsPage({ workspaceId }: { workspaceId: string }) 
       </SettingsRow>
     </SettingsSection>
     {readOnly ? null : <div className={styles.actions}>{saved ? <span className={styles.saved}>{t("Saved")}</span> : null}<Button size="compact" variant="primary" isLoading={busy} isDisabled={!dirty} onPress={() => void save()}>{t("Save")}</Button></div>}
+
+    <ProposalKitSettings workspaceId={workspaceId} />
 
     <SettingsSection id="work-packages" title={t("Work packages")}>
       {data.workPackages.length ? <ul className={styles.trades}>{data.workPackages.map((item) => <li key={item.id} data-archived={item.archived || undefined}>

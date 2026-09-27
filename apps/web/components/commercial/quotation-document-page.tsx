@@ -6,7 +6,7 @@ import { quotationDescription } from "@/lib/commercial/presentation";
 import { QuotationCover } from "./quotation-cover";
 import { BrandLogo } from "./brand-logo";
 import d from "./quotation-studio.module.css";
-import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
+import {isReferenceLayout,referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
 
 export type DocumentPage = {
   id: string;
@@ -19,12 +19,12 @@ export function quotationPages(q: Quote): DocumentPage[] {
   const pages: DocumentPage[] = [
     { id: "cover", kind: "cover", title: "Cover" },
   ];
-  const reference=q.presentation?.template==='palm-reference-v1';
+  const reference=isReferenceLayout(q.presentation?.template);
   const groups=reference?referenceItemGroups(q.lines):Array.from({length:Math.max(1,Math.ceil(q.lines.length/3))},(_,index)=>({start:index*3,count:3}));
   for (const {start,count} of groups)
     pages.push({
       id: `items:${start}`,
-      kind: q.presentation?.template==='palm-reference-v1'?"custom":"room",
+      kind: isReferenceLayout(q.presentation?.template)?"custom":"room",
       title: start ? `Scope & Items · ${groups.findIndex(group=>group.start===start)+1}` : "Scope & Items",
       lines: q.lines.slice(start, start + count),
     });

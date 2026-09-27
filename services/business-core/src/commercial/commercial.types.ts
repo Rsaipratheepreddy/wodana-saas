@@ -139,7 +139,7 @@ export type QuoteCanvasPage = {
 export type QuotePresentation = {
   version: 1;
   template?: 'palm-reference-v1';
-  details?: Partial<Record<'companyName' | 'clientName' | 'clientPhone' | 'clientEmail' | 'projectName' | 'location' | 'reference' | 'date' | 'preparedBy' | 'estimator' | 'manager' | 'clientLogo', string>>;
+  details?: Partial<Record<'companyName' | 'clientName' | 'clientPhone' | 'clientEmail' | 'projectName' | 'location' | 'reference' | 'date' | 'preparedBy' | 'estimator' | 'manager' | 'clientLogo' | 'companyLogo', string>>;
   /** Logical sections in reading order; scope expands into item pages. */
   pageOrder?: string[];
   hiddenPages?: string[];
@@ -673,6 +673,24 @@ export type CommercialData = {
     projectId?: string;
   };
 };
+/**
+ * The firm's proposal kit: the words, contact block and pictures its client proposals are built
+ * from. Everything is optional. Layout, type and page colours stay Wodana's; pictures only fill
+ * fixed slots (introduction, three terms pictures, closing, a small monogram).
+ */
+export type ProposalKit = {
+  introduction: string;
+  letterNote: string;
+  defaultTerms: string;
+  defaultExclusions: string;
+  contactDetails: string;
+  website: string;
+  introductionImage: string | null;
+  closingImage: string | null;
+  monogramImage: string | null;
+  termsImages: string[];
+  version: number;
+};
 export type PortalBrand = {
   name: string;
   logo: string;
@@ -732,6 +750,8 @@ export type CommercialState = {
   canManagePortal: boolean;
   portalSlug: string | null;
   portalBrand?: PortalBrand;
+  /** The firm's proposal kit, when the proposal screen has loaded it. */
+  proposalKit?: ProposalKit;
   portalEnabled?: boolean;
   testMode?: boolean;
   releaseReadiness?: {
