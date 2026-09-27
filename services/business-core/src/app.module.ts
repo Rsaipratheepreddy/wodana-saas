@@ -39,6 +39,7 @@ import { PurchasingModule } from "./purchasing/purchasing.module";
 import { FactoryModule } from "./factory/factory.module";
 import { SiteModule } from "./site/site.module";
 import { ReceivablesModule } from "./receivables/receivables.module";
+import { AccountingModule } from "./accounting/accounting.module";
 import { InventoryModule } from "./inventory/inventory.module";
 
 @Module({
@@ -91,6 +92,7 @@ import { InventoryModule } from "./inventory/inventory.module";
     FactoryModule,
     SiteModule,
     ReceivablesModule,
+    AccountingModule,
     HrmsModule,
   ],
   controllers: [AppController],

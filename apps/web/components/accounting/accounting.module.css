@@ -1,0 +1,4 @@
+/* Accounting: where each company posts, and the postings. */
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.actions { display: flex; justify-content: flex-end; }
+.link { color: var(--wd-color-text); font-size: var(--wd-text-sm); }

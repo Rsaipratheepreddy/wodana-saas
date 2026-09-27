@@ -37,6 +37,8 @@ import { ProjectMoneyService } from "./project-money.service";
 import { processProjectBudgets } from "./project-money";
 import { ReceivablesService, processReceivablesOverdue } from "../receivables/receivables.service";
 import { CommercialService } from "../commercial/commercial.service";
+import { AccountingService } from "../accounting/accounting.service";
+import { applyResult, claimPostings } from "../accounting/accounting-sync";
 import { processPayablesDue } from "../purchasing/purchasing-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -3165,6 +3167,118 @@ integration("projects core (plan §6.10)", () => {
       // Overdue: the project's manager hears once per invoice.
       expect(await processReceivablesOverdue(w.client, w.workspaceId)).toEqual({ sent: 1 });
       expect(await processReceivablesOverdue(w.client, w.workspaceId)).toEqual({ sent: 0 });
+    });
+  });
+
+  it("posts invoices, credit notes, supplier bills and payments to the company's accounting connection, blocking until mappings are chosen and flagging differences", async () => {
+    await world(async (w) => {
+      const { company, vendor, buyer, manager, access, all } = await buying(w, { signoff: false });
+      const connection = randomUUID();
+      await w.client.query(`INSERT INTO integration_connections (id, workspace_id, legal_entity_id, provider, display_name, status, external_account_id) VALUES ($1, $2, $3, 'quickbooks', 'Studio QuickBooks', 'connected', '9130')`,
+        [connection, w.workspaceId, company]);
+      const accounting = new AccountingService(access(w.manager, [...all, "accounting.manage"]), {} as never);
+      const link = (input: Record<string, unknown>, version: number) => accounting.saveLink(actor, w.workspaceId, { legalEntityId: company, connectionId: connection, startDate: "2026-01-01", version, ...input });
+      await expect(link({ connectionId: randomUUID() }, 0)).rejects.toThrow(/connected QuickBooks or Zoho Books/);
+      let settings = await link({ taxCodes: [{ rate: "5", providerTaxId: "TAX5" }] }, 0);
+      expect(settings.companies.find((item) => item.id === company)?.link).toMatchObject({ connectionId: connection, startDate: "2026-01-01", taxCodes: [{ rate: "5.0000", providerTaxId: "TAX5" }] });
+
+      // A client invoice, a supplier bill and a payment on it.
+      const finance = new ReceivablesService(access(w.manager, [...all, "receivables.view", "receivables.manage"]));
+      const invoice = randomUUID();
+      await finance.command(actor, w.workspaceId, { commandId: randomUUID(), action: "issue", id: invoice, caseId: w.caseId, paymentId: "p1", customerTaxNumber: "100200300400003" });
+      const detail = await w.as(w.manager).get(actor, w.workspaceId, (await w.client.query<{ id: string }>(`SELECT id FROM delivery_projects WHERE workspace_id = $1`, [w.workspaceId])).rows[0].id);
+      await w.as(w.manager).command(actor, w.workspaceId, detail.project.id, { action: "save_material", name: "Oak veneer", quantity: "2", unit: "sheets", clientChoice: false, version: detail.project.version });
+      const oak = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Oak veneer")!;
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: oak.sourceId, quantity: "2", unitPrice: "100", taxRate: "5" }]);
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-25", lines: [{ orderLineId: order.lines[0].id, received: "2" }] });
+      const payer = new PayablesService(access(w.designer, [...all, "payables.view", "payables.manage", "payables.approve"]));
+      const bill = randomUUID();
+      const saved = await payer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "save", id: bill, vendorId: vendor, legalEntityId: company, currency: "AED", number: "NM-77",
+        invoiceDate: "2026-09-26", lines: [{ orderLineId: order.lines[0].id, quantity: "2", unitPrice: "100", taxRate: "5" }] }) as { bill: { version: number } };
+      await payer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "submit", id: bill, version: saved.bill.version });
+      const payment = randomUUID();
+      await payer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "pay", id: payment, vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26",
+        amount: "210", method: "cheque", reference: "CHQ-9", allocations: [{ invoiceId: bill, amount: "210" }] });
+
+      // QuickBooks needs the item for invoice lines and the expense account for bills: both wait.
+      let claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed).toEqual([]);
+      const statuses = async () => (await w.client.query<{ kind: string; status: string; error: string | null }>(
+        `SELECT kind, status, error FROM accounting_postings WHERE workspace_id = $1 ORDER BY kind`, [w.workspaceId])).rows;
+      expect(await statuses()).toEqual([
+        { kind: "bill", status: "blocked", error: "Choose the expense account for supplier bills in Settings → Accounting." },
+        // The payment waits for its bill to be posted first.
+        { kind: "bill_payment", status: "pending", error: null },
+        { kind: "invoice", status: "blocked", error: "Choose the accounting item for invoice lines in Settings → Accounting." }]);
+
+      // Mapped: both go, with exact amounts, tax codes and the contacts to find or create.
+      settings = await link({ salesItemId: "1", expenseAccountId: "7", paymentsAccountId: "35", taxCodes: [{ rate: "5", providerTaxId: "TAX5" }] }, 1);
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      const half = ((4.5 * 1200 + 2.25 * 800 + 650) / 2).toFixed(2);
+      // Oldest document first.
+      expect(claimed.map((item) => item.kind)).toEqual(["bill", "invoice"]);
+      const invoicePosting = claimed.find((item) => item.kind === "invoice")!, billPosting = claimed.find((item) => item.kind === "bill")!;
+      expect(invoicePosting).toMatchObject({ provider: "quickbooks", connectionId: connection, attempt: 0, contact: { kind: "customer", providerId: null, name: "Maya Client", taxNumber: "100200300400003" },
+        document: { number: expect.stringMatching(/^FAC-INV-/), currency: "AED", itemId: "1", total: half, lines: [{ description: "Advance", amount: half, taxId: null }] } });
+      expect(billPosting).toMatchObject({ contact: { kind: "vendor", providerId: null, name: "Nile Marble" },
+        document: { number: "NM-77", date: "2026-09-26", total: "210.00", tax: "10.00", lines: [{ amount: "200.00", taxId: "TAX5", accountId: "7" }] } });
+      expect(invoicePosting.marker).toMatch(/^W[0-9a-f]{8}$/);
+      expect((await w.client.query(`SELECT accounting_posting_workspace($1, $2) AS workspace`, [invoicePosting.id, invoicePosting.leaseToken])).rows[0].workspace).toBe(w.workspaceId);
+      // Leased postings aren't claimed twice.
+      expect(await claimPostings(w.client, w.workspaceId, 20)).toEqual([]);
+
+      // The invoice is created; its customer is remembered. The bill fails for now and is tried again later.
+      expect(await applyResult(w.client, w.workspaceId, { id: invoicePosting.id, leaseToken: randomUUID(), providerId: "x" })).toEqual({ applied: false });
+      await applyResult(w.client, w.workspaceId, { id: invoicePosting.id, leaseToken: invoicePosting.leaseToken, providerId: "145", providerNumber: "FAC-INV-1", providerTotal: half,
+        contactProviderId: "58" });
+      await applyResult(w.client, w.workspaceId, { id: billPosting.id, leaseToken: billPosting.leaseToken, error: { code: "provider_unavailable", message: "QuickBooks is unavailable", retryable: true } });
+      let rows = (await w.client.query<{ kind: string; status: string; attempts: number; retrySoon: boolean; providerId: string | null }>(
+        `SELECT kind, status, attempts, next_at > now() AS "retrySoon", provider_id AS "providerId" FROM accounting_postings WHERE workspace_id = $1 ORDER BY kind`, [w.workspaceId])).rows;
+      expect(rows).toEqual([{ kind: "bill", status: "failed", attempts: 1, retrySoon: true, providerId: null },
+        { kind: "bill_payment", status: "pending", attempts: 0, retrySoon: null, providerId: null }, { kind: "invoice", status: "sent", attempts: 1, retrySoon: null, providerId: "145" }]);
+      expect((await w.client.query(`SELECT kind, provider_id FROM accounting_contacts WHERE workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ kind: "customer", provider_id: "58" }]);
+
+      // Retried by hand: the bill goes, with a different total flagged; then its payment goes, paying the bill.
+      await accounting.retry(actor, w.workspaceId, billPosting.id);
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed.map((item) => [item.kind, item.attempt])).toEqual([["bill", 1]]);
+      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, providerId: "B9", providerTotal: "210.01", contactProviderId: "V3" });
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed).toEqual([expect.objectContaining({ kind: "bill_payment", contact: expect.objectContaining({ providerId: "V3" }),
+        document: { date: "2026-09-26", currency: "AED", amount: "210.00", billProviderId: "B9", reference: "CHQ-9", paidFromAccountId: "35", method: "cheque" } })]);
+      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, providerId: "BP1" });
+      const list = (await accounting.postings(actor, w.workspaceId)).postings;
+      expect(list.find((item) => item.kind === "bill")).toMatchObject({ status: "sent", errorCode: "total_differs", error: "QuickBooks shows 210.01; Wodana shows 210.", label: "Nile Marble · NM-77" });
+
+      // The payment is reversed after it was posted: a void of what was posted follows.
+      await payer.command(actor, w.workspaceId, { commandId: randomUUID(), action: "reverse", paymentId: payment, reason: "Cheque bounced" });
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed).toEqual([expect.objectContaining({ kind: "bill_payment_void", document: { paymentProviderId: "BP1", reason: "Cheque bounced" } })]);
+      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, error: { code: "provider_rejected", message: "The accounting period is closed.", retryable: false } });
+      rows = (await w.client.query(`SELECT kind, status, attempts, next_at > now() AS "retrySoon", provider_id AS "providerId" FROM accounting_postings
+        WHERE workspace_id = $1 AND kind = 'bill_payment_void'`, [w.workspaceId])).rows as never;
+      expect(rows).toEqual([{ kind: "bill_payment_void", status: "failed", attempts: 1, retrySoon: null, providerId: null }]);
+      // A finance-verified client payment on the invoiced milestone goes on the posted invoice.
+      await w.client.query(`INSERT INTO commercial_receipts (workspace_id, case_id, id, sort_order, payment_id, legal_entity_id, currency, amount, source, status, reference, detail)
+        VALUES ($1, $2, 'r1', 0, 'p1', $3, 'AED', $4, 'manual', 'finance_verified', 'TT-1', '{"verifiedAt": "2026-09-27T09:00:00Z"}')`, [w.workspaceId, w.caseId, company, half]);
+      await w.client.query(`INSERT INTO commercial_allocations (workspace_id, case_id, id, sort_order, receipt_id, payment_id, legal_entity_id, currency, amount, detail)
+        VALUES ($1, $2, 'a1', 0, 'r1', 'p1', $3, 'AED', $4, '{}')`, [w.workspaceId, w.caseId, company, half]);
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed).toEqual([expect.objectContaining({ kind: "invoice_payment", contact: expect.objectContaining({ kind: "customer", providerId: "58" }),
+        document: { date: "2026-09-27", currency: "AED", amount: half, invoiceProviderId: "145", reference: "TT-1", depositAccountId: null } })]);
+      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, providerId: "P7" });
+      // The invoice is credited: the credit note credits the posted invoice.
+      const credited = await finance.invoice(actor, w.workspaceId, invoice);
+      await finance.command(actor, w.workspaceId, { commandId: randomUUID(), action: "credit", id: invoice, version: credited.invoice.version, reason: "Wrong client name" });
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed).toEqual([expect.objectContaining({ kind: "credit_note", document: expect.objectContaining({ number: expect.stringMatching(/^FAC-CN-/), invoiceProviderId: "145",
+        reason: "Wrong client name", total: half, lines: [{ description: "Advance", amount: half, taxId: null }] }) })]);
+
+      // The connection can't change once documents went to it.
+      const other = randomUUID();
+      await w.client.query(`INSERT INTO integration_connections (id, workspace_id, legal_entity_id, provider, display_name, status) VALUES ($1, $2, $3, 'zoho_books', 'Zoho', 'connected')`,
+        [other, w.workspaceId, company]);
+      await expect(link({ connectionId: other }, 2)).rejects.toThrow(/already posted to the other accounting connection/);
     });
   });
 });

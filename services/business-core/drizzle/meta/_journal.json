@@ -470,6 +470,13 @@
       "when": 1795262400000,
       "tag": "0068_client_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795348800000,
+      "tag": "0069_accounting_sync",
+      "breakpoints": true
     }
   ]
 }

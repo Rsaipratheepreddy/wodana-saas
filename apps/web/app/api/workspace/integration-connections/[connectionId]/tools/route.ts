@@ -17,7 +17,7 @@ export async function GET(request: Request, context: Context) {
     if (!/^[a-zA-Z0-9]{1,100}$/.test(invoiceId)) return invalidRequest("Choose an invoice.");
     return providerResponse(`/integrations/providers/workspaces/${workspaceId}/connections/${connectionId}/invoices/${invoiceId}`, {}, health);
   }
-  if (!["invoices", "customers", "items", "vendors", "bills", "payments", "purchaseorders", "expenses", "templates"].includes(kind)) return invalidRequest("Unsupported resource.");
+  if (!["invoices", "customers", "items", "vendors", "bills", "payments", "purchaseorders", "expenses", "templates", "accounts", "taxes"].includes(kind)) return invalidRequest("Unsupported resource.");
   const page = Number(url.searchParams.get("page") ?? 1);
   if (!Number.isInteger(page) || page < 1 || page > 10000) return invalidRequest("Invalid page.");
   return providerResponse(`/integrations/providers/workspaces/${workspaceId}/connections/${connectionId}/records/${kind}?page=${page}`, {}, health);

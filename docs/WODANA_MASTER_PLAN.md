@@ -962,6 +962,17 @@ One adapter interface per capability. States: **Not configured → Connected →
 | Storage | S3-compatible | per-tenant prefix, malware scan, signed URLs |
 | E-sign | later (DocuSign/Zoho Sign) | agreements |
 
+**Built — accounting sync (Settings → Accounting; Business → Finance → Accounting):**
+- **Setup:** each company posts to one connected QuickBooks or Zoho Books account from a start date. Its item for invoice lines, expense account for bills, the accounts supplier payments come from and client payments go into, and a tax code for each rate it uses are chosen from the accounting system's own lists.
+- **Postings:** every document gets an outbox posting — tax invoices, credit notes (after their invoice), finance-verified client payments on invoiced milestones, approved supplier bills, and each supplier payment allocation (after its bill). A payment reversed after posting gets a void; one reversed before it's posted is cancelled.
+- **Sending:** the integration worker leases due postings for five minutes, oldest document first, each after what it depends on was sent, and reports back.
+  - A missing mapping (item, account, a taxed rate's code) blocks the posting with what to choose; posting the wrong tax is never an option.
+  - Contacts are found by name or created, then remembered.
+  - QuickBooks requests carry the posting id, so a retry never creates a duplicate; on Zoho a retry first looks for what the posting may already have created (its number, or the marker in a payment's reference).
+  - Retryable failures back off (1 minute doubling to 6 hours, 8 tries); others wait for someone to retry.
+  - A provider total that differs from Wodana's is flagged.
+  - People who manage accounting hear once when a posting needs them. The connection can't change once documents were posted to it.
+
 Edge cases: provider down (queue and retry, visible status); token revoked (connection falls to "Needs attention", admin alerted); webhook replay or out-of-order (idempotent, ordered by provider timestamp); a WhatsApp number not on WhatsApp (fallback to email/SMS).
 
 ### 6.26 AI

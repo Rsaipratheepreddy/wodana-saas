@@ -6,8 +6,10 @@ import { Button, PageHeader, Tabs } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { payablesApi } from "@/lib/payables/client";
 import { receivablesApi } from "@/lib/receivables/client";
+import { accountingApi } from "@/lib/accounting/client";
 import type { FinanceSection } from "@/lib/payables/sections";
 import type { PayablesState } from "@/lib/payables/types";
+import { AccountingPostings } from "./accounting-postings";
 import { BillEditor } from "./bill-editor";
 import { ClientInvoices } from "./client-invoices";
 import { Bills } from "./bills";
@@ -22,6 +24,7 @@ export function FinancePage({ workspaceId, section, supplierId }: { workspaceId:
   const params = useSearchParams();
   const api = useMemo(() => payablesApi(workspaceId), [workspaceId]);
   const receivables = useMemo(() => receivablesApi(workspaceId), [workspaceId]);
+  const accounting = useMemo(() => accountingApi(workspaceId), [workspaceId]);
   const [state, setState] = useState<PayablesState | null>(null);
   const [error, setError] = useState("");
   const [entering, setEntering] = useState(false);
@@ -47,6 +50,7 @@ export function FinancePage({ workspaceId, section, supplierId }: { workspaceId:
           onOpenPayment={(id) => go("payments", id)} /> },
       { id: "client-invoices", label: t("Client invoices"),
         panel: <ClientInvoices api={receivables} openId={params.get("invoice")} onOpen={(id) => go("client-invoices", id)} /> },
+      { id: "accounting", label: t("Accounting"), panel: <AccountingPostings api={accounting} /> },
     ]} />
     {entering && state ? <BillEditor api={api} vendors={state.vendors} companies={state.companies} onClose={() => setEntering(false)}
       onSaved={(id) => { setEntering(false); void load(); go("bills", id); }} /> : null}

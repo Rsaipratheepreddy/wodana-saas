@@ -124,6 +124,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/purchasing", icon: "procurement", id: "purchasing-settings", label: "Purchasing" },
           { href: "/workspace/settings/inventory", icon: "materialPlan", id: "inventory-settings", label: "Stock places" },
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: "Factory" },
+          { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: "Accounting" },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },
