@@ -1179,12 +1179,13 @@ export class WorkspacesService {
       );
       if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
       const can = (permission: string) => this.access.hasPermission(client, workspaceId, user.userId, permission);
-      const [enquiries, quotes, payments, projects, manageProjects, activity, settings, data] = await Promise.all([
+      const [enquiries, quotes, payments, projects, manageProjects, activity, settings, data, followUps, orders] = await Promise.all([
         can("crm.leads.view"), can("pre_projects.view"), can("receivables.view"), can("projects.view"),
         can("projects.manage"), can("audit.view"), can("workspace.settings.manage"), can("data.manage"),
+        can("crm.activities.view"), can("purchasing.view"),
       ]);
       return readHomeMetrics(client, workspaceId, membership.rows[0].id, {
-        enquiries, quotes, payments, projects, manageProjects, activity, storage: settings || data,
+        enquiries, quotes, payments, projects, manageProjects, activity, storage: settings || data, followUps, orders,
       });
     });
   }

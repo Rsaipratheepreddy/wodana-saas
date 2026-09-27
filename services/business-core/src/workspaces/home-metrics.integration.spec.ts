@@ -13,7 +13,7 @@ const integration = describe.skipIf(!databaseUrl);
 // Monday 2026-09-14 22:30 in Los Angeles (already the 15th in UTC). The workspace week starts on Saturday.
 const now = new Date("2026-09-15T05:30:00.000Z");
 const weekStarts = ["2026-07-25", "2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29", "2026-09-05", "2026-09-12"];
-const all: HomeMetricsAccess = { enquiries: true, quotes: true, payments: true, projects: true, manageProjects: false, activity: true, storage: true };
+const all: HomeMetricsAccess = { enquiries: true, quotes: true, payments: true, projects: true, manageProjects: false, activity: true, storage: true, followUps: true, orders: true };
 
 const files = (items: Array<{ id: string; bytes: number }>): ProjectData => ({ ...emptyProject(), revision: 1, files: items } as ProjectData);
 
@@ -65,6 +65,31 @@ integration("Home metrics with PostgreSQL", () => {
       await quote(5, { status: "accepted", total: "300", detail: { issuedAt: "2026-08-05T10:00:00.000Z", decidedAt: "2026-08-12T10:00:00.000Z" } });
       await quote(6, { status: "draft", total: "10000" });
       await quote(7, { kind: "variation", status: "issued", total: "700", detail: { issuedAt: "2026-09-10T10:00:00.000Z" } });
+      // An issued quotation on a cancelled case no longer awaits the client.
+      const cancelledCaseId = randomUUID();
+      await client.query(`INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,status,created_by,cancelled_at,cancelled_by,cancellation_reason)
+         VALUES($1,$2,$3,'cancelled',$4,now(),$4,'Client withdrew')`, [cancelledCaseId, workspaceId, randomUUID(), userId]);
+      await client.query(
+        `INSERT INTO commercial_quotes(workspace_id,case_id,id,sort_order,number,kind,status,title,currency,total) VALUES($1,$2,'q1',1,1,'quotation','issued','Quote','USD','100')`,
+        [workspaceId, cancelledCaseId]);
+
+      // Follow-ups: open reminders (with or without a due time), not notes, done or cancelled ones, nor another tenant's.
+      const followUp = (type: string, status: string, due: string | null, workspace = workspaceId) => client.query(
+        "INSERT INTO crm_activities(workspace_id,party_id,type,status,title,due_at) VALUES($1,$2,$3,$4,'Call back',$5)", [workspace, party, type, status, due]);
+      await followUp("call", "pending", "2026-09-15T05:00:00Z");
+      await followUp("task", "pending", "2026-09-16T05:00:00Z");
+      await followUp("task", "pending", null);
+      await followUp("note", "pending", "2026-09-01T05:00:00Z");
+      await followUp("task", "completed", "2026-09-01T05:00:00Z");
+      await followUp("task", "cancelled", "2026-09-01T05:00:00Z");
+      await followUp("task", "pending", "2026-09-01T05:00:00Z", otherWorkspaceId);
+
+      // Purchase orders placed with a supplier and not fully received yet.
+      for (const [index, status] of ["sent", "confirmed", "partly_received", "draft", "approved", "received", "closed", "cancelled"].entries())
+        await client.query(
+          `INSERT INTO purchase_orders(id,workspace_id,number,legal_entity_id,vendor_id,currency,status,payment_terms,created_by,approved_at,sent_at,confirmed_at,cancelled_at)
+           VALUES($1,$2,$3,$4,$5,'USD',$6,'on_delivery',$7,now(),now(),now(),$8)`,
+          [randomUUID(), workspaceId, `PO-${index + 1}`, entity, randomUUID(), status, userId, status === "cancelled" ? "2026-09-10T00:00:00Z" : null]);
 
       // Payments: cases, milestones, receipts, allocations and invoices.
       await client.query(
@@ -196,7 +221,7 @@ integration("Home metrics with PostgreSQL", () => {
       });
 
       expect(metrics.quotes).toEqual({
-        issuedValue: "3000.75", previousIssuedValue: "300.00", issuedCount: 3, accepted: 1, previousAccepted: 1,
+        issuedValue: "3000.75", previousIssuedValue: "300.00", issuedCount: 3, accepted: 1, previousAccepted: 1, awaiting: 2,
         weekly: weekStarts.map((start, index) => ({
           start,
           value: ["0.00", "300.00", "0.00", "0.00", "0.00", "2000.25", "0.00", "1000.50"][index],
@@ -219,6 +244,9 @@ integration("Home metrics with PostgreSQL", () => {
         active: 5, overdueTasks: 2, late: 3, atRisk: 1, onTrack: 1,
         weekly: weekStarts.map((start, index) => ({ start, value: String([0, 0, 0, 1, 0, 1, 1, 1][index]), count: [0, 0, 0, 1, 0, 1, 1, 1][index] })),
       });
+
+      expect(metrics.followUps).toEqual({ open: 3, overdue: 1 });
+      expect(metrics.orders).toEqual({ toReceive: 3 });
     });
   });
 
@@ -259,7 +287,7 @@ integration("Home metrics with PostgreSQL", () => {
 
   it("leaves out every section the caller may not see", async () => {
     await scenario(async (client, { workspaceId, membershipId }) => {
-      const none = { enquiries: false, quotes: false, payments: false, projects: false, manageProjects: true, activity: false, storage: false };
+      const none = { enquiries: false, quotes: false, payments: false, projects: false, manageProjects: true, activity: false, storage: false, followUps: false, orders: false };
       const metrics = await readHomeMetrics(client, workspaceId, membershipId, none, now);
       expect(Object.keys(metrics).sort()).toEqual(["currency", "generatedAt", "timeZone", "weekStartsOn"]);
       const some = await readHomeMetrics(client, workspaceId, membershipId, { ...none, payments: true, storage: true }, now);
