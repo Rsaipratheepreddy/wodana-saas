@@ -51,14 +51,14 @@
 .cardValue { display:flex; align-items:baseline; justify-content:space-between; gap:var(--wd-space-1-5); min-inline-size:0; color:var(--wd-color-success); font-variant-numeric:tabular-nums; }
 .cardValue > span { color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-weight:600; }
 .cardValue > b { min-inline-size:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--wd-text-sm); font-weight:750; }
-.cardDue { display:flex; align-items:center; gap:var(--wd-space-1); min-inline-size:0; white-space:nowrap; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-variant-numeric:tabular-nums; }
+/* The footer stacks its rows (follow-up, then owner), so badges and labels never overlap; long text wraps or truncates with a tooltip. */
+.cardDue { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wd-space-0-5) var(--wd-space-1); min-inline-size:0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-variant-numeric:tabular-nums; }
 .cardDue svg { flex:none; }
 .cardDue[data-overdue], .cardDue[data-missing] { color:var(--wd-color-danger); }
-.boardCard footer { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--wd-space-1); min-inline-size:0; margin-block-start:var(--wd-space-0-5); padding-block-start:var(--wd-space-1); }
-.assignedLabel { grid-column:1; grid-row:1; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-weight:600; white-space:nowrap; }
-.owner { display:inline-flex; align-items:center; gap:var(--wd-space-1); grid-column:1 / -1; grid-row:2; min-inline-size:0; }
+.boardCard footer { display:grid; gap:var(--wd-space-1); min-inline-size:0; margin-block-start:var(--wd-space-0-5); padding-block-start:var(--wd-space-1); }
+.assignedLabel { flex:none; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-weight:600; }
+.owner { display:flex; align-items:center; gap:var(--wd-space-1); min-inline-size:0; }
 .ownerName { min-inline-size:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--wd-color-text); font-size:var(--wd-text-2xs); font-weight:700; }
-.boardCard footer .cardDue { grid-column:2; grid-row:1; }
 .emptyColumn { display:grid; place-items:center; flex:1; margin:0; min-block-size:6rem; padding:var(--wd-space-3); color:var(--wd-color-text-tertiary); text-align:center; font-size:var(--wd-text-2xs); }
 .moveNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
 .emptyNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }

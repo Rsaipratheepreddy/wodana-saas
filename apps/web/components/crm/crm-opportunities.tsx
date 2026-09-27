@@ -166,6 +166,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
             const reference = opportunityReference(item);
             const value = moneyLabel(item, locale);
             const outcomeMismatch = (column.code === "won" || column.code === "lost") && item.status !== column.code;
+            const dueText = `${overdue ? t("Overdue") : t("Follow-up")} ${item.nextActionAt ? dateLabel(item.nextActionAt, locale, timeZone, t) : t("needed")}`;
             return <button type="button" className={styles.boardCard} key={item.id} draggable={item.status === "open" && !moving} aria-busy={moving === item.id} data-dragging={dragged === item.id || undefined}
               aria-describedby="pipeline-drag-hint"
               onDragStart={event => { setDragged(item.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); }}
@@ -176,7 +177,10 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
               {outcomeMismatch && <span className={styles.cardWarning}>{t("Status is {status} — review outcome", { status: String(item.status).replaceAll("_", " ") })}</span>}
               {customer && customer !== title && <span className={styles.cardCustomer}><span>{t("Client")}</span>{customer}</span>}
               {value && <span className={styles.cardValue}><span>{t("Value")}</span><b>{value}</b></span>}
-              <footer><span className={styles.assignedLabel}>{t("Assigned to")}</span>{item.status === "open" && <span className={styles.cardDue} data-overdue={overdue || undefined} data-missing={!item.nextActionAt || undefined}><CalendarClock size={12} aria-hidden="true" /><span>{overdue ? t("Overdue") : t("Follow-up")}</span>{item.nextActionAt ? dateLabel(item.nextActionAt, locale, timeZone, t) : t("needed")}</span>}<span className={styles.owner}><span aria-hidden="true"><Avatar name={owner} size="sm" /></span><span className={styles.ownerName}>{owner}</span></span></footer>
+              <footer>
+                {item.status === "open" && <span className={styles.cardDue} data-overdue={overdue || undefined} data-missing={!item.nextActionAt || undefined} title={dueText}><CalendarClock size={12} aria-hidden="true" /><span>{overdue ? t("Overdue") : t("Follow-up")}</span>{item.nextActionAt ? dateLabel(item.nextActionAt, locale, timeZone, t) : t("needed")}</span>}
+                <span className={styles.owner} title={owner}><span className={styles.assignedLabel}>{t("Assigned to")}</span><span aria-hidden="true"><Avatar name={owner} size="sm" /></span><span className={styles.ownerName}>{owner}</span></span>
+              </footer>
             </button>;
           })}</div>
           {!cards.length && dragged && <p className={styles.emptyColumn}>{t("Drop here to move")}</p>}
