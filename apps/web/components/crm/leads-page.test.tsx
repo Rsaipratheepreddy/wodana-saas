@@ -220,7 +220,8 @@ describe("LeadsPage", () => {
     const lead = data.items[0];
     const manager = { ...data.members[0], id: "10000000-0000-4000-8000-000000000099", displayName: "New sales owner" };
     data.members.push(manager);
-    const saved = { id: lead.id, ownerMembershipId: manager.id, queueId: lead.queueId, nextActionAt: lead.nextActionAt, status: lead.status, updatedAt: lead.updatedAt, version: lead.version + 1 };
+    data.salesOwners?.push(manager); // the dialog offers the server's assignable sales owners
+    const saved ={ id: lead.id, ownerMembershipId: manager.id, queueId: lead.queueId, nextActionAt: lead.nextActionAt, status: lead.status, updatedAt: lead.updatedAt, version: lead.version + 1 };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => saved });
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadsPage initialData={data} />);
