@@ -7,9 +7,10 @@ import { ClientPortalService } from "../client-portal/client-portal.service";
 import { CommercialService } from "../commercial/commercial.service";
 import { isOperationalEvidence } from "../commercial/release-integrity";
 import { CrmIntakeService } from "../crm/intake/crm-intake.service";
-import { CreateIntakeEventDto } from "../crm/intake/dto/intake.dto";
+import { CreateIntakeEventDto, UpdateLeadDetailsDto } from "../crm/intake/dto/intake.dto";
 import { CrmLeadsService } from "../crm/leads/crm-leads.service";
 import { LogContactDto } from "../crm/leads/dto/leads.dto";
+import { hasResolvedEnquiryType } from "../crm/leads/lead-options";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import { QualifyLeadDto, TransitionOpportunityDto } from "../crm/opportunities/dto/opportunities.dto";
 import { DatabaseService } from "../database/database.service";
@@ -417,6 +418,18 @@ export async function seedShowcase(input: ShowcaseInput): Promise<ShowcaseResult
   }
 }
 
+/** Gives one existing enquiry a specific enquiry type when it has none, exactly as the showcase does before qualifying (for tools and tests). */
+export async function ensureSpecificEnquiryType(input: Pick<ShowcaseInput, "app" | "workspaceId" | "actorUserId" | "log"> & {
+  leadId: string; party: { displayName: string; email: string; mobile: string }; facts: { title: string; summary: string; area: string; emirate?: string; type?: RegExp };
+}) {
+  const seed = new ShowcaseSeed(input);
+  await seed.prepare();
+  const actor = await seed.actorFor(input.actorUserId);
+  const lead = await seed.leadById(actor, input.leadId);
+  await seed.ensureEnquiryType(actor, lead, input.party, { ...input.facts, pick: { type: input.facts.type } });
+  return seed.result;
+}
+
 class ShowcaseSeed {
   readonly result: ShowcaseResult = { created: [], reused: [], skipped: [], scenarios: {} };
   private readonly pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
@@ -493,6 +506,15 @@ class ShowcaseSeed {
     const actor: Actor = { provider: user.provider, subject: user.subject, email: user.email, displayName: user.displayName, userId: user.id, membershipId: membership?.id ?? null };
     this.actors.set(userId, actor);
     return actor;
+  }
+
+  /** The person with this user id (for the exported helpers). */
+  actorFor(userId: string) { return this.actor(userId); }
+
+  /** One lead as the seed reads it: its status and enquiry type. */
+  async leadById(actor: Actor, leadId: string) {
+    const lead = (await this.get(CrmLeadsService).get(actor, this.w, leadId)) as unknown as { id: string; status: string; version: number; serviceType?: string | null; enquiry?: { serviceType?: string | null } };
+    return { id: lead.id ?? leadId, status: lead.status, serviceType: lead.serviceType ?? lead.enquiry?.serviceType ?? null };
   }
 
   /** The person for a role, or the run's actor when nobody is named (or the named person isn't a member). */
@@ -636,7 +658,7 @@ class ShowcaseSeed {
 
   private async findLead(actor: Actor, party: { displayName: string; email: string }) {
     const leads = this.get(CrmLeadsService);
-    const list = (await leads.list(actor, this.w, { search: party.displayName, limit: 100 } as never)) as unknown as { data: Array<{ id: string; partyId: string; partyName: string; status: string; version: number }> };
+    const list = (await leads.list(actor, this.w, { search: party.displayName, limit: 100 } as never)) as unknown as { data: Array<{ id: string; partyId: string; partyName: string; status: string; version: number; serviceType?: string | null }> };
     const parties = (await this.db.tenantTransaction(this.w, actor.userId, (db) => db.query<{ id: string }>(
       `SELECT DISTINCT party_id AS id FROM crm_contact_points WHERE workspace_id = $1 AND type = 'email' AND lower(raw_value) = $2`, [this.w, party.email.toLowerCase()]))).rows.map((row) => row.id);
     return list.data.find((lead) => lead.partyName === party.displayName && parties.includes(lead.partyId)) ?? null;
@@ -648,7 +670,43 @@ class ShowcaseSeed {
     const owner = await this.as(facts.owner);
     const intake = this.get(CrmIntakeService);
     const find = () => this.findLead(actor, party);
-    return this.step(`enquiry ${reference}`, find, async () => {
+    const lead = await this.step(`enquiry ${reference}`, find, async () => this.record(actor, owner, key, reference, party, facts));
+    await this.ensureEnquiryType(actor, lead, party, facts);
+    return lead;
+  }
+
+  /**
+   * An enquiry recorded before the workspace had its enquiry types (or left "not sure") can't be qualified: the
+   * same pick rule as at creation sets a specific type through the lead update command, audited like any edit.
+   */
+  async ensureEnquiryType(actor: Actor, lead: { id: string; status: string; serviceType?: string | null }, party: { displayName: string; email: string; mobile: string },
+    facts: { title: string; summary: string; area: string; emirate?: string; pick: { type?: RegExp } }) {
+    if (hasResolvedEnquiryType(lead.serviceType) || ["qualified", "disqualified", "duplicate"].includes(lead.status)) return;
+    const leads = this.get(CrmLeadsService), intake = this.get(CrmIntakeService);
+    const options = await this.intakeOptions(actor);
+    const enquiryType = (facts.pick.type ? options.enquiryTypes.find((row) => facts.pick.type!.test(row.id)) : undefined)
+      ?? options.enquiryTypes.find((row) => hasResolvedEnquiryType(row.id));
+    if (!enquiryType) { this.skip(`enquiry type for ${facts.title}`, "the workspace has no specific enquiry type to choose"); return; }
+    const emirate = options.emirates.find((row) => row.id === (facts.emirate ?? "dubai")) ?? options.emirates[0];
+    // The same picks as at creation: an enquiry from before the taxonomies may lack the client type and budget too.
+    const customerType = options.customerTypes.find((row) => /end_user|homeowner|individual/i.test(row.id)) ?? options.customerTypes[0];
+    const budgetRange = options.budgetRanges.at(-1) ?? options.budgetRanges[0];
+    await this.advance(`enquiry type set to ${enquiryType.id} on ${facts.title}`, false, async () => {
+      const current = (await leads.get(actor, this.w, lead.id)) as unknown as { version: number };
+      await intake.updateDetails(actor, this.w, lead.id, await this.validated(UpdateLeadDetailsDto, {
+        version: current.version, title: facts.title, summary: facts.summary, serviceType: enquiryType.id,
+        party: { displayName: party.displayName, email: party.email, mobile: party.mobile },
+        details: { emirate: emirate?.id ?? "dubai", area: facts.area, ...(customerType ? { customerType: customerType.id } : {}), ...(budgetRange ? { budgetRange: budgetRange.id } : {}) },
+      }));
+    });
+  }
+
+  /** The enquiry itself: a manual intake from one of the workspace's sources and channels, assigned to its owner. */
+  private async record(actor: Actor, owner: Actor, key: string, reference: string, party: { displayName: string; email: string; mobile: string },
+    facts: { title: string; summary: string; area: string; emirate?: string; daysAgo: number; pick: { source: number; channel: number; type?: RegExp } }) {
+    const intake = this.get(CrmIntakeService);
+    const find = () => this.findLead(actor, party);
+    {
       const options = await this.intakeOptions(actor);
       if (!options.sources.length) throw new Skip("the workspace has no enquiry sources configured");
       const enquiryType = (facts.pick.type ? options.enquiryTypes.find((row) => facts.pick.type!.test(row.id)) : undefined)
@@ -687,7 +745,7 @@ class ShowcaseSeed {
       const created = await find();
       if (!created) throw new Error("the enquiry was recorded but is not listed");
       return created;
-    });
+    }
   }
 
   /** Who referred a referral enquiry, in the shape its channel asks for; null when the list it needs is empty. */
@@ -873,10 +931,12 @@ class ShowcaseSeed {
     }
   }
 
-  /** A case asset by stable id: uploaded once, found afterwards. */
+  /** A case asset by stable id: uploaded once, found afterwards (by its record, so a storage moved elsewhere doesn't make it upload again). */
   private async upload(caseId: string, actor: Actor, id: string, file: Upload) {
     const brief = this.get(BriefService);
-    try { await brief.asset(actor, this.w, caseId, id, false); return id; } catch { /* not there yet */ }
+    const known = (await this.db.tenantTransaction(this.w, actor.userId, (client) => client.query(
+      `SELECT 1 FROM pre_project_brief_assets WHERE workspace_id = $1 AND case_id = $2 AND id = $3`, [this.w, caseId, id]))).rowCount;
+    if (known) return id;
     await brief.upload(actor, this.w, caseId, id, file);
     return id;
   }
