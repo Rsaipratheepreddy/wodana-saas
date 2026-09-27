@@ -1,4 +1,0 @@
-import {useEffect,useState} from 'react';
-import {useAuth} from '../auth/provider';
-export function binaryUri(bytes:ArrayBuffer,mime='image/webp'){let result='';const data=new Uint8Array(bytes);for(let i=0;i<data.length;i+=8192)result+=String.fromCharCode(...data.subarray(i,i+8192));return `data:${mime};base64,${btoa(result)}`;}
-export function usePhoto(workspaceId:string,caseId:string,assetId?:string){const {client}=useAuth();const [result,setResult]=useState<{id:string;uri:string;error:string}|null>(null);useEffect(()=>{if(!assetId)return;let live=true;client.api<ArrayBuffer>(`/workspaces/${workspaceId}/pre-projects/${caseId}/assets/${assetId}?preview=1`,'GET',undefined,true).then(bytes=>live&&setResult({id:assetId,uri:binaryUri(bytes),error:''})).catch(e=>live&&setResult({id:assetId,uri:'',error:e.message}));return()=>{live=false;};},[client,workspaceId,caseId,assetId]);return result&&result.id===assetId?result:{uri:'',error:''};}

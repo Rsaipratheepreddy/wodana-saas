@@ -1,9 +1,15 @@
 export type TenantModuleId = 'workspace' | 'crm' | 'pre-project' | 'projects' | 'hrms';
 export type Membership = {
+  /** The membership id: the person inside this workspace (owner and assignee fields use it). */
+  id?: string;
   workspaceId: string; workspaceSlug: string; workspaceName: string; workspaceStatus: string;
   workspaceLogoUrl: string | null; workspacePrimaryColor: string | null; workspaceSecondaryColor: string | null;
   workspaceHeadingFont: string | null; workspaceBodyFont: string | null;
+  /** How the workspace formats money, dates and times. */
+  workspaceLocale?: string | null; workspaceCurrency?: string | null; workspaceTimezone?: string | null;
   accountName?: string | null; status: string; roles: string[]; allowedModules: TenantModuleId[];
+  /** What this person may do, as the server decides it (roles, entitlements, self-service). */
+  allowedPermissions?: string[];
   billingAccess?: {
     state: 'not_configured' | 'trial' | 'trial_expired' | 'current' | 'grace' | 'past_due' | 'collections' | 'suspended' | 'closed';
     effect: 'unchanged'; warning: boolean; actionDueAt: string | null; affectedModules: []; message: string;
@@ -34,9 +40,39 @@ export class AuthError extends Error {
   constructor(message: string, public code: 'credentials' | 'expired' | 'network' | 'server' | 'storage' | 'cancelled' | 'access' | 'configuration') { super(message); }
 }
 export class ApiError extends Error { constructor(message:string, public status:number, public issues:string[]=[]){super(message);} }
+/** A workspace to choose when one email belongs to several (email-first sign-in). */
+export type WorkspaceChoice = { workspaceId: string; name: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null };
+/** Another device this account is signed in on (the server allows a few). */
+export type DeviceSession = { familyId: string; createdAt: string; lastActiveAt: string; expiresAt: string; userAgent: string | null; ipAddress: string | null; current?: boolean };
+export type SignInOutcome = { kind: 'signedIn' } | { kind: 'mfa' } | { kind: 'chooseWorkspace'; workspaces: WorkspaceChoice[] };
+/** Signed in on too many devices: one has to be signed out (its `familyId`) before this one can sign in. */
+export class DeviceLimitError extends Error {
+  code = 'device_limit' as const;
+  constructor(message: string, public sessions: DeviceSession[], public maxActiveDevices: number) { super(message); }
+}
 const cancelled = () => new AuthError('Sign-in was cancelled.', 'cancelled');
 const expired = () => new AuthError('Your session has expired. Sign in again.', 'expired');
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object';
+
+/** The product module a workspace API area belongs to; the server still decides every request. */
+export function moduleForSegment(segment: string): TenantModuleId {
+  if (['crm', 'jobs'].includes(segment)) return 'crm';
+  if (['pre-projects', 'commercial', 'design', 'quotation', 'supplier-offers', 'catalog', 'catalogs', 'catalog-images'].includes(segment)) return 'pre-project';
+  if (['projects', 'project-core', 'site', 'purchasing', 'inventory', 'factory', 'payables', 'receivables', 'petty-cash', 'vendors', 'warranty-settings', 'accounting'].includes(segment)) return 'projects';
+  if (segment === 'hrms') return 'hrms';
+  return 'workspace';
+}
+
+/**
+ * Every module that may use a workspace path. Attendance reads offices, sites and work contexts from the
+ * projects area (`projects/locations`, `projects`), which the server opens to HRMS members too.
+ */
+export function modulesForPath(rest: string): TenantModuleId[] {
+  const [segment, next] = rest.split(/[/?]/);
+  const module = moduleForSegment(segment);
+  if (segment === 'projects' && (next === undefined || next === '' || next === 'locations' || next === 'attendance')) return [module, 'hrms'];
+  return [module];
+}
 
 /** One owner for token rotation and storage. Access tokens stay in memory. */
 export class AuthClient {
@@ -107,6 +143,13 @@ export class AuthClient {
             'configuration',
           );
         }
+        if (response.status === 409 && path === '/auth/login') {
+          const payload = await response.json().catch(() => null);
+          if (payload?.code === 'DEVICE_LIMIT_REACHED' && Array.isArray(payload.sessions)) {
+            throw new DeviceLimitError(typeof payload.message === 'string' ? payload.message : 'You are signed in on too many devices.', payload.sessions, Number(payload.maxActiveDevices) || payload.sessions.length);
+          }
+          throw new AuthError(typeof payload?.message === 'string' ? payload.message : 'Sign-in is unavailable. Please try again.', 'access');
+        }
         if (response.status === 401) throw path === '/auth/login'
           ? new AuthError('Email or password is incorrect.', 'credentials')
           : path === '/auth/mfa/verify' ? new AuthError('Verification code is incorrect.', 'credentials') : expired();
@@ -125,7 +168,7 @@ export class AuthClient {
       }
       return await response.json();
     } catch (error) {
-      if (error instanceof AuthError || error instanceof ApiError) throw error;
+      if (error instanceof AuthError || error instanceof ApiError || error instanceof DeviceLimitError) throw error;
       throw new AuthError('Unable to connect. Check your connection and try again.', 'network');
     } finally { clearTimeout(timer); }
   }
@@ -159,6 +202,11 @@ export class AuthClient {
     if (!isRecord(value) || typeof value.id !== 'string' || typeof value.primaryEmail !== 'string'
       || typeof value.displayName !== 'string' || !Array.isArray(value.memberships)) {
       throw new AuthError('Unable to verify your account. Please try again.', 'server');
+    }
+    if (!this.tenant && !this.options.tenantSlug) {
+      // Email-first sign-in: the account's workspace names the tenant.
+      const chosen = value.memberships.find((item) => isRecord(item) && item.workspaceId === session.workspaceId);
+      if (isRecord(chosen) && typeof chosen.workspaceSlug === 'string') { this.selectTenant(chosen.workspaceSlug); session.scope = this.scope; }
     }
     const membership = value.memberships.find((item) => isRecord(item) && item.workspaceId === session.workspaceId
       && item.workspaceSlug === this.tenant && item.status === 'active' && item.workspaceStatus === 'active');
@@ -216,22 +264,41 @@ export class AuthClient {
       bodyFont: typeof payload.bodyFont === 'string' ? payload.bodyFont : null,
     };
   }
-  async signIn(email: string, password: string, tenantSlug = this.tenant) {
+  /**
+   * Sign in. Without a workspace, the email decides it: one workspace signs straight in; several return
+   * a choice (sign in again with the chosen `loginSlug`). `revokeFamilyId` signs out another device first.
+   */
+  async signIn(email: string, password: string, tenantSlug?: string | null, options: { revokeFamilyId?: string } = {}): Promise<SignInOutcome | undefined> {
     if (this.state.status === 'authenticating') return;
     const epoch = ++this.epoch;
     let tokens: Session | undefined;
     try {
-      this.selectTenant(tenantSlug);
+      const slug = tenantSlug ?? this.options.tenantSlug;
+      if (slug) this.selectTenant(slug);
+      else { this.tenant = ''; this.scope = `${this.base}|`; }
       this.challenge = null;
       this.publish({ status: 'authenticating' });
-      const payload = await this.request('/auth/login', { email: email.trim().toLowerCase(), password, tenantSlug: this.tenant });
+      const payload = await this.request('/auth/login', {
+        email: email.trim().toLowerCase(), password, ...(this.tenant ? { tenantSlug: this.tenant } : {}),
+        ...(options.revokeFamilyId ? { revokeFamilyId: options.revokeFamilyId } : {}),
+      });
+      if (isRecord(payload) && payload.workspaceSelectionRequired === true) {
+        const workspaces = (Array.isArray(payload.workspaces) ? payload.workspaces : []).filter((item): item is Record<string, unknown> => isRecord(item)
+          && typeof item.workspaceId === 'string' && typeof item.loginSlug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.loginSlug))
+          .map((item) => ({
+            workspaceId: item.workspaceId as string, name: typeof item.name === 'string' ? item.name : String(item.loginSlug), loginSlug: item.loginSlug as string,
+            logoUrl: this.logoUrl(item.loginSlug as string, item.logoUrl), primaryColor: typeof item.primaryColor === 'string' ? item.primaryColor : null,
+          }));
+        if (epoch === this.epoch) this.publish({ status: 'signedOut' });
+        return { kind: 'chooseWorkspace', workspaces };
+      }
       if (isRecord(payload) && payload.mfaRequired === true) {
         if (typeof payload.challengeToken !== 'string' || !payload.challengeToken
           || typeof payload.selectedWorkspaceId !== 'string') throw new AuthError('The verification request was incomplete. Sign in again.', 'server');
         if (epoch !== this.epoch) throw cancelled();
         this.challenge = { token: payload.challengeToken, workspaceId: payload.selectedWorkspaceId };
         this.publish({ status: 'mfa' });
-        return;
+        return { kind: 'mfa' };
       }
       if (!isRecord(payload) || typeof payload.selectedWorkspaceId !== 'string') throw new AuthError('Unable to verify your workspace.', 'server');
       tokens = this.decodeTokens(payload, payload.selectedWorkspaceId);
@@ -239,11 +306,29 @@ export class AuthClient {
       const profile = await this.profile(tokens);
       await this.remember(tokens, epoch);
       this.publish({ status: 'signedIn', profile, workspaceId: tokens.workspaceId });
+      return { kind: 'signedIn' };
     } catch (error) {
       if (tokens) await this.revoke(tokens.refreshToken);
       if (epoch === this.epoch) this.publish({ status: 'signedOut' });
       throw error;
     }
+  }
+  /** Forget the workspace before signing in with another email (not for a single-tenant build). */
+  resetTenant() { if (!this.options.tenantSlug) { this.tenant = ''; this.scope = `${this.base}|`; } }
+  /** Public co-branding for a workspace's sign-in: name, logo and colours. */
+  async tenantBranding(loginSlug: string): Promise<OrganizationBranding> {
+    const payload = await this.request(`/auth/tenant/${encodeURIComponent(loginSlug)}`);
+    if (!isRecord(payload) || typeof payload.displayName !== 'string' || typeof payload.loginSlug !== 'string') throw new AuthError('The organization could not be verified. Try again.', 'server');
+    return {
+      displayName: payload.displayName, loginSlug: payload.loginSlug, logoUrl: this.logoUrl(payload.loginSlug, payload.logoUrl),
+      primaryColor: typeof payload.primaryColor === 'string' ? payload.primaryColor : null, secondaryColor: typeof payload.secondaryColor === 'string' ? payload.secondaryColor : null,
+      headingFont: typeof payload.headingFont === 'string' ? payload.headingFont : null, bodyFont: typeof payload.bodyFont === 'string' ? payload.bodyFont : null,
+    };
+  }
+  /** A tenant logo the app can load: absolute HTTPS as given, otherwise the API's public logo. */
+  private logoUrl(slug: string, value: unknown) {
+    if (typeof value !== 'string' || !value) return null;
+    return /^https:\/\//i.test(value) ? value : `${this.base}/public/tenant-branding/${slug}/logo`;
   }
   async verifyMfa(code: string) {
     const challenge = this.challenge;
@@ -354,10 +439,10 @@ export class AuthClient {
     const workspaceId=session.workspaceId;
     const prefix=`/workspaces/${workspaceId}/`;
     const segment=path.startsWith(prefix)?path.slice(prefix.length).split(/[/?]/)[0]:'';
-    const module:TenantModuleId|undefined=segment==='pre-projects'?'pre-project':segment==='billing'?'workspace':(['crm','hrms','projects'].includes(segment)?segment as TenantModuleId:undefined);
-    if(!path.startsWith(prefix)||!module||path.includes('..'))throw new AuthError('This request is outside the active workspace.','access');
+    if(!path.startsWith(prefix)||!segment||path.includes('..'))throw new AuthError('This request is outside the active workspace.','access');
+    const modules=modulesForPath(path.slice(prefix.length));
     const membership=this.state.profile.memberships.find(item=>item.workspaceId===workspaceId);
-    if(!membership?.allowedModules.includes(module))throw new ApiError('This module is no longer available in your workspace.',403);
+    if(!modules.some(module=>membership?.allowedModules.includes(module)))throw new ApiError('This module is no longer available in your workspace.',403);
     try{
       if(session.accessExpiresAt<=this.now()+30000)session=await this.rotate(session);
       let result:unknown;
@@ -370,9 +455,22 @@ export class AuthClient {
       throw error;
     }
   }
-  async requestPasswordReset(email: string, tenantSlug = this.tenant) {
-    this.selectTenant(tenantSlug);
-    await this.request('/auth/password/forgot', { email: email.trim().toLowerCase(), tenantSlug: this.tenant });
+  /**
+   * A current `Authorization` value for a workspace file (a photo shown by the image loader), rotating
+   * the access token first when it is about to expire. Null when signed out.
+   */
+  async authorization(): Promise<string | null> {
+    let session = this.session;
+    if (!session || this.state.status !== 'signedIn') return null;
+    if (session.accessExpiresAt <= this.now() + 30000) session = await this.rotate(session);
+    return `Bearer ${session.accessToken}`;
+  }
+  /** The API's base URL, for building links to workspace files. */
+  get apiBase() { return this.base; }
+  async requestPasswordReset(email: string, tenantSlug?: string | null) {
+    const slug = tenantSlug ?? this.options.tenantSlug;
+    if (slug) this.selectTenant(slug);
+    await this.request('/auth/password/forgot', { email: email.trim().toLowerCase(), ...(slug ? { tenantSlug: this.tenant } : {}) });
   }
   private async revoke(refreshToken: string) {
     await this.request('/auth/logout', { refreshToken }).catch(() => {});

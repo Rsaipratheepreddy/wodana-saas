@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ApiError, AuthClient, type SessionStorage } from '../src/auth/client';
+import { ApiError, AuthClient, DeviceLimitError, modulesForPath, type SessionStorage } from '../src/auth/client';
 
 const profile = { id: 'user-1', primaryEmail: 'member@example.com', displayName: 'Member', status: 'active', nextAction: 'enter_workspace',
   memberships: [{ workspaceId: 'workspace-1', workspaceName: 'Iglo Architects', workspaceSlug: 'iglo-architects', workspaceStatus: 'active',
@@ -332,4 +332,67 @@ test('Site and Brief calls use the active workspace and preserve markup bytes an
  const before=h.calls.length;await assert.rejects(client.api('/workspaces/other-workspace/pre-projects/case-1/site'),/outside the active workspace/);assert.equal(h.calls.length,before);
  const bytes=new Uint8Array([137,80,78,71]);h.override=p=>p.endsWith('/assets/photo-1')?new Response(bytes):undefined;
  assert.deepEqual(new Uint8Array(await client.api<ArrayBuffer>('/workspaces/workspace-1/pre-projects/case-1/assets/photo-1','GET',undefined,true)),bytes);
+});
+
+test('email-first sign-in takes the workspace from the account and scopes the saved session to it', async () => {
+  const h = harness(), client = h.create('');
+  const result = await client.signIn('member@example.com', 'password');
+  assert.deepEqual(result, { kind: 'signedIn' });
+  assert.equal(h.calls.find((call) => call.path === '/auth/login')?.body?.tenantSlug, undefined);
+  assert.equal(client.tenantSlug, 'iglo-architects');
+  assert.equal(JSON.parse(h.saved!).scope, 'https://api.example.com/api/v1|iglo-architects');
+  assert.equal(client.getSnapshot().status, 'signedIn');
+});
+
+test('an email in several workspaces offers a choice without a session, then signs in to the chosen one', async () => {
+  const h = harness(), client = h.create('');
+  h.override = (path, init) => {
+    if (path !== '/auth/login') return undefined;
+    const body = JSON.parse(String(init.body));
+    if (body.tenantSlug) return undefined;
+    return response({ workspaceSelectionRequired: true, workspaces: [
+      { workspaceId: 'workspace-1', name: 'Iglo Architects', loginSlug: 'iglo-architects', logoUrl: '/api/auth/tenant-logo/iglo-architects?v=1', primaryColor: '#123456' },
+      { workspaceId: 'bad', name: 'Bad', loginSlug: 'Not A Slug', logoUrl: null, primaryColor: null },
+    ] }, 201);
+  };
+  const choice = await client.signIn('member@example.com', 'password');
+  assert.equal(choice?.kind, 'chooseWorkspace');
+  assert.deepEqual(choice?.kind === 'chooseWorkspace' ? choice.workspaces : [], [{
+    workspaceId: 'workspace-1', name: 'Iglo Architects', loginSlug: 'iglo-architects', primaryColor: '#123456',
+    logoUrl: 'https://api.example.com/api/v1/public/tenant-branding/iglo-architects/logo',
+  }]);
+  assert.equal(client.getSnapshot().status, 'signedOut');
+  assert.equal(h.saved, null);
+  assert.deepEqual(await client.signIn('member@example.com', 'password', 'iglo-architects'), { kind: 'signedIn' });
+  assert.equal(h.calls.filter((call) => call.path === '/auth/login').at(-1)?.body?.tenantSlug, 'iglo-architects');
+});
+
+test('the device limit lists the other sessions, and signing one out is sent with the retry', async () => {
+  const h = harness(), client = h.create('');
+  let limited = true;
+  h.override = (path) => (path === '/auth/login' && limited ? response({ code: 'DEVICE_LIMIT_REACHED', message: 'You are already signed in on 2 devices.', maxActiveDevices: 2,
+    sessions: [{ familyId: 'f-1', createdAt: '2026-09-01', lastActiveAt: '2026-09-20', expiresAt: '2026-10-20', userAgent: 'iPhone', ipAddress: null }] }, 409) : undefined);
+  await assert.rejects(client.signIn('member@example.com', 'password'), (error: unknown) => error instanceof DeviceLimitError && error.sessions[0].familyId === 'f-1' && error.maxActiveDevices === 2);
+  limited = false;
+  await client.signIn('member@example.com', 'password', null, { revokeFamilyId: 'f-1' });
+  assert.equal(h.calls.filter((call) => call.path === '/auth/login').at(-1)?.body?.revokeFamilyId, 'f-1');
+});
+
+test('password help needs only the email, and signing in with another email forgets the workspace', async () => {
+  const h = harness(), client = h.create('');
+  h.override = (path) => (path === '/auth/password/forgot' ? response({ accepted: true }, 201) : undefined);
+  await client.requestPasswordReset('Member@Example.com');
+  assert.deepEqual(h.calls.at(-1)?.body, { email: 'member@example.com' });
+  await client.signIn('member@example.com', 'password');
+  await client.signOut();
+  client.resetTenant();
+  assert.equal(client.tenantSlug, '');
+});
+
+test('attendance may read offices, sites and work contexts from the projects area with HRMS alone', () => {
+  assert.deepEqual(modulesForPath('projects/locations'), ['projects', 'hrms']);
+  assert.deepEqual(modulesForPath('projects'), ['projects', 'hrms']);
+  assert.deepEqual(modulesForPath('projects/abc/execution'), ['projects']);
+  assert.deepEqual(modulesForPath('project-core/projects'), ['projects']);
+  assert.deepEqual(modulesForPath('crm/notifications'), ['crm']);
 });

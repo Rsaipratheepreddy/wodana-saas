@@ -116,23 +116,14 @@ test('workspace proxy permits tenant-scoped CRM reads', async (t) => {
   assert.equal(calls[0].init.headers.authorization, 'Bearer crm-token');
 });
 
-test('field proxy forwards private markups and rejects unrelated write routes',async(t)=>{
- const id='00000000-0000-4000-8000-000000000001';let calls=0;
- const request=await setup(t,async(url,init)=>{calls++;assert.match(url,/\/assets\/.+\/markup$/);assert.equal(init.headers.authorization,'Bearer field-token');assert.deepEqual(JSON.parse(init.body.toString()),{id:'same-drawing',strokes:[]});return Response.json({id:'saved'});});
- const base=`/workspaces/${id}/pre-projects/${id}`;
- assert.equal((await request(`${base}/assets/${id}/markup`,{id:'same-drawing',strokes:[]},{authorization:'Bearer field-token'})).status,200);
- assert.equal((await request(`${base}/designs`,{},{authorization:'Bearer field-token'})).status,404);
- assert.equal((await request(`${base}/site/${id}/review`,{},{origin:'https://outside.example',authorization:'Bearer field-token'})).status,403);
- assert.equal(calls,1);
-});
-
-test('project field proxy allows only the assigned-action and evidence surface',async(t)=>{
- const id='00000000-0000-4000-8000-000000000001';const record='task_01';let calls=0;
- const request=await setup(t,async(url,init)=>{calls++;assert.match(url,/\/projects\/.+\/field-actions$/);assert.equal(init.headers.authorization,'Bearer field-token');return Response.json({data:{revision:2}});});
- const base=`/workspaces/${id}/projects`;
- const action=await request(`${base}/${id}/field-actions`,{action:'report_task'},{authorization:'Bearer field-token'});
- assert.equal(action.status,200);
- assert.equal((await request(`${base}/${id}/execution`,{action:'task_status'},{authorization:'Bearer field-token'})).status,404);
- assert.equal((await request(`${base}/${id}/files/${record}/not-a-uuid`,{},{authorization:'Bearer field-token'})).status,404);
- assert.equal(calls,1);
+test('workspace proxy forwards the app areas only', async (t) => {
+ const id = '00000000-0000-4000-8000-000000000001'; const seen = [];
+ const request = await setup(t, async (url, init) => { seen.push(String(url)); assert.equal(init.headers.authorization, 'Bearer field-token'); return Response.json({ ok: true }); });
+ for (const area of [`project-core/projects/${id}/work`, `site/projects/${id}`, `purchasing/receipts`, `factory/orders/${id}`, `pre-projects/${id}/assets/${id}/markup`]) {
+  assert.equal((await request(`/workspaces/${id}/${area}`, { id }, { authorization: 'Bearer field-token' })).status, 200, area);
+ }
+ assert.equal((await request(`/workspaces/${id}/members`, {}, { authorization: 'Bearer field-token' })).status, 404);
+ assert.equal((await request(`/workspaces/${id}/site/../members`, {}, { authorization: 'Bearer field-token' })).status, 404);
+ assert.equal((await request(`/workspaces/${id}/site/projects/${id}`, {}, { origin: 'https://outside.example', authorization: 'Bearer field-token' })).status, 403);
+ assert.equal(seen.length, 5);
 });

@@ -38,7 +38,8 @@ function createAuthProxy({ target, fetcher = fetch }) {
     const path = pathname.slice('/api/v1'.length);
     const workspaceRoute = allowedWorkspaceRoute(path,request.method);
     const publicLogoRoute = request.method === 'GET' && /^\/public\/tenant-branding\/[a-z0-9]+(?:-[a-z0-9]+)*\/logo$/.test(path);
-    if (!workspaceRoute && !publicLogoRoute && (!routes.has(path) || routes.get(path) !== request.method)) return send(response, 404, { message: 'Not found' });
+    const tenantBrandingRoute = request.method === 'GET' && /^\/auth\/tenant\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path);
+    if (!workspaceRoute && !publicLogoRoute && !tenantBrandingRoute && (!routes.has(path) || routes.get(path) !== request.method)) return send(response, 404, { message: 'Not found' });
     const secure = !!request.socket.encrypted;
     const origin = `${secure ? 'https' : 'http'}://${request.headers.host}`;
     if ((request.headers.origin && request.headers.origin !== origin)
@@ -75,7 +76,7 @@ function createAuthProxy({ target, fetcher = fetch }) {
         response.setHeader('Set-Cookie', cookie('', 0, secure));
       }
       if (upstream.ok && (path === '/auth/login' || path === '/auth/mfa/verify' || path === '/auth/refresh')
-        && payload.mfaRequired !== true) {
+        && payload.mfaRequired !== true && payload.workspaceSelectionRequired !== true) {
         if (typeof payload.refreshToken !== 'string' || !payload.refreshToken
           || !Number.isFinite(payload.refreshTokenExpiresIn) || payload.refreshTokenExpiresIn <= 0) {
           return send(response, 502, { message: 'Invalid session response' });
@@ -103,26 +104,14 @@ async function proxyPublicLogo(response,target,fetcher,path){
     response.end(Buffer.from(await upstream.arrayBuffer()));
   } catch { return send(response,503,{message:'The organization logo is unavailable.'}); }
 }
-function allowedWorkspaceRoute(path,method){
- const match=path.match(/^\/workspaces\/[0-9a-f-]{36}\/(crm|hrms|projects|pre-projects)(?:\/(.*))?$/);if(!match)return false;
- const [,area,resource='']=match;
- if(area==='pre-projects'){
-  const id='[0-9a-f-]{36}';
-  if(method==='GET')return resource===''||new RegExp(`^${id}(?:/(brief|site|catalog-options|specifications/${id}|site/${id}/history|assets/${id}(?:/markup)?))?$`).test(resource);
-  if(method==='PUT')return new RegExp(`^${id}/(brief|rooms|entries|site/(visits|measurements|observations))$`).test(resource);
-  if(method==='PATCH')return new RegExp(`^${id}/entries/${id}$`).test(resource);
-  return method==='POST'&&new RegExp(`^${id}/(assets/${id}(?:/markup)?|site/${id}/review)$`).test(resource);
- }
- if(area==='crm')return resource.length>0&&['GET','POST','PATCH','DELETE'].includes(method);
- if(area==='projects'){
-  const id='[0-9a-f-]{36}';
-  if(method==='GET')return ['','locations','attendance','field-queue'].includes(resource);
-  return method==='POST'&&(new RegExp(`^${id}/field-actions$`).test(resource)
-   ||new RegExp(`^${id}/files/[a-zA-Z0-9_-]{1,80}/${id}$`).test(resource));
- }
- if(method==='GET')return /^(bootstrap|attendance\/(current|history)|reviews|leave\/(types|balances|requests)|captures\/[0-9a-f-]{36}\/photo)$/.test(resource);
- if(method==='PUT')return /^captures\/[0-9a-f-]{36}\/photo$/.test(resource);
- return method==='POST'&&/^(captures|attendance\/actions|reviews|reviews\/[0-9a-f-]{36}\/decision|leave\/requests|leave\/requests\/[0-9a-f-]{36}\/(cancel|decision))$/.test(resource);
+// The staff app's API areas. The server authorises every request; this only keeps the preview
+// proxy from becoming a general gateway to other workspace endpoints (settings, members, billing).
+const APP_AREAS = new Set(['crm', 'hrms', 'projects', 'project-core', 'site', 'pre-projects', 'purchasing', 'inventory', 'factory', 'petty-cash', 'home-overview']);
+function allowedWorkspaceRoute(path, method) {
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
+  const match = path.match(/^\/workspaces\/[0-9a-f-]{36}\/([a-z-]+)(?:\/([^?]*))?$/);
+  if (!match || path.includes('..') || path.includes('//')) return false;
+  return APP_AREAS.has(match[1]);
 }
 async function proxyWorkspace(request,response,target,fetcher,path){
  if(!request.headers.authorization)return send(response,401,{message:'Sign in to continue.'});
@@ -130,7 +119,7 @@ async function proxyWorkspace(request,response,target,fetcher,path){
   let body;const contentType=request.headers['content-type'];
   if(request.method!=='GET'){
    if(!contentType?.startsWith('application/json')&&!contentType?.startsWith('multipart/form-data'))return send(response,415,{message:'JSON or a file upload is required.'});
-   const chunks=[];let size=0;const field=path.includes('/pre-projects/');const max=contentType.startsWith('multipart/form-data')?(field?21:7)*1024*1024:(field?512000:32000);
+   const chunks=[];let size=0;const max=contentType.startsWith('multipart/form-data')?21*1024*1024:2*1024*1024;
    for await(const chunk of request){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>max)return send(response,413,{message:'Capture is too large.'});chunks.push(bytes);}body=Buffer.concat(chunks);
   }
   const upstream=await fetcher(`${target.replace(/\/$/,'')}${path}`,{method:request.method,redirect:'error',signal:AbortSignal.timeout(60000),headers:{authorization:request.headers.authorization,...(body?{'content-type':contentType}:{})},body});
