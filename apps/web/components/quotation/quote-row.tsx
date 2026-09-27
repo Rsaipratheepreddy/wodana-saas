@@ -189,11 +189,17 @@ function MaterialCell({ value, options, disabled, onCommit }: { value: string; o
  */
 function FloatingList({ anchor, id, label, className, onClose, children }: { anchor: RefObject<HTMLElement | null>; id: string; label: string; className: string; onClose: () => void; children: ReactNode }) {
   const { portalContainer, direction } = useDesignSystem();
-  const [place, setPlace] = useState<{ top: number; start: number; width: number } | null>(null);
+  const [place, setPlace] = useState<{ top?: number; bottom?: number; height: number; start: number; width: number } | null>(null);
   useLayoutEffect(() => {
+    // Below the field when there's room, otherwise above it; never off the screen.
     const measure = () => {
       const box = anchor.current?.getBoundingClientRect();
-      if (box) setPlace({ top: box.bottom + 4, start: direction === "rtl" ? window.innerWidth - box.right : box.left, width: box.width });
+      if (!box) return;
+      const below = window.innerHeight - box.bottom - 12, above = box.top - 12;
+      const start = direction === "rtl" ? window.innerWidth - box.right : box.left;
+      setPlace(below >= 220 || below >= above
+        ? { top: box.bottom + 4, height: Math.max(120, below), start, width: box.width }
+        : { bottom: window.innerHeight - box.top + 4, height: Math.max(120, above), start, width: box.width });
     };
     measure();
     const close = () => onClose();
@@ -202,7 +208,7 @@ function FloatingList({ anchor, id, label, className, onClose, children }: { anc
   }, [anchor, direction, onClose]);
   if (!place) return null;
   return createPortal(<ul id={id} role="listbox" aria-label={label} className={className} dir={direction}
-    style={{ position: "fixed", top: place.top, insetInlineStart: place.start, minInlineSize: place.width }}>{children}</ul>, portalContainer ?? document.body);
+    style={{ position: "fixed", top: place.top, bottom: place.bottom, insetInlineStart: place.start, minInlineSize: place.width, maxBlockSize: Math.min(place.height, 320) }}>{children}</ul>, portalContainer ?? document.body);
 }
 
 const NEW_MATERIAL = "\u0000new";
@@ -289,8 +295,8 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
       onBlur={() => {
         setFocused(false); setOpen(false);
         if (cancelled.current) { cancelled.current = false; return; }
-        // A new row becomes a line only by choosing an item or pressing Enter; left empty, it goes away.
-        if (draft) { if (!text.trim()) onDiscard?.(); return; }
+        // Like a spreadsheet: what was typed in a new row stays as a line; left empty, the row goes away.
+        if (draft) { if (text.trim()) onCommit(text.trim()); else onDiscard?.(); return; }
         if (text.trim() && text.trim() !== line.title) onCommit(text.trim());
       }}
       onKeyDown={(event) => {

@@ -104,6 +104,15 @@ describe("quotation builder", () => {
     await waitFor(() => expect(posted(fetcher)).toContainEqual({ ops: [{ op: "upsert", line: expect.objectContaining({ id: "a", unit: "nos" }) }] }));
   });
 
+  it("keeps what was typed in a new row as a line when you click away, like a spreadsheet", async () => {
+    const fetcher = mount(state([line({})]));
+    await userEvent.click(screen.getAllByRole("button", { name: "New line" })[0]);
+    const cell = screen.getAllByRole("combobox", { name: "Item" }).at(-1)!;
+    await userEvent.type(cell, "Site protection");
+    fireEvent.blur(cell);
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: expect.objectContaining({ title: "Site protection", areaId: KITCHEN }) }] }]));
+  });
+
   it("puts the cell back on Escape without saving", async () => {
     const fetcher = mount(state([line({})]));
     const rate = screen.getByRole("textbox", { name: "Rate" });

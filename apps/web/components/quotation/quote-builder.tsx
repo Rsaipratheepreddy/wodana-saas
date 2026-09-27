@@ -146,7 +146,17 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     discardDraft(draft);
     const base = { id: draft.id, areaId: draft.areaId, workPackageId: draft.workPackageId, ...fields };
     send([hit ? { op: "catalog", itemId: hit.id, line: base } : { op: "upsert", line: base }]);
+    focusNext.current = draft.id;
   };
+  // A line just added from a new row: its quantity is the next thing to type.
+  const focusNext = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusNext.current) return;
+    const cell = document.querySelector<HTMLInputElement>(`[data-line-id="${CSS.escape(focusNext.current)}"]:not([data-draft]) input[aria-label="${t("Quantity")}"]`);
+    if (!cell) return;
+    focusNext.current = null;
+    cell.focus();
+  }, [state, t]);
   // A brand-new item: the line is created, then added to the catalog (price and picture can follow).
   const newCatalogLine = async (draft: Draft, title: string) => {
     discardDraft(draft);
