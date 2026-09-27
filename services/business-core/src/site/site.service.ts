@@ -22,6 +22,8 @@ type Report = {
   id: string; reportDate: string; authorId: string; authorName: string; status: "draft" | "submitted" | "approved" | "returned"; weather: string; safety: "none" | "observation" | "incident";
   safetyNote: string; forecast: "none" | "watch" | "blocked"; impact: string; recoveryOwnerId: string | null; recoveryOwnerName: string | null; recoveryOn: string | null; noWorkReason: string;
   notes: string; decidedByName: string | null; decisionNote: string; version: number;
+  /** While submitted: the names of the people who can approve it. */
+  waitingFor: string[];
   workforce: Array<{ trade: string; people: number }>; lines: Array<{ id: string; boqLineId: string; title: string; unit: string; installed: string; note: string }>;
   photos: Array<{ id: string; name: string; shared: boolean }>;
 };
@@ -141,7 +143,7 @@ export class SiteService {
           if (!report.photos.length && !report.noWorkReason) throw new ConflictException("Add a photo, or say why no work was done.");
           await client.query(`UPDATE site_reports SET status = 'submitted', submitted_at = now(), decided_by = NULL, decided_at = NULL, decision_note = '', version = version + 1
             WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
-          await this.tell(client, workspaceId, projectId, "site.report_waiting", (await this.leads(client, workspaceId, projectId)), user.userId, facts, `submit:${id}:${report.version}`);
+          await this.tell(client, workspaceId, projectId, "site.report_waiting", (await this.approvers(client, workspaceId, projectId)).map((person) => person.userId), user.userId, facts, `submit:${id}:${report.version}`);
           if (report.safety === "incident") await this.tell(client, workspaceId, projectId, "site.incident", await this.leads(client, workspaceId, projectId), user.userId, report.safetyNote, `incident:${id}`, true);
           if (report.forecast === "blocked") await this.tell(client, workspaceId, projectId, "site.blocked", await this.leads(client, workspaceId, projectId), user.userId, report.impact, `blocked:${id}`);
         } else {
@@ -296,6 +298,7 @@ export class SiteService {
         WHERE report.workspace_id = $1 AND report.project_id = $2 AND ($3::uuid IS NULL OR report.id = $3)
         ORDER BY report.report_date DESC, report.created_at DESC LIMIT 120`, [workspaceId, projectId, id])).rows;
     const ids = rows.map((row) => row.id);
+    const approvers = rows.some((row) => row.status === "submitted") ? await this.approvers(client, workspaceId, projectId) : [];
     const workforce = (await client.query<{ reportId: string; trade: string; people: number }>(
       `SELECT report_id AS "reportId", trade, people FROM site_report_workforce WHERE workspace_id = $1 AND report_id = ANY($2::uuid[]) ORDER BY trade`, [workspaceId, ids])).rows;
     const lines = (await client.query<{ reportId: string; id: string; boqLineId: string; title: string; unit: string; installed: string; note: string }>(
@@ -307,7 +310,26 @@ export class SiteService {
     return rows.map((row) => ({ ...row,
       workforce: workforce.filter((item) => item.reportId === row.id).map(({ trade, people }) => ({ trade, people })),
       lines: lines.filter((item) => item.reportId === row.id).map(({ reportId: _reportId, ...item }) => item),
-      photos: photos.filter((item) => item.reportId === row.id).map(({ id: photoId, name, shared }) => ({ id: photoId, name, shared })) }));
+      photos: photos.filter((item) => item.reportId === row.id).map(({ id: photoId, name, shared }) => ({ id: photoId, name, shared })),
+      waitingFor: row.status === "submitted" ? approvers.filter((person) => person.userId !== row.authorId).map((person) => person.name) : [] }));
+  }
+
+  /**
+   * Who approves this project's reports: its managers, and anyone who manages all projects — never
+   * a report's own author, who is filtered out where it matters.
+   */
+  private async approvers(client: Db, workspaceId: string, projectId: string) {
+    return (await client.query<{ userId: string; name: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId", person.display_name AS name
+         FROM workspace_memberships membership JOIN users person ON person.id = membership.user_id
+        WHERE membership.workspace_id = $1 AND membership.status = 'active'
+          AND (EXISTS (SELECT 1 FROM project_assignments assignment
+                        WHERE assignment.workspace_id = membership.workspace_id AND assignment.project_id = $2 AND assignment.membership_id = membership.id AND assignment.active AND assignment.is_manager)
+               OR EXISTS (SELECT 1 FROM effective_member_roles assigned
+                            JOIN role_permissions granted ON granted.role_id = assigned.role_id
+                            JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'projects.manage'
+                           WHERE assigned.membership_id = membership.id))
+        ORDER BY name LIMIT 20`, [workspaceId, projectId])).rows;
   }
 
   /** Who this person is on the project: on its team (reports), its manager (starts site work, approves). */

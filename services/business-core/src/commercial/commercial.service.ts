@@ -2391,7 +2391,7 @@ export class CommercialService {
               throw new ForbiddenException(`The discount is above the ${threshold}% your firm allows without approval. Someone who approves quotes must approve this quote.`);
             if (action === "qs_approve") {
               if (!data.palmFlow || q.kind !== "quotation")
-                throw new ConflictException("QS estimate review applies to a Palm quotation round.");
+                throw new ConflictException("QS estimate review applies to a quotation round in the deal-first workflow.");
               const estimate = totals(q);
               if (estimate.cost <= 0)
                 throw new ConflictException("Enter the QS cost estimate for the quotation items before approving pricing.");
@@ -2401,7 +2401,7 @@ export class CommercialService {
                 reviewedById: user.userId, reviewedBy: user.displayName,
               };
             } else if (data.palmFlow && q.kind === "quotation") {
-              throw new ConflictException("A Quantity Surveyor must review this Palm quotation before it is issued.");
+              throw new ConflictException("A Quantity Surveyor must review this quotation before it is issued.");
             }
             q.status = "internal_approved";
             q.approvedBy = user.displayName;
@@ -3249,7 +3249,8 @@ export class CommercialService {
         if (action === "revise" && typeof b.quoteId === "string" && q && q.id !== b.quoteId)
           await copyBuilderData(client, workspaceId, caseId, b.quoteId, q.id);
         if (q && ["submit", "return", "record_decision"].includes(action))
-          await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined });
+          await noticeQuoteStep(client, { workspaceId, caseId, quoteId: q.id, number: q.number, title: q.title, action, actorUserId: user.userId, revision: data.revision, note: typeof b.note === "string" ? b.note : "", decision: typeof b.decision === "string" ? b.decision : undefined,
+            reviewPermission: data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve" });
         return { data };
       },
     );

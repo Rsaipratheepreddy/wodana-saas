@@ -50,7 +50,7 @@ export type Need = {
   /** When the work that uses it starts; ordered its lead time (in days) before that. */
   neededBy: string | null; leadDays: number; orderBy: string | null;
   /** Given from free stock (reserved for the project or issued to it); counted before orders. */
-  fromStock: string; packageIds: string[];
+  fromStock: string; packageIds: string[]; scopeLines: string[];
 };
 export type NeedsState = { needs: Need[]; settings: PurchasingSettings; canBuy: boolean; canApprove: boolean };
 

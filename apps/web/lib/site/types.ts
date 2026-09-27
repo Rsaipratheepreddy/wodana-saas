@@ -5,7 +5,7 @@ export type Outlook = "none" | "watch" | "blocked";
 /** One person's day on a project's site. */
 export type SiteReport = {
   id: string; reportDate: string; authorId: string; authorName: string; status: SiteReportStatus; weather: string; safety: Safety; safetyNote: string; forecast: Outlook; impact: string;
-  recoveryOwnerId: string | null; recoveryOwnerName: string | null; recoveryOn: string | null; noWorkReason: string; notes: string; decidedByName: string | null; decisionNote: string; version: number;
+  recoveryOwnerId: string | null; recoveryOwnerName: string | null; recoveryOn: string | null; noWorkReason: string; notes: string; decidedByName: string | null; decisionNote: string; version: number; waitingFor: string[];
   workforce: Array<{ trade: string; people: number }>;
   lines: Array<{ id: string; boqLineId: string; title: string; unit: string; installed: string; note: string }>;
   photos: Array<{ id: string; name: string; shared?: boolean }>;
@@ -25,7 +25,7 @@ export type HandoverPack = {
   issuedAt: string | null; issuedByName: string | null; decidedOn: string | null; decidedByName: string | null; decisionMethod: HandoverMethod | null; decisionNote: string; version: number;
   documents: Array<{ id: string; kind: HandoverKind; title: string; name: string; size: number; sha256: string }>;
 };
-export type HandoverState = { packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean };
+export type HandoverState = { packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean; open: { stages: string[]; snags: string[] } };
 
 export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
 /** A scope line's warranty: from the handover it was accepted in, for its months. */

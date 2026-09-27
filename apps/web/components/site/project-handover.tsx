@@ -22,7 +22,7 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
   const [state, setState] = useState<HandoverState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [dialog, setDialog] = useState<{ kind: "new" } | { kind: "accept" | "refuse"; pack: HandoverPack } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "new" } | { kind: "accept" | "refuse" | "issue"; pack: HandoverPack } | null>(null);
   const load = useCallback(async () => {
     try { setState(await api.handover()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The handover didn't load.")); }
   }, [api, t]);
@@ -73,7 +73,8 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
           try { setState(await api.uploadDocument(pack.id, crypto.randomUUID(), kind, title, file)); } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("The file could not be uploaded.")); }
         }} /> : null}
         {state.canManage && (pack.status === "draft" || pack.status === "issued") ? <div className={styles.actions}>
-          {pack.status === "draft" ? <Button size="compact" variant="primary" isDisabled={!pack.documents.length} onPress={() => void run("issue", { packId: pack.id, version: pack.version })}>{t("Issue")}</Button> : <>
+          {pack.status === "draft" ? <Button size="compact" variant="primary" isDisabled={!pack.documents.length}
+            onPress={() => { if (hasOpenWork(state.open)) setDialog({ kind: "issue", pack }); else void run("issue", { packId: pack.id, version: pack.version }); }}>{t("Issue")}</Button> : <>
             <Button size="compact" variant="quiet" onPress={() => setDialog({ kind: "refuse", pack })}>{t("Record refusal")}</Button>
             <Button size="compact" variant="primary" onPress={() => setDialog({ kind: "accept", pack })}>{t("Record acceptance")}</Button>
           </>}
@@ -81,8 +82,11 @@ export function ProjectHandover({ workspaceId, projectId }: { workspaceId: strin
       </li>)}</ul>}
     {dialog?.kind === "new" ? <PackDialog areas={state.areas} onClose={() => setDialog(null)}
       onSave={async (title, areaIds) => { if (await run("create_pack", { id: crypto.randomUUID(), title, areaIds })) setDialog(null); }} /> : null}
-    {dialog && dialog.kind !== "new" ? <DecisionDialog mode={dialog.kind} methods={methods} today={format.today()} onClose={() => setDialog(null)}
+    {dialog && dialog.kind !== "new" && dialog.kind !== "issue" ? <DecisionDialog mode={dialog.kind} methods={methods} today={format.today()} onClose={() => setDialog(null)}
+      open={dialog.kind === "accept" ? state.open : undefined}
       onSave={async (input) => { if (await run(dialog.kind, { packId: dialog.pack.id, version: dialog.pack.version, ...input })) setDialog(null); }} /> : null}
+    {dialog?.kind === "issue" ? <OpenWorkDialog open={state.open} onClose={() => setDialog(null)}
+      onSave={async (openReason) => { if (await run("issue", { packId: dialog.pack.id, version: dialog.pack.version, confirmOpen: true, openReason })) setDialog(null); }} /> : null}
   </div>;
 }
 
@@ -119,8 +123,34 @@ function PackDialog({ areas, onClose, onSave }: { areas: Array<{ id: string; nam
 }
 
 /** The client's decision on an issued revision: accepted (with anything outstanding) or refused with why. */
-function DecisionDialog({ mode, methods, today, onClose, onSave }: {
-  mode: "accept" | "refuse"; methods: Record<HandoverMethod, string>; today: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
+const hasOpenWork = (open: HandoverState["open"] | undefined) => Boolean(open && (open.stages.length || open.snags.length));
+
+/** What's still open on the project, listed before a handover is issued or accepted while it's open. */
+function OpenWorkList({ open }: { open: HandoverState["open"] }) {
+  const t = useT();
+  return <div className={styles.stack}>
+    {open.stages.length ? <InlineNotice tone="info" message={`${t("Stages not finished")}: ${open.stages.join(", ")}`} /> : null}
+    {open.snags.length ? <InlineNotice tone="info" message={`${t("Snags open")}: ${open.snags.join(", ")}`} /> : null}
+  </div>;
+}
+
+/** Issuing a pack while stages or snags are still open: confirmed on purpose, with why. */
+function OpenWorkDialog({ open, onClose, onSave }: { open: HandoverState["open"]; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  return <ControlledModalDialog isOpen size="md" title={t("Issue with work still open")} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
+      <Button variant="primary" isLoading={busy} isDisabled={!reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{t("Issue anyway")}</Button></div>}>
+    <div className={styles.dialogBody}>
+      <OpenWorkList open={open} />
+      <TextAreaField label={t("Why hand over with work still open")} isRequired value={reason} onChange={setReason} />
+    </div>
+  </ControlledModalDialog>;
+}
+
+function DecisionDialog({ mode, methods, today, open, onClose, onSave }: {
+  mode: "accept" | "refuse"; methods: Record<HandoverMethod, string>; today: string; open?: HandoverState["open"]; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void>;
 }) {
   const t = useT();
   const [decidedOn, setDecidedOn] = useState(today);
@@ -128,13 +158,16 @@ function DecisionDialog({ mode, methods, today, onClose, onSave }: {
   const [method, setMethod] = useState<HandoverMethod>("signed_document");
   const [items, setItems] = useState<string[]>([]);
   const [reason, setReason] = useState("");
+  const [openReason, setOpenReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const valid = name.trim() && (mode === "accept" || reason.trim());
+  const confirmOpen = mode === "accept" && hasOpenWork(open);
+  const valid = name.trim() && (mode === "accept" || reason.trim()) && (!confirmOpen || openReason.trim());
   return <ControlledModalDialog isOpen size="md" title={mode === "accept" ? t("Record acceptance") : t("Record refusal")} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
         setBusy(true);
-        await onSave({ decidedOn, decidedByName: name.trim(), method, ...(mode === "accept" ? { outstanding: items.map((item) => item.trim()).filter(Boolean) } : { reason: reason.trim() }) });
+        await onSave({ decidedOn, decidedByName: name.trim(), method, ...(mode === "accept" ? { outstanding: items.map((item) => item.trim()).filter(Boolean) } : { reason: reason.trim() }),
+          ...(confirmOpen ? { confirmOpen: true, openReason: openReason.trim() } : {}) });
         setBusy(false);
       }}>{t("Save")}</Button></div>}>
     <div className={styles.dialogBody}>
@@ -152,6 +185,7 @@ function DecisionDialog({ mode, methods, today, onClose, onSave }: {
         </div>)}
         <Button size="compact" variant="quiet" onPress={() => setItems([...items, ""])}><Plus aria-hidden="true" size={14} />{t("Add an item")}</Button>
       </fieldset> : <TextAreaField label={t("Why the client refused it")} isRequired value={reason} onChange={setReason} />}
+      {confirmOpen && open ? <><OpenWorkList open={open} /><TextAreaField label={t("Why hand over with work still open")} isRequired value={openReason} onChange={setOpenReason} /></> : null}
     </div>
   </ControlledModalDialog>;
 }

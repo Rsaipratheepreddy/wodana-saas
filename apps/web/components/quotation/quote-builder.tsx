@@ -382,7 +382,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   // Column headings, repeated under each area's band so a long quote stays readable. Each heading's
   // edge can be dragged (or moved with the arrow keys) to resize its column.
   const heading = (key: string, content: React.ReactNode, options: { numeric?: boolean; label?: string } = {}) => <span role="columnheader" data-numeric={options.numeric || undefined}
-    data-stick={key === "picture" || key === "item" || key === "amount" ? key : undefined}
+    data-stick={key === "picture" || key === "item" ? key : undefined}
     aria-label={options.label} title={options.label}>
     {content}
     {RESIZABLE.has(key) || key.startsWith("custom:") ? <span role="separator" aria-orientation="vertical" aria-label={t("Resize {column}", { column: options.label ?? String(content) })} tabIndex={0} className={styles.resizer}

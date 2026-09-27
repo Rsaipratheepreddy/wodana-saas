@@ -40,7 +40,7 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
     && (!search.trim() || `${need.title} ${need.detail} ${need.projectReference} ${need.projectName}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))), [state, show, search]);
   const columns: GroupedTableColumn<Need>[] = [
     { id: "item", label: t("Item"), width: "34%", render: (need) => <span className={styles.nameCell}><span>{need.title}</span>
-      {need.detail || need.packageName ? <small>{[need.detail, need.packageName].filter(Boolean).join(" · ")}</small> : null}</span> },
+      {need.detail || need.packageName || need.scopeLines?.length ? <small>{[need.detail, need.packageName, need.scopeLines?.length ? t("For {line}", { line: need.scopeLines.join(", ") }) : ""].filter(Boolean).join(" · ")}</small> : null}</span> },
     { id: "needed", label: t("Needed"), width: "14%", render: (need) => need.required === null ? <span className={styles.muted}>{t("Quantity to confirm")}</span> : `${quantityText(need.required)} ${need.unit}` },
     { id: "ordered", label: t("Ordered"), width: "14%", mobileHidden: true, render: (need) => <span className={styles.nameCell}><span>{Number(need.placed) ? `${quantityText(need.placed)} ${need.unit}` : "—"}</span>
       {Number(need.drafted) ? <small>{t("{quantity} in draft", { quantity: `${quantityText(need.drafted)} ${need.unit}` })}</small> : null}

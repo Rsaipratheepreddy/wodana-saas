@@ -65,3 +65,27 @@ export async function decideHandoverPack(db: Db, workspaceId: string, projectId:
     [workspaceId, pack.id, next, input.staffId]);
   return { warrantyStarted: 0, next };
 }
+
+export type OpenWork = { stages: string[]; snags: string[] };
+
+/** What's still open on the project: stages not finished (in order) and snags not closed. A handover with these is real, but it's confirmed on purpose. */
+export async function openWork(db: Db, workspaceId: string, projectId: string): Promise<OpenWork> {
+  const stages = (await db.query<{ name: string }>(
+    `SELECT stage.position || '. ' || stage.name AS name FROM project_stages stage WHERE stage.workspace_id = $1 AND stage.project_id = $2 AND stage.status IN ('upcoming', 'current') ORDER BY stage.position`,
+    [workspaceId, projectId])).rows.map((row) => row.name);
+  const snags = (await db.query<{ name: string }>(
+    `SELECT '#' || item.number || ' ' || item.title || ' (' || item.severity || ')' AS name FROM work_items item
+      WHERE item.workspace_id = $1 AND item.project_id = $2 AND item.type = 'snag' AND item.status NOT IN ('done', 'cancelled') ORDER BY item.number`,
+    [workspaceId, projectId])).rows.map((row) => row.name);
+  return { stages, snags };
+}
+
+/** The message that asks for an explicit confirmation, listing what's still open. Empty when nothing is. */
+export function openWorkMessage(action: "issue" | "accept", open: OpenWork) {
+  if (!open.stages.length && !open.snags.length) return "";
+  const parts = [
+    open.stages.length ? `${open.stages.length} stage${open.stages.length === 1 ? "" : "s"} not finished: ${open.stages.join(", ")}` : "",
+    open.snags.length ? `${open.snags.length} snag${open.snags.length === 1 ? "" : "s"} open: ${open.snags.join(", ")}` : "",
+  ].filter(Boolean).join("; ");
+  return `${action === "issue" ? "Issuing" : "Accepting"} the handover with work still open needs a confirmed reason (${parts}).`;
+}

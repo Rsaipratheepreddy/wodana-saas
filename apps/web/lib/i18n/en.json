@@ -9367,5 +9367,12 @@
   "No limit set": "No limit set",
   "Storage by area": "Storage by area",
   "Return for changes": "Return for changes",
-  "The discount is above {percent}% and needs approval": "The discount is above {percent}% and needs approval"
+  "The discount is above {percent}% and needs approval": "The discount is above {percent}% and needs approval",
+  "Waiting for {who}": "Waiting for {who}",
+  "For {line}": "For {line}",
+  "Stages not finished": "Stages not finished",
+  "Snags open": "Snags open",
+  "Issue with work still open": "Issue with work still open",
+  "Why hand over with work still open": "Why hand over with work still open",
+  "Issue anyway": "Issue anyway"
 }
