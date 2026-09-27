@@ -736,7 +736,7 @@ export function LoginScreen({
             const device = deviceDetails(session.userAgent);
             return <li key={session.familyId}>
               <span className={styles.deviceIcon}><Monitor aria-hidden="true" size={21} strokeWidth={1.5} /></span>
-              <div><strong>{device.browser === "Unknown browser" && device.device === "Unknown device" ? t("Unrecognized device") : t("{browser} on {device}", { browser: device.browser, device: device.device })}</strong>
+              <div><strong>{device.browser && device.device ? t("{browser} on {device}", { browser: device.browser, device: t(device.device) }) : device.device ? t(device.device) : device.browser ?? t("Browser")}</strong>
                 <small>{session.ipAddress ?? t("IP not recorded")}</small>
                 <small>{t("Last active {time}", { time: new Date(session.lastActiveAt).toLocaleString(language) })}</small>
               </div>

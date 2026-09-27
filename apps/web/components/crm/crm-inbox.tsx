@@ -4,21 +4,21 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowLeft, Check, CheckCheck, Clock3, FileText, ImageIcon, Info, MessageCircle, Plus, RefreshCw, Send, Video } from "lucide-react";
-import { SampleInbox } from "./sample-inbox";
 import { MessagingMark } from "@/components/brand/messaging-mark";
 import { ProviderMark } from "@/components/brand/provider-mark";
 import { Globe2 } from "lucide-react";
-import { Avatar, Button, Callout, ControlledModalDialog, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton, Skeleton } from "@/design-system";
+import { Avatar, Button, Callout, ControlledModalDialog, EmptyState, IconButton, InspectorSheet, SearchInput, SegmentedControl, SelectField, TextInput, ToggleButton, Skeleton } from "@/design-system";
 import { crmRequest, label, rows, type RecordData } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell, crmTime } from "./crm-product-shell";
 import { submitChatOnEnter } from "./chat-composer";
 import styles from "./crm-inbox.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 type ChatPage = { data: RecordData[]; nextCursor: string | null };
 const timeout = () => AbortSignal.timeout(20_000);
 export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScreenPageData; initialRecordId?: string }) {
-  const [sample, setSample] = useState(false);
+  const t = useT();
   const [channelFilter, setChannelFilter] = useState("all");
   const [items, setItems] = useState(initialData.items);
   const [cursor, setCursor] = useState(initialData.nextCursor);
@@ -50,8 +50,13 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
     const poll = setInterval(() => { if (document.visibilityState === "visible" && !cursorRef.current) void reload(false, true); }, 8_000);
     return () => { clearTimeout(timer); clearInterval(poll); controller.current?.abort(); };
   }, [reload, initialData.canView]);
+  // One empty state: the list says nothing of its own until there are conversations to filter.
+  const filtered = Boolean(search.trim()) || filter !== "all" || channelFilter !== "all";
+  const noConversations = !items.length && !busy && !filtered;
+  const emptyState = <EmptyState icon={<MessagingMark size={36} />} title={noConversations ? t("No conversations yet") : t("Choose a conversation")}
+    action={<Button size="compact" variant="primary" className={styles.brandButton} onPress={() => setCreating(true)}><Plus aria-hidden="true" size={16} />{t("New conversation")}</Button>} />;
   return <CrmProductShell title="Inbox" description="Customer conversations" canView={initialData.canView} compact useWorkspaceColors>
-    {sample ? <SampleInbox onClose={() => setSample(false)} /> : <div className={styles.inbox} data-selected={Boolean(selected)}>
+    <div className={styles.inbox} data-selected={Boolean(selected)}>
       <section aria-label="Customer conversations" className={styles.threadList}>
         <header className={styles.listHeading}><h1>Inbox</h1><div className={styles.actions}><IconButton aria-label="Refresh inbox" size="compact" isLoading={busy} onPress={() => void reload()}><RefreshCw size={16} /></IconButton><IconButton aria-label="New conversation" className={styles.brandButton} variant="primary" size="compact" onPress={() => setCreating(true)}><Plus size={19} /></IconButton></div></header>
         <div className={styles.searchArea}><SearchInput label="Search inbox" placeholder="Search conversations" value={search} maxLength={200} onChange={setSearch} /></div>
@@ -61,11 +66,11 @@ export function CrmInbox({ initialData, initialRecordId }: { initialData: CrmScr
         <div aria-busy={busy} className={styles.threadItems}>{items.map((item) => <ToggleButton key={item.id} className={styles.threadItem} isSelected={selected === item.id} onPress={() => setSelected(item.id)} variant="quiet">
           <Avatar name={String(item.partyName ?? "Customer")} size="md" />
           <span className={styles.threadCopy}><span className={styles.threadTop}><strong>{String(item.partyName ?? "Customer")}</strong><time dateTime={String(item.lastMessageAt ?? "")} title={item.lastMessageAt ? crmTime(item.lastMessageAt) : "New conversation"}>{inboxDate(item.lastMessageAt)}</time></span><span className={styles.threadBottom}><span className={styles.preview}>{item.lastMessageDirection === "outbound" ? <DeliveryState status={String(item.lastMessageStatus)} compact /> : null}{String(item.lastMessageText ?? item.subject ?? "No messages yet")}</span>{Number(item.unreadCount) > 0 ? <span className={styles.unread} aria-label={`${item.unreadCount} unread messages`}>{String(item.unreadCount)}</span> : <small>{label(item.channel)}</small>}</span></span>
-        </ToggleButton>)}{!items.length && !busy ? <div className={styles.empty}><MessagingMark size={36} /><p>{search || filter !== "all" ? "No matching conversations." : "Customer conversations will appear here."}</p></div> : null}</div>
+        </ToggleButton>)}{!items.length && !busy && filtered ? <div className={styles.empty}><p>{t("No matching conversations.")}</p></div> : null}{noConversations ? <div className={styles.listEmpty}>{emptyState}</div> : null}</div>
         {cursor ? <Button size="compact" isLoading={busy} onPress={() => void reload(true)}>Load more chats</Button> : null}
       </section>
-      {selected ? <ConversationThread key={`${initialData.workspaceId}/${selected}`} workspaceId={initialData.workspaceId} id={selected} draft={drafts[selected] ?? ""} onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} /> : <section className={styles.empty} aria-label="Conversation messages"><span className={styles.emptyMark}><MessagingMark size={48} /></span><h2>Your conversations, together</h2><p>Select a chat or start a conversation with a client.</p><Button size="compact" variant="primary" className={styles.brandButton} onPress={() => setCreating(true)}><Plus size={16} />New conversation</Button><Button size="compact" variant="quiet" onPress={() => setSample(true)}>Explore sample chats</Button></section>}
-    </div>}
+      {selected ? <ConversationThread key={`${initialData.workspaceId}/${selected}`} workspaceId={initialData.workspaceId} id={selected} draft={drafts[selected] ?? ""} onDraftChange={(value) => setDrafts((old) => ({ ...old, [selected]: value }))} onBack={() => setSelected(null)} onChanged={() => reload(false, true)} /> : <section className={styles.empty} aria-label={t("Conversation messages")}>{emptyState}</section>}
+    </div>
     {creating ? <NewChat workspaceId={initialData.workspaceId} onClose={() => setCreating(false)} onOpened={(id) => { setCreating(false); setSelected(id); void reload(); }} /> : null}
   </CrmProductShell>;
 }

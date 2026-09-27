@@ -4,7 +4,8 @@ import { CrmDateTimeField } from "./crm-date-time-field";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Check, StickyNote } from "lucide-react";
-import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog } from "@/design-system";
+import { Button, Callout, ComboboxField, ControlledModalDialog, InspectorSheet, SelectField, TextAreaField, TextInput, useConfirmationDialog, useWorkspaceZoneLabel } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, CrmRequestError, label, rows, type RecordData } from "@/lib/crm/client";
 import { localDateTime } from "@/lib/crm/calendar";
 import { useCrmResource } from "./crm-workbench";
@@ -46,8 +47,10 @@ function DurationField({ draft, onChange }: { draft: Draft; onChange: (value: st
 }
 
 function ScheduleFields({ date, time, onChange, required = false }: { date: string; time: string; onChange: (value: { date: string; time: string }) => void; required?: boolean }) {
+  const t = useT();
+  const zone = useWorkspaceZoneLabel();
   return <section className={styles.schedule} aria-label="Reminder schedule"><h3><CalendarDays size={15} />Reminder</h3><CrmDateTimeField label="Reminder" isRequired={required} value={`${date}T${time}`} onChange={value => { const [date = "", time = ""] = value.split("T"); onChange({ date, time }); }} />
-  <div className={styles.shortcuts} aria-label="Quick reminder dates">{[{ label: "Today", offset: 0 }, { label: "Tomorrow", offset: 1 }, { label: "Next week", offset: 7 }].map((item) => <button key={item.label} type="button" onClick={() => { const next = new Date(); next.setDate(next.getDate() + item.offset); onChange({ date: localDateTime(next.toISOString()).slice(0, 10), time: time || "10:00" }); }}>{item.label}</button>)}</div><p className={styles.hint}>Your local time · {Intl.DateTimeFormat().resolvedOptions().timeZone}</p></section>;
+  <div className={styles.shortcuts} aria-label="Quick reminder dates">{[{ label: "Today", offset: 0 }, { label: "Tomorrow", offset: 1 }, { label: "Next week", offset: 7 }].map((item) => <button key={item.label} type="button" onClick={() => { const next = new Date(); next.setDate(next.getDate() + item.offset); onChange({ date: localDateTime(next.toISOString()).slice(0, 10), time: time || "10:00" }); }}>{item.label}</button>)}</div><p className={styles.hint}>{zone ? t("Your local time · Workspace: {zone}", { zone }) : t("Your local time")}</p></section>;
 }
 
 export function FollowUpSheet({ workspaceId, recordId, summary, onClose, onSaved, inline = false, sample = false }: { sample?: boolean; inline?: boolean; workspaceId: string; recordId: string; summary?: RecordData; onClose: () => void; onSaved: (record: RecordData) => void }) {

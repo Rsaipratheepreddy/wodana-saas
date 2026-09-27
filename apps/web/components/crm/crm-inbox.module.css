@@ -58,6 +58,8 @@
 .emptyMark { display: grid; place-items: center; inline-size: 64px; block-size: 64px; border-radius: var(--wd-radius-lg); background: var(--chat-soft); }
 .empty h2 { margin: 0; font-size: var(--wd-text-xl); color: var(--wd-color-text); font-weight: 500; }
 .empty p { font-size: var(--wd-text-sm); line-height: 1.6; max-inline-size: 380px; margin: 0; }
+/* On a phone the list is the whole page, so it carries the one empty state; on wider screens the conversation pane does. */
+.listEmpty { display: none; }
 .newChat { display: grid; gap: var(--wd-space-4); }
 .newChat small { color: var(--wd-color-text-secondary); }
 .contacts { max-block-size: 320px; overflow-y: auto; }
@@ -68,6 +70,7 @@
 @media (max-width: 48rem) {
   .inbox { grid-template-columns: minmax(0, 1fr); }
   .inbox[data-selected="true"] .threadList, .inbox[data-selected="false"] > .empty { display: none; }
+  .listEmpty { display: block; }
   .inbox .mobileBack { display: inline-flex; }
   .threadList { border: 0; }
   .threadHeading { min-block-size: 66px; gap: var(--wd-space-2); padding: var(--wd-space-2); flex-wrap: wrap; }
