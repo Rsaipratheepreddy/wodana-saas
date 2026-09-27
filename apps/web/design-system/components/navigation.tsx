@@ -17,9 +17,15 @@ export function ModuleNavigation({ activeId, className, items }: { activeId: str
   </nav>;
 }
 
-export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange, variant = "underline" }: { defaultSelectedKey?: string; items: TabItem[]; selectedKey?: string; onSelectionChange?: (key: string) => void; variant?: "underline" | "segmented" }) {
+export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange, variant = "underline", tour }: { defaultSelectedKey?: string; items: TabItem[]; selectedKey?: string; onSelectionChange?: (key: string) => void; variant?: "underline" | "segmented"; /** Names each tab `data-tour="<tour>-<id>"` for Woddy's tours. */ tour?: string }) {
   const t = useT();
+<<<<<<< HEAD
   return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" id={item.id}>{item.label}{typeof item.count === "number" ? <span className="wd-count-chip">{item.count}</span> : null}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
+||||||| parent of f8dce31 (feat(design-system): Woddy's tour overlay and a shared media-query hook)
+  return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" id={item.id}>{item.label}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
+=======
+  return <AriaTabs className="wd-tabs" data-variant={variant} defaultSelectedKey={defaultSelectedKey} selectedKey={selectedKey} onSelectionChange={(key) => onSelectionChange?.(String(key))}><div aria-label={t("Scrollable sections")} className="wd-tab-scroll" role="region" tabIndex={0}><TabList aria-label={t("Sections")} className="wd-tab-list" items={items}>{(item) => <Tab className="wd-tab" data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} id={item.id}>{item.label}</Tab>}</TabList></div>{items.map((item) => <TabPanel className="wd-tab-panel" id={item.id} key={item.id}>{item.panel}</TabPanel>)}</AriaTabs>;
+>>>>>>> f8dce31 (feat(design-system): Woddy's tour overlay and a shared media-query hook)
 }
 
 export type PillTabItem = { id: string; label: ReactNode; done?: boolean };

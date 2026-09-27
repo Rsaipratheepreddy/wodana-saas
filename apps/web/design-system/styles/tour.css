@@ -1,0 +1,217 @@
+/* Woddy explains: the scripted tour overlay (design-system/patterns/tour-overlay.tsx). */
+.wd-tour {
+  --wd-tour-ease: cubic-bezier(0.45, 0, 0.2, 1);
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--wd-z-toast) - 1);
+  pointer-events: none;
+}
+
+/* The page underneath is shown, not used, while Woddy explains. */
+.wd-tour-blocker {
+  position: fixed;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.wd-tour-spotlight {
+  position: fixed;
+  border-radius: var(--wd-radius-md);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--wd-color-action-primary) 35%, transparent),
+    0 0 0 200vmax color-mix(in srgb, var(--wd-color-overlay) 70%, transparent);
+  transition:
+    inset-block-start var(--wd-tour-glide) var(--wd-tour-ease),
+    inset-inline-start var(--wd-tour-glide) var(--wd-tour-ease),
+    inline-size var(--wd-tour-glide) var(--wd-tour-ease),
+    block-size var(--wd-tour-glide) var(--wd-tour-ease);
+}
+
+.wd-tour-spotlight[data-empty] {
+  box-shadow: 0 0 0 200vmax color-mix(in srgb, var(--wd-color-overlay) 70%, transparent);
+}
+
+.wd-tour-cursor {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: var(--wd-space-12);
+  block-size: var(--wd-space-12);
+  transition: transform var(--wd-tour-glide) var(--wd-tour-ease), opacity var(--wd-duration-slow) var(--wd-ease-standard);
+  will-change: transform;
+}
+
+.wd-tour-cursor[data-hidden] {
+  opacity: 0;
+}
+
+.wd-tour-cursor > * {
+  max-inline-size: none;
+}
+
+.wd-tour-pointer {
+  position: absolute;
+  inset-block-start: calc(var(--wd-space-0-5) * -1);
+  inset-inline-start: calc(var(--wd-space-0-5) * -1);
+  fill: var(--wd-color-action-primary);
+  stroke: var(--wd-color-surface);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.wd-tour[data-rtl] .wd-tour-pointer {
+  transform: scaleX(-1);
+}
+
+.wd-tour-cursor-woddy {
+  position: absolute;
+  inset-block-start: var(--wd-space-5);
+  inset-inline-start: var(--wd-space-4);
+  inline-size: var(--wd-space-6);
+  block-size: var(--wd-space-6);
+  border: 2px solid var(--wd-color-surface);
+  border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface);
+  box-shadow: var(--wd-shadow-sm);
+  object-fit: cover;
+}
+
+.wd-tour-ripple {
+  position: absolute;
+  inset-block-start: calc(var(--wd-space-5) * -1);
+  inset-inline-start: calc(var(--wd-space-5) * -1);
+  inline-size: var(--wd-space-10);
+  block-size: var(--wd-space-10);
+  border: 2px solid var(--wd-color-action-primary);
+  border-radius: var(--wd-radius-round);
+  opacity: 0;
+  animation: wd-tour-ripple 640ms var(--wd-ease-out);
+}
+
+@keyframes wd-tour-ripple {
+  from { opacity: 0.9; transform: scale(0.3); }
+  to { opacity: 0; transform: scale(1.4); }
+}
+
+.wd-tour-bubble {
+  position: fixed;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--wd-space-3);
+  inline-size: min(24rem, calc(100vw - var(--wd-space-8)));
+  padding: var(--wd-space-4);
+  border: 1px solid var(--wd-color-border);
+  border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-surface);
+  color: var(--wd-color-text);
+  box-shadow: var(--wd-shadow-md);
+  outline: none;
+  pointer-events: auto;
+  transition:
+    inset-block-start var(--wd-duration-slow) var(--wd-ease-standard),
+    inset-inline-start var(--wd-duration-slow) var(--wd-ease-standard);
+}
+
+
+.wd-tour-bubble:focus-visible {
+  outline: none;
+}
+
+.wd-tour-woddy {
+  inline-size: var(--wd-space-12);
+  block-size: var(--wd-space-12);
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-muted);
+  object-fit: cover;
+}
+
+.wd-tour-copy {
+  display: grid;
+  gap: var(--wd-space-3);
+  min-inline-size: 0;
+}
+
+.wd-tour-text {
+  margin: 0;
+  font-size: var(--wd-text-md);
+  line-height: var(--wd-leading-copy);
+}
+
+.wd-tour-text[data-note] {
+  color: var(--wd-color-text-secondary);
+}
+
+.wd-tour-controls,
+.wd-tour-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wd-space-1);
+}
+
+.wd-tour-finish {
+  justify-content: flex-end;
+  gap: var(--wd-space-2);
+}
+
+.wd-tour-count {
+  margin-inline-end: auto;
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.wd-tour-speed {
+  min-inline-size: var(--wd-control-compact);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+  .wd-tour-woddy {
+    inline-size: var(--wd-space-10);
+    block-size: var(--wd-space-10);
+  }
+}
+
+/* Reduced motion: the cursor jumps, the spotlight and bubble fade in place. */
+@media (prefers-reduced-motion: reduce) {
+  .wd-tour-cursor { transition: opacity 160ms linear; }
+  .wd-tour-spotlight { transition: none; animation: wd-tour-fade 220ms linear; }
+  .wd-tour-bubble { transition: none; }
+  .wd-tour-ripple { animation: wd-tour-fade 400ms linear reverse; }
+}
+
+@keyframes wd-tour-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The Woddy menu: explain this screen, and the tours with their length. */
+.wd-tour-menu {
+  min-inline-size: 16rem;
+}
+
+.wd-tour-menu-section {
+  margin-block-start: var(--wd-space-1);
+  padding-block-start: var(--wd-space-1);
+  border-block-start: 1px solid var(--wd-color-border);
+}
+
+.wd-tour-menu-heading {
+  padding: var(--wd-space-1) var(--wd-space-2);
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+  font-weight: var(--wd-weight-semibold);
+}
+
+.wd-tour-menu-item {
+  justify-content: space-between;
+  gap: var(--wd-space-3);
+}
+
+.wd-tour-menu-item small {
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-xs);
+  font-variant-numeric: tabular-nums;
+}
