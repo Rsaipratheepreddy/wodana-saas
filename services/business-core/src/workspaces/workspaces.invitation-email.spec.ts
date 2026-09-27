@@ -10,8 +10,7 @@ const actor: RequestActor = {
   displayName: "Workspace Owner",
 };
 
-describe("WorkspacesService invitation email", () => {
-  it("commits the invitation before asking Mailgun to deliver it", async () => {
+function makeService() {
     let transactionFinished = false;
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("SELECT id FROM workspaces") && sql.includes("FOR UPDATE")) {
@@ -86,7 +85,12 @@ describe("WorkspacesService invitation email", () => {
       {} as never,
       { sendWorkspaceInvitation } as never,
     );
+    return { service, sendWorkspaceInvitation, query };
+}
 
+describe("WorkspacesService invitation email", () => {
+  it("commits the invitation before asking Mailgun to deliver it", async () => {
+    const { service, sendWorkspaceInvitation } = makeService();
     const result = await service.inviteMember(actor, workspaceId, {
       displayName: "Maya Thomas",
       email: "maya@example.com",
@@ -106,5 +110,13 @@ describe("WorkspacesService invitation email", () => {
       workspaceName: "Iglo Architects",
       invitationToken: result.invitationToken,
     }));
+  });
+
+  it("greets an invitee without a display name neutrally, not by the address", async () => {
+    const { service, sendWorkspaceInvitation, query } = makeService();
+    await service.inviteMember(actor, workspaceId, { email: "qs@example.com", roleCodes: ["member"] });
+    expect(sendWorkspaceInvitation).toHaveBeenCalledWith(expect.objectContaining({ email: "qs@example.com", recipientName: null }));
+    const userInsert = query.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO users"));
+    expect(userInsert?.[1]).toEqual(["qs@example.com", "Qs"]);
   });
 });

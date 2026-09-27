@@ -99,8 +99,34 @@ describe("TransactionalEmailService", () => {
       "https://app.wodana.example/login?invitation=secure-token",
     );
     expect(body.get("html")).toContain("Iglo &lt;Studio&gt;");
-    expect(body.get("html")).toContain("Maya &amp; Co");
+    expect(body.get("html")).toContain("Hello Maya &amp; Co,");
     expect(body.get("html")).not.toContain("Owner <script>");
+  });
+
+  it("greets neutrally when the invited person was not given a name", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "invitation-message-id" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new TransactionalEmailService(new ConfigService({
+      WEB_ORIGIN: "https://app.wodana.example",
+      MAILGUN_API_KEY: "test-api-key",
+      MAILGUN_DOMAIN: "mg.example.com",
+    }));
+
+    await service.sendWorkspaceInvitation({
+      email: "qs@example.com",
+      expiresAt: new Date("2026-09-13T12:00:00.000Z"),
+      invitationToken: "secure-token",
+      inviterName: "Owner",
+      recipientName: null,
+      roleCodes: ["quantity_surveyor"],
+      workspaceName: "Studio",
+    });
+
+    const body = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
+    expect(body.get("text")).toContain("Hello,");
+    expect(body.get("text")).not.toContain("Hello Qs");
+    expect(body.get("text")).not.toContain("Hello qs");
+    expect(body.get("html")).toContain("Hello,");
   });
 
   it("returns a safe failure result when Mailgun rejects the message", async () => {

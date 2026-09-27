@@ -65,6 +65,7 @@ import {
   type WorkspaceTerminologyOverride,
 } from "./workspace-terminology";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
+import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
@@ -752,7 +753,7 @@ export class WorkspacesService {
     const workspaceId = provisioned.rows[0].workspace_id;
     const rotated = await this.database.tenantTransaction(workspaceId, operatorUserId ?? workspaceId, async (client) => {
       await this.lockWorkspace(client, workspaceId);
-      const pending = await client.query<{ id: string; email: string; recipientName: string; workspaceName: string; expiresAt: Date }>(
+      const pending = await client.query<{ id: string; email: string; recipientName: string | null; workspaceName: string; expiresAt: Date }>(
         `SELECT invitation.id, invitation.email, app_user.display_name AS "recipientName",
                 workspace.name AS "workspaceName", invitation.expires_at AS "expiresAt"
          FROM workspace_invitations invitation
@@ -784,7 +785,7 @@ export class WorkspacesService {
             status: "pending", expiresAt: pending.rows[0].expiresAt, acceptedAt: null,
             invitationToken: null, deliveryStatus: prior.rows[0].status,
             providerMessageId: prior.rows[0].providerMessageId,
-            recipientName: pending.rows[0].recipientName || pending.rows[0].email,
+            recipientName: invitationGreetingName(pending.rows[0].recipientName, pending.rows[0].email),
             workspaceName: pending.rows[0].workspaceName,
             tokenHash: null,
             replayed: true as const,
@@ -857,7 +858,7 @@ export class WorkspacesService {
         invitationToken,
         deliveryStatus: "pending",
         providerMessageId: null,
-        recipientName: pending.rows[0].recipientName || pending.rows[0].email,
+        recipientName: invitationGreetingName(pending.rows[0].recipientName, pending.rows[0].email),
         workspaceName: pending.rows[0].workspaceName,
         tokenHash,
         replayed: false as const,
@@ -2902,8 +2903,7 @@ export class WorkspacesService {
         }
         await this.assertMemberRoleDelegation(client, workspaceId, actorUser.userId, roles.rows.map((role) => role.id), teamIds);
 
-        const displayName = input.displayName
-          ?? input.email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+        const displayName = input.displayName?.trim() || placeholderDisplayName(input.email);
         await client.query(
           `INSERT INTO users (primary_email, display_name)
            VALUES ($1, $2)
@@ -2965,7 +2965,7 @@ export class WorkspacesService {
             expiresAt,
             invitationToken,
             inviterName: actorUser.displayName,
-            recipientName: displayName,
+            recipientName: invitationGreetingName(input.displayName, input.email),
             roleCodes: input.roleCodes,
             workspaceName: workspace.name,
             workspaceId,
@@ -3232,8 +3232,7 @@ export class WorkspacesService {
             expiresAt,
             invitationToken,
             inviterName: actorUser.displayName,
-            recipientName: recipient?.displayName
-              ?? String(response.email).split("@")[0],
+            recipientName: invitationGreetingName(recipient?.displayName, String(response.email)),
             roleCodes: recipient?.roleCodes ?? [],
             workspaceName: workspace.name,
             workspaceId,
