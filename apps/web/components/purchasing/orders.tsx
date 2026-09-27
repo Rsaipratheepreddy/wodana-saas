@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DataGrid, EmptyState, ErrorState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { DataGrid, EmptyState, ErrorState, NoAccessState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { PurchasingApi } from "@/lib/purchasing/client";
+import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { OrderRow, OrdersState, OrderStatus } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { OPEN_ORDERS, OrderStatusLabel, useOrderLabels } from "./order-labels";
@@ -21,11 +21,12 @@ export function Orders({ api, openId, onOpen, onReceipt, refreshKey }: {
   const format = useProjectFormat();
   const [state, setState] = useState<OrdersState | null>(null);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const [show, setShow] = useState<Show>("open");
   const [status, setStatus] = useState<OrderStatus | null>(null);
   const [search, setSearch] = useState("");
   const load = useCallback(async () => {
-    try { setState(await api.orders()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The orders didn't load.")); }
+    try { setState(await api.orders()); setError(""); } catch (cause) { setDenied(isDenied(cause)); setError(cause instanceof Error ? cause.message : t("The orders didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
 
@@ -44,7 +45,7 @@ export function Orders({ api, openId, onOpen, onReceipt, refreshKey }: {
     { id: "by", header: t("Raised by"), accessorFn: (row) => row.createdByName, size: 140, meta: { mobileHidden: true } },
   ], [t, labels, format]);
 
-  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   return <>
     <DataGrid<OrderRow>
       appearance="flush"

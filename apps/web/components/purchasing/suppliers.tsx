@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Upload } from "lucide-react";
-import { Button, DataGrid, EmptyState, ErrorState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, NoAccessState, MenuButton, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { formatPhoneForDisplay } from "@/lib/phone";
-import type { PurchasingApi } from "@/lib/purchasing/client";
+import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { Approval, Supplier, SupplierState } from "@/lib/purchasing/types";
 import { useSupplierLabels } from "./supplier-labels";
 import { SupplierImport } from "./supplier-import";
@@ -23,6 +23,7 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
   const labels = useSupplierLabels();
   const [state, setState] = useState<SupplierState | null>(null);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const [search, setSearch] = useState("");
   const [show, setShow] = useState<Show>("active");
   const [category, setCategory] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
   const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
-    try { setState(await api.suppliers()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The suppliers didn't load.")); }
+    try { setState(await api.suppliers()); setError(""); } catch (cause) { setDenied(isDenied(cause)); setError(cause instanceof Error ? cause.message : t("The suppliers didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
@@ -55,7 +56,7 @@ export function Suppliers({ api, adding, onAddingChange }: { api: PurchasingApi;
     { id: "companies", header: t("Buys"), accessorFn: (row) => row.entityIds.map((id) => companies.get(id)?.code ?? "").join(", "), size: 110, meta: { mobileHidden: true } },
   ], [t, labels, companies]);
 
-  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   const filtered = category || approval || company;
   const current = state?.suppliers.find((item) => item.id === open) ?? null;
 

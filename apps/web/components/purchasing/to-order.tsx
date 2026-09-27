@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, EmptyState, ErrorState, GroupedTable, SearchInput, SegmentedControl, Skeleton, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Button, EmptyState, ErrorState, NoAccessState, GroupedTable, SearchInput, SegmentedControl, Skeleton, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { PurchasingApi } from "@/lib/purchasing/client";
+import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { Need, NeedsState } from "@/lib/purchasing/types";
 import { AskPricesDialog } from "./ask-prices-dialog";
 import { CreateOrderDialog } from "./create-order-dialog";
@@ -25,13 +25,14 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
   const format = useProjectFormat();
   const [state, setState] = useState<NeedsState | null>(null);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const [show, setShow] = useState<Show>("left");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [ordering, setOrdering] = useState(false);
   const [asking, setAsking] = useState(false);
   const load = useCallback(async () => {
-    try { setState(await api.needs()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("What to order didn't load.")); }
+    try { setState(await api.needs()); setError(""); } catch (cause) { setDenied(isDenied(cause)); setError(cause instanceof Error ? cause.message : t("What to order didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
@@ -56,7 +57,7 @@ export function ToOrder({ api, onCreated, onAsked }: { api: PurchasingApi; onCre
     const rows = needs.filter((need) => need.projectId === projectId);
     return { id: projectId, label: `${rows[0].projectReference} · ${rows[0].projectName}`, rows, emptyMessage: "" };
   });
-  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={6} shape="rows" />;
   const ready = sections(false);
   const waiting = sections(true);

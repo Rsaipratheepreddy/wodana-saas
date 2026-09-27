@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, DataGrid, EmptyState, ErrorState, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { Button, DataGrid, EmptyState, ErrorState, NoAccessState, NoResultsState, SegmentedControl, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { PurchasingApi } from "@/lib/purchasing/client";
+import { isDenied, type PurchasingApi } from "@/lib/purchasing/client";
 import type { DeliveriesState, ExpectedOrder, Receipt, SupplierReturnRow } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
 import { OrderStatusLabel, useOrderLabels } from "./order-labels";
@@ -30,6 +30,7 @@ export function Deliveries({ api, openId, returnId, unmatchedId, onOpen, onOpenR
   const placeLabel = usePlaceLabel();
   const [state, setState] = useState<DeliveriesState | null>(null);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const [show, setShow] = useState<Show>(returnId ? "returns" : unmatchedId ? "unmatched" : "expected");
   const [recording, setRecording] = useState(false);
   const [returns, setReturns] = useState<SupplierReturnRow[] | null>(null);
@@ -39,7 +40,7 @@ export function Deliveries({ api, openId, returnId, unmatchedId, onOpen, onOpenR
     try {
       const [deliveries, back] = await Promise.all([api.deliveries(), api.returns()]);
       setState(deliveries); setReturns(back.returns ?? []); setError("");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : t("Deliveries didn't load.")); }
+    } catch (cause) { setDenied(isDenied(cause)); setError(cause instanceof Error ? cause.message : t("Deliveries didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
 
@@ -74,7 +75,7 @@ export function Deliveries({ api, openId, returnId, unmatchedId, onOpen, onOpenR
     { id: "result", header: t("Status"), accessorFn: (row) => row.pending, size: 150, meta: { renderCell: (row) => <ReceiptResult receipt={row} /> } },
   ], [t, format, placeLabel, state?.requireSitePhoto]);
 
-  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  if (error && !state) return denied ? <NoAccessState /> : <ErrorState description={error} onRetry={() => void load()} />;
   const toggle = <SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[
     { id: "expected", label: t("Expected") },
     { id: "inspection", label: state?.inspection.length ? t("To inspect ({count})", { count: state.inspection.length }) : t("To inspect") },
