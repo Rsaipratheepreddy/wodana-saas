@@ -723,7 +723,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Goods out leave at the average; taking out everything takes out all the value.
   - The stock grid shows each row's value and cost each, with the total worth; history shows each change's value.
 - **Corrections needing approval:** a count whose difference is worth more than the workspace's limit (Settings → Purchasing → Stock) waits. Someone else with `stock.adjust` approves it, or refuses it with why; they are told when it waits.
-**Built (Business → Finance: Supplier invoices · Payments · Owed to suppliers; Settings → Purchasing → Supplier invoices):**
+**Built (Business → Finance: Supplier invoices · Payments · Payment runs · Owed to suppliers; Settings → Purchasing → Supplier invoices):**
 - A supplier's invoice is entered as printed: their number (once per supplier unless cancelled), dates, the printed total, and lines taken from an order (what's still to invoice, at the order's net price and tax) or typed for charges not on an order (going to the project the order lines share). The supplier's PDF or photo is attached.
 - **Three-way match on submit:** each order line invoiced (across held and approved invoices) no more than was accepted plus what the supplier credited; the price no more than the tolerance above the order's net price; the order's tax rate; the lines adding up to the printed total. A match is approved at once; otherwise it's **held** with each reason, and someone other than who entered it approves it with why (or it's cancelled with why).
 - **Debit notes** follow from credited returns automatically: only the credited quantity that had been invoiced (invoiced beyond what was kept), so a return before invoicing needs none. Rounded to the currency; partial debits add up to the credit.
@@ -731,7 +731,17 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Owed to suppliers**, per buying company and currency: approved invoices − payments − debit notes; overdue (open invoices past due, never more than owed); held amounts; paid-ahead balances.
 - One supplier's invoices and payments change one at a time (advisory lock), every command is idempotent and audited, and invoices are version-checked.
 - Notices: a held invoice tells the approvers; invoices due within three days or overdue tell the people who pay, once per supplier until the set changes.
-- Still to come: retention held back until handover, and a payment run approved before money goes out.
+- **Retention:** the share of each invoice a supplier's terms hold back until handover, copied to its orders (changeable while an order is a draft).
+  - Fixed when an invoice is approved: each order line's net at its order's share, summed per project and rounded once to the currency; charges not on an order hold nothing. Later terms never change it.
+  - What's held isn't payable, overdue or due; Owed to suppliers shows it apart.
+  - Released by the daily run once the client accepted the project's handover (each project of a multi-project invoice on its own), or earlier or later — all or part — by someone who approves payables, with why. Each release is recorded (automatic, or who and why); the people who pay suppliers are told.
+- **Payment runs** (Finance → Payment runs): someone who pays suppliers lists approved invoices and how much of each (up to what can be paid now; everything due by a date at once) and submits it. Someone else — not who prepared it, enforced in the database — approves it or sends it back with what to change; it can be cancelled with why until it's paid.
+  - A submitted or approved run reserves what it pays: no other run or direct payment takes the same balance, and its invoices can't be cancelled.
+  - Approval and payment check everything again: each invoice still approved and payable, and each supplier with an approved bank account and no new details waiting. The account is fixed at approval; a change after it stops the payment until the run is approved again.
+  - An approved run downloads as a bank file (supplier, account name, bank, account number — whole only for people who verify bank details — SWIFT, amount, currency, reference). Each download is audited.
+  - Marked paid with the bank's reference per payment: one bank payment per supplier, company and currency, allocated exactly as the run says, all at once and once only.
+  - Notices: submitted (approvers), approved or sent back (the preparer), paid (the preparer).
+- **Pay through approved runs** (Settings → Purchasing → Supplier invoices, off by default): invoices are paid only through runs; an advance on an order is still recorded directly.
 
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.

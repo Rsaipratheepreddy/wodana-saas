@@ -26,7 +26,8 @@ export function Payments({ api, state, error, openId, onReload, onOpen, onOpenBi
   const columns = useMemo<DataGridColumn<SupplierPayment>[]>(() => [
     { id: "supplier", header: t("Supplier"), accessorFn: (row) => row.supplierName, size: 300, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{row.supplierName}</span>
-      <small>{[methods[row.method], row.reference, ...(row.orderNumber ? [t("Advance on {order}", { order: row.orderNumber })] : []), ...row.allocations.map((item) => item.number)]
+      <small>{[methods[row.method], row.reference, ...(row.orderNumber ? [t("Advance on {order}", { order: row.orderNumber })] : []),
+        ...(row.runNumber ? [t("Run {number}", { number: row.runNumber })] : []), ...row.allocations.map((item) => item.number)]
         .filter(Boolean).join(" · ")}</small></span> } },
     { id: "paid", header: t("Paid on"), accessorFn: (row) => row.paidOn, size: 140, meta: { mobileHidden: true, renderCell: (row) => <span>{format.day(row.paidOn)}</span> } },
     { id: "amount", header: t("Amount"), accessorFn: (row) => Number(row.amount), size: 190, meta: { renderCell: (row) => <span className={styles.nameCell}>
@@ -59,7 +60,7 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
   const [busy, setBusy] = useState(false);
   const money = (value: string) => format.money(value, payment.currency);
   const recorded = payment.status === "recorded";
-  const open = bills.filter((bill) => bill.status === "approved" && Number(bill.balance) > 0 && bill.vendorId === payment.vendorId && bill.legalEntityId === payment.legalEntityId
+  const open = bills.filter((bill) => bill.status === "approved" && Number(bill.payable) > 0 && bill.vendorId === payment.vendorId && bill.legalEntityId === payment.legalEntityId
     && bill.currency === payment.currency && (!payment.orderNumber || bill.orders.includes(payment.orderNumber)));
   const allocating = addExact(...Object.values(parts));
   const over = subtractExact(allocating, payment.unallocated) !== "0";
@@ -80,6 +81,7 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
         <div><dt>{t("How")}</dt><dd>{[methods[payment.method], payment.reference].filter(Boolean).join(" · ")}</dd></div>
         <div><dt>{t("Paid by")}</dt><dd>{payment.companyName}</dd></div>
         {payment.orderNumber ? <div><dt>{t("Advance on")}</dt><dd>{payment.orderNumber}</dd></div> : null}
+        {payment.runNumber ? <div><dt>{t("Paid in")}</dt><dd>{t("Run {number}", { number: payment.runNumber })}</dd></div> : null}
         <div><dt>{t("To allocate")}</dt><dd className={styles.money}>{money(payment.unallocated)}</dd></div>
         <div><dt>{t("Recorded by")}</dt><dd>{payment.createdByName}</dd></div>
       </dl>
@@ -100,8 +102,8 @@ function PaymentSheet({ api, payment, canManage, bills, onChanged, onClose, onOp
         {dialog === "allocate" ? <>
           <p className={styles.muted}>{t("{amount} to allocate", { amount: money(payment.unallocated) })}</p>
           <div className={styles.allocations}>{open.map((bill) => <div key={bill.id} className={styles.allocation}>
-            <span className={styles.nameCell}><span>{bill.number}</span><small>{t("{amount} left", { amount: money(bill.balance) })}</small></span>
-            <TextInput aria-label={t("Amount for {invoice}", { invoice: bill.number })} label={null} inputMode="decimal" value={parts[bill.id] ?? ""} placeholder={plain(bill.balance)}
+            <span className={styles.nameCell}><span>{bill.number}</span><small>{t("{amount} to pay", { amount: money(bill.payable) })}</small></span>
+            <TextInput aria-label={t("Amount for {invoice}", { invoice: bill.number })} label={null} inputMode="decimal" value={parts[bill.id] ?? ""} placeholder={plain(bill.payable)}
               onChange={(value) => setParts({ ...parts, [bill.id]: numeric(value) })} />
           </div>)}</div>
           {over ? <InlineNotice tone="error" message={t("That's more than is left of the payment.")} /> : null}

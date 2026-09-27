@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { debitNote, invoiceable, orderUnitPrice, priceBillLine } from "./payables";
+import { debitNote, invoiceable, orderUnitPrice, priceBillLine, retentionByProject } from "./payables";
 
 const line = { accepted: "10", credited: "0", creditValue: "0", billed: "0", approvedBilled: "0", currency: "AED" };
 
@@ -31,5 +31,23 @@ describe("payables arithmetic", () => {
     // Thirds round to the currency; the parts still add up to the whole credit.
     expect(debitNote({ ...line, accepted: "0", credited: "3", creditValue: "100", approvedBilled: "1" }).amount.toString()).toBe("33.33");
     expect(debitNote({ ...line, accepted: "0", credited: "3", creditValue: "100", approvedBilled: "3" }).amount.toString()).toBe("100");
+  });
+
+  it("holds back retention per project, summed exactly across lines and rounded once to the currency", () => {
+    const part = (projectId: string | null, net: string, retentionPercent: string) => ({ projectId, net, retentionPercent });
+    // Three lines of a third each at 5%: 1.6665 + 1.6665 + 1.667 = 5 exactly, where rounding each line would make 5.01.
+    expect(retentionByProject([part("p1", "33.33", "5"), part("p1", "33.33", "5"), part("p1", "33.34", "5")], "AED")).toEqual([{ projectId: "p1", amount: "5.00" }]);
+    // Per project, each rounded on its own; lines without retention (a charge not on an order) hold nothing.
+    expect(retentionByProject([part("p1", "100.10", "7.5"), part("p2", "40.00", "10"), part("p2", "12.00", "0"), part(null, "20.00", "5")], "AED"))
+      .toEqual([{ projectId: "p1", amount: "7.51" }, { projectId: "p2", amount: "4.00" }, { projectId: null, amount: "1.00" }]);
+    // Half a minor unit rounds away from zero; just under it rounds down, however many places it runs to.
+    expect(retentionByProject([part("p1", "10.00", "0.05")], "AED")).toEqual([{ projectId: "p1", amount: "0.01" }]);
+    expect(retentionByProject([part("p1", "9.99", "0.05")], "AED")).toEqual([]);
+    expect(retentionByProject([part("p1", "9.9990", "0.05")], "AED")).toEqual([]);
+    // Currencies without minor units, and with three.
+    expect(retentionByProject([part("p1", "1250", "5"), part("p1", "1250", "5")], "JPY")).toEqual([{ projectId: "p1", amount: "125" }]);
+    expect(retentionByProject([part("p1", "1049", "5")], "JPY")).toEqual([{ projectId: "p1", amount: "52" }]);
+    expect(retentionByProject([part("p1", "10.001", "5")], "KWD")).toEqual([{ projectId: "p1", amount: "0.500" }]);
+    expect(retentionByProject([], "AED")).toEqual([]);
   });
 });

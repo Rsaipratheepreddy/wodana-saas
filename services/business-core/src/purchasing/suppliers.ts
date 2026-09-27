@@ -14,6 +14,8 @@ export type Supplier = {
   id: string; code: string; name: string; legalName: string | null; categories: string[];
   approval: Approval; preferredFor: string[]; approvalNote: string; approvalAt: string | null; approvalByName: string | null;
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string;
+  /** The share of each invoice held back until handover, copied to new orders. */
+  retentionPercent: string;
   deal: Deal; dealPercent: string | null; dealNote: string;
   contactName: string | null; phone: string | null; email: string | null; locality: string | null;
   entityIds: string[]; taxRegistrationNumber: string | null; currency: string | null; notes: string;
@@ -23,7 +25,7 @@ export type Supplier = {
 const SELECT = `SELECT vendor.id, vendor.code, vendor.display_name AS name, vendor.legal_name AS "legalName", vendor.categories,
   vendor.approval, vendor.preferred_for AS "preferredFor", vendor.approval_note AS "approvalNote", vendor.approval_at AS "approvalAt", approver.display_name AS "approvalByName",
   vendor.payment_terms AS "paymentTerms", vendor.advance_percent::text AS "advancePercent", vendor.credit_days AS "creditDays", vendor.terms_note AS "termsNote",
-  vendor.deal, vendor.deal_percent::text AS "dealPercent", vendor.deal_note AS "dealNote",
+  vendor.retention_percent::text AS "retentionPercent", vendor.deal, vendor.deal_percent::text AS "dealPercent", vendor.deal_note AS "dealNote",
   site.contact_name AS "contactName", site.phone, site.email, site.locality,
   coalesce((SELECT array_agg(link.legal_entity_id ORDER BY link.created_at) FROM vendor_legal_entities link
              WHERE link.workspace_id = vendor.workspace_id AND link.vendor_id = vendor.id), '{}') AS "entityIds",
@@ -63,6 +65,19 @@ export function cleanCategories(value: unknown, known: string[] = []): string[] 
 export function percent(value: unknown, label: string): string {
   const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim().replace(/%$/, "").trim() : "";
   if (!/^\d{1,2}(\.\d{1,2})?$/.test(text) || Number(text) <= 0) throw new BadRequestException(`${label} is a percentage between 0 and 100.`);
+  return text;
+}
+
+/** A bank account number as people who don't verify bank details see it: its last four digits. */
+export function maskAccountNumber(value: string) {
+  return `•••• ${value.replace(/\s+/g, "").slice(-4)}`;
+}
+
+/** The share of each invoice held back until handover: none when left empty, else a percentage below 100. */
+export function retentionPercent(value: unknown): string {
+  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim().replace(/%$/, "").trim() : "";
+  if (value === undefined || value === null || text === "") return "0";
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(text)) throw new BadRequestException("Retention is a percentage from 0 to 99.99.");
   return text;
 }
 

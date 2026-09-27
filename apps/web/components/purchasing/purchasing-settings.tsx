@@ -13,7 +13,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict" } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict"; runs: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
@@ -23,7 +23,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
       tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto,
       adjustLimit: next.settings.stockAdjustApprovalValue ? quantityText(next.settings.stockAdjustApprovalValue) : "", ahead: String(next.settings.orderAheadDays),
-      invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard });
+      invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard, runs: next.settings.paymentRunsRequired });
   };
   const load = useCallback(async () => {
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -38,7 +38,8 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     try {
       const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved,
         requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto,
-        stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0", spendingGuard: form.guard });
+        stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0", spendingGuard: form.guard,
+        paymentRunsRequired: form.runs });
       accept({ ...data, settings });
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
@@ -92,6 +93,9 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       <SettingsRow label={t("Price difference allowed")} hint={t("How far above the ordered price an invoice can be before it's held for approval.")}>
         <TextInput aria-label={t("Price difference allowed")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix="%" value={form.invoiceTolerance}
           onChange={(value) => setForm({ ...form, invoiceTolerance: value.replace(/[^\d.]/g, "") })} />
+      </SettingsRow>
+      <SettingsRow label={t("Pay through approved runs")} hint={t("Invoices are paid only in a payment run someone else approved. Advances on orders are still recorded directly.")}>
+        <Switch aria-label={t("Pay through approved runs")} isDisabled={readOnly} isSelected={form.runs} onChange={(runs) => setForm({ ...form, runs })} />
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="stock" title={t("Stock")}>

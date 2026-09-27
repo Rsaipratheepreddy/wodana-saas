@@ -9,7 +9,10 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { currencyDecimals, ensurePurchasingSettings, firstTime } from "./orders";
-import { matchBill, priceBillLine, readBillLines, readBills, readDebitNotes, readInvoiceable, readPayments, readSupplierBalances, type BillRow } from "./payables";
+import {
+  lockSuppliers, matchBill, priceBillLine, readBillLines, readBills, readDebitNotes, readInvoiceable, readPayments, readRetentions, readSupplierBalances, retentionByProject, type BillRow,
+} from "./payables";
+import { readRuns } from "./payment-runs";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -17,14 +20,15 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
 const CURRENCY = /^[A-Z]{3}$/;
 export const PAYMENT_METHODS = ["bank", "cheque", "cash", "card", "other"] as const;
-const ACTIONS = ["save", "submit", "approve", "cancel", "pay", "allocate", "reverse"] as const;
+const ACTIONS = ["save", "submit", "approve", "cancel", "release", "pay", "allocate", "reverse"] as const;
 /** Orders a supplier can invoice: placed ones (approved and on), including closed and cancelled ones that received goods. */
 const UNPLACED = ["draft", "pending_approval"];
 
 /**
  * Payables: suppliers' invoices entered against order lines and matched three ways (ordered, received,
  * invoiced), held for someone else's approval when they don't match, and paid — in full, in part, or in
- * advance on an order — never beyond what's owed. Every change to one supplier's money runs one at a time.
+ * advance on an order — never beyond what's payable now (what's owed, less retention held until handover
+ * and what payment runs reserve). Every change to one supplier's money runs one at a time.
  */
 @Injectable()
 export class PayablesService {
@@ -35,6 +39,8 @@ export class PayablesService {
       bills: await readBills(client, workspaceId),
       payments: await readPayments(client, workspaceId),
       suppliers: await readSupplierBalances(client, workspaceId),
+      runs: await readRuns(client, workspaceId),
+      runsRequired: (await ensurePurchasingSettings(client, workspaceId)).paymentRunsRequired,
       // Who an invoice or payment can be for, and which company it's to.
       vendors: (await client.query<{ id: string; name: string; currency: string | null }>(
         `SELECT id, display_name AS name, default_currency AS currency FROM workspace_vendors WHERE workspace_id = $1 AND status <> 'archived' ORDER BY display_name LIMIT 2000`, [workspaceId])).rows,
@@ -66,7 +72,7 @@ export class PayablesService {
   command(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     const action = body.action as (typeof ACTIONS)[number];
     if (!ACTIONS.includes(action)) throw new BadRequestException("Unknown action.");
-    return this.access.withPermission(actor, workspaceId, action === "approve" ? "payables.approve" : "payables.manage", async (client, user) => {
+    return this.access.withPermission(actor, workspaceId, action === "approve" || action === "release" ? "payables.approve" : "payables.manage", async (client, user) => {
       const commandId = uuid(body.commandId, "Command");
       const payment = ["pay", "allocate", "reverse"].includes(action);
       const entityId = uuid(payment ? (action === "pay" ? body.id : body.paymentId) : body.id, payment ? "Payment" : "Invoice");
@@ -76,6 +82,7 @@ export class PayablesService {
       else if (action === "submit") await this.submit(client, workspaceId, user.userId, entityId, body);
       else if (action === "approve") await this.approve(client, workspaceId, user.userId, entityId, body);
       else if (action === "cancel") await this.cancel(client, workspaceId, user.userId, entityId, body);
+      else if (action === "release") await this.release(client, workspaceId, user.userId, entityId, body);
       else if (action === "pay") await this.pay(client, workspaceId, user.userId, entityId, body);
       else if (action === "allocate") await this.allocateMore(client, workspaceId, user.userId, entityId, body);
       else await this.reverse(client, workspaceId, user.userId, entityId, body);
@@ -217,9 +224,11 @@ export class PayablesService {
       [workspaceId, id, bill.invoiceDate, bill.vendorId])).rows[0].due;
     const settings = await ensurePurchasingSettings(client, workspaceId);
     const reasons = await matchBill(client, workspaceId, { id, total: bill.total, statedTotal: bill.statedTotal, currency: bill.currency }, settings.invoiceTolerancePercent);
+    let retention: Array<{ projectId: string | null; amount: string }> = [];
     if (!reasons.length) {
       await client.query(`UPDATE supplier_invoices SET status = 'approved', approved_at = now(), hold_reasons = '', due_date = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, id, due]);
+      retention = await this.holdRetention(client, workspaceId, id, bill.currency);
       await this.applyAdvances(client, workspaceId, id, userId);
     } else {
       const holdReasons = reasons.join("\n").slice(0, 2000);
@@ -232,7 +241,7 @@ export class PayablesService {
           deepLink: `/workspace/finance/bills?bill=${id}`, idempotencyKey: `payables.held:${id}:${bill.version + 1}:${person}` });
     }
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier_invoice.submitted", entityType: "supplier_invoice", entityId: id,
-      after: { status: reasons.length ? "held" : "approved", reasons, dueDate: due } });
+      after: { status: reasons.length ? "held" : "approved", reasons, dueDate: due, retention } });
   }
 
   /** A held invoice approved anyway, by someone other than who entered it, with why. */
@@ -244,8 +253,10 @@ export class PayablesService {
     if (!note) throw new BadRequestException("Say why it's approved.");
     await client.query(`UPDATE supplier_invoices SET status = 'approved', approved_by = $3, approved_at = now(), approval_note = $4, version = version + 1 WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, id, userId, note]);
+    const retention = await this.holdRetention(client, workspaceId, id, bill.currency);
     await this.applyAdvances(client, workspaceId, id, userId);
-    await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier_invoice.approved", entityType: "supplier_invoice", entityId: id, after: { note, reasons: bill.holdReasons } });
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier_invoice.approved", entityType: "supplier_invoice", entityId: id,
+      after: { note, reasons: bill.holdReasons, retention } });
   }
 
   /** Cancelled with why — a wrong entry, or an invoice the supplier replaces. Not while payments are on it. */
@@ -255,8 +266,56 @@ export class PayablesService {
     const reason = text(body.reason, 500, "Reason");
     if (!reason) throw new BadRequestException("Say why it's cancelled.");
     if (Dec.of(bill.paid).cmp(0) > 0) throw new ConflictException("Payments are on this invoice; reverse them first.");
+    if (Dec.of(bill.reserved).cmp(0) > 0) throw new ConflictException("It's in a payment run; take it out of the run first.");
     await client.query(`UPDATE supplier_invoices SET status = 'cancelled', cancel_reason = $3, version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id, reason]);
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier_invoice.cancelled", entityType: "supplier_invoice", entityId: id, before: { status: bill.status }, after: { reason } });
+  }
+
+  /**
+   * Retention released by someone who approves payables, with why — before the handover (the work was done
+   * early) or after it (the defects period ended), all or part of what one project's lines hold back. The
+   * rest is released on its own once the client accepted the project's handover.
+   */
+  private async release(client: Db, workspaceId: string, userId: string, id: string, body: Record<string, unknown>) {
+    const bill = await this.lockBill(client, workspaceId, id, body.version);
+    if (bill.status !== "approved") throw new ConflictException("Only an approved invoice holds retention.");
+    const projectId = body.projectId === undefined || body.projectId === null || body.projectId === "" ? null : uuid(body.projectId, "Project");
+    const retention = (await readRetentions(client, workspaceId, id)).find((row) => row.projectId === projectId);
+    if (!retention || Dec.of(retention.held).cmp(0) <= 0) throw new ConflictException("Nothing is held back for that project on this invoice.");
+    const reason = text(body.reason, 500, "Reason");
+    if (!reason) throw new BadRequestException("Say why it's released.");
+    const places = currencyDecimals(bill.currency);
+    const amount = body.amount === undefined || body.amount === null || body.amount === "" ? Dec.of(retention.held).toFixed(places) : money(body.amount, "Amount", bill.currency);
+    if (Dec.of(amount).cmp(0) <= 0) throw new BadRequestException("Enter what's released.");
+    if (Dec.of(amount).cmp(retention.held) > 0) throw new ConflictException(`Only ${Dec.of(retention.held).toFixed(places)} is held back for that project.`);
+    await client.query(`INSERT INTO supplier_retention_releases (id, workspace_id, retention_id, invoice_id, amount, automatic, reason, released_by) VALUES ($1, $2, $3, $4, $5, false, $6, $7)`,
+      [randomUUID(), workspaceId, retention.id, id, amount, reason, userId]);
+    await client.query(`UPDATE supplier_invoices SET version = version + 1 WHERE workspace_id = $1 AND id = $2`, [workspaceId, id]);
+    await recordAudit(client, { workspaceId, actorUserId: userId, action: "supplier_invoice.retention_released", entityType: "supplier_invoice", entityId: id,
+      before: { held: retention.held }, after: { projectId, amount, reason } });
+    const actor = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [userId])).rows[0]?.name ?? "Someone";
+    const released = `${bill.currency} ${Dec.of(amount).toFixed(places)}`;
+    const note = `${bill.number}: ${released}${retention.projectReference ? ` (${retention.projectReference})` : ""} released by ${actor}: ${reason}`.slice(0, 480);
+    for (const person of new Set((await this.holders(client, workspaceId, ["payables.manage"])).filter((person) => person !== userId)))
+      await notifyUserInApp(client, { workspaceId, recipientUserId: person, code: "payables.retention_released", eventType: "payables.retention_released",
+        variables: { supplier: bill.supplierName, invoice: bill.number, amount: released, actor, note },
+        deepLink: `/workspace/finance/bills?bill=${id}`, idempotencyKey: `payables.retention_released:${id}:${bill.version + 1}:${person}` });
+  }
+
+  /**
+   * What an invoice holds back, fixed as it's approved: each order line takes its order's retention then (a
+   * snapshot later terms never change), and the amounts per project are recorded. Returns them.
+   */
+  private async holdRetention(client: Db, workspaceId: string, billId: string, currency: string) {
+    await client.query(
+      `UPDATE supplier_invoice_lines line SET retention_percent = purchase.retention_percent
+         FROM purchase_order_lines ordered JOIN purchase_orders purchase ON purchase.workspace_id = ordered.workspace_id AND purchase.id = ordered.order_id
+        WHERE line.workspace_id = $1 AND line.invoice_id = $2 AND ordered.workspace_id = line.workspace_id AND ordered.id = line.order_line_id`, [workspaceId, billId]);
+    const held = retentionByProject(await readBillLines(client, workspaceId, billId), currency);
+    for (const part of held)
+      await client.query(`INSERT INTO supplier_invoice_retentions (id, workspace_id, invoice_id, project_id, amount) VALUES ($1, $2, $3, $4, $5)`,
+        [randomUUID(), workspaceId, billId, part.projectId, part.amount]);
+    return held;
   }
 
   // ---------- payments ----------
@@ -301,6 +360,9 @@ export class PayablesService {
         throw new BadRequestException(`An advance on ${order.number} is paid by its company to its supplier in ${order.currency}.`);
       if ([...UNPLACED, "cancelled"].includes(order.status)) throw new ConflictException(`${order.number} isn't a placed order.`);
     }
+    // Where invoices are paid only through approved runs, only an advance on an order is recorded directly.
+    if ((await ensurePurchasingSettings(client, workspaceId)).paymentRunsRequired && (!orderId || (Array.isArray(body.allocations) && body.allocations.length)))
+      throw new ConflictException("Invoices are paid through an approved payment run; only an advance on an order is recorded here.");
     await client.query(
       `INSERT INTO supplier_payments (id, workspace_id, vendor_id, legal_entity_id, paid_on, currency, amount, method, reference, order_id, bank_account_id, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -333,7 +395,8 @@ export class PayablesService {
 
   /**
    * Puts a payment against approved invoices of its supplier, company and currency: never more than an
-   * invoice has left or the payment has left, and an advance only against its own order's invoices.
+   * invoice can be paid now (what's left, less retention held and what payment runs reserve) or the
+   * payment has left, and an advance only against its own order's invoices.
    */
   private async allocate(client: Db, workspaceId: string, userId: string, paymentId: string, raw: unknown) {
     if (!Array.isArray(raw)) throw new BadRequestException("Allocations are not valid.");
@@ -352,7 +415,9 @@ export class PayablesService {
         throw new BadRequestException(`Invoice ${bill.number} is for another supplier, company or currency.`);
       if (payment.orderNumber && !bill.orders.includes(payment.orderNumber)) throw new ConflictException(`This advance was paid on ${payment.orderNumber}; it goes only to that order's invoices.`);
       const places = currencyDecimals(bill.currency);
-      if (Dec.of(part).cmp(bill.balance) > 0) throw new ConflictException(`Invoice ${bill.number} has ${Dec.of(bill.balance).toFixed(places)} left to pay.`);
+      if (Dec.of(part).cmp(bill.payable) > 0) throw new ConflictException(`Invoice ${bill.number} has ${Dec.of(bill.payable).toFixed(places)} left to pay${[
+        Dec.of(bill.retentionHeld).cmp(0) > 0 ? `; ${Dec.of(bill.retentionHeld).toFixed(places)} retention is held` : "",
+        Dec.of(bill.reserved).cmp(0) > 0 ? `; ${Dec.of(bill.reserved).toFixed(places)} is in a payment run` : ""].join("")}.`);
       if (Dec.of(part).cmp(left) > 0) throw new ConflictException(`Only ${left.toFixed(places)} of this payment is left to allocate.`);
       await client.query(`INSERT INTO supplier_payment_allocations (id, workspace_id, payment_id, invoice_id, amount, created_by) VALUES ($1, $2, $3, $4, $5, $6)`,
         [randomUUID(), workspaceId, paymentId, invoiceId, part, userId]);
@@ -362,7 +427,7 @@ export class PayablesService {
     return done;
   }
 
-  /** Advances paid on an invoice's orders go against it, oldest first, as far as they reach. */
+  /** Advances paid on an invoice's orders go against what it can be paid now (never its retention), oldest first, as far as they reach. */
   private async applyAdvances(client: Db, workspaceId: string, billId: string, userId: string) {
     const bill = (await readBills(client, workspaceId, { id: billId }))[0];
     if (!bill.orders.length) return;
@@ -370,7 +435,7 @@ export class PayablesService {
       .filter((payment) => payment.status === "recorded" && payment.orderNumber && bill.orders.includes(payment.orderNumber) && payment.legalEntityId === bill.legalEntityId
         && payment.currency === bill.currency && Dec.of(payment.unallocated).cmp(0) > 0)
       .sort((a, b) => a.paidOn.localeCompare(b.paidOn) || a.id.localeCompare(b.id));
-    let balance = Dec.of(bill.balance);
+    let balance = Dec.of(bill.payable);
     for (const advance of advances) {
       if (balance.cmp(0) <= 0) break;
       const part = Dec.of(advance.unallocated).cmp(balance) < 0 ? Dec.of(advance.unallocated) : balance;
@@ -388,12 +453,16 @@ export class PayablesService {
     const bill = (await readBills(client, workspaceId, { id: billId }))[0];
     if (!bill) throw new NotFoundException("Invoice not found.");
     const rights = await this.rights(client, workspaceId, userId);
+    const runsRequired = (await ensurePurchasingSettings(client, workspaceId)).paymentRunsRequired;
+    const retentions = await readRetentions(client, workspaceId, billId);
     return {
-      bill, lines: await readBillLines(client, workspaceId, billId), payments: await readPayments(client, workspaceId, { invoiceId: billId }), ...rights,
+      bill, lines: await readBillLines(client, workspaceId, billId), payments: await readPayments(client, workspaceId, { invoiceId: billId }), retentions, ...rights,
       canEdit: rights.canManage && ["draft", "held"].includes(bill.status),
       canApproveThis: rights.canApprove && bill.status === "held" && bill.createdBy !== userId,
-      canCancel: rights.canManage && bill.status !== "cancelled" && Dec.of(bill.paid).isZero(),
-      canPay: rights.canManage && bill.status === "approved" && Dec.of(bill.balance).cmp(0) > 0,
+      canCancel: rights.canManage && bill.status !== "cancelled" && Dec.of(bill.paid).isZero() && Dec.of(bill.reserved).isZero(),
+      // Where invoices are paid only through runs, an invoice isn't paid from here.
+      canPay: rights.canManage && !runsRequired && bill.status === "approved" && Dec.of(bill.payable).cmp(0) > 0,
+      canRelease: rights.canApprove && bill.status === "approved" && retentions.some((row) => Dec.of(row.held).cmp(0) > 0),
     };
   }
 
@@ -420,6 +489,7 @@ export class PayablesService {
       bills: await readBills(client, workspaceId, { vendorId }),
       payments: await readPayments(client, workspaceId, { vendorId }),
       debitNotes: await readDebitNotes(client, workspaceId, vendorId),
+      runsRequired: (await ensurePurchasingSettings(client, workspaceId)).paymentRunsRequired,
       ...(await this.rights(client, workspaceId, userId)),
     };
   }
@@ -436,9 +506,9 @@ export class PayablesService {
     return bill;
   }
 
-  /** One supplier's invoices and payments change one at a time, so matching and balances see each other. */
+  /** One supplier's invoices and payments change one at a time, so matching, balances and runs see each other. */
   private async serialize(client: Db, workspaceId: string, vendorId: string) {
-    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('payables:' || $1::text || ':' || $2::text, 0))`, [workspaceId, vendorId]);
+    await lockSuppliers(client, workspaceId, [vendorId]);
   }
 
   private async rights(client: Db, workspaceId: string, userId: string) {

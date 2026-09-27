@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: nav.replace, pu
 
 const supplier = (patch: Partial<Supplier>): Supplier => ({
   id: "s1", code: "NILE", name: "Nile Marble & Granite", legalName: null, categories: ["Marble", "Travertine"], approval: "approved", preferredFor: ["Marble"], approvalNote: "",
-  approvalAt: "2026-09-20T10:00:00Z", approvalByName: "Dara Director", paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deal: "discount", dealPercent: "10.00",
+  approvalAt: "2026-09-20T10:00:00Z", approvalByName: "Dara Director", paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", retentionPercent: "0.00", deal: "discount", dealPercent: "10.00",
   dealNote: "", contactName: "Mohamed", phone: "+971503175797", email: "sales@nile.example", locality: "Al Quoz", entityIds: ["f"], taxRegistrationNumber: null, currency: null, notes: "",
   status: "active", archivedReason: null, version: 3, ...patch,
 });
@@ -200,7 +200,7 @@ describe("ordering", () => {
   const orderState = (patch: Partial<OrderState["order"]> = {}, rights: Partial<OrderState> = {}): OrderState => ({
     order: { id: "o1", number: "FAC-PO-2026-00001", status: "draft", vendorId: "s1", supplierName: "Nile Marble & Granite", legalEntityId: "f", companyCode: "FAC", currency: "AED",
       total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
-      revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
+      revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", retentionPercent: "0.00", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
       subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", createdBy: "u1", submittedBy: null, approvedByName: null, approvedAt: null, sentAt: null, sentTo: null,
       confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, overReason: null, continuedAt: null, continuedNote: null, continuedByName: null, fundsOverrideAt: null, fundsOverrideReason: null, fundsOverrideByName: null, companyName: "Studio Furniture", ...patch },
     lines: [

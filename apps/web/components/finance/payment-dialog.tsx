@@ -15,8 +15,9 @@ const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const METHODS: PaymentMethod[] = ["bank", "cheque", "cash", "card", "other"];
 
 /**
- * A payment made to a supplier: when, how much and how, and which approved invoices it pays. Opened from
- * an invoice it pays that invoice; opened from the supplier it can be an advance on an order instead.
+ * A payment made to a supplier: when, how much and how, and which approved invoices it pays (never more
+ * than each can be paid now). Opened from an invoice it pays that invoice; opened from the supplier it can
+ * be an advance on an order instead — the only kind where invoices are paid through payment runs.
  * Whatever isn't put against an invoice stays with the supplier to allocate later.
  */
 export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, currency: fixedCurrency, forBill, onClose, onSaved }: {
@@ -29,11 +30,11 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
   const [supplier, setSupplier] = useState<SupplierState | null>(null);
   const [pair, setPair] = useState(fixedCompany && fixedCurrency ? `${fixedCompany}|${fixedCurrency}` : "");
   const [paidOn, setPaidOn] = useState<string | null>(format.today());
-  const [amount, setAmount] = useState(forBill ? plain(forBill.balance) : "");
+  const [amount, setAmount] = useState(forBill ? plain(forBill.payable) : "");
   const [method, setMethod] = useState<PaymentMethod>("bank");
   const [reference, setReference] = useState("");
   const [orderId, setOrderId] = useState("");
-  const [parts, setParts] = useState<Record<string, string>>(forBill ? { [forBill.id]: plain(forBill.balance) } : {});
+  const [parts, setParts] = useState<Record<string, string>>(forBill ? { [forBill.id]: plain(forBill.payable) } : {});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -54,8 +55,10 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
   const [legalEntityId, currency] = pair ? pair.split("|") : ["", ""];
   const orders = (supplier?.orders ?? []).filter((order) => order.legalEntityId === legalEntityId && order.currency === currency);
   const orderNumber = orders.find((order) => order.id === orderId)?.number ?? null;
-  const open = (supplier?.bills ?? []).filter((bill) => bill.status === "approved" && Number(bill.balance) > 0 && bill.legalEntityId === legalEntityId && bill.currency === currency
-    && (!orderNumber || bill.orders.includes(orderNumber)))
+  // Where invoices are paid only through runs, this records an advance on an order and nothing else.
+  const advanceOnly = Boolean(supplier?.runsRequired);
+  const open = advanceOnly ? [] : (supplier?.bills ?? []).filter((bill) => bill.status === "approved" && Number(bill.payable) > 0 && bill.legalEntityId === legalEntityId
+    && bill.currency === currency && (!orderNumber || bill.orders.includes(orderNumber)))
     .sort((a, b) => (a.dueDate ?? a.invoiceDate).localeCompare(b.dueDate ?? b.invoiceDate));
   const allocated = addExact(...open.map((bill) => parts[bill.id] || "0"));
   const over = amount && subtractExact(allocated, amount) !== "0";
@@ -67,14 +70,14 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
     const next: Record<string, string> = {};
     for (const bill of open) {
       if (left === "0") break;
-      const part = subtractExact(left, bill.balance) === "0" ? left : plain(bill.balance);
+      const part = subtractExact(left, bill.payable) === "0" ? left : plain(bill.payable);
       next[bill.id] = part;
       left = subtractExact(left, part);
     }
     setParts(next);
   };
   const bankMissing = method === "bank" && supplier && !supplier.supplier.bank;
-  const ready = Boolean(pair && paidOn && amount && Number(amount) > 0 && !over && !bankMissing);
+  const ready = Boolean(pair && paidOn && amount && Number(amount) > 0 && !over && !bankMissing && (!advanceOnly || orderId));
 
   return <ControlledModalDialog isOpen size="lg" title={t("Record payment")} description={supplier?.supplier.name} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
@@ -88,6 +91,7 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
       }}>{t("Record payment")}</Button></div>}>
     {!supplier && !error ? <Skeleton lines={6} /> : <div className={styles.dialogBody}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
+      {advanceOnly ? <InlineNotice tone="info" message={t("Invoices are paid through payment runs. Record an advance on an order here.")} /> : null}
       {!fixedCompany && pairs.length > 1 ? <SelectField label={t("Paid by")} isRequired placeholder={t("Choose")} selectedKey={pair || null}
         onSelectionChange={(key) => { setPair(key ? String(key) : ""); setOrderId(""); setParts({}); }} items={pairs} /> : null}
       <div className={styles.trio}>
@@ -111,7 +115,7 @@ export function PaymentDialog({ api, vendorId, legalEntityId: fixedCompany, curr
           {amount ? <Button size="compact" variant="quiet" onPress={spread}>{t("Oldest first")}</Button> : null}</div>
         <div className={styles.allocations}>{open.map((bill) => <div key={bill.id} className={styles.allocation}>
           <span className={styles.nameCell}><span>{bill.number}</span>
-            <small>{[bill.dueDate ? t("Due {date}", { date: format.day(bill.dueDate) }) : "", t("{amount} left", { amount: money(bill.balance) })].filter(Boolean).join(" · ")}</small></span>
+            <small>{[bill.dueDate ? t("Due {date}", { date: format.day(bill.dueDate) }) : "", t("{amount} to pay", { amount: money(bill.payable) })].filter(Boolean).join(" · ")}</small></span>
           <TextInput aria-label={t("Amount for {invoice}", { invoice: bill.number })} label={null} inputMode="decimal" value={parts[bill.id] ?? ""}
             onChange={(value) => setParts({ ...parts, [bill.id]: numeric(value) })} />
         </div>)}</div>

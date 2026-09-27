@@ -13,11 +13,14 @@ import { AccountingPostings } from "./accounting-postings";
 import { BillEditor } from "./bill-editor";
 import { ClientInvoices } from "./client-invoices";
 import { Bills } from "./bills";
+import { PaymentRuns } from "./payment-runs";
 import { Payments } from "./payments";
 import { SuppliersOwed } from "./suppliers-owed";
 import styles from "./finance.module.css";
 
-/** Finance: suppliers' invoices to check and pay, payments made, and what each supplier is owed. Records open in place. */
+const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "client-invoices": "invoice" };
+
+/** Finance: suppliers' invoices to check and pay, payments and payment runs, what each supplier is owed, clients' tax invoices, and accounting postings. Records open in place. */
 export function FinancePage({ workspaceId, section, supplierId }: { workspaceId: string; section: FinanceSection; supplierId: string | null }) {
   const t = useT();
   const router = useRouter();
@@ -28,23 +31,31 @@ export function FinancePage({ workspaceId, section, supplierId }: { workspaceId:
   const [state, setState] = useState<PayablesState | null>(null);
   const [error, setError] = useState("");
   const [entering, setEntering] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Finance didn't load.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const go = (next: FinanceSection, open?: string | null) => {
     const base = `/workspace/finance${next === "bills" ? "" : `/${next}`}`;
-    const key = next === "bills" ? "bill" : next === "client-invoices" ? "invoice" : "payment";
-    router.replace(!open ? base : next === "suppliers" ? `${base}/${open}` : `${base}?${key}=${open}`, { scroll: false });
+    router.replace(!open || next === "accounting" ? base : next === "suppliers" ? `${base}/${open}` : `${base}?${OPEN_PARAM[next]}=${open}`, { scroll: false });
   };
   const held = state?.bills.filter((bill) => bill.status === "held").length ?? 0;
+  const toApprove = state?.canApprove ? state.runs.filter((run) => run.status === "submitted").length : 0;
+  // One primary action, for the tab it belongs to: a run on Payment runs, a supplier's invoice on the supplier tabs.
+  const action = !state?.canManage || section === "client-invoices" || section === "accounting" ? undefined : section === "runs"
+    ? <Button variant="primary" onPress={() => setPreparing(true)}>{t("New run")}</Button>
+    : <Button variant="primary" onPress={() => setEntering(true)}>{t("Enter invoice")}</Button>;
   return <div className={styles.page}>
-    <PageHeader title={t("Finance")} actions={state?.canManage ? <Button variant="primary" onPress={() => setEntering(true)}>{t("Enter invoice")}</Button> : undefined} />
+    <PageHeader title={t("Finance")} actions={action} />
     <Tabs selectedKey={section} onSelectionChange={(key) => go(key as FinanceSection)} items={[
       { id: "bills", label: held ? t("Supplier invoices ({count})", { count: held }) : t("Supplier invoices"),
         panel: <Bills api={api} state={state} error={error} openId={params.get("bill")} onReload={() => void load()} onOpen={(id) => go("bills", id)} /> },
       { id: "payments", label: t("Payments"),
         panel: <Payments api={api} state={state} error={error} openId={params.get("payment")} onReload={() => void load()} onOpen={(id) => go("payments", id)} onOpenBill={(id) => go("bills", id)} /> },
+      { id: "runs", label: toApprove ? t("Payment runs ({count})", { count: toApprove }) : t("Payment runs"),
+        panel: <PaymentRuns api={api} state={state} error={error} openId={params.get("run")} creating={preparing} onReload={() => void load()} onOpen={(id) => go("runs", id)}
+          onCreated={(id) => { setPreparing(false); if (id) go("runs", id); }} /> },
       { id: "suppliers", label: t("Owed to suppliers"),
         panel: <SuppliersOwed api={api} state={state} error={error} openId={supplierId} onReload={() => void load()} onOpen={(id) => go("suppliers", id)} onOpenBill={(id) => go("bills", id)}
           onOpenPayment={(id) => go("payments", id)} /> },

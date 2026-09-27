@@ -31,6 +31,7 @@ export function SupplierSheet({ api, state, supplier, onState, onClose }: {
   const [form, setForm] = useState({
     name: supplier?.name ?? "", legalName: supplier?.legalName ?? "", categories: supplier?.categories ?? [], paymentTerms: supplier?.paymentTerms ?? "upfront" as PaymentTerms,
     advancePercent: percentText(supplier?.advancePercent ?? null), creditDays: supplier?.creditDays ? String(supplier.creditDays) : "", termsNote: supplier?.termsNote ?? "",
+    retentionPercent: percentText(supplier && Number(supplier.retentionPercent) ? supplier.retentionPercent : null),
     deal: supplier?.deal ?? "none" as Deal, dealPercent: percentText(supplier?.dealPercent ?? null), dealNote: supplier?.dealNote ?? "",
     contactName: supplier?.contactName ?? "", phoneCountry: phone.country, phone: phone.national, email: supplier?.email ?? "", locality: supplier?.locality ?? "",
     entityIds: new Set(supplier?.entityIds ?? (state.entities.length === 1 ? [state.entities[0].id] : [])), taxRegistrationNumber: supplier?.taxRegistrationNumber ?? "", notes: supplier?.notes ?? "",
@@ -45,11 +46,12 @@ export function SupplierSheet({ api, state, supplier, onState, onClose }: {
     try { onState(await work()); return true; } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); return false; }
   };
   const valid = form.name.trim() && (form.paymentTerms !== "split" || Number(form.advancePercent) > 0) && (form.paymentTerms !== "credit" || Number(form.creditDays) > 0)
+    && (!form.retentionPercent || Number(form.retentionPercent) < 100)
     && (!["discount", "commission"].includes(form.deal) || Number(form.dealPercent) > 0);
   const save = async () => {
     setBusy(true);
     const done = await run(() => api.saveSupplier({ id, version: supplier?.version ?? 0, name: form.name, legalName: form.legalName, categories: form.categories,
-      paymentTerms: form.paymentTerms, advancePercent: form.advancePercent, creditDays: form.creditDays ? Number(form.creditDays) : null, termsNote: form.termsNote,
+      paymentTerms: form.paymentTerms, advancePercent: form.advancePercent, creditDays: form.creditDays ? Number(form.creditDays) : null, termsNote: form.termsNote, retentionPercent: form.retentionPercent,
       deal: form.deal, dealPercent: form.dealPercent, dealNote: form.dealNote, contactName: form.contactName, phone: joinPhone(form.phoneCountry, form.phone), email: form.email,
       locality: form.locality, entityIds: [...form.entityIds], taxRegistrationNumber: form.taxRegistrationNumber, notes: form.notes }));
     setBusy(false);
@@ -89,7 +91,11 @@ export function SupplierSheet({ api, state, supplier, onState, onClose }: {
             : form.paymentTerms === "credit" ? <TextInput label={t("Days")} isRequired isReadOnly={!edit} inputMode="numeric" value={form.creditDays} onChange={(value) => set("creditDays")(value.replace(/\D/g, "").slice(0, 3))} />
             : <span />}
         </div>
-        <TextInput label={t("Terms note")} isReadOnly={!edit} value={form.termsNote} onChange={set("termsNote")} />
+        <div className={styles.pair}>
+          <TextInput label={t("Terms note")} isReadOnly={!edit} value={form.termsNote} onChange={set("termsNote")} />
+          <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} isReadOnly={!edit} inputMode="decimal" suffix="%" value={form.retentionPercent}
+            onChange={(value) => set("retentionPercent")(value.replace(/[^\d.]/g, ""))} />
+        </div>
         <div className={styles.pair}>
           <SelectField label={t("Discount or commission")} isDisabled={!edit} selectedKey={form.deal} onSelectionChange={(key) => set("deal")(key as Deal)}
             items={DEALS.map((item) => ({ id: item, label: labels.deal[item] }))} />

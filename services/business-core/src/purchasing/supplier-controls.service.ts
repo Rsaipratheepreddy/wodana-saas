@@ -8,7 +8,7 @@ import { notifyUserInApp } from "../notifications/default-templates";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
-import { readSupplier } from "./suppliers";
+import { maskAccountNumber, readSupplier } from "./suppliers";
 
 type Db = Pick<PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -47,7 +47,7 @@ async function readBankAccounts(db: Db, workspaceId: string, vendorId: string, f
       WHERE account.workspace_id = $1 AND account.vendor_id = $2
       ORDER BY array_position(ARRAY['pending', 'approved', 'rejected', 'retired'], account.status::text), account.requested_at DESC`, [workspaceId, vendorId])).rows;
   // Only people who verify bank details see the whole number; everyone else sees its last four digits.
-  return full ? rows : rows.map((row) => ({ ...row, accountNumber: `•••• ${row.accountNumber.replace(/\s+/g, "").slice(-4)}` }));
+  return full ? rows : rows.map((row) => ({ ...row, accountNumber: maskAccountNumber(row.accountNumber) }));
 }
 
 export type RateContract = {

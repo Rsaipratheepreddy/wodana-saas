@@ -26,7 +26,8 @@ export function SuppliersOwed({ api, state, error, openId, onReload, onOpen, onO
       <span>{row.supplierName}</span><small>{row.companyName}</small></span> } },
     { id: "owed", header: t("Owed"), accessorFn: (row) => Number(row.owed), size: 190, meta: { renderCell: (row) => <span className={styles.nameCell}>
       <span className={styles.money}>{Number(row.owed) < 0 ? t("{amount} paid ahead", { amount: format.money(plain(row.owed).replace("-", ""), row.currency) }) : format.money(row.owed, row.currency)}</span>
-      {Number(row.held) > 0 ? <small>{t("{amount} held", { amount: format.money(row.held, row.currency) })}</small> : null}</span> } },
+      {Number(row.held) > 0 ? <small>{t("{amount} held", { amount: format.money(row.held, row.currency) })}</small> : null}
+      {Number(row.retention) > 0 ? <small>{t("{amount} retention", { amount: format.money(row.retention, row.currency) })}</small> : null}</span> } },
     { id: "overdue", header: t("Overdue"), accessorFn: (row) => Number(row.overdue), size: 170, meta: { renderCell: (row) => Number(row.overdue) > 0
       ? <span className={`${styles.money} ${styles.lateText}`}>{format.money(row.overdue, row.currency)}</span> : <span className={styles.muted}>—</span> } },
   ], [t, format]);
@@ -64,6 +65,7 @@ function OwedSheet({ api, vendorId, onChanged, onClose, onOpenBill, onOpenPaymen
           <span className={styles.money}>{Number(row.owed) < 0 ? t("{amount} paid ahead", { amount: format.money(plain(row.owed).replace("-", ""), row.currency) })
             : t("{amount} owed", { amount: format.money(row.owed, row.currency) })}</span>
           {Number(row.overdue) > 0 ? <span className={styles.lateText}>{t("{amount} overdue", { amount: format.money(row.overdue, row.currency) })}</span> : null}
+          {Number(row.retention) > 0 ? <span className={styles.muted}>{t("{amount} retention held", { amount: format.money(row.retention, row.currency) })}</span> : null}
           {Number(row.debited) > 0 ? <span className={styles.muted}>{t("{amount} in debit notes", { amount: format.money(row.debited, row.currency) })}</span> : null}
         </dd></div>)}
         <div><dt>{t("Bank account")}</dt><dd>{state.supplier.bank ? t("{bank} ending {digits}", { bank: state.supplier.bank.bankName, digits: state.supplier.bank.last4 })

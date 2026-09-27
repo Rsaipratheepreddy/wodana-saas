@@ -18,7 +18,7 @@ import { outstanding, readReceipts, settleOrder } from "./receiving";
 import { describeShort, fundsShort, type FundsShort } from "./spending-guard";
 import { readReturns } from "./returns.service";
 import { contractPrice } from "./supplier-controls.service";
-import { PAYMENT_TERMS, percent, readSupplier, type Supplier } from "./suppliers";
+import { PAYMENT_TERMS, percent, readSupplier, retentionPercent, type Supplier } from "./suppliers";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -79,7 +79,7 @@ export class OrdersService {
       const threshold = body.approvalThreshold === undefined ? current.approvalThreshold
         : body.approvalThreshold === null || body.approvalThreshold === "" ? null : String(body.approvalThreshold);
       if (threshold !== null && !NUMBER.test(threshold)) throw new BadRequestException("Enter the amount from which orders need approval, or leave it empty.");
-      const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto") => (body[key] === undefined ? current[key] : body[key] === true);
+      const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto" | "paymentRunsRequired") => (body[key] === undefined ? current[key] : body[key] === true);
       const tolerance = body.receiveTolerancePercent === undefined ? current.receiveTolerancePercent : String(body.receiveTolerancePercent || "0");
       if (!NUMBER.test(tolerance) || Dec.of(tolerance).cmp(50) > 0) throw new BadRequestException("Over-delivery is a percentage from 0 to 50.");
       const adjustLimit = body.stockAdjustApprovalValue === undefined ? current.stockAdjustApprovalValue
@@ -92,10 +92,11 @@ export class OrdersService {
       const guard = body.spendingGuard === undefined ? current.spendingGuard : String(body.spendingGuard);
       if (!["off", "warn", "strict"].includes(guard)) throw new BadRequestException("Choose how orders beyond a project's money are handled.");
       await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
-        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, invoice_tolerance_percent = $11, spending_guard = $12, version = version + 1, updated_by = $7, updated_at = now()
+        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, invoice_tolerance_percent = $11, spending_guard = $12,
+        payment_runs_required = $13, version = version + 1, updated_by = $7, updated_at = now()
         WHERE workspace_id = $1`,
         [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit, ahead,
-          invoiceTolerance, guard]);
+          invoiceTolerance, guard, flag("paymentRunsRequired")]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });
@@ -142,8 +143,8 @@ export class OrdersService {
         const terms = this.terms(body, order);
         const lines = body.lines === undefined ? null : await this.lines(client, workspaceId, body.lines, { tax: await defaultTaxRate(client, workspaceId, order.legalEntityId),
           discount: supplier.deal === "discount" ? supplier.dealPercent ?? "0" : "0", vendorId: order.vendorId, currency: order.currency });
-        await set(`deliver_to = $3, delivery_address = $4, expected_date = $5, notes = $6, payment_terms = $7, advance_percent = $8, credit_days = $9, terms_note = $10`,
-          [header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, terms.paymentTerms, terms.advancePercent, terms.creditDays, terms.termsNote]);
+        await set(`deliver_to = $3, delivery_address = $4, expected_date = $5, notes = $6, payment_terms = $7, advance_percent = $8, credit_days = $9, terms_note = $10, retention_percent = $11`,
+          [header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, terms.paymentTerms, terms.advancePercent, terms.creditDays, terms.termsNote, terms.retentionPercent]);
         if (lines) {
           await this.writeLines(client, workspaceId, orderId, lines, order.currency);
           // An override was for the order as it was.
@@ -434,10 +435,10 @@ export class OrdersService {
     const number = await nextOrderNumber(client, workspaceId, legalEntityId);
     await client.query(
       `INSERT INTO purchase_orders (id, workspace_id, number, legal_entity_id, vendor_id, currency, payment_terms, advance_percent, credit_days, terms_note, deliver_to, delivery_address,
-                                    expected_date, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+                                    expected_date, notes, created_by, retention_percent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [id, workspaceId, number, legalEntityId, supplier.id, currency, supplier.paymentTerms, supplier.advancePercent, supplier.creditDays, supplier.termsNote,
-        header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, userId]);
+        header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, userId, supplier.retentionPercent]);
     await this.writeLines(client, workspaceId, id, lines, currency);
     await orderEvent(client, workspaceId, id, "created", { number, lines: lines.length, ...(input.from ?? {}) }, userId);
     await recordAudit(client, { workspaceId, actorUserId: userId, action: "purchase_order.created", entityType: "purchase_order", entityId: id, after: { number, vendorId: supplier.id, lines: lines.length, ...(input.from ?? {}) } });
@@ -544,7 +545,8 @@ export class OrdersService {
     const advancePercent = paymentTerms === "split" ? percent(body.advancePercent ?? current.advancePercent, "The advance") : null;
     const days = paymentTerms === "credit" ? Number(body.creditDays ?? current.creditDays) : null;
     if (days !== null && (!Number.isInteger(days) || days < 1 || days > 365)) throw new BadRequestException("Credit is a whole number of days, from 1 to 365.");
-    return { paymentTerms, advancePercent, creditDays: days, termsNote: body.termsNote === undefined ? current.termsNote : text(body.termsNote, 500, "Terms note") };
+    return { paymentTerms, advancePercent, creditDays: days, termsNote: body.termsNote === undefined ? current.termsNote : text(body.termsNote, 500, "Terms note"),
+      retentionPercent: body.retentionPercent === undefined ? current.retentionPercent : retentionPercent(body.retentionPercent) };
   }
 
   /**

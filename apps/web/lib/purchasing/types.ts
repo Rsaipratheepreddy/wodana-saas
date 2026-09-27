@@ -6,6 +6,8 @@ export type Supplier = {
   id: string; code: string; name: string; legalName: string | null; categories: string[];
   approval: Approval; preferredFor: string[]; approvalNote: string; approvalAt: string | null; approvalByName: string | null;
   paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string;
+  /** The share of each invoice held back until handover, copied to new orders. */
+  retentionPercent: string;
   deal: Deal; dealPercent: string | null; dealNote: string;
   contactName: string | null; phone: string | null; email: string | null; locality: string | null;
   entityIds: string[]; taxRegistrationNumber: string | null; currency: string | null; notes: string;
@@ -35,7 +37,9 @@ export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
 export type PurchasingSettings = {
   approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
-  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; invoiceTolerancePercent: string; spendingGuard: "off" | "warn" | "strict"; version: number;
+  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; invoiceTolerancePercent: string; spendingGuard: "off" | "warn" | "strict";
+  /** Invoices are paid only through an approved payment run; advances on orders are still recorded directly. */
+  paymentRunsRequired: boolean; version: number;
 };
 
 /** Something a running project still needs to order. */
@@ -67,7 +71,9 @@ export type OrderLine = {
   alternateNote: string; alternateOfferedBy: string | null; originalDescription: string | null; originalSpecification: string | null;
 };
 export type OrderDetail = OrderRow & {
-  paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
+  paymentTerms: PaymentTerms; advancePercent: string | null; creditDays: number | null; termsNote: string;
+  /** The share of each invoice held back until the project's handover. */
+  retentionPercent: string; deliverTo: DeliverTo; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
   continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;

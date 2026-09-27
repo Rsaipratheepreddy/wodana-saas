@@ -1,4 +1,4 @@
-import type { BillState, InvoiceableState, PayablesState, PaymentState, SupplierState } from "./types";
+import type { BillState, InvoiceableState, PayablesState, PaymentState, RunState, SupplierState } from "./types";
 
 export class PayablesRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -11,7 +11,7 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
   return data as T;
 }
 
-/** The payables API for one workspace: suppliers' invoices, payments to suppliers, and what each is owed. */
+/** The payables API for one workspace: suppliers' invoices, payments to suppliers, what each is owed, and payment runs. */
 export function payablesApi(workspaceId: string) {
   const at = (value: string) => `/api/payables/${value}?${new URLSearchParams({ workspaceId })}`;
   /** One change, with its own command id so a retry never runs it twice. */
@@ -21,8 +21,8 @@ export function payablesApi(workspaceId: string) {
     bill: (id: string) => request<BillState>(at(`bills/${id}`)),
     supplier: (vendorId: string) => request<SupplierState>(at(`suppliers/${vendorId}`)),
     invoiceable: (orderId: string) => request<InvoiceableState>(at(`orders/${orderId}`)),
-    /** save · submit · approve · cancel (an invoice, by id and version). */
-    billCommand: (action: "save" | "submit" | "approve" | "cancel", input: Record<string, unknown>) => command<BillState>(action, input),
+    /** save · submit · approve · cancel · release (retention) — an invoice, by id and version. */
+    billCommand: (action: "save" | "submit" | "approve" | "cancel" | "release", input: Record<string, unknown>) => command<BillState>(action, input),
     /** pay (a new payment, by its id) · allocate · reverse (by paymentId). */
     paymentCommand: (action: "pay" | "allocate" | "reverse", input: Record<string, unknown>) => command<PaymentState>(action, input),
     uploadFile: async (billId: string, file: File) => {
@@ -33,6 +33,20 @@ export function payablesApi(workspaceId: string) {
       return data as BillState;
     },
     fileUrl: (billId: string) => at(`bills/${billId}/file`),
+    run: (runId: string) => request<RunState>(at(`runs/${runId}`)),
+    /** save · submit · approve · return · paid · cancel — a payment run, by id (and version once it exists). */
+    runCommand: (action: "save" | "submit" | "approve" | "return" | "paid" | "cancel", input: Record<string, unknown>) =>
+      request<RunState>(at("runs"), "POST", { ...input, action, commandId: crypto.randomUUID() }),
+    /** An approved run's file for the bank, or why it can't be made. */
+    runFile: async (runId: string) => {
+      const response = await fetch(at(`runs/${runId}/file`), { cache: "no-store" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new PayablesRequestError(typeof data?.message === "string" ? data.message : "The file could not be made.", response.status);
+      }
+      const name = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ?? "payment-run.csv";
+      return { name, body: await response.blob() };
+    },
   };
 }
 export type PayablesApi = ReturnType<typeof payablesApi>;

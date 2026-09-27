@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Req, Res, StreamableFile, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
@@ -7,13 +7,14 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { PayablesService } from "./payables.service";
+import { PaymentRunsService } from "./payment-runs.service";
 
-/** Suppliers' invoices, what each supplier is owed, and payments to them. Bodies are validated in the service. */
+/** Suppliers' invoices, what each supplier is owed, payments to them, and payment runs. Bodies are validated in the services. */
 @ApiTags("payables")
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/payables")
 export class PayablesController {
-  constructor(private readonly payables: PayablesService) {}
+  constructor(private readonly payables: PayablesService, private readonly runs: PaymentRunsService) {}
 
   @Get()
   overview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
@@ -53,5 +54,22 @@ export class PayablesController {
   @Get("orders/:orderId")
   invoiceable(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("orderId", ParseUUIDPipe) orderId: string) {
     return this.payables.invoiceable(actor, workspaceId, orderId);
+  }
+
+  @Post("runs")
+  runCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.runs.command(actor, workspaceId, input ?? {});
+  }
+
+  @Get("runs/:runId")
+  run(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("runId", ParseUUIDPipe) runId: string) {
+    return this.runs.run(actor, workspaceId, runId);
+  }
+
+  @Get("runs/:runId/file")
+  @Header("Cache-Control", "private, no-store")
+  async runFile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("runId", ParseUUIDPipe) runId: string) {
+    const file = await this.runs.file(actor, workspaceId, runId);
+    return new StreamableFile(Buffer.from(file.body, "utf8"), { type: "text/csv; charset=utf-8", disposition: `attachment; filename="${file.fileName}"` });
   }
 }

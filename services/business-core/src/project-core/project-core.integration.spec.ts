@@ -39,7 +39,8 @@ import { ReceivablesService, processReceivablesOverdue } from "../receivables/re
 import { CommercialService } from "../commercial/commercial.service";
 import { AccountingService } from "../accounting/accounting.service";
 import { applyResult, claimPostings } from "../accounting/accounting-sync";
-import { processPayablesDue } from "../purchasing/purchasing-reminders";
+import { processPayablesDue, processRetentionReleases } from "../purchasing/purchasing-reminders";
+import { PaymentRunsService } from "../purchasing/payment-runs.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -3291,6 +3292,237 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query(`INSERT INTO integration_connections (id, workspace_id, legal_entity_id, provider, display_name, status) VALUES ($1, $2, $3, 'zoho_books', 'Zoho', 'connected')`,
         [other, w.workspaceId, company]);
       await expect(link({ connectionId: other }, 2)).rejects.toThrow(/already posted to the other accounting connection/);
+    });
+  });
+
+  it("holds retention until handover and releases it per project, and pays approved invoices only through runs someone else approved, never paying a balance twice", async () => {
+    await world(async (w) => {
+      const { projectId, company, vendor, buyer, manager, access, all } = await buying(w, { signoff: false });
+      // A second project, so one invoice can hold retention for two.
+      const second = randomUUID();
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO delivery_projects (id, workspace_id, case_id, name, status, created_by, reference, currency, started_at, started_by, quote_id)
+        SELECT $2, workspace_id, $3, 'Marina flat', 'active', created_by, 'PRJ-9998', currency, started_at, started_by, quote_id FROM delivery_projects WHERE id = $1`, [projectId, second, randomUUID()]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      // Who pays suppliers (the designer) and who approves (the manager) hear about it.
+      const role = async (code: string, permissions: string[], membership: string) => {
+        const id = randomUUID();
+        await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, $3, $3)", [id, w.workspaceId, code]);
+        await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = ANY($3::text[])", [w.workspaceId, id, permissions]);
+        await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, membership, id]);
+      };
+      await role("payer", ["payables.manage"], w.designerMembership);
+      await role("checker", ["payables.manage", "payables.approve"], w.managerMembership);
+      const payables = [...all, "payables.view", "payables.manage", "payables.approve"];
+      const payer = new PayablesService(access(w.designer, payables)), approver = new PayablesService(access(w.manager, payables));
+      const clerk = new PayablesService(access(w.designer, ["payables.view", "payables.manage"]));
+      const preparer = new PaymentRunsService(access(w.designer, payables)), checker = new PaymentRunsService(access(w.manager, payables));
+      const send = (service: PayablesService, body: Record<string, unknown>) => service.command(actor, w.workspaceId, { commandId: randomUUID(), ...body });
+      const sendRun = (service: PaymentRunsService, body: Record<string, unknown>) => service.command(actor, w.workspaceId, { commandId: randomUUID(), ...body });
+      const bill = async (id: string) => (await payer.bill(actor, w.workspaceId, id)).bill;
+
+      // The supplier holds back 10% of each invoice; new orders take it, and a draft's own share can change.
+      const supplierVersion = async () => (await w.client.query<{ version: number }>(`SELECT version FROM workspace_vendors WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, vendor])).rows[0].version;
+      const supplier = { id: vendor, name: "Nile Marble", entityIds: [company], email: "orders@nile.example" };
+      await expect(buyer.suppliers.save(actor, w.workspaceId, { ...supplier, version: await supplierVersion(), retentionPercent: "100" })).rejects.toThrow(/Retention is a percentage/);
+      await buyer.suppliers.save(actor, w.workspaceId, { ...supplier, version: await supplierVersion(), retentionPercent: "10" });
+      const scratch = randomUUID();
+      let scratchOrder = await buyer.orders.create(actor, w.workspaceId, { id: scratch, vendorId: vendor, lines: [{ description: "Grout", unit: "bags", quantity: "1", unitPrice: "5", projectId }] });
+      expect(scratchOrder.order.retentionPercent).toBe("10.00");
+      scratchOrder = await buyer.orders.command(actor, w.workspaceId, scratch, { action: "save", version: scratchOrder.order.version, retentionPercent: "7.5" });
+      expect(scratchOrder.order.retentionPercent).toBe("7.50");
+      await expect(buyer.orders.command(actor, w.workspaceId, scratch, { action: "save", version: scratchOrder.order.version, retentionPercent: "-1" })).rejects.toThrow(/Retention is a percentage/);
+
+      // Fitting for both projects at the supplier's 10%, all received.
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [
+        { description: "Fitting", unit: "m", quantity: "10", unitPrice: "100", taxRate: "5", projectId },
+        { description: "Fitting", unit: "m", quantity: "4", unitPrice: "33.33", taxRate: "5", projectId: second }]);
+      const [mine, theirs] = [projectId, second].map((id) => order.lines.find((line) => line.projectId === id)!);
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: "warehouse", receivedOn: "2026-09-25",
+        lines: [{ orderLineId: mine.id, received: "10" }, { orderLineId: theirs.id, received: "4" }] });
+
+      // One invoice for both projects and a delivery charge not on the order: held, then approved. Retention is fixed then, on each project's net.
+      const invoice = randomUUID();
+      let entered = await send(payer, { action: "save", id: invoice, vendorId: vendor, legalEntityId: company, currency: "AED", number: "INV-R1", invoiceDate: "2026-09-26",
+        dueDate: "2026-10-30", lines: [{ orderLineId: mine.id, quantity: "10", unitPrice: "100", taxRate: "5" }, { orderLineId: theirs.id, quantity: "4", unitPrice: "33.33", taxRate: "5" },
+          { description: "Delivery", quantity: "1", unitPrice: "50", taxRate: "5", projectId }] }) as Awaited<ReturnType<PayablesService["bill"]>>;
+      entered = await send(payer, { action: "submit", id: invoice, version: entered.bill.version }) as never;
+      expect(entered.bill).toMatchObject({ status: "held", retention: "0.0000" });
+      entered = await send(approver, { action: "approve", id: invoice, version: entered.bill.version, note: "Delivery agreed" }) as never;
+      // 1050 + 139.99 + 52.50; held back 10% of 1000 and of 133.32 (13.332 → 13.33); the delivery charge holds nothing.
+      expect(entered.bill).toMatchObject({ total: "1242.4900", retention: "113.3300", retentionHeld: "113.3300", reserved: "0.0000", payable: "1129.1600", balance: "1242.4900" });
+      expect(entered.lines.map((line) => line.retentionPercent)).toEqual(["10.00", "10.00", "0.00"]);
+      const retentionOf = (state: typeof entered, id: string) => state.retentions.find((row) => row.projectId === id)!;
+      expect(retentionOf(entered, projectId)).toMatchObject({ amount: "100.0000", held: "100.0000" });
+      expect(retentionOf(entered, second)).toMatchObject({ amount: "13.3300", held: "13.3300", projectReference: "PRJ-9998" });
+      expect(entered).toMatchObject({ canPay: true, canRelease: true });
+      // Later terms never change an approved invoice.
+      await w.client.query(`UPDATE purchase_orders SET retention_percent = 20 WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, order.order.id]);
+      expect((await bill(invoice)).retention).toBe("113.3300");
+
+      // Paid now: never into what's held back.
+      await expect(send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "1129.17", method: "cash",
+        allocations: [{ invoiceId: invoice, amount: "1129.17" }] })).rejects.toThrow("Invoice INV-R1 has 1129.16 left to pay; 113.33 retention is held.");
+      await send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "129.16", method: "cash", reference: "CASH-1",
+        allocations: [{ invoiceId: invoice, amount: "129.16" }] });
+      // Past due, retention is still owed but not overdue, and the reminder leaves it out.
+      await w.client.query(`UPDATE supplier_invoices SET invoice_date = '2026-08-01', due_date = '2026-09-01' WHERE workspace_id = $1 AND id = $2`, [w.workspaceId, invoice]);
+      expect((await payer.supplier(actor, w.workspaceId, vendor)).balances).toEqual([expect.objectContaining({ owed: "1113.3300", retention: "113.3300", overdue: "1000.0000" })]);
+      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 2 });
+      expect((await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.due'`, [w.workspaceId])).rows[0].body)
+        .toBe("INV-R1: AED 1000.00 overdue since 2026-09-01");
+
+      // Released before handover only by someone who approves, with why, up to what's held for that project.
+      const version = async () => (await bill(invoice)).version;
+      await expect(send(clerk, { action: "release", id: invoice, version: await version(), projectId: second, reason: "Early" })).rejects.toThrow(/Not allowed/);
+      await expect(send(approver, { action: "release", id: invoice, version: await version(), projectId: second, amount: "3.33" })).rejects.toThrow(/Say why/);
+      await expect(send(approver, { action: "release", id: invoice, version: await version(), projectId: second, amount: "13.34", reason: "Early" })).rejects.toThrow(/Only 13.33 is held back/);
+      await expect(send(approver, { action: "release", id: invoice, version: await version(), projectId: second, amount: "1.005", reason: "Early" })).rejects.toThrow(/more decimals than AED/);
+      await expect(send(approver, { action: "release", id: invoice, version: (await version()) - 1, projectId: second, amount: "1", reason: "Early" })).rejects.toThrow(/Someone else changed/);
+      let released = await send(approver, { action: "release", id: invoice, version: await version(), projectId: second, amount: "3.33", reason: "Their snags closed early" }) as typeof entered;
+      expect(retentionOf(released, second)).toMatchObject({ released: "3.3300", held: "10.0000", releases: [expect.objectContaining({ automatic: false, amount: "3.3300",
+        reason: "Their snags closed early", releasedByName: "Omar Manager" })] });
+      expect(released.bill).toMatchObject({ retentionHeld: "110.0000", payable: "1003.3300" });
+      expect((await w.client.query(`SELECT 1 FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.retention_released' AND recipient_id = $2`, [w.workspaceId, w.designer])).rowCount).toBe(1);
+
+      // The first project's handover is accepted: the daily run releases what its lines held back, once; the second project's stays held.
+      expect(await processRetentionReleases(w.client, w.workspaceId)).toEqual({ released: 0, sent: 0 });
+      await acceptHandover(w, projectId);
+      expect(await processRetentionReleases(w.client, w.workspaceId)).toEqual({ released: 1, sent: 2 });
+      expect(await processRetentionReleases(w.client, w.workspaceId)).toEqual({ released: 0, sent: 0 });
+      released = await payer.bill(actor, w.workspaceId, invoice) as typeof entered;
+      expect(retentionOf(released, projectId)).toMatchObject({ held: "0.0000", releases: [expect.objectContaining({ automatic: true, amount: "100.0000", reason: null, releasedByName: null })] });
+      expect(released.bill).toMatchObject({ retentionHeld: "10.0000", payable: "1103.3300" });
+      expect((await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.retention_released' AND recipient_id = $2`,
+        [w.workspaceId, w.designer])).rows.map((row) => row.body)).toEqual(expect.arrayContaining([expect.stringMatching(/^INV-R1: AED 100\.00 \(.+ handed over\)$/)]));
+
+      // A run lists approved invoices and what to pay of each, never more than can be paid now; a draft reserves nothing.
+      const first = randomUUID();
+      await expect(sendRun(preparer, { action: "save", id: first, items: [{ invoiceId: invoice, amount: "1103.34" }] })).rejects.toThrow(/INV-R1 has 1103.33 to pay now/);
+      let run = await sendRun(preparer, { action: "save", id: first, note: "Friday", items: [{ invoiceId: invoice, amount: "600" }] });
+      expect(run.run).toMatchObject({ number: 1, status: "draft", invoices: 1, suppliers: 1, totals: [{ currency: "AED", amount: "600.0000" }] });
+      expect((await bill(invoice)).reserved).toBe("0.0000");
+      // Only by bank into an approved account.
+      await expect(sendRun(preparer, { action: "submit", id: first, version: run.run.version })).rejects.toThrow(/Nile Marble has no approved bank account/);
+      const account = randomUUID();
+      await w.client.query(`INSERT INTO vendor_bank_accounts (id, workspace_id, vendor_id, account_name, bank_name, account_number, swift, currency, source, status, requested_by,
+          callback_by, callback_at, callback_note, decided_by, decided_at)
+        VALUES ($1, $2, $3, 'Nile Marble LLC', 'Emirates NBD', 'AE07 0331 2345 6789 0123 456', 'EBILAEAD', 'AED', 'supplier_letter', 'approved', $4, $5, now(), 'Called back', $5, now())`,
+        [account, w.workspaceId, vendor, w.designer, w.manager]);
+      run = await sendRun(preparer, { action: "submit", id: first, version: run.run.version });
+      expect(run.run.status).toBe("submitted");
+      expect(await bill(invoice)).toMatchObject({ reserved: "600.0000", payable: "503.3300" });
+      expect((await w.client.query(`SELECT 1 FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.run_submitted' AND recipient_id = $2`, [w.workspaceId, w.manager])).rowCount).toBe(1);
+      // Whoever prepared it can't approve it — nor can the database be made to say so.
+      await expect(sendRun(preparer, { action: "approve", id: first, version: run.run.version })).rejects.toThrow(/Someone other than who prepared/);
+      await w.client.query("SAVEPOINT tamper");
+      await expect(w.client.query(`UPDATE payment_runs SET status = 'approved', approved_by = prepared_by, approved_at = now() WHERE id = $1`, [first])).rejects.toThrow(/check constraint/);
+      await w.client.query("ROLLBACK TO SAVEPOINT tamper");
+      await expect(w.client.query(`UPDATE payment_run_items SET amount = 1 WHERE run_id = $1`, [first])).rejects.toThrow(/only while it is a draft/);
+      await w.client.query("ROLLBACK TO SAVEPOINT tamper");
+
+      // What a submitted run reserves can't be taken again by another run or a direct payment.
+      const other = randomUUID();
+      await expect(sendRun(preparer, { action: "save", id: other, items: [{ invoiceId: invoice, amount: "503.34" }] })).rejects.toThrow(/INV-R1 has 503.33 to pay now/);
+      await expect(send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "503.34", method: "cash",
+        allocations: [{ invoiceId: invoice, amount: "503.34" }] })).rejects.toThrow("Invoice INV-R1 has 503.33 left to pay; 10.00 retention is held; 600.00 is in a payment run.");
+      let spare = await sendRun(preparer, { action: "save", id: other, items: [{ invoiceId: invoice, amount: "503.33" }] });
+      spare = await sendRun(preparer, { action: "submit", id: other, version: spare.run.version });
+      expect((await bill(invoice)).payable).toBe("0.0000");
+      await expect(sendRun(checker, { action: "submit", id: other, version: spare.run.version })).rejects.toThrow(/Only a draft run is submitted/);
+      await expect(send(payer, { action: "cancel", id: invoice, version: await version(), reason: "x" })).rejects.toThrow(/Payments are on this invoice/);
+      // Sent back with why, it stops reserving; then cancelled with why.
+      await expect(sendRun(checker, { action: "return", id: other, version: spare.run.version })).rejects.toThrow(/Say why/);
+      await expect(sendRun(preparer, { action: "return", id: other, version: spare.run.version, note: "x" })).rejects.toThrow(/Someone other than who prepared/);
+      spare = await sendRun(checker, { action: "return", id: other, version: spare.run.version, note: "Pay it next week" });
+      expect(spare.run).toMatchObject({ status: "draft", returnNote: "Pay it next week", approvedBy: null });
+      expect((await bill(invoice)).reserved).toBe("600.0000");
+      expect((await w.client.query(`SELECT 1 FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.run_returned' AND recipient_id = $2`, [w.workspaceId, w.designer])).rowCount).toBe(1);
+      await expect(sendRun(preparer, { action: "cancel", id: other, version: spare.run.version })).rejects.toThrow(/Say why/);
+      spare = await sendRun(preparer, { action: "cancel", id: other, version: spare.run.version, reason: "Next week's run pays it" });
+      expect(spare.run).toMatchObject({ status: "cancelled", cancelReason: "Next week's run pays it" });
+      expect(spare.canCancel).toBe(false);
+
+      // New bank details waiting: the run isn't approved until they're decided.
+      const waiting = randomUUID();
+      await w.client.query(`INSERT INTO vendor_bank_accounts (id, workspace_id, vendor_id, account_name, bank_name, account_number, source, requested_by)
+        VALUES ($1, $2, $3, 'Nile Marble LLC', 'Other Bank', 'AE99 0000 0000 0000 0000 999', 'email', $4)`, [waiting, w.workspaceId, vendor, w.designer]);
+      await expect(sendRun(checker, { action: "approve", id: first, version: run.run.version })).rejects.toThrow(/New bank details for Nile Marble are waiting/);
+      await w.client.query(`UPDATE vendor_bank_accounts SET status = 'rejected', decided_by = $2, decided_at = now(), reject_reason = 'Not the supplier' WHERE id = $1`, [waiting, w.manager]);
+      run = await sendRun(checker, { action: "approve", id: first, version: run.run.version });
+      expect(run.run).toMatchObject({ status: "approved", approvedByName: "Omar Manager" });
+      expect(run.payments).toEqual([expect.objectContaining({ supplierName: "Nile Marble", currency: "AED", amount: "600.00", reference: "Run 1: INV-R1", bank: { bankName: "Emirates NBD", last4: "3456" },
+        bankChangePending: false, bankChanged: false })]);
+      expect((await w.client.query(`SELECT 1 FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.run_approved' AND recipient_id = $2`, [w.workspaceId, w.designer])).rowCount).toBe(1);
+
+      // The bank file: the whole account number only for people who verify bank details.
+      const full = await preparer.file(actor, w.workspaceId, first);
+      expect(full.fileName).toBe("payment-run-1.csv");
+      expect(full.body.split("\r\n")[1]).toBe(`Nile Marble,Nile Marble LLC,Emirates NBD,AE07 0331 2345 6789 0123 456,EBILAEAD,600.00,AED,Run 1: INV-R1`);
+      const masked = await new PaymentRunsService(access(w.designer, ["payables.view", "payables.manage"])).file(actor, w.workspaceId, first);
+      expect(masked.body.split("\r\n")[1]).toBe(`Nile Marble,Nile Marble LLC,Emirates NBD,•••• 3456,EBILAEAD,600.00,AED,Run 1: INV-R1`);
+      expect((await w.client.query(`SELECT 1 FROM audit_events WHERE workspace_id = $1 AND action = 'payment_run.exported' AND entity_id = $2`, [w.workspaceId, first])).rowCount).toBe(2);
+
+      // Marked paid with the bank's reference: one bank payment into the approved account, allocated exactly as the run says; a replay changes nothing.
+      const paid = { action: "paid", id: first, version: run.run.version, paidOn: "2026-09-26" };
+      await expect(sendRun(checker, { ...paid, references: [] })).rejects.toThrow(/Enter the bank's reference for Nile Marble/);
+      await expect(sendRun(checker, { ...paid, paidOn: "2099-01-01", references: [] })).rejects.toThrow(/once the money went out/);
+      await expect(sendRun(checker, { ...paid, references: [{ vendorId: vendor, legalEntityId: company, currency: "AED", reference: "cash-1" }] })).rejects.toThrow(/cash-1 is already recorded/);
+      const commandId = randomUUID();
+      const references = [{ vendorId: vendor, legalEntityId: company, currency: "AED", reference: "TT-100" }];
+      run = await checker.command(actor, w.workspaceId, { commandId, ...paid, references });
+      expect(run.run).toMatchObject({ status: "paid", paidOn: "2026-09-26", paidByName: "Omar Manager" });
+      expect(run.payments[0]).toMatchObject({ reference: "TT-100", paymentId: expect.any(String) });
+      const replay = await checker.command(actor, w.workspaceId, { commandId, ...paid, references });
+      expect(replay.run.version).toBe(run.run.version);
+      const recorded = (await w.client.query<{ amount: string; method: string; reference: string; bankAccountId: string; allocations: string[] }>(
+        `SELECT payment.amount::text AS amount, payment.method, payment.reference, payment.bank_account_id AS "bankAccountId",
+                array_agg(allocation.invoice_id || '=' || allocation.amount::text) AS allocations
+           FROM supplier_payments payment JOIN supplier_payment_allocations allocation ON allocation.workspace_id = payment.workspace_id AND allocation.payment_id = payment.id
+          WHERE payment.workspace_id = $1 AND payment.run_id = $2 GROUP BY payment.id`, [w.workspaceId, first])).rows;
+      expect(recorded).toEqual([{ amount: "600.0000", method: "bank", reference: "TT-100", bankAccountId: account, allocations: [`${invoice}=600.0000`] }]);
+      expect(await bill(invoice)).toMatchObject({ paid: "729.1600", reserved: "0.0000", payable: "503.3300" });
+      await expect(sendRun(checker, { ...paid, version: run.run.version, references })).rejects.toThrow(/Only an approved run is paid/);
+      expect((await w.client.query(`SELECT 1 FROM notifications WHERE workspace_id = $1 AND event_type = 'payables.run_paid' AND recipient_id = $2`, [w.workspaceId, w.designer])).rowCount).toBe(1);
+
+      // Bank details that change after approval stop the payment until the run is approved again.
+      const last = randomUUID();
+      run = await sendRun(preparer, { action: "save", id: last, items: [{ invoiceId: invoice, amount: "503.33" }] });
+      run = await sendRun(preparer, { action: "submit", id: last, version: run.run.version });
+      run = await sendRun(checker, { action: "approve", id: last, version: run.run.version });
+      const moved = randomUUID();
+      await w.client.query(`UPDATE vendor_bank_accounts SET status = 'retired' WHERE id = $1`, [account]);
+      await w.client.query(`INSERT INTO vendor_bank_accounts (id, workspace_id, vendor_id, account_name, bank_name, account_number, source, status, requested_by, callback_by, callback_at, callback_note,
+          decided_by, decided_at) VALUES ($1, $2, $3, 'Nile Marble LLC', 'Mashreq', 'AE11 0000 0000 0000 0000 777', 'supplier_letter', 'approved', $4, $5, now(), 'Called back', $5, now())`,
+        [moved, w.workspaceId, vendor, w.designer, w.manager]);
+      expect((await checker.run(actor, w.workspaceId, last)).payments[0]).toMatchObject({ bankChanged: true, bank: { bankName: "Mashreq", last4: "0777" } });
+      await expect(sendRun(checker, { action: "paid", id: last, version: run.run.version, paidOn: "2026-09-26", references: [{ vendorId: vendor, legalEntityId: company, currency: "AED",
+        reference: "TT-101" }] })).rejects.toThrow(/bank account changed since the run was approved/);
+      await expect(checker.file(actor, w.workspaceId, last)).rejects.toThrow(/bank account changed/);
+      run = await sendRun(checker, { action: "return", id: last, version: run.run.version, note: "New account" });
+      run = await sendRun(preparer, { action: "submit", id: last, version: run.run.version });
+      run = await sendRun(checker, { action: "approve", id: last, version: run.run.version });
+      run = await sendRun(checker, { action: "paid", id: last, version: run.run.version, paidOn: "2026-09-26", references: [{ vendorId: vendor, legalEntityId: company, currency: "AED", reference: "TT-101" }] });
+      expect((await w.client.query<{ bankAccountId: string }>(`SELECT bank_account_id AS "bankAccountId" FROM supplier_payments WHERE workspace_id = $1 AND run_id = $2`, [w.workspaceId, last])).rows)
+        .toEqual([{ bankAccountId: moved }]);
+      // Only the second project's retention is left: owed, not overdue, and not due.
+      expect(await bill(invoice)).toMatchObject({ balance: "10.0000", retentionHeld: "10.0000", payable: "0.0000" });
+      expect((await payer.supplier(actor, w.workspaceId, vendor)).balances).toEqual([expect.objectContaining({ owed: "10.0000", retention: "10.0000", overdue: "0.0000" })]);
+      expect(await processPayablesDue(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      expect((await payer.overview(actor, w.workspaceId)).runs.map((item) => [item.number, item.status])).toEqual([[3, "paid"], [2, "cancelled"], [1, "paid"]]);
+
+      // Where invoices are paid only through runs, nothing pays an invoice directly; an advance on an order still can.
+      const settings = await manager.orders.settings(actor, w.workspaceId);
+      await manager.orders.saveSettings(actor, w.workspaceId, { version: settings.settings.version, paymentRunsRequired: true });
+      await expect(send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "5", method: "cash",
+        allocations: [{ invoiceId: invoice, amount: "5" }] })).rejects.toThrow(/paid through an approved payment run/);
+      await expect(send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "5", method: "cash" }))
+        .rejects.toThrow(/paid through an approved payment run/);
+      const advance = await send(payer, { action: "pay", id: randomUUID(), vendorId: vendor, legalEntityId: company, currency: "AED", paidOn: "2026-09-26", amount: "5", method: "cash",
+        orderId: order.order.id }) as { payment: { orderNumber: string; unallocated: string } };
+      expect(advance.payment).toMatchObject({ orderNumber: order.order.number, unallocated: "5.0000" });
+      expect((await payer.bill(actor, w.workspaceId, invoice)).canPay).toBe(false);
+      expect((await payer.overview(actor, w.workspaceId)).runsRequired).toBe(true);
     });
   });
 });

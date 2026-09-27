@@ -1,21 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, MenuButton, Skeleton, TextAreaField } from "@/design-system";
+import { Button, ControlledModalDialog, ErrorState, InlineNotice, InspectorSheet, MenuButton, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { PayablesApi } from "@/lib/payables/client";
 import type { BillState, PayablesState } from "@/lib/payables/types";
+import { subtractExact } from "@/lib/purchasing/amounts";
 import { useProjectFormat } from "../project-core/format";
 import { BillEditor } from "./bill-editor";
 import { BillStatusLabel, plain, useMethodLabels } from "./finance-labels";
 import { PaymentDialog } from "./payment-dialog";
 import styles from "./finance.module.css";
 
-type Dialog = "edit" | "approve" | "cancel" | "pay" | null;
+type Dialog = "edit" | "approve" | "cancel" | "pay" | "release" | null;
+const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 
 /**
  * One supplier invoice: its lines against their orders, why it's held (if it is), who approved it, the
- * supplier's document, and the payments on it. The next step is the primary action.
+ * supplier's document, the payments on it, and the retention it holds back per project until handover.
+ * The next step is the primary action.
  */
 export function BillSheet({ api, billId, vendors, companies, onChanged, onClose }: {
   api: PayablesApi; billId: string; vendors: PayablesState["vendors"]; companies: PayablesState["companies"]; onChanged: () => void; onClose: () => void;
@@ -29,13 +32,14 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
+  const [release, setRelease] = useState<{ key: string; amount: string }>({ key: "", amount: "" });
   const file = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     try { setState(await api.bill(billId)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("The invoice didn't load.")); }
   }, [api, billId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   /** Runs one change; a clash with someone else's change reloads the invoice and says so. */
-  const run = async (action: "submit" | "approve" | "cancel", input: Record<string, unknown> = {}) => {
+  const run = async (action: "submit" | "approve" | "cancel" | "release", input: Record<string, unknown> = {}) => {
     if (!state) return false;
     setBusy(true); setNotice("");
     try { setState(await api.billCommand(action, { id: billId, version: state.bill.version, ...input })); onChanged(); return true; }
@@ -56,7 +60,12 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
   const more = !state || !bill ? [] : [
     ...(state.canEdit ? [{ id: "edit", label: t("Edit") }] : []),
     ...(state.canCancel ? [{ id: "cancel", label: t("Cancel invoice") }] : []),
+    ...(state.canRelease ? [{ id: "release", label: t("Release retention") }] : []),
   ];
+  // What's still held back, per project; the key is the project (or "none").
+  const holding = (state?.retentions ?? []).filter((row) => Number(row.held) > 0);
+  const releasing = holding.find((row) => (row.projectId ?? "none") === release.key);
+  const openRelease = () => { setText(""); setRelease({ key: holding[0] ? holding[0].projectId ?? "none" : "", amount: holding[0] ? plain(holding[0].held) : "" }); setDialog("release"); };
   const primary = !state || !bill ? null
     : bill.status === "draft" && state.canManage ? <Button variant="primary" isLoading={busy} onPress={() => void run("submit")}>{t("Submit")}</Button>
     : bill.status === "held" && state.canApproveThis ? <Button variant="primary" onPress={() => { setText(""); setDialog("approve"); }}>{t("Approve")}</Button>
@@ -66,7 +75,7 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
 
   return <InspectorSheet isOpen size="lg" title={bill ? `${bill.supplierName} · ${bill.number}` : t("Supplier invoice")} onOpenChange={(value) => { if (!value) onClose(); }}
     footer={state && bill && (primary || more.length) ? <div className="wd-dialog-actions">
-      {more.length ? <MenuButton size="compact" label={t("More")} onAction={(id) => { setText(""); setDialog(id as Dialog); }} items={more} /> : null}
+      {more.length ? <MenuButton size="compact" label={t("More")} onAction={(id) => { if (id === "release") openRelease(); else { setText(""); setDialog(id as Dialog); } }} items={more} /> : null}
       <span className={styles.spacer} />{primary}
     </div> : null}>
     {error && !state ? <ErrorState description={error} onRetry={() => void load()} /> : !state || !bill ? <Skeleton lines={8} /> : <div className={styles.sheet}>
@@ -83,6 +92,8 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
         <div><dt>{t("Due")}</dt><dd>{bill.dueDate ? format.day(bill.dueDate) : "—"}</dd></div>
         <div><dt>{t("Total")}</dt><dd className={styles.money}>{money(bill.total)}</dd></div>
         {bill.status === "approved" ? <div><dt>{t("Left to pay")}</dt><dd className={styles.money}>{money(bill.balance)}</dd></div> : null}
+        {Number(bill.retentionHeld) > 0 ? <div><dt>{t("Retention held")}</dt><dd className={styles.money}>{money(bill.retentionHeld)}</dd></div> : null}
+        {Number(bill.reserved) > 0 ? <div><dt>{t("In a payment run")}</dt><dd className={styles.money}>{money(bill.reserved)}</dd></div> : null}
         <div><dt>{t("Entered by")}</dt><dd>{bill.createdByName}</dd></div>
         {bill.approvedByName ? <div><dt>{t("Approved by")}</dt><dd>{[bill.approvedByName, bill.approvalNote].filter(Boolean).join(" · ")}</dd></div> : null}
         <div><dt>{t("Document")}</dt><dd>
@@ -97,7 +108,8 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
         <ul className={styles.list}>{state.lines.map((line) => <li key={line.id}>
           <span className={styles.nameCell}><span>{line.description}</span>
             <small>{[line.orderNumber, line.projectReference, `${plain(line.quantity)} ${line.unit ?? ""}`.trim(), t("{price} each", { price: money(line.unitPrice) }),
-              Number(line.taxRate) ? t("tax {rate}%", { rate: plain(line.taxRate) }) : ""].filter(Boolean).join(" · ")}</small></span>
+              Number(line.taxRate) ? t("tax {rate}%", { rate: plain(line.taxRate) }) : "",
+              Number(line.retentionPercent) ? t("{percent}% retention", { percent: plain(line.retentionPercent) }) : ""].filter(Boolean).join(" · ")}</small></span>
           <span className={styles.money}>{money(line.total)}</span>
         </li>)}</ul>
         <dl className={styles.totals}>
@@ -106,6 +118,15 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
           <div><dt>{t("Total")}</dt><dd><strong>{money(bill.total)}</strong></dd></div>
         </dl>
       </section>
+      {state.retentions.length ? <section className={styles.part} aria-label={t("Retention")}>
+        <h3 className={styles.subhead}>{t("Retention")}</h3>
+        <ul className={styles.list}>{state.retentions.map((row) => <li key={row.id}>
+          <span className={styles.nameCell}><span>{row.projectReference ?? t("No project")}</span>
+            {row.releases.map((item) => <small key={item.id}>{item.automatic ? t("{amount} released at handover", { amount: money(item.amount) })
+              : t("{amount} released by {name}: {reason}", { amount: money(item.amount), name: item.releasedByName ?? "", reason: item.reason ?? "" })}</small>)}</span>
+          <span className={styles.money}>{Number(row.held) > 0 ? t("{amount} held", { amount: money(row.held) }) : t("Released")}</span>
+        </li>)}</ul>
+      </section> : null}
       {state.payments.length ? <section className={styles.part} aria-label={t("Payments")}>
         <h3 className={styles.subhead}>{t("Payments")}</h3>
         <ul className={styles.list}>{state.payments.map((payment) => <li key={payment.id}>
@@ -127,6 +148,19 @@ export function BillSheet({ api, billId, vendors, companies, onChanged, onClose 
       <div className={styles.dialogBody}>
         {notice ? <InlineNotice tone="error" message={notice} /> : null}
         <TextAreaField label={dialog === "approve" ? t("Why it's approved") : t("Why it's cancelled")} isRequired value={text} onChange={setText} />
+      </div>
+    </ControlledModalDialog> : null}
+    {dialog === "release" && bill ? <ControlledModalDialog isOpen size="md" title={t("Release retention")} onOpenChange={(open) => { if (!open) setDialog(null); }}
+      footer={<div className="wd-dialog-actions"><Button onPress={() => setDialog(null)}>{t("Back")}</Button>
+        <Button variant="primary" isLoading={busy} isDisabled={!releasing || !text.trim() || !(Number(release.amount) > 0) || subtractExact(release.amount, releasing.held) !== "0"}
+          onPress={async () => { if (await run("release", { projectId: releasing?.projectId ?? null, amount: release.amount, reason: text.trim() })) setDialog(null); }}>{t("Release")}</Button></div>}>
+      <div className={styles.dialogBody}>
+        {notice ? <InlineNotice tone="error" message={notice} /> : null}
+        {holding.length > 1 ? <SelectField label={t("Project")} selectedKey={release.key || null} items={holding.map((row) => ({ id: row.projectId ?? "none", label: row.projectReference ?? t("No project") }))}
+          onSelectionChange={(key) => { const row = holding.find((item) => (item.projectId ?? "none") === key); setRelease({ key: String(key ?? ""), amount: row ? plain(row.held) : "" }); }} /> : null}
+        <TextInput label={t("Amount")} isRequired inputMode="decimal" prefix={bill.currency} value={release.amount} onChange={(value) => setRelease({ ...release, amount: numeric(value) })}
+          description={releasing ? t("{amount} held", { amount: money(releasing.held) }) : undefined} />
+        <TextAreaField label={t("Why it's released")} isRequired value={text} onChange={setText} />
       </div>
     </ControlledModalDialog> : null}
     {dialog === "pay" && bill ? <PaymentDialog api={api} vendorId={bill.vendorId} legalEntityId={bill.legalEntityId} currency={bill.currency} forBill={bill}

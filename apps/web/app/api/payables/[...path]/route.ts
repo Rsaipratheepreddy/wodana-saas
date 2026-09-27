@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
 
-/** Payables: suppliers' invoices (and their documents), payments to suppliers, and what each is owed. */
+/** Payables: suppliers' invoices (and their documents), payments to suppliers, what each is owed, and payment runs (and their bank files). */
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "state") return ["GET", "POST"].includes(method);
-  if (path.length === 2 && ["bills", "suppliers", "orders"].includes(path[0]) && UUID.test(path[1])) return method === "GET";
+  if (path.length === 1 && path[0] === "runs") return method === "POST";
+  if (path.length === 2 && ["bills", "suppliers", "orders", "runs"].includes(path[0]) && UUID.test(path[1])) return method === "GET";
   if (path.length === 3 && path[0] === "bills" && UUID.test(path[1]) && path[2] === "file") return ["GET", "POST"].includes(method);
+  if (path.length === 3 && path[0] === "runs" && UUID.test(path[1]) && path[2] === "file") return method === "GET";
   return false;
 }
 
@@ -17,9 +19,16 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const upstream = `/workspaces/${workspaceId}/payables${path[0] === "state" ? "" : `/${path.join("/")}`}`;
   if (path[2] === "file" && request.method === "GET") {
     const result = await authenticatedBackendFetch(upstream, { cache: "no-store" });
-    if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: "The document could not be loaded." }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
-    const response = new NextResponse(result.upstream.body, { status: 200, headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
-      "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
+    if (result.unauthenticated || !result.upstream || !result.upstream.ok) {
+      // A run's bank file says why it can't be made (bank details changed, not approved yet).
+      const reason = path[0] === "runs" && result.upstream ? await result.upstream.json().then((data) => (typeof data?.message === "string" ? data.message : null)).catch(() => null) : null;
+      return NextResponse.json({ message: reason ?? "The document could not be loaded." }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
+    }
+    const headers: Record<string, string> = { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
+      "cache-control": path[0] === "runs" ? "private, no-store" : "private, max-age=300", "x-content-type-options": "nosniff" };
+    const disposition = result.upstream.headers.get("content-disposition");
+    if (disposition) headers["content-disposition"] = disposition;
+    const response = new NextResponse(result.upstream.body, { status: 200, headers });
     applyRotatedSession(response, result.rotatedSession);
     return response;
   }

@@ -6,7 +6,7 @@ import { recordAudit } from "../audit/record-audit";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { tellSupplierOnHold } from "./supplier-controls.service";
 import {
-  APPROVALS, DEALS, PAYMENT_TERMS, cleanCategories, normalName, percent, readApproval, readDeal, readSupplier, readSuppliers, readTerms, supplierCode,
+  APPROVALS, DEALS, PAYMENT_TERMS, cleanCategories, normalName, percent, readApproval, readDeal, readSupplier, readSuppliers, readTerms, retentionPercent, supplierCode,
   type Approval, type Deal, type PaymentTerms, type Supplier,
 } from "./suppliers";
 
@@ -56,17 +56,18 @@ export class SuppliersService {
       if (current) {
         await client.query(
           `UPDATE workspace_vendors SET display_name = $3, legal_name = $4, categories = $5, preferred_for = $6, payment_terms = $7, advance_percent = $8, credit_days = $9, terms_note = $10,
-                  deal = $11, deal_percent = $12, deal_note = $13, tax_registration_number = $14, default_currency = $15, notes = $16, updated_by = $17, updated_at = now(), version = version + 1
+                  deal = $11, deal_percent = $12, deal_note = $13, tax_registration_number = $14, default_currency = $15, notes = $16, updated_by = $17, retention_percent = $18,
+                  updated_at = now(), version = version + 1
             WHERE workspace_id = $1 AND id = $2`,
           [workspaceId, id, name, fields.legalName, categories, preferred, terms.paymentTerms, terms.advancePercent, terms.creditDays, terms.termsNote,
-            deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId]);
+            deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId, terms.retentionPercent]);
       } else {
         await client.query(
           `INSERT INTO workspace_vendors (workspace_id, id, code, display_name, legal_name, capabilities, categories, payment_terms, advance_percent, credit_days, terms_note,
-                                          deal, deal_percent, deal_note, tax_registration_number, default_currency, notes, status, created_by, updated_by)
-           VALUES ($1, $2, $3, $4, $5, '{materials}', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'active', $17, $17)`,
+                                          deal, deal_percent, deal_note, tax_registration_number, default_currency, notes, status, created_by, updated_by, retention_percent)
+           VALUES ($1, $2, $3, $4, $5, '{materials}', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'active', $17, $17, $18)`,
           [workspaceId, id, await supplierCode(client, workspaceId, name), name, fields.legalName, categories, terms.paymentTerms, terms.advancePercent, terms.creditDays,
-            terms.termsNote, deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId]);
+            terms.termsNote, deal.deal, deal.dealPercent, deal.dealNote, tax, currency, fields.notes, user.userId, terms.retentionPercent]);
       }
       await this.contact(client, workspaceId, id, body, user.userId);
       await this.entities(client, workspaceId, id, body.entityIds);
@@ -209,7 +210,7 @@ export class SuppliersService {
     const advancePercent = paymentTerms === "split" ? percent(body.advancePercent, "The advance") : null;
     const days = paymentTerms === "credit" ? Number(body.creditDays) : null;
     if (days !== null && (!Number.isInteger(days) || days < 1 || days > 365)) throw new BadRequestException("Credit is a whole number of days, from 1 to 365.");
-    return { paymentTerms, advancePercent, creditDays: days, termsNote: text(body.termsNote, 500, "Terms note") };
+    return { paymentTerms, advancePercent, creditDays: days, termsNote: text(body.termsNote, 500, "Terms note"), retentionPercent: retentionPercent(body.retentionPercent) };
   }
 
   private deal(body: Record<string, unknown>) {

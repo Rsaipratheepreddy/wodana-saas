@@ -43,6 +43,7 @@
 .totals dt { color: var(--wd-color-text-tertiary); text-align: end; }
 .totals dd { margin: 0; text-align: end; font-variant-numeric: tabular-nums; }
 .allocations { display: grid; gap: var(--wd-space-2); }
+.pickBar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--wd-space-3); }
 .allocation { display: grid; grid-template-columns: minmax(0, 1fr) 9rem; gap: var(--wd-space-3); align-items: center; font-size: var(--wd-text-sm); }
 .linkButton { padding: 0; border: 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
 .linkButton:hover { text-decoration: underline; }

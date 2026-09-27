@@ -8,7 +8,7 @@ import { processSiteReports, processWarrantyExpiry } from "../site/site-reminder
 import { processProjectBudgets } from "../project-core/project-money";
 import { processReceivablesOverdue } from "../receivables/receivables.service";
 import { processWorkDeadlines } from "../project-core/work-reminders";
-import { processPayablesDue, processPurchasingDeadlines } from "../purchasing/purchasing-reminders";
+import { processPayablesDue, processPurchasingDeadlines, processRetentionReleases } from "../purchasing/purchasing-reminders";
 import { processSupplierDocuments } from "../purchasing/supplier-controls.service";
 import { ProjectNotificationsService } from "./project-notifications";
 
@@ -33,7 +33,7 @@ export class ProjectRemindersService {
     const workspaces = await this.db.query<{ workspace_id: string }>(
       "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, overBudget: 0, receivablesOverdue: 0, failedWorkspaces: 0 };
+    const totals = { created: 0, dueReminders: 0, decisionReminders: 0, weeklySummaries: 0, designAlerts: 0, workReminders: 0, lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, warrantyEnding: 0, payablesDue: 0, retentionReleased: 0, overBudget: 0, receivablesOverdue: 0, failedWorkspaces: 0 };
     for (const { workspace_id: workspaceId } of workspaces.rows) {
       try {
         const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, async (client) => ({
@@ -47,6 +47,8 @@ export class ProjectRemindersService {
           factory: projectId ? null : await processFactoryDeadlines(client, workspaceId),
           site: projectId ? null : await processSiteReports(client, workspaceId),
           warranty: projectId ? null : await processWarrantyExpiry(client, workspaceId),
+          // Retention released at handover first, so what falls due includes it.
+          retention: projectId ? null : await processRetentionReleases(client, workspaceId),
           payables: projectId ? null : await processPayablesDue(client, workspaceId),
           budgets: projectId ? null : await processProjectBudgets(client, workspaceId),
           receivables: projectId ? null : await processReceivablesOverdue(client, workspaceId),
@@ -64,6 +66,7 @@ export class ProjectRemindersService {
         totals.siteReports += run.site?.sent ?? 0;
         totals.warrantyEnding += run.warranty?.sent ?? 0;
         totals.payablesDue += run.payables?.sent ?? 0;
+        totals.retentionReleased += run.retention?.released ?? 0;
         totals.overBudget += run.budgets?.sent ?? 0;
         totals.receivablesOverdue += run.receivables?.sent ?? 0;
       } catch (error) {

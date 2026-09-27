@@ -20,7 +20,10 @@ import styles from "./purchasing.module.css";
 type LineDraft = Pick<OrderLine, "id" | "source" | "materialItemId" | "boqLineId" | "projectId" | "projectReference" | "description" | "specification" | "unit"> & {
   quantity: string; unitPrice: string; discountPercent: string; taxRate: string;
 };
-type Form = { expectedDate: string | null; deliverTo: DeliverTo; deliveryAddress: string; paymentTerms: PaymentTerms; advancePercent: string; creditDays: string; termsNote: string; notes: string; lines: LineDraft[] };
+type Form = {
+  expectedDate: string | null; deliverTo: DeliverTo; deliveryAddress: string; paymentTerms: PaymentTerms; advancePercent: string; creditDays: string; termsNote: string; retentionPercent: string;
+  notes: string; lines: LineDraft[];
+};
 type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | null;
 /** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
 const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
@@ -30,7 +33,8 @@ const DELIVERY: DeliverTo[] = ["site", "factory", "warehouse", "pickup", "other"
 
 const formOf = (state: OrderState): Form => ({
   expectedDate: state.order.expectedDate, deliverTo: state.order.deliverTo, deliveryAddress: state.order.deliveryAddress, paymentTerms: state.order.paymentTerms,
-  advancePercent: percentText(state.order.advancePercent), creditDays: state.order.creditDays ? String(state.order.creditDays) : "", termsNote: state.order.termsNote, notes: state.order.notes,
+  advancePercent: percentText(state.order.advancePercent), creditDays: state.order.creditDays ? String(state.order.creditDays) : "", termsNote: state.order.termsNote,
+  retentionPercent: Number(state.order.retentionPercent) ? percentText(state.order.retentionPercent) : "", notes: state.order.notes,
   lines: state.lines.map((line) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, projectReference: line.projectReference,
     description: line.description, specification: line.specification, unit: line.unit, quantity: quantityText(line.quantity), unitPrice: quantityText(line.unitPrice),
     discountPercent: quantityText(line.discountPercent), taxRate: quantityText(line.taxRate) })),
@@ -88,7 +92,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
   const totals = orderTotals(priced, decimals);
   const dirty = Boolean(state && form && JSON.stringify(form) !== JSON.stringify(formOf(state)));
   const saveInput = () => form ? { expectedDate: form.expectedDate, deliverTo: form.deliverTo, deliveryAddress: form.deliveryAddress, paymentTerms: form.paymentTerms,
-    advancePercent: form.advancePercent || null, creditDays: form.creditDays ? Number(form.creditDays) : null, termsNote: form.termsNote, notes: form.notes,
+    advancePercent: form.advancePercent || null, creditDays: form.creditDays ? Number(form.creditDays) : null, termsNote: form.termsNote, retentionPercent: form.retentionPercent, notes: form.notes,
     lines: form.lines.map((line) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, boqLineId: line.boqLineId, projectId: line.projectId, description: line.description,
       specification: line.specification, quantity: line.quantity, unit: line.unit, unitPrice: line.unitPrice, discountPercent: line.discountPercent, taxRate: line.taxRate })) } : {};
   const submit = async () => {
@@ -192,6 +196,11 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
             items={TERMS.map((id) => ({ id, label: supplierLabels.terms[id] }))} />
           {form.paymentTerms === "split" ? <TextInput label={t("Advance")} inputMode="decimal" suffix="%" value={form.advancePercent} onChange={(value) => setForm({ ...form, advancePercent: numeric(value) })} />
             : form.paymentTerms === "credit" ? <TextInput label={t("Days")} inputMode="numeric" value={form.creditDays} onChange={(value) => setForm({ ...form, creditDays: value.replace(/\D/g, "").slice(0, 3) })} /> : <span />}
+        </div>
+        <div className={styles.pair}>
+          <TextInput label={t("Retention")} description={t("Held from each invoice until handover")} inputMode="decimal" suffix="%" value={form.retentionPercent}
+            onChange={(value) => setForm({ ...form, retentionPercent: numeric(value) })} />
+          <span />
         </div>
       </section> : <dl className={styles.facts}>
         <div><dt>{t("Supplier")}</dt><dd>{[order.supplierName, state.supplier?.contactName, state.supplier?.phone].filter(Boolean).join(" · ")}</dd></div>

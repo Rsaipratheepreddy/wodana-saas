@@ -16,10 +16,13 @@ export function useSupplierLabels() {
     const deal: Record<Deal, string> = { none: t("None"), discount: t("Discount"), commission: t("Commission"), on_request: t("On request") };
     return {
       approval, terms, deal,
-      termsText: (supplier: Pick<Supplier, "paymentTerms" | "advancePercent" | "creditDays">) =>
+      /** The payment terms, and the retention held from each invoice when there is one. */
+      termsText: (supplier: Pick<Supplier, "paymentTerms" | "advancePercent" | "creditDays"> & { retentionPercent?: string }) => [
         supplier.paymentTerms === "split" ? t("{percent}% advance, rest on delivery", { percent: percentText(supplier.advancePercent) })
           : supplier.paymentTerms === "credit" ? t("{count} days credit", { count: supplier.creditDays ?? 0 })
           : terms[supplier.paymentTerms],
+        supplier.retentionPercent && Number(supplier.retentionPercent) ? t("{percent}% retention", { percent: percentText(supplier.retentionPercent) }) : "",
+      ].filter(Boolean).join(" · "),
       dealText: (supplier: Pick<Supplier, "deal" | "dealPercent">) =>
         supplier.deal === "discount" ? t("{percent}% discount", { percent: percentText(supplier.dealPercent) })
           : supplier.deal === "commission" ? t("{percent}% commission", { percent: percentText(supplier.dealPercent) })

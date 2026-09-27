@@ -222,7 +222,9 @@ export type OrderLine = {
 };
 
 export type OrderDetail = OrderRow & {
-  paymentTerms: string; advancePercent: string | null; creditDays: number | null; termsNote: string; deliverTo: string; deliveryAddress: string; supplierReference: string; notes: string;
+  paymentTerms: string; advancePercent: string | null; creditDays: number | null; termsNote: string;
+  /** The share of each invoice held back until the project's handover (the supplier's by default). */
+  retentionPercent: string; deliverTo: string; deliveryAddress: string; supplierReference: string; notes: string;
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
   /** When the supplier went on hold, who said this order continues anyway, and why. */
@@ -235,7 +237,7 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
   if (lock) await db.query(`SELECT 1 FROM purchase_orders WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, orderId]);
   return (await db.query<OrderDetail>(
     `SELECT listed.*, purchase.payment_terms AS "paymentTerms", purchase.advance_percent::text AS "advancePercent", purchase.credit_days AS "creditDays", purchase.terms_note AS "termsNote",
-            purchase.deliver_to AS "deliverTo", purchase.delivery_address AS "deliveryAddress", purchase.supplier_reference AS "supplierReference", purchase.notes,
+            purchase.retention_percent::text AS "retentionPercent", purchase.deliver_to AS "deliverTo", purchase.delivery_address AS "deliveryAddress", purchase.supplier_reference AS "supplierReference", purchase.notes,
             purchase.subtotal::text AS subtotal, purchase.discount_total::text AS "discountTotal", purchase.tax_total::text AS "taxTotal", purchase.created_by AS "createdBy",
             purchase.submitted_by AS "submittedBy", approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
             purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason",
@@ -301,7 +303,9 @@ export type PurchasingSettings = {
   /** How far above the ordered price (in percent) a supplier's invoice may be before it's held. */
   invoiceTolerancePercent: string;
   /** Orders beyond a project's money in hand: let through, let through with a warning, or stopped until someone who may override approves. */
-  spendingGuard: "off" | "warn" | "strict"; version: number;
+  spendingGuard: "off" | "warn" | "strict";
+  /** Invoices are paid only through a payment run someone else approved; advances on orders are still recorded directly. */
+  paymentRunsRequired: boolean; version: number;
 };
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
@@ -309,7 +313,8 @@ export async function ensurePurchasingSettings(db: Db, workspaceId: string): Pro
   return (await db.query<PurchasingSettings>(
     `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
             require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue",
-            order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", spending_guard AS "spendingGuard", version
+            order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", spending_guard AS "spendingGuard",
+            payment_runs_required AS "paymentRunsRequired", version
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 
