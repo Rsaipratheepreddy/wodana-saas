@@ -66,6 +66,7 @@ import {
 } from "./workspace-terminology";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
 import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
+import { parseRoleTemplateCodes, roleTemplatesFor } from "./role-templates";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
@@ -135,27 +136,6 @@ const SYSTEM_ROLES = [
   ["viewer", "Viewer", "Read-only workspace access"],
 ] as const;
 
-const COMMERCIAL_REVIEW_ROLES = [
-  {
-    code: "quantity_surveyor",
-    name: "Quantity Surveyor",
-    description: "Review quotation estimates before the client receives a proposal",
-    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.costs.view", "commercial.estimate"],
-  },
-  {
-    code: "finance_reviewer",
-    name: "Finance reviewer",
-    description: "Verify deal payment evidence and confirm final commissions before operations approval",
-    // Reads Finance (supplier bills and client invoices) to verify what came in and what is owed.
-    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view"],
-  },
-  {
-    code: "operations_approver",
-    name: "Operations approver",
-    description: "Approve Finance-verified deals and authorize their release to production",
-    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.deal.approve", "commercial.release"],
-  },
-] as const;
 
 @Injectable()
 export class WorkspacesService {
@@ -220,7 +200,7 @@ export class WorkspacesService {
           );
 
           const roleIds = await this.insertSystemRoles(client, workspaceId);
-          await this.insertCommercialReviewRoles(client, workspaceId);
+          await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(undefined));
           await client.query(
             `INSERT INTO member_roles (workspace_id, membership_id, role_id)
              VALUES ($1, $2, $3)`,
@@ -386,7 +366,8 @@ export class WorkspacesService {
           input.firstLegalEntity,
         );
         const roleIds = await this.insertSystemRoles(client, workspaceId);
-        await this.insertCommercialReviewRoles(client, workspaceId);
+        // The firm kit says which people a firm of this kind employs; without a kit, every template.
+        await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(setup?.firmKit.configuration.roleTemplates));
         const invitationToken = randomBytes(32).toString("base64url");
         const tokenHash = createHash("sha256").update(invitationToken).digest("hex");
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -414,7 +395,7 @@ export class WorkspacesService {
           input.firstLegalEntity.code,
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
-          await seedDefaultNotificationTemplates(client, workspaceId);
+        await seedDefaultNotificationTemplates(client, workspaceId);
         if (setup) {
           const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
           await client.query(
@@ -604,7 +585,7 @@ export class WorkspacesService {
       [membershipId, workspaceId, ownerUserId],
     );
     const roleIds = await this.insertSystemRoles(client, workspaceId);
-    await this.insertCommercialReviewRoles(client, workspaceId);
+    await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(undefined));
     await client.query(
       `INSERT INTO member_roles (workspace_id, membership_id, role_id)
        VALUES ($1, $2, $3)`,
@@ -4335,6 +4316,7 @@ export class WorkspacesService {
     const firmKit = profiles.rows.find((profile) => profile.kind === "firm_kit")!;
     const plan = profiles.rows.find((profile) => profile.kind === "plan")!;
     parseProjectWorkflowTemplate(firmKit.configuration.projectWorkflow);
+    parseRoleTemplateCodes(firmKit.configuration.roleTemplates);
     if (!Number.isInteger(plan.configuration.seatLimit) || Number(plan.configuration.seatLimit) < 1
       || !Number.isInteger(plan.configuration.projectLimit) || Number(plan.configuration.projectLimit) < 1
       || !["monthly", "yearly", "custom"].includes(String(plan.configuration.billingCycle))) {
@@ -4377,18 +4359,22 @@ export class WorkspacesService {
     return roleIds;
   }
 
-  private async insertCommercialReviewRoles(client: PoolClient, workspaceId: string) {
-    for (const role of COMMERCIAL_REVIEW_ROLES) {
+  /** Materialises the kit's role templates as editable roles. A permission the catalog lacks is a defect, not a silent gap. */
+  private async insertRoleTemplates(client: PoolClient, workspaceId: string, templateCodes: readonly string[]) {
+    for (const role of roleTemplatesFor(templateCodes)) {
       const result = await client.query<{ id: string }>(
         `INSERT INTO roles (workspace_id, code, name, description, is_system)
          VALUES ($1, $2, $3, $4, false) RETURNING id`,
         [workspaceId, role.code, role.name, role.description],
       );
-      await client.query(
+      const granted = await client.query(
         `INSERT INTO role_permissions (workspace_id, role_id, permission_id)
          SELECT $1, $2, id FROM permissions WHERE code = ANY($3::text[])`,
         [workspaceId, result.rows[0].id, [...role.permissions]],
       );
+      if (granted.rowCount !== role.permissions.length) {
+        throw new Error(`Role template ${role.code} names a permission the catalog does not have`);
+      }
     }
   }
 
