@@ -21,6 +21,9 @@ import { getSecurityPageData } from "@/lib/workspace/security.server";
 import { getBillingPageData } from "@/lib/workspace/billing.server";
 import { notFound, redirect, unstable_rethrow } from "next/navigation";
 import styles from "./workspace-screen.module.css";
+import { NoAccessState } from "@/design-system";
+import { canOpen, SALES_SECTION_ACCESS } from "@/lib/workspace/access";
+import { serverTranslator } from "@/lib/i18n/server";
 
 export default async function WorkspaceScreen({
   params,
@@ -82,6 +85,20 @@ export default async function WorkspaceScreen({
     const record = query.get("record");
     if (record) state.set("record", record);
     redirect(`${PRE_PROJECT_ROOT}${state.size ? `?${state}` : ""}`);
+  }
+
+  // A page the person's role can't open says so plainly, before loading data the service would refuse.
+  const membership = (await getAuthenticatedProfile()).memberships[0];
+  const access = { permissions: membership?.allowedPermissions, roles: membership?.roles };
+  const checkAccess = Array.isArray(membership?.allowedPermissions);
+  // Sales opens on the first of its pages the person can use (Enquiries for most, the Pipeline for estimators).
+  if (screen.id === "crm-overview" && checkAccess && !canOpen("leads", access)) {
+    const first = [["opportunities", "/workspace/crm/opportunities"], ["follow-ups", "/workspace/crm/follow-ups"]].find(([id]) => canOpen(id, access));
+    if (first) redirect(first[1]);
+  }
+  if (checkAccess && !canOpen(screen.id, access)) {
+    const t = await serverTranslator();
+    return <NoAccessState area={t(screen.label as never)} />;
   }
 
   if (screen.id === "company") {
@@ -155,9 +172,14 @@ export default async function WorkspaceScreen({
     const enquirySection = typeof query.section === "string" && ["forms", "sources", "options", "reports", "sla", "assignment", "automations"].includes(query.section)
       ? query.section as Exclude<EnquirySection, "leads">
       : undefined;
-    const [leadsData, integrationsData, companyData] = await Promise.all([getLeadsPageData(), enquirySection === "sources" ? getIntegrationsPageData() : Promise.resolve(undefined), enquirySection === "forms" ? getCompanyProfilePageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined)]);
+    // Campaigns, Reports, Settings and Automations are sections of Enquiries with rules of their own.
+    const sectionItem = enquirySection ? SALES_SECTION_ACCESS[enquirySection] : undefined;
+    const sectionDenied = checkAccess && Boolean(sectionItem) && !canOpen(sectionItem!, access);
+    // Lead sources list the workspace's connections, which need the organization's details.
+    const integrationsDenied = enquirySection === "sources" && checkAccess && !canOpen("integrations", access);
+    const [leadsData, integrationsData, companyData] = await Promise.all([getLeadsPageData(), enquirySection === "sources" && !sectionDenied && !integrationsDenied ? getIntegrationsPageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined), enquirySection === "forms" && !sectionDenied ? getCompanyProfilePageData().catch((error: unknown) => { unstable_rethrow(error); return undefined; }) : Promise.resolve(undefined)]);
     const formBranding = companyData ? { ...companyData.profile.branding, workspaceName: companyData.profile.workspace.name, canManage: companyData.canManage } : undefined;
-    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} />;
+    return <LeadsPage key={`${String(query.lead ?? "leads")}-${enquirySection ?? "leads"}`} initialCreate={query.create === "true"} initialData={leadsData} integrationsData={integrationsData} integrationsDenied={integrationsDenied} formBranding={formBranding} initialLeadId={typeof query.lead === "string" && /^[\da-f-]{36}$/i.test(query.lead) ? query.lead : undefined} initialSection={enquirySection} sectionDenied={sectionDenied} />;
   }
 
   // Sales opens on Enquiries; one address per view keeps the breadcrumb and tabs truthful.

@@ -7,7 +7,7 @@ import { I18nProvider } from "@/lib/i18n/i18n-provider";
 import { WorkspaceRegionProvider } from "@/design-system";
 import { getWorkspaceRegion } from "@/lib/workspace/region.server";
 import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
-import { scopePeopleNavigation, scopeSupplyNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
+import { scopeWorkspaceNavigation, visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
 
 export default async function WorkspaceLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const profile = await getAuthenticatedProfile();
@@ -42,11 +42,11 @@ export default async function WorkspaceLayout({ children }: Readonly<{ children:
     <I18nProvider language={language}>
     <WorkspaceRegionProvider {...region}>
     <WorkspaceShell
-      modules={scopeSupplyNavigation(scopePeopleNavigation(
+      modules={scopeWorkspaceNavigation(
         visibleWorkspaceModules(workspaceModules, activeMembership?.workspaceSlug ?? "", allowedModules),
         activeMembership?.allowedPermissions,
         activeMembership?.roles ?? [],
-      ), activeMembership?.allowedPermissions, activeMembership?.roles ?? [])}
+      )}
       unavailableOrganizations={profile.unavailableOrganizations ?? []}
       user={user}
       workspaces={workspaces}>

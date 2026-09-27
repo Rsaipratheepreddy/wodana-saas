@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forwardedDeviceHeaders } from "@/lib/auth/device-request";
 import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath } from "@/lib/workspace/module-rollout";
+import { accessRuleForPath, meetsRule } from "@/lib/workspace/access";
 
 const ACCESS_COOKIE = "wodana_access";
 const REFRESH_COOKIE = "wodana_refresh";
 type BootstrapProfile = {
   nextAction?: unknown;
-  memberships?: Array<{ workspaceId: string; workspaceSlug: string; allowedModules?: string[]; roles?: string[]; onboarding?: { status?: string } }>;
+  memberships?: Array<{ workspaceId: string; workspaceSlug: string; allowedModules?: string[]; allowedPermissions?: string[]; roles?: string[]; onboarding?: { status?: string } }>;
 };
 
 const ALL_WORKSPACE_MODULES = ["workspace", "crm", "pre-project", "projects", "hrms"] as const;
@@ -30,6 +31,12 @@ function workspaceRedirect(profile: BootstrapProfile | null, request: NextReques
   // their established access working until an explicit entitlement list exists.
   const allowedModules = ownerAccess ? ALL_WORKSPACE_MODULES : membership?.allowedModules ?? ALL_WORKSPACE_MODULES;
   if (!membership || !allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))) {
+    return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
+  }
+  // Areas such as Finance also need the permissions their pages load with. Older releases without
+  // permission lists in /me keep their module-level access.
+  const rule = accessRuleForPath(request.nextUrl.pathname);
+  if (rule && Array.isArray(membership.allowedPermissions) && !meetsRule(rule, { permissions: membership.allowedPermissions, roles: membership.roles })) {
     return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
   }
   if (deferred && membership && isCrmFirstWorkspace(membership.workspaceSlug)) {

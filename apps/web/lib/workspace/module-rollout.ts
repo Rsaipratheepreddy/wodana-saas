@@ -1,4 +1,5 @@
 import type { WorkspaceModuleDefinition, WorkspaceModuleId } from "@/components/workspace/workspace-navigation";
+import { canOpen } from "./access";
 
 export type DeferredModule = "pre-project" | "projects";
 
@@ -12,6 +13,7 @@ export function deferredModuleForPath(pathname: string): DeferredModule | null {
   if (pathname === "/workspace/purchasing" || pathname.startsWith("/workspace/purchasing/")) return "projects";
   if (pathname === "/workspace/inventory" || pathname.startsWith("/workspace/inventory/")) return "projects";
   if (pathname === "/workspace/factory" || pathname.startsWith("/workspace/factory/")) return "projects";
+  if (pathname === "/workspace/finance" || pathname.startsWith("/workspace/finance/")) return "projects";
   return null;
 }
 
@@ -22,6 +24,8 @@ export function moduleForWorkspacePath(pathname: string): WorkspaceModuleId {
   if (pathname === "/workspace/purchasing" || pathname.startsWith("/workspace/purchasing/")) return "projects";
   if (pathname === "/workspace/inventory" || pathname.startsWith("/workspace/inventory/")) return "projects";
   if (pathname === "/workspace/factory" || pathname.startsWith("/workspace/factory/")) return "projects";
+  // Finance pays suppliers and invoices clients for projects: it is part of the Projects module.
+  if (pathname === "/workspace/finance" || pathname.startsWith("/workspace/finance/")) return "projects";
   if (pathname === "/workspace/crm" || pathname.startsWith("/workspace/crm/")) return "crm";
   if (pathname === "/workspace/hrms" || pathname.startsWith("/workspace/hrms/")) return "hrms";
   return "workspace";
@@ -32,44 +36,29 @@ export function visibleWorkspaceModules(modules: WorkspaceModuleDefinition[], sl
     && (!isCrmFirstWorkspace(slug) || (module.id !== "pre-project" && module.id !== "projects")));
 }
 
-export function scopePeopleNavigation(
+/**
+ * Keeps the navigation entries whose pages the signed-in member can open, using the same permission
+ * codes the pages load with (see `NAVIGATION_ACCESS`). Sidebar, Settings menu and module tabs all
+ * come from this list, so nothing leads to a page that only says "no access".
+ */
+export function scopeWorkspaceNavigation(
   modules: WorkspaceModuleDefinition[],
   allowedPermissions: readonly string[] | undefined,
   roleCodes: readonly string[],
 ): WorkspaceModuleDefinition[] {
-  const isAdministrator = roleCodes.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
-  const canViewPeople = isAdministrator || (allowedPermissions ?? []).some((permission) => [
-    "workspace.members.manage", "module.members.read", "module.members.write", "module.members.edit", "module.members.delete",
-  ].includes(permission));
-  // Attendance & leave settings are for whoever manages HR, in a workspace that has People.
-  const canManageHrms = modules.some((module) => module.id === "hrms") && (isAdministrator || (allowedPermissions ?? []).includes("hrms.manage"));
-  if (canViewPeople && canManageHrms) return modules;
-  return modules.map((module) => module.id !== "workspace" ? module : {
+  const context = { permissions: allowedPermissions ?? [], roles: roleCodes };
+  // Attendance & leave settings exist only in a workspace that has People.
+  const hasPeople = modules.some((module) => module.id === "hrms");
+  return modules.map((module) => ({
     ...module,
     navigation: module.navigation.map((section) => ({
       ...section,
-      items: section.items.filter((item) => (item.id !== "members" || canViewPeople) && (item.id !== "attendance-settings" || canManageHrms)),
+      items: section.items.filter((item) => canOpen(item.id, context) && (item.id !== "attendance-settings" || hasPeople)),
     })).filter((section) => section.items.length > 0),
-  });
+  }));
 }
 
-/** Global supply entries follow the same project permissions as their data sources. */
-export function scopeSupplyNavigation(
-  modules: WorkspaceModuleDefinition[],
-  allowedPermissions: readonly string[] | undefined,
-  roleCodes: readonly string[],
-): WorkspaceModuleDefinition[] {
-  const isAdministrator = roleCodes.some(role => ["owner", "administrator"].includes(role.toLowerCase()));
-  const canViewPurchasing = isAdministrator || (allowedPermissions ?? []).some(permission => ["purchasing.view", "purchasing.manage", "vendors.view", "vendors.manage"].includes(permission));
-  const canViewInventory = isAdministrator || (allowedPermissions ?? []).some(permission => ["stock.view", "stock.manage", "stock.adjust", "stock.receive"].includes(permission));
-  const canViewFactory = isAdministrator || (allowedPermissions ?? []).some(permission => ["factory.view", "factory.manage", "factory.report", "factory.approve"].includes(permission));
-  const canViewFinance = isAdministrator || (allowedPermissions ?? []).some(permission => ["payables.view", "payables.manage", "payables.approve", "receivables.view", "receivables.manage", "accounting.manage"].includes(permission));
-  return modules.map(module => module.id !== "projects" ? module : {
-    ...module,
-    navigation: module.navigation.map(section => ({
-      ...section,
-      items: section.items.filter(item => (item.id !== "global-purchasing" || canViewPurchasing) && (item.id !== "global-inventory" || canViewInventory)
-        && (item.id !== "global-factory" || canViewFactory) && (item.id !== "global-finance" || canViewFinance)),
-    })),
-  });
-}
+/** @deprecated Use `scopeWorkspaceNavigation`, which scopes every module. */
+export const scopePeopleNavigation = scopeWorkspaceNavigation;
+/** @deprecated Use `scopeWorkspaceNavigation`, which scopes every module. */
+export const scopeSupplyNavigation = scopeWorkspaceNavigation;

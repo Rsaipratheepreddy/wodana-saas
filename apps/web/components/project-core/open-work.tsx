@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Avatar, EmptyState, ErrorState, GroupedTable, MenuButton, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { Avatar, EmptyState, ErrorState, GroupedTable, isNoAccessError, NoAccessState, MenuButton, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { OpenWork as OpenWorkState, OpenWorkItem, WorkBoard } from "@/lib/project-core/types";
@@ -51,7 +51,7 @@ export function OpenWork({ workspaceId }: { workspaceId: string }) {
   const bucket = (due: string | null): Bucket => (!due ? "none" : due < today ? "late" : due === today ? "today" : due <= weekEnd ? "week" : "later");
   const bucketLabels: Record<Bucket, string> = { late: t("Late"), today: t("Today"), week: t("Next 7 days"), later: t("Later"), none: t("No due date") };
 
-  if (error && !data) return <div className={styles.openWork}><ErrorState description={error} onRetry={() => void load()} /></div>;
+  if (error && !data) return <div className={styles.openWork}>{isNoAccessError(error) ? <NoAccessState area={t("Projects")} /> : <ErrorState description={error} onRetry={() => void load()} />}</div>;
   const needle = search.trim().toLocaleLowerCase();
   const people = [...new Map((data?.items ?? []).map((item) => [item.assigneeId ?? "none", { id: item.assigneeId, name: item.assigneeName ?? t("No one") }])).values()]
     .sort((a, b) => a.name.localeCompare(b.name));
