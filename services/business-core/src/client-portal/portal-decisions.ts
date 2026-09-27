@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { Dec } from "../catalog-core/decimal";
 import { controlledChangeCanRelease, controlledChangeForQuote } from "../commercial/change-control";
 import { actionable, newRequest, quoteDecisionEvidence } from "../commercial/commercial.domain";
-import type { CommercialData, Quote } from "../commercial/commercial.types";
+import type { ChangeRequest, CommercialData, Quote } from "../commercial/commercial.types";
 import { decidePortalDesign, portalReviewDesign } from "../commercial/portal-design-approval";
 import { validateDeduction } from "../commercial/variation-controls";
 import { notifyUserInApp, queueUserEmail } from "../notifications/default-templates";
@@ -351,6 +351,7 @@ export async function raiseRequest(ctx: DecisionContext, body: Record<string, un
   const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
   const request = newRequest(data, title, detail);
   await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, "Client request (portal)");
+  await noticeClientMessage(ctx.db, ctx.workspaceId, row, { code: "request.client_raised", actor: grant.name, request, note: detail, key: request.id });
   return { ok: true, requestId: request.id, entity: { type: "pre_project_case", id: row.caseId }, audit: { requestId: request.id } };
 }
 
@@ -360,9 +361,40 @@ export async function comment(ctx: DecisionContext, body: Record<string, unknown
   const data = await ctx.commercial.load(ctx.db, ctx.workspaceId, row.caseId);
   const request = data.requests.find((item) => item.id === body.requestId && !item.decisionRequest);
   if (!request) throw new NotFoundException("This conversation isn't there any more.");
-  request.comments.push({ id: randomUUID(), author: grant.name, at: new Date().toISOString(), text, visibility: "client", fromClient: true } as (typeof request.comments)[number]);
+  const commentId = randomUUID();
+  request.comments.push({ id: commentId, author: grant.name, at: new Date().toISOString(), text, visibility: "client", fromClient: true } as (typeof request.comments)[number]);
   await ctx.commercial.persist(ctx.db, ctx.workspaceId, row.caseId, data, grant.name, "Client message (portal)");
+  await noticeClientMessage(ctx.db, ctx.workspaceId, row, { code: "request.client_replied", actor: grant.name, request, note: text, key: commentId });
   return { ok: true, entity: { type: "pre_project_case", id: row.caseId }, audit: { requestId: request.id } };
+}
+
+/**
+ * The case owner, the engagement owner and, once the project has started, its managers hear a client's
+ * request or reply in-app, once per message (the key is the request or comment id). The link opens that
+ * request thread on the planning case, where the team reads and replies.
+ */
+export async function noticeClientMessage(db: Db, workspaceId: string, row: { caseId: string; projectId: string | null; title: string; reference: string | null; projectName: string | null },
+  input: { code: "request.client_raised" | "request.client_replied"; actor: string; request: Pick<ChangeRequest, "id" | "number" | "title">; note: string; key: string }) {
+  const facts = (await db.query<{ clientName: string; ownerUserId: string | null; engagementOwnerUserId: string | null }>(
+    `SELECT coalesce(party.display_name, opportunity.title) AS "clientName", owner.user_id AS "ownerUserId", engagement_owner.user_id AS "engagementOwnerUserId"
+       FROM pre_project_cases pre_case
+       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id
+       LEFT JOIN crm_parties party ON party.workspace_id = opportunity.workspace_id AND party.id = opportunity.party_id
+       LEFT JOIN workspace_memberships owner ON owner.workspace_id = opportunity.workspace_id AND owner.id = opportunity.owner_membership_id AND owner.status = 'active'
+       LEFT JOIN workspace_memberships engagement_owner ON engagement_owner.workspace_id = pre_case.workspace_id AND engagement_owner.id = pre_case.owner_membership_id
+                                                        AND engagement_owner.status = 'active'
+      WHERE pre_case.workspace_id = $1 AND pre_case.id = $2`, [workspaceId, row.caseId])).rows[0];
+  if (!facts) return;
+  const team = row.projectId ? (await db.query<{ userId: string }>(
+    `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
+       JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+      WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND assignment.is_manager`, [workspaceId, row.projectId])).rows.map((member) => member.userId) : [];
+  const people = [...new Set([facts.ownerUserId, facts.engagementOwnerUserId, ...team].filter((id): id is string => Boolean(id)))];
+  const title = row.projectId ? `${row.reference} · ${row.projectName}` : row.title;
+  const variables = { title, clientName: facts.clientName, actor: input.actor, request: `CR-${String(input.request.number).padStart(3, "0")} · ${input.request.title}`, note: input.note.slice(0, 480) };
+  const deepLink = `/workspace/pre-projects/cases/${row.caseId}/variations?request=${encodeURIComponent(input.request.id)}`;
+  for (const userId of people)
+    await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: input.code, eventType: input.code, variables, deepLink, idempotencyKey: `${input.code}:${input.key}:${userId}` });
 }
 
 /** The project manager (and the account manager for claims) hear what the client did, in-app and, for claims, by email. */

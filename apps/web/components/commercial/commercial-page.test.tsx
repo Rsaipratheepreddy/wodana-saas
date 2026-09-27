@@ -165,6 +165,14 @@ describe("Quotation entry flow", () => {
     render(<CommercialPage initial={state} record={record} section="variations" search=""/>);
     expect(screen.queryByRole("navigation",{name:"Planning readiness timeline"})).not.toBeInTheDocument();
   });
+  it("opens the request thread a notification links to", () => {
+    const paint = { id: "r1", number: 1, title: "Paint", detail: "Which white did you mean?", status: "open" as const, owner: "", dueDate: "", resolution: "", createdAt: "2026-09-27T00:00:00Z",
+      comments: [{ id: "c1", author: "Maya", at: "2026-09-27T00:00:00Z", text: "The warmer one.", visibility: "client" as const }] };
+    render(<CommercialPage initial={{ ...state, data: { ...state.data, requests: [paint] } }} record={record} section="variations" search="" openRequestId="r1"/>);
+    const dialog = screen.getByRole("dialog", { name: "Paint" });
+    expect(dialog).toHaveTextContent("Which white did you mean?");
+    expect(dialog).toHaveTextContent("The warmer one.");
+  });
   it("keeps a successful quotation creation when its follow-up read fails", async () => {
     const empty = structuredClone(state);
     empty.data.quotes = [];

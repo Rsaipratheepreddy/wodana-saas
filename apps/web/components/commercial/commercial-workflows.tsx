@@ -43,9 +43,11 @@ type Props = {
 };
 type CommissionDraft = { recipientName: string; type: "sales" | "designer" | "referral"; basis: "amount" | "percent"; value: number };
 const newCommissionLine = (): CommissionDraft => ({ recipientName: "", type: "sales", basis: "amount", value: 0 });
-export function CommercialRequests({ state, run, busy, error }: Props) {
+/** `openRequestId` (from a notification's link) opens that request's thread as the page loads. */
+export function CommercialRequests({ state, run, busy, error, openRequestId }: Props & { openRequestId?: string }) {
   const t = useT();
-  const [selected, setSelected] = useState(""),
+  const opened = openRequestId ? state.data.requests.find((r) => r.id === openRequestId) : undefined;
+  const [selected, setSelected] = useState(opened?.id ?? ""),
     [create, setCreate] = useState(false),
     [createDecision, setCreateDecision] = useState(false),
     [draft, setDraft] = useState({ title: "", detail: "" }),
@@ -55,7 +57,7 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
     }),
     [comment, setComment] = useState(""),
     [internal, setInternal] = useState(false),
-    [edit, setEdit] = useState<ChangeRequest | null>(null);
+    [edit, setEdit] = useState<ChangeRequest | null>(opened ?? null);
   const request = state.data.requests.find((r) => r.id === selected);
   const accepted = state.data.quotes.some((quote) => quote.kind === "quotation" && quote.status === "accepted");
   const contractLines = availableContractLines(state.data);

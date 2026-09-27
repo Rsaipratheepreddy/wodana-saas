@@ -49,6 +49,6 @@ export default async function CasePage({ params, searchParams }: {
   }
   if (route.section === "quotations" && commercialState && !("error" in commercialState)) return <><CaseSelection record={record} search={listSearch(query).toString()} /><QuoteList key={caseId} initial={commercialState} baseHref={caseHref(caseId, new URLSearchParams(), "quotations").split("?")[0]} /></>;
   if (route.section === "approvals" && content && definition && commercialState) return <PlanningApprovals record={record} content={content} definition={definition} commercial={commercialState} search={listSearch(query).toString()} review={query.get("review") ?? undefined} />;
-  if(commercialSection && commercialState)return <CommercialPage key={`${caseId}-${route.section}-${query.get("quote")??"list"}`} quotationId={query.get("quote")??undefined} initial={commercialState} record={record} section={route.section} search={listSearch(query).toString()}/>;
+  if(commercialSection && commercialState)return <CommercialPage key={`${caseId}-${route.section}-${query.get("quote")??"list"}`} quotationId={query.get("quote")??undefined} openRequestId={route.section === "variations" ? query.get("request") ?? undefined : undefined} initial={commercialState} record={record} section={route.section} search={listSearch(query).toString()}/>;
   return <PreProjectCasePage commercial={commercialState} content={content} definition={definition} overview={overview} record={record} section={route.section} search={listSearch(query).toString()} siteItem={query.get('item')??undefined} />;
 }

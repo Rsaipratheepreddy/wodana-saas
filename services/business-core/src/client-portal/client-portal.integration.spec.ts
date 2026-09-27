@@ -527,8 +527,13 @@ integration("client portal (plan §6.22)", () => {
         [w.workspaceId])).rows;
       expect(audits).toEqual([{ action: "client_portal.quote_decision", source: "client_portal", actor_user_id: null, grant: approver.id },
         { action: "client_portal.request", source: "client_portal", actor_user_id: null, grant: approver.id }]);
-      // The account manager hears the client's decision.
+      // The account manager hears the client's decision; the case owner hears the request, with a link to its thread.
       expect((await w.client.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND event_type = 'quotation.client_accepted'", [w.workspaceId])).rows[0].n).toBeGreaterThan(0);
+      const requestNotices = (await w.client.query<{ deepLink: string; body: string }>(
+        "SELECT deep_link AS \"deepLink\", body FROM notifications WHERE workspace_id = $1 AND event_type = 'request.client_raised'", [w.workspaceId])).rows;
+      expect(requestNotices.length).toBeGreaterThan(0);
+      expect(requestNotices[0].deepLink).toMatch(new RegExp(`^/workspace/pre-projects/cases/${w.caseId}/variations\\?request=[0-9a-f-]{36}$`));
+      expect(requestNotices[0].body).toContain("Paint: Which white?");
 
       // A viewer reads but never decides, even with a well-formed command.
       const viewer = await signIn(w, VIEWER, "whatsapp").catch(async () => {
