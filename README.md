@@ -64,7 +64,11 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e 'services/intelligence-automation[dev]'
 uvicorn wodana_intelligence.main:app --reload --port 8001
+npm run dev:worker   # delivery, CRM timers and automation waits
 ```
+
+Live delivery from the worker (`NOTIFICATION_ADAPTER_MODE=live`) needs `DELIVERY_ALLOWLIST` locally,
+so nothing reaches a real customer; `test` marks deliveries done without sending.
 
 Python 3.12 or newer is required and Python 3.12 is used in the container image.
 

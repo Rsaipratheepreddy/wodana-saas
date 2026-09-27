@@ -29,6 +29,14 @@
       "port": 3100
     },
     {
+      "name": "worker",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:worker"
+      ]
+    },
+    {
       "name": "business-core-seed",
       "runtimeExecutable": "sh",
       "runtimeArgs": [
