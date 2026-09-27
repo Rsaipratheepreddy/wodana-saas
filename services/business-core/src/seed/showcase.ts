@@ -79,16 +79,21 @@ export const SHOWCASE = {
   rooms: ["Living room", "Dining room", "Master bedroom"],
 };
 
-/** The quotation's lines: named after the workspace catalog when it has them, with the seed's rates and costs. */
+/** The quotation's lines: Core Collection pieces and fit-out items from the catalog when it has them, with the seed's rates and costs (the Core Collection list prices, AED, from the workbook). */
 const QUOTE_LINES = [
   { key: "living-media", room: "Living room", catalog: "TV unit", title: "Fitted media wall · oak veneer, concealed cabling", quantity: "1", unit: "nos", unitCost: "9800", rate: "17100" },
   { key: "living-floor", room: "Living room", catalog: "Engineered oak flooring 14mm", quantity: "45", unit: "sqm", unitCost: "190", rate: "320" },
   { key: "living-paint", room: "Living room", catalog: "Wall painting, 2 coats", quantity: "120", unit: "sqm", unitCost: "14", rate: "28" },
   { key: "living-lights", room: "Living room", catalog: "LED downlight 9W warm", quantity: "12", unit: "nos", unitCost: "45", rate: "95" },
-  { key: "dining-light", room: "Dining room", catalog: "Pendant light", quantity: "1", unit: "nos", unitCost: "950", rate: "1600" },
+  { key: "living-sofa", room: "Living room", catalog: "Annie Sofa - Length 2000mm", quantity: "1", unit: "pcs", unitCost: "11400", rate: "19000" },
+  { key: "living-coffee", room: "Living room", catalog: "Ace Calacatta Nesting Coffee Table", quantity: "1", unit: "pcs", unitCost: "9800", rate: "16300" },
+  { key: "dining-chairs", room: "Dining room", catalog: "Andrea Curved Dining Chair", quantity: "8", unit: "pcs", unitCost: "1900", rate: "3200" },
+  { key: "dining-light", room: "Dining room", catalog: "Mandy Pendant Light - Large", quantity: "1", unit: "nos", unitCost: "950", rate: "1600" },
   { key: "dining-ceiling", room: "Dining room", catalog: "Gypsum false ceiling with cove", quantity: "30", unit: "sqm", unitCost: "85", rate: "160" },
   { key: "dining-paint", room: "Dining room", catalog: "Wall painting, 2 coats", quantity: "60", unit: "sqm", unitCost: "14", rate: "28" },
   { key: "bed-wardrobe", room: "Master bedroom", catalog: "Wardrobe · hinged", title: "Hinged wardrobe · wall to wall, matt laminate", quantity: "1", unit: "nos", unitCost: "8400", rate: "14500" },
+  { key: "bed-bed", room: "Master bedroom", catalog: "Devon Cloud Bed", quantity: "1", unit: "pcs", unitCost: "8400", rate: "14000" },
+  { key: "bed-rug", room: "Master bedroom", catalog: "Amelia Rug", quantity: "1", unit: "pcs", unitCost: "540", rate: "900" },
   { key: "bed-floor", room: "Master bedroom", catalog: "Engineered oak flooring 14mm", quantity: "30", unit: "sqm", unitCost: "190", rate: "320" },
   { key: "bed-paint", room: "Master bedroom", catalog: "Wall painting, 2 coats", quantity: "80", unit: "sqm", unitCost: "14", rate: "28" },
 ] as Array<{ key: string; room: string; catalog: string; title?: string; quantity: string; unit: string; unitCost: string; rate: string }>;

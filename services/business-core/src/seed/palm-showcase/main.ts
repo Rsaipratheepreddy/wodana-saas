@@ -22,7 +22,10 @@
  */
 import "reflect-metadata";
 import { ensureTeamsAndPeople, ensureTenant } from "./bootstrap";
+import { ensureBrand } from "./brand";
 import { ensureCoreCollection } from "./catalog";
+import { ensureCoreCollectionItems } from "./catalog-core";
+import { ensureCrmProfile } from "./crm-profile";
 import { Core, describe, type Actor, type Mode } from "./core";
 import { loadSeedData, type Phase } from "./data";
 import { ensureSettings } from "./settings";
@@ -51,8 +54,11 @@ async function main() {
       } else {
         await ensureTeamsAndPeople(core, data, tenant, owner, rotateLinks);
         if (phase === "all") {
+          await ensureBrand(core, data, tenant.workspaceId, owner);
+          await ensureCrmProfile(core, data, tenant.workspaceId, owner);
           await ensureSettings(core, data, tenant.workspaceId, owner);
           await ensureCoreCollection(core, data, tenant.workspaceId, owner);
+          await ensureCoreCollectionItems(core, data, tenant.workspaceId, owner);
           await ensureSuppliers(core, data, tenant.workspaceId, owner);
           await runShowcase(core, data, tenant.workspaceId, owner);
         }
@@ -86,14 +92,23 @@ async function runShowcase(core: Core, data: ReturnType<typeof loadSeedData>, wo
     throw error;
   }
   if (!module?.seedShowcase) { core.report.notes.push("The showcase module exports no seedShowcase(); the demonstration project was not seeded."); return; }
+  // Only active members act; a pending person leaves their role to the owner. The showcase's role names map to the teams.
   const roleActors: Record<string, { userId: string; membershipId: string | null; email: string; displayName: string; active: boolean }> = {};
+  const actors: Record<string, string> = {};
+  const roleForTeam: Record<string, string> = { SALES: "sales", SALES_ADMIN: "salesAdmin", INTERIOR_DESIGN: "designer", QS: "estimator", OPS_ADMIN: "manager",
+    PROJECT_MANAGERS: "projectManager", FINANCE: "finance", PROCUREMENT: "buyer", PRODUCTION: "factory" };
   for (const person of data.showcase.people) {
     const actor = await core.actor(workspaceId, person.email);
-    if (actor) roleActors[person.team] = { userId: actor.userId, membershipId: actor.membershipId, email: actor.email, displayName: actor.displayName, active: actor.active };
+    if (!actor?.active) continue;
+    roleActors[person.team] = { userId: actor.userId, membershipId: actor.membershipId, email: actor.email, displayName: actor.displayName, active: actor.active };
+    const role = person.roleCodes.includes("site_supervisor") ? "site" : roleForTeam[person.team];
+    if (role && !actors[role]) actors[role] = actor.userId;
   }
+  actors.owner = owner.userId;
   if (!core.commit) { core.report.record("showcase", "pending", "the demonstration project runs in commit mode"); return; }
-  await module.seedShowcase({ app: core.app, workspaceId, actorUserId: owner.userId, roleActors, report: core.report });
-  core.report.record("showcase", "changed");
+  const result = await module.seedShowcase({ app: core.app, workspaceId, actorUserId: owner.userId, actors, roleActors, report: core.report, log: (line: string) => process.stdout.write(`${line}\n`) }) as
+    { created?: unknown[]; reused?: unknown[]; skipped?: unknown[] } | undefined;
+  core.report.record("showcase run", result?.created?.length ? "changed" : "reused");
 }
 
 main().catch((error) => {

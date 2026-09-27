@@ -11,7 +11,24 @@ export type SeedData = {
   suppliers: SuppliersFixture;
   proposalKit: Record<string, unknown>;
   collection: { manifest: CollectionManifest; dir: string } | null;
+  crmProfile: CrmProfileFixture | null;
+  brand: BrandFixture | null;
+  brandLogoPath: string | null;
 };
+export type CrmProfileFixture = {
+  sources: Array<{ code: string; label: string; allowedRoles?: string[] }>;
+  channels: Record<string, Array<{ code: string; label: string }>>;
+  enquiryTypes: Array<{ code: string; label: string }>;
+  budgetRanges: Array<{ code: string; label: string }>;
+  customerTypes?: Array<{ code: string; label: string }>;
+  referralBrokers?: Array<{ code: string; label: string }>;
+  referralPartners?: Array<{ code: string; label: string }>;
+  operations: {
+    queue: { code: string; name: string; takeoverAfterMinutes: number; takeoverSchedule?: Record<string, unknown> };
+    firstResponseSla: { name: string; warningAfterMinutes: number; breachAfterMinutes: number; calculationMode: string; schedule?: Record<string, unknown> };
+  };
+};
+export type BrandFixture = { primaryColor: string; secondaryColor: string; headingFont: { token: string }; bodyFont: { token: string }; logos: { wordmark: string; monogram: string } };
 
 export type Person = { email: string; displayName: string; roleCodes: string[]; team: string };
 export type ShowcaseFixture = {
@@ -87,5 +104,14 @@ export function loadSeedData(phase: Phase = "all"): SeedData {
     suppliers: full ? readJson<SuppliersFixture>(resolve(dataDir, "fixtures/palm-suppliers.json")) : { suppliers: [] },
     proposalKit: full ? readJson<Record<string, unknown>>(resolve(dataDir, "projects/palm-living/proposal-kit.json")) : {},
     collection: full && manifestPath && existsSync(manifestPath) ? { manifest: readJson<CollectionManifest>(manifestPath), dir: collectionDir } : null,
+    crmProfile: full ? readJson<CrmProfileFixture>(resolve(dataDir, "fixtures/palm-crm-intake-profile.json")) : null,
+    brand: full ? readJson<BrandFixture>(resolve(dataDir, "fixtures/palm-living-brand.json")) : null,
+    brandLogoPath: full ? findLogo(dataDir, "palm-living-logo.png") : null,
   };
+}
+
+/** The logo file next to the fixtures (in the image: /workspace/docs/brand), else the mobile app's brand asset. */
+export function findLogo(dataDir: string, fileName: string) {
+  const candidates = [process.env.SEED_BRAND_LOGO, resolve(dataDir, "brand", fileName), resolve(dataDir, "../apps/mobile/assets/brand", fileName)].filter(Boolean) as string[];
+  return candidates.find((path) => existsSync(path)) ?? candidates[candidates.length - 2];
 }
