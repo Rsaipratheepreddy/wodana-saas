@@ -165,7 +165,10 @@ export class ClientPortalService {
       const ctx = this.context(client, workspaceId, settings, contact, await workspaceToday(client, workspaceId));
       const found = await this.locate(client, workspaceId, kind, id);
       if (!found || !contact.grants.some((grant) => grant.caseId === found.caseId)) throw new NotFoundException("File not found.");
-      await grantFor(ctx, found.caseId, found.section);
+      // Open when any section that shows the file is shared with this client (a handover document shows under Decisions and Documents).
+      let open = false;
+      for (const section of found.sections) if (!open) open = await grantFor(ctx, found.caseId, section).then(() => true, () => false);
+      if (!open) throw new NotFoundException("File not found.");
       if (!this.storage) throw new NotFoundException("File not found.");
       const key = preview && found.previewKey ? found.previewKey : found.objectKey;
       const stored = await this.storage.read(key).catch(() => null);
@@ -175,7 +178,7 @@ export class ClientPortalService {
   }
 
   private async locate(client: PoolClient, workspaceId: string, kind: string, id: string) {
-    type Found = { caseId: string; objectKey: string; previewKey: string | null; mimeType: string; name: string; section: "decisions" | "documents" | "progress" };
+    type Found = { caseId: string; objectKey: string; previewKey: string | null; mimeType: string; name: string; sections: Array<"decisions" | "documents" | "progress"> };
     if (kind === "design") {
       // Designs shared for review (decisions) or approved (documents).
       const row = (await client.query<Found & { status: string }>(
@@ -184,7 +187,7 @@ export class ClientPortalService {
            JOIN pre_project_designs design ON design.workspace_id = version.workspace_id AND design.id = version.design_id AND design.archived_at IS NULL
            JOIN pre_project_brief_assets asset ON asset.workspace_id = version.workspace_id AND asset.id = version.asset_id
           WHERE version.workspace_id = $1 AND version.id = $2 AND version.status IN ('client_review', 'approved', 'changes_requested', 'rejected')`, [workspaceId, id])).rows[0];
-      return row ? { ...row, section: row.status === "approved" ? "documents" as const : "decisions" as const } : null;
+      return row ? { ...row, sections: row.status === "approved" ? ["documents" as const, "decisions" as const] : ["decisions" as const] } : null;
     }
     if (kind === "photo") {
       const row = (await client.query<Found>(
@@ -194,7 +197,7 @@ export class ClientPortalService {
            JOIN delivery_projects project ON project.workspace_id = report.workspace_id AND project.id = report.project_id
           WHERE photo.workspace_id = $1 AND photo.id = $2 AND photo.shared_at IS NOT NULL`, [workspaceId, id])).rows[0];
       const settings = await readPortalSettings(client, workspaceId);
-      return row && settings.progress.photos ? { ...row, section: "progress" as const } : null;
+      return row && settings.progress.photos ? { ...row, sections: ["progress" as const] } : null;
     }
     if (kind === "handover") {
       const row = (await client.query<Found>(
@@ -203,7 +206,7 @@ export class ClientPortalService {
            JOIN handover_packs pack ON pack.workspace_id = document.workspace_id AND pack.id = document.pack_id AND pack.status <> 'draft'
            JOIN delivery_projects project ON project.workspace_id = pack.workspace_id AND project.id = pack.project_id
           WHERE document.workspace_id = $1 AND document.id = $2`, [workspaceId, id])).rows[0];
-      return row ? { ...row, section: "documents" as const } : null;
+      return row ? { ...row, sections: ["documents" as const, "decisions" as const] } : null;
     }
     if (kind === "agreement") {
       const row = (await client.query<Found>(
@@ -212,7 +215,7 @@ export class ClientPortalService {
       if (!row) return null;
       const data = await this.commercial.load(client, workspaceId, row.caseId);
       // Only a file of the executed agreement.
-      return data.agreement?.status === "executed" && data.agreement.files?.some((file) => file.id === id) ? { ...row, section: "documents" as const } : null;
+      return data.agreement?.status === "executed" && data.agreement.files?.some((file) => file.id === id) ? { ...row, sections: ["documents" as const] } : null;
     }
     return null;
   }

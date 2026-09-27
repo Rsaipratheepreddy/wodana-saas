@@ -63,7 +63,7 @@ projects[].decisions.quotes[].lines[].id projects[].decisions.quotes[].lines[].d
 projects[].decisions.quotes[].lines[].title projects[].decisions.quotes[].lines[].specification projects[].decisions.quotes[].lines[].material
 projects[].decisions.quotes[].lines[].finish projects[].decisions.quotes[].lines[].variantLabel projects[].decisions.quotes[].lines[].photo
 projects[].decisions.quotes[].lines[].dimensions projects[].decisions.quotes[].lines[].pricingMode projects[].decisions.quotes[].lines[].quantity
-projects[].decisions.quotes[].lines[].unit projects[].decisions.quotes[].lines[].rate projects[].decisions.quotes[].lines[].optional
+projects[].decisions.quotes[].lines[].unit projects[].decisions.quotes[].lines[].rate projects[].decisions.quotes[].lines[].optional projects[].decisions.quotes[].lines[].optionPrice
 projects[].decisions.quotes[].lines[].materialRows projects[].decisions.quotes[].lines[].customMaterials
 projects[].decisions.quotes[].decision projects[].decisions.quotes[].decision.decision projects[].decisions.quotes[].decision.quoteHash
 projects[].decisions.quotes[].decision.selectedOptionLineIds projects[].decisions.quotes[].decision.baseTotal projects[].decisions.quotes[].decision.optionsTotal
@@ -529,6 +529,33 @@ integration("client portal (plan §6.22)", () => {
         { action: "client_portal.request", source: "client_portal", actor_user_id: null, grant: approver.id }]);
       // The account manager hears the client's decision.
       expect((await w.client.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND event_type = 'quotation.client_accepted'", [w.workspaceId])).rows[0].n).toBeGreaterThan(0);
+
+      // A viewer reads but never decides, even with a well-formed command.
+      const viewer = await signIn(w, VIEWER, "whatsapp").catch(async () => {
+        const contact = (await w.admin.contacts(actor, w.workspaceId, w.caseId)).contacts.find((item) => item.phone === VIEWER)!;
+        await w.admin.saveContact(actor, w.workspaceId, w.caseId, { id: contact.id, version: contact.version, name: "Sam", phone: VIEWER, email: "sam@example.com", role: "viewer" });
+        return signIn(w, VIEWER, "email");
+      });
+      await expect(w.portal.challenge(w.slug, { purpose: `quote:${w.caseId}:${w.quoteId}:accept` }, viewer, "203.0.113.7")).rejects.toThrow(/decision-maker/);
+      await expect(w.portal.command(w.slug, viewer, { commandId: randomUUID(), action: "materials_decision", caseId: w.caseId, revisionId: randomUUID(), challengeId: randomUUID(), code: "123456" }))
+        .rejects.toThrow(/decision-maker/);
+
+      // A design shared for review: approved in the portal with a code bound to that version.
+      const asset = randomUUID(), design = randomUUID(), version = randomUUID();
+      await w.client.query(`INSERT INTO pre_project_brief_assets (id, workspace_id, case_id, original_name, mime_type, byte_size, object_key, sha256, created_by)
+        VALUES ($1, $2, $3, 'render.png', 'image/png', 10, $4, repeat('a', 64), $5)`, [asset, w.workspaceId, w.caseId, `designs/${asset}`, w.designer]);
+      await w.client.query(`INSERT INTO pre_project_designs (id, workspace_id, case_id, title, document_type, created_by) VALUES ($1, $2, $3, 'Living render', 'Render', $4)`,
+        [design, w.workspaceId, w.caseId, w.designer]);
+      await w.client.query(`INSERT INTO pre_project_design_versions (id, workspace_id, case_id, design_id, number, asset_id, status, created_by, client_review_expires_at)
+        VALUES ($1, $2, $3, $4, 1, $5, 'client_review', $6, now() + interval '5 days')`, [version, w.workspaceId, w.caseId, design, asset, w.designer]);
+      expect((await w.portal.view(w.slug, token)).projects[0].decisions!.designs).toEqual([expect.objectContaining({ id: version, status: "client_review", canDecide: true })]);
+      const designProof = await decisionCode(w, token, `design:${w.caseId}:${version}:accept`);
+      await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "design_decision", caseId: w.caseId, versionId: version, decision: "accept", ...designProof });
+      expect((await w.client.query("SELECT status FROM pre_project_design_versions WHERE id = $1", [version])).rows[0].status).toBe("approved");
+      expect((await w.client.query("SELECT decision_source, client_grant_id FROM pre_project_design_activity WHERE version_id = $1", [version])).rows)
+        .toEqual([{ decision_source: "client_portal", client_grant_id: approver.id }]);
+      // Approved, it moves to Documents.
+      expect((await w.portal.view(w.slug, token)).projects[0].documents).toEqual([expect.objectContaining({ id: version, kind: "design", title: "Living render · V1" })]);
     });
   });
 

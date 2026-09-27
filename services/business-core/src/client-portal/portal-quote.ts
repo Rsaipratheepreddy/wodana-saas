@@ -1,4 +1,4 @@
-import { quoteExpired } from "../commercial/commercial.domain";
+import { quoteExpired, round, totals } from "../commercial/commercial.domain";
 import type { Quote, QuoteLine } from "../commercial/commercial.types";
 import { quotationLineVariant, quotationMaterialText } from "../commercial/quotation-presentation";
 
@@ -43,7 +43,7 @@ export function portalQuote(quote: Quote, grantId: string, role: "approver" | "v
     } : null,
     rooms: (quote.rooms ?? []).map((room) => ({ id: room.id, name: room.name })),
     paymentTerms: (quote.paymentTerms ?? []).map((term) => ({ id: term.id, title: term.title, percent: term.percent, trigger: term.trigger })),
-    lines: quote.lines.map((line) => portalQuoteLine(line)),
+    lines: quote.lines.map((line) => portalQuoteLine(line, line.optional ? optionPrice(quote, line.id) : null)),
     decision: decision ? {
       decision: decision.decision, quoteHash: decision.quoteHash, selectedOptionLineIds: [...decision.selectedOptionLineIds], baseTotal: decision.baseTotal,
       optionsTotal: decision.optionsTotal, acceptedTotal: decision.acceptedTotal ?? null, decidedAt: decision.decidedAt, decidedBy: decision.decidedBy,
@@ -52,7 +52,7 @@ export function portalQuote(quote: Quote, grantId: string, role: "approver" | "v
   };
 }
 
-function portalQuoteLine(line: QuoteLine) {
+function portalQuoteLine(line: QuoteLine, optionPrice: number | null) {
   return {
     id: line.id,
     deductsLineId: line.deductsLineId ?? null,
@@ -69,6 +69,8 @@ function portalQuoteLine(line: QuoteLine) {
     unit: line.unit,
     rate: line.rate,
     optional: line.optional ?? false,
+    // What choosing this option adds to the total (with its discount and tax), priced by the quotation engine.
+    optionPrice,
     materialRows: (line.materialRows ?? []).map((row) => ({
       id: row.id, name: row.name, type: row.type, specification: row.specification, quantity: row.quantity, unit: row.unit, rate: row.rate, suppliedByClient: row.suppliedByClient,
     })),
@@ -76,6 +78,16 @@ function portalQuoteLine(line: QuoteLine) {
       id: material.id, name: material.name, brand: material.brand, code: material.code, specification: material.specification, suppliedByClient: material.suppliedByClient,
     })),
   };
+}
+
+/** The difference one option makes to the quotation's total. */
+function optionPrice(quote: Quote, lineId: string) {
+  try {
+    const base = totals(quote).total;
+    return round(totals({ ...quote, lines: quote.lines.map((line) => (line.id === lineId ? { ...line, optional: false } : line)) }).total - base);
+  } catch {
+    return null;
+  }
 }
 
 export type PortalQuote = ReturnType<typeof portalQuote>;

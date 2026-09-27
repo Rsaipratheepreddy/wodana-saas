@@ -1,0 +1,58 @@
+import { describe, expect, it } from "vitest";
+import type { ChangeRequest, Quote } from "../commercial/commercial.types";
+import { maskEmail, mobileNumber, PortalCodes } from "./portal-auth";
+import { portalQuote } from "./portal-quote";
+import { portalRequest } from "./portal-read";
+import { effectiveSections, type PortalSettings } from "./portal-settings";
+
+const settings = (sections: Partial<PortalSettings["sections"]> = {}): PortalSettings => ({
+  workspaceId: "w", slug: "s", enabled: true, version: 1,
+  sections: { progress: true, decisions: true, payments: true, documents: true, warranty: true, messages: true, ...sections },
+  progress: { stageNames: true, dates: true, updates: true, photos: true }, invoiceAmounts: true, welcomeTitle: "", welcomeText: "", support: { phone: "", email: "", whatsapp: "" },
+});
+
+describe("client portal rules", () => {
+  it("shows a project the workspace's sections, narrowed by the project, and nothing while it's paused", () => {
+    expect(effectiveSections(settings({ payments: false }), null)).toMatchObject({ progress: true, payments: false });
+    expect(effectiveSections(settings(), { sections: ["progress", "payments"], paused: false, pausedAt: null, version: 1 }))
+      .toEqual({ progress: true, decisions: false, payments: true, documents: false, warranty: false, messages: false });
+    expect(Object.values(effectiveSections(settings(), { sections: null, paused: true, pausedAt: "2026-09-27", version: 1 }))).toEqual(Array(6).fill(false));
+  });
+
+  it("takes a mobile number in international form and never shows an email in full", () => {
+    expect(mobileNumber("+1 (202) 555-0123")).toBe("+12025550123");
+    expect(() => mobileNumber("0501234567")).toThrow(/country code/);
+    expect(maskEmail("maya@example.com")).toBe("m•••@example.com");
+  });
+
+  it("stores codes only as an HMAC bound to their challenge", () => {
+    const codes = new PortalCodes("s".repeat(40), false);
+    expect(codes.next()).toMatch(/^\d{6}$/);
+    expect(codes.hash("a", "123456")).not.toBe(codes.hash("b", "123456"));
+    expect(new PortalCodes("s".repeat(40), true).next()).toBe("123456");
+    expect(codes.requester(undefined)).toBeNull();
+  });
+
+  it("projects a quotation field by field: no cost, QS review, manual reasons, catalogue links or who approved it", () => {
+    const quote = {
+      id: "q", number: 1, kind: "quotation", status: "issued", title: "Kitchen", currency: "USD", validUntil: "2099-01-01", discount: 0, taxRate: 0, terms: "", exclusions: "", total: 100,
+      requestIds: [], paymentTerms: [], createdAt: "", approverId: "g1", approvedBy: "QS Person", qsEstimate: { quoteHash: "h", cost: 55, sellingTotal: 100, reviewedAt: "", reviewedById: "u", reviewedBy: "QS" },
+      lines: [{ id: "l", room: "Kitchen", title: "Cabinets", specification: "", material: "", finish: "", quantity: 1, unit: "nos", unitCost: 55, rate: 100, manualReason: "no catalogue",
+        catalogLinks: [], scopeId: "s1" }],
+    } as unknown as Quote;
+    const projected = portalQuote(quote, "g1", "approver");
+    expect(projected.canDecide).toBe(true);
+    expect(portalQuote(quote, "g1", "viewer").canDecide).toBe(false);
+    const text = JSON.stringify(projected);
+    for (const secret of ["unitCost", "qsEstimate", "approverId", "approvedBy", "QS Person", "manualReason", "catalogLinks", "scopeId", "55"]) expect(text).not.toContain(secret);
+  });
+
+  it("shows the team's replies as the team, and never internal comments", () => {
+    const request = { id: "r", number: 1, title: "Socket", detail: "One more?", status: "open", owner: "Dana Designer", dueDate: "", resolution: "", createdAt: "",
+      comments: [{ id: "c1", author: "Dana Designer", at: "", text: "Yes", visibility: "client" }, { id: "c2", author: "Dana Designer", at: "", text: "Check budget", visibility: "internal" },
+        { id: "c3", author: "Maya", at: "", text: "Thanks", visibility: "client" }] } as ChangeRequest;
+    const projected = portalRequest(request, { id: "g", caseId: "c", name: "Maya", role: "approver", email: null, confirmed: true });
+    expect(projected.comments.map((comment) => [comment.text, comment.fromClient])).toEqual([["Yes", false], ["Thanks", true]]);
+    expect(JSON.stringify(projected)).not.toMatch(/Dana Designer|Check budget|owner/);
+  });
+});
