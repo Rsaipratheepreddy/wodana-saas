@@ -602,7 +602,7 @@ integration("client portal (plan §6.22)", () => {
       let state = await handover.command(actor, w.workspaceId, projectId, { action: "create_pack", id: pack, title: "Villa handover", areaIds: [] });
       state = await handover.uploadDocument(actor, w.workspaceId, projectId, pack, randomUUID(), { kind: "manual", title: "Care guide" },
         { buffer: Buffer.from("%PDF-1.4\n%care\n"), originalname: "care.pdf", mimetype: "application/pdf", size: 0 });
-      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: state.packs[0].version });
+      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: state.packs[0].version, confirmOpen: true, openReason: "Client walk-through before the last stages" });
       expect((await w.client.query("SELECT count(*)::int AS n FROM notifications WHERE workspace_id = $1 AND recipient_type = 'portal_contact' AND event_type = 'portal.decision_waiting'",
         [w.workspaceId])).rows[0].n).toBe(4);
       let view = (await w.portal.view(w.slug, token)).projects[0];
@@ -614,7 +614,7 @@ integration("client portal (plan §6.22)", () => {
       expect(snags).toEqual([{ title: "Handover refused: Scratch on the island", severity: "major", source: "client", created_by: w.manager }]);
       state = await handover.state(actor, w.workspaceId, projectId);
       const next = state.packs.find((item) => item.status === "draft")!;
-      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: next.id, version: next.version });
+      state = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: next.id, version: next.version, confirmOpen: true, openReason: "Client walk-through before the last stages" });
       proof = await decisionCode(w, token, `handover:${w.caseId}:${next.id}:accept`);
       await w.portal.command(w.slug, token, { commandId: randomUUID(), action: "handover_decision", caseId: w.caseId, packId: next.id, decision: "accept", outstanding: ["Touch up the skirting"], ...proof });
       expect((await w.client.query("SELECT status, decision_method, recorded_by, decided_by_name FROM handover_packs WHERE id = $1", [next.id])).rows)
