@@ -177,6 +177,8 @@ export type WorkBoard = {
   materials: Record<string, string[]>;
   /** The project's areas, for where a snag is. */
   areas: Array<{ id: string; name: string }>;
+  /** A completed project still works its warranty snags. */
+  aftercare: boolean;
 };
 /** An item pushed later because something it waits on moved. */
 export type WorkMove = { id: string; number: number; title: string; fromStart: string | null; fromDue: string | null; startDate: string | null; dueDate: string | null; because: number };

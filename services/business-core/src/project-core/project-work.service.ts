@@ -43,7 +43,7 @@ export class ProjectWorkService {
     const photoKind = oneOf(kind, ["before", "after"] as const, "Photo");
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const context = await this.context(client, workspaceId, projectId, user);
-      if (!context.canEdit) throw new ConflictException("The project is closed.");
+      if (!context.canEdit && !(await this.aftercare(client, workspaceId, context, "update", itemId))) throw new ConflictException("The project is closed.");
       const item = await this.own(client, workspaceId, projectId, itemId, true);
       if (item.type !== "snag") throw new BadRequestException("Photos before and after are for snags.");
       const id = uuid(photoId, "Photo");
@@ -148,8 +148,10 @@ export class ProjectWorkService {
   command(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
       const context = await this.context(client, workspaceId, projectId, user);
-      if (!context.canEdit) throw new ConflictException(EDITABLE.includes(context.project.status) ? "Only the project's team can change its work." : "The project is closed.");
       const action = String(body.action ?? "");
+      // After completion only warranty snags are still worked on (aftercare).
+      if (!context.canEdit && !(await this.aftercare(client, workspaceId, context, action, body.itemId)))
+        throw new ConflictException(EDITABLE.includes(context.project.status) ? "Only the project's team can change its work." : "The project is closed.");
       const notices: Array<{ key: string; notice: WorkNotice }> = [];
       let itemId: string | null;
       let audit: Record<string, unknown>;
@@ -454,7 +456,9 @@ export class ProjectWorkService {
         WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, project.id])).rows[0];
     return {
       items, packages: packages.rows, stages: stages.rows, lines: lines.rows,
-      people: context.canEdit ? await activeMembers(client, workspaceId) : [],
+      people: context.canEdit || project.status === "completed" ? await activeMembers(client, workspaceId) : [],
+      // A completed project still works its warranty snags.
+      aftercare: project.status === "completed" && Boolean(context.membershipId || context.manager),
       sprints: await readSprints(client, workspaceId, project.id),
       me: context.membershipId, canEdit: context.canEdit, canManage: context.manager && context.canEdit,
       calendar, promiseDate: project.promiseDate, startDate: project.startDate,
@@ -650,6 +654,13 @@ export class ProjectWorkService {
 
   private async ripple(client: Db, workspaceId: string, projectId: string, changed: { id: string; startDate: string | null; dueDate: string | null }) {
     return ripple(await readItems(client, workspaceId, projectId), await readProjectLinks(client, workspaceId, projectId), changed, await readCalendar(client, workspaceId));
+  }
+
+  /** Whether this change is aftercare: a completed project's warranty snag, changed or commented on by its team. */
+  private async aftercare(client: Db, workspaceId: string, context: Context, action: string, itemId: unknown) {
+    if (context.project.status !== "completed" || !["update", "comment"].includes(action) || typeof itemId !== "string" || !UUID.test(itemId)) return false;
+    return Boolean((await client.query(`SELECT 1 FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3 AND type = 'snag' AND source = 'warranty'`,
+      [workspaceId, context.project.id, itemId])).rowCount);
   }
 
   /** An area of the project (a room of its planning record). */

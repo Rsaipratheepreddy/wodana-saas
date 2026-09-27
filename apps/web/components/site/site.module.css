@@ -24,3 +24,7 @@
 @media (max-width: 640px) { .pair { grid-template-columns: minmax(0, 1fr); } }
 .document { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 .document a { color: var(--wd-color-text); }
+.body { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; }
+.link { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); }
+@media (max-width: 640px) { .months { grid-template-columns: minmax(0, 1fr); } }

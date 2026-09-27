@@ -11,6 +11,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { handedOver } from "./handover";
+import { startWarranty } from "./warranty";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -98,12 +99,14 @@ export class HandoverService {
             const outstanding = Array.isArray(body.outstanding) ? body.outstanding.map((item) => text(item, 300)).filter(Boolean) : [];
             await client.query(`UPDATE handover_packs SET status = 'accepted', decided_on = $3, decided_by_name = $4, decision_method = $5, decision_note = $6, recorded_by = $7, version = version + 1
               WHERE workspace_id = $1 AND id = $2`, [workspaceId, pack.id, decidedOn, decidedByName, method, outstanding.join("\n").slice(0, 1000), user.userId]);
+            // The warranty of what it covers starts on the day the client accepted it.
+            const started = await startWarranty(client, workspaceId, { projectId, packId: pack.id, areaIds: pack.areaIds, startsOn: decidedOn });
             // What the client accepted with still to do becomes minor snags from the client.
             for (const item of outstanding) await raiseSnag(client, workspaceId, { projectId, title: item, description: `Outstanding at handover (R${pack.revision})`, severity: "minor", source: "client",
               actorId: user.userId });
             await this.tell(client, workspaceId, projectId, "handover.accepted", user.userId,
               `${decidedByName} accepted R${pack.revision}${outstanding.length ? ` with ${outstanding.length} item${outstanding.length === 1 ? "" : "s"} outstanding` : ""}.`, `accepted:${pack.id}`);
-            audit = { packId: pack.id, outstanding: outstanding.length };
+            audit = { packId: pack.id, outstanding: outstanding.length, warrantyStarted: started };
           } else {
             const reason = text(body.reason, 1000);
             if (!reason) throw new BadRequestException("Say why the client refused it.");

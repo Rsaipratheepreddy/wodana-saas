@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request, Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
@@ -7,6 +7,7 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { HandoverService } from "./handover.service";
+import { WarrantyService } from "./warranty.service";
 import { SiteService } from "./site.service";
 
 /** A project's site: when site work runs, and its daily reports with their photos. Bodies are validated in the service. */
@@ -14,7 +15,18 @@ import { SiteService } from "./site.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/site/projects/:projectId")
 export class SiteController {
-  constructor(private readonly site: SiteService, private readonly handover: HandoverService) {}
+  constructor(private readonly site: SiteService, private readonly handover: HandoverService, private readonly warranty: WarrantyService) {}
+
+  @Get("warranty")
+  warrantyState(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
+    return this.warranty.state(actor, workspaceId, projectId);
+  }
+
+  @Post("warranty")
+  warrantyCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string,
+    @Body() input: Record<string, unknown>) {
+    return this.warranty.command(actor, workspaceId, projectId, input ?? {});
+  }
 
   @Get("handover")
   handoverState(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
@@ -67,4 +79,18 @@ export class SiteController {
     response.setHeader("Cache-Control", "private, max-age=300");
     return sendMedia(file, request, response);
   }
+}
+
+/** Settings → Projects → Warranty: months of warranty for each way of delivering a package. */
+@ApiTags("site")
+@ApiBearerAuth()
+@Controller("workspaces/:workspaceId/warranty-settings")
+export class WarrantySettingsController {
+  constructor(private readonly warranty: WarrantyService) {}
+
+  @Get()
+  settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.warranty.settings(actor, workspaceId); }
+
+  @Put()
+  save(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) { return this.warranty.saveSettings(actor, workspaceId, input ?? {}); }
 }

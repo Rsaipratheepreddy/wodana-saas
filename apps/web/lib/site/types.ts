@@ -26,3 +26,16 @@ export type HandoverPack = {
   documents: Array<{ id: string; kind: HandoverKind; title: string; name: string; size: number; sha256: string }>;
 };
 export type HandoverState = { packs: HandoverPack[]; areas: Array<{ id: string; name: string }>; covered: boolean; canManage: boolean };
+
+export type Supply = "make" | "buy" | "ready_made" | "subcontract" | "client" | "site_work";
+/** A scope line's warranty: from the handover it was accepted in, for its months. */
+export type WarrantyItem = { lineId: string; title: string; areaName: string | null; supply: Supply | null; months: number; startsOn: string; endsOn: string; note: string; active: boolean };
+export type ClaimStatus = "open" | "covered" | "not_covered" | "chargeable";
+export type WarrantyClaim = {
+  id: string; number: number; raisedOn: string; raisedByName: string; channel: "phone" | "email" | "visit" | "message" | "portal"; description: string; areaId: string | null; lineId: string | null;
+  lineTitle: string | null; status: ClaimStatus; decisionNote: string; decidedByName: string | null; snagId: string | null; snagNumber: number | null; snagStatus: string | null; version: number;
+};
+export type WarrantyState = {
+  items: WarrantyItem[]; claims: WarrantyClaim[]; lines: Array<{ id: string; title: string }>; areas: Array<{ id: string; name: string }>; today: string; canRecord: boolean; canManage: boolean;
+};
+export type WarrantySettings = { months: Record<Supply, number>; canManage: boolean };

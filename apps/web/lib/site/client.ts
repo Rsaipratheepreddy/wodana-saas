@@ -1,4 +1,4 @@
-import type { HandoverKind, HandoverState, SiteState } from "./types";
+import type { HandoverKind, HandoverState, SiteState, WarrantySettings, WarrantyState } from "./types";
 
 export class SiteRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
@@ -33,6 +33,18 @@ export function siteApi(workspaceId: string, projectId: string) {
       return send<HandoverState>(`${at(`handover/${packId}/documents/${documentId}`)}&${new URLSearchParams({ kind, title })}`, { method: "POST", body: form }, "The file could not be uploaded.");
     },
     documentUrl: (documentId: string) => at(`handover/documents/${documentId}`),
+    warranty: () => send<WarrantyState>(at("warranty"), {}, "The warranty didn't load."),
+    warrantyCommand: (action: string, input: Record<string, unknown> = {}) =>
+      send<WarrantyState>(at("warranty"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action }) }, "Could not save."),
   };
 }
 export type SiteApi = ReturnType<typeof siteApi>;
+
+/** Settings → Projects → Warranty: months of warranty for each way of delivering a package. */
+export function warrantySettingsApi(workspaceId: string) {
+  const at = `/api/warranty-settings?${new URLSearchParams({ workspaceId })}`;
+  return {
+    get: () => send<WarrantySettings>(at, {}, "Could not load the settings."),
+    save: (months: Record<string, number>) => send<WarrantySettings>(at, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ months }) }, "Could not save."),
+  };
+}

@@ -74,7 +74,8 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview, photos }: {
   const t = useT();
   const labels = useWorkLabels();
   const format = useProjectFormat();
-  const edit = board.canEdit;
+  // After completion, a warranty snag is still worked on.
+  const edit = board.canEdit || (board.aftercare && detail.type === "snag" && detail.source === "warranty");
   const update = (patch: Record<string, unknown>) => run("update", { version: detail.version, ...patch });
   const [title, setTitle] = useState(detail.title);
   const [description, setDescription] = useState(detail.description);

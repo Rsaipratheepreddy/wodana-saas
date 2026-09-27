@@ -837,7 +837,11 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - A pack (for the whole project or some of its areas) gathers what the client receives: drawings, warranties, manuals, care guides, as-built photos (PDFs or photos). Issuing it freezes revision R#: its contents listed and fingerprinted, and the database refuses any change after.
   - The project manager records the client's decision on an issued revision (who, when, how). Accepted: only while no critical snag is open in its areas; anything still outstanding becomes minor snags from the client; the team is told. Refused with why: the reason becomes a major snag, and a new draft revision (same documents) is made to issue once it's fixed.
   - The default Handover stage finishes on *The client accepted the handover*: accepted packs cover the whole project (a whole-project pack, or every area).
-  - Still to come: the final account and a waiver for a balance still due (Money, phase 9), warranty terms from the handover date (phase 8), and acceptance in the client portal (phase 10).
+  - Still to come: the final account and a waiver for a balance still due (Money, phase 9), and acceptance in the client portal (phase 10).
+- **Warranty and aftercare (built, project → Warranty; Settings → Projects → Warranty):**
+  - Months of warranty per way a package is delivered (defaults: 12; nothing for what the client supplies). When the client accepts a handover pack, each scope line it covers starts its warranty that day, ending the day before the same date that many months later. The project manager can change an item's months, with why.
+  - Claims are recorded as the client raises them (when, who, how, what, the item and area); the project manager and account manager are told (in-app and email). The project manager decides: *Covered* (inside the item's cover — or with why, as goodwill) raises a warranty snag; *Not covered* and *Chargeable* say why. A completed project still works its warranty snags; nothing else on it changes.
+  - The daily run tells the account manager and project manager when warranties end within 30 days (once per project and end date).
 
 ### 6.20 Change orders (variations)
 - **Records:** change_orders (kind `addition | deduction | replacement | move | schedule | price_correction`), impact assessment snapshot (affected packages, tasks, POs, WOs, bookings, reported work) with an explicit disposition per impact, variation quote rounds.

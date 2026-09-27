@@ -40,7 +40,7 @@ const handles = item({ id: "i4", number: 4, title: "Order handles", status: "don
 const board = (items: WorkItem[] = [drawings, sheet, marble, handles], extra: Partial<WorkBoard> = {}): WorkBoard => ({
   items, packages: [{ id: "k1", name: "Kitchen joinery", supply: "make", planned: true }], stages: [{ id: "s1", name: "Technical drawings", status: "current" }], lines: [],
   people: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], me: "m1", canEdit: true, canManage: true, item: null,
-  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], critical: { finish: null, float: {} }, progress: { project: 40, packages: { k1: 40 } }, materials: {}, areas: [], ...extra,
+  calendar: { workingDays: [1, 2, 3, 4, 5], holidays: [] }, promiseDate: "2099-12-01", startDate: null, baseline: null, sprints: [], critical: { finish: null, float: {} }, progress: { project: 40, packages: { k1: 40 } }, materials: {}, areas: [], aftercare: false, ...extra,
 });
 const detail = (base: WorkItem, patch: Partial<WorkDetail> = {}): WorkDetail => ({
   ...base, description: "", createdByName: "Omar Haddad", createdAt: "2026-09-22T09:00:00Z", startedAt: null, subtaskIds: base.id === "i1" ? ["i2"] : [],

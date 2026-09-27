@@ -53,3 +53,32 @@ export async function processSiteReports(db: Db, workspaceId: string) {
   }
   return { sent };
 }
+
+/**
+ * Warranties ending within 30 days: the project's account manager and project manager hear once per
+ * project and end date — a chance for a last check or a care plan.
+ */
+export async function processWarrantyExpiry(db: Db, workspaceId: string) {
+  const today = (await db.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.today;
+  if (!today) return { sent: 0 };
+  const ending = (await db.query<{ projectId: string; title: string; endsOn: string; items: number }>(
+    `SELECT item.project_id AS "projectId", project.reference || ' · ' || project.name AS title, item.ends_on::text AS "endsOn", count(*)::int AS items
+       FROM warranty_items item JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
+      WHERE item.workspace_id = $1 AND item.months > 0 AND item.ends_on BETWEEN $2::date AND $2::date + 30 AND project.status IN ('active', 'completed')
+      GROUP BY item.project_id, project.reference, project.name, item.ends_on`, [workspaceId, today])).rows;
+  let sent = 0;
+  for (const group of ending) {
+    const people = (await db.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM project_assignments assignment
+         JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+        WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND (assignment.is_manager OR 'account_manager' = ANY(assignment.role_keys))`,
+      [workspaceId, group.projectId])).rows.map((row) => row.userId);
+    for (const userId of people) {
+      const result = await notifyUserInApp(db, { workspaceId, recipientUserId: userId, code: "warranty.expiring", eventType: "warranty.expiring",
+        variables: { title: group.title, clientName: "", actor: "", note: `${group.items} item${group.items === 1 ? "'s" : "s'"} warranty ends on ${group.endsOn}.` },
+        deepLink: `/workspace/projects/${group.projectId}/warranty`, idempotencyKey: `warranty.expiring:${group.projectId}:${group.endsOn}:${userId}` });
+      if (result.queued) sent += 1;
+    }
+  }
+  return { sent };
+}

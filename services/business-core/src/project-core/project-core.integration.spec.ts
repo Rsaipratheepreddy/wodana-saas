@@ -29,6 +29,8 @@ import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { tellScopeChanges } from "../factory/factory-changes";
 import { SiteService } from "../site/site.service";
 import { HandoverService } from "../site/handover.service";
+import { WarrantyService } from "../site/warranty.service";
+import { processWarrantyExpiry } from "../site/site-reminders";
 import { processSiteReports } from "../site/site-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -2480,6 +2482,78 @@ integration("projects core (plan §6.10)", () => {
       await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
       detail = await core.get(actor, w.workspaceId, projectId);
       expect(detail.stages.find((stage) => stage.key === "handover")!.checks.find((check) => check.kind === "handover_accepted")!.passed).toBe(true);
+    });
+  });
+
+  it("starts each item's warranty at handover, triages claims into warranty snags that are still worked after completion, and warns before warranties end", async () => {
+    await world(async (w) => {
+      await accept(w);
+      const core = w.as(w.manager);
+      const { projectId } = await core.start(actor, w.workspaceId, w.caseId, { quoteId: w.quoteId, leadMembershipId: w.managerMembership });
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "account_manager", membershipId: w.designerMembership, version: detail.project.version });
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-warranty-")) }));
+      const access = (userId: string, permissions: string[]) => ({
+        asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT aftercare"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT aftercare"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT aftercare"); throw error; } },
+        withPermission: async (_a: unknown, _w: string, _code: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => fn(w.client, { userId }),
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never);
+      const pm = new WarrantyService(access(w.manager, ["projects.view", "workspace.settings.manage"]));
+      const account = new WarrantyService(access(w.designer, ["projects.view"]));
+      await pm.saveSettings(actor, w.workspaceId, { months: { buy: 18 } });
+      expect((await pm.settings(actor, w.workspaceId)).months).toMatchObject({ buy: 18, make: 12, client: 0 });
+
+      // The client accepts a whole-project handover on 26 September: warranties start that day.
+      const handover = new HandoverService(access(w.manager, ["projects.view"]), storage);
+      const pack = randomUUID();
+      let packs = await handover.command(actor, w.workspaceId, projectId, { action: "create_pack", id: pack, title: "Handover", areaIds: [] });
+      packs = await handover.uploadDocument(actor, w.workspaceId, projectId, pack, randomUUID(), { kind: "manual", title: "Care guide" },
+        { buffer: Buffer.from("%PDF-1.4\n%care\n"), originalname: "care.pdf", mimetype: "application/pdf", size: 0 });
+      packs = await handover.command(actor, w.workspaceId, projectId, { action: "issue", packId: pack, version: packs.packs[0].version });
+      await handover.command(actor, w.workspaceId, projectId, { action: "accept", packId: pack, version: packs.packs[0].version, decidedOn: "2026-09-26", decidedByName: "Maya Client", method: "signed_document" });
+      let state = await pm.state(actor, w.workspaceId, projectId);
+      expect(state.items.map((item) => [item.title, item.months, item.startsOn, item.endsOn])).toEqual([
+        ["Kitchen cabinets", 18, "2026-09-26", "2028-03-25"], ["Worktop", 18, "2026-09-26", "2028-03-25"], ["Under-cabinet lights", 18, "2026-09-26", "2028-03-25"]]);
+      const lights = state.lines.find((line) => line.title === "Under-cabinet lights")!.id;
+      const cabinets = state.lines.find((line) => line.title === "Kitchen cabinets")!.id;
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "set_months", lineId: lights, months: 6 })).rejects.toThrow("Say why the warranty changes.");
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "set_months", lineId: lights, months: 6, reason: "Supplier covers 6 months" });
+      expect(state.items.find((item) => item.lineId === lights)).toMatchObject({ months: 6, endsOn: "2027-03-25" });
+
+      // A claim on the cabinets, inside their warranty: covered, a warranty snag.
+      const claim = randomUUID();
+      state = await account.command(actor, w.workspaceId, projectId, { action: "record_claim", id: claim, raisedOn: "2026-12-01", raisedByName: "Maya Client", channel: "phone",
+        description: "Drawer runner broken", boqLineId: cabinets });
+      expect((await w.client.query("SELECT recipient_id AS id, channel FROM notifications WHERE workspace_id = $1 AND event_type = 'warranty.claim' ORDER BY channel", [w.workspaceId])).rows)
+        .toEqual([{ id: w.manager, channel: "email" }, { id: w.manager, channel: "in_app" }]);
+      await expect(account.command(actor, w.workspaceId, projectId, { action: "decide_claim", claimId: claim, decision: "covered", version: 1 })).rejects.toThrow("Only the project manager decides claims.");
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "decide_claim", claimId: claim, decision: "covered", version: 1 });
+      const covered = state.claims.find((row) => row.id === claim)!;
+      expect([covered.status, covered.snagNumber, covered.snagStatus]).toMatchObject(["covered", expect.any(Number), "todo"]);
+      // The lights' 6 months had ended by June: covered only as goodwill, with why.
+      const late = randomUUID();
+      state = await account.command(actor, w.workspaceId, projectId, { action: "record_claim", id: late, raisedOn: "2027-06-01", raisedByName: "Maya Client", channel: "email",
+        description: "Light flickers", boqLineId: lights });
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "decide_claim", claimId: late, decision: "covered", version: 1 })).rejects.toThrow(/warranty didn't cover that day/);
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "decide_claim", claimId: late, decision: "not_covered", version: 1 })).rejects.toThrow("Say why it isn't covered.");
+      state = await pm.command(actor, w.workspaceId, projectId, { action: "decide_claim", claimId: late, decision: "chargeable", note: "Replace the driver at cost", version: 1 });
+      expect(state.claims.find((row) => row.id === late)).toMatchObject({ status: "chargeable", snagId: null });
+
+      // Once the project is complete, only its warranty snags are still worked on.
+      await w.client.query("UPDATE delivery_projects SET status = 'completed', completed_at = now(), completed_by = $2 WHERE id = $1", [projectId, w.manager]);
+      const lead = w.work(w.manager);
+      let board = await lead.board(actor, w.workspaceId, projectId);
+      expect(board.aftercare).toBe(true);
+      const snag = board.items.find((item) => item.id === covered.snagId)!;
+      board = await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: snag.id, version: snag.version, assigneeId: w.designerMembership });
+      expect(board.items.find((item) => item.id === snag.id)!.assigneeId).toBe(w.designerMembership);
+      await expect(lead.command(actor, w.workspaceId, projectId, { action: "create", id: randomUUID(), title: "New task" })).rejects.toThrow("The project is closed.");
+
+      // A warranty ending within 30 days is flagged to the account manager and project manager.
+      await w.client.query("UPDATE warranty_items SET ends_on = (now() AT TIME ZONE 'Asia/Dubai')::date + 10 WHERE boq_line_id = $1", [cabinets]);
+      expect((await processWarrantyExpiry(w.client, w.workspaceId)).sent).toBe(2);
+      expect((await processWarrantyExpiry(w.client, w.workspaceId)).sent).toBe(0);
     });
   });
 
