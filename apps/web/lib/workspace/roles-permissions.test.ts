@@ -23,7 +23,7 @@ describe("workspace permissions catalogue", () => {
     expect(permissionLabel("commercial.costs.manage")).toBe("Manage internal quotation costs");
     expect(permissionLabel("commercial.estimate")).toBe("Approve QS quotation estimate");
     expect(permissionLabel("commercial.finance.verify")).toBe("Verify payment evidence");
-    expect(permissionLabel("commercial.deal.approve")).toBe("Approve Deal File (Owner/Admin for Palm Living)");
+    expect(permissionLabel("commercial.deal.approve")).toBe("Approve deal file");
     expect(permissionLabel("projects.schedule.override")).toBe("Override project schedule conflicts");
     expect(permissionLabel("hrms.self")).toBe("Use own attendance and leave");
     expect(permissionLabel("ai.suggestions.use")).toBe("Use AI suggestions");

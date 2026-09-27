@@ -105,7 +105,7 @@ describe("RolesPermissionsPage", () => {
     render(<RolesPermissionsPage initialData={data} />);
 
     expect(screen.getByRole("switch", { name: "Studio lead: Manage internal quotation costs" })).toBeEnabled();
-    expect(screen.getByRole("switch", { name: "Studio lead: Approve Deal File (Owner/Admin for Palm Living)" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Studio lead: Approve deal file" })).toBeDisabled();
     expect(screen.getByText("Save changes to apply access. You can grant only permissions you hold.")).toBeInTheDocument();
   });
 

@@ -376,10 +376,12 @@ export function OnboardingFlow({
         }),
       });
       if (!response.ok) throw new Error(await responseMessage(response, "The invitation could not be sent."));
+      const created = await response.json().catch(() => null) as { emailDelivery?: { status?: string } } | null;
       setInvited((current) => [...current, inviteEmail.trim().toLowerCase()]);
         setInvitedRoles(current => ({ ...current, [inviteEmail.trim().toLowerCase()]: availableRoles.find(role => role.id === inviteRole)?.label ?? inviteRole }));
       setNewReservations(count => count + 1);
-      setInviteEmail(""); setStatus("Invitation sent");
+      // Say "sent" only when the email went out; otherwise the link is shared from People.
+      setInviteEmail(""); setStatus(created?.emailDelivery?.status === "sent" ? "Invitation sent" : "Invitation created · share the link from People");
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "The invitation could not be sent.");
     } finally { setBusy(false); }

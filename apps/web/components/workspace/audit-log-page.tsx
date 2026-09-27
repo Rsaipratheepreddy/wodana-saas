@@ -2,11 +2,9 @@
 
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState } from "react";
-import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, SearchInput, SelectField, SettingsPage, formatDate, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, SearchInput, SelectField, SettingsPage, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
 import type { AuditEvent, AuditLogPageData } from "@/lib/workspace/audit-log";
 import styles from "./audit-log-page.module.css";
-
-const DUBAI_FORMAT = { locale: "en-GB", timeZone: "Asia/Dubai" };
 
 function humanize(value: string) {
   return value
@@ -23,8 +21,8 @@ function actionLabel(action: string) {
   return humanize(words.length > 1 && broadModules.has(words[0] ?? "") ? words.slice(1).join(" ") : action);
 }
 
-function timestamp(value: string) {
-  return formatDate(value, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" });
+function timestamp(value: string, region: { locale: string; timeZone: string }) {
+  return formatDate(value, region, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function sourceTone(source: string) {
@@ -46,6 +44,7 @@ function responseMessage(response: Response, fallback: string) {
 
 export function AuditLogPage({ initialData }: { initialData: AuditLogPageData }) {
   const t = useT();
+  const region = useDesignSystem();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
@@ -79,7 +78,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
     { id: "actor", accessorFn: (item) => item.actorName ?? "System", header: "Actor", size: 215, cell: ({ row }) => <span className={styles.actor}><span>{row.original.actorName ?? "System"}</span>{row.original.actorEmail ? <small>{row.original.actorEmail}</small> : null}</span> },
     { id: "source", accessorFn: (item) => humanize(item.source), header: "Source", size: 115 },
     { id: "record", accessorFn: (item) => humanize(item.entityType), header: "Record", size: 165 },
-    { id: "occurred", accessorFn: (item) => item.occurredAt, header: "Date & time", size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt)}</time> },
+    { id: "occurred", accessorFn: (item) => item.occurredAt, header: "Date & time", size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt, region)}</time> },
     { id: "action", header: "Action", size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={`View ${actionLabel(row.original.action)} details`} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">{t("View")}</Button> },
   ];
 
@@ -152,6 +151,7 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
 
 function AuditEventDialog({ event, onClose }: { event: AuditEvent | null; onClose: () => void }) {
   const t = useT();
+  const region = useDesignSystem();
   const fields = event ? changedFields(event) : [];
   return <ControlledModalDialog
     description={event ? `${humanize(event.entityType)} · ${event.entityId?.slice(0, 8) ?? "No record ID"}` : undefined}
@@ -163,7 +163,7 @@ function AuditEventDialog({ event, onClose }: { event: AuditEvent | null; onClos
     {event ? <div className={styles.eventDetails}>
       <dl>
         <div><dt>{t("Actor")}</dt><dd>{event.actorName ?? "Wodana system"}<small>{event.actorEmail}</small></dd></div>
-        <div><dt>Date &amp; time</dt><dd>{timestamp(event.occurredAt)}</dd></div>
+        <div><dt>Date &amp; time</dt><dd>{timestamp(event.occurredAt, region)}</dd></div>
         <div><dt>{t("Source")}</dt><dd><Badge tone={sourceTone(event.source)}>{humanize(event.source)}</Badge></dd></div>
         <div><dt>{t("Correlation ID")}</dt><dd><code>{event.correlationId}</code></dd></div>
       </dl>

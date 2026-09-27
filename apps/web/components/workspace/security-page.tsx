@@ -4,12 +4,10 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
-import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, TextInput, formatDate, type DataGridColumn } from "@/design-system";
+import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, TextInput, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
 import type { MfaSecurityStatus, SecurityPageData, SecuritySession } from "@/lib/workspace/security";
 import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./security-page.module.css";
-
-const DUBAI_FORMAT = { locale: "en-GB", timeZone: "Asia/Dubai" };
 
 function responseMessage(response: Response, fallback: string) {
   return response.json()
@@ -40,6 +38,8 @@ async function mfaRequest(action: string, workspaceId: string, code?: string) {
 
 export function SecurityPage({ initialData }: { initialData: SecurityPageData }) {
   const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  const regionFormat = { locale, timeZone };
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [sessions, setSessions] = useState(initialData.sessions);
   const [selectedSession, setSelectedSession] = useState<SecuritySession | null>(null);
@@ -209,7 +209,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
   const sessionColumns: DataGridColumn<SecuritySession>[] = [
     { id: "device", accessorFn: sessionLabel, header: "Device", size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser}</strong><small>{details.device}</small></span>; } },
     { accessorKey: "ipAddress", header: "IP address", size: 145, cell: ({ row }) => row.original.ipAddress ?? "—" },
-    { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: "Last active", size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" })}</time> },
+    { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: "Last active", size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, regionFormat, { dateStyle: "medium", timeStyle: "short" })}</time> },
     { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <Badge tone="success">{t("This device")}</Badge> : <Button aria-label={`Sign out ${sessionLabel(row.original)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">{t("Sign out")}</Button> },
   ];
 
@@ -218,7 +218,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
       {failure && !mfaDialog ? <Callout title={t("Security action failed")} tone="danger">{failure}</Callout> : null}
       <SettingsSection id="mfa" title={t("Two-step verification")}>
-        <SettingsRow hint={mfa.enabled ? t("A code from your authenticator app is asked after your password.") : mfa.required && mfa.enrollmentDeadline ? `${t("Turn this on by")} ${formatDate(mfa.enrollmentDeadline, DUBAI_FORMAT, { dateStyle: "medium" })}` : t("Add an authenticator-app code after your password.")} label={t("Authenticator app")}>
+        <SettingsRow hint={mfa.enabled ? t("A code from your authenticator app is asked after your password.") : mfa.required && mfa.enrollmentDeadline ? `${t("Turn this on by")} ${formatDate(mfa.enrollmentDeadline, regionFormat, { dateStyle: "medium" })}` : t("Add an authenticator-app code after your password.")} label={t("Authenticator app")}>
           <Badge tone={mfa.enabled ? "success" : "warning"}>{mfa.enabled ? t("On") : t("Off")}</Badge>
           {mfa.enabled ? (!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">{t("Turn off")}</Button> : null)
             : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">{t("Set up")}</Button>}
