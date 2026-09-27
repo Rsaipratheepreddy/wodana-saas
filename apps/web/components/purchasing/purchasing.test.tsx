@@ -202,7 +202,7 @@ describe("ordering", () => {
       total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
       revision: 0, version: 1, paymentTerms: "split", advancePercent: "50.00", creditDays: null, termsNote: "", deliverTo: "site", deliveryAddress: "Villa 12, Palm", supplierReference: "", notes: "",
       subtotal: "4000.0000", discountTotal: "400.0000", taxTotal: "180.0000", createdBy: "u1", submittedBy: null, approvedByName: null, approvedAt: null, sentAt: null, sentTo: null,
-      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, overReason: null, continuedAt: null, continuedNote: null, continuedByName: null, companyName: "Studio Furniture", ...patch },
+      confirmedAt: null, cancelledAt: null, cancelReason: null, closedAt: null, closeReason: null, overReason: null, continuedAt: null, continuedNote: null, continuedByName: null, fundsOverrideAt: null, fundsOverrideReason: null, fundsOverrideByName: null, companyName: "Studio Furniture", ...patch },
     lines: [
       { id: "a", position: 0, projectId: "p1", projectReference: "PRJ-0007", source: "material", materialItemId: "m1", boqLineId: null, description: "Calacatta slab", specification: "CAL-20",
         quantity: "10.0000", unit: "m²", unitPrice: "350.0000", discountPercent: "10.00", taxRate: "5.0000", net: "3150.0000", tax: "157.5000", total: "3307.5000",
@@ -216,7 +216,7 @@ describe("ordering", () => {
         alternateStatus: null, alternateDescription: null, alternateSpecification: "", alternateUnitPrice: null, alternateNote: "", alternateOfferedBy: null, originalDescription: null, originalSpecification: null }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], contracts: [], neededBy: {}, me: "u2", supplierHold: null, ...rights,
+    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], contracts: [], neededBy: {}, spendingGuard: "off", fundsShort: [], canOverrideFunds: false, me: "u2", supplierHold: null, ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 
@@ -446,6 +446,31 @@ describe("ordering", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Continue this order" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "continue_on_hold", note: "Renewal filed" }));
     expect(await within(sheet).findByText("Continued while the supplier is on hold, by Dara: Renewal filed")).toBeInTheDocument();
+  });
+
+  it("stops an order beyond its project's money in hand until someone who may override lets it go ahead, and lets a buyer ask", async () => {
+    nav.query = "order=o1";
+    const short = [{ projectId: "p1", reference: "PRJ-0007", currency: "AED", needed: "3600.0000", available: "1000.0000" }];
+    const blocked = orderState({}, { spendingGuard: "strict", fundsShort: short, canOverrideFunds: true });
+    const fetcher = mount((url, body) => (url.includes("/orders/o1") ? (body?.action === "override_funds" ? orderState({ version: 2, fundsOverrideAt: "2026-09-27T11:00:00Z",
+      fundsOverrideReason: "Payment due Monday", fundsOverrideByName: "Omar" }, { spendingGuard: "strict", fundsShort: short, canOverrideFunds: true }) : blocked) : ordersList));
+    const view = page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    expect(await within(sheet).findByText(/Beyond the money in hand: PRJ-0007 has .*1,000.00, this order needs .*3,600.00/)).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Let it go ahead" }));
+    const dialog = await screen.findByRole("dialog", { name: "Let it go ahead" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it goes ahead/ }), "Payment due Monday");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Let it go ahead" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "override_funds", reason: "Payment due Monday" }));
+    expect(await within(sheet).findByText("Let go ahead beyond the money in hand by Omar: Payment due Monday")).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Let it go ahead" })).toBeNull();
+    view.unmount();
+
+    const asking = mount((url, body) => (url.includes("/orders/o1") ? orderState(body ? { version: 2 } : {}, { spendingGuard: "strict", fundsShort: short, canOverrideFunds: false }) : ordersList));
+    page("orders");
+    const again = await screen.findByRole("dialog", { name: "FAC-PO-2026-00001" });
+    await userEvent.click(await within(again).findByRole("button", { name: "Ask to go ahead" }));
+    await waitFor(() => expect(posts(asking).at(-1)!.body).toMatchObject({ action: "ask_funds" }));
   });
 
   it("offers the supplier's pack size on a draft line", async () => {

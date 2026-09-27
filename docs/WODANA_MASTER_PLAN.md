@@ -883,7 +883,10 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
     - received = finance-verified payments on those quotations.
   - **Summary:** margin = agreed before tax − spent − committed, and cash in hand = received − spent − committed, both only when the project and the workspace share a currency.
   - **Budgets:** one per package, plus one for costs not in a package; version-checked and audited. A package whose spent + committed passes its budget tells the project managers and cost managers once per budget version.
-  - **Still to come:** labour and petty cash costs, and the spending guard on new commitments.
+  - **Spending guard (Settings → Purchasing → Project money):** when an order is placed or approved, each project on it is checked against its money in hand (received − spent − committed, in the workspace's currency; projects kept in another currency aren't compared, and a missing rate counts as short).
+    - Off lets it through. Warn lets it through, records it on the order, and tells the projects' managers and cost managers.
+    - Strict stops it with what's in hand and what it needs. The buyer can ask; someone with `projects.funds_override` (Owner by default) lets it go ahead with why. Changing the order's lines clears that.
+  - **Still to come:** labour and petty cash costs.
 
 ### 6.22 Client portal
 - **Access:** passwordless (email/phone OTP), per deal and project grants, multiple client contacts with roles (decision-maker vs viewer).

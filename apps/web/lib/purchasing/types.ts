@@ -35,7 +35,7 @@ export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
 export type PurchasingSettings = {
   approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
-  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; invoiceTolerancePercent: string; version: number;
+  requireSitePhoto: boolean; stockAdjustApprovalValue: string | null; orderAheadDays: number; invoiceTolerancePercent: string; spendingGuard: "off" | "warn" | "strict"; version: number;
 };
 
 /** Something a running project still needs to order. */
@@ -71,6 +71,8 @@ export type OrderDetail = OrderRow & {
   subtotal: string; discountTotal: string; taxTotal: string; createdBy: string; submittedBy: string | null; approvedByName: string | null; approvedAt: string | null;
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
   continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;
+  /** Who let the order go ahead beyond its project's money in hand, and why. */
+  fundsOverrideAt: string | null; fundsOverrideReason: string | null; fundsOverrideByName: string | null;
 };
 export type OrderState = {
   order: OrderDetail; lines: OrderLine[]; receipts: Receipt[]; returns: SupplierReturnRow[]; canReceive: boolean;
@@ -90,6 +92,11 @@ export type OrderState = {
   contracts: Array<{ lineId: string; reference: string; unitPrice: string; above: boolean }>;
   /** When each line's goods are needed on its project, by line id. */
   neededBy: Record<string, string>;
+  /** Orders beyond a project's money in hand: off, warn or strict (stopped until someone who may override approves). */
+  spendingGuard: "off" | "warn" | "strict";
+  /** While not placed: the projects this order takes beyond their money in hand, in the workspace's currency. */
+  fundsShort: Array<{ projectId: string; reference: string; currency: string; needed: string; available: string }>;
+  canOverrideFunds: boolean;
   /** After cancelling the rest of a line and ordering it elsewhere: the new draft order. */
   reordered?: string | null;
   /** After sending: how the supplier's email went. */

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, SelectField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSettings } from "@/lib/purchasing/types";
@@ -13,7 +13,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean; adjustLimit: string; ahead: string; invoiceTolerance: string; guard: "off" | "warn" | "strict" } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
@@ -23,7 +23,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
       tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto,
       adjustLimit: next.settings.stockAdjustApprovalValue ? quantityText(next.settings.stockAdjustApprovalValue) : "", ahead: String(next.settings.orderAheadDays),
-      invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0" });
+      invoiceTolerance: quantityText(next.settings.invoiceTolerancePercent) || "0", guard: next.settings.spendingGuard });
   };
   const load = useCallback(async () => {
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -38,7 +38,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     try {
       const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved,
         requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto,
-        stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0" });
+        stockAdjustApprovalValue: form.adjustLimit || null, orderAheadDays: Number(form.ahead || "0"), invoiceTolerancePercent: form.invoiceTolerance || "0", spendingGuard: form.guard });
       accept({ ...data, settings });
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
@@ -67,6 +67,13 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
       <SettingsRow label={t("Order ahead")} hint={t("Days before it's needed that something is ordered, when the supplier's lead time isn't known.")}>
         <TextInput aria-label={t("Order ahead")} label={null} isReadOnly={readOnly} inputMode="numeric" suffix={t("days")} value={form.ahead}
           onChange={(value) => setForm({ ...form, ahead: value.replace(/\D/g, "").slice(0, 3) })} />
+      </SettingsRow>
+    </SettingsSection>
+    <SettingsSection id="money" title={t("Project money")}>
+      <SettingsRow label={t("Orders beyond the money in hand")} hint={t("Money in hand is what the client paid, less what's spent and already ordered.")}>
+        <SelectField aria-label={t("Orders beyond the money in hand")} label={null} isDisabled={readOnly} selectedKey={form.guard}
+          onSelectionChange={(key) => setForm({ ...form, guard: (key ?? "off") as "off" | "warn" | "strict" })}
+          items={[{ id: "off", label: t("Go ahead") }, { id: "warn", label: t("Go ahead and tell the managers") }, { id: "strict", label: t("Wait for someone who may override") }]} />
       </SettingsRow>
     </SettingsSection>
     <SettingsSection id="receiving" title={t("Receiving")}>

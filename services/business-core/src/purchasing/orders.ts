@@ -227,6 +227,8 @@ export type OrderDetail = OrderRow & {
   sentAt: string | null; sentTo: string | null; confirmedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedAt: string | null; closeReason: string | null; overReason: string | null; companyName: string;
   /** When the supplier went on hold, who said this order continues anyway, and why. */
   continuedAt: string | null; continuedNote: string | null; continuedByName: string | null;
+  /** Who let the order go ahead beyond its project's money in hand, and why (cleared when its lines change). */
+  fundsOverrideAt: string | null; fundsOverrideReason: string | null; fundsOverrideByName: string | null;
 };
 
 export async function readOrder(db: Db, workspaceId: string, orderId: string, lock = false): Promise<OrderDetail | undefined> {
@@ -238,12 +240,14 @@ export async function readOrder(db: Db, workspaceId: string, orderId: string, lo
             purchase.submitted_by AS "submittedBy", approver.display_name AS "approvedByName", purchase.approved_at AS "approvedAt", purchase.sent_at AS "sentAt", purchase.sent_to AS "sentTo",
             purchase.confirmed_at AS "confirmedAt", purchase.cancelled_at AS "cancelledAt", purchase.cancel_reason AS "cancelReason",
             purchase.closed_at AS "closedAt", purchase.close_reason AS "closeReason", purchase.over_reason AS "overReason",
-            purchase.continue_on_hold_at AS "continuedAt", purchase.continue_on_hold_note AS "continuedNote", continuer.display_name AS "continuedByName", entity.display_name AS "companyName"
+            purchase.continue_on_hold_at AS "continuedAt", purchase.continue_on_hold_note AS "continuedNote", continuer.display_name AS "continuedByName", entity.display_name AS "companyName",
+            purchase.funds_override_at AS "fundsOverrideAt", purchase.funds_override_reason AS "fundsOverrideReason", overrider.display_name AS "fundsOverrideByName"
        FROM (${ORDER_SELECT} WHERE purchase.workspace_id = $1 AND purchase.id = $2) listed
        JOIN purchase_orders purchase ON purchase.workspace_id = $1 AND purchase.id = listed.id
        JOIN legal_entities entity ON entity.workspace_id = $1 AND entity.id = purchase.legal_entity_id
        LEFT JOIN users approver ON approver.id = purchase.approved_by
-       LEFT JOIN users continuer ON continuer.id = purchase.continue_on_hold_by`, [workspaceId, orderId])).rows[0];
+       LEFT JOIN users continuer ON continuer.id = purchase.continue_on_hold_by
+       LEFT JOIN users overrider ON overrider.id = purchase.funds_override_by`, [workspaceId, orderId])).rows[0];
 }
 
 export async function readOrderLines(db: Db, workspaceId: string, orderId: string): Promise<OrderLine[]> {
@@ -295,7 +299,9 @@ export type PurchasingSettings = {
   /** How many days before it's needed something is ordered, when the supplier's lead time isn't known. */
   orderAheadDays: number;
   /** How far above the ordered price (in percent) a supplier's invoice may be before it's held. */
-  invoiceTolerancePercent: string; version: number;
+  invoiceTolerancePercent: string;
+  /** Orders beyond a project's money in hand: let through, let through with a warning, or stopped until someone who may override approves. */
+  spendingGuard: "off" | "warn" | "strict"; version: number;
 };
 
 export async function ensurePurchasingSettings(db: Db, workspaceId: string): Promise<PurchasingSettings> {
@@ -303,7 +309,7 @@ export async function ensurePurchasingSettings(db: Db, workspaceId: string): Pro
   return (await db.query<PurchasingSettings>(
     `SELECT approval_threshold::text AS "approvalThreshold", require_material_signoff AS "requireMaterialSignoff", require_approved_supplier AS "requireApprovedSupplier",
             require_inspection AS "requireInspection", receive_tolerance_percent::text AS "receiveTolerancePercent", require_site_photo AS "requireSitePhoto", stock_adjust_approval_value::text AS "stockAdjustApprovalValue",
-            order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", version
+            order_ahead_days AS "orderAheadDays", invoice_tolerance_percent::text AS "invoiceTolerancePercent", spending_guard AS "spendingGuard", version
        FROM workspace_purchasing_settings WHERE workspace_id = $1`, [workspaceId])).rows[0];
 }
 

@@ -15,6 +15,7 @@ import {
   readOrders, type OrderDetail, type OrderLine,
 } from "./orders";
 import { outstanding, readReceipts, settleOrder } from "./receiving";
+import { describeShort, fundsShort, type FundsShort } from "./spending-guard";
 import { readReturns } from "./returns.service";
 import { contractPrice } from "./supplier-controls.service";
 import { PAYMENT_TERMS, percent, readSupplier, type Supplier } from "./suppliers";
@@ -74,7 +75,9 @@ export class OrdersService {
     return this.access.withPermission(actor, workspaceId, "workspace.settings.manage", async (client, user) => {
       const current = await ensurePurchasingSettings(client, workspaceId);
       if (body.version !== current.version) throw new ConflictException("Someone else changed these settings. Reload to see their changes.");
-      const threshold = body.approvalThreshold === null || body.approvalThreshold === "" ? null : String(body.approvalThreshold ?? current.approvalThreshold ?? "");
+      // Left out, it keeps what's set; null or empty means no approval.
+      const threshold = body.approvalThreshold === undefined ? current.approvalThreshold
+        : body.approvalThreshold === null || body.approvalThreshold === "" ? null : String(body.approvalThreshold);
       if (threshold !== null && !NUMBER.test(threshold)) throw new BadRequestException("Enter the amount from which orders need approval, or leave it empty.");
       const flag = (key: "requireMaterialSignoff" | "requireApprovedSupplier" | "requireInspection" | "requireSitePhoto") => (body[key] === undefined ? current[key] : body[key] === true);
       const tolerance = body.receiveTolerancePercent === undefined ? current.receiveTolerancePercent : String(body.receiveTolerancePercent || "0");
@@ -86,11 +89,13 @@ export class OrdersService {
       if (!Number.isInteger(ahead) || ahead < 0 || ahead > 365) throw new BadRequestException("Order ahead is a whole number of days, from 0 to 365.");
       const invoiceTolerance = body.invoiceTolerancePercent === undefined ? current.invoiceTolerancePercent : String(body.invoiceTolerancePercent || "0");
       if (!NUMBER.test(invoiceTolerance) || Dec.of(invoiceTolerance).cmp(50) > 0) throw new BadRequestException("Invoice price tolerance is a percentage from 0 to 50.");
+      const guard = body.spendingGuard === undefined ? current.spendingGuard : String(body.spendingGuard);
+      if (!["off", "warn", "strict"].includes(guard)) throw new BadRequestException("Choose how orders beyond a project's money are handled.");
       await client.query(`UPDATE workspace_purchasing_settings SET approval_threshold = $2, require_material_signoff = $3, require_approved_supplier = $4, require_inspection = $5,
-        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, invoice_tolerance_percent = $11, version = version + 1, updated_by = $7, updated_at = now()
+        receive_tolerance_percent = $6, require_site_photo = $8, stock_adjust_approval_value = $9, order_ahead_days = $10, invoice_tolerance_percent = $11, spending_guard = $12, version = version + 1, updated_by = $7, updated_at = now()
         WHERE workspace_id = $1`,
         [workspaceId, threshold, flag("requireMaterialSignoff"), flag("requireApprovedSupplier"), flag("requireInspection"), tolerance, user.userId, flag("requireSitePhoto"), adjustLimit, ahead,
-          invoiceTolerance]);
+          invoiceTolerance, guard]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "purchasing.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
       return ensurePurchasingSettings(client, workspaceId);
     });
@@ -139,7 +144,11 @@ export class OrdersService {
           discount: supplier.deal === "discount" ? supplier.dealPercent ?? "0" : "0", vendorId: order.vendorId, currency: order.currency });
         await set(`deliver_to = $3, delivery_address = $4, expected_date = $5, notes = $6, payment_terms = $7, advance_percent = $8, credit_days = $9, terms_note = $10`,
           [header.deliverTo, header.deliveryAddress, header.expectedDate, header.notes, terms.paymentTerms, terms.advancePercent, terms.creditDays, terms.termsNote]);
-        if (lines) await this.writeLines(client, workspaceId, orderId, lines, order.currency);
+        if (lines) {
+          await this.writeLines(client, workspaceId, orderId, lines, order.currency);
+          // An override was for the order as it was.
+          if (order.fundsOverrideReason) await set(`funds_override_by = NULL, funds_override_at = NULL, funds_override_reason = NULL`, []);
+        }
         audit = { header, terms, lines: lines?.length };
       } else if (action === "submit") {
         await need("purchasing.manage", "You can't raise purchase orders.");
@@ -152,6 +161,7 @@ export class OrdersService {
           throw new ConflictException(`${over.map((line) => `${line.description}: ${line.over} ${line.unit}`.trim()).join(", ")} more than needed. Say why to order more.`);
         if (over.length && overReason !== order.overReason) await set(`over_reason = $3`, [overReason]);
         const settings = await ensurePurchasingSettings(client, workspaceId);
+        await this.guardFunds(client, workspaceId, order, settings.spendingGuard, user.userId);
         const home = (await client.query<{ currency: string }>(`SELECT default_currency AS currency FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.currency;
         const needsApproval = settings.approvalThreshold !== null && (order.currency !== home || Dec.of(order.total).cmp(settings.approvalThreshold) >= 0);
         if (needsApproval) {
@@ -171,11 +181,43 @@ export class OrdersService {
         if (action === "return" && !note) throw new BadRequestException("Say what needs to change.");
         if (action === "approve") {
           await this.checkReady(client, workspaceId, order);
+          // The money may have changed since it was submitted.
+          await this.guardFunds(client, workspaceId, order, (await ensurePurchasingSettings(client, workspaceId)).spendingGuard, user.userId);
           await set(`status = 'approved', approved_at = now(), approved_by = $3`, [user.userId]);
         } else await set(`status = 'draft', submitted_by = NULL`, []);
         await orderEvent(client, workspaceId, orderId, action === "approve" ? "approved" : "returned", { note }, user.userId);
         await this.tell(client, workspaceId, order, action === "approve" ? "purchasing.approved" : "purchasing.returned", [order.createdBy, order.submittedBy], user.userId, note);
         audit = { note };
+      } else if (action === "override_funds") {
+        await need("projects.funds_override", "Only someone who may override the money in hand lets this order go ahead.");
+        status("draft", "pending_approval");
+        const reason = text(body.reason, 500, "Reason");
+        if (!reason) throw new BadRequestException("Say why this order goes ahead beyond the money in hand.");
+        const short = await fundsShort(client, workspaceId, orderId);
+        if (!short.length) throw new ConflictException("The projects on this order have the money for it.");
+        await set(`funds_override_by = $3, funds_override_at = now(), funds_override_reason = $4`, [user.userId, reason]);
+        await orderEvent(client, workspaceId, orderId, "funds_override", { reason, short: describeShort(short) }, user.userId);
+        await this.tell(client, workspaceId, order, "purchasing.over_funds", [order.createdBy, order.submittedBy, ...await this.moneyPeople(client, workspaceId, short)], user.userId,
+          `${describeShort(short)}. Approved to go ahead: ${reason}`.slice(0, 480));
+        audit = { reason, short };
+      } else if (action === "ask_funds") {
+        await need("purchasing.manage", "You can't raise purchase orders.");
+        status("draft", "pending_approval");
+        const short = await fundsShort(client, workspaceId, orderId);
+        if (!short.length) throw new ConflictException("The projects on this order have the money for it.");
+        const note = text(body.note, 500, "Note");
+        const holders = (await client.query<{ userId: string }>(
+          `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+             JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
+             JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+             JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'projects.funds_override'
+            WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
+        if (!holders.filter((id) => id !== user.userId).length) throw new ConflictException("Nobody else here may let an order go ahead beyond the money in hand.");
+        await set(`notes = notes`, []);
+        await orderEvent(client, workspaceId, orderId, "funds_asked", { note, short: describeShort(short) }, user.userId);
+        await this.tell(client, workspaceId, { ...order, version: order.version + 1 }, "purchasing.funds_blocked", holders, user.userId,
+          [describeShort(short), note].filter(Boolean).join(". ").slice(0, 480));
+        audit = { note, short };
       } else if (action === "send") {
         await need("purchasing.manage", "You can't send purchase orders.");
         status("approved");
@@ -437,7 +479,16 @@ export class OrdersService {
       packs: await this.packs(client, workspaceId, order),
       contracts: await this.contracts(client, workspaceId, order),
       neededBy: await this.neededBy(client, workspaceId, lines),
+      ...(await this.funds(client, workspaceId, order, userId)),
     };
+  }
+
+  /** While an order isn't placed: the projects it would take beyond their money in hand, and who may let it go ahead. */
+  private async funds(client: Db, workspaceId: string, order: OrderDetail, userId: string) {
+    const guard = (await ensurePurchasingSettings(client, workspaceId)).spendingGuard;
+    const open = guard !== "off" && ["draft", "pending_approval"].includes(order.status);
+    return { spendingGuard: guard, fundsShort: open ? await fundsShort(client, workspaceId, order.id) : [],
+      canOverrideFunds: open && await this.access.hasPermission(client, workspaceId, userId, "projects.funds_override") };
   }
 
   /** When each line's goods are needed on its project, from the plan (lines with no date are left out). */
@@ -707,6 +758,34 @@ export class OrdersService {
          JOIN role_permissions granted ON granted.role_id = effective_role.role_id
          JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'purchasing.approve'
         WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId])).rows.map((row) => row.userId);
+  }
+
+  /**
+   * The spending guard on placing an order: off lets it through; warn lets it through, records it and tells
+   * the projects' managers and cost managers; strict stops it unless someone who may override approved it.
+   */
+  private async guardFunds(client: Db, workspaceId: string, order: OrderDetail, guard: "off" | "warn" | "strict", actorId: string) {
+    if (guard === "off") return;
+    const short = await fundsShort(client, workspaceId, order.id);
+    if (!short.length) return;
+    if (guard === "strict" && !order.fundsOverrideReason)
+      throw new ConflictException(`Not enough money in hand. ${describeShort(short)}. Ask someone who may override to let it go ahead.`);
+    if (guard === "warn") {
+      await orderEvent(client, workspaceId, order.id, "over_funds", { short: describeShort(short) }, actorId);
+      await this.tell(client, workspaceId, order, "purchasing.over_funds", await this.moneyPeople(client, workspaceId, short), actorId, describeShort(short).slice(0, 480));
+    }
+  }
+
+  /** The managers of the projects short of money, and the people who manage costs. */
+  private async moneyPeople(client: Db, workspaceId: string, short: FundsShort[]) {
+    return (await client.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+        WHERE membership.workspace_id = $1 AND membership.status = 'active' AND (
+          EXISTS (SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id = membership.workspace_id AND assignment.membership_id = membership.id
+                   AND assignment.project_id = ANY($2::uuid[]) AND assignment.active AND assignment.is_manager)
+          OR EXISTS (SELECT 1 FROM effective_member_roles effective_role JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+                      JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = 'commercial.costs.manage'
+                     WHERE effective_role.membership_id = membership.id))`, [workspaceId, short.map((item) => item.projectId)])).rows.map((row) => row.userId);
   }
 
   private async tellApprovers(client: Db, workspaceId: string, order: OrderDetail, actorId: string) {

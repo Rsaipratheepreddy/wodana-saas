@@ -21,7 +21,7 @@ type LineDraft = Pick<OrderLine, "id" | "source" | "materialItemId" | "boqLineId
   quantity: string; unitPrice: string; discountPercent: string; taxRate: string;
 };
 type Form = { expectedDate: string | null; deliverTo: DeliverTo; deliveryAddress: string; paymentTerms: PaymentTerms; advancePercent: string; creditDays: string; termsNote: string; notes: string; lines: LineDraft[] };
-type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | null;
+type Dialog = "cancel" | "change" | "return" | "send" | "confirm" | "close" | "receive" | "chase" | "continue" | "funds" | null;
 /** Still to come on a line: ordered less cancelled, credited, accepted and waiting for inspection. */
 const stillToCome = (line: OrderLine) => subtractExact(line.quantity, addExact(line.cancelled, line.credited, line.accepted, line.pending));
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
@@ -168,6 +168,15 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
         {state.canApprove ? <div><Button size="compact" onPress={() => setDialog("continue")}>{t("Continue this order")}</Button></div> : null}
       </div> : null}
       {order.continuedAt ? <InlineNotice tone="info" message={t("Continued while the supplier is on hold, by {name}: {note}", { name: order.continuedByName ?? "", note: order.continuedNote ?? "" })} /> : null}
+      {state.fundsShort.length ? <div className={styles.alternate} role="note">
+        <InlineNotice tone={state.spendingGuard === "strict" && !order.fundsOverrideAt ? "error" : "info"} message={t("Beyond the money in hand: {projects}", { projects: state.fundsShort.map((item) => item.needed
+          ? t("{project} has {available}, this order needs {needed}", { project: item.reference, available: format.money(item.available, item.currency), needed: format.money(item.needed, item.currency) })
+          : t("{project}: no exchange rate to compare", { project: item.reference })).join("; ") })} />
+        {state.spendingGuard === "strict" && !order.fundsOverrideAt ? <div>{state.canOverrideFunds
+          ? <Button size="compact" onPress={() => setDialog("funds")}>{t("Let it go ahead")}</Button>
+          : state.canBuy ? <Button size="compact" isLoading={busy} onPress={() => void run("ask_funds")}>{t("Ask to go ahead")}</Button> : null}</div> : null}
+      </div> : null}
+      {order.fundsOverrideAt ? <InlineNotice tone="info" message={t("Let go ahead beyond the money in hand by {name}: {reason}", { name: order.fundsOverrideByName ?? "", reason: order.fundsOverrideReason ?? "" })} /> : null}
       {over.length ? <InlineNotice tone="info" message={t("More than the project needs: {lines}", { lines: over.map((line) => `${line.description} +${quantityText(line.over)} ${line.unit}`.trim()).join(", ") })} /> : null}
       {over.length && draft ? <TextInput label={t("Why order more than needed")} isRequired value={overReason || order.overReason || ""} onChange={setOverReason} /> : null}
       {order.overReason && !draft ? <InlineNotice tone="info" message={t("Ordered more than needed: {reason}", { reason: order.overReason })} /> : null}
@@ -270,6 +279,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     {dialog === "confirm" && order && state ? <ConfirmDialog promised={order.promisedDate} reference={order.supplierReference} lines={state.lines} onClose={() => setDialog(null)}
       onSave={async (input) => { if (await run("confirm", input)) setDialog(null); }} /> : null}
     {dialog === "continue" ? <ReasonDialog kind="continue" onClose={() => setDialog(null)} onSave={async (note) => { if (await run("continue_on_hold", { note })) setDialog(null); }} /> : null}
+    {dialog === "funds" ? <ReasonDialog kind="funds" onClose={() => setDialog(null)} onSave={async (reason) => { if (await run("override_funds", { reason })) setDialog(null); }} /> : null}
     {dialog === "chase" ? <ChaseDialog onClose={() => setDialog(null)} onSave={async (note, promisedDate) => { if (await run("chase", { note, promisedDate })) setDialog(null); }} /> : null}
     {offering ? <OfferAlternateDialog line={offering} onClose={() => setOffering(null)}
       onSave={async (input) => { if (await run("offer_alternate", { lineId: offering.id, ...input })) setOffering(null); }} /> : null}
@@ -322,13 +332,13 @@ function History({ state }: { state: OrderState }) {
   return <section className={styles.part} aria-label={t("History")}><h3 className={styles.subhead}>{t("History")}</h3><ActivityFeed items={items} /></section>;
 }
 
-function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind: "cancel" | "change" | "return" | "close" | "continue"; optional?: boolean; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+function ReasonDialog({ kind, optional = false, onClose, onSave }: { kind: "cancel" | "change" | "return" | "close" | "continue" | "funds"; optional?: boolean; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
   const t = useT();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order") : t("Send back");
+  const title = kind === "cancel" ? t("Cancel order") : kind === "change" ? t("Change the order") : kind === "close" ? t("Close order") : kind === "continue" ? t("Continue this order") : kind === "funds" ? t("Let it go ahead") : t("Send back");
   const label = kind === "cancel" ? t("Why it's cancelled") : kind === "change" ? t("What's changing") : kind === "close" ? t("Why the rest won't come")
-    : kind === "continue" ? t("Why it continues while the supplier is on hold") : t("What needs to change");
+    : kind === "continue" ? t("Why it continues while the supplier is on hold") : kind === "funds" ? t("Why it goes ahead beyond the money in hand") : t("What needs to change");
   return <ControlledModalDialog isOpen size="md" title={title} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Back")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!optional && !reason.trim()} onPress={async () => { setBusy(true); await onSave(reason.trim()); setBusy(false); }}>{title}</Button></div>}>

@@ -2944,5 +2944,18 @@
   "Search costs": "Search costs",
   "No costs yet": "No costs yet",
   "Budget for {package}": "Budget for {package}",
-  "Money": "Money"
+  "Money": "Money",
+  "Beyond the money in hand: {projects}": "Beyond the money in hand: {projects}",
+  "{project} has {available}, this order needs {needed}": "{project} has {available}, this order needs {needed}",
+  "{project}: no exchange rate to compare": "{project}: no exchange rate to compare",
+  "Let it go ahead": "Let it go ahead",
+  "Ask to go ahead": "Ask to go ahead",
+  "Let go ahead beyond the money in hand by {name}: {reason}": "Let go ahead beyond the money in hand by {name}: {reason}",
+  "Why it goes ahead beyond the money in hand": "Why it goes ahead beyond the money in hand",
+  "Project money": "Project money",
+  "Orders beyond the money in hand": "Orders beyond the money in hand",
+  "Money in hand is what the client paid, less what's spent and already ordered.": "Money in hand is what the client paid, less what's spent and already ordered.",
+  "Go ahead": "Go ahead",
+  "Go ahead and tell the managers": "Go ahead and tell the managers",
+  "Wait for someone who may override": "Wait for someone who may override"
 }

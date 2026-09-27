@@ -3032,4 +3032,68 @@ integration("projects core (plan §6.10)", () => {
       expect((await core.get(actor, w.workspaceId, projectId)).canSeeMoney).toBe(false);
     });
   });
+
+  it("guards spending: an order beyond its project's money in hand is let through, warned about, or stopped until someone who may override approves it", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, access, all } = await buying(w, { signoff: false });
+      const detail = await core.get(actor, w.workspaceId, projectId);
+      await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Marble", quantity: "10", unit: "m²", clientChoice: false, version: detail.project.version });
+      const marble = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Marble")!;
+      // The client paid half of 7,850; nothing is spent yet, so 3,925 is in hand. This order needs 5,000.
+      const draft = async () => (await buyer.orders.create(actor, w.workspaceId, { id: randomUUID(), vendorId: vendor,
+        lines: [{ source: "material", materialItemId: marble.sourceId, quantity: "10", unitPrice: "500", taxRate: "0" }] })).order;
+      const setGuard = async (spendingGuard: string) => {
+        const current = await buyer.orders.settings(actor, w.workspaceId);
+        await buyer.orders.saveSettings(actor, w.workspaceId, { version: current.settings.version, spendingGuard });
+      };
+      const owner = new OrdersService(access(w.manager, [...all, "projects.funds_override"]));
+
+      // Off: nothing changes.
+      let order = await draft();
+      let state = await buyer.orders.command(actor, w.workspaceId, order.id, { action: "submit", version: order.version });
+      expect(state.order.status).toBe("approved");
+      await buyer.orders.command(actor, w.workspaceId, order.id, { action: "cancel", reason: "Test", version: state.order.version });
+
+      // Strict: stopped with what's in hand and what it needs.
+      await setGuard("strict");
+      await expect(buyer.orders.saveSettings(actor, w.workspaceId, { version: (await buyer.orders.settings(actor, w.workspaceId)).settings.version, spendingGuard: "maybe" }))
+        .rejects.toThrow(/Choose how orders/);
+      order = await draft();
+      state = await buyer.orders.get(actor, w.workspaceId, order.id);
+      expect(state).toMatchObject({ spendingGuard: "strict", canOverrideFunds: false, fundsShort: [expect.objectContaining({ needed: "5000.0000", available: "3925.0000" })] });
+      await expect(buyer.orders.command(actor, w.workspaceId, order.id, { action: "submit", version: order.version }))
+        .rejects.toThrow(/Not enough money in hand\. PRJ-\d+: AED 3925\.00 in hand, this order needs AED 5000\.00/);
+      // The buyer asks; nobody else may override yet, then the manager may.
+      await expect(buyer.orders.command(actor, w.workspaceId, order.id, { action: "ask_funds", version: order.version })).rejects.toThrow(/Nobody else/);
+      const role = randomUUID();
+      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'money', 'Money')", [role, w.workspaceId]);
+      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'projects.funds_override'", [w.workspaceId, role]);
+      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.managerMembership, role]);
+      state = await buyer.orders.command(actor, w.workspaceId, order.id, { action: "ask_funds", note: "Slab is on a promotion", version: order.version });
+      const asked = (await w.client.query<{ body: string }>(`SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.funds_blocked'`, [w.workspaceId])).rows;
+      expect(asked.map((row) => row.body)).toEqual([expect.stringMatching(/AED 3925\.00 in hand, this order needs AED 5000\.00\. Slab is on a promotion/)]);
+      await expect(buyer.orders.command(actor, w.workspaceId, order.id, { action: "override_funds", reason: "x", version: state.order.version })).rejects.toThrow(/Only someone who may override/);
+      await expect(owner.command(actor, w.workspaceId, order.id, { action: "override_funds", version: state.order.version })).rejects.toThrow(/Say why/);
+      state = await owner.command(actor, w.workspaceId, order.id, { action: "override_funds", reason: "Next payment is due Monday", version: state.order.version });
+      expect(state.order).toMatchObject({ fundsOverrideReason: "Next payment is due Monday", fundsOverrideByName: "Omar Manager" });
+      // Changing its lines clears the override; the unchanged order goes ahead.
+      state = await buyer.orders.command(actor, w.workspaceId, order.id, { action: "save", version: state.order.version,
+        lines: [{ source: "material", materialItemId: marble.sourceId, quantity: "10", unitPrice: "510", taxRate: "0" }] });
+      expect(state.order.fundsOverrideReason).toBeNull();
+      state = await owner.command(actor, w.workspaceId, order.id, { action: "override_funds", reason: "Next payment is due Monday", version: state.order.version });
+      state = await buyer.orders.command(actor, w.workspaceId, order.id, { action: "submit", version: state.order.version });
+      expect(state.order.status).toBe("approved");
+      expect(state.events.map((event) => event.kind)).toEqual(expect.arrayContaining(["funds_asked", "funds_override", "approved"]));
+
+      // Warn: a second order now finds the money committed; it goes through and the manager hears.
+      await setGuard("warn");
+      order = await draft();
+      state = await buyer.orders.command(actor, w.workspaceId, order.id, { action: "submit", overReason: "Spare slabs", version: order.version });
+      expect(state.order.status).toBe("approved");
+      expect(state.events.find((event) => event.kind === "over_funds")?.detail).toMatchObject({ short: expect.stringMatching(/AED -1175\.00 in hand, this order needs AED 5000\.00/) });
+      const warned = (await w.client.query<{ recipient: string }>(`SELECT recipient_id::text AS recipient FROM notifications WHERE workspace_id = $1 AND event_type = 'purchasing.over_funds'`,
+        [w.workspaceId])).rows.map((row) => row.recipient);
+      expect(warned).toContain(w.manager);
+    });
+  });
 });
