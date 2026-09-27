@@ -1,13 +1,22 @@
 import type {
   DeliveriesState, NeedsState, OrderState, OrdersState, PriceRequestsState, PriceRequestState, PurchasingSettings, ReceiptState, ReceivingForm, SupplierImportPlan, SupplierImportRow,
-  SupplierReturnState, SupplierReturnsState, SupplierState,
+  SupplierReturnState, SupplierReturnsState, SupplierState, UnmatchedState,
 } from "./types";
 
 export class PurchasingRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
-const path = (workspaceId: string, value: string) => `/api/purchasing/${value}?${new URLSearchParams({ workspaceId })}`;
+const path = (workspaceId: string, value: string, query: Record<string, string> = {}) => `/api/purchasing/${value}?${new URLSearchParams({ workspaceId, ...query })}`;
+
+async function upload<T>(url: string, file: File): Promise<T> {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch(url, { method: "POST", body, cache: "no-store" });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new PurchasingRequestError(typeof data?.message === "string" ? data.message : "The photo could not be uploaded.", response.status);
+  return data as T;
+}
 
 async function request<T>(url: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store" });
@@ -18,7 +27,7 @@ async function request<T>(url: string, method = "GET", body?: unknown): Promise<
 
 /** The Purchasing API for one workspace. */
 export function purchasingApi(workspaceId: string) {
-  const at = (value: string) => path(workspaceId, value);
+  const at = (value: string, query: Record<string, string> = {}) => path(workspaceId, value, query);
   return {
     suppliers: () => request<SupplierState>(at("suppliers")),
     saveSupplier: (input: Record<string, unknown>) => request<SupplierState>(at("suppliers"), "POST", input),
@@ -43,6 +52,12 @@ export function purchasingApi(workspaceId: string) {
     receipt: (id: string) => request<ReceiptState>(at(`receipts/${id}`)),
     inspect: (id: string, input: Record<string, unknown>) => request<ReceiptState>(at(`receipts/${id}/inspection`), "POST", input),
     reverse: (id: string, reason: string) => request<ReceiptState>(at(`receipts/${id}/reversal`), "POST", { reason }),
+    /** Adds a photo to a delivery (or to goods that came without an order); the same photo id twice changes nothing. */
+    uploadPhoto: (owner: { kind: "receipt" | "unmatched"; id: string }, photoId: string, file: File) => upload<ReceiptState & UnmatchedState>(at(`${owner.kind === "receipt" ? "receipts" : "unmatched"}/${owner.id}/photos/${photoId}`), file),
+    photoUrl: (photoId: string, preview = true) => at(`photos/${photoId}`, preview ? { preview: "1" } : {}),
+    recordUnmatched: (input: Record<string, unknown>) => request<UnmatchedState>(at("unmatched"), "POST", input),
+    unmatched: (id: string) => request<UnmatchedState>(at(`unmatched/${id}`)),
+    resolveUnmatched: (id: string, input: Record<string, unknown>) => request<UnmatchedState>(at(`unmatched/${id}`), "POST", input),
     returns: () => request<SupplierReturnsState>(at("returns")),
     supplierReturn: (id: string) => request<SupplierReturnState>(at(`returns/${id}`)),
     createReturn: (input: Record<string, unknown>) => request<SupplierReturnState>(at("returns"), "POST", input),

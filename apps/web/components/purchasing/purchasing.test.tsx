@@ -2,7 +2,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { DeliveriesState, Need, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierImportPlan, SupplierReturnState, SupplierState } from "@/lib/purchasing/types";
+import type {
+  DeliveriesState, Need, OrderState, PriceRequestState, ReceiptState, ReceivingForm, Supplier, SupplierImportPlan, SupplierReturnState, SupplierState, UnmatchedState,
+} from "@/lib/purchasing/types";
 import { PurchasingPage, type PurchasingSection } from "./purchasing-page";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
@@ -29,7 +31,9 @@ const mount = (respond: (url: string, body: Record<string, unknown> | undefined)
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 };
-const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST").map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
+const posts = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && typeof init.body === "string")
+  .map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) }));
+const uploads = (fetcher: ReturnType<typeof mount>) => fetcher.mock.calls.filter(([, init]) => init?.method === "POST" && init.body instanceof FormData).map(([url, init]) => ({ url: String(url), file: (init!.body as FormData).get("file") as File }));
 const page = (section: PurchasingSection = "suppliers") => render(<DesignSystemProvider><PurchasingPage workspaceId="w" section={section} /></DesignSystemProvider>);
 
 describe("suppliers", () => {
@@ -128,7 +132,7 @@ describe("ordering", () => {
     supply: null, clientChoice: true, blocked: null, ...patch });
   const needs = { needs: [need({}), need({ key: "line:l1", source: "line", sourceId: "l1", title: "Under-cabinet lights", detail: "", unit: "nos", required: "1.0000", remaining: "1.0000",
     supplierHint: "", packageName: "Lights" }), need({ key: "material:m9", sourceId: "m9", projectId: "p2", projectReference: "PRJ-0008", projectName: "Marina", title: "Oak veneer", blocked: "material_signoff" })],
-    settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, requireInspection: true, receiveTolerancePercent: "0.00", version: 1 }, canBuy: true, canApprove: true };
+    settings: { approvalThreshold: "0", requireMaterialSignoff: true, requireApprovedSupplier: true, requireInspection: true, receiveTolerancePercent: "0.00", requireSitePhoto: true, version: 1 }, canBuy: true, canApprove: true };
   const orderState = (patch: Partial<OrderState["order"]> = {}, rights: Partial<OrderState> = {}): OrderState => ({
     order: { id: "o1", number: "FAC-PO-2026-00001", status: "draft", vendorId: "s1", supplierName: "Nile Marble & Granite", legalEntityId: "f", companyCode: "FAC", currency: "AED",
       total: "3780.0000", expectedDate: "2099-10-20", promisedDate: null, createdAt: "2026-09-27T09:00:00Z", createdByName: "Bina Buyer", projects: [{ id: "p1", reference: "PRJ-0007" }], lines: 2,
@@ -214,6 +218,52 @@ describe("ordering", () => {
     expect(await screen.findByText("Ordered 2 m² more than needed")).toBeInTheDocument();
   });
 
+  it("needs a photo for a delivery at the project's site, and uploads it with the delivery", async () => {
+    const sent = orderState({ status: "confirmed", sentAt: "2026-09-27T11:00:00Z" });
+    const form: ReceivingForm = { order: sent.order, lines: sent.lines.map((line) => ({ ...line, outstanding: line.quantity, receivable: line.quantity })),
+      places: [{ key: "site:p1", kind: "site", name: null, projectReference: "PRJ-0007" }], defaultPlace: "site:p1", requireInspection: true, receiveTolerancePercent: "0.00", requireSitePhoto: true };
+    const deliveries: DeliveriesState = { expected: [{ ...sent.order, deliverTo: "site", linesLeft: 2, due: null }], inspection: [], received: [], locations: [], canReceive: true, canInspect: true,
+      userId: "u2", unmatched: [], requireSitePhoto: true };
+    const fetcher = mount((url) => (url.includes("/receiving") ? form : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : url.includes("/receipts") ? receipt() : deliveries));
+    page("deliveries");
+    const grid = await screen.findByRole("grid", { name: "Expected deliveries" }).catch(() => screen.findByRole("table", { name: "Expected deliveries" }));
+    await userEvent.click(await within(grid).findByRole("button", { name: "Receive" }));
+    const dialog = await screen.findByRole("dialog", { name: "Receive FAC-PO-2026-00001" });
+    await userEvent.type(await within(dialog).findByRole("textbox", { name: "Received of Calacatta slab" }), "10");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Handed over by" }), "Ravi");
+    expect(within(dialog).getByRole("button", { name: "Receive" })).toBeDisabled();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:photo", revokeObjectURL: () => undefined }));
+    await userEvent.upload(within(dialog).getByLabelText("Add a photo of the delivery"), new File(["x"], "site.jpg", { type: "image/jpeg" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Receive" }));
+    await waitFor(() => expect(uploads(fetcher)).toHaveLength(1));
+    expect(posts(fetcher).at(-1)!.body).toMatchObject({ place: "site:p1", handedOverBy: "Ravi", lines: [{ orderLineId: "a", received: "10" }] });
+    expect(uploads(fetcher)[0]).toMatchObject({ url: expect.stringMatching(/\/api\/purchasing\/receipts\/g1\/photos\/[0-9a-f-]{36}\?/), file: expect.objectContaining({ name: "site.jpg" }) });
+  });
+
+  it("records goods that came without an order and matches them to an order line", async () => {
+    nav.query = "unmatched=u1";
+    const open: UnmatchedState = {
+      delivery: { id: "u1", number: 1, vendorId: "s1", supplierName: "Nile Marble & Granite", locationId: "w1", locationName: "Warehouse", locationKind: "warehouse", receivedOn: "2026-09-27",
+        receivedBy: "u9", receivedByName: "Sam Store", handedOverBy: "", deliveryNote: "DN-4410", notes: "", status: "open", receiptId: null, receiptNumber: null, resolvedByName: null, resolvedAt: null,
+        resolutionNote: "", createdAt: "2026-09-27T10:00:00Z", lines: 1, photos: 0 },
+      lines: [{ id: "ul1", description: "Calacatta 20mm", quantity: "2.0000", unit: "m²" }], photos: [],
+      candidates: [{ id: "o1", number: "FAC-PO-2026-00001", supplierName: "Nile Marble & Granite", lines: [{ id: "a", description: "Calacatta slab", unit: "m²", projectReference: "PRJ-0007", outstanding: "2" }] }],
+      canBuy: true, canReceive: true, canInspect: true,
+    };
+    const fetcher = mount((url, body) => (url.includes("/unmatched/u1") ? (body ? { ...open, delivery: { ...open.delivery, status: "matched", receiptId: "g5", receiptNumber: 5, resolvedByName: "Omar" }, candidates: [] } : open)
+      : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [open.delivery], requireSitePhoto: true }));
+    page("deliveries");
+    const sheet = await screen.findByRole("dialog", { name: "Without an order 1" });
+    expect(await within(sheet).findByText("Calacatta 20mm")).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Match to an order" }));
+    const dialog = await screen.findByRole("dialog", { name: "Match to an order" });
+    await userEvent.click(within(dialog).getByRole("button", { name: /Calacatta 20mm \(2 m²\) is/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Calacatta slab · PRJ-0007/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Match" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "match", orderId: "o1", note: "", lines: [{ unmatchedLineId: "ul1", orderLineId: "a" }] }));
+    expect(await within(sheet).findByText("Matched by Omar; now delivery 5.")).toBeInTheDocument();
+  });
+
   it("records the supplier's confirmation per line: less than ordered, and each line's date", async () => {
     nav.query = "order=o1";
     const sent = orderState({ status: "sent", sentAt: "2026-09-27T11:00:00Z", version: 4 });
@@ -293,19 +343,19 @@ describe("ordering", () => {
     receipt: { id: "g1", number: 4, orderId: "o1", orderNumber: "FAC-PO-2026-00001", supplierName: "Nile Marble & Granite", locationId: "loc", locationName: "PRJ-0007 · Villa 12",
       locationKind: "site", receivedOn: "2026-09-27", receivedBy: "u1", receivedByName: "Sam Store", deliveryNote: "DN-88", notes: "", inspectedByName: null, inspectedAt: null,
       received: "6.0000", accepted: "0.0000", rejected: "0.0000", pending: "6.0000", createdAt: "2026-09-27T10:00:00Z", missing: "0.0000", reversedAt: null, reversedByName: null,
-      reverseReason: null, ...patch },
+      reverseReason: null, handedOverBy: "", photos: 0, ...patch },
     lines: [{ id: "gl1", orderLineId: "a", description: "Calacatta slab", specification: "CAL-20", unit: "m²", projectReference: "PRJ-0007", boqLineId: null, projectId: "p1",
       received: "6.0000", accepted: "0.0000", rejected: "0.0000", pending: "6.0000", rejectReason: "", rejectKind: null, noted: null, inspectedByName: null,
       returnedRejected: "0.0000", returnedAccepted: "0.0000" }],
-    canBuy: true, canReceive: true, canInspect: true, canInspectThis: true, canReturnThis: false, canReverseThis: false, ...rights,
+    canBuy: true, canReceive: true, canInspect: true, canInspectThis: true, canReturnThis: false, canReverseThis: false, photos: [], needsPhoto: false, ...rights,
   });
 
   it("lists expected deliveries, late ones marked, and receives what arrived at the project's site", async () => {
     const sent = orderState({ status: "confirmed", promisedDate: "2020-01-10", sentAt: "2026-09-27T11:00:00Z" });
-    const deliveries: DeliveriesState = { expected: [{ ...sent.order, deliverTo: "site", linesLeft: 2, due: "2020-01-10" }], inspection: [receipt().receipt], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" };
+    const deliveries: DeliveriesState = { expected: [{ ...sent.order, deliverTo: "site", linesLeft: 2, due: "2020-01-10" }], inspection: [receipt().receipt], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true };
     const form: ReceivingForm = { order: sent.order, lines: sent.lines.map((line) => ({ ...line, outstanding: line.quantity, receivable: line.quantity })),
       places: [{ key: "site:p1", kind: "site", name: null, projectReference: "PRJ-0007" }, { key: "warehouse", kind: "warehouse", name: null, projectReference: null }],
-      defaultPlace: "site:p1", requireInspection: true, receiveTolerancePercent: "0.00" };
+      defaultPlace: "site:p1", requireInspection: true, receiveTolerancePercent: "0.00", requireSitePhoto: false };
     const fetcher = mount((url) => (url.includes("/receiving") ? form : url.includes("/receipts") ? receipt() : url.includes("/deliveries") ? deliveries : ordersList));
     page("deliveries");
     const grid = await screen.findByRole("grid", { name: "Expected deliveries" }).catch(() => screen.findByRole("table", { name: "Expected deliveries" }));
@@ -332,7 +382,7 @@ describe("ordering", () => {
   it("inspects a delivery someone else received: accepted by default, a rejection needs its reason", async () => {
     nav.query = "receipt=g1";
     const fetcher = mount((url, body) => (url.includes("/receipts/g1") ? (body ? receipt({ accepted: "5.0000", rejected: "1.0000", pending: "0.0000", inspectedByName: "Dara Director",
-      inspectedAt: "2026-09-27T12:00:00Z" }, { canInspectThis: false }) : receipt()) : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
+      inspectedAt: "2026-09-27T12:00:00Z" }, { canInspectThis: false }) : receipt()) : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true }));
     page("deliveries");
     const sheet = await screen.findByRole("dialog", { name: "Delivery 4" });
     await within(sheet).findByText("Calacatta slab");
@@ -354,8 +404,8 @@ describe("ordering", () => {
   it("flags goods missing against the supplier's note when receiving", async () => {
     const sent = orderState({ status: "confirmed", sentAt: "2026-09-27T11:00:00Z" });
     const form: ReceivingForm = { order: sent.order, lines: sent.lines.map((line) => ({ ...line, outstanding: line.quantity, receivable: line.quantity })),
-      places: [{ key: "warehouse", kind: "warehouse", name: null, projectReference: null }], defaultPlace: "warehouse", requireInspection: true, receiveTolerancePercent: "0.00" };
-    const deliveries: DeliveriesState = { expected: [{ ...sent.order, deliverTo: "site", linesLeft: 2, due: null }], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" };
+      places: [{ key: "warehouse", kind: "warehouse", name: null, projectReference: null }], defaultPlace: "warehouse", requireInspection: true, receiveTolerancePercent: "0.00", requireSitePhoto: true };
+    const deliveries: DeliveriesState = { expected: [{ ...sent.order, deliverTo: "site", linesLeft: 2, due: null }], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true };
     const fetcher = mount((url) => (url.includes("/receiving") ? form : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : url.includes("/receipts") ? receipt() : deliveries));
     page("deliveries");
     const grid = await screen.findByRole("grid", { name: "Expected deliveries" }).catch(() => screen.findByRole("table", { name: "Expected deliveries" }));
@@ -373,7 +423,7 @@ describe("ordering", () => {
     const two = receipt();
     two.lines.push({ ...two.lines[0], id: "gl2", orderLineId: "b", description: "Under-cabinet lights", unit: "nos", received: "1.0000", pending: "1.0000", specification: "" });
     const fetcher = mount((url, body) => (url.includes("/receipts/g1") ? (body ? receipt({ pending: "1.0000", accepted: "6.0000" }, { canInspectThis: true }) : two)
-      : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
+      : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true } : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true }));
     page("deliveries");
     const sheet = await screen.findByRole("dialog", { name: "Delivery 4" });
     const later = (await within(sheet).findAllByRole("checkbox", { name: "Inspect now" }))[1];
@@ -392,7 +442,7 @@ describe("ordering", () => {
         creditAmount: null, creditTax: null, projectReference: "PRJ-0007" }], canBuy: true, canReceive: true, canSendThis: true, canCancelThis: true };
     const fetcher = mount((url, body) => (url.includes("/returns/r1") ? (body ? { ...created, return: { ...created.return, status: "sent", sentOn: "2026-09-28", version: 2 }, canSendThis: false, canCancelThis: false } : created)
       : url.includes("/returns") ? (body ? created : { returns: [created.return], canBuy: true, canReceive: true })
-      : url.includes("/receipts/g1") ? inspected : url.includes("/orders/o1") ? orderState({ status: "partly_received" }) : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
+      : url.includes("/receipts/g1") ? inspected : url.includes("/orders/o1") ? orderState({ status: "partly_received" }) : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true }));
     page("deliveries");
     const sheet = await screen.findByRole("dialog", { name: "Delivery 4" });
     expect(await within(sheet).findByText("Not to spec (colour, finish, size): Veins don't match")).toBeInTheDocument();
@@ -413,7 +463,7 @@ describe("ordering", () => {
       lines: [{ id: "rl1", receiptLineId: "gl1", receiptNumber: 4, description: "Calacatta slab", unit: "m²", source: "accepted", quantity: "1.0000", reasonKind: "defective", reason: "Hairline crack",
         creditAmount: "350.0000", creditTax: "17.5000", projectReference: "PRJ-0007" }], canBuy: true, canReceive: true, canSendThis: true, canCancelThis: true };
     const fetcher = mount((url, body) => (url.includes("/returns/r1") ? (body ? { ...credited, return: { ...credited.return, status: "sent", sentOn: "2026-09-28", version: 2 }, canSendThis: false, canCancelThis: false } : credited)
-      : url.includes("/returns") ? { returns: [credited.return], canBuy: true, canReceive: true } : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
+      : url.includes("/returns") ? { returns: [credited.return], canBuy: true, canReceive: true } : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true }));
     page("deliveries");
     const sheet = await screen.findByRole("dialog", { name: "Return 3" });
     expect(await within(sheet).findByText("Defective: Hairline crack")).toBeInTheDocument();
@@ -428,7 +478,7 @@ describe("ordering", () => {
     nav.query = "receipt=g1";
     const fetcher = mount((url, body) => (url.includes("/receipts/g1") ? (body ? receipt({ reversedAt: "2026-09-27T12:00:00Z", reversedByName: "Sam Store", reverseReason: "Wrong order" }, { canReverseThis: false, canInspectThis: false })
       : receipt({}, { canReverseThis: true, canInspectThis: false })) : url.includes("/returns") ? { returns: [], canBuy: true, canReceive: true }
-      : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2" }));
+      : { expected: [], inspection: [], received: [], locations: [], canReceive: true, canInspect: true, userId: "u2", unmatched: [], requireSitePhoto: true }));
     page("deliveries");
     const sheet = await screen.findByRole("dialog", { name: "Delivery 4" });
     await userEvent.click(await within(sheet).findByRole("button", { name: "Reverse" }));

@@ -677,7 +677,9 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Still owed on a line = ordered − credited − (accepted − returned after acceptance) − waiting for inspection.
   - A credit carries the line's net and tax. Each credit is the line's share up to now less what was credited before, so partial credits add up to the line exactly.
   - A project's site holds only that project's goods, and "today" is the firm's today in its time zone.
-- **Notices:** inspection needed (inspectors), received (the buyer and the receiver), goods rejected and goods missing (the buyer), a return raised (the buyer), and a delivery reversed (the buyer and the receiver).
+- **Site deliveries:** a delivery records who handed the goods over and takes up to 10 photos (checked as images, with previews, stored under the workspace). With the setting on (default), a delivery at a project's site without a photo shows "No photo yet" until one is added; the receive form asks for one at site.
+- **Goods without an order** are recorded apart (who from, where, what the note says, photos), don't count and don't enter stock. A buyer matches them to an open order from that supplier, each line to one of its lines; they're then received like any delivery (by whoever received them, with inspection, stock and notices) and their photos go with the delivery. Or they're sent back, with the reason. Buyers are told when they arrive.
+- **Notices:** inspection needed (inspectors), received (the buyer and the receiver), goods rejected and goods missing (the buyer), a return raised (the buyer), a delivery reversed (the buyer and the receiver), and goods without an order (buyers).
 - **Permissions:** `stock.receive` and `stock.inspect`, alongside `purchasing.manage` and `purchasing.approve`.
 - Accepted goods go into stock where they arrived (see Inventory below).
 
@@ -692,7 +694,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Places:** warehouses, factory and other places in Settings; a project's site is made by its first delivery; a place with stock can't be closed.
 - **Notices:** a move is on its way (receivers), a move arrived short (the sender), and stock was corrected (people who adjust stock).
 - **Permissions:** `stock.view`, `stock.manage` and `stock.adjust`.
-- Still to come: site deliveries with photo proof, receipts without an order, unit conversions (bought in boxes, stocked in pieces), the late-delivery chase task, costing (moving average) and payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
+- Still to come: unit conversions (bought in boxes, stocked in pieces), costing (moving average) and payables (supplier invoices matched to orders and receipts, debit notes from credited returns).
 
 - **Receiving:**
   - Records: shipments/ASN (from the vendor portal), goods_receipts + lines (`received = accepted + rejected + pending_qc`), inspections (shared), vendor_returns + lines, debit_notes, and an unmatched-receipt queue.

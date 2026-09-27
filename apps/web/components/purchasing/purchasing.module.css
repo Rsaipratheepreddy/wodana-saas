@@ -71,6 +71,11 @@
 .late { color: var(--wd-color-danger); }
 .nameCell small.lateText, .lateText { color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
 .nameCell small.arrived { color: var(--wd-color-text-secondary); }
+.photos { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.photos > li { position: relative; inline-size: var(--wd-space-20); block-size: var(--wd-space-20); border-radius: var(--wd-radius-sm); overflow: hidden; background: var(--wd-color-surface-subtle); }
+.photos img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.photos > li > button { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); }
+.photoPicker { display: grid; gap: var(--wd-space-2); justify-items: start; }
 .nameCell small.packHint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
 .receipts { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
 .receipts > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }

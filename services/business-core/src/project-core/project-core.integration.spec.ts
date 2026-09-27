@@ -15,6 +15,12 @@ import { PriceRequestsService } from "../purchasing/price-requests.service";
 import { ReceivingService } from "../purchasing/receiving.service";
 import { SupplierReturnsService } from "../purchasing/returns.service";
 import { processPurchasingDeadlines } from "../purchasing/purchasing-reminders";
+import { ConfigService } from "@nestjs/config";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import sharp from "sharp";
+import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 
@@ -1528,6 +1534,62 @@ integration("projects core (plan §6.10)", () => {
       await expect(buyer.orders.command(actor, w.workspaceId, orderId, { action: "cancel_line", lineId: handles.id, reason: "x", version: done.order.version })).rejects.toThrow(/can only be closed now/);
       const closed = await buyer.orders.command(actor, w.workspaceId, orderId, { action: "close", version: done.order.version });
       expect(closed.order).toMatchObject({ status: "closed", closeReason: null });
+    });
+  });
+
+  it("proves site deliveries with photos and who handed them over, and holds goods that came without an order until they're matched or sent back", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, access, all } = await buying(w);
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-photos-")) }));
+      const keeper = new ReceivingService(access(w.designer, ["purchasing.view", "stock.receive"]), storage);
+      const office = new ReceivingService(access(w.manager, all), storage);
+      const photo = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "delivery.png", mimetype: "image/png", size: 0 };
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Calacatta slab", quantity: "12", unit: "m²", clientChoice: false, version: detail.project.version });
+      const slabNeed = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((need) => need.title === "Calacatta slab")!;
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: slabNeed.sourceId, quantity: "12", unitPrice: "350" }]);
+
+      // At site, a delivery without a photo shows it; the photo proves it.
+      let receipt = await keeper.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: `site:${projectId}`, receivedOn: "2026-09-27", handedOverBy: "Ravi, Nile's driver",
+        lines: [{ orderLineId: order.lines[0].id, received: "10" }] });
+      expect(receipt).toMatchObject({ needsPhoto: true, receipt: { handedOverBy: "Ravi, Nile's driver", photos: 0 } });
+      const photoId = randomUUID();
+      receipt = await keeper.uploadPhoto(actor, w.workspaceId, { kind: "receipt", id: receipt.receipt.id }, photoId, photo) as typeof receipt;
+      receipt = await keeper.uploadPhoto(actor, w.workspaceId, { kind: "receipt", id: receipt.receipt.id }, photoId, photo) as typeof receipt;
+      expect(receipt).toMatchObject({ needsPhoto: false, receipt: { photos: 1 } });
+      expect(receipt.photos.map((item) => [item.name, item.byName])).toEqual([["delivery.png", "Dana Designer"]]);
+      expect((await office.photo(actor, w.workspaceId, photoId, true)).contentType).toBe("image/webp");
+      await expect(keeper.uploadPhoto(actor, w.workspaceId, { kind: "receipt", id: receipt.receipt.id }, randomUUID(), { ...photo, buffer: Buffer.from("%PDF-1.4 not a photo") }))
+        .rejects.toThrow();
+
+      // Two m² arrive with no order in sight: held apart, not in stock, until the buyer matches them.
+      const stray = randomUUID();
+      await expect(keeper.recordUnmatched(actor, w.workspaceId, { id: randomUUID(), place: "warehouse", receivedOn: "2026-09-27", lines: [{ description: "Slab", quantity: "2" }] }))
+        .rejects.toThrow(/who delivered/);
+      let held = await keeper.recordUnmatched(actor, w.workspaceId, { id: stray, vendorId: vendor, place: "warehouse", receivedOn: "2026-09-27", deliveryNote: "DN-4410",
+        lines: [{ description: "Calacatta 20mm slab", quantity: "2", unit: "m²" }] });
+      held = await keeper.uploadPhoto(actor, w.workspaceId, { kind: "unmatched", id: stray }, randomUUID(), photo) as typeof held;
+      expect(held.delivery).toMatchObject({ number: 1, status: "open", supplierName: "Nile Marble", photos: 1 });
+      expect(held.candidates).toEqual([]);
+      expect((await keeper.deliveries(actor, w.workspaceId)).unmatched.map((item) => item.number)).toEqual([1]);
+      const stockBefore = (await buyer.stock.stock(actor, w.workspaceId)).rows.map((row) => row.onHand);
+      await expect(keeper.resolveUnmatched(actor, w.workspaceId, stray, { action: "match", orderId: order.order.id, lines: [] })).rejects.toThrow(/A buyer matches/);
+      held = await office.unmatched(actor, w.workspaceId, stray);
+      expect(held.candidates.map((candidate) => [candidate.number, candidate.lines.map((line) => [line.description, line.outstanding])])).toEqual([[order.order.number, [["Calacatta slab", "2"]]]]);
+      held = await office.resolveUnmatched(actor, w.workspaceId, stray, { action: "match", orderId: order.order.id, note: "Second truck for the Villa 12 order",
+        lines: [{ unmatchedLineId: held.lines[0].id, orderLineId: order.lines[0].id }] });
+      expect(held.delivery).toMatchObject({ status: "matched", receiptNumber: 2, resolvedByName: "Omar Manager", photos: 0 });
+      const matched = await office.receipt(actor, w.workspaceId, held.delivery.receiptId!);
+      expect(matched.receipt).toMatchObject({ receivedByName: "Dana Designer", locationKind: "warehouse", deliveryNote: "DN-4410", accepted: "2.0000", photos: 1 });
+      expect((await buyer.orders.get(actor, w.workspaceId, order.order.id)).order.status).toBe("received");
+      expect((await buyer.stock.stock(actor, w.workspaceId)).rows.map((row) => row.onHand).sort()).toEqual([...stockBefore, "2.0000"].sort());
+
+      // Goods nobody ordered go back.
+      const unknown = randomUUID();
+      await keeper.recordUnmatched(actor, w.workspaceId, { id: unknown, supplierName: "A van from Sharjah", place: "warehouse", receivedOn: "2026-09-27", lines: [{ description: "Tiles", quantity: "40", unit: "boxes" }] });
+      await expect(keeper.resolveUnmatched(actor, w.workspaceId, unknown, { action: "return" })).rejects.toThrow(/why the goods went back/);
+      const back = await keeper.resolveUnmatched(actor, w.workspaceId, unknown, { action: "return", note: "Not ours; the driver took them back" });
+      expect(back.delivery).toMatchObject({ status: "returned", resolutionNote: "Not ours; the driver took them back" });
     });
   });
 

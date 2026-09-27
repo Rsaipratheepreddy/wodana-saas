@@ -33,7 +33,8 @@ export function PurchasingPage({ workspaceId, section }: { workspaceId: string; 
   const requestId = params.get("request");
   const receiptId = params.get("receipt");
   const returnId = params.get("return");
-  const go = (next: PurchasingSection, open?: string | null, key?: "return") => {
+  const unmatchedId = params.get("unmatched");
+  const go = (next: PurchasingSection, open?: string | null, key?: "return" | "unmatched") => {
     const base = `/workspace/purchasing${next === "to-order" ? "" : `/${next}`}`;
     router.replace(open ? `${base}?${key ?? (next === "price-requests" ? "request" : next === "deliveries" ? "receipt" : "order")}=${open}` : base, { scroll: false });
   };
@@ -47,8 +48,8 @@ export function PurchasingPage({ workspaceId, section }: { workspaceId: string; 
       { id: "price-requests", label: t("Price requests"), panel: <PriceRequests api={api} refreshKey={refresh} openId={requestId} onOpen={(id) => go("price-requests", id)}
         onOrder={(id) => { setRefresh((value) => value + 1); go("orders", id); }} /> },
       { id: "orders", label: t("Orders"), panel: <Orders api={api} refreshKey={refresh} openId={openId} onOpen={(id) => go("orders", id)} onReceipt={(id) => go("deliveries", id)} /> },
-      { id: "deliveries", label: t("Deliveries"), panel: <Deliveries api={api} refreshKey={refresh} openId={receiptId} returnId={returnId} onOpen={(id) => go("deliveries", id)}
-        onOpenReturn={(id) => go("deliveries", id, "return")} onOpenOrder={(id) => go("orders", id)} /> },
+      { id: "deliveries", label: t("Deliveries"), panel: <Deliveries api={api} refreshKey={refresh} openId={receiptId} returnId={returnId} unmatchedId={unmatchedId} onOpen={(id) => go("deliveries", id)}
+        onOpenReturn={(id) => go("deliveries", id, "return")} onOpenUnmatched={(id) => go("deliveries", id, "unmatched")} onOpenOrder={(id) => go("orders", id)} /> },
       { id: "suppliers", label: t("Suppliers"), panel: <Suppliers api={api} adding={addingSupplier} onAddingChange={setAddingSupplier} /> },
     ]} />
     {newOrder ? <CreateOrderDialog api={api} needs={[]} onClose={() => setNewOrder(false)} onCreated={(id) => { setNewOrder(false); setRefresh((value) => value + 1); go("orders", id); }} /> : null}

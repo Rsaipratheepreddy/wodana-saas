@@ -34,7 +34,8 @@ export type SupplierImportPlan = {
 export type OrderStatus = "draft" | "pending_approval" | "approved" | "sent" | "confirmed" | "partly_received" | "received" | "closed" | "cancelled";
 export type DeliverTo = "site" | "factory" | "warehouse" | "pickup" | "other";
 export type PurchasingSettings = {
-  approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string; version: number;
+  approvalThreshold: string | null; requireMaterialSignoff: boolean; requireApprovedSupplier: boolean; requireInspection: boolean; receiveTolerancePercent: string;
+  requireSitePhoto: boolean; version: number;
 };
 
 /** Something a running project still needs to order. */
@@ -112,7 +113,9 @@ export type Receipt = {
   receivedOn: string; receivedBy: string; receivedByName: string; deliveryNote: string; notes: string; inspectedByName: string | null; inspectedAt: string | null;
   received: string; accepted: string; rejected: string; pending: string; createdAt: string;
   missing: string; reversedAt: string | null; reversedByName: string | null; reverseReason: string | null;
+  handedOverBy: string; photos: number;
 };
+export type ReceiptPhoto = { id: string; name: string; byName: string; at: string };
 export type RejectKind = "damaged" | "defective" | "wrong_item" | "wrong_spec" | "other";
 export type ReceiptLine = {
   id: string; orderLineId: string; description: string; specification: string; unit: string; projectReference: string | null; boqLineId: string | null; projectId: string | null;
@@ -121,6 +124,19 @@ export type ReceiptLine = {
 };
 export type ReceiptState = {
   receipt: Receipt; lines: ReceiptLine[]; canBuy: boolean; canReceive: boolean; canInspect: boolean; canInspectThis: boolean; canReturnThis: boolean; canReverseThis: boolean;
+  photos: ReceiptPhoto[]; needsPhoto: boolean;
+};
+
+/** Goods that came without an order, held until they're matched to one or sent back. */
+export type UnmatchedDelivery = {
+  id: string; number: number; vendorId: string | null; supplierName: string; locationId: string; locationName: string; locationKind: LocationKind; receivedOn: string;
+  receivedBy: string; receivedByName: string; handedOverBy: string; deliveryNote: string; notes: string; status: "open" | "matched" | "returned"; receiptId: string | null;
+  receiptNumber: number | null; resolvedByName: string | null; resolvedAt: string | null; resolutionNote: string; createdAt: string; lines: number; photos: number;
+};
+export type UnmatchedState = {
+  delivery: UnmatchedDelivery; lines: Array<{ id: string; description: string; quantity: string; unit: string }>; photos: ReceiptPhoto[];
+  candidates: Array<{ id: string; number: string; supplierName: string; lines: Array<{ id: string; description: string; unit: string; projectReference: string | null; outstanding: string }> }>;
+  canBuy: boolean; canReceive: boolean; canInspect: boolean;
 };
 
 export type SupplierReturnRow = {
@@ -140,9 +156,10 @@ export type SupplierReturnsState = { returns: SupplierReturnRow[]; canBuy: boole
 export type ExpectedOrder = OrderRow & { deliverTo: DeliverTo; linesLeft: number; due: string | null };
 export type DeliveriesState = {
   expected: ExpectedOrder[]; inspection: Receipt[]; received: Receipt[]; locations: StockLocation[]; canReceive: boolean; canInspect: boolean; userId: string;
+  unmatched: UnmatchedDelivery[]; requireSitePhoto: boolean;
 };
 /** What the receive form needs for one order. */
 export type ReceivingForm = {
   order: OrderDetail; lines: Array<OrderLine & { outstanding: string; receivable: string }>; places: Place[]; defaultPlace: string | null;
-  requireInspection: boolean; receiveTolerancePercent: string;
+  requireInspection: boolean; receiveTolerancePercent: string; requireSitePhoto: boolean;
 };

@@ -330,6 +330,13 @@
       "when": 1793361600000,
       "tag": "0046_purchasing_followup",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793448000000,
+      "tag": "0047_site_deliveries",
+      "breakpoints": true
     }
   ]
 }

@@ -81,6 +81,8 @@ export type Receipt = {
   /** Short against the supplier's delivery note. */
   missing: string;
   reversedAt: string | null; reversedByName: string | null; reverseReason: string | null;
+  /** The supplier's person who handed the goods over, and how many photos prove the delivery. */
+  handedOverBy: string; photos: number;
 };
 
 export const REJECT_KINDS = ["damaged", "defective", "wrong_item", "wrong_spec", "other"] as const;
@@ -91,7 +93,8 @@ const RECEIPT_SELECT = `SELECT receipt.id, receipt.number, receipt.order_id AS "
   receipt.received_by AS "receivedBy", receiver.display_name AS "receivedByName", receipt.delivery_note AS "deliveryNote", receipt.notes,
   inspector.display_name AS "inspectedByName", receipt.inspected_at AS "inspectedAt", receipt.created_at AS "createdAt",
   totals.received::text AS received, totals.accepted::text AS accepted, totals.rejected::text AS rejected, totals.pending::text AS pending, totals.missing::text AS missing,
-  receipt.reversed_at AS "reversedAt", reverser.display_name AS "reversedByName", receipt.reverse_reason AS "reverseReason"
+  receipt.reversed_at AS "reversedAt", reverser.display_name AS "reversedByName", receipt.reverse_reason AS "reverseReason", receipt.handed_over_by AS "handedOverBy",
+  (SELECT count(*)::int FROM goods_receipt_photos photo WHERE photo.workspace_id = receipt.workspace_id AND photo.receipt_id = receipt.id) AS photos
   FROM goods_receipts receipt
   JOIN purchase_orders purchase ON purchase.workspace_id = receipt.workspace_id AND purchase.id = receipt.order_id
   JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
@@ -178,4 +181,49 @@ export async function settleOrder(db: Db, workspaceId: string, orderId: string) 
   const next = receivedStatus(await readOrderLines(db, workspaceId, orderId), arrived) ?? (order.confirmed ? "confirmed" : "sent");
   if (next !== order.status)
     await db.query(`UPDATE purchase_orders SET status = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId, next]);
+}
+
+export type ReceiptPhoto = { id: string; name: string; byName: string; at: string };
+
+/** The photos of a delivery, or of goods that came without an order. */
+export async function readPhotos(db: Db, workspaceId: string, owner: { receiptId?: string; unmatchedId?: string }): Promise<ReceiptPhoto[]> {
+  return (await db.query<ReceiptPhoto>(
+    `SELECT photo.id, photo.original_name AS name, person.display_name AS "byName", photo.created_at AS at
+       FROM goods_receipt_photos photo JOIN users person ON person.id = photo.created_by
+      WHERE photo.workspace_id = $1 AND ${owner.receiptId ? "photo.receipt_id = $2" : "photo.unmatched_id = $2"} ORDER BY photo.created_at, photo.id`,
+    [workspaceId, owner.receiptId ?? owner.unmatchedId])).rows;
+}
+
+export type UnmatchedDelivery = {
+  id: string; number: number; vendorId: string | null; supplierName: string; locationId: string; locationName: string; locationKind: LocationKind; receivedOn: string;
+  receivedBy: string; receivedByName: string; handedOverBy: string; deliveryNote: string; notes: string; status: "open" | "matched" | "returned"; receiptId: string | null;
+  receiptNumber: number | null; resolvedByName: string | null; resolvedAt: string | null; resolutionNote: string; createdAt: string; lines: number; photos: number;
+};
+
+const UNMATCHED_SELECT = `SELECT delivery.id, delivery.number, delivery.vendor_id AS "vendorId", coalesce(vendor.display_name, delivery.supplier_name) AS "supplierName",
+  delivery.location_id AS "locationId", location.name AS "locationName", location.kind AS "locationKind", delivery.received_on::text AS "receivedOn",
+  delivery.received_by AS "receivedBy", receiver.display_name AS "receivedByName", delivery.handed_over_by AS "handedOverBy", delivery.delivery_note AS "deliveryNote",
+  delivery.notes, delivery.status, delivery.receipt_id AS "receiptId", receipt.number AS "receiptNumber", resolver.display_name AS "resolvedByName",
+  delivery.resolved_at AS "resolvedAt", delivery.resolution_note AS "resolutionNote", delivery.created_at AS "createdAt",
+  (SELECT count(*)::int FROM unmatched_delivery_lines line WHERE line.workspace_id = delivery.workspace_id AND line.delivery_id = delivery.id) AS lines,
+  (SELECT count(*)::int FROM goods_receipt_photos photo WHERE photo.workspace_id = delivery.workspace_id AND photo.unmatched_id = delivery.id) AS photos
+  FROM unmatched_deliveries delivery
+  JOIN stock_locations location ON location.workspace_id = delivery.workspace_id AND location.id = delivery.location_id
+  JOIN users receiver ON receiver.id = delivery.received_by
+  LEFT JOIN workspace_vendors vendor ON vendor.workspace_id = delivery.workspace_id AND vendor.id = delivery.vendor_id
+  LEFT JOIN goods_receipts receipt ON receipt.workspace_id = delivery.workspace_id AND receipt.id = delivery.receipt_id
+  LEFT JOIN users resolver ON resolver.id = delivery.resolved_by`;
+
+export async function readUnmatched(db: Db, workspaceId: string, filter: { open?: boolean; id?: string } = {}): Promise<UnmatchedDelivery[]> {
+  const where = ["delivery.workspace_id = $1"];
+  const values: unknown[] = [workspaceId];
+  if (filter.open) where.push("delivery.status = 'open'");
+  if (filter.id) { values.push(filter.id); where.push(`delivery.id = $${values.length}`); }
+  return (await db.query<UnmatchedDelivery>(`${UNMATCHED_SELECT} WHERE ${where.join(" AND ")} ORDER BY (delivery.status = 'open') DESC, delivery.number DESC LIMIT 200`, values)).rows;
+}
+
+export async function readUnmatchedLines(db: Db, workspaceId: string, deliveryId: string) {
+  return (await db.query<{ id: string; description: string; quantity: string; unit: string }>(
+    `SELECT id, description, quantity::text AS quantity, unit FROM unmatched_delivery_lines WHERE workspace_id = $1 AND delivery_id = $2 ORDER BY position, id`,
+    [workspaceId, deliveryId])).rows;
 }

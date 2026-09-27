@@ -8,6 +8,7 @@ import { subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { Place, ReceiptState, ReceivingForm, RejectKind } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
+import { PhotoPicker } from "./delivery-photos";
 import { quantityText, useOrderLabels } from "./order-labels";
 import styles from "./purchasing.module.css";
 
@@ -36,6 +37,9 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
   const [place, setPlace] = useState<string | null>(null);
   const [receivedOn, setReceivedOn] = useState(format.today());
   const [note, setNote] = useState("");
+  const [handedOverBy, setHandedOverBy] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const photoIds = useMemo(() => photos.map(() => crypto.randomUUID()), [photos]);
   const [lines, setLines] = useState<Record<string, LineInput>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,13 +53,18 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
   const tooMuch = open.find((item) => Number(line(item.id).received) > Number(item.receivable));
   const unexplained = form && !form.requireInspection ? open.find((item) => Number(line(item.id).rejected) > 0 && (!line(item.id).reason.trim() || !line(item.id).kind)) : undefined;
   const overRejected = form && !form.requireInspection ? open.find((item) => Number(line(item.id).rejected) > Number(line(item.id).received || 0)) : undefined;
+  const atSite = form?.places.find((item) => item.key === place)?.kind === "site";
+  const photoNeeded = Boolean(form?.requireSitePhoto && atSite && !photos.length);
   const save = async () => {
     if (!form || !place) return;
     setBusy(true); setError("");
     try {
-      onReceived(await api.receive({ id, orderId, place, receivedOn, deliveryNote: note.trim(), lines: entered.map((item) => ({ orderLineId: item.id, received: line(item.id).received,
+      let saved = await api.receive({ id, orderId, place, receivedOn, deliveryNote: note.trim(), handedOverBy: handedOverBy.trim(), lines: entered.map((item) => ({ orderLineId: item.id, received: line(item.id).received,
         noted: line(item.id).noted || null,
-        ...(form.requireInspection ? {} : { rejected: line(item.id).rejected || "0", rejectKind: line(item.id).kind, rejectReason: line(item.id).reason.trim() }) })) }));
+        ...(form.requireInspection ? {} : { rejected: line(item.id).rejected || "0", rejectKind: line(item.id).kind, rejectReason: line(item.id).reason.trim() }) })) });
+      // The delivery is saved; its photos follow (each once, by its own id).
+      for (const [index, file] of photos.entries()) saved = await api.uploadPhoto({ kind: "receipt", id: saved.receipt.id }, photoIds[index], file);
+      onReceived(saved);
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
   };
   return <ControlledModalDialog isOpen size="lg" title={form ? t("Receive {order}", { order: form.order.number }) : t("Receive")} onOpenChange={(value) => { if (!value) onClose(); }}
@@ -63,7 +72,7 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
       {form && open.length ? <Button variant="quiet" onPress={() => setLines(Object.fromEntries(open.map((item) => [item.id, { ...line(item.id), received: quantityText(item.outstanding) }])))}>{t("Everything left")}</Button> : null}
       <span className={styles.spacer} />
       <Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!place || !entered.length || Boolean(tooMuch || unexplained || overRejected)} onPress={() => void save()}>{t("Receive")}</Button></div>}>
+      <Button variant="primary" isLoading={busy} isDisabled={!place || !entered.length || Boolean(tooMuch || unexplained || overRejected) || photoNeeded} onPress={() => void save()}>{t("Receive")}</Button></div>}>
     {!form && !error ? <Skeleton lines={5} /> : <div className={styles.dialogBody}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
       {form ? <>
@@ -72,7 +81,10 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
             items={form.places.map((item) => ({ id: item.key, label: placeLabel(item) }))} />
           <DateField label={t("Received on")} isRequired value={parseDate(receivedOn)} onChange={(value) => value && setReceivedOn(value.toString())} />
         </div>
-        <TextInput label={t("Delivery note")} value={note} onChange={setNote} />
+        <div className={styles.pair}>
+          <TextInput label={t("Delivery note")} value={note} onChange={setNote} />
+          <TextInput label={t("Handed over by")} value={handedOverBy} onChange={setHandedOverBy} />
+        </div>
         {!open.length ? <InlineNotice tone="info" message={t("Everything on this order has arrived.")} /> : <div className={styles.receiveLines} role="table" aria-label={t("What arrived")}
           data-columns={form.requireInspection ? "4" : "5"}>
           <div role="row" className={styles.receiveHead}><span role="columnheader">{t("Item")}</span><span role="columnheader">{t("Left")}</span>
@@ -97,6 +109,7 @@ export function ReceiveDialog({ api, orderId, onClose, onReceived }: { api: Purc
         </div>}
         {tooMuch ? <InlineNotice tone="error" message={t("At most {quantity} of {item} can arrive.", { quantity: `${quantityText(tooMuch.receivable)} ${tooMuch.unit}`.trim(), item: tooMuch.description })} /> : null}
         {overRejected ? <InlineNotice tone="error" message={t("More of {item} is rejected than arrived.", { item: overRejected.description })} /> : null}
+        <PhotoPicker files={photos} onChange={setPhotos} label={atSite && form.requireSitePhoto ? t("Add a photo of the delivery") : undefined} />
       </> : null}
     </div>}
   </ControlledModalDialog>;

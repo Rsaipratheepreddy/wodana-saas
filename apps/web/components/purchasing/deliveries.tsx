@@ -10,18 +10,19 @@ import { OrderStatusLabel, useOrderLabels } from "./order-labels";
 import { ReceiptResult, ReceiptSheet } from "./receipt-sheet";
 import { ReceiveDialog, usePlaceLabel } from "./receive-dialog";
 import { ReturnSheet, SupplierReturns } from "./supplier-returns";
+import { RecordUnmatchedDialog, UnmatchedList, UnmatchedSheet } from "./unmatched-deliveries";
 import styles from "./purchasing.module.css";
 
-type Show = "expected" | "inspection" | "received" | "returns";
+type Show = "expected" | "inspection" | "received" | "returns" | "unmatched";
 
 /**
  * Deliveries: orders expected from suppliers (the late ones first), deliveries waiting for inspection,
  * what arrived lately, and goods going back to suppliers. An expected order is received in place; a
  * delivery opens to inspect, return or reverse it; a return opens to record the pickup.
  */
-export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpenOrder, refreshKey }: {
-  api: PurchasingApi; openId: string | null; returnId: string | null; onOpen: (receiptId: string | null) => void; onOpenReturn: (returnId: string | null) => void;
-  onOpenOrder: (orderId: string) => void; refreshKey: number;
+export function Deliveries({ api, openId, returnId, unmatchedId, onOpen, onOpenReturn, onOpenUnmatched, onOpenOrder, refreshKey }: {
+  api: PurchasingApi; openId: string | null; returnId: string | null; unmatchedId: string | null; onOpen: (receiptId: string | null) => void; onOpenReturn: (returnId: string | null) => void;
+  onOpenUnmatched: (id: string | null) => void; onOpenOrder: (orderId: string) => void; refreshKey: number;
 }) {
   const t = useT();
   const format = useProjectFormat();
@@ -29,7 +30,8 @@ export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpen
   const placeLabel = usePlaceLabel();
   const [state, setState] = useState<DeliveriesState | null>(null);
   const [error, setError] = useState("");
-  const [show, setShow] = useState<Show>(returnId ? "returns" : "expected");
+  const [show, setShow] = useState<Show>(returnId ? "returns" : unmatchedId ? "unmatched" : "expected");
+  const [recording, setRecording] = useState(false);
   const [returns, setReturns] = useState<SupplierReturnRow[] | null>(null);
   const [search, setSearch] = useState("");
   const [receiving, setReceiving] = useState<string | null>(null);
@@ -64,11 +66,13 @@ export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpen
   const receiptColumns = useMemo<DataGridColumn<Receipt>[]>(() => [
     { id: "number", header: t("Delivery"), accessorFn: (row) => `${row.number} ${row.orderNumber}`, size: 200, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{t("Delivery {number}", { number: row.number })}</span><small>{`${row.orderNumber} · ${row.supplierName}`}</small></span> } },
-    { id: "where", header: t("Arrived at"), accessorFn: (row) => row.locationName, size: 190, meta: { renderCell: (row) => placeLabel({ kind: row.locationKind, name: row.locationName, projectReference: null }) } },
+    { id: "where", header: t("Arrived at"), accessorFn: (row) => row.locationName, size: 190, meta: { renderCell: (row) => <span className={styles.nameCell}>
+      <span>{placeLabel({ kind: row.locationKind, name: row.locationName, projectReference: null })}</span>
+      {state?.requireSitePhoto && row.locationKind === "site" && !row.photos && !row.reversedAt ? <small className={styles.lateText}>{t("No photo yet")}</small> : null}</span> } },
     { id: "when", header: t("Received"), accessorFn: (row) => row.receivedOn, size: 170, meta: { mobileHidden: true, renderCell: (row) => <span className={styles.nameCell}>
       <span>{format.day(row.receivedOn)}</span><small>{row.receivedByName}</small></span> } },
     { id: "result", header: t("Status"), accessorFn: (row) => row.pending, size: 150, meta: { renderCell: (row) => <ReceiptResult receipt={row} /> } },
-  ], [t, format, placeLabel]);
+  ], [t, format, placeLabel, state?.requireSitePhoto]);
 
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   const toggle = <SegmentedControl label={t("Show")} value={show} onChange={(value) => setShow(value as Show)} options={[
@@ -76,6 +80,7 @@ export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpen
     { id: "inspection", label: state?.inspection.length ? t("To inspect ({count})", { count: state.inspection.length }) : t("To inspect") },
     { id: "received", label: t("Received") },
     { id: "returns", label: returns?.some((row) => row.status === "open") ? t("Returns ({count})", { count: returns.filter((row) => row.status === "open").length }) : t("Returns") },
+    { id: "unmatched", label: state?.unmatched.length ? t("Without an order ({count})", { count: state.unmatched.length }) : t("Without an order") },
   ]} />;
   const cleared = search.trim() ? <NoResultsState onClear={() => setSearch("")} /> : null;
   return <>
@@ -83,6 +88,8 @@ export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpen
       onRowAction={(row) => onOpenOrder(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toggle}
       emptyContent={cleared ?? <EmptyState title={t("No deliveries expected")} description={t("Orders appear here once they're sent to the supplier.")} />}
       rowNumbers={false} selectable={false} wrapText />
+      : show === "unmatched" ? <UnmatchedList rows={state?.unmatched ?? []} search={search} onSearch={setSearch} onOpen={(id) => onOpenUnmatched(id)}
+        toolbar={<div className={styles.filters}>{toggle}{state?.canReceive ? <Button size="compact" onPress={() => setRecording(true)}>{t("Goods without an order")}</Button> : null}</div>} />
       : show === "returns" ? <SupplierReturns api={api} rows={returns} search={search} onSearch={setSearch} toolbar={toggle} onOpen={(id) => onOpenReturn(id)} />
       : <DataGrid<Receipt> appearance="flush" ariaLabel={show === "inspection" ? t("To inspect") : t("Received")} columns={receiptColumns} data={receipts} getRowId={(row) => row.id} isLoading={!state}
         onRowAction={(row) => onOpen(row.id)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search deliveries")} toolbarLeading={toggle}
@@ -92,5 +99,8 @@ export function Deliveries({ api, openId, returnId, onOpen, onOpenReturn, onOpen
     {openId ? <ReceiptSheet api={api} receiptId={openId} onChanged={() => void load()} onClose={() => onOpen(null)} onOpenOrder={onOpenOrder}
       onReturn={(next) => { setShow("returns"); onOpenReturn(next.return.id); }} /> : null}
     {returnId ? <ReturnSheet api={api} returnId={returnId} onChanged={() => void load()} onClose={() => onOpenReturn(null)} onOpenOrder={onOpenOrder} /> : null}
+    {unmatchedId ? <UnmatchedSheet api={api} deliveryId={unmatchedId} onChanged={() => void load()} onClose={() => onOpenUnmatched(null)} onOpenReceipt={(id) => onOpen(id)} /> : null}
+    {recording && state ? <RecordUnmatchedDialog api={api} locations={state.locations} onClose={() => setRecording(false)}
+      onRecorded={(next) => { setRecording(false); setShow("unmatched"); void load(); onOpenUnmatched(next.delivery.id); }} /> : null}
   </>;
 }

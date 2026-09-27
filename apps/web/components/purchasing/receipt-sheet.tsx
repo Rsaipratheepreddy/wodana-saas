@@ -7,6 +7,7 @@ import { addExact, subtractExact } from "@/lib/purchasing/amounts";
 import type { PurchasingApi } from "@/lib/purchasing/client";
 import type { ReceiptState, RejectKind, SupplierReturnState } from "@/lib/purchasing/types";
 import { useProjectFormat } from "../project-core/format";
+import { PhotoPicker, SavedPhotos } from "./delivery-photos";
 import { quantityText, useOrderLabels } from "./order-labels";
 import { RejectFields, usePlaceLabel } from "./receive-dialog";
 import { ReturnDialog } from "./return-dialog";
@@ -44,6 +45,19 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<"reverse" | "return" | null>(null);
+  const [adding, setAdding] = useState<File[]>([]);
+  const addPhotos = async (files: File[]) => {
+    setAdding(files);
+    if (!files.length) return;
+    setNotice("");
+    try {
+      let next: ReceiptState | null = null;
+      for (const file of files) next = await api.uploadPhoto({ kind: "receipt", id: receiptId }, crypto.randomUUID(), file);
+      if (next) setState(next);
+      onChanged();
+    } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("The photo could not be uploaded.")); }
+    setAdding([]);
+  };
   const accept = useCallback((next: ReceiptState) => {
     setState(next);
     setChecks(Object.fromEntries(next.lines.filter((line) => Number(line.pending) > 0).map((line) => [line.id, { include: true, rejected: "", kind: null, reason: "" }])));
@@ -91,10 +105,12 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
       {notice ? <InlineNotice tone="error" message={notice} /> : null}
       {receipt.reversedAt ? <InlineNotice tone="info" message={t("Reversed by {name}: {reason}", { name: receipt.reversedByName ?? "", reason: receipt.reverseReason ?? "" })} />
         : Number(receipt.pending) > 0 && !inspecting ? <InlineNotice tone="info" message={state.canInspect ? t("Someone else inspects goods you received.") : t("Waiting for someone who inspects deliveries.")} /> : null}
+      {state.needsPhoto ? <InlineNotice tone="error" message={t("No photo of this site delivery yet.")} /> : null}
       <dl className={styles.facts}>
         <div><dt>{t("Arrived at")}</dt><dd>{placeLabel({ kind: receipt.locationKind, name: receipt.locationName, projectReference: null })}</dd></div>
         <div><dt>{t("Received")}</dt><dd>{[format.day(receipt.receivedOn), receipt.receivedByName].join(" · ")}</dd></div>
         {receipt.deliveryNote ? <div><dt>{t("Delivery note")}</dt><dd>{receipt.deliveryNote}</dd></div> : null}
+        {receipt.handedOverBy ? <div><dt>{t("Handed over by")}</dt><dd>{receipt.handedOverBy}</dd></div> : null}
         {receipt.inspectedByName ? <div><dt>{t("Inspected")}</dt><dd>{[format.when(receipt.inspectedAt), receipt.inspectedByName].join(" · ")}</dd></div> : null}
       </dl>
       <section className={styles.part} aria-label={t("Lines")}>
@@ -128,6 +144,11 @@ export function ReceiptSheet({ api, receiptId, onChanged, onClose, onOpenOrder, 
         </div>
       </section>
       {receipt.notes ? <p className={styles.dialogText}>{receipt.notes}</p> : null}
+      {state.photos.length || (state.canReceive && !receipt.reversedAt) ? <section className={styles.part} aria-label={t("Photos")}>
+        <h3 className={styles.subhead}>{t("Photos")}</h3>
+        <SavedPhotos photos={state.photos} url={api.photoUrl} />
+        {state.canReceive && !receipt.reversedAt ? <PhotoPicker files={adding} onChange={(files) => void addPhotos(files)} label={t("Add photos")} /> : null}
+      </section> : null}
     </div>}
     {dialog === "reverse" ? <ReverseDialog onClose={() => setDialog(null)} onSave={async (reason) => {
       try { accept(await api.reverse(receiptId, reason)); setDialog(null); onChanged(); } catch (cause) { setNotice(cause instanceof Error ? cause.message : t("Could not save.")); setDialog(null); }

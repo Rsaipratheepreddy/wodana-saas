@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
@@ -7,10 +7,13 @@ import { Dec } from "../catalog-core/decimal";
 import { notifyUserInApp } from "../notifications/default-templates";
 import { move, stockFromReceipt } from "../inventory/stock";
 import { event as boqEvent } from "../project-core/project-scope";
+import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
+import { prepareReferenceUpload, type ReferenceUpload } from "../workspaces/reference-upload";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { currencyDecimals, ensurePurchasingSettings, firstTime, orderEvent, readOrder, readOrderLines, readOrders, type OrderDetail } from "./orders";
 import {
-  RECEIVABLE, REJECT_KINDS, outstanding, placesFor, readLocations, readReceipt, readReceiptLines, readReceipts, receivable, resolvePlace, settleOrder, type ReceiptLine, type RejectKind,
+  RECEIVABLE, REJECT_KINDS, outstanding, placesFor, readLocations, readPhotos, readReceipt, readReceiptLines, readReceipts, readUnmatched, readUnmatchedLines, receivable, resolvePlace, settleOrder,
+  type ReceiptLine, type RejectKind,
 } from "./receiving";
 
 type Db = PoolClient;
@@ -25,7 +28,7 @@ const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
  */
 @Injectable()
 export class ReceivingService {
-  constructor(private readonly access: WorkspaceAccessService) {}
+  constructor(private readonly access: WorkspaceAccessService, @Optional() private readonly storage?: BrandAssetStorageService) {}
 
   /** What's expected, what's waiting for inspection and what arrived lately. */
   deliveries(actor: RequestActor, workspaceId: string) {
@@ -48,6 +51,8 @@ export class ReceivingService {
         expected,
         inspection: await readReceipts(client, workspaceId, { pending: true }),
         received: await readReceipts(client, workspaceId, { pending: false, limit: 100 }),
+        unmatched: await readUnmatched(client, workspaceId, { open: true }),
+        requireSitePhoto: (await ensurePurchasingSettings(client, workspaceId)).requireSitePhoto,
         locations: await readLocations(client, workspaceId),
         ...(await this.rights(client, workspaceId, user.userId)),
         userId: user.userId,
@@ -65,7 +70,7 @@ export class ReceivingService {
         ...line, outstanding: outstanding(line).toString(), receivable: receivable(line, settings.receiveTolerancePercent).toString(),
       }));
       return { order, lines, ...(await placesFor(client, workspaceId, orderId, order.deliverTo)),
-        requireInspection: settings.requireInspection, receiveTolerancePercent: settings.receiveTolerancePercent };
+        requireInspection: settings.requireInspection, receiveTolerancePercent: settings.receiveTolerancePercent, requireSitePhoto: settings.requireSitePhoto };
     });
   }
 
@@ -81,78 +86,88 @@ export class ReceivingService {
     return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
       const id = uuid(body.id, "Receipt");
       if (!(await firstTime(client, workspaceId, id, id, "receive", user.userId))) return this.detail(client, workspaceId, id, user.userId);
-      const orderId = uuid(body.orderId, "Order");
-      const order = await readOrder(client, workspaceId, orderId, true);
-      if (!order) throw new NotFoundException("Order not found.");
-      if (!(RECEIVABLE as readonly string[]).includes(order.status))
-        throw new ConflictException(order.status === "approved" ? "Send the order to the supplier before receiving against it." : order.status === "received" ? "Everything on this order has arrived." : "This order isn't open for deliveries.");
-      const settings = await ensurePurchasingSettings(client, workspaceId);
-      const orderLines = await readOrderLines(client, workspaceId, orderId);
-      const receivedOn = date(body.receivedOn, "Received on");
-      // "Today" is the firm's today, in its time zone.
-      if ((await client.query<{ future: boolean }>(
-        `SELECT $2::date > (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date AS future FROM workspaces WHERE id = $1`, [workspaceId, receivedOn])).rows[0].future)
-        throw new BadRequestException("Goods can't be received in the future.");
-      const projectIds = [...new Set(orderLines.map((line) => line.projectId).filter((value): value is string => Boolean(value)))];
-      const location = await resolvePlace(client, workspaceId, typeof body.place === "string" ? body.place : "", projectIds, randomUUID);
-      if (!location) throw new BadRequestException("Choose where the goods arrived.");
-
-      if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Enter what arrived.");
-      const seen = new Set<string>();
-      const lines: Array<{ id: string; orderLineId: string; description: string; unit: string; received: string; accepted: string; rejected: string; pending: string;
-        rejectReason: string; rejectKind: RejectKind | null; noted: string | null }> = [];
-      for (const raw of body.lines) {
-        const input = (raw ?? {}) as Record<string, unknown>;
-        const line = orderLines.find((item) => item.id === input.orderLineId);
-        if (!line) throw new BadRequestException("A line isn't on this order.");
-        // A project's site holds only that project's goods; another project's lines go to their own site or a store.
-        if (location.kind === "site" && line.projectId && line.projectId !== location.projectId)
-          throw new BadRequestException(`${line.description} is for ${line.projectReference}; receive it at its own site or a store.`);
-        if (seen.has(line.id)) throw new BadRequestException(`${line.description} is entered twice.`);
-        seen.add(line.id);
-        const received = quantity(input.received, `${line.description}: received`);
-        if (Dec.of(received).isZero()) continue;
-        const most = receivable(line, settings.receiveTolerancePercent);
-        if (Dec.of(received).cmp(most) > 0)
-          throw new BadRequestException(most.isZero() ? `${line.description} has fully arrived.` : `${line.description}: at most ${most.toString()} ${line.unit} can arrive.`);
-        const noted = input.noted === undefined || input.noted === null || input.noted === "" ? null : quantity(input.noted, `${line.description}: on the delivery note`);
-        let accepted = "0", rejected = "0", pending = received, rejectReason = "", rejectKind: RejectKind | null = null;
-        if (!settings.requireInspection) {
-          ({ accepted, rejected, rejectReason, rejectKind } = split(line.description, received, input));
-          pending = "0";
-        }
-        lines.push({ id: randomUUID(), orderLineId: line.id, description: line.description, unit: line.unit, received, accepted, rejected, pending, rejectReason, rejectKind, noted });
-      }
-      if (!lines.length) throw new BadRequestException("Enter what arrived.");
-
-      // Receipts are numbered across the workspace, one at a time.
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('goods_receipts:' || $1::text, 0))`, [workspaceId]);
-      const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM goods_receipts WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
-      await client.query(
-        `INSERT INTO goods_receipts (id, workspace_id, number, order_id, location_id, received_on, received_by, delivery_note, notes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [id, workspaceId, number, orderId, location.id, receivedOn, user.userId, text(body.deliveryNote, 120, "Delivery note"), text(body.notes, 2000, "Notes")]);
-      for (const line of lines)
-        await client.query(
-          `INSERT INTO goods_receipt_lines (id, workspace_id, receipt_id, order_line_id, received, accepted, rejected, pending, reject_reason, reject_kind, noted, inspected_by, inspected_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [line.id, workspaceId, id, line.orderLineId, line.received, line.accepted, line.rejected, line.pending, line.rejectReason, line.rejectKind, line.noted, null, null]);
-
-      await settleOrder(client, workspaceId, orderId);
-      await stockFromReceipt(client, workspaceId, { receiptId: id, lines: lines.map((line) => ({ receiptLineId: line.id, accepted: line.accepted })), actorId: user.userId });
-      await orderEvent(client, workspaceId, orderId, "received", { receipt: number, location: location.name, lines: lines.length, inspection: settings.requireInspection }, user.userId);
-      await this.booked(client, workspaceId, order, lines, user.userId);
-      const pending = lines.some((line) => Dec.of(line.pending).cmp(0) > 0);
-      if (pending) await this.tell(client, workspaceId, order, id, "purchasing.inspection_needed", await this.inspectors(client, workspaceId), user.userId, location.name);
-      else await this.tell(client, workspaceId, order, id, "purchasing.received", [order.createdBy], user.userId, location.name);
-      await this.rejectedNotice(client, workspaceId, order, id, lines, user.userId);
-      // Less arrived than the supplier's delivery note says: the buyer claims the rest.
-      const missing = lines.filter((line) => line.noted !== null && Dec.of(line.noted).cmp(line.received) > 0)
-        .map((line) => `${line.description}: ${Dec.of(line.noted!).sub(line.received).toString()} ${line.unit} missing (note ${Dec.of(line.noted!).toString()}, arrived ${Dec.of(line.received).toString()})`);
-      if (missing.length) await this.tell(client, workspaceId, order, id, "purchasing.missing", [order.createdBy, order.submittedBy], user.userId, missing.join("; ").slice(0, 480));
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "goods_receipt.received", entityType: "goods_receipt", entityId: id,
-        after: { number, orderId, location: location.id, receivedOn, lines } });
+      await this.receiveIn(client, workspaceId, user.userId, id, body);
       return this.detail(client, workspaceId, id, user.userId);
     });
+  }
+
+  /**
+   * Records one delivery against an order, received by `receiverId`: the checks, the lines, the order's
+   * status, stock, history and notices. Used for deliveries and for matching goods that came without an order.
+   */
+  private async receiveIn(client: Db, workspaceId: string, receiverId: string, id: string, body: Record<string, unknown>) {
+    const orderId = uuid(body.orderId, "Order");
+    const order = await readOrder(client, workspaceId, orderId, true);
+    if (!order) throw new NotFoundException("Order not found.");
+    if (!(RECEIVABLE as readonly string[]).includes(order.status))
+      throw new ConflictException(order.status === "approved" ? "Send the order to the supplier before receiving against it." : order.status === "received" ? "Everything on this order has arrived." : "This order isn't open for deliveries.");
+    const settings = await ensurePurchasingSettings(client, workspaceId);
+    const orderLines = await readOrderLines(client, workspaceId, orderId);
+    const receivedOn = date(body.receivedOn, "Received on");
+    // "Today" is the firm's today, in its time zone.
+    if ((await client.query<{ future: boolean }>(
+      `SELECT $2::date > (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date AS future FROM workspaces WHERE id = $1`, [workspaceId, receivedOn])).rows[0].future)
+      throw new BadRequestException("Goods can't be received in the future.");
+    const projectIds = [...new Set(orderLines.map((line) => line.projectId).filter((value): value is string => Boolean(value)))];
+    const location = await resolvePlace(client, workspaceId, typeof body.place === "string" ? body.place : "", projectIds, randomUUID);
+    if (!location) throw new BadRequestException("Choose where the goods arrived.");
+
+    if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Enter what arrived.");
+    const seen = new Set<string>();
+    const lines: Array<{ id: string; orderLineId: string; description: string; unit: string; received: string; accepted: string; rejected: string; pending: string;
+      rejectReason: string; rejectKind: RejectKind | null; noted: string | null }> = [];
+    for (const raw of body.lines) {
+      const input = (raw ?? {}) as Record<string, unknown>;
+      const line = orderLines.find((item) => item.id === input.orderLineId);
+      if (!line) throw new BadRequestException("A line isn't on this order.");
+      // A project's site holds only that project's goods; another project's lines go to their own site or a store.
+      if (location.kind === "site" && line.projectId && line.projectId !== location.projectId)
+        throw new BadRequestException(`${line.description} is for ${line.projectReference}; receive it at its own site or a store.`);
+      if (seen.has(line.id)) throw new BadRequestException(`${line.description} is entered twice.`);
+      seen.add(line.id);
+      const received = quantity(input.received, `${line.description}: received`);
+      if (Dec.of(received).isZero()) continue;
+      const most = receivable(line, settings.receiveTolerancePercent);
+      if (Dec.of(received).cmp(most) > 0)
+        throw new BadRequestException(most.isZero() ? `${line.description} has fully arrived.` : `${line.description}: at most ${most.toString()} ${line.unit} can arrive.`);
+      const noted = input.noted === undefined || input.noted === null || input.noted === "" ? null : quantity(input.noted, `${line.description}: on the delivery note`);
+      let accepted = "0", rejected = "0", pending = received, rejectReason = "", rejectKind: RejectKind | null = null;
+      if (!settings.requireInspection) {
+        ({ accepted, rejected, rejectReason, rejectKind } = split(line.description, received, input));
+        pending = "0";
+      }
+      lines.push({ id: randomUUID(), orderLineId: line.id, description: line.description, unit: line.unit, received, accepted, rejected, pending, rejectReason, rejectKind, noted });
+    }
+    if (!lines.length) throw new BadRequestException("Enter what arrived.");
+
+    // Receipts are numbered across the workspace, one at a time.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('goods_receipts:' || $1::text, 0))`, [workspaceId]);
+    const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM goods_receipts WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
+    await client.query(
+      `INSERT INTO goods_receipts (id, workspace_id, number, order_id, location_id, received_on, received_by, delivery_note, notes, handed_over_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, workspaceId, number, orderId, location.id, receivedOn, receiverId, text(body.deliveryNote, 120, "Delivery note"), text(body.notes, 2000, "Notes"), text(body.handedOverBy, 200, "Handed over by")]);
+    for (const line of lines)
+      await client.query(
+        `INSERT INTO goods_receipt_lines (id, workspace_id, receipt_id, order_line_id, received, accepted, rejected, pending, reject_reason, reject_kind, noted, inspected_by, inspected_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [line.id, workspaceId, id, line.orderLineId, line.received, line.accepted, line.rejected, line.pending, line.rejectReason, line.rejectKind, line.noted, null, null]);
+
+    await settleOrder(client, workspaceId, orderId);
+    await stockFromReceipt(client, workspaceId, { receiptId: id, lines: lines.map((line) => ({ receiptLineId: line.id, accepted: line.accepted })), actorId: receiverId });
+    await orderEvent(client, workspaceId, orderId, "received", { receipt: number, location: location.name, lines: lines.length, inspection: settings.requireInspection }, receiverId);
+    await this.booked(client, workspaceId, order, lines, receiverId);
+    const pending = lines.some((line) => Dec.of(line.pending).cmp(0) > 0);
+    if (pending) await this.tell(client, workspaceId, order, id, "purchasing.inspection_needed", await this.inspectors(client, workspaceId), receiverId, location.name);
+    else await this.tell(client, workspaceId, order, id, "purchasing.received", [order.createdBy], receiverId, location.name);
+    await this.rejectedNotice(client, workspaceId, order, id, lines, receiverId);
+    // Less arrived than the supplier's delivery note says: the buyer claims the rest.
+    const missing = lines.filter((line) => line.noted !== null && Dec.of(line.noted).cmp(line.received) > 0)
+      .map((line) => `${line.description}: ${Dec.of(line.noted!).sub(line.received).toString()} ${line.unit} missing (note ${Dec.of(line.noted!).toString()}, arrived ${Dec.of(line.received).toString()})`);
+    if (missing.length) await this.tell(client, workspaceId, order, id, "purchasing.missing", [order.createdBy, order.submittedBy], receiverId, missing.join("; ").slice(0, 480));
+    await recordAudit(client, { workspaceId, actorUserId: receiverId, action: "goods_receipt.received", entityType: "goods_receipt", entityId: id,
+      after: { number, orderId, location: location.id, receivedOn, lines } });
+    return number;
   }
 
   /**
@@ -247,7 +262,186 @@ export class ReceivingService {
     });
   }
 
+  /** Adds a photo to a delivery, or to goods that came without an order. The same photo id twice changes nothing. */
+  async uploadPhoto(actor: RequestActor, workspaceId: string, owner: { kind: "receipt" | "unmatched"; id: string }, photoId: string, file?: ReferenceUpload) {
+    const prepared = await prepareReferenceUpload(file);
+    if (!prepared.mimeType.startsWith("image/")) throw new BadRequestException("Choose a photo (JPG, PNG, WebP or HEIC).");
+    const storage = this.storage;
+    if (!storage) throw new ConflictException("Photos can't be stored here yet.");
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
+      const id = uuid(photoId, "Photo");
+      if (owner.kind === "receipt") {
+        const row = (await client.query<{ reversed: boolean }>(`SELECT reversed_at IS NOT NULL AS reversed FROM goods_receipts WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, owner.id])).rows[0];
+        if (!row) throw new NotFoundException("Delivery not found.");
+        if (row.reversed) throw new ConflictException("This delivery was reversed.");
+      } else {
+        const row = (await client.query<{ status: string }>(`SELECT status FROM unmatched_deliveries WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, owner.id])).rows[0];
+        if (!row) throw new NotFoundException("Delivery not found.");
+        if (row.status !== "open") throw new ConflictException("These goods are already matched or sent back.");
+      }
+      const existing = (await client.query<{ sha256: string }>(`SELECT sha256 FROM goods_receipt_photos WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rows[0];
+      if (existing && existing.sha256 !== prepared.digest) throw new ConflictException("This upload id belongs to another photo.");
+      if (!existing) {
+        const count = (await client.query<{ count: number }>(`SELECT count(*)::int AS count FROM goods_receipt_photos WHERE workspace_id = $1 AND ${owner.kind === "receipt" ? "receipt_id" : "unmatched_id"} = $2`,
+          [workspaceId, owner.id])).rows[0].count;
+        if (count >= 10) throw new BadRequestException("A delivery takes up to 10 photos.");
+        const key = `purchasing/deliveries/${workspaceId}/${id}`;
+        await storage.put(`${key}/original`, prepared.body, prepared.mimeType);
+        if (prepared.preview) await storage.put(`${key}/preview.webp`, prepared.preview, "image/webp");
+        await client.query(
+          `INSERT INTO goods_receipt_photos (id, workspace_id, receipt_id, unmatched_id, original_name, mime_type, byte_size, object_key, preview_key, sha256, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [id, workspaceId, owner.kind === "receipt" ? owner.id : null, owner.kind === "unmatched" ? owner.id : null, prepared.name, prepared.mimeType, prepared.body.length,
+            `${key}/original`, prepared.preview ? `${key}/preview.webp` : null, prepared.digest, user.userId]);
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "goods_receipt.photo_added", entityType: owner.kind === "receipt" ? "goods_receipt" : "unmatched_delivery",
+          entityId: owner.id, after: { photoId: id } });
+      }
+      return owner.kind === "receipt" ? this.detail(client, workspaceId, owner.id, user.userId) : this.unmatchedDetail(client, workspaceId, owner.id, user.userId);
+    });
+  }
+
+  /** One delivery photo (or its preview) for someone who can see deliveries. */
+  photo(actor: RequestActor, workspaceId: string, photoId: string, preview: boolean) {
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "stock.receive", "stock.inspect"], async (client) => {
+      const row = (await client.query<{ objectKey: string; previewKey: string | null; mimeType: string }>(
+        `SELECT object_key AS "objectKey", preview_key AS "previewKey", mime_type AS "mimeType" FROM goods_receipt_photos WHERE workspace_id = $1 AND id = $2`, [workspaceId, uuid(photoId, "Photo")])).rows[0];
+      if (!row || !this.storage) throw new NotFoundException("Photo not found.");
+      const key = preview && row.previewKey ? row.previewKey : row.objectKey;
+      const stored = await this.storage.read(key).catch(() => null);
+      if (!stored) throw new NotFoundException("Photo not found.");
+      return { body: stored.body, contentType: key === row.previewKey ? "image/webp" : row.mimeType };
+    });
+  }
+
+  /**
+   * Goods that arrived without an order: who from, where, what (as written on the note), with photos.
+   * They don't count and don't enter stock until a buyer matches them to an order or sends them back.
+   */
+  recordUnmatched(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
+      const id = uuid(body.id, "Delivery");
+      if (!(await firstTime(client, workspaceId, id, id, "record_unmatched", user.userId))) return this.unmatchedDetail(client, workspaceId, id, user.userId);
+      const vendorId = body.vendorId ? uuid(body.vendorId, "Supplier") : null;
+      if (vendorId && !(await client.query(`SELECT 1 FROM workspace_vendors WHERE workspace_id = $1 AND id = $2`, [workspaceId, vendorId])).rowCount) throw new BadRequestException("Choose a supplier.");
+      const supplierName = text(body.supplierName, 200, "Supplier");
+      if (!vendorId && !supplierName) throw new BadRequestException("Say who delivered the goods.");
+      const receivedOn = date(body.receivedOn, "Received on");
+      if ((await client.query<{ future: boolean }>(`SELECT $2::date > (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date AS future FROM workspaces WHERE id = $1`,
+        [workspaceId, receivedOn])).rows[0].future) throw new BadRequestException("Goods can't be received in the future.");
+      const key = typeof body.place === "string" ? body.place : "";
+      const running = (await client.query<{ id: string }>(`SELECT id FROM delivery_projects WHERE workspace_id = $1 AND status IN ('active', 'on_hold')`, [workspaceId])).rows.map((row) => row.id);
+      const location = await resolvePlace(client, workspaceId, key, running, randomUUID);
+      if (!location) throw new BadRequestException("Choose where the goods arrived.");
+      if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Say what arrived.");
+      if (body.lines.length > 100) throw new BadRequestException("Up to 100 lines.");
+      const lines = (body.lines as Array<Record<string, unknown>>).map((raw, index) => {
+        const description = text(raw?.description, 500, "What arrived");
+        if (!description) throw new BadRequestException(`Line ${index + 1}: say what arrived.`);
+        const quantity = amountOf(raw?.quantity, `Line ${index + 1}: quantity`);
+        if (Dec.of(quantity).isZero()) throw new BadRequestException(`Line ${index + 1}: more than zero arrived.`);
+        return { description, quantity, unit: text(raw?.unit, 40, "Unit") };
+      });
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('unmatched_deliveries:' || $1::text, 0))`, [workspaceId]);
+      const number = (await client.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM unmatched_deliveries WHERE workspace_id = $1`, [workspaceId])).rows[0].next;
+      await client.query(
+        `INSERT INTO unmatched_deliveries (id, workspace_id, number, vendor_id, supplier_name, location_id, received_on, received_by, handed_over_by, delivery_note, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [id, workspaceId, number, vendorId, supplierName, location.id, receivedOn, user.userId, text(body.handedOverBy, 200, "Handed over by"), text(body.deliveryNote, 120, "Delivery note"),
+          text(body.notes, 2000, "Notes")]);
+      for (const [position, line] of lines.entries())
+        await client.query(`INSERT INTO unmatched_delivery_lines (id, workspace_id, delivery_id, position, description, quantity, unit) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [randomUUID(), workspaceId, id, position, line.description, line.quantity, line.unit]);
+      const supplier = vendorId ? (await client.query<{ name: string }>(`SELECT display_name AS name FROM workspace_vendors WHERE workspace_id = $1 AND id = $2`, [workspaceId, vendorId])).rows[0].name : supplierName;
+      const actorName = (await client.query<{ name: string }>(`SELECT display_name AS name FROM users WHERE id = $1`, [user.userId])).rows[0]?.name ?? "Someone";
+      for (const userId of new Set((await this.holders(client, workspaceId, ["purchasing.manage"])).filter((person) => person !== user.userId)))
+        await notifyUserInApp(client, { workspaceId, recipientUserId: userId, code: "purchasing.unmatched", eventType: "purchasing.unmatched",
+          variables: { supplier, actor: actorName, note: location.name }, deepLink: `/workspace/purchasing/deliveries?unmatched=${id}`, idempotencyKey: `purchasing.unmatched:${id}:${userId}` });
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "unmatched_delivery.recorded", entityType: "unmatched_delivery", entityId: id,
+        after: { number, vendorId, supplierName, location: location.id, lines } });
+      return this.unmatchedDetail(client, workspaceId, id, user.userId);
+    });
+  }
+
+  unmatched(actor: RequestActor, workspaceId: string, deliveryId: string) {
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.view", "stock.receive"], async (client, user) => this.unmatchedDetail(client, workspaceId, deliveryId, user.userId));
+  }
+
+  /**
+   * Matches goods that came without an order to an order: each line to one of its lines. They're then
+   * received like any delivery (by whoever received them, with inspection, stock and notices), and
+   * their photos go with the delivery. Or they're sent back, with the reason.
+   */
+  resolveUnmatched(actor: RequestActor, workspaceId: string, deliveryId: string, body: Record<string, unknown>) {
+    return this.access.withAnyPermission(actor, workspaceId, ["purchasing.manage", "stock.receive"], async (client, user) => {
+      await client.query(`SELECT 1 FROM unmatched_deliveries WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, deliveryId]);
+      const delivery = (await readUnmatched(client, workspaceId, { id: deliveryId }))[0];
+      if (!delivery) throw new NotFoundException("Delivery not found.");
+      const action = String(body.action ?? "");
+      if (delivery.status !== "open") {
+        if ((action === "match" && delivery.status === "matched") || (action === "return" && delivery.status === "returned")) return this.unmatchedDetail(client, workspaceId, deliveryId, user.userId);
+        throw new ConflictException(delivery.status === "matched" ? "These goods are already matched to an order." : "These goods were sent back.");
+      }
+      const note = text(body.note, 500, "Note");
+      if (action === "return") {
+        if (!note) throw new BadRequestException("Say why the goods went back.");
+        await client.query(`UPDATE unmatched_deliveries SET status = 'returned', resolved_by = $3, resolved_at = now(), resolution_note = $4 WHERE workspace_id = $1 AND id = $2`,
+          [workspaceId, deliveryId, user.userId, note]);
+      } else if (action === "match") {
+        if (!(await this.access.hasPermission(client, workspaceId, user.userId, "purchasing.manage"))) throw new ForbiddenException("A buyer matches deliveries to orders.");
+        const orderId = uuid(body.orderId, "Order");
+        const order = await readOrder(client, workspaceId, orderId);
+        if (!order) throw new NotFoundException("Order not found.");
+        if (delivery.vendorId && order.vendorId !== delivery.vendorId) throw new ConflictException(`${order.number} is with another supplier.`);
+        const lines = await readUnmatchedLines(client, workspaceId, deliveryId);
+        const given = Array.isArray(body.lines) ? body.lines as Array<Record<string, unknown>> : [];
+        const received = new Map<string, Dec>();
+        for (const line of lines) {
+          const input = given.find((item) => item?.unmatchedLineId === line.id);
+          if (!input) throw new BadRequestException(`Choose the order line for ${line.description}.`);
+          const orderLineId = uuid(input.orderLineId, "Order line");
+          received.set(orderLineId, (received.get(orderLineId) ?? Dec.of(0)).add(line.quantity));
+        }
+        const receiptId = randomUUID();
+        await this.receiveIn(client, workspaceId, delivery.receivedBy, receiptId, { orderId, place: delivery.locationId, receivedOn: delivery.receivedOn, deliveryNote: delivery.deliveryNote,
+          handedOverBy: delivery.handedOverBy, notes: [delivery.notes, note].filter(Boolean).join(" · ").slice(0, 2000),
+          lines: [...received].map(([orderLineId, quantity]) => ({ orderLineId, received: quantity.toString() })) });
+        await client.query(`UPDATE goods_receipt_photos SET receipt_id = $3, unmatched_id = NULL WHERE workspace_id = $1 AND unmatched_id = $2`, [workspaceId, deliveryId, receiptId]);
+        await client.query(`UPDATE unmatched_deliveries SET status = 'matched', receipt_id = $3, resolved_by = $4, resolved_at = now(), resolution_note = $5 WHERE workspace_id = $1 AND id = $2`,
+          [workspaceId, deliveryId, receiptId, user.userId, note]);
+      } else throw new BadRequestException("Unknown action.");
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: `unmatched_delivery.${action === "match" ? "matched" : "returned"}`, entityType: "unmatched_delivery",
+        entityId: deliveryId, after: { note, orderId: body.orderId ?? null } });
+      return this.unmatchedDetail(client, workspaceId, deliveryId, user.userId);
+    });
+  }
+
   // ---------- helpers ----------
+  private async unmatchedDetail(client: Db, workspaceId: string, deliveryId: string, userId: string) {
+    const delivery = (await readUnmatched(client, workspaceId, { id: deliveryId }))[0];
+    if (!delivery) throw new NotFoundException("Delivery not found.");
+    const rights = await this.rights(client, workspaceId, userId);
+    // Orders it could belong to: open orders with the same supplier (any open order when the supplier isn't known).
+    const candidates = delivery.status !== "open" || !rights.canBuy ? [] : await Promise.resolve().then(async () => {
+      const orders = (await readOrders(client, workspaceId)).filter((order) => (RECEIVABLE as readonly string[]).includes(order.status) && (!delivery.vendorId || order.vendorId === delivery.vendorId));
+      const out = [];
+      for (const order of orders.slice(0, 50))
+        out.push({ id: order.id, number: order.number, supplierName: order.supplierName,
+          lines: (await readOrderLines(client, workspaceId, order.id)).filter((line) => outstanding(line).cmp(0) > 0)
+            .map((line) => ({ id: line.id, description: line.description, unit: line.unit, projectReference: line.projectReference, outstanding: outstanding(line).toString() })) });
+      return out.filter((order) => order.lines.length);
+    });
+    return { delivery, lines: await readUnmatchedLines(client, workspaceId, deliveryId), photos: await readPhotos(client, workspaceId, { unmatchedId: deliveryId }), candidates, ...rights };
+  }
+
+  private async holders(client: Db, workspaceId: string, codes: string[]) {
+    return (await client.query<{ userId: string }>(
+      `SELECT DISTINCT membership.user_id AS "userId" FROM workspace_memberships membership
+         JOIN effective_member_roles effective_role ON effective_role.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = effective_role.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id AND permission.code = ANY($2::text[])
+        WHERE membership.workspace_id = $1 AND membership.status = 'active'`, [workspaceId, codes])).rows.map((row) => row.userId);
+  }
+
   private async detail(client: Db, workspaceId: string, receiptId: string, userId: string) {
     const receipt = await readReceipt(client, workspaceId, receiptId);
     if (!receipt) throw new NotFoundException("Receipt not found.");
@@ -258,7 +452,9 @@ export class ReceivingService {
     const returnable = lines.some((line) => Dec.of(line.rejected).sub(line.returnedRejected).cmp(0) > 0 || Dec.of(line.accepted).sub(line.returnedAccepted).cmp(0) > 0);
     const returned = lines.some((line) => Dec.of(line.returnedRejected).add(line.returnedAccepted).cmp(0) > 0);
     const inspectedAny = lines.some((line) => line.inspectedByName !== null);
-    return { receipt, lines, ...rights,
+    const settings = await ensurePurchasingSettings(client, workspaceId);
+    return { receipt, lines, ...rights, photos: await readPhotos(client, workspaceId, { receiptId }),
+      needsPhoto: settings.requireSitePhoto && receipt.locationKind === "site" && receipt.photos === 0 && !receipt.reversedAt,
       canInspectThis: rights.canInspect && live && Dec.of(receipt.pending).cmp(0) > 0 && receipt.receivedBy !== userId,
       canReturnThis: rights.canBuy && live && returnable,
       // A wrong receipt is reversed by a buyer, or by its receiver before anyone has inspected it; never once goods went back.
@@ -337,6 +533,8 @@ function text(value: unknown, max: number, label: string) {
   if (trimmed.length > max) throw new BadRequestException(`${label} is too long (up to ${max} characters).`);
   return trimmed;
 }
+
+const amountOf = (value: unknown, label: string) => quantity(value, label);
 
 function quantity(value: unknown, label: string) {
   const textValue = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";

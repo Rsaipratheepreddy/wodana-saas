@@ -1,7 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, Query, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import type { Request, Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
+import { sendMedia } from "../gallery/gallery.controller";
+import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
 import { OrdersService } from "./orders.service";
 import { PriceRequestsService } from "./price-requests.service";
 import { ReceivingService } from "./receiving.service";
@@ -86,6 +90,43 @@ export class PurchasingController {
   @Get("receipts/:receiptId")
   receipt(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("receiptId", ParseUUIDPipe) receiptId: string) {
     return this.receiving.receipt(actor, workspaceId, receiptId);
+  }
+
+  @Post("receipts/:receiptId/photos/:photoId")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  receiptPhoto(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("receiptId", ParseUUIDPipe) receiptId: string,
+    @Param("photoId", ParseUUIDPipe) photoId: string, @UploadedFile() file: ReferenceUpload) {
+    return this.receiving.uploadPhoto(actor, workspaceId, { kind: "receipt", id: receiptId }, photoId, file);
+  }
+
+  @Get("photos/:photoId")
+  async photo(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("photoId", ParseUUIDPipe) photoId: string, @Query("preview") preview: string,
+    @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const file = await this.receiving.photo(actor, workspaceId, photoId, preview === "1");
+    response.setHeader("Cache-Control", "private, max-age=300");
+    return sendMedia(file, request, response);
+  }
+
+  @Post("unmatched")
+  recordUnmatched(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.receiving.recordUnmatched(actor, workspaceId, input ?? {});
+  }
+
+  @Get("unmatched/:deliveryId")
+  unmatched(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("deliveryId", ParseUUIDPipe) deliveryId: string) {
+    return this.receiving.unmatched(actor, workspaceId, deliveryId);
+  }
+
+  @Post("unmatched/:deliveryId")
+  resolveUnmatched(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("deliveryId", ParseUUIDPipe) deliveryId: string, @Body() input: Record<string, unknown>) {
+    return this.receiving.resolveUnmatched(actor, workspaceId, deliveryId, input ?? {});
+  }
+
+  @Post("unmatched/:deliveryId/photos/:photoId")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: REFERENCE_MAX_BYTES, files: 1, fields: 1 } }))
+  unmatchedPhoto(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("deliveryId", ParseUUIDPipe) deliveryId: string,
+    @Param("photoId", ParseUUIDPipe) photoId: string, @UploadedFile() file: ReferenceUpload) {
+    return this.receiving.uploadPhoto(actor, workspaceId, { kind: "unmatched", id: deliveryId }, photoId, file);
   }
 
   @Post("receipts/:receiptId/reversal")

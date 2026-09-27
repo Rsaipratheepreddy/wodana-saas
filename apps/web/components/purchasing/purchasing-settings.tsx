@@ -13,7 +13,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
   const t = useT();
   const api = useMemo(() => purchasingApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<{ settings: PurchasingSettings; canManage: boolean; currency: string | null } | null>(null);
-  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string } | null>(null);
+  const [form, setForm] = useState<{ always: boolean; threshold: string; approval: boolean; signoff: boolean; approved: boolean; inspection: boolean; tolerance: string; sitePhoto: boolean } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const accept = (next: { settings: PurchasingSettings; canManage: boolean; currency: string | null }) => {
@@ -21,7 +21,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     const value = next.settings.approvalThreshold;
     setForm({ approval: value !== null, always: value !== null && Number(value) === 0, threshold: value && Number(value) ? value.replace(/\.?0+$/, "") : "",
       signoff: next.settings.requireMaterialSignoff, approved: next.settings.requireApprovedSupplier, inspection: next.settings.requireInspection,
-      tolerance: quantityText(next.settings.receiveTolerancePercent) || "0" });
+      tolerance: quantityText(next.settings.receiveTolerancePercent) || "0", sitePhoto: next.settings.requireSitePhoto });
   };
   const load = useCallback(async () => {
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
@@ -35,7 +35,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     setBusy(true); setError("");
     try {
       const settings = await api.saveSettings({ version: data.settings.version, approvalThreshold: threshold, requireMaterialSignoff: form.signoff, requireApprovedSupplier: form.approved,
-        requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0" });
+        requireInspection: form.inspection, receiveTolerancePercent: form.tolerance || "0", requireSitePhoto: form.sitePhoto });
       accept({ ...data, settings });
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); }
     setBusy(false);
@@ -65,6 +65,9 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     <SettingsSection id="receiving" title={t("Receiving")}>
       <SettingsRow label={t("Inspect deliveries")} hint={t("Someone other than the receiver accepts or rejects what arrived.")}>
         <Switch aria-label={t("Inspect deliveries")} isDisabled={readOnly} isSelected={form.inspection} onChange={(inspection) => setForm({ ...form, inspection })} />
+      </SettingsRow>
+      <SettingsRow label={t("Photo of site deliveries")} hint={t("A delivery received at a project's site needs a photo.")}>
+        <Switch aria-label={t("Photo of site deliveries")} isDisabled={readOnly} isSelected={form.sitePhoto} onChange={(sitePhoto) => setForm({ ...form, sitePhoto })} />
       </SettingsRow>
       <SettingsRow label={t("Over-delivery allowed")} hint={t("How much more than ordered can be received on a line.")}>
         <TextInput aria-label={t("Over-delivery allowed")} label={null} isReadOnly={readOnly} inputMode="decimal" suffix="%" value={form.tolerance}
