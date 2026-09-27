@@ -24,13 +24,15 @@ export type KanbanColumn<T> = { id: string; label: string; items: T[]; limit?: n
  * Columns of cards. Cards open with click, Enter or Space when `onItemAction` is set; with `onMove`
  * they can be dragged to another column (the record's own panel is the keyboard way to move them).
  */
-export function Kanban<T>({ columns, getId, getLabel, onItemAction, onMove, renderItem }: {
-  columns: KanbanColumn<T>[]; getId: (item: T) => string; getLabel?: (item: T) => string; onItemAction?: (item: T) => void;
+export function Kanban<T>({ columns, getId, getLabel, label, onItemAction, onMove, renderItem }: {
+  columns: KanbanColumn<T>[]; getId: (item: T) => string; getLabel?: (item: T) => string; label?: string; onItemAction?: (item: T) => void;
   onMove?: (itemId: string, columnId: string) => void; renderItem: (item: T) => ReactNode;
 }) {
+  const t = useT();
   const [target, setTarget] = useState<string | null>(null);
   const draggable = Boolean(onMove) || !onItemAction;
-  return <div className="wd-kanban">{columns.map((column) => <section aria-label={column.label} data-drop-target={target === column.id || undefined} key={column.id}
+  // The board scrolls sideways without a visible scrollbar, so it is a focusable region for keyboard scrolling.
+  return <div className="wd-kanban wd-scroll-quiet" role="region" tabIndex={0} aria-label={label ?? t("Board")}>{columns.map((column) => <section aria-label={column.label} data-drop-target={target === column.id || undefined} key={column.id}
     onDragLeave={onMove ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTarget(null); } : undefined}
     onDragOver={onMove ? (event) => { if (event.dataTransfer.types.includes(CARD)) { event.preventDefault(); setTarget(column.id); } } : undefined}
     onDrop={onMove ? (event) => { const id = event.dataTransfer.getData(CARD); setTarget(null); if (id) { event.preventDefault(); onMove(id, column.id); } } : undefined}>

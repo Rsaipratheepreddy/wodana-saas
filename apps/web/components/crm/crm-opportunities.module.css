@@ -21,9 +21,8 @@
 .viewSwitch :global(.wd-button[aria-pressed="true"]) { background:var(--wd-color-surface-muted); border-color:var(--wd-color-text); color:var(--wd-color-text); font-weight:var(--wd-weight-medium); }
 .toolbarActions { margin-inline-start:auto; }
 
-.salesBoard { display:grid; grid-template-columns:repeat(var(--stage-count),minmax(0,1fr)); gap:var(--wd-space-2); flex:1; min-inline-size:0; min-block-size:20rem; overflow-x:auto; padding-block:var(--wd-space-0-5) var(--wd-space-2); scrollbar-width:none; }
-.salesBoard::-webkit-scrollbar { display:none; }
-.salesBoard:focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:-2px; }
+/* Stages keep a readable width and the board scrolls sideways (quiet scrollbars); each column scrolls its own cards. */
+.salesBoard { display:grid; grid-template-columns:repeat(var(--stage-count),minmax(15rem,1fr)); gap:var(--wd-space-2); flex:1; min-inline-size:0; min-block-size:20rem; overflow:auto; padding-block:var(--wd-space-0-5) var(--wd-space-2); }
 .boardColumn { --column-accent:var(--wd-color-text-tertiary); display:flex; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-1); border-radius:var(--wd-radius-md); background:var(--wd-color-surface-muted); }
 .boardColumn[data-tone="1"] { --column-accent:var(--wd-color-warning); }
 .boardColumn[data-tone="2"] { --column-accent:var(--wd-color-info); }
@@ -36,7 +35,7 @@
 .boardColumn > header i { flex:none; inline-size:7px; block-size:7px; border-radius:50%; background:var(--column-accent); }
 .count { display:grid; place-items:center; flex:none; min-inline-size:1.5rem; block-size:1.5rem; padding-inline:var(--wd-space-1-5); border-radius:var(--wd-radius-xs); background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-variant-numeric:tabular-nums; }
 .pipelineName { display:block; padding:var(--wd-space-1-5) var(--wd-space-3) 0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
-.cardStack { display:grid; align-content:start; gap:var(--wd-space-2); min-block-size:0; overflow-y:auto; padding:var(--wd-space-0-5); scrollbar-width:thin; }
+.cardStack { display:grid; grid-auto-rows:max-content; align-content:start; gap:var(--wd-space-2); min-block-size:0; overflow-y:auto; padding:var(--wd-space-0-5); }
 .boardCard { display:grid; gap:var(--wd-space-1-5); inline-size:100%; min-inline-size:0; overflow:hidden; padding:var(--wd-space-3) var(--wd-space-3); text-align:start; border:0; border-radius:var(--wd-radius-md); background:var(--wd-color-surface); color:var(--wd-color-text); box-shadow:0 1px 4px rgb(27 31 30 / 10%); cursor:pointer; font:inherit; transition:box-shadow 140ms ease; }
 .boardCard:hover { box-shadow:0 4px 14px rgb(27 31 30 / 12%); }
 .boardCard:focus-visible { outline:2px solid var(--wd-color-focus); outline-offset:2px; }

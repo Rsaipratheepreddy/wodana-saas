@@ -44,6 +44,10 @@
 .wd-scroll-area { min-inline-size: 0; overflow: auto; scrollbar-gutter: stable; }
 .wd-aspect-ratio { inline-size: 100%; overflow: hidden; }
 .wd-visually-hidden { position: absolute !important; inline-size: 1px !important; block-size: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; border: 0 !important; }
+/* A scroll region without visible scrollbars: boards and wide tables keep wheel, trackpad, touch and keyboard scrolling. */
+.wd-scroll-quiet { scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior: contain; }
+.wd-scroll-quiet::-webkit-scrollbar { display: none; inline-size: 0; block-size: 0; }
+.wd-scroll-quiet:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
 
 .wd-text { margin: 0; color: var(--wd-ink); }
 .wd-text[data-size="xs"] { font-size: var(--wd-text-xs); }

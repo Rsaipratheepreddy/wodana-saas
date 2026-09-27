@@ -150,7 +150,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     {layout === "board" && activePipelines.length > 0 && !boardItems.length && <p className={styles.emptyNotice}>{search || assignee || pipelineFilter !== "all" ? t("No opportunities match these filters.") : view === "closed" ? t("No closed opportunities yet.") : view === "open" ? t("No open opportunities yet. Convert one from an enquiry.") : t("No opportunities yet. Convert one from an enquiry.")}</p>}
     {layout === "board" ? <>
       <span id="pipeline-drag-hint" className={styles.srOnly}>{t("Open opportunity. Drag to move stage, or use Alt and the left or right arrow keys.")}</span>
-      <div className={styles.salesBoard} role="region" tabIndex={0} aria-label={t("Sales pipeline board")} style={{ "--stage-count": boardColumns.length + (unplaced.length ? 1 : 0) } as CSSProperties}>{[...boardColumns, ...(unplaced.length ? [{id:"unplaced",name:t("Needs a stage"),code:"",pipelineId:"",pipelineName:"",canCreate:false}] : [])].map((column, columnIndex) => {
+      <div className={`${styles.salesBoard} wd-scroll-quiet`} role="region" tabIndex={0} aria-label={t("Sales pipeline board")} style={{ "--stage-count": boardColumns.length + (unplaced.length ? 1 : 0) } as CSSProperties}>{[...boardColumns, ...(unplaced.length ? [{id:"unplaced",name:t("Needs a stage"),code:"",pipelineId:"",pipelineName:"",canCreate:false}] : [])].map((column, columnIndex) => {
         const cards = column.id === "unplaced" ? unplaced : boardItems.filter(item => String(item.stageId ?? item.stage_id) === column.id);
         return <section className={styles.boardColumn} key={column.id} aria-label={column.name} data-empty={!cards.length || undefined} data-tone={column.code === "won" ? "won" : column.code === "lost" ? "lost" : columnIndex % 5} data-drop-target={dropTarget === column.id || undefined}
           onDragOver={event => { const item = items.find(record => record.id === dragged); if (item && column.canCreate && column.pipelineId === String(item.pipelineId ?? item.pipeline_id)) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(column.id); } }}
@@ -158,7 +158,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
           onDrop={event => { event.preventDefault(); if (dragged) requestMove(dragged, column.id); setDragged(null); setDropTarget(null); }}>
           <header><h2><i aria-hidden="true" />{column.name}</h2><span className={styles.count} aria-label={t("{count} loaded opportunities", { count: cards.length })}>{cards.length}</span></header>
           {pipelines.length > 1 && pipelineFilter === "all" && <small className={styles.pipelineName}>{column.pipelineName}</small>}
-          <div className={styles.cardStack}>{cards.map(item => {
+          <div className={`${styles.cardStack} wd-scroll-quiet`}>{cards.map(item => {
             const owner = personDisplayName(item.ownerName as string | null) || t("Unassigned");
             const overdue = item.status === "open" && typeof item.nextActionAt === "string" && Date.parse(item.nextActionAt) < Date.now();
             const title = opportunityTitle(item, t);
