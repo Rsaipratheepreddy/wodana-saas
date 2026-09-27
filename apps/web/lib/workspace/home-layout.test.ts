@@ -24,10 +24,12 @@ it("builds a different starting Home per role from permissions, packing rows wit
   expect(homeProfile(grants("crm.leads.view", "pre_projects.view"))).toBe("sales");
   expect(homeProfile(grants("pre_projects.view"))).toBe("qs");
   expect(homeProfile(grants())).toBe("member");
-  expect(defaultLayoutFor("finance").filter(item => item.visible)[1].id).toBe("money");
-  expect(defaultLayoutFor("qs").filter(item => item.visible)[1].id).toBe("planning");
+  expect(defaultLayoutFor("finance").filter(item => item.visible)[0].id).toBe("money");
+  expect(defaultLayoutFor("qs").filter(item => item.visible)[0].id).toBe("planning");
   for (const profile of ["owner", "sales", "qs", "finance", "member"] as const) {
-    const shown = defaultLayoutFor(profile, id => id !== "attendance" && id !== "storage").filter(item => item.visible);
+    // Compact: at most two rows of the three-column grid.
+    expect(defaultLayoutFor(profile).filter(item => item.visible).reduce((sum, item) => sum + homeWidgetSpan[item.size], 0), profile).toBeLessThanOrEqual(6);
+    const shown = defaultLayoutFor(profile, id => id !== "planning" && id !== "storage").filter(item => item.visible);
     let used = 0;
     for (const item of shown) { const span = homeWidgetSpan[item.size]; expect(used + span, `${profile}: ${item.id}`).toBeLessThanOrEqual(3); used = (used + span) % 3; }
     expect(used).toBe(0);

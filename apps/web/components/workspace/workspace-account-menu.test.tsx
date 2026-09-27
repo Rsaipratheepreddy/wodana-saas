@@ -43,10 +43,24 @@ describe("WorkspaceAccountMenu", () => {
     expect(await screen.findByRole("dialog", { name: "Set up your workspace" })).toBeVisible();
     expect(screen.getByRole("link", { name: /Manage people/ })).toHaveAttribute("href", "/workspace/members");
     expect(screen.queryByRole("link", { name: /Review company/ })).not.toBeInTheDocument();
+    // Only real checks: tax and the proposal kit link to where they are done; nothing hard-coded.
+    expect(screen.getByRole("link", { name: /Set up tax/ })).toHaveAttribute("href", "/workspace/legal-entities");
+    expect(screen.getByRole("link", { name: /Open proposal kit/ })).toHaveAttribute("href", "/workspace/settings/quotations");
+    expect(screen.queryByText("Bring your data")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quotation templates")).not.toBeInTheDocument();
+    await interaction.click(screen.getByRole("link", { name: /Set up tax/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Set up your workspace" })).not.toBeInTheDocument());
+  });
+
+  it("counts tax and the proposal kit from the workspace's real records", async () => {
+    const readiness = { company: true, regional: true, tax: true, people: true, proposalKit: false, connections: false };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => readiness })));
+    render(<DesignSystemProvider><WorkspaceAccountMenu setup={{ workspaceId: "11111111-1111-4111-8111-111111111111", modules: ["pre-project"] }} user={{ email: "owner@palmliving.test", name: "Olivia" }} /></DesignSystemProvider>);
+    expect(await screen.findByRole("button", { name: "Account menu for Olivia. Setup 4 of 6 done" })).toHaveAttribute("data-setup");
   });
 
   it("drops the ring once every step is done", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ company: true, regional: true, people: true, connections: true }) })));
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ company: true, regional: true, tax: true, people: true, connections: true }) })));
     render(<DesignSystemProvider><WorkspaceAccountMenu setup={{ workspaceId: "11111111-1111-4111-8111-111111111111", modules: [] }} user={{ email: "owner@palmliving.test", name: "Olivia" }} /></DesignSystemProvider>);
 
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());

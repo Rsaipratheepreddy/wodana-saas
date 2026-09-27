@@ -9519,5 +9519,16 @@
   "Explain this screen": "Explain this screen",
   "Ask a question": "Ask a question",
   "Tours": "Tours",
-  "there": "there"
+  "there": "there",
+  "Follow-ups to do": "Follow-ups to do",
+  "{count} overdue": "{count} overdue",
+  "Quotes awaiting the client": "Quotes awaiting the client",
+  "{count} late": "{count} late",
+  "Orders to receive": "Orders to receive",
+  "Due this month": "Due this month",
+  "New enquiries this month": "New enquiries this month",
+  "Tax set up": "Tax set up",
+  "Set up tax": "Set up tax",
+  "Proposal kit": "Proposal kit",
+  "Open proposal kit": "Open proposal kit"
 }

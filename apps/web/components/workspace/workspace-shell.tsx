@@ -97,7 +97,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
 
 
   if (preProjectRoute?.section === "quotations" && builderSearch.has("quote")) {
-    return <div className={styles.shell} data-workspace-theme={theme} style={{...workspacePrimaryColorStyle(workspaces[0]),display:"block",minHeight:"100dvh"}}><main>{children}</main></div>;
+    return <div className={styles.shell} data-workspace-theme={theme} style={{...workspacePrimaryColorStyle(workspaces[0]),display:"block",minHeight:"100dvh"}}><main data-tour="page-content">{children}</main></div>;
   }
 
   return (
