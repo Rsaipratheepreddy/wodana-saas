@@ -3238,11 +3238,12 @@ integration("projects core (plan §6.10)", () => {
         { kind: "bill_payment", status: "pending", attempts: 0, retrySoon: null, providerId: null }, { kind: "invoice", status: "sent", attempts: 1, retrySoon: null, providerId: "145" }]);
       expect((await w.client.query(`SELECT kind, provider_id FROM accounting_contacts WHERE workspace_id = $1`, [w.workspaceId])).rows).toEqual([{ kind: "customer", provider_id: "58" }]);
 
-      // Retried by hand: the bill goes, with a different total flagged; then its payment goes, paying the bill.
-      await accounting.retry(actor, w.workspaceId, billPosting.id);
+      // Retried by hand after an outage: the same request key, so QuickBooks can still deduplicate; the bill goes, with a different total flagged.
+      const internalId = async (requestKey: string) => (await w.client.query<{ id: string }>(`SELECT id FROM accounting_postings WHERE request_key = $1`, [requestKey])).rows[0].id;
+      await accounting.retry(actor, w.workspaceId, await internalId(billPosting.id));
       claimed = await claimPostings(w.client, w.workspaceId, 20);
-      expect(claimed.map((item) => [item.kind, item.attempt])).toEqual([["bill", 1]]);
-      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, providerId: "B9", providerTotal: "210.01", contactProviderId: "V3" });
+      expect(claimed.map((item) => [item.kind, item.attempt, item.id])).toEqual([["bill", 1, billPosting.id]]);
+      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, providerId: "B9", providerTotal: "210.010", contactProviderId: "V3" });
       claimed = await claimPostings(w.client, w.workspaceId, 20);
       expect(claimed).toEqual([expect.objectContaining({ kind: "bill_payment", contact: expect.objectContaining({ providerId: "V3" }),
         document: { date: "2026-09-26", currency: "AED", amount: "210.00", billProviderId: "B9", reference: "CHQ-9", paidFromAccountId: "35", method: "cheque" } })]);
@@ -3258,6 +3259,17 @@ integration("projects core (plan §6.10)", () => {
       rows = (await w.client.query(`SELECT kind, status, attempts, next_at > now() AS "retrySoon", provider_id AS "providerId" FROM accounting_postings
         WHERE workspace_id = $1 AND kind = 'bill_payment_void'`, [w.workspaceId])).rows as never;
       expect(rows).toEqual([{ kind: "bill_payment_void", status: "failed", attempts: 1, retrySoon: null, providerId: null }]);
+      // Refused, then retried by hand: a new request key, so an earlier answer can't be replayed.
+      const voidKey = claimed[0].id;
+      await accounting.retry(actor, w.workspaceId, await internalId(voidKey));
+      claimed = await claimPostings(w.client, w.workspaceId, 20);
+      expect(claimed.map((item) => item.kind)).toEqual(["bill_payment_void"]);
+      expect(claimed[0].id).not.toBe(voidKey);
+      // A lease that lapses without a result counts as an attempt, and the marker stays with the key.
+      await w.client.query(`UPDATE accounting_postings SET lease_until = now() - interval '1 second' WHERE request_key = $1`, [claimed[0].id]);
+      const again = await claimPostings(w.client, w.workspaceId, 20);
+      expect(again.map((item) => [item.id, item.attempt, item.marker])).toEqual([[claimed[0].id, claimed[0].attempt + 1, claimed[0].marker]]);
+      await applyResult(w.client, w.workspaceId, { id: again[0].id, leaseToken: again[0].leaseToken, providerId: "BP1" });
       // A finance-verified client payment on the invoiced milestone goes on the posted invoice.
       await w.client.query(`INSERT INTO commercial_receipts (workspace_id, case_id, id, sort_order, payment_id, legal_entity_id, currency, amount, source, status, reference, detail)
         VALUES ($1, $2, 'r1', 0, 'p1', $3, 'AED', $4, 'manual', 'finance_verified', 'TT-1', '{"verifiedAt": "2026-09-27T09:00:00Z"}')`, [w.workspaceId, w.caseId, company, half]);

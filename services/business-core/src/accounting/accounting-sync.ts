@@ -249,18 +249,24 @@ export async function claimPostings(db: Db, workspaceId: string, limit: number):
       continue;
     }
     const leaseToken = randomUUID();
-    await db.query(`UPDATE accounting_postings SET lease_token = $3, lease_until = now() + interval '5 minutes', status = CASE WHEN status = 'blocked' THEN 'pending' ELSE status END,
-                      error = CASE WHEN status = 'blocked' THEN NULL ELSE error END, error_code = CASE WHEN status = 'blocked' THEN NULL ELSE error_code END
-                    WHERE workspace_id = $1 AND id = $2`, [workspaceId, posting.id, leaseToken]);
-    claimed.push({ id: posting.id, leaseToken, workspaceId, connectionId: link.connectionId, provider: link.provider, kind: posting.kind, attempt: posting.attempts,
-      marker: marker(posting.id), contact: built.contact, document: built.document });
+    // A lease that lapsed without a result counts as an attempt: the document may exist in the accounting system.
+    const leased = (await db.query<{ requestKey: string; attempts: number }>(
+      `UPDATE accounting_postings SET attempts = attempts + CASE WHEN lease_token IS NOT NULL THEN 1 ELSE 0 END, lease_token = $3, lease_until = now() + interval '5 minutes',
+              status = CASE WHEN status = 'blocked' THEN 'pending' ELSE status END,
+              error = CASE WHEN status = 'blocked' THEN NULL ELSE error END, error_code = CASE WHEN status = 'blocked' THEN NULL ELSE error_code END
+        WHERE workspace_id = $1 AND id = $2 RETURNING request_key AS "requestKey", attempts`, [workspaceId, posting.id, leaseToken])).rows[0];
+    claimed.push({ id: leased.requestKey, leaseToken, workspaceId, connectionId: link.connectionId, provider: link.provider, kind: posting.kind, attempt: leased.attempts,
+      marker: marker(leased.requestKey), contact: built.contact, document: built.document });
   }
   return claimed;
 }
 
+/** What the worker reports for a posting it leased, by the posting's request key. */
 export type PostingResult = {
   id: string; leaseToken: string; providerId?: string; providerNumber?: string | null; providerTotal?: string | null; contactProviderId?: string;
   error?: { code: string; message: string; retryable: boolean };
+  /** Sent, with something to look at (a credit note that couldn't be applied to its invoice). */
+  warning?: { code: string; message: string };
 };
 
 /**
@@ -271,7 +277,7 @@ export type PostingResult = {
 export async function applyResult(db: Db, workspaceId: string, result: PostingResult) {
   const posting = (await db.query<{ id: string; linkId: string; kind: PostingKind; sourceId: string; expectedTotal: string | null; attempts: number }>(
     `SELECT id, link_id AS "linkId", kind, source_id AS "sourceId", expected_total::text AS "expectedTotal", attempts FROM accounting_postings
-      WHERE workspace_id = $1 AND id = $2 AND lease_token = $3 AND lease_until > now() FOR UPDATE`, [workspaceId, result.id, result.leaseToken])).rows[0];
+      WHERE workspace_id = $1 AND request_key = $2 AND lease_token = $3 AND lease_until > now() FOR UPDATE`, [workspaceId, result.id, result.leaseToken])).rows[0];
   if (!posting) return { applied: false };
   const link = (await readLinks(db, workspaceId)).find((item) => item.id === posting.linkId);
   // A contact found or created by the worker is remembered for the next posting (a mapping already chosen stays).
@@ -286,14 +292,16 @@ export async function applyResult(db: Db, workspaceId: string, result: PostingRe
   }
   if (!result.error && result.providerId) {
     const differs = result.providerTotal && posting.expectedTotal && Dec.of(result.providerTotal).cmp(posting.expectedTotal) !== 0;
-    const note = differs && link ? `${link.provider === "quickbooks" ? "QuickBooks" : "Zoho Books"} shows ${result.providerTotal}; Wodana shows ${Dec.of(posting.expectedTotal!).toString()}.` : null;
+    const flag = differs && link
+      ? { code: "total_differs", note: `${link.provider === "quickbooks" ? "QuickBooks" : "Zoho Books"} shows ${Dec.of(result.providerTotal!).toString()}; Wodana shows ${Dec.of(posting.expectedTotal!).toString()}.` }
+      : result.warning ? { code: result.warning.code.slice(0, 40), note: result.warning.message.slice(0, 500) } : null;
     await db.query(
       `UPDATE accounting_postings SET status = 'sent', provider_id = $3, provider_number = $4, provider_total = $5, sent_at = now(), attempts = attempts + 1,
               lease_token = NULL, lease_until = NULL, next_at = NULL, error_code = $6, error = $7
         WHERE workspace_id = $1 AND id = $2`,
       [workspaceId, posting.id, String(result.providerId).slice(0, 120), result.providerNumber ? String(result.providerNumber).slice(0, 120) : null,
-        result.providerTotal ?? null, differs ? "total_differs" : null, note]);
-    if (note && link) await tellAttention(db, workspaceId, link, posting.id, note);
+        result.providerTotal ?? null, flag?.code ?? null, flag?.note ?? null]);
+    if (flag && link) await tellAttention(db, workspaceId, link, posting.id, flag.note);
     return { applied: true };
   }
   const error = result.error ?? { code: "no_result", message: "The accounting system didn't say what it created.", retryable: false };

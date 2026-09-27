@@ -52,6 +52,9 @@ CREATE TABLE accounting_postings (
   link_id uuid NOT NULL,
   kind varchar(24) NOT NULL CHECK (kind IN ('invoice', 'credit_note', 'invoice_payment', 'bill', 'bill_payment', 'bill_payment_void')),
   source_id varchar(80) NOT NULL,
+  -- What the worker and the accounting system know the posting by (QuickBooks deduplicates on it). A posting
+  -- retried by hand after the accounting system refused it gets a new key, so an earlier answer isn't replayed.
+  request_key uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
   depends_on uuid,
   document_date date NOT NULL,
   -- cancelled: its source was undone before it was ever posted (a supplier payment reversed first).
@@ -99,9 +102,9 @@ CREATE FUNCTION list_accounting_workspaces() RETURNS TABLE (workspace_id uuid) L
   SELECT DISTINCT link.workspace_id FROM accounting_links link WHERE link.active
 $$;
 --> statement-breakpoint
--- A result names its posting and lease; this finds whose workspace it is, only while the lease holds.
-CREATE FUNCTION accounting_posting_workspace(p_id uuid, p_lease uuid) RETURNS uuid LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-  SELECT workspace_id FROM accounting_postings WHERE id = p_id AND lease_token = p_lease AND lease_until > now()
+-- A result names its posting (by request key) and lease; this finds whose workspace it is, only while the lease holds.
+CREATE FUNCTION accounting_posting_workspace(p_key uuid, p_lease uuid) RETURNS uuid LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  SELECT workspace_id FROM accounting_postings WHERE request_key = p_key AND lease_token = p_lease AND lease_until > now()
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION list_accounting_workspaces() FROM PUBLIC;

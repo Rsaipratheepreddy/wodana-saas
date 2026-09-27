@@ -14,6 +14,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const PROVIDER_ID = /^[\w.:-]{1,120}$/;
 const CLAIM_LIMIT = 20;
+/** Failures after which the document may exist in the accounting system (so a retry keeps its request key). */
+const MAY_HAVE_POSTED = ["provider_unavailable", "rate_limited", "provider_conflict", "sync_failed", "no_result"];
 
 /**
  * Accounting sync: where each company posts (its QuickBooks or Zoho Books connection, from a start date),
@@ -92,11 +94,15 @@ export class AccountingService {
   /** Sends a failed or blocked posting again on the worker's next pass. */
   retry(actor: RequestActor, workspaceId: string, postingId: string) {
     return this.access.withPermission(actor, workspaceId, "accounting.manage", async (client, user) => {
-      const posting = (await client.query<{ status: string }>(`SELECT status FROM accounting_postings WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
-        [workspaceId, uuid(postingId, "Posting")])).rows[0];
+      const posting = (await client.query<{ status: string; errorCode: string | null }>(
+        `SELECT status, error_code AS "errorCode" FROM accounting_postings WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, uuid(postingId, "Posting")])).rows[0];
       if (!posting) throw new NotFoundException("Posting not found.");
       if (!["failed", "blocked"].includes(posting.status)) throw new ConflictException("Only a failed or blocked posting is sent again.");
-      await client.query(`UPDATE accounting_postings SET status = 'pending', next_at = NULL, error = NULL, error_code = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, postingId]);
+      // Refused by the accounting system: nothing was created, and a fresh key keeps QuickBooks from replaying its answer.
+      // Failures that may have reached it (timeouts, outages) keep their key so a retry is still deduplicated.
+      const fresh = posting.status === "failed" && !MAY_HAVE_POSTED.includes(posting.errorCode ?? "");
+      await client.query(`UPDATE accounting_postings SET status = 'pending', next_at = NULL, error = NULL, error_code = NULL, lease_token = NULL, lease_until = NULL,
+                            request_key = CASE WHEN $3 THEN gen_random_uuid() ELSE request_key END WHERE workspace_id = $1 AND id = $2`, [workspaceId, postingId, fresh]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "accounting.posting_retried", entityType: "accounting_posting", entityId: postingId, before: posting });
       return { postings: await this.readPostings(client, workspaceId) };
     });
@@ -122,9 +128,11 @@ export class AccountingService {
     const error = body.error && typeof body.error === "object" ? body.error as Record<string, unknown> : null;
     const text = (value: unknown, max: number) => (typeof value === "string" ? value.slice(0, max) : undefined);
     const total = typeof body.providerTotal === "string" && /^-?\d{1,14}(\.\d{1,6})?$/.test(body.providerTotal) ? body.providerTotal : null;
+    const warning = body.warning && typeof body.warning === "object" ? body.warning as Record<string, unknown> : null;
     const result: PostingResult = {
       id, leaseToken, providerId: text(body.providerId, 120), providerNumber: text(body.providerNumber, 120) ?? null, providerTotal: total, contactProviderId: text(body.contactProviderId, 120),
       error: error ? { code: text(error.code, 40) ?? "provider_error", message: text(error.message, 500) ?? "The accounting system refused it.", retryable: error.retryable === true } : undefined,
+      warning: warning ? { code: text(warning.code, 40) ?? "warning", message: text(warning.message, 500) ?? "Check this document in the accounting system." } : undefined,
     };
     return this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) => applyResult(client, workspaceId, result));
   }
