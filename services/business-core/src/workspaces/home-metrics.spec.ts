@@ -4,8 +4,8 @@ import { activityArea, readHomeMetrics, type HomeMetricsAccess } from "./home-me
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const membershipId = "00000000-0000-4000-8000-000000000002";
 const now = new Date("2026-09-15T05:30:00.000Z");
-const none: HomeMetricsAccess = { enquiries: false, quotes: false, payments: false, projects: false, manageProjects: false, activity: false, storage: false };
-const all: HomeMetricsAccess = { enquiries: true, quotes: true, payments: true, projects: true, manageProjects: false, activity: true, storage: true };
+const none: HomeMetricsAccess = { enquiries: false, quotes: false, payments: false, projects: false, manageProjects: false, activity: false, storage: false, followUps: false, orders: false };
+const all: HomeMetricsAccess = { enquiries: true, quotes: true, payments: true, projects: true, manageProjects: false, activity: true, storage: true, followUps: true, orders: true };
 const workspaceRow = { timeZone: "America/Los_Angeles", weekStartsOn: 6, currency: "USD" };
 const eight = (value: string) => Array.from({ length: 8 }, (_, index) => ({ start: `2026-0${7 + Math.floor(index / 4)}-0${index % 4 + 1}`, value, count: 0 }));
 
@@ -22,7 +22,7 @@ describe("Home metrics queries", () => {
     expect(client.query).toHaveBeenCalledTimes(1);
     expect(client.query.mock.calls[0][1]).toEqual([workspaceId]);
     expect(result).toEqual({ generatedAt: now.toISOString(), timeZone: "America/Los_Angeles", weekStartsOn: 6, currency: "USD" });
-    for (const key of ["enquiries", "quotes", "payments", "projects", "activity", "storage"]) expect(key in result).toBe(false);
+    for (const key of ["enquiries", "quotes", "payments", "projects", "activity", "storage", "followUps", "orders"]) expect(key in result).toBe(false);
   });
 
   it("queries only the permitted sections", async () => {
@@ -37,14 +37,16 @@ describe("Home metrics queries", () => {
     const client = { query: vi.fn()
       .mockResolvedValueOnce({ rows: [workspaceRow] })
       .mockResolvedValueOnce({ rows: [{ current: 3, previous: 1, weekly: eight("1") }] })
-      .mockResolvedValueOnce({ rows: [{ issuedValue: "3000.75", previousIssuedValue: "300.00", issuedCount: 3, accepted: 1, previousAccepted: 1, weekly: eight("12.50") }] })
+      .mockResolvedValueOnce({ rows: [{ issuedValue: "3000.75", previousIssuedValue: "300.00", issuedCount: 3, accepted: 1, previousAccepted: 1, awaiting: 2, weekly: eight("12.50") }] })
       .mockResolvedValueOnce({ rows: [{ received: "500.00", previousReceived: "250.00", due: "899.90", weekly: eight("0.00") }] })
       .mockResolvedValueOnce({ rows: [{ active: 5, overdueTasks: 2, late: 2, atRisk: 2, onTrack: 1, weekly: eight("1") }] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ used: "5120", projects: "3700", planning: "900", catalog: "400", other: "120", quota: null }] }) };
+      .mockResolvedValueOnce({ rows: [{ used: "5120", projects: "3700", planning: "900", catalog: "400", other: "120", quota: null }] })
+      .mockResolvedValueOnce({ rows: [{ open: 4, overdue: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ toReceive: 3 }] }) };
     const result = await readHomeMetrics(client as never, workspaceId, membershipId, all, now);
     const calls = client.query.mock.calls as Array<[string, unknown[]]>;
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(9);
     for (const [, params] of calls) expect(params[0]).toBe(workspaceId);
     // The region comes from the workspace row and is passed to every bucketed query.
     expect(calls[0][0]).toContain("default_timezone");
@@ -65,20 +67,33 @@ describe("Home metrics queries", () => {
     expect(projects[1].slice(4)).toEqual([membershipId, false]);
     expect(result.activity).toEqual([]);
     expect(result.storage).toEqual({ usedBytes: "5120", quotaBytes: null, areas: { projects: "3700", planning: "900", catalog: "400", other: "120" } });
+    // Awaiting quotes leave out cancelled cases; overdue follow-ups compare with the same instant; open orders are placed, not fully received.
+    expect(quotes[0]).toContain("waiting.status='issued'");
+    expect(quotes[0]).toContain("pre_case.status<>'cancelled'");
+    const followUps = calls.find(([sql]) => sql.includes("FROM crm_activities activity"))!;
+    expect(followUps[1]).toEqual([workspaceId, now.toISOString()]);
+    expect(followUps[0]).toContain("activity.type <> 'note'");
+    const orders = calls.find(([sql]) => sql.includes("FROM purchase_orders purchase"))!;
+    expect(orders[0]).toContain("('sent', 'confirmed', 'partly_received')");
+    expect(result.quotes?.awaiting).toBe(2);
+    expect(result.followUps).toEqual({ open: 4, overdue: 1 });
+    expect(result.orders).toEqual({ toReceive: 3 });
   });
 
   it("maps rows to the contract with money kept as strings and all eight weeks", async () => {
     const weekly = eight("1234567890123.45");
     const client = clientFor([
       { current: 3, previous: 1, weekly: eight("1") },
-      { issuedValue: "9007199254740993.10", previousIssuedValue: "0.00", issuedCount: 3, accepted: 1, previousAccepted: 0, weekly },
+      { issuedValue: "9007199254740993.10", previousIssuedValue: "0.00", issuedCount: 3, accepted: 1, previousAccepted: 0, awaiting: 1, weekly },
       { received: "0.10", previousReceived: "0.20", due: "0.30", weekly },
       { active: 5, overdueTasks: 2, late: 2, atRisk: 2, onTrack: 1, weekly: eight("0") },
       { id: "event", action: "crm.lead.created.v1", entityType: "crm_lead", entityId: "lead-1", at: new Date("2026-09-14T01:00:00Z"), actorName: "Sara", subject: "Amira" },
       { used: "9007199254740993", projects: "1", planning: "2", catalog: "3", other: "9007199254740987", quota: "10737418240" },
+      { open: 0, overdue: 0 },
+      { toReceive: 0 },
     ]);
     const result = await readHomeMetrics(client as never, workspaceId, membershipId, all, now);
-    expect(result.quotes).toEqual({ issuedValue: "9007199254740993.10", previousIssuedValue: "0.00", issuedCount: 3, accepted: 1, previousAccepted: 0, weekly });
+    expect(result.quotes).toEqual({ issuedValue: "9007199254740993.10", previousIssuedValue: "0.00", issuedCount: 3, accepted: 1, previousAccepted: 0, awaiting: 1, weekly });
     expect(result.quotes!.weekly).toHaveLength(8);
     expect(result.payments).toEqual({ received: "0.10", previousReceived: "0.20", due: "0.30", weekly });
     expect(result.enquiries).toEqual({ current: 3, previous: 1, weekly: eight("1") });

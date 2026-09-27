@@ -11,15 +11,18 @@ export type HomeMetrics = {
   weekStartsOn: number;
   currency: string;
   enquiries?: { current: number; previous: number; weekly: HomeMetricWeek[] };
-  quotes?: { issuedValue: string; previousIssuedValue: string; issuedCount: number; accepted: number; previousAccepted: number; weekly: HomeMetricWeek[] };
+  quotes?: { issuedValue: string; previousIssuedValue: string; issuedCount: number; accepted: number; previousAccepted: number; awaiting: number; weekly: HomeMetricWeek[] };
   payments?: { received: string; previousReceived: string; due: string; weekly: HomeMetricWeek[] };
   projects?: { active: number; overdueTasks: number; onTrack: number; atRisk: number; late: number; weekly: HomeMetricWeek[] };
   activity?: HomeActivityEvent[];
   storage?: { usedBytes: string; quotaBytes: string | null; areas: { projects: string; planning: string; catalog: string; other: string } };
+  followUps?: { open: number; overdue: number };
+  orders?: { toReceive: number };
 };
 
 export type HomeMetricsAccess = {
   enquiries: boolean; quotes: boolean; payments: boolean; projects: boolean; manageProjects: boolean; activity: boolean; storage: boolean;
+  followUps: boolean; orders: boolean;
 };
 
 type Db = Pick<PoolClient, "query">;
@@ -127,7 +130,8 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
   if (access.quotes) {
     // Issued = sent to the client (issuedAt), superseded revisions left out so a revised offer counts once.
     // Values include only quotations in the workspace currency; counts include every quotation.
-    const row = (await client.query<{ issuedValue: string; previousIssuedValue: string; issuedCount: number; accepted: number; previousAccepted: number; weekly: unknown }>(
+    // Awaiting = issued and not yet decided by the client, on a case that is still open.
+    const row = (await client.query<{ issuedValue: string; previousIssuedValue: string; issuedCount: number; accepted: number; previousAccepted: number; awaiting: number; weekly: unknown }>(
       `WITH ${CALENDAR}, quotes AS (
          SELECT ${stamp("quote.detail->>'issuedAt'")} AS issued_at,
                 CASE WHEN quote.status='accepted' THEN ${stamp("quote.detail->>'decidedAt'")} END AS accepted_at,
@@ -144,13 +148,16 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
               (SELECT count(*) FROM events CROSS JOIN bounds WHERE events.at >= bounds.month_from)::int AS "issuedCount",
               (SELECT count(*) FROM quotes CROSS JOIN bounds WHERE quotes.accepted_at >= bounds.month_from AND quotes.accepted_at < bounds.now_at)::int AS accepted,
               (SELECT count(*) FROM quotes CROSS JOIN bounds WHERE quotes.accepted_at >= bounds.previous_from AND quotes.accepted_at < bounds.previous_to)::int AS "previousAccepted",
+              (SELECT count(*) FROM commercial_quotes waiting
+                 JOIN pre_project_cases pre_case ON pre_case.workspace_id=waiting.workspace_id AND pre_case.id=waiting.case_id
+                WHERE waiting.workspace_id=$1 AND waiting.kind='quotation' AND waiting.status='issued' AND pre_case.status<>'cancelled')::int AS awaiting,
               ${weekly(MONEY_VALUE)} AS weekly`,
       [...calendar, currency, decimals],
     )).rows[0];
     result.quotes = {
       issuedValue: String(row?.issuedValue ?? "0"), previousIssuedValue: String(row?.previousIssuedValue ?? "0"),
       issuedCount: Number(row?.issuedCount ?? 0), accepted: Number(row?.accepted ?? 0), previousAccepted: Number(row?.previousAccepted ?? 0),
-      weekly: weeks(row?.weekly),
+      awaiting: Number(row?.awaiting ?? 0), weekly: weeks(row?.weekly),
     };
   }
 
@@ -319,6 +326,26 @@ export async function readHomeMetrics(client: Db, workspaceId: string, membershi
       usedBytes: String(row?.used ?? "0"), quotaBytes: row?.quota ?? null,
       areas: { projects: String(row?.projects ?? "0"), planning: String(row?.planning ?? "0"), catalog: String(row?.catalog ?? "0"), other: String(row?.other ?? "0") },
     };
+  }
+
+  if (access.followUps) {
+    // The follow-ups list's "To do": every open reminder in the workspace (notes are not reminders); overdue = due before now.
+    const row = (await client.query<{ open: number; overdue: number }>(
+      `SELECT count(*)::int AS open, count(*) FILTER (WHERE activity.due_at < $2::timestamptz)::int AS overdue
+       FROM crm_activities activity WHERE activity.workspace_id=$1 AND activity.status='pending' AND activity.type <> 'note'`,
+      [workspaceId, at],
+    )).rows[0];
+    result.followUps = { open: Number(row?.open ?? 0), overdue: Number(row?.overdue ?? 0) };
+  }
+
+  if (access.orders) {
+    // Orders placed with a supplier that have not fully arrived yet (the purchasing reminders' open orders).
+    const row = (await client.query<{ toReceive: number }>(
+      `SELECT count(*)::int AS "toReceive" FROM purchase_orders purchase
+       WHERE purchase.workspace_id=$1 AND purchase.status IN ('sent', 'confirmed', 'partly_received')`,
+      [workspaceId],
+    )).rows[0];
+    result.orders = { toReceive: Number(row?.toReceive ?? 0) };
   }
 
   return result;

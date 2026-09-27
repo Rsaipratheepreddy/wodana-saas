@@ -1,4 +1,4 @@
-/* The lockup scales from one size: the mark's height. Proportions match packages/brand/logo/render.mjs. */
+/* One size drives the logo: its height. The artwork keeps its own proportions. */
 .logo {
   --logo-height: 2rem;
   display: inline-grid;
@@ -9,28 +9,12 @@
   text-decoration: none;
 }
 
-.lockup {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: calc(var(--logo-height) * 0.164);
-  font-size: var(--logo-height);
-}
-
-.mark {
+.artwork {
   display: block;
-  flex: none;
-  block-size: 1em;
+  block-size: var(--logo-height);
   inline-size: auto;
-  aspect-ratio: 260 / 244;
-}
-
-.wordmark {
-  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, sans-serif;
-  font-size: 0.87em;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1;
-  transform: translateY(-0.066em);
+  max-inline-size: none;
+  overflow: visible;
 }
 
 .subtitle {
@@ -53,10 +37,4 @@
 
 .logo[data-size="micro"] {
   --logo-height: 0.875rem;
-}
-
-@media (forced-colors: active) {
-  .wordmark {
-    color: CanvasText;
-  }
 }

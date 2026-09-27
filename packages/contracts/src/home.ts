@@ -36,8 +36,8 @@ export type HomeMetrics = {
   currency: string;
   /** crm.leads.view */
   enquiries?: { current: number; previous: number; weekly: HomeMetricWeek[] };
-  /** pre_projects.view */
-  quotes?: { issuedValue: string; previousIssuedValue: string; issuedCount: number; accepted: number; previousAccepted: number; weekly: HomeMetricWeek[] };
+  /** pre_projects.view — `awaiting` = quotations issued to the client and not yet decided, on open cases. */
+  quotes?: { issuedValue: string; previousIssuedValue: string; issuedCount: number; accepted: number; previousAccepted: number; awaiting: number; weekly: HomeMetricWeek[] };
   /** receivables.view — finance-verified client payments; due = open invoice / schedule amounts due this month. */
   payments?: { received: string; previousReceived: string; due: string; weekly: HomeMetricWeek[] };
   /** projects.view (scoped to assigned projects without projects.manage) */
@@ -46,6 +46,10 @@ export type HomeMetrics = {
   activity?: HomeActivityEvent[];
   /** workspace.settings.manage or data.manage */
   storage?: { usedBytes: string; quotaBytes: string | null; areas: { projects: string; planning: string; catalog: string; other: string } };
+  /** crm.activities.view — open follow-ups in the workspace (the follow-ups list's To do); overdue = due before now. */
+  followUps?: { open: number; overdue: number };
+  /** purchasing.view — orders placed with a supplier that have not fully arrived. */
+  orders?: { toReceive: number };
 };
 
 export type HomeActivityEvent = {

@@ -6,16 +6,13 @@ changing a file here, and commit the copies.
 
 ## Logo — `logo/`
 
-- `wodana-mark.svg` is the source: the house in green `#01A92D`, a white arch and a darker door `#007A20`.
-- The wordmark "wodana" is set in the product font, Plus Jakarta Sans 800, and follows the text colour.
-  - Web renders it live in `WodanaLogo`.
-  - The PNGs bake it in: `wodana-logo.png` has ink text, `wodana-logo-dark.png` has white text.
-- The lockup is scaled from the mark's height H: the wordmark is 0.87H, and the gap is 0.164H.
-- It always reads left to right, in every language.
+- `wodana-mark.svg` is the house. It uses green `#01A92D`, a white arch and a darker door `#007A2A`.
+- `wodana-logo.svg` (ink text) and `wodana-logo-dark.svg` (white text) are the full lockups. The wordmark is outlined, rounded bold lettering, so the logo never depends on a font being installed.
+- Web draws the same paths inline in `WodanaLogo`. The wordmark there follows the text colour, and the logo always reads left to right.
 - App icons:
-  - `wodana-icon.png`: iOS, 1024 px, on white.
-  - `wodana-adaptive-icon.png`: the Android foreground, transparent, with the mark inside the safe zone.
-- `node packages/brand/logo/render.mjs` re-renders the PNGs. It needs Google Chrome.
+  - `wodana-icon.png` is the iOS icon, 1024 px on white.
+  - `wodana-adaptive-icon.png` is Android's transparent foreground, with the mark inside the safe zone.
+- To update, run `node packages/brand/logo/render.mjs`, which re-renders the PNGs from the SVGs, then `node packages/brand/sync.mjs`.
 
 ## Role avatars — `avatars/<role>-<f|m>.webp`
 
