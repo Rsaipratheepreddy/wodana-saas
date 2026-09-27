@@ -11,6 +11,7 @@ const endpointId = "66666666-6666-4666-8666-666666666666";
 function access(client: { query: ReturnType<typeof vi.fn> }, permissions: Record<string, boolean> = {}) {
   return {
     withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work(client, { userId })),
+    asMember: vi.fn(async (_actor, _workspace, work) => work(client, { userId })),
     hasPermission: vi.fn(async (_client, _workspace, _user, permission: string) => permissions[permission] === true),
   };
 }

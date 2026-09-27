@@ -54,5 +54,5 @@ export function captureActions(access: Access): CaptureAction[] {
   return actions;
 }
 
-/** The inbox lists every module's notices but sits behind this one permission on the server. */
-export const canUseInbox = (access: Access) => access.has('crm') && access.can('crm.notifications.view');
+/** The inbox lists your own notices from every module; the server needs only membership, so every member has it. */
+export const canUseInbox = (_access: Access) => true;

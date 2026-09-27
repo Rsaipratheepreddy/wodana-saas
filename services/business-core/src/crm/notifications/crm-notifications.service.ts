@@ -66,11 +66,14 @@ export class CrmNotificationsService {
       return result.rows[0];
     });
   }
+  // Your own notices, devices and push settings need only membership: every role is told about its work
+  // (QS reviews, Finance verifications…). Every query below is bound to the signed-in user as recipient;
+  // templates, policies and anyone else's notices keep their permissions.
   notificationSettings(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => this.mobileSettings(client, workspaceId, actorUser.userId));
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => this.mobileSettings(client, workspaceId, actorUser.userId));
   }
   recordDeviceConsent(actor: RequestActor, workspaceId: string, input: RecordDeviceConsentDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       this.assertTimezone(input.timezone);
       const replay = await client.query<Row>(`SELECT id,permission_status AS "permissionStatus",version FROM notification_device_consents WHERE workspace_id=$1 AND user_id=$2 AND installation_id=$3 AND last_request_id=$4`, [workspaceId, actorUser.userId, input.installationId, input.requestId]);
       if (replay.rowCount) return { ...(await this.mobileSettings(client, workspaceId, actorUser.userId)), idempotentReplay: true };
@@ -90,7 +93,7 @@ export class CrmNotificationsService {
     });
   }
   registerDevice(actor: RequestActor, workspaceId: string, input: RegisterDeviceEndpointDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       if (!this.deviceTokens) throw new ServiceUnavailableException("Push registration is unavailable");
       this.assertTimezone(input.timezone);
       if (!["granted", "provisional", "ephemeral"].includes(input.status)) throw new BadRequestException("Allow notifications on this device before registering push delivery");
@@ -117,7 +120,7 @@ export class CrmNotificationsService {
     });
   }
   setPushPreference(actor: RequestActor, workspaceId: string, input: PushPreferenceDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       if (input.enabled && !(await client.query(`SELECT 1 FROM device_endpoints endpoint JOIN notification_device_consents consent ON consent.id=endpoint.consent_id AND consent.workspace_id=endpoint.workspace_id WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active' AND consent.permission_status IN ('granted','provisional','ephemeral')`, [workspaceId, actorUser.userId])).rowCount) throw new ConflictException("Allow notifications and register this device before enabling push");
       const preference = await this.setPushPreferenceWithClient(client, workspaceId, actorUser.userId, input.enabled);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.push_preference.changed.v1", entityType: "notification_preference", entityId: String(preference.id), after: preference });
@@ -125,7 +128,7 @@ export class CrmNotificationsService {
     });
   }
   revokeDevice(actor: RequestActor, workspaceId: string, endpointId: string, input: RevokeDeviceEndpointDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const current = await client.query<Row>(`SELECT id,status,version,last_request_id,encrypted_token_reference AS "tokenReference" FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND id=$3 FOR UPDATE`, [workspaceId, actorUser.userId, endpointId]);
       if (!current.rowCount) throw new NotFoundException("Notification device not found");
       if (current.rows[0].last_request_id === input.requestId) return { ...(await this.mobileSettings(client, workspaceId, actorUser.userId)), idempotentReplay: true };
@@ -140,25 +143,25 @@ export class CrmNotificationsService {
     });
   }
   inbox(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const result = await client.query(`SELECT id,event_type AS "eventType",status,subject,body,deep_link AS "deepLink",delivered_at AS "deliveredAt",read_at AS "readAt",created_at AS "createdAt",version FROM notifications WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' ORDER BY created_at DESC LIMIT 200`, [workspaceId, actorUser.userId]);
       return result.rows;
     });
   }
   readAll(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const result = await client.query(`UPDATE notifications SET read_at=now(),version=version+1 WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' AND read_at IS NULL RETURNING id`, [workspaceId, actorUser.userId]);
       return { updated: result.rowCount };
     });
   }
   read(actor: RequestActor, workspaceId: string, notificationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const result = await client.query(`UPDATE notifications SET read_at=COALESCE(read_at,now()),version=version+1 WHERE workspace_id=$1 AND id=$2 AND recipient_type='user' AND recipient_id=$3 RETURNING id,read_at AS "readAt",version`, [workspaceId, notificationId, actorUser.userId]);
       if (!result.rowCount) throw new NotFoundException("Notification not found"); return result.rows[0];
     });
   }
   open(actor: RequestActor, workspaceId: string, notificationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const result = await client.query<Row>(`UPDATE notifications SET read_at=COALESCE(read_at,now()),version=version+1 WHERE workspace_id=$1 AND id=$2 AND recipient_type='user' AND recipient_id=$3 AND channel IN ('push','in_app') RETURNING id,deep_link AS "deepLink",read_at AS "readAt",version`, [workspaceId, notificationId, actorUser.userId]);
       if (!result.rowCount) throw new NotFoundException("Notification not found");
       const destination = await this.mobileDestination(client, workspaceId, actorUser.userId, String(result.rows[0].deepLink ?? ""));
