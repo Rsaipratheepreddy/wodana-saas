@@ -6,7 +6,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { WoddyProvider, useWoddy } from "@/components/crm/woddy-chat";
-import { Woddy } from "@/design-system";
+import { TourProvider } from "@/components/tours/tour-provider";
+import { WoddyMenu } from "@/components/tours/woddy-menu";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import {
   findWorkspaceModule,
@@ -46,7 +47,13 @@ export type WorkspaceShellProps = {
 
 export function WorkspaceShell({ children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
   const identity = workspaces[0] ? { name: workspaces[0].name, logoUrl: workspaces[0].imageUrl ?? null } : null;
+<<<<<<< HEAD
   return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><WorkspaceShellContent canManageWorkspace={canManageWorkspace} modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+||||||| parent of a91a5ae (feat(tours): Woddy explains, scripted product tours with a demo-safe player)
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><WorkspaceShellContent modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+=======
+  return <PreProjectProvider><WorkspaceFocusProvider><WorkspaceBreadcrumbProvider><WorkspaceIdentityProvider identity={identity}><WoddyProvider key={workspaces[0]?.id} workspaceId={workspaces[0]?.id ?? ""}><TourProvider brandStyle={workspacePrimaryColorStyle(workspaces[0])} userId={user.id ?? user.email ?? ""} userName={user.name}><WorkspaceShellContent modules={modules} unavailableOrganizations={unavailableOrganizations} user={user} workspaces={workspaces}>{children}</WorkspaceShellContent></TourProvider></WoddyProvider></WorkspaceIdentityProvider></WorkspaceBreadcrumbProvider></WorkspaceFocusProvider></PreProjectProvider>;
+>>>>>>> a91a5ae (feat(tours): Woddy explains, scripted product tours with a demo-safe player)
 }
 
 function WorkspaceShellContent({ children, modules, user, workspaces, unavailableOrganizations = [], canManageWorkspace }: WorkspaceShellProps) {
@@ -159,17 +166,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           {route.id === "home" || route.homeTab ? <HomeTabs tabs={homeTabs(modules)} pathname={pathname} /> : null}
           <div className={styles.globalUtilities}>
             <div className={styles.woddyControl}>
-              <button
-                aria-label={t("Ask Woddy")}
-                aria-haspopup="dialog"
-                className={styles.woddyButton}
-                onClick={woddy?.open}
-                title={t("Ask Woddy")}
-                type="button"
-              >
-                <Woddy className={styles.woddyAvatar} decorative motion="idle" pose="idle" size={34} />
-                <span className={styles.woddyLabel}>{t("Ask Woddy")}</span>
-              </button>
+              <WoddyMenu avatarClassName={styles.woddyAvatar} className={styles.woddyButton} labelClassName={styles.woddyLabel} onChat={woddy?.open} />
             </div>
             <WorkspaceNotifications workspaceId={workspaceId} />
             {settingsModule ? <Link
@@ -194,7 +191,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
             <WorkspaceAccountMenu setup={canManageWorkspace && workspaceId ? { workspaceId, modules: modules.map((module) => module.id) } : undefined} user={user} />
           </div>
         </header>
-        <main className={styles.workspaceContent} data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : route.settings && settingsModule ? <SettingsLayout module={settingsModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
+        <main className={styles.workspaceContent} data-tour="page-content" data-follow-ups={pathname === "/workspace/crm/follow-ups" || undefined} data-inbox={pathname === "/workspace/crm/conversations" || undefined} data-module={pathname !== "/workspace" ? activeModule.id : undefined}>{pathname !== "/workspace" && activeModule.id !== "workspace" && <WorkspaceFlowNavigation module={activeModule} pathname={pathname} />}{(activeModule.id === "crm" && pathname !== "/workspace" || pathname === "/workspace/projects" || projectPage) ? <div className={`${styles.crmContentPanel} ${styles.recordTablePanel}`} data-overview={pathname === "/workspace/projects" || projectPage || undefined}>{children}</div> : pathname === "/workspace/pre-projects" ? <div className={styles.recordTablePanel}>{children}</div> : route.settings && settingsModule ? <SettingsLayout module={settingsModule} pathname={pathname}>{children}</SettingsLayout> : children}</main>
       </div>
     </div>
   );

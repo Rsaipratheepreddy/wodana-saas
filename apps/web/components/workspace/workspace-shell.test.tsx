@@ -196,10 +196,33 @@ describe("WorkspaceShell theme", () => {
     render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
 
     await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
+    await interaction.click(screen.getByRole("menuitem", { name: "Ask a question" }));
     expect(screen.getByRole("dialog", { name: "Woddy chat" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message Woddy" })).toBeInTheDocument();
     await interaction.click(screen.getByRole("button", { name: "Close Woddy chat" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Woddy chat" })).not.toBeInTheDocument());
+  });
+
+  it("offers Woddy's tours from the header: this screen's tour and every tour with its length", async () => {
+    const interaction = userEvent.setup();
+    route.pathname = "/workspace";
+    render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
+    await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
+    expect(screen.getByRole("menuitem", { name: "Explain this screen" })).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByRole("menuitem", { name: /Home at a glance\s*\d+ min/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /From enquiry to opportunity/ })).toBeInTheDocument();
+  });
+
+  it("has no tours on a phone: the Woddy button opens the chat directly", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width: 40rem"), addEventListener() {}, removeEventListener() {} }));
+    const interaction = userEvent.setup();
+    route.pathname = "/workspace";
+    route.search = "tour=home";
+    render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);
+    expect(document.querySelector(".wd-tour")).toBeNull();
+    await interaction.click(screen.getByRole("button", { name: "Ask Woddy" }));
+    expect(screen.queryByRole("menuitem", { name: "Explain this screen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Woddy chat" })).toBeInTheDocument();
   });
 });
 
