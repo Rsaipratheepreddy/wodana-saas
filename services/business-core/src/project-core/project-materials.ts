@@ -126,6 +126,42 @@ export async function suggestMaterials(db: Db, workspaceId: string, projectId: s
       added += 1;
     }
   }
+  return added + await suggestNamedMaterials(db, workspaceId, projectId, position);
+}
+
+/**
+ * Lines priced by hand carry no catalog item, but the estimator often names the material on the line
+ * ("MR MDF", "Engineered oak"). Those names, as sealed, become materials too: one per name, tied to every
+ * line that names it, and a name already on the list only gains the lines.
+ */
+async function suggestNamedMaterials(db: Db, workspaceId: string, projectId: string, start: number) {
+  const named = (await db.query<{ lineId: string; material: string }>(
+    `SELECT line.id AS "lineId", btrim(sealed->>'material') AS material
+       FROM project_boq_lines line
+       JOIN project_scope_seals seal ON seal.workspace_id = line.workspace_id AND seal.id = line.origin_seal_id
+       CROSS JOIN LATERAL jsonb_array_elements(coalesce(seal.snapshot->'lines', '[]'::jsonb)) sealed
+      WHERE line.workspace_id = $1 AND line.project_id = $2 AND line.status = 'active' AND line.catalog_item_id IS NULL
+        AND sealed->>'id' = line.source_line_id AND coalesce(btrim(sealed->>'material'), '') <> ''
+      ORDER BY line.position`, [workspaceId, projectId])).rows;
+  const key = (name: string) => name.trim().toLocaleLowerCase();
+  const byName = new Map((await readItems(db, workspaceId, projectId)).filter((item) => !item.catalogItemId).map((item) => [key(item.name), item]));
+  let position = start;
+  let added = 0;
+  for (const row of named) {
+    const item = byName.get(key(row.material));
+    if (item) {
+      if (item.boqLineIds.includes(row.lineId)) continue;
+      item.boqLineIds.push(row.lineId);
+      await db.query(`UPDATE project_material_items SET boq_line_ids = $3, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, item.id, item.boqLineIds]);
+    } else {
+      const id = randomUUID();
+      await db.query(
+        `INSERT INTO project_material_items (id, workspace_id, project_id, position, name, code, specification, unit, boq_line_ids) VALUES ($1, $2, $3, $4, $5, '', '', '', $6)`,
+        [id, workspaceId, projectId, position++, row.material.slice(0, 240), [row.lineId]]);
+      byName.set(key(row.material), { id, position, catalogItemId: null, name: row.material, code: "", specification: "", supplier: "", quantity: null, unit: "", note: "", boqLineIds: [row.lineId], version: 1, clientChoice: true });
+      added += 1;
+    }
+  }
   return added;
 }
 
