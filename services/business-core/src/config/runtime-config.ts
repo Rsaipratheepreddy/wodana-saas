@@ -1,3 +1,5 @@
+import { DeliveryAllowlist } from "../notifications/delivery-allowlist";
+
 export function validateRuntimeConfig(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -92,6 +94,12 @@ export function validateRuntimeConfig(
     if (/\r|\n/.test(String(config.MAILGUN_FROM ?? ""))) {
       throw new Error("MAILGUN_FROM cannot contain line breaks");
     }
+  }
+
+  // The delivery guard is for local and UAT only: in production it would silently drop real messages.
+  const allowlist = DeliveryAllowlist.parse(String(config.DELIVERY_ALLOWLIST ?? ""));
+  if (allowlist.enabled && String(config.ENVIRONMENT ?? "").trim().toLowerCase() === "production") {
+    throw new Error("DELIVERY_ALLOWLIST is for local and UAT environments; remove it in production (ENVIRONMENT=production)");
   }
   return config;
 }

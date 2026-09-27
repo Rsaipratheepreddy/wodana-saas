@@ -10,6 +10,7 @@ x-intelligence-environment: &intelligence-environment
   WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:${WEB_PORT:-3000}}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   NOTIFICATION_ADAPTER_MODE: ${NOTIFICATION_ADAPTER_MODE:-live}
+  DELIVERY_ALLOWLIST: ${DELIVERY_ALLOWLIST:-}
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
   GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8001/api/v1/integrations/google/oauth/callback}
@@ -84,6 +85,8 @@ services:
       target: runner
     environment:
       NODE_ENV: ${NODE_ENV:-development}
+      ENVIRONMENT: ${NODE_ENV:-development}
+      DELIVERY_ALLOWLIST: ${DELIVERY_ALLOWLIST:-}
       PORT: 8000
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       DATABASE_URL: postgresql://${POSTGRES_APP_USER:-wodana_app}:${POSTGRES_APP_PASSWORD:-wodana-app-local}@postgres:5432/${POSTGRES_DB:-wodana}

@@ -110,6 +110,8 @@ services:
     init: true
     environment:
       NODE_ENV: production
+      # Refuses DELIVERY_ALLOWLIST (the local/UAT delivery guard), which this file never passes.
+      ENVIRONMENT: production
       PORT: 8000
       WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
       DATABASE_URL: postgresql://${POSTGRES_APP_USER:-wodana_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-wodana}

@@ -17,6 +17,8 @@ logger = logging.getLogger("wodana.worker")
 
 async def run() -> None:
     settings = get_settings()
+    # DELIVERY_ALLOWLIST parses, and is refused in production, before anything can be sent.
+    settings.validate_delivery_settings()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -53,6 +55,8 @@ async def run() -> None:
         await client.ping()
         await worker.ensure_group()
         await worker.recover_pending()
+        if settings.allowlist().enabled:
+            logger.warning("DELIVERY_ALLOWLIST is set: deliveries go only to listed recipients")
         logger.info("Worker ready; CRM event, automation, timer, and notification handlers active")
         timer_task = asyncio.create_task(worker.poll_due_work())
         accounting_task = asyncio.create_task(poll_accounting(business_core, providers))

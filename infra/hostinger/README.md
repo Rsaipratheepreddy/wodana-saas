@@ -114,6 +114,14 @@ maintenance window:
 
 Rollback: restore the step 1 backup into `wodana_release` and restart the previous release.
 
+## UAT delivery guard
+
+While a host holds UAT data, put the same `DELIVERY_ALLOWLIST` (exact emails, `*@domain`, E.164
+numbers) and `ENVIRONMENT=uat` in both `core.env` and `intelligence.env`. Email, WhatsApp and push
+then reach only listed recipients; the rest are recorded as suppressed with `not_allowlisted`.
+Remove both at go-live: with `ENVIRONMENT=production`, Business Core and the worker refuse to start
+while the list is set.
+
 ## Operations
 
 Install the systemd units only on the server. The backup timer captures PostgreSQL, Redis provider

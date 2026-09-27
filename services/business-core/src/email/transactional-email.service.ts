@@ -2,6 +2,7 @@ import { readableOnWhite } from "./readable-colour";
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../database/database.service";
+import { deliveryAllowlist, NOT_ALLOWLISTED } from "../notifications/delivery-allowlist";
 import { renderBrandedEmail, WODANA_BRAND, type EmailBrand } from "./branded-email";
 
 export type EmailDeliveryStatus = "sent" | "not_configured" | "failed";
@@ -10,6 +11,8 @@ export interface EmailDeliveryResult {
   status: EmailDeliveryStatus;
   provider: "mailgun" | null;
   messageId: string | null;
+  /** Why nothing was sent although email is set up (the DELIVERY_ALLOWLIST guard). */
+  suppressedReason?: typeof NOT_ALLOWLISTED;
 }
 
 interface TransactionalMessage {
@@ -179,6 +182,11 @@ export class TransactionalEmailService {
   }
 
   async send(message: TransactionalMessage): Promise<EmailDeliveryResult> {
+    // Local and UAT: nothing leaves for a recipient who isn't on DELIVERY_ALLOWLIST.
+    if (!deliveryAllowlist(this.config).allowsEmail(message.to)) {
+      this.logger.warn(`Transactional email suppressed (${NOT_ALLOWLISTED}) for a recipient at ${message.to.split("@").pop() ?? "unknown"}`);
+      return { status: "not_configured", provider: null, messageId: null, suppressedReason: NOT_ALLOWLISTED };
+    }
     const apiKey = this.config.get<string>("MAILGUN_API_KEY", "").trim();
     const domain = this.config.get<string>("MAILGUN_DOMAIN", "").trim();
     if (!apiKey || !domain) {

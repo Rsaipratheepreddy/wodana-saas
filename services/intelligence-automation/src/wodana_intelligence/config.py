@@ -4,6 +4,8 @@ from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from wodana_intelligence.integrations.delivery_allowlist import DeliveryAllowlist
+
 
 class Settings(BaseSettings):
     """Runtime configuration loaded from environment variables."""
@@ -54,8 +56,21 @@ class Settings(BaseSettings):
     whatsapp_graph_version: str = "v23.0"
     whatsapp_webhook_verify_token: str = ""
     integration_public_url: str = "http://localhost:8001/api/v1/integrations/providers"
+    # Local and UAT only: external deliveries go only to these emails, *@domains and E.164 numbers.
+    delivery_allowlist: str = ""
+
+    def allowlist(self) -> DeliveryAllowlist:
+        return DeliveryAllowlist.parse(self.delivery_allowlist)
+
+    def validate_delivery_settings(self) -> None:
+        """The guard parses, and is never set in production (it would drop real messages)."""
+        if self.allowlist().enabled and self.environment.lower() == "production":
+            raise ValueError(
+                "DELIVERY_ALLOWLIST is for local and UAT environments; remove it in production"
+            )
 
     def validate_integration_settings(self) -> None:
+        self.validate_delivery_settings()
         if self.environment.lower() == "production":
             if (
                 len(self.business_core_internal_token) < 32

@@ -48,6 +48,9 @@ if [[ "${MODE}" != "structure-only" ]]; then
     value="$(sed -n "s/^${key}=//p" "${ENV_FILE}" | tail -n 1 | tr -d '\r')"
     [[ "${value}" == https://* ]] || { echo "${key} must use HTTPS" >&2; exit 1; }
   done
+
+  allowlist="$(sed -n 's/^DELIVERY_ALLOWLIST=//p' "${ENV_FILE}" | tail -n 1 | tr -d '\r')"
+  [[ -z "${allowlist}" ]] || { echo "DELIVERY_ALLOWLIST is for local and UAT; remove it in production" >&2; exit 1; }
 fi
 
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --quiet
