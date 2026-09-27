@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Play } from "lucide-react";
-import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoResultsState, PageHeader, SegmentedControl, type DataGridColumn } from "@/design-system";
+import { Button, ControlledModalDialog, DataGrid, EmptyState, ErrorState, NoResultsState, PageHeader, SegmentedControl, Tag, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { ProjectRow, ReadyCase } from "@/lib/project-core/types";
@@ -13,9 +13,11 @@ import { StartProjectDialog } from "./start-project-dialog";
 import styles from "./project-core.module.css";
 
 type Filter = "open" | "on_hold" | "closed";
+/** Home's Projects health links here: late = off track or past its promised date, at risk = flagged at risk. */
+export type HealthFilter = "on-track" | "at-risk" | "late";
 
 /** Every project the person can see, one row each: where it is, what's next and when it's due. */
-export function ProjectsPage({ workspaceId }: { workspaceId: string }) {
+export function ProjectsPage({ workspaceId, initialHealth }: { workspaceId: string; initialHealth?: HealthFilter }) {
   const t = useT();
   const router = useRouter();
   const format = useProjectFormat();
@@ -26,6 +28,7 @@ export function ProjectsPage({ workspaceId }: { workspaceId: string }) {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("open");
+  const [health, setHealth] = useState<HealthFilter | null>(initialHealth ?? null);
   const [picking, setPicking] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
 
@@ -39,9 +42,13 @@ export function ProjectsPage({ workspaceId }: { workspaceId: string }) {
     if (filter === "open" && row.status !== "active") return false;
     if (filter === "on_hold" && row.status !== "on_hold") return false;
     if (filter === "closed" && !["completed", "cancelled", "archived"].includes(row.status)) return false;
+    if (health) {
+      const late = row.health === "off_track" || Boolean(row.promiseDate && format.until(row.promiseDate)?.late);
+      if (row.status !== "active" || (late ? "late" : row.health === "at_risk" ? "at-risk" : "on-track") !== health) return false;
+    }
     const query = search.trim().toLocaleLowerCase();
     return !query || [row.name, row.reference, row.clientName, row.lead ?? ""].some((value) => value.toLocaleLowerCase().includes(query));
-  }), [rows, filter, search]);
+  }), [rows, filter, search, health, format]);
 
   const columns = useMemo<DataGridColumn<ProjectRow>[]>(() => [
     { id: "name", header: t("Project"), accessorFn: (row) => `${row.name} ${row.reference}`, size: 240, meta: { primary: true, renderCell: (row) => <span className={styles.nameCell}>
@@ -76,8 +83,9 @@ export function ProjectsPage({ workspaceId }: { workspaceId: string }) {
       onSearchChange={setSearch}
       searchValue={search}
       searchLabel={t("Search projects")}
-      toolbarLeading={<SegmentedControl label={t("Show")} value={filter} onChange={(value) => setFilter(value as Filter)}
-        options={[{ id: "open", label: t("Running") }, { id: "on_hold", label: t("On hold") }, { id: "closed", label: t("Closed") }]} />}
+      toolbarLeading={<><SegmentedControl label={t("Show")} value={filter} onChange={(value) => { setFilter(value as Filter); if (value !== "open") setHealth(null); }}
+        options={[{ id: "open", label: t("Running") }, { id: "on_hold", label: t("On hold") }, { id: "closed", label: t("Closed") }]} />
+        {health ? <Tag onRemove={() => { setHealth(null); router.replace("/workspace/projects"); }}>{health === "late" ? t("Late") : health === "at-risk" ? t("At risk") : t("On track")}</Tag> : null}</>}
       emptyContent={search.trim() ? <NoResultsState onClear={() => setSearch("")} />
         : <EmptyState title={filter === "open" ? t("No running projects") : filter === "on_hold" ? t("Nothing on hold") : t("No closed projects")}
             description={filter === "open" ? t("A project starts from an accepted quotation.") : undefined}
