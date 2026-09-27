@@ -9368,5 +9368,7 @@
   "{used} of {total}": "{used} of {total}",
   "{percent}% of your allowance": "{percent}% of your allowance",
   "No limit set": "No limit set",
-  "Storage by area": "Storage by area"
+  "Storage by area": "Storage by area",
+  "Return for changes": "Return for changes",
+  "The discount is above {percent}% and needs approval": "The discount is above {percent}% and needs approval"
 }

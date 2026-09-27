@@ -103,3 +103,16 @@ function readyMadePalmState(): CommercialState {
   } as unknown as CommercialState;
 }
 
+
+it("shows the deal's cost and margin only to people who can see costs", () => {
+  const quote = { id: "quote", number: 1, kind: "quotation", status: "accepted", title: "Villa", currency: "AED", validUntil: "2099-01-01",
+    discount: 0, taxRate: 0, terms: "", exclusions: "", requestIds: [], paymentTerms: [], createdAt: "2026-09-18", total: 100, lines: [] };
+  const state = (canViewCosts: boolean) => ({ canEdit: true, canApprove: false, canRelease: false, canViewCosts, contacts: [], releaseReadiness: { designsRequired: 0, designsApproved: 0 },
+    data: { revision: 1, quotes: [quote], requests: [], agreement: null, payments: [], audit: [], release: null, materialApprovals: [], ownerReview: null, dealFile: null } }) as unknown as CommercialState;
+  const { unmount } = render(<ApprovalRelease initialView="owner" state={state(false)} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.queryByText("Internal cost")).not.toBeInTheDocument();
+  expect(screen.queryByText("Gross margin")).not.toBeInTheDocument();
+  unmount();
+  render(<ApprovalRelease initialView="owner" state={state(true)} run={vi.fn()} busy={false} root="/workspace/pre-projects/cases/case" />);
+  expect(screen.getByText("Internal cost")).toBeInTheDocument();
+});

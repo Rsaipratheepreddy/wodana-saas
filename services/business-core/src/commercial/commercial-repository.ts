@@ -19,7 +19,10 @@ export const commercialRepository = {
       "SELECT content, revision FROM commercial_cases_view WHERE workspace_id=$1 AND case_id=$2",
       [workspaceId, caseId],
     );
-    return result.rows[0];
+    const row = result.rows[0];
+    // The column is the case's revision. Quote-builder edits move it without rewriting the document,
+    // so the copy inside the document can lag behind; commands must check against the column.
+    return row ? { ...row, content: { ...row.content, revision: row.revision } } : row;
   },
 
   /** Writes the case and synchronises quote rows in the caller's transaction (see commercial_case_save). */

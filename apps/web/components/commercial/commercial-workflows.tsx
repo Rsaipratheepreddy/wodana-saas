@@ -794,8 +794,11 @@ export function ApprovalRelease({
           ) : <>
             <div className={s.controlSummary}>
               <div><small>{t("Accepted quotation")}</small><strong>V{accepted.number} · {money(acceptedQuoteValue(accepted), accepted.currency)}</strong></div>
-              <div><small>{t("Internal cost")}</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
-              <div><small>{t("Gross margin")}</small><strong>{acceptedQuoteTotals(accepted).margin.toFixed(1)}%</strong></div>
+              {/* Costs are stripped for people who can't see them; showing 0 and 100% would mislead. */}
+              {state.canViewCosts ? <>
+                <div><small>{t("Internal cost")}</small><strong>{money(acceptedQuoteTotals(accepted).cost, accepted.currency)}</strong></div>
+                <div><small>{t("Gross margin")}</small><strong>{acceptedQuoteTotals(accepted).margin.toFixed(1)}%</strong></div>
+              </> : null}
               <div><small>{t("Internal approval")}</small><strong>{d.ownerReview ? statusLabel[d.ownerReview.status] ?? d.ownerReview.status : "Not submitted"}</strong></div>
             </div>
             {d.dealFile && <div className={s.dealBanner}><div><small>{t("DEAL FILE")}</small><strong>{d.dealFile.reference}</strong><span>{t("Approved")}{" "}{d.dealFile.approvedAt.slice(0,10)} {t("by")}{" "}{d.dealFile.approvedBy}</span></div><div><small>{t("Current round")}</small><strong>{d.dealFile.quoteId === accepted.id ? accepted.round === "design" ? "Design" : "Main quotation" : "Design approved · main pending"}</strong></div><div><small>{t("Frozen evidence")}</small><strong>{d.dealFile.designEvidence?.links?.length ?? 0} {t("files ·")}{" "}{d.dealFile.materialEvidence?.length ?? 0} {t("materials")}</strong></div><div><small>{t("Deal value")}</small><strong>{money(d.dealFile.value, accepted.currency)}</strong></div></div>}

@@ -43,5 +43,8 @@ describe("brand identities", () => {
     expect(identityInitials("Woddy")).toBe("W");
     expect(identityInitials("   ")).toBe("?");
     expect(identityInitials("李 明")).toBe("李明");
+    expect(identityInitials("Sara (Account Manager)")).toBe("SA");
+    expect(identityInitials("\"Omar\" (QS)")).toBe("OQ");
+    expect(identityInitials("( )")).toBe("?");
   });
 });

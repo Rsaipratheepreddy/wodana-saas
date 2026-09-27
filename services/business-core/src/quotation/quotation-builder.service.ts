@@ -847,7 +847,7 @@ const blankLine = (id: string): LineRow => ({
 });
 
 /** Validates and applies the editor's fields to a line. Costs and markup change only with cost permission. */
-function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fields: Record<string, unknown>, context: { canEditCosts: boolean; areas: Map<string, string>; trades: Set<string>; taxes: Map<string, string>; requirements: Set<string>; columns: Map<string, "text" | "number"> }) {
+export function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fields: Record<string, unknown>, context: { canEditCosts: boolean; areas: Map<string, string>; trades: Set<string>; taxes: Map<string, string>; requirements: Set<string>; columns: Map<string, "text" | "number"> }) {
   const next = { ...line };
   const has = (key: string) => Object.prototype.hasOwnProperty.call(fields, key);
   if (has("kind")) next.kind = oneOf(fields.kind, LINE_KINDS, "line kind");
@@ -883,9 +883,14 @@ function applyFields(line: LineRow & { components?: ComponentRow[] | null }, fie
   if (context.canEditCosts) {
     if (has("unitCost")) next.unitCost = decimal(fields.unitCost, "Cost", { max: "100000000000", nullable: true });
     if (has("markupPercent")) next.markupPercent = decimal(fields.markupPercent, "Markup", { max: "1000", nullable: true });
-    // A new cost or markup (without a typed rate) sets the sell rate: cost plus markup.
-    if ((has("unitCost") || has("markupPercent")) && !has("rate") && next.pricingMode === "rate" && next.markupPercent !== null && next.unitCost !== null && !Dec.of(next.unitCost).isZero())
-      next.rate = Dec.of(next.unitCost).mul(Dec.of(next.markupPercent).add(100)).div(100).toString();
+    // A new cost or markup (without a typed rate) sets the sell rate: cost plus markup — but only while the
+    // rate still follows them (no rate yet, a changed markup, or a rate that was cost plus markup). A rate
+    // someone typed is the client's price: a QS entering the cost afterwards doesn't change it.
+    const derived = (cost: string | null, markup: string | null) => cost === null || markup === null ? null : Dec.of(cost).mul(Dec.of(markup).add(100)).div(100);
+    const previous = derived(line.unitCost, line.markupPercent);
+    const follows = Dec.of(line.rate).isZero() || has("markupPercent") || (previous !== null && previous.cmp(line.rate) === 0);
+    if ((has("unitCost") || has("markupPercent")) && !has("rate") && follows && next.pricingMode === "rate" && next.markupPercent !== null && next.unitCost !== null && !Dec.of(next.unitCost).isZero())
+      next.rate = derived(next.unitCost, next.markupPercent)!.toString();
   }
   if (has("discountKind") || has("discountValue")) {
     const kind = fields.discountKind === null || fields.discountValue === null || fields.discountValue === "" ? null : oneOf(fields.discountKind ?? next.discountKind, ["percent", "amount"] as const, "discount type");
@@ -1021,6 +1026,11 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
   const floor = input.settings.marginFloorPercent;
   if (input.canViewCosts && floor !== null && input.pricing.margin !== null && Dec.of(input.pricing.margin).cmp(floor) < 0)
     checks.push({ code: "Margin is below the {floor}% floor", values: { floor }, tone: "warning" });
+  // A discount above the firm's threshold is approved by someone who approves quotes (plan §6.5).
+  const approvalAt = input.settings.discountApprovalPercent;
+  if (approvalAt !== null && !Dec.of(input.pricing.subtotal).isZero()
+    && Dec.of(input.pricing.discounts.total).mul(100).cmp(Dec.of(approvalAt).mul(input.pricing.subtotal)) > 0)
+    checks.push({ code: "The discount is above {percent}% and needs approval", values: { percent: approvalAt }, tone: "warning" });
   if (input.draft && input.lines.length && !input.paymentTerms.length) checks.push({ code: "Add the payment milestones", tone: "warning" });
   // Requirement trace: nothing is sent while a requirement is undecided; an included one should have a line.
   if (input.kind === "quotation") {

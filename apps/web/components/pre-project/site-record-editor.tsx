@@ -11,6 +11,11 @@ import styles from './case-content.module.css';
 import siteStyles from './site.module.css';
 import { useT } from '@/lib/i18n/i18n-provider';
 
+/** The dimensions that carry a value; blank suggested rows are dropped before saving. */
+export function measuredDimensions(dimensions: ItemDimension[] | undefined) {
+ return (dimensions ?? []).filter(d=>d.measured!=null||d.approximate!=null);
+}
+
 export function SiteRecordEditor({initial,data:initialData,site,onClose,onSave,onRoomAdded}:{initial:SiteRecord;data:CaseContent;site:SiteData;onClose:()=>void;onSave:(record:SiteRecord,specificationVersion:number)=>Promise<void>;onRoomAdded?:(room:CaseRoom)=>void}) {
  const t=useT();
  const [rooms,setRooms]=useState(initialData.rooms);const data={...initialData,rooms};
@@ -30,13 +35,15 @@ export function SiteRecordEditor({initial,data:initialData,site,onClose,onSave,o
   if(!draft.title.trim()){setStep(0);setError(t(visit?'Give the visit a short title.':'Enter a short title.'));return false;}
   if(measurement&&!draft.roomId&&!draft.entryId){setStep(0);setError(t('Choose a room or scope item to measure.'));return false;}
   if(visit){try{visitInstant(localTime,draft.timezone??site.timezone);}catch{setStep(0);setError(t('Choose a valid date, time and time zone. This local time may be unavailable or ambiguous during a clock change.'));return false;}}
-  if(measurement&&(all||step===1)&&(!draft.dimensions?.length||draft.dimensions.some(d=>!d.name.trim()||(d.measured==null&&d.approximate==null)||[d.measured,d.approximate].some(n=>n!=null&&(!Number.isFinite(n)||n<=0||n>1e6))))){setStep(1);setError(t('Add a named dimension with an approximate or measured value greater than zero.'));return false;}
+  // Suggested rows left blank (a room has no fourth wall, say) are skipped, not blocking.
+  const filled=measuredDimensions(draft.dimensions);
+  if(measurement&&(all||step===1)&&(!filled.length||filled.some(d=>!d.name.trim()||[d.measured,d.approximate].some(n=>n!=null&&(!Number.isFinite(n)||n<=0||n>1e6))))){setStep(1);setError(t('Add a named dimension with an approximate or measured value greater than zero.'));return false;}
   if(all&&visit&&draft.status!=='planned'&&!draft.outcome?.trim()){setStep(1);setError(t('Add an outcome or cancellation reason.'));return false;}
   if(all&&!visit&&!measurement&&draft.status==='resolved'&&!draft.resolution?.trim()){setStep(1);setError(t('Add a resolution note.'));return false;}
   setError('');return true;
  };
  const navigate=(next:number)=>{if(next>step&&!validate())return;setStep(next);};
- const save=async()=>{if(!validate(true))return;setSaving(true);try{await onSave({...draft,...(visit?{scheduledAt:visitInstant(localTime,draft.timezone??site.timezone)}:{})},selectedEntry?.specification?.version??0);onClose();}catch(e){setError(e instanceof Error?e.message:t('Could not save.'));}finally{setSaving(false);}};
+ const save=async()=>{if(!validate(true))return;setSaving(true);try{await onSave({...draft,...(visit?{scheduledAt:visitInstant(localTime,draft.timezone??site.timezone)}:{}),...(measurement?{dimensions:measuredDimensions(draft.dimensions)}:{})},selectedEntry?.specification?.version??0);onClose();}catch(e){setError(e instanceof Error?e.message:t('Could not save.'));}finally{setSaving(false);}};
  const text=(label:string,key:'title'|'location'|'access'|'note'|'outcome'|'resolution',multiline=false,max=3000)=><label>{label}{multiline?<textarea disabled={disabled} rows={3} maxLength={max} value={String(draft[key]??'')} onChange={e=>change({[key]:e.target.value})}/>:<input disabled={disabled} maxLength={max} value={String(draft[key]??'')} onChange={e=>change({[key]:e.target.value})}/>}</label>;
  const locations=<>
   <RoomField data={data} isDisabled={disabled||(measurement&&initial.version>0)} value={draft.roomId??null} onRoomAdded={room=>{setRooms(r=>[...r,room]);onRoomAdded?.(room);}} onChange={room=>change({roomId:room.id,entryId:null,...(measurement?{dimensions:[]}: {})})}/>

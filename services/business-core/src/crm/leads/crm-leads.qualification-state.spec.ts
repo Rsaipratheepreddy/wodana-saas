@@ -91,4 +91,24 @@ describe("CRM lead qualification presentation", () => {
     });
     expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
   });
+  it("names the owner on a single enquiry, so a role without the team list still sees who owns it", async () => {
+    const evidence = { version: 1, leadId: "lead", serviceType: "interior_design", selection: "none", form: null, answers: [], requiredKeys: [], evaluatedAt: "2026-09-18T08:00:00.000Z" };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{
+        id: "lead", enquiry_id: "enquiry", party_id: "party", owner_membership_id: "membership", queue_id: null,
+        status: "qualified", version: 2, source: "company", channel: "call", service_type: "interior_design",
+        business_unit_id: null, preferred_locale: "en-AE", party_owner_membership_id: null,
+        qualification_evidence: evidence, qualification_evidence_hash: "c".repeat(64),
+      }], rowCount: 1 };
+      if (sql.includes("person.display_name AS \"ownerName\"")) return { rows: [{ ownerName: "Sara Sales" }], rowCount: 1 };
+      if (sql.includes("FROM crm_lead_qualification_values") || sql.includes("FROM crm_assignment_history")
+        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })), hasPermission: vi.fn().mockResolvedValue(false) };
+    const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
+    const result = await service.get({} as never, "workspace", "lead");
+    expect(result).toMatchObject({ ownerMembershipId: "membership", ownerName: "Sara Sales" });
+  });
 });

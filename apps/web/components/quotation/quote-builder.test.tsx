@@ -117,6 +117,16 @@ describe("quotation builder", () => {
     await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: expect.objectContaining({ title: "Site protection", areaId: KITCHEN }) }] }]));
   });
 
+  it("adds a line to an area that has none yet", async () => {
+    const fetcher = mount(state([]));
+    const kitchen = screen.getAllByRole("button", { name: "New line" })[0];
+    await userEvent.click(kitchen);
+    const cell = screen.getAllByRole("combobox", { name: "Item" }).at(-1)!;
+    await userEvent.type(cell, "Tall pantry unit");
+    fireEvent.blur(cell);
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: expect.objectContaining({ title: "Tall pantry unit", areaId: KITCHEN }) }] }]));
+  });
+
   it("reads numbers the workspace's way and puts back anything that isn't one", async () => {
     const fetcher = mount(state([line({})]));
     const quantity = screen.getByRole("textbox", { name: "Quantity" });
@@ -172,6 +182,18 @@ describe("quotation builder", () => {
     const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [{ id: "q1", number: 2, status: "internal_review" }] } } : initial);
     await userEvent.click(screen.getByRole("button", { name: "Send for review" }));
     await waitFor(() => expect(posted(fetcher)).toContainEqual({ action: "submit", revision: 1, quoteId: "q1" }));
+  });
+
+  it("returns a quote in review only with the reviewer's reason", async () => {
+    const initial = state([line({})]);
+    initial.quote.status = "internal_review";
+    const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [{ id: "q1", number: 2, status: "draft" }] } } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Return" }));
+    const dialog = await screen.findByRole("dialog", { name: "Return for changes" });
+    expect(within(dialog).getByRole("button", { name: "Return" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /What needs to change/ }), "Add the QS cost for the design fee.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Return" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual({ action: "return", revision: 1, quoteId: "q1", note: "Add the QS cost for the design fee." }));
   });
 
   it("records the client's decision with how they decided and the options they chose", async () => {

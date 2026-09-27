@@ -1,4 +1,5 @@
 import { DesignPackagesService } from "../design/design-packages.service";
+import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { effectivePortalBrand } from "./effective-brand";
@@ -143,6 +144,8 @@ export function commercialCommandPermission(action: string) {
   if (["approve", "execute_agreement"].includes(action))
     return "commercial.approve";
   if (action === "release") return "commercial.release";
+  // Sending a quote back is the reviewer's step too (a QS may not edit the case); checked in the command.
+  if (action === "return") return "pre_projects.view";
   return "pre_projects.edit";
 }
 
@@ -209,7 +212,12 @@ export class CommercialService {
        LEFT JOIN crm_leads source_lead ON source_lead.workspace_id=o.workspace_id AND source_lead.id=o.lead_id
        LEFT JOIN crm_enquiries enquiry ON enquiry.workspace_id=source_lead.workspace_id AND enquiry.id=source_lead.enquiry_id
        JOIN crm_parties p ON p.workspace_id=o.workspace_id AND p.id=o.party_id
-       LEFT JOIN legal_entities e ON e.workspace_id=o.workspace_id AND e.id=o.legal_entity_id AND e.status='active'
+       -- The opportunity's legal entity; when none was chosen and the firm has only one, that one.
+       LEFT JOIN LATERAL (SELECT entity.* FROM legal_entities entity
+          WHERE entity.workspace_id=o.workspace_id AND entity.status='active'
+            AND (entity.id=o.legal_entity_id OR (o.legal_entity_id IS NULL AND NOT EXISTS (
+              SELECT 1 FROM legal_entities other WHERE other.workspace_id=o.workspace_id AND other.status='active' AND other.id<>entity.id)))
+          LIMIT 1) e ON true
        WHERE c.workspace_id=$1 AND c.id=$2 ${lock ? "FOR UPDATE OF c" : ""}`,
       [workspaceId, caseId],
     );
@@ -2372,6 +2380,15 @@ export class CommercialService {
               throw new ConflictException(
                 "Submit this version for review first.",
               );
+            // A discount above the firm's threshold needs someone who approves quotes, not only the QS (plan §6.5).
+            const threshold = (await client.query<{ percent: string | null }>(
+              `SELECT discount_approval_percent::text AS percent FROM workspace_quotation_settings WHERE workspace_id=$1`,
+              [workspaceId])).rows[0]?.percent ?? null;
+            const priced = totals(q);
+            if (threshold !== null && priced.subtotal > 0
+              && Dec.of(priced.discount).mul(100).cmp(Dec.of(threshold).mul(priced.subtotal)) > 0
+              && !(await this.access.hasPermission(client, workspaceId, user.userId, "commercial.approve")))
+              throw new ForbiddenException(`The discount is above the ${threshold}% your firm allows without approval. Someone who approves quotes must approve this quote.`);
             if (action === "qs_approve") {
               if (!data.palmFlow || q.kind !== "quotation")
                 throw new ConflictException("QS estimate review applies to a Palm quotation round.");
@@ -2390,6 +2407,10 @@ export class CommercialService {
             q.approvedBy = user.displayName;
           }
           if (action === "return") {
+            const reviewPermission = data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve";
+            if (!(await this.access.hasPermission(client, workspaceId, user.userId, reviewPermission))
+              && !(await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit")))
+              throw new ForbiddenException("Only the quote's reviewer or someone who edits this case can send it back.");
             if (!["internal_review", "internal_approved"].includes(q.status))
               throw new ConflictException(
                 "This version cannot return to draft.",
@@ -2450,12 +2471,21 @@ export class CommercialService {
               throw new ConflictException(
                 "Enable the client portal in Workspace settings first.",
               );
-            const grant = (
-              await client.query(
-                `SELECT id FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 AND id=$3 AND active=true AND role='approver'`,
-                [workspaceId, caseId, text(b.approverId, 80, true)],
+            // The quote goes to the case's client approver; with only one, the sender needn't pick them.
+            const approvers = (
+              await client.query<{ id: string }>(
+                `SELECT id FROM client_portal_grants WHERE workspace_id=$1 AND case_id=$2 AND active=true AND role='approver' ORDER BY created_at`,
+                [workspaceId, caseId],
               )
-            ).rows[0];
+            ).rows;
+            const chosen = b.approverId === undefined || b.approverId === null || b.approverId === ""
+              ? (approvers.length === 1 ? approvers[0].id : "")
+              : text(b.approverId, 80, true);
+            if (!chosen)
+              throw new ConflictException(approvers.length
+                ? "Choose which client approver receives this quote."
+                : "Add the client as an approver in the client portal first.");
+            const grant = approvers.find((approver) => approver.id === chosen);
             if (!grant)
               throw new ConflictException("Choose an active client approver.");
             if (q.validUntil < now.slice(0, 10))
@@ -3209,7 +3239,8 @@ export class CommercialService {
           user.displayName,
           action,
           q?.id,
-          "",
+          // The reviewer's reason for sending a quote back stays in the case history.
+          action === "return" && typeof b.note === "string" ? b.note.trim().slice(0, 3000) : "",
           user.userId,
         );
         if (["submit_owner_review", "review_deal_finance", "decide_owner_review"].includes(action))

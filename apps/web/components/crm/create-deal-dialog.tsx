@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, Callout, ControlledModalDialog, DateField, NumericInput, SelectField, TextInput } from "@/design-system";
+import { Button, Callout, ControlledModalDialog, DateField, NumericInput, SelectField, TextInput, useDesignSystem } from "@/design-system";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { translateKnown } from "@/lib/i18n/keys";
@@ -19,14 +19,20 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
   const resource = useCrmResource<unknown>(initialData.workspaceId, "pipelines");
   const pipelines = (resource.data ? rows(resource.data) as unknown as CrmPipeline[] : initialData.pipelines).filter(p => p.status === "active");
   const pipeline = pipelines.find(p => p.isDefault) ?? pipelines[0];
-  const members = initialData.members.filter(m => m.status === "active");
+  // The enquiry's own owner can always keep it, even for a role that can't list the whole team.
+  const active = initialData.members.filter(m => m.status === "active");
+  const members = lead.ownerMembershipId && !active.some(m => m.id === lead.ownerMembershipId)
+    ? [...active, { id: lead.ownerMembershipId, displayName: lead.ownerName ?? t("Current owner") }]
+    : active;
   const needsEnquiryType = !hasResolvedEnquiryType(lead.serviceType);
   const [owner, setOwner] = useState(lead.ownerMembershipId ?? (members.length === 1 ? members[0].id : ""));
   const [title, setTitle] = useState(lead.title);
   const [nextAction, setNextAction] = useState(localDateTime(lead.nextActionAt));
   const [closeDate, setCloseDate] = useState("");
   const [amount, setAmount] = useState<number | undefined>();
-  const currency = initialData.defaultCurrency ?? "";
+  // Every member's session carries the workspace region; the page data may not (roles without settings access).
+  const region = useDesignSystem();
+  const currency = initialData.defaultCurrency ?? region.currency ?? "";
   const [busy, setBusy] = useState(false), [saved, setSaved] = useState(false), [failure, setFailure] = useState("");
   const ensurePipeline = async () => {
     const available = rows(await crmRequest(initialData.workspaceId, "pipelines"));
@@ -64,7 +70,7 @@ export function CreateDealDialog({ lead, initialData, onClose, onCreated }: { le
       <p className={styles.explanation}>{t("Move this enquiry into Pipeline as a new opportunity, keeping its client, owner and follow-up connected.")}</p>
       {failure && <Callout tone={saved ? "warning" : "danger"} title={t(saved ? "Opportunity created" : "Could not continue")}>{failure}</Callout>}
       {needsEnquiryType && <Callout tone="warning" title={t("Enquiry type needed")}>{t("This enquiry is marked Not Sure Yet. Open Edit details and choose its actual type before conversion.")}</Callout>}
-      {!members.length && <Callout tone="warning" title={t("A sales owner is needed")}>{t("Add an active team member in Company settings before conversion.")}</Callout>}
+      {!members.length && <Callout tone="warning" title={t("A sales owner is needed")}>{t("Ask an administrator to assign this enquiry before converting it.")}</Callout>}
       <fieldset disabled={busy || saved} className={styles.fields}>
         <div className={styles.identityRow}><TextInput label={t("Opportunity name")} isRequired value={title} onChange={setTitle} maxLength={240} />
         <SelectField label={t("Sales owner")} isRequired selectedKey={owner || null} items={members.map(m => ({ id: m.id, label: m.displayName }))} onSelectionChange={key => setOwner(String(key ?? ""))} /></div>

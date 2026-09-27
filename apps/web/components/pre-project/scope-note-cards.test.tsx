@@ -152,6 +152,13 @@ describe('Requirements tabs and original forms', () => {
   expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
   expect(screen.getByRole('button', {name:'Add inspiration'})).toBeVisible();
  });
+ it('lists only requirements on Requirements; moodboard pins and site photos stay on their own tabs',()=>{
+  const entries=[entry,{...entry,id:'pin',kind:'inspiration' as const,title:'Warm oak pin'},{...entry,id:'photo',kind:'file' as const,title:'Living room wall'}];
+  render(<DesignSystemProvider><BriefScopePage initialData={{...gatheringData,entries}}/></DesignSystemProvider>);
+  expect(screen.getByRole('article',{name:'Reception desk'})).toBeVisible();
+  expect(screen.queryByRole('article',{name:'Warm oak pin'})).not.toBeInTheDocument();
+  expect(screen.queryByRole('article',{name:'Living room wall'})).not.toBeInTheDocument();
+ });
  it('opens notes without a duplicate local tab bar or table switch',()=>{
   render(<DesignSystemProvider><BriefScopePage initialData={gatheringData}/></DesignSystemProvider>);
   expect(screen.getByRole('article',{name:'Reception desk'})).toBeVisible();

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { leadsPageFixture } from "@/lib/crm/leads";
+import { WorkspaceRegionProvider } from "@/design-system";
 import { CreateDealDialog } from "./create-deal-dialog";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -38,4 +39,23 @@ it("does not create a pipeline or opportunity while the enquiry type is unresolv
   expect(screen.getByText(/choose its actual type before conversion/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Convert to opportunity" })).toBeDisabled();
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
+it("lets the enquiry's own owner convert it when the team list is hidden from their role", async () => {
+  const data = structuredClone(leadsPageFixture);
+  data.members = [];
+  const lead = { ...data.items[0], ownerName: "Sara Sales", nextActionAt: "2026-10-01T09:00:00.000Z" };
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ id: "opportunity" }) }));
+  vi.stubGlobal("fetch", fetchMock);
+  const onCreated = vi.fn().mockResolvedValue(undefined);
+  data.defaultCurrency = undefined;
+  render(<WorkspaceRegionProvider currency="AED"><CreateDealDialog lead={lead} initialData={data} onClose={vi.fn()} onCreated={onCreated} /></WorkspaceRegionProvider>);
+  expect(screen.queryByText("A sales owner is needed")).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Estimated value (AED)" })).toBeInTheDocument();
+  expect(screen.getAllByText("Sara Sales").length).toBeGreaterThan(0);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Convert to opportunity" }));
+  await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
+  const write = fetchMock.mock.calls.find(([url]) => url.includes("/qualify"));
+  if (!write) throw new Error("The enquiry was not converted");
+  expect(JSON.parse(String(write[1]?.body))).toMatchObject({ ownerMembershipId: lead.ownerMembershipId });
 });
