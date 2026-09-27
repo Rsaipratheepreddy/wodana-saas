@@ -26,6 +26,7 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
   const [busy, setBusy] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [returning, setReturning] = useState(false);
   const { status } = state.quote;
   const { flow } = state;
   const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
@@ -59,12 +60,12 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
       onPress={() => (direct ? confirmSend("send", [["submit"], [flow.reviewAction], ["issue"]]) : void run("send", [["submit"]]))}>{direct ? t("Send to client") : t("Send for review")}</Button>;
   } else if (status === "internal_review") {
     actions = flow.canReview ? <>
-      <Button size="compact" isLoading={busy === "return"} onPress={() => void run("return", [["return"]])}>{t("Return")}</Button>
+      <Button size="compact" isLoading={busy === "return"} onPress={() => setReturning(true)}>{t("Return")}</Button>
       <Button size="compact" variant="primary" isLoading={busy === "approve"} onPress={() => void run("approve", [[flow.reviewAction]])}>{t("Approve")}</Button>
     </> : <span className={styles.waiting}>{t("Waiting for review")}</span>;
   } else if (status === "internal_approved") {
     actions = <>
-      {flow.canReview ? <Button size="compact" isLoading={busy === "return"} onPress={() => void run("return", [["return"]])}>{t("Return")}</Button> : null}
+      {flow.canReview ? <Button size="compact" isLoading={busy === "return"} onPress={() => setReturning(true)}>{t("Return")}</Button> : null}
       <Button size="compact" variant="primary" isLoading={busy === "issue"} onPress={() => confirmSend("issue", [["issue"]])}>{t("Send to client")}</Button>
     </>;
   } else if (status === "issued") {
@@ -96,9 +97,24 @@ export function FlowActions({ state, api, workspaceId, caseId, onDone, onError, 
     {actions}
     {confirmationDialog}
     {starting ? <StartProjectDialog workspaceId={workspaceId} caseId={caseId} onClose={() => setStarting(false)} /> : null}
+    {returning ? <ReturnDialog busy={busy === "return"} onClose={() => setReturning(false)}
+      onSave={async (note) => { await run("return", [["return", { note }]]); setReturning(false); }} /> : null}
     {deciding ? <DecisionDialog state={state} onClose={() => setDeciding(false)}
       onSave={async (input) => { await run("decide", [["record_decision", input]]); setDeciding(false); }} busy={busy === "decide"} /> : null}
   </>;
+}
+
+/** The reviewer says what needs to change; the preparer reads it in the notice and the case history. */
+function ReturnDialog({ onClose, onSave, busy }: { onClose: () => void; onSave: (note: string) => Promise<void>; busy: boolean }) {
+  const t = useT();
+  const [note, setNote] = useState("");
+  return <ControlledModalDialog isOpen size="md" title={t("Return for changes")} onOpenChange={(open) => { if (!open && !busy) onClose(); }}
+    footer={<div className={styles.formActions}><span className={styles.spacer} /><Button size="compact" onPress={onClose}>{t("Cancel")}</Button>
+      <Button size="compact" variant="primary" isLoading={busy} isDisabled={!note.trim()} onPress={() => void onSave(note.trim())}>{t("Return")}</Button></div>}>
+    <div className={styles.dialogForm}>
+      <TextAreaField label={t("What needs to change")} isRequired value={note} onChange={setNote} maxLength={3000} />
+    </div>
+  </ControlledModalDialog>;
 }
 
 const METHODS = [["signed_document", "Signed copy"], ["email", "Email"], ["in_person", "In person"], ["phone", "Phone"], ["message", "Message"]] as const;

@@ -174,6 +174,18 @@ describe("quotation builder", () => {
     await waitFor(() => expect(posted(fetcher)).toContainEqual({ action: "submit", revision: 1, quoteId: "q1" }));
   });
 
+  it("returns a quote in review only with the reviewer's reason", async () => {
+    const initial = state([line({})]);
+    initial.quote.status = "internal_review";
+    const fetcher = mount(initial, (url) => url.includes("/api/commercial/") ? { data: { revision: 2, quotes: [{ id: "q1", number: 2, status: "draft" }] } } : initial);
+    await userEvent.click(screen.getByRole("button", { name: "Return" }));
+    const dialog = await screen.findByRole("dialog", { name: "Return for changes" });
+    expect(within(dialog).getByRole("button", { name: "Return" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /What needs to change/ }), "Add the QS cost for the design fee.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Return" }));
+    await waitFor(() => expect(posted(fetcher)).toContainEqual({ action: "return", revision: 1, quoteId: "q1", note: "Add the QS cost for the design fee." }));
+  });
+
   it("records the client's decision with how they decided and the options they chose", async () => {
     const base = state([line({}), line({ id: "o", title: "TV unit", optional: true })]);
     const initial = { ...base, quote: { ...base.quote, status: "issued" }, canEdit: false };

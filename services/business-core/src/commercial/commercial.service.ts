@@ -3214,7 +3214,8 @@ export class CommercialService {
           user.displayName,
           action,
           q?.id,
-          "",
+          // The reviewer's reason for sending a quote back stays in the case history.
+          action === "return" && typeof b.note === "string" ? b.note.trim().slice(0, 3000) : "",
           user.userId,
         );
         if (["submit_owner_review", "review_deal_finance", "decide_owner_review"].includes(action))
