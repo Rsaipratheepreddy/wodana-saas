@@ -77,6 +77,8 @@ try {
     `SELECT branding.workspace_id AS id, workspace.name FROM tenant_login_branding branding
        JOIN workspaces workspace ON workspace.id = branding.workspace_id WHERE branding.login_slug = $1`, [slug])).rows[0];
   assert.ok(workspace, `No workspace has the login address "${slug}"`);
+  // The tenant's own rows are visible only inside its context (forced RLS), for the app role as for the owner.
+  await database.query("SELECT set_config('app.current_workspace_id', $1, false)", [workspace.id]);
   const pending = (await database.query(
     `SELECT invitation.id, invitation.email, invitation.expires_at AS "expiresAt", app_user.id AS "userId", app_user.display_name AS "displayName",
             coalesce((SELECT string_agg(role.code, ', ' ORDER BY role.code) FROM invitation_roles invited JOIN roles role ON role.id = invited.role_id WHERE invited.invitation_id = invitation.id), '') AS roles,
