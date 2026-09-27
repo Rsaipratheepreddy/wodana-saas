@@ -59,6 +59,11 @@ export class ClientPortalAdminController {
     return this.admin.saveSettings(actor, workspaceId, object(body));
   }
 
+  /** The portal as this case's client sees it, read-only, for the team's preview and Woddy's tours. */
+  @Get("cases/:caseId/preview") preview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string) {
+    return this.admin.preview(actor, workspaceId, caseId);
+  }
+
   @Get("projects/:projectId") project(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) {
     return this.admin.project(actor, workspaceId, projectId);
   }
