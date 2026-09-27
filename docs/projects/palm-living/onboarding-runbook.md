@@ -49,7 +49,7 @@ MIGRATION_DATABASE_URL=postgresql://postgres@localhost:5432/wodana_release \
 Check:
 
 ```bash
-psql -d wodana_release -Atc "select count(*) from drizzle.__drizzle_migrations"   # = entries in drizzle/meta/_journal.json (81 today)
+psql -d wodana_release -Atc "select count(*) from drizzle.__drizzle_migrations"   # = entries in drizzle/meta/_journal.json (83 today)
 DATABASE_URL=postgresql://postgres@localhost:5432/wodana_release \
   npm run test:smoke:tenant-isolation --workspace @wodana/business-core           # "ok": true
 curl -fsS https://api.<domain>/api/v1/health/ready                               # postgres ok
@@ -108,7 +108,7 @@ Review → Create tenant. Check on the account page:
 | Company profile → Brand colour | `#E4E3DE` (Palm's brand fixture) → **Save colour** |
 | Business records → Tax & numbering | **Add rate**: Name `Standard VAT`, Rate `5`, Default on; Prices include tax **off** → **Save tax**. Numbering prefixes default to `PL-QUO-{YYYY}-`, `PL-INV-…`, `PL-CN-…`, `PL-PO-…`; change only if Palm asks |
 | Quotations → Pricing / Quotes | Default markup % (Palm to confirm), Valid for **7** days (Palm's terms), **Review before sending on** → Save |
-| Design packages | Minimum deposit **AED 15,000** |
+| Design packages | Minimum deposit **AED 15,000** (Palm to confirm; empty means no minimum and is never shown as 0) |
 | Client portal | **Clients can sign in on**; welcome title and text; support phone, WhatsApp, email → Save |
 | Sales → Settings → Options → Enquiry type | Palm's approved list (draft: Renovation / Fit-Out, Full Fit-Out, Interior Design, Interior Design + Furniture, Furniture Only, Concepts / Early Ideas, Architecture / ODG; keep Not Sure Yet) → Save options |
 | Sales → Settings → Options → Budget | Palm's AED bands (e.g. Under AED 50,000 · AED 50,000–150,000 · AED 150,000–300,000 · AED 300,000–600,000 · Over AED 600,000) → Save options |
@@ -126,24 +126,26 @@ pictures are filled.
 
 ## 7. Team and access
 
-1. Settings → Roles & permissions → **Custom role** "Sales" → switch on the Sales capabilities
-   (enquiries, customers, opportunities, activities, communications, notifications, reports; not
-   "erase" or CRM settings), Planning & design: Create / Edit / View planning cases, Supply & catalog:
-   View master data → **Save changes**. (The firm kit has no Sales role yet; "Member" cannot open Sales.)
-2. Settings → People → Invite each teammate: Sales → **Sales**, QS → **Quantity Surveyor**,
-   Finance → **Finance reviewer**, Operations approver if Palm names one.
+1. The firm kit gives the workspace its roles on creation: **Sales** (enquiries, pipeline, planning
+   cases, quotes; no costs), **Quantity Surveyor** (estimator), **Finance reviewer**, **Operations
+   approver**, **Project manager** and **Site supervisor**. They are editable under Settings → Roles &
+   permissions; no custom role is needed.
+2. Invite each teammate with their role, either on the onboarding "Seats & people" step or later in
+   Settings → People → Invite: Sales → **Sales**, QS → **Quantity Surveyor**, Finance → **Finance
+   reviewer**, Operations approver if Palm names one. Give a display name when you know it; an
+   invitation without one greets "Hello," (never a name guessed from the address).
 3. Each teammate accepts the email invite and sets a password.
-4. **Before Sales converts anything: the owner converts the first enquiry** (Sales → Enquiries →
-   Convert). On a new workspace this creates the default Sales pipeline; a Sales user gets 403 until
-   the pipeline exists.
+4. The Sales pipeline (New Opportunity → Proposal → Negotiation → Won / Lost) is created with the
+   workspace, so Sales converts the first enquiry themselves; the owner is not needed.
 
 ## 8. Day-one checks
 
 - [ ] `palm-living.<domain>/login` shows Palm's name and logo, "Powered by Wodana" only in the footer.
 - [ ] Invitation emails show Palm's logo and name, from "Palm Living", "Powered by Wodana" at the foot.
 - [ ] Wodana Control → Palm Living → Seats shows the accepted people.
-- [ ] Sales creates an enquiry (Emirate, Enquiry type and Budget lists show Palm's values) and the
-  owner-converted opportunity appears under Pipeline.
+- [ ] Sales creates an enquiry (Emirate, Enquiry type and Budget lists show Palm's values; the
+  enquiry type list holds only "Not Sure Yet" until §6's options are saved, and "Not Sure Yet"
+  cannot be converted) and converts it; the opportunity appears under Pipeline.
 - [ ] A test quote with three lines shows VAT 5 % on the proposal preview and Palm's kit pages.
 - [ ] Send for review → QS approves → issue → client portal code → accept → record the advance →
   Finance verifies → owner approves → start the project. Use a staff member's own phone as the
