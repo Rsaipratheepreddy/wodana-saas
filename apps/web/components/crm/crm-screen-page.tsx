@@ -25,6 +25,7 @@ import {
   Callout,
   DataGrid,
   InspectorSheet,
+  NoAccessState,
   Tabs,
   DesignSystemProvider,
   formatDate,
@@ -34,6 +35,7 @@ import {
 } from "@/design-system";
 import type { CrmRecord, CrmScreenId, CrmScreenPageData } from "@/lib/crm/screens";
 import styles from "./crm-screen-page.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows } from "@/lib/crm/client";
 import { CrmRecordWorkbench, CrmCreateDialog, LinkedRecordWorkbench } from "./crm-record-workbench";
 import { PipelineSettings } from "./pipeline-settings";
@@ -329,6 +331,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
   const [view, setView] = useState("all");
   const referenceTime = Date.parse(initialData.referenceTime);
   const copy = screenCopy[initialData.id];
+  const t = useT();
   const views = useMemo(() => viewsFor(initialData.id, data.items, referenceTime), [initialData.id, data.items, referenceTime]);
   const visibleItems = useMemo(() => filterFor(initialData.id, data.items, view, referenceTime), [initialData.id, data.items, referenceTime, view]);
   const columns = useMemo(() => columnsFor(initialData.id, referenceTime), [initialData.id, referenceTime]);
@@ -349,7 +352,7 @@ function CrmTablePage({ initialData, initialRecordId, initialCalendar = false }:
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
     <section aria-label={`${copy.title} workspace`} className={styles.page}>
       <header className={styles.pageHeading}><div><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
-      {!initialData.canView ? <Callout title={`${copy.title} access is restricted`} tone="warning">Ask a workspace owner or administrator for the required CRM permission.</Callout> : <>
+      {!initialData.canView ? <NoAccessState area={t(copy.title as never)} /> : <>
         <section aria-label={`${copy.title} summary`} className={styles.summary}>
           {summary.map((item) => <span data-attention={item.attention && Number(item.value) > 0 || undefined} key={item.label}>{item.icon}<strong>{item.value}</strong>{item.label}</span>)}
         </section>

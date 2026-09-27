@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, SearchInput, SelectField, useDesignSystem, Skeleton } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DesignSystemProvider, IconButton, InspectorSheet, isNoAccessError, NoAccessState, SearchInput, SelectField, useDesignSystem, useWorkspaceZoneLabel, Skeleton } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows, dateText, label, type RecordData } from "@/lib/crm/client";
 import { calendarDayKey, calendarRange, localDateTime, moveCalendar, type CalendarMode, type CalendarEvent } from "@/lib/crm/calendar";
 import { connectedGoogleForMember, crmCalendarEvents, googleCalendarEvents, projectCalendarEvents, type CalendarConnection, type CalendarMember } from "@/lib/crm/calendar-sources";
@@ -19,10 +20,11 @@ function safeGoogleLink(value: unknown) { try { const url = new URL(String(value
 const subscribeToHydration = () => () => {};
 export function CrmCalendar(props: { workspaceId: string; currentUserId?: string; canView?: boolean; revision?: number }) {
   const settings = useDesignSystem();
+  const t = useT();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   // The calendar uses the viewer's locale, timezone and current local day, not the server's.
   const ready = useSyncExternalStore(subscribeToHydration, () => true, () => false);
-  return <DesignSystemProvider {...settings} className={`${styles.provider} ${workspaceColors.theme}`} portalContainer={portal} ref={setPortal}>{props.canView === false ? <Callout title="Calendar unavailable" tone="warning">You do not have access to this calendar.</Callout> : ready ? <LocalCrmCalendar {...props} /> : <p role="status">Loading your local calendar…</p>}</DesignSystemProvider>;
+  return <DesignSystemProvider {...settings} className={`${styles.provider} ${workspaceColors.theme}`} portalContainer={portal} ref={setPortal}>{props.canView === false ? <NoAccessState area={t("Calendar")} /> : ready ? <LocalCrmCalendar {...props} /> : <p role="status">Loading your local calendar…</p>}</DesignSystemProvider>;
 }
 
 function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { workspaceId: string; currentUserId?: string; revision?: number }) {
@@ -36,6 +38,11 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   const [connections, setConnections] = useState<CalendarConnection[]>([]);
   const [members, setMembers] = useState<CalendarMember[]>([]);
   const [memberError, setMemberError] = useState("");
+  // Sources the person's role can't read are left out quietly: the calendar shows what they can use.
+  const [membersDenied, setMembersDenied] = useState(false);
+  const [connectionsDenied, setConnectionsDenied] = useState(false);
+  const t = useT();
+  const zoneLabel = useWorkspaceZoneLabel();
   const [scope, setScope] = useState<"organization" | "personal" | "member">("organization");
   const [memberId, setMemberId] = useState("");
   const [googleSelection, setGoogleSelection] = useState("all");
@@ -57,12 +64,12 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/workspace/integration-connections?workspaceId=${workspaceId}`, { signal: controller.signal }).then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.message ?? "Connections unavailable"); return rows(payload) as CalendarConnection[]; }).then((items) => { if (!controller.signal.aborted) setConnections(items.filter((item) => item.provider === "google_workspace")); }).catch((error: Error) => { if (!controller.signal.aborted) setConnectionError(error.message); });
+    fetch(`/api/workspace/integration-connections?workspaceId=${workspaceId}`, { signal: controller.signal }).then(async (response) => { const payload = await response.json(); if (!response.ok) throw Object.assign(new Error(payload.message ?? "Connections unavailable"), { status: response.status }); return rows(payload) as CalendarConnection[]; }).then((items) => { if (!controller.signal.aborted) setConnections(items.filter((item) => item.provider === "google_workspace")); }).catch((error: Error) => { if (controller.signal.aborted) return; if (isNoAccessError(error)) setConnectionsDenied(true); else setConnectionError(error.message); });
     return () => controller.abort();
   }, [workspaceId, refresh]);
   useEffect(() => {
     const controller = new AbortController();
-    void crmRequest<CalendarMember[]>(workspaceId, "members", "GET", undefined, controller.signal).then(payload => { if (!controller.signal.aborted) { setMembers(rows(payload) as CalendarMember[]); setMemberError(""); } }).catch((error: Error) => { if (!controller.signal.aborted) setMemberError(error.message); });
+    void crmRequest<CalendarMember[]>(workspaceId, "members", "GET", undefined, controller.signal).then(payload => { if (!controller.signal.aborted) { setMembers(rows(payload) as CalendarMember[]); setMemberError(""); } }).catch((error: Error) => { if (controller.signal.aborted) return; if (isNoAccessError(error)) setMembersDenied(true); else setMemberError(error.message); });
     return () => controller.abort();
   }, [workspaceId, refresh]);
   useEffect(() => {
@@ -96,13 +103,13 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
           const query = new URLSearchParams({ workspaceId, view: "all", from: startDay, to: endDay, ...(ownerId ? { ownerId } : {}), ...(cursor ? { cursor } : {}) });
           const response = await fetch(`/api/projects/work-queue?${query}`, { signal: controller.signal, cache: "no-store" });
           const payload = await response.json();
-          if (!response.ok) throw new Error(payload.message ?? "Project work could not be loaded.");
+          if (!response.ok) throw Object.assign(new Error(payload.message ?? "Project work could not be loaded."), { status: response.status });
           items.push(...rows(payload)); cursor = typeof payload.nextCursor === "string" ? payload.nextCursor : "";
           if (!cursor) break;
         }
         if (cursor) throw new Error("More than 3,000 project items in this range. Choose Week or Day to see the full schedule.");
         if (!controller.signal.aborted) setProject({ key, events: projectCalendarEvents(items as Parameters<typeof projectCalendarEvents>[0]) });
-      } catch (error) { if (!controller.signal.aborted) setProject({ key, events: [], error: (error as Error).message }); }
+      } catch (error) { if (!controller.signal.aborted) setProject({ key, events: [], error: isNoAccessError(error) ? undefined : (error as Error).message }); }
     })();
     return () => controller.abort();
   }, [workspaceId, key, ownerId, scope, range.start, range.end]);
@@ -133,21 +140,21 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
   return <div className={styles.calendarLayout}><div className={styles.calendar}>
     <header className={styles.pageHeader} aria-label="Calendar controls"><div className={styles.scopeBar}><div role="tablist" aria-label="Calendar scope" className={styles.scopeTabs}>
       <button type="button" role="tab" aria-selected={scope === "organization"} onClick={() => { setScope("organization"); setGoogleSelection("all"); }}>Organisation</button>
-      <button type="button" role="tab" aria-selected={scope === "personal"} onClick={() => { setScope("personal"); setGoogleSelection("all"); }}>Personal</button>
+      {!membersDenied ? <button type="button" role="tab" aria-selected={scope === "personal"} onClick={() => { setScope("personal"); setGoogleSelection("all"); }}>Personal</button> : null}
       {scope === "member" ? <button type="button" role="tab" aria-selected="true">{scopedMember?.displayName ?? "Member"}</button> : null}
     </div><div className={styles.scopeFilters}>
-      <SelectField label={<span className="wd-visually-hidden">View member calendar</span>} aria-label="View member calendar" selectedKey={scope === "member" ? memberId : "none"} items={[{ id: "none", label: "Choose member" }, ...members.filter(member => member.status !== "suspended").map(member => ({ id: member.id, label: member.displayName }))]} onSelectionChange={value => { if (value && value !== "none") { setMemberId(String(value)); setScope("member"); setGoogleSelection("all"); } else { setMemberId(""); setScope("organization"); } }} />
+      {!membersDenied ? <SelectField label={<span className="wd-visually-hidden">View member calendar</span>} aria-label="View member calendar" selectedKey={scope === "member" ? memberId : "none"} items={[{ id: "none", label: "Choose member" }, ...members.filter(member => member.status !== "suspended").map(member => ({ id: member.id, label: member.displayName }))]} onSelectionChange={value => { if (value && value !== "none") { setMemberId(String(value)); setScope("member"); setGoogleSelection("all"); } else { setMemberId(""); setScope("organization"); } }} /> : null}
       {eligibleConnections.length ? <SelectField label={<span className="wd-visually-hidden">Google calendars</span>} aria-label="Google calendars" selectedKey={googleSelection} items={[{ id: "all", label: "All Google calendars" }, ...eligibleConnections.map(connection => ({ id: connection.id, label: connection.displayName }))]} onSelectionChange={value => setGoogleSelection(String(value ?? "all"))} /> : null}
     </div></div><div className={styles.topActions}>
       <div className={styles.search}><SearchInput label="Search calendar" placeholder="Search events" value={search} onChange={setSearch} /></div>
-      <Link className={styles.googleLink} href="/workspace/integrations?connect=google_workspace"><Image src="/icons/integrations/google-calendar.svg" alt="" width={18} height={18} aria-hidden="true" />{connections.some(item => ["connected", "degraded"].includes(item.status)) ? "Manage Google" : "Connect Google"}</Link>
+      {!connectionsDenied ? <Link className={styles.googleLink} href="/workspace/integrations?connect=google_workspace"><Image src="/icons/integrations/google-calendar.svg" alt="" width={18} height={18} aria-hidden="true" />{connections.some(item => ["connected", "degraded"].includes(item.status)) ? "Manage Google" : "Connect Google"}</Link> : null}
       <Button size="compact" onPress={() => setCreateOn(newEventDate())}><CalendarDays size={15} aria-hidden="true" />Schedule</Button>
       <Button size="compact" variant="primary" onPress={() => connections.some(item => ["connected", "degraded"].includes(item.status)) ? setGoogleCreateOn(newEventDate()) : setCreateOn(newEventDate())}><Plus size={16} aria-hidden="true" />Add event</Button>
     </div></header>
     {memberError ? <Callout title="Members unavailable" tone="warning">{memberError}</Callout> : null}
     {scope === "personal" && members.length > 0 && !currentMember ? <Callout title="Personal calendar unavailable" tone="warning">Your workspace membership could not be identified.</Callout> : null}
     {connectionError ? <Callout title="Google connection access" tone="warning">{connectionError} Workspace events are still available.</Callout> : null}
-    {crm?.key === key && crm.error ? <Callout title="Calendar could not load" tone="warning">{crm.error}</Callout> : crm?.key !== key ? <Skeleton lines={6} shape="rows" /> : null}
+    {crm?.key === key && crm.error ? <Callout title={t("Calendar could not load")} tone="warning">{crm.error}</Callout> : crm?.key !== key ? <Skeleton lines={6} shape="rows" /> : null}
     {project?.key === key && project.error ? <Callout title="Project schedule unavailable" tone="warning">{project.error}</Callout> : null}
     {connectionIds.length ? google?.key !== googleKey ? <p role="status">Loading Google Calendar…</p> : google.error ? <Callout title="Google Calendar unavailable" tone="warning">{google.error}</Callout> : null : null}
     <section className={styles.calendarFrame} aria-label="Calendar schedule"><div className={styles.periodBar}>
@@ -157,7 +164,7 @@ function LocalCrmCalendar({ workspaceId, currentUserId = "", revision = 0 }: { w
       {range.days.slice(0, 7).map(day => <div className={styles.weekday} key={day.toISOString()}>{day.toLocaleDateString(undefined, { weekday: "short" })}</div>)}
       {range.days.map(day => { const nextDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1); const dayEvents = events.filter(event => event.start < nextDay && (event.end && event.end > event.start ? event.end > day : event.start >= day)); return <section key={day.toISOString()} className={styles.day} data-outside={day.getMonth() !== anchor.getMonth() || undefined} aria-label={day.toLocaleDateString(undefined, { dateStyle: "full" })}><button className={styles.date} aria-current={calendarDayKey(day) === today ? "date" : undefined} data-today={calendarDayKey(day) === today || undefined} type="button" aria-label={`Schedule on ${day.toLocaleDateString()}`} onClick={() => setCreateOn(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10))}>{day.getDate()}</button>{dayEvents.slice(0, 3).map(event => <button type="button" className={styles.event} data-kind={event.kind} data-provider={event.provider} key={event.id} aria-label={`${event.provider} ${event.title}`} onClick={() => setSelected(event)}><span className={styles.eventTitle}>{event.title}</span></button>)}{dayEvents.length > 3 ? <button type="button" className={styles.more} onClick={() => { setAnchor(day); setMode("day"); }}>+{dayEvents.length - 3} more</button> : null}</section>; })}
     </div></div>}</div></section>
-    <footer className={styles.calendarFooter}><span>{timezone}</span><span>{events.length} event{events.length === 1 ? "" : "s"} in view</span></footer>
+    <footer className={styles.calendarFooter}><span>{zoneLabel ? t("Workspace: {zone}", { zone: zoneLabel }) : null}</span><span>{events.length} event{events.length === 1 ? "" : "s"} in view</span></footer>
     {createOn ? <ScheduleMeeting workspaceId={workspaceId} date={createOn} onClose={() => setCreateOn(null)} onSaved={() => { setCreateOn(null); setRefresh(n => n + 1); }} /> : null}
     {googleCreateOn ? <GoogleEventDialog workspaceId={workspaceId} connections={eligibleConnections} date={googleCreateOn} onClose={() => setGoogleCreateOn(null)} onSaved={() => { setGoogleCreateOn(null); setRefresh(n => n + 1); }} /> : null}
     {selected?.provider === "crm" ? <FollowUpSheet key={selected.id} workspaceId={workspaceId} recordId={selected.id} onClose={() => setSelected(null)} onSaved={() => setRefresh(n => n + 1)} /> : selected ? <InspectorSheet isOpen title={selected.title} onOpenChange={open => { if (!open) setSelected(null); }}><CalendarDetails workspaceId={workspaceId} event={selected} onChanged={() => setRefresh(n => n + 1)} /></InspectorSheet> : null}

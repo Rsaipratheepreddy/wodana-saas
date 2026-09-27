@@ -50,7 +50,7 @@ describe("CrmScreenPage", () => {
     const fixture = crmScreenFixture("customers");
     render(<CrmScreenPage initialData={{ ...fixture, canView: false, items: [] }} />);
 
-    expect(screen.getByText("Customers access is restricted")).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to Customers")).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "CRM customers" })).not.toBeInTheDocument();
   });
 });

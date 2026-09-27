@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, ControlledModalDialog, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { inventoryApi } from "@/lib/inventory/client";
 import type { LocationKind, StockLocation } from "@/lib/inventory/types";
@@ -21,7 +21,7 @@ export function StockPlacesSettings({ workspaceId }: { workspaceId: string }) {
     try { setData(await api.locations()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (error && !data) return isNoAccessError(error) ? <NoAccessState area={t("Stock places")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!data) return <Skeleton lines={6} shape="rows" />;
   const edit = (location: StockLocation) => setDraft({ id: location.id, kind: location.kind, name: location.name, address: location.address, isDefault: location.isDefault, active: location.active, isNew: false });
   return <SettingsPage title={t("Stock places")}>

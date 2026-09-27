@@ -14,7 +14,7 @@ describe("CrmCustomers", () => {
     const user = userEvent.setup();
     render(<CrmCustomers initialData={structuredClone(crmScreenFixture("customers"))} />);
 
-    expect(screen.getByRole("region", { name: "Customers workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Clients workspace" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Customer records" })).toBeInTheDocument();
     expect(screen.getByText("Amira Al Mansoori")).toBeInTheDocument();
     expect(screen.getByText("Al Noor Developments LLC")).toBeInTheDocument();

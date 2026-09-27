@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { HrmsBootstrap, HrmsDocumentKind, HrmsPerson } from "@wodana/contracts";
-import {
-  Button, Checkbox, EmptyState, InlineNotice, NoAccessState, NumericInput, PageSkeleton, SelectField, SettingsPage, SettingsRow, Skeleton, Tabs,
-} from "@/design-system";
+import { Button, Checkbox, EmptyState, InlineNotice, NoAccessState, NumericInput, PageSkeleton, SelectField, SettingsPage, SettingsRow, Skeleton, Tabs, isNoAccessError } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type HrmsApi } from "@/lib/hrms/api";
 import { HRMS_SETTINGS_TABS, type HrmsSettingsTab } from "@/lib/hrms/sections";
@@ -34,7 +32,7 @@ export function AttendanceSettingsPage({ workspaceId }: { workspaceId: string })
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const requested = params.get("tab");
   const tab: HrmsSettingsTab = HRMS_SETTINGS_TABS.includes(requested as HrmsSettingsTab) ? requested as HrmsSettingsTab : "calendars";
-  if (error && !boot) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (error && !boot) return isNoAccessError(error) ? <NoAccessState area={t("Attendance & leave")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!boot) return <PageSkeleton variant="form" />;
   if (!boot.permissions.manage) return <SettingsPage title={t("Attendance & leave")}><NoAccessState /></SettingsPage>;
   const done = () => setCreating(null);

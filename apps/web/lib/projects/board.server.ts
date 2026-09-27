@@ -2,6 +2,7 @@ import type { PortfolioRow } from "@/components/projects/project-portfolio";
 import { getPreProjects } from "@/lib/pre-project/server";
 import { projectRead } from "@/lib/projects/server";
 import type { ProjectWorkflowTemplatesResponse } from "@/lib/projects/workflow-templates";
+import { isNoAccessError } from "@/design-system/foundations/access";
 
 /** Everything the Planning and Projects boards need, loaded once on the server. */
 export async function loadProjectsBoard() {
@@ -21,6 +22,7 @@ export async function loadProjectsBoard() {
     projects: execution.status === "fulfilled" ? execution.value.data : [],
     planning: data,
     palmFlowEnabled,
-    projectError: execution.status === "rejected" ? "Projects could not be loaded. Check your access or refresh." : workflow.status === "rejected" ? "Project workflow could not be loaded. Refresh to confirm which records belong in Planning." : undefined,
+    // Someone without Projects simply has no project rows here; only a failing service is worth a warning.
+    projectError: execution.status === "rejected" && !isNoAccessError(execution.reason) ? "Projects could not be loaded. Refresh to try again." : workflow.status === "rejected" && !isNoAccessError(workflow.reason) ? "Project workflow could not be loaded. Refresh to confirm which records belong in Planning." : undefined,
   };
 }

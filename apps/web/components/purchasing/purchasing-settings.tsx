@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, SelectField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, SelectField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { purchasingApi } from "@/lib/purchasing/client";
 import type { PurchasingSettings } from "@/lib/purchasing/types";
@@ -29,7 +29,7 @@ export function PurchasingSettingsPage({ workspaceId }: { workspaceId: string })
     try { accept(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (error && !data) return isNoAccessError(error) ? <NoAccessState area={t("Purchasing")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!data || !form) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
   const threshold = !form.approval ? null : form.always ? "0" : form.threshold;

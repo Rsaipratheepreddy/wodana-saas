@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { ArrowLeft, Eye, FileText, Palette, Plus, QrCode, Search, Upload } from "lucide-react";
-import { Badge, Button, Callout, ControlledModalDialog, DataGrid, IconButton, SelectField, Tabs, TextInput, useConfirmationDialog } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, IconButton, isNoAccessError, NoAccessNotice, SelectField, Tabs, TextInput, useConfirmationDialog } from "@/design-system";
 import type { LeadsPageData } from "@/lib/crm/leads";
 import { type LeadFormRecord } from "@/lib/crm/lead-forms";
 import { crmRequest } from "@/lib/crm/client";
@@ -149,7 +149,7 @@ export function LeadFormBuilder({ initialData, initialBranding, onDirtyChange, o
     });
   };
   return <section className={styles.forms} aria-label="Enquiry form builder">
-    {error && <Callout title="Forms" tone="danger">{error}{!record && !loading && <Button size="compact" onPress={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>Retry loading forms</Button>}</Callout>}
+    {error && (isNoAccessError(error) ? <NoAccessNotice area={t("Forms")} /> : <Callout title="Forms" tone="danger">{error}{!record && !loading && <Button size="compact" onPress={() => { setLoading(true); setError(""); setReload(value => value + 1); }}>Retry loading forms</Button>}</Callout>)}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {!record || !draft ? <>
       <div className={styles.formListToolbar}><label className={styles.formSearch}><Search size={17} aria-hidden="true" /><input aria-label="Search forms" placeholder="Search forms" value={search} onChange={event => setSearch(event.target.value)} /></label><Button variant="primary" size="compact" onPress={() => void create()} isLoading={busy}><Plus size={15} />New form</Button></div>

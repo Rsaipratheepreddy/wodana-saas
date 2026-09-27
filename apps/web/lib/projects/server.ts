@@ -79,7 +79,7 @@ export async function projectRead<T>(path:string){
     return {workspaceId:w,data:e2eProject(w) as T};
   }
   const r=await authenticatedBackendFetch(`/workspaces/${w}/projects/${path}`);
-  if(!r.upstream?.ok)throw Error('Projects could not be loaded. Check your access or refresh.');
+  if(!r.upstream?.ok)throw Object.assign(Error('Projects could not be loaded. Check your access or refresh.'),{status:r.upstream?.status});
   return {workspaceId:w,data:await r.upstream.json() as T};
 }
 export const getProject=(id:string)=>projectRead<ProjectState>(`${id}/execution`);
