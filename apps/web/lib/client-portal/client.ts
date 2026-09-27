@@ -47,6 +47,9 @@ export function staffPortalApi(workspaceId: string, t: Translate = untranslated)
     saveSettings: (input: Record<string, unknown>) => call<Settings>(t, at("settings"), "PUT", input),
     project: (projectId: string) => call<ProjectPortal>(t, at(`projects/${projectId}`)),
     saveProject: (projectId: string, input: Record<string, unknown>) => call<ProjectPortal>(t, at(`projects/${projectId}`), "PUT", input),
+    /** Invites (or re-invites) the project's client; the command id makes a retry safe. */
+    inviteClient: (projectId: string, input: { commandId: string; version: number }) => call<ProjectPortal>(t, at(`projects/${projectId}/invite`), "POST", input),
+    revokeClient: (projectId: string, input: { commandId: string; version: number }) => call<ProjectPortal>(t, at(`projects/${projectId}/revoke`), "POST", input),
     contacts: (caseId: string) => call<Contacts>(t, at(`cases/${caseId}/contacts`)),
     saveContact: (caseId: string, input: Record<string, unknown>) => call<Contacts>(t, at(`cases/${caseId}/contacts`), "PUT", input),
     signOut: (caseId: string, contactId: string) => call<Contacts>(t, at(`cases/${caseId}/contacts/${contactId}/sign-out`), "POST", {}),

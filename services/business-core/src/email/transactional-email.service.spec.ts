@@ -129,6 +129,25 @@ describe("TransactionalEmailService", () => {
     expect(body.get("html")).toContain("Hello,");
   });
 
+  it("invites a client in the tenant's name with the portal address and how to sign in; Wodana only powers it", async () => {
+    const service = new TransactionalEmailService(new ConfigService({ WEB_ORIGIN: "https://app.example.com" }));
+    const send = vi.spyOn(service, "send").mockResolvedValue({ status: "sent", provider: "mailgun", messageId: "inv" });
+    await service.sendPortalInvitation({
+      workspaceId: "4f0b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d", to: "client@palmliving.test", recipientName: "Maya Client", projectName: "Villa 12", company: "Studio Interiors",
+      portalUrl: "https://app.example.com/portal/studio", inviteUrl: "https://app.example.com/portal/studio?invite=tok-en", phoneHint: "23", channel: "whatsapp",
+      expiresAt: new Date("2026-10-12T00:00:00Z"),
+    });
+    const message = send.mock.calls[0][0];
+    expect(message).toMatchObject({ to: "client@palmliving.test", subject: "Your project page with Studio Interiors", fromName: "Studio Interiors" });
+    expect(message.text).toContain("Hello Maya Client,");
+    expect(message.text).toContain("Open your project page: https://app.example.com/portal/studio?invite=tok-en");
+    expect(message.text).toContain("mobile number ending in 23");
+    expect(message.text).toContain("by WhatsApp");
+    expect(message.text).toContain("expires on October 12, 2026. You can always sign in at https://app.example.com/portal/studio.");
+    expect(message.html).toContain("Powered by Wodana");
+    expect(message.html.replace("Powered by Wodana", "")).not.toContain("Wodana");
+  });
+
   it("returns a safe failure result when Mailgun rejects the message", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const service = new TransactionalEmailService(new ConfigService({

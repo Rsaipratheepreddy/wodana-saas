@@ -589,6 +589,13 @@
       "when": 1800709200000,
       "tag": "0132_role_avatar_presets",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1800792000000,
+      "tag": "0133_client_portal_invitations",
+      "breakpoints": true
     }
   ]
 }

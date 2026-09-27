@@ -6,23 +6,27 @@ import type { RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
 import { commercialRepository } from "../commercial/commercial-repository";
 import type { CommercialData } from "../commercial/commercial.types";
+import { canonicalHash } from "../crm/shared/crm-types";
+import { TransactionalEmailService } from "../email/transactional-email.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { endSessions, mobileNumber } from "./portal-auth";
+import { inviteClient, readClientAccess, revokeClient, type InviteDelivery } from "./portal-invitations";
 import { optionalEmail, readPortalSettings, readProjectAccess, savePortalSettings, saveProjectAccess, SECTIONS } from "./portal-settings";
-import { readSite } from "./portal-site";
+import { portalUrl, readSite } from "./portal-site";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Contact = { id: string; name: string; confirmedName: string | null; phone: string; email: string | null; role: "approver" | "viewer"; active: boolean; testContact: boolean;
   lastSignedInAt: string | null; version: number };
+type Command = { id: string; version: number; hash: string };
 
 /**
  * The firm's side of the client portal: what clients see (Settings → Client portal), each project's own
- * choice and pause, and the client contacts who can sign in.
+ * choice and pause, the client contacts who can sign in, and inviting the project's client.
  */
 @Injectable()
 export class ClientPortalAdminService {
-  constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService) {}
+  constructor(private readonly access: WorkspaceAccessService, private readonly config: ConfigService, private readonly mailer: TransactionalEmailService) {}
 
   private get demo() {
     return this.config.get("PORTAL_DEMO_OTP") === "true" && this.config.get("NODE_ENV") !== "production";
@@ -68,10 +72,93 @@ export class ClientPortalAdminService {
 
   private async readProject(client: PoolClient, workspaceId: string, projectId: string, caseId: string, canManage: boolean) {
     const settings = await readPortalSettings(client, workspaceId);
+    const access = await readProjectAccess(client, workspaceId, projectId);
     return {
-      enabled: settings.enabled, sections: SECTIONS.filter((section) => settings.sections[section]), access: await readProjectAccess(client, workspaceId, projectId),
+      enabled: settings.enabled, sections: SECTIONS.filter((section) => settings.sections[section]), access,
       contacts: await this.readContacts(client, workspaceId, caseId), caseId, canManage,
+      portalUrl: await portalUrl(client, this.config, workspaceId, settings.slug),
+      client: await readClientAccess(client, { workspaceId, projectId, caseId, settings, access }),
     };
+  }
+
+  /**
+   * Invites the project's client to the portal: their identity for this project is created or reused, and they
+   * get the tenant's email with the portal address, how to sign in and a link that opens it with their number.
+   * One command once (commandId), version-checked against the client's access, audited.
+   */
+  inviteClient(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      if (!canManage) throw new ForbiddenException("Only the project manager invites the client.");
+      const command = this.command(body, { action: "invite_client", projectId });
+      if (!(await this.replayed(client, workspaceId, command))) {
+        const settings = await readPortalSettings(client, workspaceId);
+        const access = await readProjectAccess(client, workspaceId, projectId);
+        const facts = (await client.query<{ project: string; company: string; whatsapp: boolean }>(
+          `SELECT project.name AS project, coalesce(branding.display_name, workspace.name) AS company,
+                  EXISTS (SELECT 1 FROM integration_connections connection WHERE connection.workspace_id = workspace.id AND connection.provider = 'whatsapp'
+                           AND connection.status = 'connected') AS whatsapp
+             FROM delivery_projects project JOIN workspaces workspace ON workspace.id = project.workspace_id
+             LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
+            WHERE project.workspace_id = $1 AND project.id = $2`, [workspaceId, projectId])).rows[0];
+        const address = await portalUrl(client, this.config, workspaceId, settings.slug);
+        const result = await inviteClient(client, {
+          workspaceId, projectId, caseId, userId: user.userId, settings, access, version: command.version,
+          send: async ({ to, name, phone, token, expiresAt }) => {
+            const link = new URL(address);
+            link.searchParams.set("invite", token);
+            const outcome = await this.mailer.sendPortalInvitation({ workspaceId, to, recipientName: name, projectName: facts.project, company: facts.company, portalUrl: address,
+              inviteUrl: link.toString(), phoneHint: phone.slice(-2), channel: facts.whatsapp && !this.demo ? "whatsapp" : "email", expiresAt });
+            return (outcome.status === "sent" ? "sent" : outcome.suppressedReason ? "suppressed" : outcome.status) satisfies InviteDelivery;
+          },
+        });
+        await this.remember(client, workspaceId, command, result.grantId, "invite_client", { invitationId: result.invitationId, delivery: result.delivery });
+        await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "client_portal.client_invited", entityType: "project", entityId: projectId,
+          after: { grantId: result.grantId, invitationId: result.invitationId, email: result.email, delivery: result.delivery, reused: result.reused, commandId: command.id } });
+      }
+      return this.readProject(client, workspaceId, projectId, caseId, true);
+    });
+  }
+
+  /** Takes the client's portal access away for this project's case: no sign-in, sessions ended, invitation links dead. */
+  revokeClient(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { caseId, canManage } = await this.projectRole(client, workspaceId, projectId, user.userId);
+      if (!canManage) throw new ForbiddenException("Only the project manager changes the client's access.");
+      const command = this.command(body, { action: "revoke_client", projectId });
+      if (!(await this.replayed(client, workspaceId, command))) {
+        const settings = await readPortalSettings(client, workspaceId);
+        const access = await readProjectAccess(client, workspaceId, projectId);
+        const current = await readClientAccess(client, { workspaceId, projectId, caseId, settings, access });
+        if (current.grantId && await this.namedOnIssuedQuote(client, workspaceId, caseId, current.grantId))
+          throw new ConflictException("This client decides an issued quotation. Withdraw it before taking their access away.");
+        const result = await revokeClient(client, { workspaceId, projectId, caseId, userId: user.userId, settings, access, version: command.version });
+        await this.remember(client, workspaceId, command, result.grantId, "revoke_client", { ended: result.ended, changed: result.changed });
+        if (result.changed) await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "client_portal.client_revoked", entityType: "project", entityId: projectId,
+          after: { grantId: result.grantId, sessions: result.ended, commandId: command.id } });
+      }
+      return this.readProject(client, workspaceId, projectId, caseId, true);
+    });
+  }
+
+  /** A staff command on the client's access: its id (for a safe retry), the version it saw, and a hash of what it asked. */
+  private command(body: Record<string, unknown>, expected: Record<string, unknown>): Command {
+    if (typeof body.commandId !== "string" || !UUID.test(body.commandId)) throw new BadRequestException("Try that again.");
+    if (typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 0) throw new BadRequestException("Reload and try again.");
+    return { id: body.commandId, version: body.version, hash: canonicalHash({ ...expected, version: body.version }) };
+  }
+
+  /** A retry of the same command changes nothing; the same id with different details is refused. */
+  private async replayed(client: PoolClient, workspaceId: string, command: Command) {
+    const prior = (await client.query<{ requestHash: string }>(`SELECT request_hash AS "requestHash" FROM client_portal_commands WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, command.id])).rows[0];
+    if (prior && prior.requestHash !== command.hash) throw new ConflictException("This was already sent with different details. Reload and try again.");
+    return Boolean(prior);
+  }
+
+  private remember(client: PoolClient, workspaceId: string, command: Command, grantId: string, action: string, result: Record<string, unknown>) {
+    return client.query(`INSERT INTO client_portal_commands (workspace_id, id, grant_id, action, request_hash, result) VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+      [workspaceId, command.id, grantId, action, command.hash, JSON.stringify(result)]);
   }
 
   private async projectRole(client: PoolClient, workspaceId: string, projectId: string, userId: string) {

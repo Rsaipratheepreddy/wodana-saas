@@ -119,7 +119,10 @@ export async function useCode(db: Db, workspaceId: string, codes: PortalCodes, i
   return challenge.phone;
 }
 
-/** Signs a client in with their code: a session for this number, and whether they still need to confirm their name. */
+/**
+ * Signs a client in with their code: a session for this number, whether they still need to confirm their name,
+ * and the projects they open for the first time (the team hears about those).
+ */
 export async function signIn(db: Db, workspaceId: string, codes: PortalCodes, input: { challengeId: string; code: string }) {
   const phone = await useCode(db, workspaceId, codes, { ...input, purpose: "sign_in" });
   const grants = phone ? await grantsFor(db, workspaceId, phone, codes.demo) : [];
@@ -128,8 +131,12 @@ export async function signIn(db: Db, workspaceId: string, codes: PortalCodes, in
   await db.query(
     `INSERT INTO client_portal_sessions (id, workspace_id, phone, token_hash, expires_at, last_seen_at) VALUES ($1, $2, $3, $4, now() + make_interval(days => $5), now())`,
     [randomUUID(), workspaceId, phone, digest(token), SESSION_MAX_DAYS]);
-  await db.query(`UPDATE client_portal_grants SET last_signed_in_at = now() WHERE workspace_id = $1 AND id = ANY($2::uuid[])`, [workspaceId, grants.map((grant) => grant.id)]);
-  return { token, expiresIn: SESSION_MAX_DAYS * 86_400, needsName: !grants.some((grant) => grant.confirmed) };
+  const firstSignIns = (await db.query<{ id: string; caseId: string; name: string; first: boolean }>(
+    `WITH never AS (SELECT id FROM client_portal_grants WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND last_signed_in_at IS NULL)
+     UPDATE client_portal_grants grant_row SET last_signed_in_at = now() WHERE grant_row.workspace_id = $1 AND grant_row.id = ANY($2::uuid[])
+     RETURNING grant_row.id, grant_row.case_id AS "caseId", coalesce(grant_row.confirmed_name, grant_row.name) AS name, grant_row.id IN (SELECT id FROM never) AS first`,
+    [workspaceId, grants.map((grant) => grant.id)])).rows.filter((row) => row.first).map(({ id, caseId, name }) => ({ id, caseId, name }));
+  return { token, expiresIn: SESSION_MAX_DAYS * 86_400, needsName: !grants.some((grant) => grant.confirmed), firstSignIns };
 }
 
 /** The signed-in client: their session (kept alive while used) and the projects they have access to. */

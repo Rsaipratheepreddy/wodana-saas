@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
+import { notifyUserInApp } from "../notifications/default-templates";
 import { portalLink } from "./portal-site";
 import { effectiveSections, readPortalSettings, readProjectAccess, type Section } from "./portal-settings";
 
@@ -87,4 +88,38 @@ export async function tellClients(db: Db, input: {
         actorUserId: null, occurredAt: new Date().toISOString(), correlationId: inserted.correlationId, causationId: null, data: { channel: "email" } })]);
   }
   return { queued, reason: null };
+}
+
+/**
+ * The first time a client signs in, the people running their project hear it in the app: the managers named
+ * on each started project of the case, and the case's owner. Once per client and person.
+ */
+export async function tellStaffClientSignedIn(db: Db, workspaceId: string, contacts: Array<{ id: string; caseId: string; name: string }>) {
+  let told = 0;
+  for (const contact of contacts) {
+    const projects = (await db.query<{ id: string; title: string }>(
+      `SELECT id, reference || ' · ' || name AS title FROM delivery_projects WHERE workspace_id = $1 AND case_id = $2 AND started_at IS NOT NULL ORDER BY started_at`,
+      [workspaceId, contact.caseId])).rows;
+    for (const project of projects) {
+      const people = (await db.query<{ userId: string }>(
+        `SELECT DISTINCT membership.user_id AS "userId"
+           FROM project_assignments assignment
+           JOIN workspace_memberships membership ON membership.workspace_id = assignment.workspace_id AND membership.id = assignment.membership_id AND membership.status = 'active'
+          WHERE assignment.workspace_id = $1 AND assignment.project_id = $2 AND assignment.active AND assignment.is_manager
+         UNION
+         SELECT membership.user_id
+           FROM pre_project_cases pre_case
+           JOIN workspace_memberships membership ON membership.workspace_id = pre_case.workspace_id AND membership.id = pre_case.owner_membership_id AND membership.status = 'active'
+          WHERE pre_case.workspace_id = $1 AND pre_case.id = $3`, [workspaceId, project.id, contact.caseId])).rows;
+      for (const person of people) {
+        const result = await notifyUserInApp(db, {
+          workspaceId, recipientUserId: person.userId, code: "client_portal.client_signed_in", eventType: "client_portal.client_signed_in",
+          variables: { client: contact.name, title: project.title }, deepLink: `/workspace/projects/${project.id}/updates`,
+          idempotencyKey: `client_portal.client_signed_in:${contact.id}:${person.userId}`,
+        });
+        if (result.queued) told += 1;
+      }
+    }
+  }
+  return told;
 }
