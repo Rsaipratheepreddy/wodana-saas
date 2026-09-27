@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Plus, RefreshCw, Columns3, List, Search } from "lucide-react";
-import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, SelectField, type DataGridColumn } from "@/design-system";
+import { Avatar, Badge, Button, Callout, DataGrid, ControlledModalDialog, personDisplayName, SelectField, type DataGridColumn } from "@/design-system";
 import type { CrmRecord, CrmScreenPageData } from "@/lib/crm/screens";
 import { crmRequest, rows, type RecordData } from "@/lib/crm/client";
 import { LinkedRecordWorkbench } from "./crm-record-workbench";
@@ -49,7 +49,7 @@ function columnsFor(pipelines: Pipeline[]): DataGridColumn<CrmRecord>[] {
     { id: "stage", accessorFn: (record) => String(record.stageName ?? record.stage_name ?? "Not set"), header: "Stage", size: 150, meta: { filterOptions: stageNames.map((name) => ({ id: name, label: name })) }, cell: ({ row }) => <span data-unplaced={!row.original.stageName && !row.original.stage_name || undefined} className={styles.stage}>{String(row.original.stageName ?? row.original.stage_name ?? "Not set")}</span> },
     { accessorKey: "status", header: "Status", size: 105, cell: ({ row }) => { const status = String(row.original.status ?? "unknown"); return <Badge tone={status === "won" ? "success" : status === "lost" || status === "abandoned" ? "danger" : "neutral"}>{status.replaceAll("_", " ")}</Badge>; } },
     { id: "value", accessorFn: (record) => Number(record.amount ?? 0), header: "Value", size: 150, meta: { align: "end" }, cell: ({ row }) => <span className={styles.money}>{moneyLabel(row.original)}</span> },
-    { accessorKey: "ownerName", header: "Sales owner", size: 160, cell: ({ row }) => String(row.original.ownerName ?? "Unassigned") },
+    { accessorKey: "ownerName", header: "Sales owner", size: 160, cell: ({ row }) => personDisplayName(row.original.ownerName as string | null) || "Unassigned" },
     { accessorKey: "nextActionAt", header: "Next follow-up", size: 145, cell: ({ row }) => <span className={styles.due}><CalendarClock aria-hidden="true" size={13} />{dateLabel(row.original.nextActionAt)}</span> },
   ];
 }
@@ -130,7 +130,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
     <div className={styles.boardSurface}>
     <div className={styles.boardToolbar}>
       <label className={styles.search}><Search size={15} aria-hidden="true" /><input aria-label="Search opportunities" placeholder="Search opportunities" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
-      <SelectField label={null} aria-label="Filter by assignee" placeholder="All assignees" selectedKey={assignee || "all"} onSelectionChange={key => setAssignee(key === "all" ? "" : String(key))} items={[{id:"all",label:"All assignees"},{id:"unassigned",label:"Unassigned"}, ...[...new Map(items.filter(item => item.ownerMembershipId).map(item => [String(item.ownerMembershipId), String(item.ownerName ?? "Assigned person")])).entries()].map(([id,label]) => ({id,label}))]} />
+      <SelectField label={null} aria-label="Filter by assignee" placeholder="All assignees" selectedKey={assignee || "all"} onSelectionChange={key => setAssignee(key === "all" ? "" : String(key))} items={[{id:"all",label:"All assignees"},{id:"unassigned",label:"Unassigned"}, ...[...new Map(items.filter(item => item.ownerMembershipId).map(item => [String(item.ownerMembershipId), personDisplayName(item.ownerName as string | null) || "Assigned person"])).entries()].map(([id,label]) => ({id,label}))]} />
       <SelectField label={null} aria-label="Opportunity status" selectedKey={view} onSelectionChange={key => setView(key as "all" | "open" | "closed")} items={[{id:"all",label:"All opportunities"},{id:"open",label:"Open"},{id:"closed",label:"Closed"}]} />
       {pipelines.length > 1 && <SelectField label={null} aria-label="Pipeline" selectedKey={pipelineFilter} onSelectionChange={key => setPipelineFilter(String(key))} items={[{id:"all",label:"All pipelines"},...pipelines.map(p => ({id:p.id,label:String(p.name)}))]} />}
       <div role="group" aria-label="Pipeline view" className={styles.viewSwitch}><Button size="compact" aria-pressed={layout === "board"} onPress={() => setLayout("board")}><Columns3 size={14} />Board</Button><Button size="compact" aria-pressed={layout === "list"} onPress={() => setLayout("list")}><List size={14} />List</Button></div>
@@ -154,7 +154,7 @@ export function CrmOpportunities({ initialData, initialRecordId }: { initialData
           <header><h2><i aria-hidden="true" />{column.name}</h2><span className={styles.count} aria-label={`${cards.length} loaded opportunities`}>{cards.length}</span></header>
           {pipelines.length > 1 && pipelineFilter === "all" && <small className={styles.pipelineName}>{column.pipelineName}</small>}
           <div className={styles.cardStack}>{cards.map(item => {
-            const owner = String(item.ownerName ?? "Unassigned");
+            const owner = personDisplayName(item.ownerName as string | null) || "Unassigned";
             const overdue = item.status === "open" && typeof item.nextActionAt === "string" && Date.parse(item.nextActionAt) < Date.now();
             const title = opportunityTitle(item);
             const customer = String(item.partyName ?? "").trim();

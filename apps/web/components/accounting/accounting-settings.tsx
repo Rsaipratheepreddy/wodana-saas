@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { parseDate } from "@internationalized/date";
-import { Button, DateField, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, DateField, EmptyState, InlineNotice, SelectField, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { accountingApi, type AccountingApi } from "@/lib/accounting/client";
 import type { AccountingCompany, AccountingConnection, AccountingSettings, ProviderOption } from "@/lib/accounting/types";
@@ -23,7 +23,7 @@ export function AccountingSettingsPage({ workspaceId }: { workspaceId: string })
     try { setState(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (error && !state) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (error && !state) return isNoAccessError(error) ? <NoAccessState area={t("Accounting")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!state) return <Skeleton lines={6} shape="form" />;
   return <SettingsPage title={t("Accounting")}>
     {!state.connections.length ? <EmptyState title={t("No accounting connection yet")}

@@ -1,3 +1,5 @@
+import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
+
 export type WorkspaceIconName =
   | "activity"
   | "automations"
@@ -174,7 +176,6 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
         label: "Sales flow",
         items: [
           { href: "/workspace/crm", icon: "home", id: "crm-overview", label: "Overview" },
-          { href: "/workspace/crm/jobs", icon: "projects", id: "jobs", label: "Jobs" },
           {
             href: "/workspace/crm/leads",
             icon: "leads",
@@ -256,6 +257,15 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             id: "crm-reports",
             label: "Reports",
           },
+        ],
+      },
+      {
+        // Sections of Enquiries, named so navigation offers them only to people who can use them.
+        id: "crm-setup",
+        label: "Setup",
+        items: [
+          { href: "/workspace/crm/leads?section=forms", icon: "documents", id: "crm-campaigns", label: "Campaigns", showInSidebar: false },
+          { href: "/workspace/crm/leads?section=assignment", icon: "settings", id: "crm-settings", label: "Settings", showInSidebar: false },
         ],
       },
     ],
@@ -350,7 +360,6 @@ export const workspaceNavigation = workspaceModules[0].navigation;
 /** Build the product navigation from the server-authorized destinations. */
 export function productNavigation(modules: WorkspaceModuleDefinition[]): WorkspaceNavigationSection[] {
   const allowed = new Set(modules.flatMap(module => module.navigation.flatMap(group => group.items).filter(item => item.showInSidebar !== false).map(item => item.id)));
-  const hasProjectTasks = allowed.has("projects-overview");
   const salesEntry = modules.find(module => module.id === "crm")?.navigation.flatMap(group => group.items).find(item => allowed.has(item.id) && ["crm-overview", "leads", "opportunities", "follow-ups"].includes(item.id));
   const sections: WorkspaceNavigationSection[] = [
     // Daily work: Home (Overview, Tasks, Approvals as tabs), then Calendar and Inbox on their own.
@@ -396,28 +405,10 @@ export const HOME_ROUTES = ["/workspace", "/workspace/tasks", "/workspace/approv
 
 export function productNavigationActive(pathname: string, query: URLSearchParams, sections: WorkspaceNavigationSection[]): string | undefined {
   const items = sections.flatMap(section => section.items);
-  const exists = (id: string) => items.some(item => item.id === id) ? id : undefined;
-  const under = (root: string) => pathname === root || pathname.startsWith(`${root}/`);
-  if (pathname === "/workspace") return exists("home");
-  if (under("/workspace/catalogs") || under("/workspace/pre-projects/catalogs") || under("/workspace/pre-projects/master-data")) return exists("resources");
-  if (under("/workspace/crm/conversations")) return exists("inbox");
-  if (under("/workspace/crm/customers") || under("/workspace/crm/organizations")) return exists("clients");
-  if (under("/workspace/crm/calendar")) return exists("daily-follow-ups");
-  if (under("/workspace/crm/follow-ups") && query.get("view") === "schedule") return exists("daily-follow-ups");
-  if (under("/workspace/tasks") || under("/workspace/approvals")) return exists("home");
-  if (under("/workspace/crm/follow-ups") && query.get("view") === "activity") return exists("home");
-  if (under("/workspace/crm")) return exists("sales");
-  if (under("/workspace/pre-projects")) return exists("planning") ?? exists("projects");
-  if (under("/workspace/projects/clients")) return exists("clients");
-  if (under("/workspace/purchasing")) return exists("purchasing");
-  if (under("/workspace/inventory")) return exists("inventory");
-  if (under("/workspace/factory")) return exists("factory");
-  if (under("/workspace/finance")) return exists("finance");
-  if (under("/workspace/projects")) return exists("projects");
-  if (under("/workspace/hrms")) return exists("team");
-  if (under("/workspace/integrations")) return exists("integrations");
-  if (under("/workspace/gallery")) return exists("gallery");
-  return exists("settings");
+  const exists = (id: string | undefined) => id && items.some(item => item.id === id) ? id : undefined;
+  const nav = resolveWorkspaceRoute(pathname, query).nav;
+  // Planning cases belong to Projects for people who reach them from a project.
+  return exists(nav) ?? (nav === "planning" ? exists("projects") : undefined);
 }
 
 export const workspaceScreens = workspaceModules.flatMap((module) =>

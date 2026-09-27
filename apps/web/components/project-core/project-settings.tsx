@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import {
-  Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput,
-} from "@/design-system";
+import { Badge, Button, EmptyState, IconButton, InlineNotice, PillTabs, SelectField, SettingsPage, SettingsRow, SettingsSection, InspectorSheet, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
@@ -35,7 +33,7 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
-  if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (error && !data) return isNoAccessError(error) ? <NoAccessState area={t("Projects")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!data) return <Skeleton lines={6} shape="form" />;
   const save = async (work: () => Promise<SettingsState>) => {
     setError("");

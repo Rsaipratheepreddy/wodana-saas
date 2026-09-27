@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { parseDate } from "@internationalized/date";
-import { Button, ControlledModalDialog, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { Button, ControlledModalDialog, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput, isNoAccessError, NoAccessState } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
 import type { FactorySettings, FactorySettingsState, Workcenter, WorkcenterRate } from "@/lib/factory/types";
@@ -30,7 +30,7 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
     try { setData(await api.settings()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not load the settings.")); }
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (error && !data) return <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
+  if (error && !data) return isNoAccessError(error) ? <NoAccessState area={t("Factory")} /> : <EmptyState illustration="error" title={t("Settings didn't load")} description={error} action={<Button size="compact" onPress={() => void load()}>{t("Retry")}</Button>} />;
   if (!data) return <Skeleton lines={6} shape="form" />;
   const readOnly = !data.canManage;
   const flip = async (key: Flag, value: boolean) => {

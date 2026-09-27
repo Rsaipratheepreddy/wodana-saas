@@ -97,4 +97,25 @@ describe("workspace onboarding gate", () => {
     allowedModules = ["workspace", "crm", "projects"];
     expect((await direct()).status).toBe(200);
   });
+
+  it("opens Finance only for roles that can read supplier invoices, client invoices or postings", async () => {
+    vi.stubEnv("E2E_AUTH_BYPASS", "false");
+    let membership: Record<string, unknown> = { allowedModules: ["workspace", "crm"], allowedPermissions: ["payables.view"], roles: ["sales"] };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ nextAction: "enter_workspace", memberships: [{ workspaceId: "workspace-1", workspaceSlug: "example", onboarding: { status: "completed" }, ...membership }] }),
+    })));
+    const finance = () => proxy(new NextRequest("http://localhost/workspace/finance/payments", { headers: { cookie: "wodana_access=access-token" } }));
+
+    // Finance belongs to the Projects module…
+    expect((await finance()).headers.get("location")).toBe("http://localhost/workspace-access-denied");
+    // …and needs a finance permission within it.
+    membership = { allowedModules: ["workspace", "projects"], allowedPermissions: ["commercial.finance.verify"], roles: ["finance_reviewer"] };
+    expect((await finance()).headers.get("location")).toBe("http://localhost/workspace-access-denied");
+    membership = { allowedModules: ["workspace", "projects"], allowedPermissions: ["receivables.view"], roles: ["finance_reviewer"] };
+    expect((await finance()).status).toBe(200);
+    membership = { allowedModules: ["workspace"], allowedPermissions: [], roles: ["owner"] };
+    expect((await finance()).status).toBe(200);
+  });
 });

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Route } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Callout, Checkbox, EmptyState, SelectField, Skeleton, Surface, Switch } from "@/design-system";
+import { Button, Callout, Checkbox, EmptyState, isNoAccessError, NoAccessState, SelectField, Skeleton, Surface, Switch } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { crmRequest, rows } from "@/lib/crm/client";
 import type { CrmScreenPageData } from "@/lib/crm/screens";
 import { CrmProductShell } from "./crm-product-shell";
@@ -37,6 +38,7 @@ export const SALES_RULES = ["enquiry_ownership", "response_escalation"];
 export const DELIVERY_RULES = ["decision_reminders", "weekly_progress"];
 
 export function CrmSmartRules({ initialData, codes = SALES_RULES, title = "Automations", embedded = false }: { initialData: CrmScreenPageData; codes?: string[]; title?: string; embedded?: boolean }) {
+  const t = useT();
   const [rules, setRules] = useState(() => (initialData.items as unknown as Rule[]).filter((rule) => codes.includes(rule.code)));
   const [saving, setSaving] = useState<string | null>(null);
   const [failure, setFailure] = useState("");
@@ -78,11 +80,12 @@ export function CrmSmartRules({ initialData, codes = SALES_RULES, title = "Autom
         </Surface>)}
       </section>
     </div>;
-  return embedded ? body : <CrmProductShell title={title} description="" canView={initialData.canView} useWorkspaceColors>{body}</CrmProductShell>;
+  return embedded ? (initialData.canView ? body : <NoAccessState area={t(title as never)} />) : <CrmProductShell title={title} description="" canView={initialData.canView} useWorkspaceColors>{body}</CrmProductShell>;
 }
 
 /** Sales → Settings → Automations, inside the Sales page like the other settings tabs. */
 export function SalesAutomations({ workspaceId }: { workspaceId: string }) {
+  const t = useT();
   const [data, setData] = useState<CrmScreenPageData | null>(null);
   const [failure, setFailure] = useState("");
   const [reload, setReload] = useState(0);
@@ -93,7 +96,7 @@ export function SalesAutomations({ workspaceId }: { workspaceId: string }) {
       .catch((cause: Error) => { if (!controller.signal.aborted) setFailure(cause.message); });
     return () => controller.abort();
   }, [workspaceId, reload]);
-  if (failure) return <EmptyState illustration="error" title="Automations didn't load" description={failure} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>Retry</Button>} />;
+  if (failure) return isNoAccessError(failure) ? <NoAccessState area={t("Automations")} /> : <EmptyState illustration="error" title="Automations didn't load" description={failure} action={<Button size="compact" onPress={() => setReload((value) => value + 1)}>Retry</Button>} />;
   if (!data) return <Skeleton lines={3} />;
   return <CrmSmartRules initialData={data} embedded />;
 }

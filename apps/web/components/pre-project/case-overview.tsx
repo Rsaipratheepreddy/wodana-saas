@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Button, ControlledModalDialog, Form, MenuButton, SelectField, TextAreaField, TextInput, type ActionItem } from "@/design-system";
+import { Button, ControlledModalDialog, Form, MenuButton, PersonName, SelectField, TextAreaField, TextInput, type ActionItem } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { caseRequest } from "@/lib/pre-project/content";
 import type { DefinitionPageData } from "@/lib/pre-project/definition";
 import type { PreProjectCase } from "@/lib/pre-project/types";
@@ -22,6 +23,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
   commercial?: CommercialState;
   onUpdated: (record: PreProjectCase) => void;
 }) {
+  const t = useT();
   const [record, setRecord] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [owner, setOwner] = useState(initial.ownerMembershipId ?? "");
@@ -92,7 +94,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
     {error && !action ? <p role="alert" className={styles.error}>{error}</p> : null}
     {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
     <div className={styles.identity}>
-      <div><h2>Client details</h2>{!manageable && record.status !== "released" ? <span>View only · ask a project manager to change details</span> : null}</div>
+      <div><h2>Client details</h2>{!manageable && record.status !== "released" ? <span>{t("View only · the case owner or an admin can change details")}</span> : null}</div>
       {manageable && !editing ? <div className={styles.identityActions}>
         <Button size="compact" onPress={() => { setError(""); setEditing(true); }}>Edit details</Button>
         {caseActions.length ? <MenuButton items={caseActions} label="Project actions" onAction={(id) => { setError(""); if (id === "set_phase") setPhase(record.phase); setAction(id as Action); }} /> : null}
@@ -106,7 +108,7 @@ export function CaseOverview({ record: initial, workspaceId, members, onUpdated 
       <div className={styles.formActions}><Button size="compact" onPress={() => setEditing(false)} isDisabled={busy}>Cancel</Button><Button type="submit" size="compact" variant="primary" isDisabled={!changed} isLoading={busy}>Save details</Button></div>
     </Form> : <dl className={styles.facts}>
       <div><dt>Client</dt><dd>{record.customerName || "Not specified"}</dd></div>
-      <div><dt>Owner</dt><dd>{record.engagementOwnerName ?? "Unassigned"}</dd></div>
+      <div><dt>Owner</dt><dd><PersonName person={record.engagementOwnerName} fallback={t("Unassigned")} /></dd></div>
       <div><dt>Target</dt><dd>{record.targetDate ? new Date(`${record.targetDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Not set"}</dd></div>
     </dl>}
     <DesignJourney workspaceId={workspaceId} caseId={record.id} />

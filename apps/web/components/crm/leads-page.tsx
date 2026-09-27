@@ -14,6 +14,8 @@ import {
   IconButton,
   IconMenuButton,
   InspectorSheet,
+  NoAccessNotice,
+  NoAccessState,
   type DataGridColumn,
   DesignSystemProvider,
   TextAreaField,
@@ -103,7 +105,12 @@ function responseMessage(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-export function LeadsPage({ initialData: serverData, integrationsData, formBranding, initialLeadId, initialCreate = false, initialSection = "leads" }: { initialData: LeadsPageData; integrationsData?: IntegrationsPageData; formBranding?: LeadFormBranding; initialLeadId?: string; initialCreate?: boolean; initialSection?: EnquirySection }) {
+/** What each Enquiries section is called when someone's role can't open it. */
+const SECTION_AREA: Record<EnquirySection, "Enquiries" | "Campaigns" | "Reports" | "Sales settings" | "Automations"> = {
+  leads: "Enquiries", forms: "Campaigns", sources: "Campaigns", reports: "Reports", assignment: "Sales settings", sla: "Sales settings", options: "Sales settings", automations: "Automations",
+};
+
+export function LeadsPage({ initialData: serverData, integrationsData, integrationsDenied = false, formBranding, initialLeadId, initialCreate = false, initialSection = "leads", sectionDenied = false }: { initialData: LeadsPageData; integrationsData?: IntegrationsPageData; integrationsDenied?: boolean; formBranding?: LeadFormBranding; initialLeadId?: string; initialCreate?: boolean; initialSection?: EnquirySection; sectionDenied?: boolean }) {
   const router = useRouter();
   const t = useT();
   const [formDirty, setFormDirty] = useState(false);
@@ -300,10 +307,10 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
     <section aria-label="Enquiries workspace" className={styles.page}>
 
 
-      {workspaceArea === "capture" && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label="Capture settings"><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>Forms</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>Lead sources</button></nav> : null}
+      {workspaceArea === "capture" && !sectionDenied && !(activeSection === "forms" && formEditing) ? <nav className={styles.subnav} aria-label="Capture settings"><button type="button" data-active={activeSection === "forms" || undefined} onClick={() => openSection("forms")}>Forms</button><button type="button" data-active={activeSection === "sources" || undefined} onClick={() => openSection("sources")}>Lead sources</button></nav> : null}
 
 
-      {!initialData.canView ? <Callout title="Enquiry access is restricted" tone="warning">Ask a workspace owner or administrator for CRM enquiry access.</Callout> : <>
+      {!initialData.canView ? <NoAccessState area={t("Enquiries")} /> : sectionDenied ? <NoAccessState area={t(SECTION_AREA[activeSection])} /> : <>
         {linkedLead ? <InspectorSheet isOpen hideTitle title="Enquiry details" size="md" onOpenChange={(open) => { if (!open) setLinkedLead(undefined); }}><LinkedLeadWorkbench leadId={linkedLead} initialData={initialData} onChanged={() => reloadLeads()} onQualify={setQualificationLead} /></InspectorSheet> : null}
         {failure ? <Callout title="Enquiries could not be updated" tone="danger">{failure}</Callout> : null}
         {statusMessage ? <p aria-live="polite" className={styles.statusMessage}>{statusMessage}</p> : null}
@@ -345,7 +352,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
         </section>
           </> : null}
           {activeSection === "forms" ? <LeadFormBuilder initialData={initialData} initialBranding={formBranding} onDirtyChange={setFormDirty} onEditingChange={setFormEditing} /> : null}
-          {activeSection === "sources" ? <section aria-label="Sales lead source connections">{integrationsData ? <IntegrationsPage embedded initialData={integrationsData} onlyIds={["whatsapp", "meta_lead_ads"]} /> : <Callout title="Connections unavailable" tone="warning">Reload this page to see available lead-source connections.</Callout>}</section> : null}
+          {activeSection === "sources" ? <section aria-label="Sales lead source connections">{integrationsData ? <IntegrationsPage embedded initialData={integrationsData} onlyIds={["whatsapp", "meta_lead_ads"]} /> : integrationsDenied ? <NoAccessNotice area={t("Lead sources")} /> : <Callout title="Connections unavailable" tone="warning">Reload this page to see available lead-source connections.</Callout>}</section> : null}
           {activeSection === "options" ? <EnquiryFieldsSettings workspaceId={initialData.workspaceId} leadOptions={leadOptions} regionLabel={administrativeAreaLabel(countryFromLocale(serverData.defaultLocale))} onOptionsSaved={setLeadOptions} /> : null}
           {activeSection === "reports" ? <SalesReports initialData={initialData} regionLabel={administrativeAreaLabel(countryFromLocale(serverData.defaultLocale))} /> : null}
           {activeSection === "sla" ? <LeadResponseSla initialData={initialData} /> : null}

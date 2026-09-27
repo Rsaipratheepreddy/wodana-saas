@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Button, TextAreaField, useDesignSystem } from "@/design-system";
+import { Button, personDisplayName, TextAreaField, useDesignSystem } from "@/design-system";
 import {
   caseRequest,
   type CaseContent,
@@ -53,7 +53,7 @@ export function DesignComments({
       .map((a) => ({
         id: a.id,
         body: a.note,
-        author: a.decisionBy || a.createdByName,
+        author: personDisplayName(a.decisionBy || a.createdByName),
         at: a.createdAt,
         decision: decisions[a.action] ?? "",
       })),
@@ -63,7 +63,7 @@ export function DesignComments({
         t.messages.map((m) => ({
           id: m.id,
           body: m.body,
-          author: m.createdByName,
+          author: personDisplayName(m.createdByName),
           at: m.createdAt,
           decision: "",
         })),

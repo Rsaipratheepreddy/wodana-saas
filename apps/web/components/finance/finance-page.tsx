@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSection } from "@/lib/navigation/use-section";
 import { Button, PageHeader, Tabs } from "@/design-system";
@@ -8,7 +8,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { payablesApi } from "@/lib/payables/client";
 import { receivablesApi } from "@/lib/receivables/client";
 import { accountingApi } from "@/lib/accounting/client";
-import type { FinanceSection } from "@/lib/payables/sections";
+import { FINANCE_SECTIONS, type FinanceSection } from "@/lib/payables/sections";
 import type { PayablesState } from "@/lib/payables/types";
 import { AccountingPostings } from "./accounting-postings";
 import { BillEditor } from "./bill-editor";
@@ -20,10 +20,18 @@ import { PettyCash } from "./petty-cash";
 import { SuppliersOwed } from "./suppliers-owed";
 import styles from "./finance.module.css";
 
+const PAYABLES_SECTIONS = ["bills", "payments", "runs", "suppliers"] as const;
+
+/** Tabs when there is a choice; a single tab is just its panel. */
+function FinanceTabs(props: ComponentProps<typeof Tabs>) {
+  const items = [...(props.items ?? [])];
+  return items.length === 1 ? <>{items[0].panel}</> : <Tabs {...props} />;
+}
+
 const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "petty-cash": "claim", "client-invoices": "invoice" };
 
 /** Finance: suppliers' invoices to check and pay, payments and payment runs, what each supplier is owed, petty cash to reimburse, clients' tax invoices, and accounting postings. Records open in place. */
-export function FinancePage({ workspaceId, section: initialSection, supplierId: initialSupplier }: { workspaceId: string; section: FinanceSection; supplierId: string | null }) {
+export function FinancePage({ workspaceId, section: initialSection, sections = FINANCE_SECTIONS, supplierId: initialSupplier }: { workspaceId: string; section: FinanceSection; sections?: readonly FinanceSection[]; supplierId: string | null }) {
   const t = useT();
   const [route, move] = useSection({ section: initialSection, supplierId: initialSupplier }, `${initialSection}/${initialSupplier ?? ""}`);
   const { section, supplierId } = route;
@@ -38,7 +46,9 @@ export function FinancePage({ workspaceId, section: initialSection, supplierId: 
   const load = useCallback(async () => {
     try { setState(await api.state()); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Finance didn't load.")); }
   }, [api, t]);
-  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // Supplier invoices, payments, runs and what's owed share one load; only fetch it for people who have those tabs.
+  const payablesTabs = sections.some((item) => (PAYABLES_SECTIONS as readonly string[]).includes(item));
+  useEffect(() => { if (payablesTabs) queueMicrotask(() => void load()); }, [load, payablesTabs]);
   const go = (next: FinanceSection, open?: string | null) => {
     const base = `/workspace/finance${next === "bills" ? "" : `/${next}`}`;
     move({ section: next, supplierId: next === "suppliers" ? open ?? null : null },
@@ -52,7 +62,7 @@ export function FinancePage({ workspaceId, section: initialSection, supplierId: 
     : <Button variant="primary" onPress={() => setEntering(true)}>{t("Enter invoice")}</Button>;
   return <div className={styles.page}>
     <PageHeader title={t("Finance")} actions={action} />
-    <Tabs selectedKey={section} onSelectionChange={(key) => go(key as FinanceSection)} items={[
+    <FinanceTabs selectedKey={section} onSelectionChange={(key) => go(key as FinanceSection)} items={[
       { id: "bills", label: held ? t("Supplier invoices ({count})", { count: held }) : t("Supplier invoices"),
         panel: <Bills api={api} state={state} error={error} openId={params.get("bill")} onReload={() => void load()} onOpen={(id) => go("bills", id)} /> },
       { id: "payments", label: t("Payments"),
@@ -67,7 +77,7 @@ export function FinancePage({ workspaceId, section: initialSection, supplierId: 
       { id: "client-invoices", label: t("Client invoices"),
         panel: <ClientInvoices api={receivables} openId={params.get("invoice")} onOpen={(id) => go("client-invoices", id)} /> },
       { id: "accounting", label: t("Accounting"), panel: <AccountingPostings api={accounting} /> },
-    ]} />
+    ].filter((item) => sections.includes(item.id as FinanceSection))} />
     {entering && state ? <BillEditor api={api} vendors={state.vendors} companies={state.companies} onClose={() => setEntering(false)}
       onSaved={(id) => { setEntering(false); void load(); go("bills", id); }} /> : null}
   </div>;

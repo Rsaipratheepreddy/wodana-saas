@@ -141,6 +141,27 @@ describe("WorkspaceShell theme", () => {
     expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Calendar")).toBeVisible();
     expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Calendar" })).toHaveAttribute("aria-current", "page");
   });
+  it("names Finance from the route map: breadcrumb, sidebar, Settings gear and window title agree", () => {
+    route.pathname = "/workspace/finance/payments";
+    const { container } = render(<WorkspaceShell {...shellProps}><p>Finance</p></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Finance$/);
+    expect(within(screen.getByRole("navigation", { name: "Main navigation" })).getByRole("link", { name: "Finance" })).toHaveAttribute("aria-current", "page");
+    expect(container.querySelector('header a[title="Settings"]')).not.toHaveAttribute("data-active");
+    expect(document.title).toBe("Finance · Example Studio");
+  });
+  it("keeps People under Settings with the Settings menu, and lights the gear only there", () => {
+    const { container } = render(<WorkspaceShell {...shellProps}><p>People</p></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Settings");
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("People");
+    expect(screen.getByRole("navigation", { name: "Settings" })).toBeInTheDocument();
+    expect(container.querySelector('header a[title="Settings"]')).toHaveAttribute("data-active", "true");
+    expect(document.title).toBe("People · Example Studio");
+  });
+  it("shows Clients on its own, not under Sales", () => {
+    route.pathname = "/workspace/crm/customers";
+    render(<WorkspaceShell {...shellProps}><p>Clients</p></WorkspaceShell>);
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(/^Clients$/);
+  });
   it("toggles light and dark mode from the header and persists the choice", async () => {
     const interaction = userEvent.setup();
     render(<WorkspaceShell {...shellProps}><p>Workspace content</p></WorkspaceShell>);

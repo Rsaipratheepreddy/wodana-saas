@@ -15,9 +15,11 @@ function responseMessage(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-function sessionLabel(session: SecuritySession) {
+/** "Safari on Mac"; just "Browser" when the session's user agent doesn't say. */
+function sessionLabel(session: SecuritySession, t: ReturnType<typeof useT>) {
   const details = deviceDetails(session.userAgent);
-  return `${details.browser} on ${details.device}`;
+  const browser = details.browser ?? t("Browser");
+  return details.device ? t("{browser} on {device}", { browser, device: t(details.device) }) : browser;
 }
 
 type MfaDialog = "setup" | "regenerate" | "disable" | "codes";
@@ -192,7 +194,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       });
       if (!response.ok) throw new Error(await responseMessage(response, "The session could not be signed out."));
       setSessions((current) => current.filter((session) => session.familyId !== selectedSession.familyId));
-      setStatus(`${sessionLabel(selectedSession)} was signed out.`);
+      setStatus(`${sessionLabel(selectedSession, t)} was signed out.`);
       setSelectedSession(null);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : "The session could not be signed out.");
@@ -207,10 +209,10 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       : mfaDialog === "disable" ? "Turn off two-step verification"
         : "Save your recovery codes";
   const sessionColumns: DataGridColumn<SecuritySession>[] = [
-    { id: "device", accessorFn: sessionLabel, header: "Device", size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser}</strong><small>{details.device}</small></span>; } },
+    { id: "device", accessorFn: (session) => sessionLabel(session, t), header: "Device", size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser ?? t("Browser")}</strong>{details.device ? <small>{t(details.device)}</small> : null}</span>; } },
     { accessorKey: "ipAddress", header: "IP address", size: 145, cell: ({ row }) => row.original.ipAddress ?? "—" },
     { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: "Last active", size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, regionFormat, { dateStyle: "medium", timeStyle: "short" })}</time> },
-    { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <Badge tone="success">{t("This device")}</Badge> : <Button aria-label={`Sign out ${sessionLabel(row.original)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">{t("Sign out")}</Button> },
+    { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <Badge tone="success">{t("This device")}</Badge> : <Button aria-label={`Sign out ${sessionLabel(row.original, t)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">{t("Sign out")}</Button> },
   ];
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
@@ -280,7 +282,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
     </ControlledModalDialog>
 
     <ConfirmationDialog
-      body={selectedSession ? <>{t("Sign out")}{" "}<strong>{sessionLabel(selectedSession)}</strong>{t("? That browser will need to sign in again.")}</> : null}
+      body={selectedSession ? <>{t("Sign out")}{" "}<strong>{sessionLabel(selectedSession, t)}</strong>{t("? That browser will need to sign in again.")}</> : null}
       confirmLabel={working ? "Signing out…" : "Sign out session"}
       isOpen={Boolean(selectedSession)}
       onConfirm={() => void revokeSession()}

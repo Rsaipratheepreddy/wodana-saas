@@ -68,7 +68,7 @@ export function CrmCustomers({ initialData, initialRecordId, initialView = "all"
     finally { setBusy(false); }
   };
 
-  return <CrmProductShell title="Customers" description="" canView={initialData.canView} useWorkspaceColors>
+  return <CrmProductShell title="Clients" description="" canView={initialData.canView} useWorkspaceColors>
     {failure ? <Callout title="Could not refresh customers" tone="warning">{failure}</Callout> : null}
     <div data-sales-grid className={styles.clientsGrid}><DataGrid
       ariaLabel="Customer records"

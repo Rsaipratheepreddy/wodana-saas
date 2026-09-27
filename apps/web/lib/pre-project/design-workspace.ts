@@ -1,3 +1,4 @@
+import { personDisplayName } from "@/design-system/components/person";
 import type { CaseDesign, DesignOptions } from "./content";
 
 export type JourneyStageKey = "inspiration" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "approval";
@@ -34,7 +35,7 @@ export function nextStep(design: CaseDesign, options: Pick<DesignOptions, "revie
   const latest = latestOf(design);
   if (!latest) return { key: "Upload a file" };
   if (latest.status === "draft") return { key: "Send for review" };
-  if (latest.status === "internal_review") return { key: "With {name}", values: { name: options.reviewers.find((item) => item.id === latest.reviewerId)?.name ?? "the reviewer" } };
+  if (latest.status === "internal_review") return { key: "With {name}", values: { name: personDisplayName(options.reviewers.find((item) => item.id === latest.reviewerId)?.name) || "the reviewer" } };
   if (latest.status === "internal_approved") return { key: "Present to the client" };
   if (latest.status === "client_review") return { key: "Waiting for the client" };
   if (latest.status === "approved") return { key: "Approved" };

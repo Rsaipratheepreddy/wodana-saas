@@ -1,7 +1,6 @@
-import { JobsPage } from "@/components/jobs";
-import { jobsRead } from "@/lib/jobs/jobs.server";
+import { redirect } from "next/navigation";
 
-export default async function JobsEntryPage() {
-  const { data, loadError } = await jobsRead();
-  return <JobsPage items={data.items} loadError={loadError} total={data.total} />;
+/** The old Jobs list: the work is followed in Planning, then Projects. */
+export default function JobsEntryPage() {
+  redirect("/workspace/pre-projects");
 }

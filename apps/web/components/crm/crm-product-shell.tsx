@@ -1,17 +1,19 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Callout, DesignSystemProvider } from "@/design-system";
+import { DesignSystemProvider, NoAccessState } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import base from "./crm-screen-page.module.css";
 import styles from "./crm-product.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
 
 export function CrmProductShell({ title, canView, actions, children, compact = false, useWorkspaceColors = false, headerClassName, pageClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; useWorkspaceColors?: boolean; headerClassName?: string; pageClassName?: string }) {
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
+  const t = useT();
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
     <section className={[compact ? styles.focusedPage : base.page, pageClassName].filter(Boolean).join(" ")} aria-label={`${title} workspace`}>
       {!compact && canView && actions ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div className={styles.actions}>{actions}</div></header> : null}
-      {canView ? children : <Callout title={`${title} access is restricted`} tone="warning">Ask an administrator for the required CRM permission.</Callout>}
+      {canView ? children : <NoAccessState area={t(title as never)} />}
     </section>
   </DesignSystemProvider>;
 }

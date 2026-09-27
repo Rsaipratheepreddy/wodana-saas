@@ -4,7 +4,7 @@ import { ArrowUpRight, Copy, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Button, Checkbox, ControlledModalDialog, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, PhoneField, RecordTable, SegmentedControl, Skeleton, TextInput,
+  Button, Checkbox, ControlledModalDialog, EmailInput, EmptyState, ErrorState, IconMenuButton, InlineNotice, isNoAccessError, NoAccessState, PhoneField, RecordTable, SegmentedControl, Skeleton, TextInput,
   type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -34,7 +34,7 @@ export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled,
     try { setState(await api.contacts(caseId)); setError(""); } catch (cause) { setError((cause as Error).message); }
   }, [api, caseId]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-  if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
+  if (error && !state) return isNoAccessError(error) ? <NoAccessState area={t("Client access")} /> : <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={3} shape="rows" />;
   const done = async (message: string, next: { contacts: PortalContact[]; canManage: boolean; demo: boolean }) => {
     setState(next); setEdit(null); setNotice(message); await onChanged?.();
@@ -81,11 +81,11 @@ export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled,
       <span className={styles.spacer} />
       {state.canManage ? <Button size="compact" variant="primary" onPress={() => open()}><Plus aria-hidden="true" size={14} />{t("Add contact")}</Button> : null}
     </div>
-    {!portalEnabled ? <InlineNotice tone="info" message={<>{t("The portal is off.")} <Link href="/workspace/settings/client-portal">{t("Turn it on in Settings")}</Link></>} /> : null}
+    {!portalEnabled ? <InlineNotice tone="info" message={state.canManage ? <>{t("The portal is off.")} <Link href="/workspace/settings/client-portal">{t("Turn it on in Settings")}</Link></> : t("The portal is off.")} /> : null}
     {notice ? <InlineNotice tone="success" message={notice} /> : null}
     {error && !edit ? <InlineNotice tone="error" message={error} /> : null}
     {state.contacts.length ? <RecordTable ariaLabel={t("Client contacts")} data={state.contacts} getRowId={(row) => row.id} columns={columns} showToolbar={false} wrapText />
-      : <EmptyState title={t("No client contacts yet")} description={t("Add the people who follow this project.")} action={state.canManage ? <Button variant="primary" onPress={() => open()}>{t("Add contact")}</Button> : undefined} />}
+      : <EmptyState title={t("No client contacts yet")} description={state.canManage ? t("Add the people who follow this project.") : t("People who manage the client portal add contacts here.")} action={state.canManage ? <Button variant="primary" onPress={() => open()}>{t("Add contact")}</Button> : undefined} />}
     {edit ? <ControlledModalDialog isOpen onOpenChange={(openState) => { if (!openState) setEdit(null); }} title={edit.id ? t("Edit contact") : t("Add contact")}
       footer={<div className="wd-dialog-actions"><Button onPress={() => setEdit(null)}>{t("Cancel")}</Button>
         <Button variant="primary" isLoading={busy} isDisabled={!edit.name.trim() || !edit.national.trim()} onPress={() => void save()}>{t("Save")}</Button></div>}>

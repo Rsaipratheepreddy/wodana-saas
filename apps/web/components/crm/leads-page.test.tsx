@@ -375,7 +375,7 @@ describe("LeadsPage", () => {
   it("shows a permission state instead of an empty data grid", () => {
     render(<LeadsPage initialData={{ ...structuredClone(leadsPageFixture), canView: false, items: [] }} />);
 
-    expect(screen.getByText("Enquiry access is restricted")).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to Enquiries")).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "CRM enquiries" })).not.toBeInTheDocument();
   });
 });

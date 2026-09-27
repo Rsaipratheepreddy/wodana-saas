@@ -81,6 +81,12 @@ export function sourceRoute(link: JobSourceLink): string | null {
   return null;
 }
 
+/** Where a job's work lives today: its project, else its planning case, else its sales record. */
+export function jobHome(links: JobSourceLink[]): string | null {
+  const order: JobSourceLink["type"][] = ["project", "case", "quote", "opportunity", "lead", "enquiry"];
+  return order.map((type) => links.filter((link) => link.type === type).map(sourceRoute).find(Boolean)).find(Boolean) ?? null;
+}
+
 export function actionableJobs(items: JobIdentityProjection[]) {
   return items.filter((job) => job.nextAction || jobFlagLabels(job).length > 0);
 }

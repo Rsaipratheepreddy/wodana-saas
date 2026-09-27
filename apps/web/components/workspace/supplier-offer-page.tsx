@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Callout, Container, DataGrid, PageHeader, Stack, type DataGridColumn } from "@/design-system";
+import { Badge, Callout, Container, DataGrid, isNoAccessError, NoAccessState, PageHeader, Stack, type DataGridColumn } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 export type SupplierOffer = {
   id: string;
@@ -41,9 +42,10 @@ const offerState = (offer: SupplierOffer) => {
 };
 
 export function SupplierOfferPage({ workspaceId }: { workspaceId: string }) {
+  const t = useT();
   const [status, setStatus] = useState("active");
   const [search, setSearch] = useState("");
-  const [result, setResult] = useState<{ items: SupplierOffer[]; loading: boolean; error: string }>({ items: [], loading: true, error: "" });
+  const [result, setResult] = useState<{ items: SupplierOffer[]; loading: boolean; error: string; denied?: boolean }>({ items: [], loading: true, error: "" });
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -52,10 +54,10 @@ export function SupplierOfferPage({ workspaceId }: { workspaceId: string }) {
         const query = new URLSearchParams({ workspaceId, ...(status !== "all" ? { status } : {}), ...(search.trim() ? { search: search.trim() } : {}) });
         const response = await fetch(`/api/workspace/supplier-offers?${query}`, { signal: controller.signal });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message ?? "Supplier offers could not be loaded.");
+        if (!response.ok) throw Object.assign(new Error(payload.message ?? "Supplier offers could not be loaded."), { status: response.status });
         setResult({ items: Array.isArray(payload.data) ? payload.data : [], loading: false, error: "" });
       } catch (error) {
-        if (!controller.signal.aborted) setResult({ items: [], loading: false, error: error instanceof Error ? error.message : "Supplier offers could not be loaded." });
+        if (!controller.signal.aborted) setResult({ items: [], loading: false, error: error instanceof Error ? error.message : "Supplier offers could not be loaded.", denied: isNoAccessError(error) });
       }
     }, search ? 160 : 0);
     return () => { controller.abort(); clearTimeout(timer); };
@@ -70,6 +72,7 @@ export function SupplierOfferPage({ workspaceId }: { workspaceId: string }) {
     { id: "state", header: "Status", size: 120, accessorFn: (offer) => offerState(offer).label, cell: ({ row }) => { const state = offerState(row.original); return <Badge tone={state.tone}>{state.label}</Badge>; } },
   ], []);
 
+  if (result.denied) return <NoAccessState area={t("Supplier offers")} />;
   return <Container as="main" size="full"><Stack gap={5}>
     <PageHeader eyebrow="Planning" title="Supplier offers" description="Compare permissioned purchase offers by item, entity, currency, source and validity. Selling-price users cannot see this data." />
     <Callout tone="info" title="Purchase evidence only">Currency conversion is never implied. Offers outside the legal entity&apos;s base currency remain marked for conversion before selection.</Callout>
