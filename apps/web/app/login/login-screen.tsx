@@ -715,7 +715,7 @@ export function LoginScreen({
             </div>
             <footer aria-label={t("Powered by Wodana")} className={styles.poweredBy}>
               <span>{t("Powered by")}</span>
-              <WodanaLogo size="small" className={styles.poweredLogo} />
+              <WodanaLogo size="small" />
             </footer>
             <LanguageSelect className={styles.languageChoice} compact label={null} />
           </div>
