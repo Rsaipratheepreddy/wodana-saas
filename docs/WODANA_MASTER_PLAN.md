@@ -757,6 +757,16 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - Dispatched ≤ passed lot qty − previous dispatches + returns.
   - Site delivery records accepted and rejected qty. A rejected qty creates a snag plus a rework order and a return trip automatically.
 - **Screens:** Factory = production queue (WOs by workcenter and day: board + grid) · WO inspector (allocations, materials, operations, outputs, QC, lots, dispatches) · Dispatch planner (ready lots → trips).
+- **Build order:** F1 work orders, release checks, output reports, QC and ready stock → F2 work-order materials (issue, shortage, substitution) → F3 capacity schedule and cross-project batches → F4 outsourced operations, drawing revisions, deduction variations → dispatch and site acceptance with Site (phase 7).
+- **F1 (built) — Operations → Factory: To make · Work orders; Settings → Factory:**
+  1. *To make* lists the scope lines of packages made in our factory, in running projects: quantity, on work orders, left. *Plan work order* takes all or part of what's left (Σ work orders ≤ the line, under a lock), a workcenter and planned dates (by default the package's work that needs its materials).
+  2. *Release* passes only when its checks do, each shown with what's missing: the project is running; the drawing is approved (a reference, recorded by whom and when); payments before production are verified; the package's materials are in (from orders or stock); a workcenter and dates are set. Each check is a Factory setting.
+  3. *Start*, then *Report output*: good and scrapped (scrap needs why). Someone else approves or refuses each report; approved good can't pass what's left to make.
+  4. *Quality check* of approved output: passed goes into stock at the factory, owned by the project (moved to site with Inventory → Move stock); failed says why and is made again (it never counts twice). With no check required, approval passes it.
+  5. The work order is ready when all of it passed. On hold with why and resumed; cancelled only with nothing made; otherwise short-closed with why, and what wasn't made goes back to *To make*.
+  - Notices: released (factory people and the project's factory lead), a report waiting (approvers), a check failed (factory lead and project manager), ready (project manager and installation lead).
+  - Permissions: `factory.view`, `factory.manage` (plan, release, start, hold, close), `factory.report`, `factory.approve` (approve reports, check quality).
+  - Records: `workcenters`, `workspace_factory_settings`, `work_orders` (numbered WO-n), `work_order_reports`, `work_order_checks`, `work_order_events`; made goods are `produce` movements in the stock ledger, and Inventory → History names the work order.
 
 ### 6.17 Site execution
 - **Records:** daily_reports (date, author, workforce by trade, weather, safety state `none|observation|incident`, forecast state `none|watch|blocked`, impact/recovery plan/next update date, photos), daily_report_lines → task_progress_entries, installation records (task progress), site deliveries, access/permit notes, commissioning checks.

@@ -123,6 +123,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/projects", icon: "projects", id: "project-settings", label: "Projects" },
           { href: "/workspace/settings/purchasing", icon: "procurement", id: "purchasing-settings", label: "Purchasing" },
           { href: "/workspace/settings/inventory", icon: "materialPlan", id: "inventory-settings", label: "Stock places" },
+          { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: "Factory" },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },
@@ -306,7 +307,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     icon: "projects",
     id: "projects",
     label: "Projects",
-    paths: ["/workspace/purchasing", "/workspace/inventory"],
+    paths: ["/workspace/purchasing", "/workspace/inventory", "/workspace/factory"],
     navigation: [
       {
         id: "projects-primary",
@@ -314,6 +315,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Projects", description: "Every project: stage, next step and handover date." },
           { href: "/workspace/purchasing", icon: "procurement", id: "global-purchasing", label: "Purchasing", description: "What to order, orders and suppliers." },
           { href: "/workspace/inventory", icon: "materialPlan", id: "global-inventory", label: "Inventory", description: "Stock by place, moves and counts." },
+          { href: "/workspace/factory", icon: "production", id: "global-factory", label: "Factory", description: "What to make, work orders and their checks." },
         ],
       },
     ],
@@ -362,7 +364,7 @@ export function productNavigation(modules: WorkspaceModuleDefinition[]): Workspa
     { id: "operations", label: "Operations", items: [
       ...(allowed.has("global-purchasing") ? [{ id: "purchasing", label: "Purchasing", href: "/workspace/purchasing", icon: "procurement" as const }] : []),
       ...(allowed.has("global-inventory") ? [{ id: "inventory", label: "Inventory", href: "/workspace/inventory", icon: "materialPlan" as const }] : []),
-      ...(allowed.has("production") ? [{ id: "factory", label: "Factory", href: "/workspace/projects/factory", icon: "production" as const }] : []),
+      ...(allowed.has("global-factory") ? [{ id: "factory", label: "Factory", href: "/workspace/factory", icon: "production" as const }] : []),
     ] },
     { id: "utilities", label: "Company", items: [
       ...(allowed.has("hrms-overview") ? [{ id: "team", label: "People", description: "Team, attendance and leave", href: "/workspace/hrms", icon: "members" as const }] : []),

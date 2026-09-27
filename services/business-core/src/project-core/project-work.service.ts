@@ -3,8 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { PoolClient } from "pg";
 import type { ActorUser, RequestActor } from "../auth/actor";
 import { recordAudit } from "../audit/record-audit";
-import { Dec } from "../catalog-core/decimal";
-import { readNeeds } from "../purchasing/orders";
+import { needsNotIn, readNeeds } from "../purchasing/orders";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { activeMembers, ensureSettings, membershipOf, readProject, readTeam, type ProjectRow } from "./project-core.store";
 import { noticeWork, type WorkNotice } from "./project-notices";
@@ -381,11 +380,8 @@ export class ProjectWorkService {
   private async materialsWaiting(client: Db, workspaceId: string, projectId: string, items: WorkItem[]) {
     const needing = items.filter((item) => item.needsMaterials && OPEN(item.status));
     if (!needing.length) return {};
-    const short = (await readNeeds(client, workspaceId, false, projectId))
-      .filter((need) => need.required !== null && Dec.of(need.received).add(need.fromStock).cmp(need.required) < 0);
-    return Object.fromEntries(needing.map((item) => [item.id, short
-      .filter((need) => !item.packageId || !need.packageIds.length || need.packageIds.includes(item.packageId))
-      .map((need) => need.title)]).filter(([, titles]) => titles.length));
+    const needs = await readNeeds(client, workspaceId, false, projectId);
+    return Object.fromEntries(needing.map((item) => [item.id, needsNotIn(needs, item.packageId).map((need) => need.title)]).filter(([, titles]) => titles.length));
   }
 
   private async detail(client: Db, workspaceId: string, projectId: string, itemId: string) {

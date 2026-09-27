@@ -134,6 +134,15 @@ export async function readNeeds(db: Db, workspaceId: string, requireSignoff: boo
 }
 
 /**
+ * The needs a package's work is still waiting for: not in yet (received on orders or given from stock,
+ * short of what's needed). A need used nowhere in particular counts for every package.
+ */
+export function needsNotIn(needs: Need[], packageId: string | null) {
+  return needs.filter((need) => need.required !== null && Dec.of(need.received).add(need.fromStock).cmp(need.required) < 0
+    && (!packageId || !need.packageIds.length || need.packageIds.includes(packageId)));
+}
+
+/**
  * What free stock has given each need: reserved for its project (less released) or issued to it straight
  * from free stock (less what came back). Stock matches a need by its catalog item in the same unit, else
  * by name and unit; when two needs match the same stock, the first in the list takes what it needs first.

@@ -24,6 +24,7 @@ import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.serv
 import { SupplierControlsService, processSupplierDocuments } from "../purchasing/supplier-controls.service";
 import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
+import { FactoryService } from "../factory/factory.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -1997,6 +1998,100 @@ integration("projects core (plan §6.10)", () => {
       expect(board.materials).toEqual({});
     });
   });
+
+  it("makes scope lines in the factory: split work orders, release checks, output approved by someone else, quality checks into stock, and closing short", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const factoryRights = [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"];
+      const maker = new FactoryService(access(w.designer, factoryRights));
+      const checker = new FactoryService(access(w.manager, ["factory.view", "factory.approve"]));
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      const joinery = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery", hoursPerDay: "8" });
+      await expect(maker.saveWorkcenter(actor, w.workspaceId, { id: randomUUID(), name: "joinery" })).rejects.toThrow(/already a workcenter called/);
+
+      let state = await maker.state(actor, w.workspaceId);
+      const cabinets = state.toMake.find((line) => line.title === "Kitchen cabinets")!;
+      expect([cabinets.quantity, cabinets.planned, cabinets.left, cabinets.unit]).toEqual(["4.5000", "0", "4.5000", "m"]);
+      // 3 now and 1.5 later; nothing past the line.
+      const first = randomUUID(), second = randomUUID();
+      let order = await maker.plan(actor, w.workspaceId, { id: first, lineId: cabinets.lineId, quantity: "3" });
+      expect(await maker.plan(actor, w.workspaceId, { id: first, lineId: cabinets.lineId, quantity: "3" })).toMatchObject({ order: { id: first } });
+      await expect(maker.plan(actor, w.workspaceId, { id: second, lineId: cabinets.lineId, quantity: "2" })).rejects.toThrow("Only 1.5 m of Kitchen cabinets is left to plan.");
+      await maker.plan(actor, w.workspaceId, { id: second, lineId: cabinets.lineId, quantity: "1.5" });
+      expect((await maker.state(actor, w.workspaceId)).toMake.find((line) => line.title === "Kitchen cabinets")!.left).toBe("0.0000");
+
+      // Released only when its checks pass.
+      expect(order.releaseChecks.filter((check) => !check.passed).map((check) => check.key)).toEqual(["drawing", "payment", "schedule"]);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "release", version: order.order.version }))
+        .rejects.toThrow("Before it's released: the drawing isn't approved; the payment before production isn't verified; it has no workcenter or dates.");
+      order = await maker.command(actor, w.workspaceId, first, { action: "approve_drawing", reference: "K-01 rev B", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, first, { action: "update", workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-16", version: order.order.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requirePayment: false });
+      order = await maker.command(actor, w.workspaceId, first, { action: "release", version: order.order.version });
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: randomUUID(), good: "1" })).rejects.toThrow(/Start the work order first/);
+      order = await maker.command(actor, w.workspaceId, first, { action: "start", version: order.order.version });
+
+      // Output: reported by one person, approved by another; never past what's left to make.
+      const report = randomUUID();
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: report, good: "2", scrap: "0.5" })).rejects.toThrow("Say why it was scrapped.");
+      order = await maker.command(actor, w.workspaceId, first, { action: "report", id: report, good: "2", scrap: "0.5", scrapReason: "Chipped edge" });
+      order = await maker.command(actor, w.workspaceId, first, { action: "report", id: report, good: "2", scrap: "0.5", scrapReason: "Chipped edge" });
+      expect(order.reports).toHaveLength(1);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: randomUUID(), good: "2" })).rejects.toThrow("Only 1 m is still to make.");
+      await expect(maker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: report, decision: "approve", version: order.order.version })).rejects.toThrow("Someone else approves your report.");
+      await expect(checker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: report, decision: "refuse", version: order.order.version })).rejects.toThrow("Say why the report is refused.");
+      order = await checker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: report, decision: "approve", version: order.order.version });
+      expect([order.order.made, order.order.toCheck, order.order.scrapped, order.order.left]).toEqual(["2.0000", "2.0000", "0.5000", "1.0000"]);
+
+      // Quality: what passes goes into stock at the factory; what fails is made again.
+      const check = randomUUID();
+      await expect(checker.command(actor, w.workspaceId, first, { action: "check", id: randomUUID(), passed: "2", failed: "0.5", failReason: "x" })).rejects.toThrow("Only 2 m is waiting to be checked.");
+      order = await checker.command(actor, w.workspaceId, first, { action: "check", id: check, passed: "1.5", failed: "0.5", failReason: "Veneer lifting" });
+      order = await checker.command(actor, w.workspaceId, first, { action: "check", id: check, passed: "1.5", failed: "0.5", failReason: "Veneer lifting" });
+      expect([order.order.passed, order.order.toCheck, order.order.left, order.order.status]).toEqual(["1.5000", "0.0000", "1.5000", "in_production"]);
+      const more = randomUUID();
+      order = await maker.command(actor, w.workspaceId, first, { action: "report", id: more, good: "1.5" });
+      order = await checker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: more, decision: "approve", version: order.order.version });
+      order = await checker.command(actor, w.workspaceId, first, { action: "check", id: randomUUID(), passed: "1.5" });
+      expect([order.order.passed, order.order.left, order.order.status]).toEqual(["3.0000", "0.0000", "ready"]);
+      const stock = await buyingStock(w, access, all);
+      expect(stock.rows.map((row) => [row.itemName, row.locationName, row.projectId, row.onHand])).toEqual([["Kitchen cabinets", "Factory", projectId, "3.0000"]]);
+
+      // The second can be cancelled while nothing is made on it; what it held goes back to be planned.
+      const planned = (await maker.order(actor, w.workspaceId, second)).order;
+      await expect(maker.command(actor, w.workspaceId, second, { action: "cancel", version: planned.version })).rejects.toThrow("Say why it's cancelled.");
+      await maker.command(actor, w.workspaceId, second, { action: "cancel", reason: "Made in one run instead", version: planned.version });
+      state = await maker.state(actor, w.workspaceId);
+      expect(state.toMake.find((line) => line.title === "Kitchen cabinets")!.left).toBe("1.5000");
+
+      // A third, closed short after one passes: the half not made comes back.
+      const third = randomUUID();
+      order = await maker.plan(actor, w.workspaceId, { id: third, lineId: cabinets.lineId, quantity: "1.5", workcenterId: joinery, plannedStart: "2026-10-19", plannedEnd: "2026-10-20" });
+      order = await maker.command(actor, w.workspaceId, third, { action: "approve_drawing", reference: "K-01 rev B", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, third, { action: "release", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, third, { action: "start", version: order.order.version });
+      await expect(maker.command(actor, w.workspaceId, third, { action: "short_close", reason: "x", version: order.order.version })).rejects.toThrow("Nothing was made on it yet: cancel it instead.");
+      const one = randomUUID();
+      order = await maker.command(actor, w.workspaceId, third, { action: "report", id: one, good: "1" });
+      await expect(maker.command(actor, w.workspaceId, third, { action: "cancel", reason: "x", version: order.order.version })).rejects.toThrow(/close it short instead/);
+      order = await checker.command(actor, w.workspaceId, third, { action: "decide_report", reportId: one, decision: "approve", version: order.order.version });
+      await expect(maker.command(actor, w.workspaceId, third, { action: "short_close", reason: "x", version: order.order.version })).rejects.toThrow(/check what was made first/);
+      order = await checker.command(actor, w.workspaceId, third, { action: "check", id: randomUUID(), passed: "1" });
+      order = await maker.command(actor, w.workspaceId, third, { action: "short_close", reason: "Client took one unit out", version: order.order.version });
+      expect(order.order.status).toBe("short_closed");
+      expect((await maker.state(actor, w.workspaceId)).toMake.find((line) => line.title === "Kitchen cabinets")!.left).toBe("0.5000");
+      const history = await new InventoryService(access(w.designer, all)).movements(actor, w.workspaceId, { projectId });
+      expect(history.movements.map((row) => [row.kind, row.quantity, row.workOrderNumber])).toEqual([["produce", "1.0000", 3], ["produce", "1.5000", 1], ["produce", "1.5000", 1]]);
+    });
+  });
+
+  async function buyingStock(w: World, access: (userId: string, permissions: string[]) => never, all: string[]) {
+    return new InventoryService(access(w.designer, all)).stock(actor, w.workspaceId);
+  }
 
   /** The project service where each call is its own transaction, as in the app. */
   function projectsAt(w: World, userId: string, permissions = ["projects.manage", "projects.view"]) {

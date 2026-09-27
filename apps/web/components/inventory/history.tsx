@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import type { InventoryApi } from "@/lib/inventory/client";
 import type { MovementKind, MovementRow } from "@/lib/inventory/types";
 import { useProjectFormat } from "../project-core/format";
+import { orderNumber } from "../factory/factory-labels";
 import { quantityText } from "../purchasing/order-labels";
 import { multiplyExact } from "@/lib/purchasing/amounts";
 
@@ -25,10 +26,11 @@ export function History({ api, itemId, onClearItem, refreshKey }: { api: Invento
   }, [api, itemId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load, refreshKey]);
   const kinds = useMemo(() => ({ receive: t("Delivered"), issue: t("Issued"), return: t("Taken back"), transfer_out: t("Moved out"), transfer_in: t("Moved in"),
-    allocate: t("Reserved"), release: t("Released"), adjust: t("Corrected"), supplier_return: t("Returned to supplier"), reverse: t("Delivery reversed") } satisfies Record<MovementKind, string>), [t]);
+    allocate: t("Reserved"), release: t("Released"), adjust: t("Corrected"), supplier_return: t("Returned to supplier"), reverse: t("Delivery reversed"), produce: t("Made") } satisfies Record<MovementKind, string>), [t]);
   const source = useCallback((row: MovementRow) => [
     row.receiptNumber ? t("{order}, delivery {number}", { order: row.orderNumber ?? "", number: row.receiptNumber }) : row.orderNumber ?? "",
-    row.transferNumber ? t("Move {number}", { number: row.transferNumber }) : "", row.returnNumber ? t("Return {number}", { number: row.returnNumber }) : "", row.reason,
+    row.transferNumber ? t("Move {number}", { number: row.transferNumber }) : "", row.returnNumber ? t("Return {number}", { number: row.returnNumber }) : "", row.workOrderNumber ? orderNumber(row.workOrderNumber) : "",
+    row.workOrderNumber ? "" : row.reason,
   ].filter(Boolean).join(" · "), [t]);
   const shown = (rows ?? []).filter((row) => !search.trim() || `${row.itemName} ${row.locationName} ${row.projectReference ?? ""} ${row.forProjectReference ?? ""} ${row.reason}`
     .toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
