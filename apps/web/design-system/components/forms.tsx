@@ -46,7 +46,7 @@ import {
   type SelectProps,
   type TextFieldProps,
 } from "react-aria-components";
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Paperclip, Search, Upload, X } from "lucide-react";
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Minus, Paperclip, Search, Upload, X } from "lucide-react";
 import type { DateValue } from "@internationalized/date";
 import { useDesignSystem, usePortalThemeAttributes } from "../foundations/provider";
 import { Tag } from "./status";
@@ -99,7 +99,8 @@ export const QuantityInput = (props: Omit<React.ComponentProps<typeof NumericInp
 export const MeasurementInput = (props: Omit<React.ComponentProps<typeof NumericInput>, "suffix"> & { unit?: string }) => <NumericInput {...props} suffix={props.unit ?? "mm"} />;
 
 export function Checkbox({ children, ...props }: React.ComponentProps<typeof AriaCheckbox>) {
-  return <AriaCheckbox {...props} className="wd-checkbox">{(values) => <><span aria-hidden="true" className="wd-checkbox-box"><Check size={13} /></span>{typeof children === "function" ? children(values) : children}</>}</AriaCheckbox>;
+  // A partly selected group shows a dash, not a tick.
+  return <AriaCheckbox {...props} className="wd-checkbox">{(values) => <><span aria-hidden="true" className="wd-checkbox-box">{values.isIndeterminate ? <Minus size={13} /> : <Check size={13} />}</span>{typeof children === "function" ? children(values) : children}</>}</AriaCheckbox>;
 }
 
 export function Switch({ children, ...props }: React.ComponentProps<typeof AriaSwitch>) {

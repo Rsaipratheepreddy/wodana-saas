@@ -9377,5 +9377,9 @@
   "Issue anyway": "Issue anyway",
   "No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings.": "No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings.",
   "Show {count} more events from {time}": "Show {count} more events from {time}",
-  "{count} events": "{count} events"
+  "{count} events": "{count} events",
+  "Expand {name}": "Expand {name}",
+  "Collapse {name}": "Collapse {name}",
+  "Order {name}": "Order {name}",
+  "Selected lines": "Selected lines"
 }

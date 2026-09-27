@@ -59,7 +59,7 @@
   .wd-table-row:is(:hover,:focus-within,[data-selected="true"]) .wd-row-index[data-selectable] > span { opacity: 0; }
   .wd-grouped-table-scroll.wd-grouped-table-scroll { border: 0; border-radius: 0; }
   .wd-grouped-table-scroll .wd-record-table { min-inline-size: 48rem; }
-  .wd-grouped-table-scroll .wd-grouped-table-heading th { position: sticky; inset-block-start: 0; z-index: 3; }
+  .wd-grouped-table-scroll > .wd-grouped-table > thead th { position: sticky; inset-block-start: 0; z-index: 3; }
   .wd-record-toolbar.wd-record-toolbar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); padding: 0 0 var(--wd-phi-2); min-block-size: 3rem; background: transparent; border-block-end: 0; }
   .wd-record-tools, .wd-record-controls, .wd-record-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-1-5); min-inline-size: 0; }
   .wd-record-tools { flex: 1 1 auto; }
@@ -298,4 +298,17 @@
   table:is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]):is(.wd-record-table,[data-record-table]) [data-pinned] { box-shadow: none; }
   /* Footer sits under the frame as a quiet caption. */
   .wd-data-grid.wd-data-grid .wd-grid-footer { border: 0; padding: var(--wd-space-2) var(--wd-space-1); min-block-size: 0; color: var(--wd-color-text-secondary); background: transparent; }
+}
+
+/* Grouped tables (needs per project, plans, members) keep row dividers only: no cell outlines, no frame,
+   a quiet header and a muted band per group. */
+@media screen {
+  .wd-grouped-table-scroll.wd-grouped-table-scroll.wd-grouped-table-scroll:not([data-appearance="enclosed"]) { border: 0; border-radius: 0; }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table > :is(thead, tbody) > tr > :is(th, td) { border-inline-end: 0; }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table > thead > tr > th { background: var(--wd-color-surface); color: var(--wd-record-muted); font-weight: var(--wd-weight-medium); border-block-end: 1px solid var(--wd-record-line); }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table > tbody > tr.wd-grouped-table-heading > th { block-size: var(--wd-control-md); height: var(--wd-control-md); padding-block: 0; background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table > tbody > tr.wd-grouped-table-heading:hover > th { background: var(--wd-color-surface-muted); }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table > tbody > tr:last-child > :is(th, td) { border-block-end: 1px solid var(--wd-record-line); }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table > tbody:last-child > tr:last-child > :is(th, td) { border-block-end: 0; }
+  table.wd-grouped-table.wd-record-table.wd-record-table.wd-record-table [data-align="end"] { text-align: end; font-variant-numeric: tabular-nums; }
 }

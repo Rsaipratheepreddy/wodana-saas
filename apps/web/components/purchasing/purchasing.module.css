@@ -103,3 +103,6 @@
   .receiveHead, .receiveLine, .receiveLines[data-columns] :is(.receiveHead, .receiveLine) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .receiveHead > :first-child, .receiveLine > :first-child { grid-column: 1 / -1; text-align: start; }
 }
+/* Selected lines keep their actions in view while the list scrolls. */
+.selectionBar { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); background: var(--wd-color-surface); }
+.selectionActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }
