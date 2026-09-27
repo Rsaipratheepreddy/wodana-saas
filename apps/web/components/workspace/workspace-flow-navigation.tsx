@@ -32,7 +32,8 @@ export function WorkspaceFlowNavigation({ module, pathname }: { module: Workspac
   if (pathname.startsWith("/workspace/integrations/") || pathname === "/workspace/integrations") return null;
   // Projects have no section bar: the list is one page and a project page has its own tabs.
   // Projects, Purchasing and Inventory are separate sidebar entries with their own tabs; no module bar above them.
-  if (["/workspace/projects", "/workspace/purchasing", "/workspace/inventory", "/workspace/factory"].some((root) => pathname === root || pathname.startsWith(`${root}/`))) return null;
+  // People has its own title and tabs too.
+  if (["/workspace/projects", "/workspace/purchasing", "/workspace/inventory", "/workspace/factory", "/workspace/hrms"].some((root) => pathname === root || pathname.startsWith(`${root}/`))) return null;
 
   const recordRoute = caseRoute(pathname);
   if (recordRoute?.section === "quotations" && searchParams.has("quote")) return null;

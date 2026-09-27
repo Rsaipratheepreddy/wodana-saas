@@ -1,9 +1,6 @@
 "use client";
 
 import { ArrowLeft, ChevronRight, Menu, Moon, Settings, Sun } from "lucide-react";
-import type { HrmsBootstrap } from '@wodana/contracts';
-import { scopedHrmsNavigation } from '@/lib/hrms/navigation';
-import { hrmsRequest } from '@/lib/hrms/client';
 import { WoddyMark } from "@/components/brand";
 import { useWorkspaceTheme } from "@/lib/use-workspace-theme";
 import Link from "next/link";
@@ -59,10 +56,8 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const registeredFocus = useWorkspaceFocus();
   const focus = registeredFocus;
   const baseModule = findWorkspaceModule(pathname, modules);
-  const [hrmsAccess,setHrmsAccess]=useState<{workspaceId:string;permissions:HrmsBootstrap['permissions']}|null>(null);
-  const hrmsActive=baseModule.id==='hrms',workspaceId=workspaces[0]?.id??'';
-  useEffect(()=>{if(!hrmsActive||!workspaceId)return;let active=true;hrmsRequest<HrmsBootstrap>(workspaceId,'bootstrap').then(boot=>{if(active)setHrmsAccess({workspaceId,permissions:boot.permissions});}).catch(()=>{});return()=>{active=false;};},[hrmsActive,workspaceId]);
-  const activeModule = hrmsActive ? scopedHrmsNavigation(baseModule,hrmsAccess?.workspaceId===workspaceId?hrmsAccess.permissions:undefined) : baseModule.id === "pre-project"
+  const workspaceId = workspaces[0]?.id ?? "";
+  const activeModule = baseModule.id === "pre-project"
     ? { ...baseModule, navigation: preProjectNavigation(baseModule.navigation, pathname, selectedCase?.search) }
     : baseModule;
   // The Settings menu belongs to settings pages only, not to every page without a module of its own (Tasks, Approvals…).

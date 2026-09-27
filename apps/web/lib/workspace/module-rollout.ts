@@ -41,12 +41,14 @@ export function scopePeopleNavigation(
   const canViewPeople = isAdministrator || (allowedPermissions ?? []).some((permission) => [
     "workspace.members.manage", "module.members.read", "module.members.write", "module.members.edit", "module.members.delete",
   ].includes(permission));
-  if (canViewPeople) return modules;
+  // Attendance & leave settings are for whoever manages HR, in a workspace that has People.
+  const canManageHrms = modules.some((module) => module.id === "hrms") && (isAdministrator || (allowedPermissions ?? []).includes("hrms.manage"));
+  if (canViewPeople && canManageHrms) return modules;
   return modules.map((module) => module.id !== "workspace" ? module : {
     ...module,
     navigation: module.navigation.map((section) => ({
       ...section,
-      items: section.items.filter((item) => item.id !== "members"),
+      items: section.items.filter((item) => (item.id !== "members" || canViewPeople) && (item.id !== "attendance-settings" || canManageHrms)),
     })).filter((section) => section.items.length > 0),
   });
 }

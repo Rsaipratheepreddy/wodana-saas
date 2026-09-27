@@ -27,4 +27,13 @@ describe("effective workspace module navigation", () => {
     expect(scopePeopleNavigation(workspaceModules, [], ["owner"])[0].navigation.flatMap((section) => section.items)
       .some((item) => item.id === "members")).toBe(true);
   });
+
+  it("shows Attendance & leave settings to whoever manages HR, only where People is available", () => {
+    const has = (modules: typeof workspaceModules, permissions: string[], roles = ["role_viewer"]) => scopePeopleNavigation(modules, permissions, roles)
+      .find((module) => module.id === "workspace")?.navigation.flatMap((section) => section.items).some((item) => item.id === "attendance-settings");
+    expect(has(workspaceModules, ["hrms.self", "hrms.team"])).toBe(false);
+    expect(has(workspaceModules, ["hrms.manage"])).toBe(true);
+    expect(has(workspaceModules, [], ["administrator"])).toBe(true);
+    expect(has(workspaceModules.filter((module) => module.id !== "hrms"), ["hrms.manage"])).toBe(false);
+  });
 });

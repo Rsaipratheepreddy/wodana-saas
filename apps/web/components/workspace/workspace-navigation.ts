@@ -125,6 +125,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/settings/inventory", icon: "materialPlan", id: "inventory-settings", label: "Stock places" },
           { href: "/workspace/settings/factory", icon: "production", id: "factory-settings", label: "Factory" },
           { href: "/workspace/settings/accounting", icon: "integrations", id: "accounting-settings", label: "Accounting" },
+          { href: "/workspace/settings/attendance", icon: "calendar", id: "attendance-settings", label: "Attendance & leave" },
           { href: "/workspace/gallery", icon: "designs", id: "gallery", label: "Gallery", showInSidebar: false },
         ],
       },
@@ -323,22 +324,18 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     ],
   },
   {
-    description: "Attendance, sites and leave",
+    description: "Attendance, leave and the team",
     href: "/workspace/hrms", icon: "members", id: "hrms", label: "People",
     navigation: [
-      {id:"hrms-primary",label:"My work",items:[
-        {href:"/workspace/hrms",icon:"activity",id:"hrms-overview",label:"My attendance"},
-        {href:"/workspace/hrms/leave",icon:"calendar",id:"hrms-leave",label:"Leave"},
-        {href:"/workspace/hrms/time-summary",icon:"reports",id:"hrms-summary",label:"Time summary"},
-        {href:"/workspace/hrms/site-attendance",icon:"siteVisits",id:"hrms-sites",label:"Site attendance"},
-      ]},
-      {id:"hrms-team",label:"Team",items:[{href:"/workspace/hrms/team",icon:"teams",id:"hrms-team-attendance",label:"Team attendance"}]},
-      {id:"hrms-admin",label:"Manage",items:[
-        {href:"/workspace/hrms/people",icon:"members",id:"hrms-people",label:"People"},
-        {href:"/workspace/hrms/workplaces",icon:"company",id:"hrms-workplaces",label:"Workplaces & assignments"},
-        {href:"/workspace/hrms/settings",icon:"settings",id:"hrms-settings",label:"Calendar & policy"},
-        {href:"/workspace/hrms/leave-settings",icon:"calendar",id:"hrms-leave-settings",label:"Leave allowances"},
-      ]},
+      {
+        id: "hrms-primary",
+        items: [
+          { href: "/workspace/hrms", icon: "activity", id: "hrms-overview", label: "Attendance" },
+          { href: "/workspace/hrms/leave", icon: "calendar", id: "hrms-leave", label: "Leave" },
+          { href: "/workspace/hrms/team", icon: "teams", id: "hrms-team", label: "Team" },
+          { href: "/workspace/hrms/people", icon: "members", id: "hrms-people", label: "People" },
+        ],
+      },
     ],
   },
 ];
