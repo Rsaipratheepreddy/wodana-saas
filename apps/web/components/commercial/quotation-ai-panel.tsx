@@ -1,4 +1,6 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey } from "@/lib/i18n/keys";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
@@ -33,6 +35,7 @@ export function QuotationAiPanel({
   onProposal: (analysis: QuotationAnalysis) => void;
   onReview: () => void;
 }) {
+  const t = useT();
   const [prompt, setPrompt] = useState(""),
     [messages, setMessages] = useState<Message[]>([]),
     [busy, setBusy] = useState(false),
@@ -53,7 +56,7 @@ export function QuotationAiPanel({
       id: crypto.randomUUID(),
       role: "user",
       text:
-        direction.trim() || "Suggest rooms and items from the requirements.",
+        direction.trim() || t("Suggest rooms and items from the requirements."),
     };
     const controller = new AbortController();
     request.current = controller;
@@ -92,11 +95,11 @@ export function QuotationAiPanel({
       });
       const data = await result.json();
       if (!result.ok)
-        throw new Error(data.message ?? "Could not analyze the case.");
+        throw new Error(data.message ?? t("Could not analyze the case."));
       if (controller.signal.aborted) return;
       if (!Array.isArray(data.rooms))
         throw new Error(
-          "The assistant returned an incomplete response. Please try again.",
+          t("The assistant returned an incomplete response. Please try again."),
         );
       onProposal(data);
       setAnalysis(data);
@@ -106,9 +109,9 @@ export function QuotationAiPanel({
           id: crypto.randomUUID(),
           role: "assistant",
           text: data.rooms.length
-            ? `${data.summary}\n\nReview the suggestions before adding them. Your existing items and prices will stay unchanged.`
+            ? `${data.summary}\n\n${t("Review the suggestions before adding them. Your existing items and prices will stay unchanged.")}`
             : data.summary ||
-              "No matching rooms were found. Try describing a room from Master Data.",
+              t("No matching rooms were found. Try describing a room from Master Data."),
         },
       ]);
     } catch (error) {
@@ -116,7 +119,7 @@ export function QuotationAiPanel({
         setError(
           error instanceof Error
             ? error.message
-            : "Could not analyze the case.",
+            : t("Could not analyze the case."),
         );
         setPrompt(message.text);
       }
@@ -128,43 +131,40 @@ export function QuotationAiPanel({
     }
   };
   return (
-    <section className={s.chat} aria-label="Woody quotation chat">
+    <section className={s.chat} aria-label={t("Woody quotation chat")}>
       <header className={s.chatHeader}>
         <span className={s.woodyMark}>
           <Sparkles size={16} />
         </span>
         <div>
-          <strong>Woody · AI assistant</strong>
-          <small>Suggest with AI. Edit manually anytime.</small>
+          <strong>{t("Woody · AI assistant")}</strong>
+          <small>{t("Suggest with AI. Edit manually anytime.")}</small>
         </div>
       </header>
       <div
         className={s.conversation}
         ref={conversation}
         role="log"
-        aria-label="Quotation conversation"
+        aria-label={t("Quotation conversation")}
         aria-live="polite"
       >
         {!messages.length && (
           <div className={s.welcome}>
-            <h2>What would you like to add?</h2>
+            <h2>{t("What would you like to add?")}</h2>
             <p>
-              Use your case references to suggest rooms, items and materials.
-              You choose what to add; quantities and prices stay in your
-              control.
-            </p>
+              {t("Use your case references to suggest rooms, items and materials. You choose what to add; quantities and prices stay in your control.")}</p>
             <div className={s.sourceList}>
               {(
                 [
-                  ["Requirements", FileText],
-                  ["Client inspirations", Image],
-                  ["Site layouts", LayoutTemplate],
-                  ["Measurements", Ruler],
+                  [tKey("Requirements"), FileText],
+                  [tKey("Client inspirations"), Image],
+                  [tKey("Site layouts"), LayoutTemplate],
+                  [tKey("Measurements"), Ruler],
                 ] as const
               ).map(([label, Icon]) => (
                 <span key={label}>
                   <Icon size={12} />
-                  {label}
+                  {t(label)}
                 </span>
               ))}
             </div>
@@ -173,13 +173,12 @@ export function QuotationAiPanel({
               disabled={disabled || busy}
               onClick={() =>
                 void analyze(
-                  "Suggest rooms and items from all case requirements.",
+                  t("Suggest rooms and items from all case requirements."),
                 )
               }
             >
               <Sparkles size={13} />
-              Suggest from requirements
-            </button>
+              {t("Suggest from requirements")}</button>
           </div>
         )}
         {messages.map((message) => (
@@ -188,28 +187,28 @@ export function QuotationAiPanel({
             className={s.chatMessage}
             data-role={message.role}
           >
-            <small>{message.role === "user" ? "You" : "Woody"}</small>
+            <small>{message.role === "user" ? t("You") : "Woody"}</small>
             <p>{message.text}</p>
           </div>
         ))}
         {busy && (
           <p className={s.thinking} role="status">
             <Sparkles size={14} />
-            Reading the case and matching rooms…
-          </p>
+            {t("Reading the case and matching rooms…")}</p>
         )}
         {analysis && (
           <div className={s.chatReview}>
             <button className={s.linkButton} onClick={onReview}>
               <Check size={14} />
-              Review room suggestions
-            </button>
+              {t("Review room suggestions")}</button>
             {Boolean(analysis.review?.length || analysis.notes?.length) && (
               <section>
                 <h3>
-                  Details to review ·{" "}
-                  {(analysis.review?.length ?? 0) +
-                    (analysis.notes?.length ?? 0)}
+                  {t("Details to review · {count}", {
+                    count:
+                      (analysis.review?.length ?? 0) +
+                      (analysis.notes?.length ?? 0),
+                  })}
                 </h3>
                 {[...(analysis.review ?? []), ...(analysis.notes ?? [])].map(
                   (note, i) => (
@@ -218,7 +217,7 @@ export function QuotationAiPanel({
                 )}
               </section>
             )}
-            <small>Quantities and prices need your confirmation.</small>
+            <small>{t("Quantities and prices need your confirmation.")}</small>
           </div>
         )}
         {error && (
@@ -236,13 +235,17 @@ export function QuotationAiPanel({
       >
         {!!selectedRooms.length && (
           <span className={s.chatContext}>
-            {selectedRooms.length} selected{" "}
-            {selectedRooms.length === 1 ? "room" : "rooms"}
+            {t(
+              selectedRooms.length === 1
+                ? "{count} selected room"
+                : "{count} selected rooms",
+              { count: selectedRooms.length },
+            )}
           </span>
         )}
         <textarea
-          aria-label="Message Woody"
-          placeholder="Describe your rooms or request additions…"
+          aria-label={t("Message Woody")}
+          placeholder={t("Describe your rooms or request additions…")}
           maxLength={2000}
           rows={3}
           disabled={disabled || busy}
@@ -261,13 +264,13 @@ export function QuotationAiPanel({
         />
         <div>
           <small>
-            {disabled ? "Read only" : "Review suggestions before adding"}
+            {t(disabled ? "Read only" : "Review suggestions before adding")}
           </small>
           {busy ? (
             <button
               className={s.send}
               type="button"
-              aria-label="Stop generation"
+              aria-label={t("Stop generation")}
               onClick={() => {
                 request.current?.abort();
                 setBusy(false);
@@ -279,7 +282,7 @@ export function QuotationAiPanel({
             <button
               className={s.send}
               type="submit"
-              aria-label="Send message"
+              aria-label={t("Send message")}
               disabled={disabled || !prompt.trim()}
             >
               <ArrowUp size={16} />

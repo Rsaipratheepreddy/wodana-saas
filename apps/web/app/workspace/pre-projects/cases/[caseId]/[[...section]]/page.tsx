@@ -9,6 +9,7 @@ import { getPreProject, getCaseContent, getDefinitionPageData, getCaseOverviewDa
 import { caseRoute, requirementViews, listSearch, caseHref, PRE_PROJECT_ROOT } from "@/lib/pre-project/types";
 import Link from "next/link";
 import { CaseSelection } from "@/components/pre-project/case-selection";
+import { getServerT } from "@/lib/i18n/server";
 
 export default async function CasePage({ params, searchParams }: {
   params: Promise<{ caseId: string; section?: string[] }>;
@@ -37,7 +38,7 @@ export default async function CasePage({ params, searchParams }: {
     ["definition", "overview", "approvals"].includes(route.section) ? getDefinitionPageData(caseId) : undefined,
     route.section === "overview" ? getCaseOverviewData() : undefined,
   ]);
-  if ("error" in record) return <section style={{ padding: "2rem" }}><h1>Planning unavailable</h1><p role="alert">{record.error}</p><Link href={PRE_PROJECT_ROOT}>Back to all planning records</Link></section>;
+  if ("error" in record) { const t = await getServerT(); return <section style={{ padding: "2rem" }}><h1>{t("Planning unavailable")}</h1><p role="alert">{record.error}</p><Link href={PRE_PROJECT_ROOT}>{t("Back to all planning records")}</Link></section>; }
   if (route.section === "quotations" && query.has("quote") && commercialState && !("error" in commercialState)) {
     if (!commercialState.data.quotes.some(quote => quote.id === query.get("quote"))) notFound();
     const backHref = caseHref(caseId, new URLSearchParams(listSearch(query).toString()), "quotations");

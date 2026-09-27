@@ -31,9 +31,10 @@ function PortalSkeleton() {
  * it shows the client's projects.
  */
 export function PortalApp({ site }: { site: PortalSite }) {
+  const t = useT();
   const theme = useDeviceTheme();
   const [container, setContainer] = useState<HTMLElement | null>(null);
-  const api = useMemo(() => portalApi(site.slug), [site.slug]);
+  const api = useMemo(() => portalApi(site.slug, t), [site.slug, t]);
   const [state, setState] = useState<State>({ kind: "loading" });
   const load = useCallback(async () => {
     try { setState({ kind: "ready", view: await api.view() }); }

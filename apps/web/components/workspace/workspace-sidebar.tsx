@@ -70,6 +70,7 @@ import { ModuleIcon as WorkspaceModuleIconTile } from "@/design-system/atoms/mod
 import { productNavigation, productNavigationActive } from "./workspace-navigation";
 import styles from "./workspace.module.css";
 import { identityInitials, identityStyle as visualForIdentity } from "@/lib/brand/identity";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 const icons: Record<WorkspaceIconName, LucideIcon> = {
   activity: Activity,
@@ -116,11 +117,12 @@ const icons: Record<WorkspaceIconName, LucideIcon> = {
 };
 
 export function WorkspaceModuleSwitcher({ activeModule, modules }: { activeModule: WorkspaceModuleDefinition; modules: WorkspaceModuleDefinition[] }) {
+  const t = useT();
   const ActiveIcon = icons[activeModule.icon];
-  return <DialogTrigger><AriaButton aria-label={`Switch module. Current: ${activeModule.label}`} className={styles.moduleButton}><ActiveIcon aria-hidden="true" size={16} /><span>{activeModule.label}</span><ChevronDown aria-hidden="true" size={14} /></AriaButton>
-    <Popover className={styles.modulePopover} offset={8} placement="bottom start"><Dialog aria-label="Choose module" className={styles.moduleDialog}>{({ close }) => <><p className={styles.popoverLabel}>Workspaces</p>{modules.map((module) => {
+  return <DialogTrigger><AriaButton aria-label={t("Switch module. Current: {module}", { module: t(activeModule.label as never) })} className={styles.moduleButton}><ActiveIcon aria-hidden="true" size={16} /><span>{t(activeModule.label as never)}</span><ChevronDown aria-hidden="true" size={14} /></AriaButton>
+    <Popover className={styles.modulePopover} offset={8} placement="bottom start"><Dialog aria-label={t("Choose module")} className={styles.moduleDialog}>{({ close }) => <><p className={styles.popoverLabel}>{t("Workspaces")}</p>{modules.map((module) => {
       const ModuleIcon = icons[module.icon];
-      return <Link aria-current={module.id === activeModule.id ? "page" : undefined} className={styles.moduleOption} data-selected={module.id === activeModule.id || undefined} href={module.href} key={module.id} onClick={close}><span aria-hidden="true" className={styles.moduleOptionIcon} data-module={module.id}><ModuleIcon size={17} strokeWidth={1.8} /></span><span><strong>{module.label}</strong><small>{module.description}</small></span></Link>;
+      return <Link aria-current={module.id === activeModule.id ? "page" : undefined} className={styles.moduleOption} data-selected={module.id === activeModule.id || undefined} href={module.href} key={module.id} onClick={close}><span aria-hidden="true" className={styles.moduleOptionIcon} data-module={module.id}><ModuleIcon size={17} strokeWidth={1.8} /></span><span><strong>{t(module.label as never)}</strong><small>{t(module.description as never)}</small></span></Link>;
     })}</>}</Dialog></Popover>
   </DialogTrigger>;
 }
@@ -149,6 +151,7 @@ export function WorkspaceSidebar({
   pathname,
   workspaces,
 }: WorkspaceSidebarProps) {
+  const t = useT();
   const contextualNavigation = useMemo(() => productNavigation(modules), [modules]);
   const instanceId = useId().replaceAll(":", "");
   const searchParams = useSearchParams();
@@ -184,11 +187,11 @@ export function WorkspaceSidebar({
 
   return (
     <div className={styles.sidebarFrame} data-mode={mode}>
-      <aside aria-label="Workspace navigation" className={styles.sidebarCard}>
+      <aside aria-label={t("Workspace navigation")} className={styles.sidebarCard}>
         <div className={styles.workspaceHeader}>
           <DialogTrigger>
             <AriaButton
-              aria-label={`Switch workspace. Current: ${activeWorkspace?.name ?? "Workspace"}`}
+              aria-label={t("Switch workspace. Current: {workspace}", { workspace: activeWorkspace?.name ?? t("Workspace") })}
               className={styles.workspaceButton}
             >
               <span
@@ -198,11 +201,11 @@ export function WorkspaceSidebar({
                 data-workspace-mark
                 style={activeWorkspaceVisual}
               >
-                {activeWorkspace?.imageUrl ? null : identityInitials(activeWorkspace?.name ?? "Workspace")}
+                {activeWorkspace?.imageUrl ? null : identityInitials(activeWorkspace?.name ?? t("Workspace"))}
               </span>
               <span className={styles.workspaceIdentity}>
-                <strong>{activeWorkspace?.name ?? "Workspace"}</strong>
-                <small>{activeWorkspace?.description ?? "Business workspace"}</small>
+                <strong>{activeWorkspace?.name ?? t("Workspace")}</strong>
+                <small>{activeWorkspace?.description ?? t("Business workspace")}</small>
               </span>
               <ChevronsUpDown
                 aria-hidden="true"
@@ -215,10 +218,10 @@ export function WorkspaceSidebar({
               offset={mode === "desktop" ? 46 : 8}
               placement={mode === "desktop" ? "right top" : "bottom start"}
             >
-              <Dialog aria-label="Choose workspace" className={styles.workspaceDialog}>
+              <Dialog aria-label={t("Choose workspace")} className={styles.workspaceDialog}>
                 {({ close }) => (
                   <>
-                    <p className={styles.popoverLabel}>Workspaces</p>
+                    <p className={styles.popoverLabel}>{t("Workspaces")}</p>
                     {workspaceError ? <p role="alert">{workspaceError}</p> : null}
                     {workspaces.map((workspace) => (
                       <AriaButton
@@ -231,7 +234,7 @@ export function WorkspaceSidebar({
                           setSwitchingWorkspace(true); setWorkspaceError("");
                           try {
                             const response = await fetch("/api/workspace/active", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workspaceId: workspace.id }) });
-                            if (!response.ok) throw new Error("Workspace could not be switched. Your current workspace is unchanged.");
+                            if (!response.ok) throw new Error(t("Workspace could not be switched. Your current workspace is unchanged."));
                             window.location.assign(activeModule.href);
                           } catch (error) { setWorkspaceError((error as Error).message); setSwitchingWorkspace(false); }
                         }}
@@ -253,7 +256,7 @@ export function WorkspaceSidebar({
                     {unavailableOrganizations.map((organization) => (
                       <div aria-disabled="true" className={styles.workspaceOption} key={organization.workspaceId}>
                         <span aria-hidden="true" className={styles.optionMark} style={visualForIdentity(organization.workspaceId)}>{identityInitials(organization.workspaceName)}</span>
-                        <span><strong>{organization.workspaceName}</strong><small>{organization.accountName ? `${organization.accountName} · ` : ""}{organization.workspaceStatus === "suspended" ? "Suspended" : "Unavailable"}</small></span>
+                        <span><strong>{organization.workspaceName}</strong><small>{organization.accountName ? `${organization.accountName} · ` : ""}{organization.workspaceStatus === "suspended" ? t("Suspended") : t("Unavailable")}</small></span>
                       </div>
                     ))}
                     <Link
@@ -264,8 +267,8 @@ export function WorkspaceSidebar({
                         close();
                       }}
                     >
-                      <strong>Add or manage workspaces</strong>
-                      <small>For a separate company with its own team, data and branding.</small>
+                      <strong>{t("Add or manage workspaces")}</strong>
+                      <small>{t("For a separate company with its own team, data and branding.")}</small>
                     </Link>
                   </>
                 )}
@@ -274,7 +277,7 @@ export function WorkspaceSidebar({
           </DialogTrigger>
           {mode === "mobile" ? (
             <AriaButton
-              aria-label="Close navigation"
+              aria-label={t("Close navigation")}
               className={styles.mobileClose}
               onPress={onDismiss}
             >
@@ -283,7 +286,7 @@ export function WorkspaceSidebar({
           ) : null}
         </div>
 
-        <nav aria-label="Main navigation" className={styles.navigation}>
+        <nav aria-label={t("Main navigation")} className={styles.navigation}>
           {visibleNavigation.map((section) => {
             const sectionContentId = `${instanceId}-${section.id}`;
             const isOpen =
@@ -297,7 +300,7 @@ export function WorkspaceSidebar({
                     className={styles.sectionToggle}
                     onPress={() => toggleSection(section.id)}
                   >
-                    <span>{section.label}</span>
+                    <span>{t(section.label as never)}</span>
                     <ChevronDown aria-hidden="true" data-open={isOpen || undefined} size={15} />
                   </AriaButton>
                 ) : null}
@@ -325,7 +328,7 @@ export function WorkspaceSidebar({
                                 onPress={() => toggleSubmenu(item.id, defaultOpen)}
                               >
                                 <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
-                                <span>{item.label}</span>
+                                <span>{t(item.label as never)}</span>
                                 <ChevronDown aria-hidden="true" className={styles.accordionChevron} data-open={showSubmenu || undefined} size={15} />
                               </AriaButton>
                             ) : <Link
@@ -337,14 +340,14 @@ export function WorkspaceSidebar({
                               tabIndex={isOpen ? undefined : -1}
                             >
                               <WorkspaceModuleIconTile className={styles.navigationMark}>{item.id === "inbox" ? <MessagingMark size={28} /> : <ItemIcon aria-hidden="true" size={20} strokeWidth={1.8} />}</WorkspaceModuleIconTile>
-                              <span>{item.label}</span>
+                              <span>{t(item.label as never)}</span>
                             </Link>}
                           </div>
                           {item.id === "projects" && activeWorkspace?.id ? <ProjectShortcuts workspaceId={activeWorkspace.id} pathname={pathname} visible={isOpen} onNavigate={onNavigate} /> : null}
                           {item.children?.length ? <div aria-hidden={!showSubmenu} className={styles.submenu} data-open={showSubmenu || undefined} id={`${instanceId}-${item.id}-submenu`}>
                             <div className={styles.submenuInner}>{item.children.map((child) => {
                               const childActive = location === child.href;
-                              return <Link aria-current={childActive ? "page" : undefined} className={styles.submenuItem} data-active={childActive || undefined} href={child.href} key={child.id} onClick={onNavigate} tabIndex={isOpen && showSubmenu ? undefined : -1}>{child.label}</Link>;
+                              return <Link aria-current={childActive ? "page" : undefined} className={styles.submenuItem} data-active={childActive || undefined} href={child.href} key={child.id} onClick={onNavigate} tabIndex={isOpen && showSubmenu ? undefined : -1}>{t(child.label as never)}</Link>;
                             })}</div>
                           </div> : null}
                         </div>

@@ -8,3 +8,4 @@
 .option[data-selected] { box-shadow: 0 0 0 2px var(--wd-color-success); }
 .option:disabled { cursor: progress; opacity: 0.7; }
 .check { position: absolute; inset-block-end: 0; inset-inline-end: 0; display: grid; inline-size: 1.25rem; block-size: 1.25rem; place-items: center; border-radius: var(--wd-radius-round); background: var(--wd-color-success); color: var(--wd-color-surface); box-shadow: 0 0 0 2px var(--wd-color-surface); }
+.language { inline-size: min(100%, 16rem); }

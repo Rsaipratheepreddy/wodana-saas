@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import type { JobDetailProjection, JobIdentityList, JobIdentityProjection } from "./jobs";
+import { tKey } from "@/lib/i18n/keys";
 
 const fixtureId = "91000000-0000-4000-8000-000000000001";
 const sourceIds = {
@@ -111,7 +112,7 @@ export async function jobsRead(): Promise<{ workspaceId: string; data: JobIdenti
   if (!result.upstream?.ok) return {
     workspaceId,
     data: { items: [], total: 0, limit: 100, offset: 0 },
-    loadError: "Jobs are temporarily unavailable. Refresh when the service is ready.",
+    loadError: tKey("Jobs are temporarily unavailable. Refresh when the service is ready."),
   };
   return { workspaceId, data: await result.upstream.json() as JobIdentityList };
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
+import { useT } from "@/lib/i18n/i18n-provider";
 import q from "./quotation-line-fields.module.css";
 
 /** A blank or partially typed amount must never silently become a saved zero. */
@@ -22,6 +23,7 @@ export function QuotationNumberInput({
   onEditStart?: () => void;
   onCancel?: () => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const startingValue = useRef(value);
@@ -54,7 +56,7 @@ export function QuotationNumberInput({
       aria-invalid={error || undefined}
       title={
         error
-          ? `Enter a number between ${min} and ${max}. Your previous value was kept.`
+          ? t("Enter a number between {min} and {max}. Your previous value was kept.", { min, max })
           : label
       }
       value={draft ?? format(value)}

@@ -1,9 +1,11 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const TERMINOLOGY_KEY = /^[a-z][a-z_]{1,59}$/;
 
 export async function POST(request: Request, { params }: { params: Promise<{ key: string }> }) {
-  if (!isSameOrigin(request)) return invalidRequest("This request must come from the workspace.");
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return invalidRequest(t("This request must come from the workspace."));
   const { key } = await params;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
@@ -16,7 +18,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ key
     typeof version !== "number" ||
     !Number.isInteger(version) ||
     version < 0
-  ) return invalidRequest("A valid workspace, terminology revision, and current version are required.");
+  ) return invalidRequest(t("A valid workspace, terminology revision, and current version are required."));
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/terminology/${key}/rollback`,
     {
@@ -24,6 +26,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ key
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ revisionId, version }),
     },
-    "Workspace language could not be restored.",
+    t("Workspace language could not be restored."),
   );
 }

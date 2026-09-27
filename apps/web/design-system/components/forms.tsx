@@ -79,8 +79,10 @@ export function TextAreaField({ description, errorMessage, isRequired, label, pl
   return <TextField {...props} className="wd-field" isRequired={isRequired}><FieldLabel label={label} required={isRequired} /><span className="wd-textarea-frame wd-focus-frame"><TextArea className="wd-textarea" placeholder={placeholder} /></span><FieldMeta description={description} errorMessage={errorMessage} /></TextField>;
 }
 
-export function SearchInput({ inputRef, label = "Search", placeholder, ...props }: Omit<TextFieldProps, "children"> & { inputRef?: Ref<HTMLInputElement>; label?: string; placeholder?: string }) {
-  return <SearchField {...props} className="wd-search-field wd-focus-frame"><Label className="wd-visually-hidden">{label}</Label><Search aria-hidden="true" size={15} /><Input className="wd-input" placeholder={placeholder ?? label} ref={inputRef} /><AriaButton aria-label="Clear search"><X size={14} /></AriaButton></SearchField>;
+export function SearchInput({ inputRef, label: labelProp, placeholder, ...props }: Omit<TextFieldProps, "children"> & { inputRef?: Ref<HTMLInputElement>; label?: string; placeholder?: string }) {
+  const t = useT();
+  const label = labelProp ?? t("Search");
+  return <SearchField {...props} className="wd-search-field wd-focus-frame"><Label className="wd-visually-hidden">{label}</Label><Search aria-hidden="true" size={15} /><Input className="wd-input" placeholder={placeholder ?? label} ref={inputRef} /><AriaButton aria-label={t("Clear search")}><X size={14} /></AriaButton></SearchField>;
 }
 
 export function NumericInput({ description, errorMessage, isRequired, label, prefix, suffix, ...props }: NumberFieldProps & FieldChromeProps & { prefix?: ReactNode; suffix?: ReactNode }) {
@@ -91,7 +93,7 @@ export function InputAction({ children, className, ...props }: AriaButtonProps) 
   return <AriaButton {...props} className={(state) => ["wd-input-action", typeof className === "function" ? className(state) : className].filter(Boolean).join(" ")}>{children}</AriaButton>;
 }
 
-export const MoneyInput = (props: Omit<React.ComponentProps<typeof NumericInput>, "prefix"> & { currency?: string }) => <NumericInput {...props} prefix={props.currency ?? "INR"} />;
+export const MoneyInput = (props: Omit<React.ComponentProps<typeof NumericInput>, "prefix"> & { currency?: string }) => { const { currency } = useDesignSystem(); return <NumericInput {...props} prefix={props.currency ?? currency} />; };
 export const PercentageInput = (props: Omit<React.ComponentProps<typeof NumericInput>, "suffix">) => <NumericInput {...props} maxValue={props.maxValue ?? 100} minValue={props.minValue ?? 0} suffix="%" />;
 export const QuantityInput = (props: Omit<React.ComponentProps<typeof NumericInput>, "suffix"> & { unit?: string }) => <NumericInput {...props} suffix={props.unit ?? "nos"} />;
 export const MeasurementInput = (props: Omit<React.ComponentProps<typeof NumericInput>, "suffix"> & { unit?: string }) => <NumericInput {...props} suffix={props.unit ?? "mm"} />;
@@ -112,7 +114,7 @@ export type SelectItem = { id: string; label: string; description?: string; icon
 /** Lists longer than this become type-to-filter: one dropdown, with search only where it helps. */
 const LONG_LIST = 10;
 
-export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder = "Select an option", ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+export function SelectField({ accent = "brand", description, errorMessage, items, label, prefix, placeholder, ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
   if (items.length > LONG_LIST) {
     const { selectedKey, defaultSelectedKey, onSelectionChange, isRequired, isDisabled, isInvalid, autoFocus, name, validate, ...rest } = props;
     return <ComboboxField aria-label={rest["aria-label"]} autoFocus={autoFocus} defaultSelectedKey={defaultSelectedKey} description={description} errorMessage={errorMessage}
@@ -122,7 +124,9 @@ export function SelectField({ accent = "brand", description, errorMessage, items
   return <SelectList accent={accent} description={description} errorMessage={errorMessage} items={items} label={label} prefix={prefix} placeholder={placeholder} {...props} />;
 }
 
-function SelectList({ accent = "brand", description, errorMessage, items, label, prefix, placeholder = "Select an option", ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+function SelectList({ accent = "brand", description, errorMessage, items, label, prefix, placeholder: placeholderProp, ...props }: SelectProps<object> & FieldChromeProps & { accent?: "brand" | "neutral"; prefix?: ReactNode; items: SelectItem[] }) {
+  const t = useT();
+  const placeholder = placeholderProp ?? t("Select an option");
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
   return <Select {...props} className="wd-field" data-accent={accent} placeholder={placeholder}><FieldLabel label={label} required={props.isRequired} /><AriaButton className="wd-select-button wd-focus-frame">{prefix ? <span className="wd-select-prefix" aria-hidden="true">{prefix}</span> : null}<SelectValue className="wd-select-value">{({ isPlaceholder, selectedText }) => isPlaceholder ? placeholder : selectedText}</SelectValue><span aria-hidden="true" className="wd-select-indicator"><ChevronDown size={15} /></span></AriaButton><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" data-accent={accent} dir={direction}><ListBox items={items}>{(item) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.label}><span>{item.label}</span>{item.description ? <small>{item.description}</small> : null}<Check aria-hidden="true" className="wd-picker-check" size={14} /></ListBoxItem>}</ListBox></Popover></Select>;
@@ -138,19 +142,21 @@ export function ComboboxField({ description, errorMessage, items, label, placeho
 }
 
 export function MultiSelectField({ label, items, selectedKeys, onSelectionChange }: { label: string; items: SelectItem[]; selectedKeys: Set<Key>; onSelectionChange: (keys: Set<Key>) => void }) {
+  const t = useT();
   const available = items.filter((item) => !selectedKeys.has(item.id));
-  return <div aria-label={label} className="wd-field" role="group"><span className="wd-field-label">{label}</span><div className="wd-multi-select">{items.filter((item) => selectedKeys.has(item.id)).map((item) => <Tag key={item.id} onRemove={() => { const next = new Set(selectedKeys); next.delete(item.id); onSelectionChange(next); }}>{item.label}</Tag>)}<ComboboxField aria-label={`Add ${label}`} items={available} label={<span className="wd-visually-hidden">Add {label}</span>} onSelectionChange={(key) => { if (key) onSelectionChange(new Set([...selectedKeys, key])); }} placeholder="Add…" /></div></div>;
+  return <div aria-label={label} className="wd-field" role="group"><span className="wd-field-label">{label}</span><div className="wd-multi-select">{items.filter((item) => selectedKeys.has(item.id)).map((item) => <Tag key={item.id} onRemove={() => { const next = new Set(selectedKeys); next.delete(item.id); onSelectionChange(next); }}>{item.label}</Tag>)}<ComboboxField aria-label={t("Add {name}", { name: label })} items={available} label={<span className="wd-visually-hidden">{t("Add {name}", { name: label })}</span>} onSelectionChange={(key) => { if (key) onSelectionChange(new Set([...selectedKeys, key])); }} placeholder={t("Add…")} /></div></div>;
 }
 
-function CalendarHeader() { return <header className="wd-calendar-header"><AriaButton aria-label="Previous month" slot="previous"><ChevronLeft data-directional="true" size={15} /></AriaButton><Heading /><AriaButton aria-label="Next month" slot="next"><ChevronRight data-directional="true" size={15} /></AriaButton></header>; }
+function CalendarHeader() { const t = useT(); return <header className="wd-calendar-header"><AriaButton aria-label={t("Previous month")} slot="previous"><ChevronLeft data-directional="true" size={15} /></AriaButton><Heading /><AriaButton aria-label={t("Next month")} slot="next"><ChevronRight data-directional="true" size={15} /></AriaButton></header>; }
 type CalendarStart={firstDayOfWeek?:CalendarProps<DateValue>['firstDayOfWeek']};
 function CalendarBody({firstDayOfWeek}:CalendarStart) { return <Calendar firstDayOfWeek={firstDayOfWeek} className="wd-calendar"><CalendarHeader /><CalendarGrid>{(date) => <CalendarCell className="wd-calendar-cell" date={date} />}</CalendarGrid></Calendar>; }
 function RangeCalendarBody() { return <RangeCalendar className="wd-calendar"><CalendarHeader /><CalendarGrid>{(date) => <CalendarCell className="wd-calendar-cell" date={date} />}</CalendarGrid></RangeCalendar>; }
 
 export function DateField({ description, errorMessage, label, firstDayOfWeek, ...props }: DatePickerProps<DateValue> & FieldChromeProps & CalendarStart) {
+  const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
-  return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><DialogCalendar firstDayOfWeek={firstDayOfWeek}/></Popover></DatePicker>;
+  return <DatePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label={t("Open calendar")}><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><DialogCalendar firstDayOfWeek={firstDayOfWeek}/></Popover></DatePicker>;
 }
 
 export function TimeField({ description, errorMessage, label, ...props }: TimeFieldProps<TimeValue> & FieldChromeProps) {
@@ -160,9 +166,10 @@ export function TimeField({ description, errorMessage, label, ...props }: TimeFi
 function DialogCalendar({firstDayOfWeek}:CalendarStart) { return <div role="dialog"><CalendarBody firstDayOfWeek={firstDayOfWeek}/></div>; }
 
 export function DateRangeField({ description, errorMessage, label, ...props }: DateRangePickerProps<DateValue> & FieldChromeProps) {
+  const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const portalTheme = usePortalThemeAttributes();
-  return <DateRangePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input" slot="start">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><span aria-hidden="true">–</span><DateInput className="wd-date-input" slot="end">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label="Open calendar"><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><div role="dialog"><RangeCalendarBody /></div></Popover></DateRangePicker>;
+  return <DateRangePicker {...props} className="wd-field"><FieldLabel label={label} required={props.isRequired} /><Group className="wd-date-group wd-focus-frame"><DateInput className="wd-date-input" slot="start">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><span aria-hidden="true">–</span><DateInput className="wd-date-input" slot="end">{(segment) => <DateSegment className="wd-date-segment" segment={segment} />}</DateInput><AriaButton aria-label={t("Open calendar")}><CalendarDays size={15} /></AriaButton></Group><FieldMeta description={description} errorMessage={errorMessage} /><Popover {...portalTheme} UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-calendar-popover" dir={direction}><div role="dialog"><RangeCalendarBody /></div></Popover></DateRangePicker>;
 }
 
 /**
@@ -205,26 +212,28 @@ export function PropertyRow({ children, description, label }: { children: ReactN
 }
 
 export type UploadFile = { id: string; file: File; progress: number; status: "queued" | "uploading" | "complete" | "error" };
-export function FileUploader({ accept, appearance = "dropzone", label = "Upload files", multiple = true, onFiles }: { accept?: string; appearance?: "dropzone" | "button"; label?: string; multiple?: boolean; onFiles?: (files: File[]) => void }) {
+export function FileUploader({ accept, appearance = "dropzone", label: labelProp, multiple = true, onFiles }: { accept?: string; appearance?: "dropzone" | "button"; label?: string; multiple?: boolean; onFiles?: (files: File[]) => void }) {
+  const t = useT();
+  const label = labelProp ?? t("Upload files");
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<UploadFile[]>([]);
   const addFiles = (nextFiles: File[]) => { setFiles((current) => [...current, ...nextFiles.map((file) => ({ id: `${file.name}-${file.lastModified}`, file, progress: 100, status: "complete" as const }))]); onFiles?.(nextFiles); };
   const change = (event: ChangeEvent<HTMLInputElement>) => addFiles(Array.from(event.target.files ?? []));
   return <div className="wd-uploader" data-appearance={appearance}>{appearance === "button"
     ? <Button onPress={() => input.current?.click()} size="compact" variant="quiet"><Upload aria-hidden="true" size={14} />{label}</Button>
-    : <button className="wd-drop-zone" onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }} type="button"><Upload aria-hidden="true" size={18} /><strong>{label}</strong><span>Drop files here or choose from your device</span></button>}
+    : <button className="wd-drop-zone" onClick={() => input.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); }} type="button"><Upload aria-hidden="true" size={18} /><strong>{label}</strong><span>{t("Drop files here or choose from your device")}</span></button>}
     <input accept={accept} aria-label={label} className="wd-visually-hidden" multiple={multiple} onChange={change} ref={input} type="file" />
-    {appearance === "dropzone" ? <div className="wd-upload-list">{files.map((item) => <div key={item.id}><Paperclip size={14} /><span>{item.file.name}</span><small>{Math.ceil(item.file.size / 1024)} KB</small><IconButton aria-label={`Remove ${item.file.name}`} onPress={() => setFiles((current) => current.filter((file) => file.id !== item.id))}><X size={13} /></IconButton></div>)}</div> : null}</div>;
+    {appearance === "dropzone" ? <div className="wd-upload-list">{files.map((item) => <div key={item.id}><Paperclip size={14} /><span>{item.file.name}</span><small>{Math.ceil(item.file.size / 1024)} KB</small><IconButton aria-label={t("Remove {name}", { name: item.file.name })} onPress={() => setFiles((current) => current.filter((file) => file.id !== item.id))}><X size={13} /></IconButton></div>)}</div> : null}</div>;
 }
 
-export function LogoUploader(props: Omit<React.ComponentProps<typeof FileUploader>, "accept" | "multiple">) { return <FileUploader {...props} accept="image/png,image/jpeg,image/webp,image/svg+xml" label={props.label ?? "Upload organization logo"} multiple={false} />; }
+export function LogoUploader(props: Omit<React.ComponentProps<typeof FileUploader>, "accept" | "multiple">) { const t = useT(); return <FileUploader {...props} accept="image/png,image/jpeg,image/webp,image/svg+xml" label={props.label ?? t("Upload organization logo")} multiple={false} />; }
 
-export function AutosaveState({ state }: { state: "idle" | "saving" | "saved" | "error" }) { return <span aria-live="polite" className="wd-autosave" data-state={state}>{state === "saving" ? "Saving…" : state === "saved" ? "Saved" : state === "error" ? "Could not save" : ""}</span>; }
+export function AutosaveState({ state }: { state: "idle" | "saving" | "saved" | "error" }) { const t = useT(); return <span aria-live="polite" className="wd-autosave" data-state={state}>{state === "saving" ? t("Saving…") : state === "saved" ? t("Saved") : state === "error" ? t("Could not save") : ""}</span>; }
 
 export function SegmentedControl({ label, onChange, options, value }: { label: string; onChange: (value: string) => void; options: SelectItem[]; value: string }) { return <div aria-label={label} className="wd-segmented" role="radiogroup">{options.map((option) => <button aria-checked={value === option.id} key={option.id} onClick={() => onChange(option.id)} role="radio" type="button">{option.label}</button>)}</div>; }
 
-export function RepeatableFields<T>({ addLabel = "Add item", items, onAdd, onRemove, renderItem }: { addLabel?: string; items: T[]; onAdd: () => void; onRemove: (index: number) => void; renderItem: (item: T, index: number) => ReactNode }) { return <div className="wd-repeatable"><div>{items.map((item, index) => <div className="wd-repeatable-row" key={index}><div>{renderItem(item, index)}</div><IconButton aria-label={`Remove item ${index + 1}`} onPress={() => onRemove(index)}><X size={14} /></IconButton></div>)}</div><Button onPress={onAdd}>{addLabel}</Button></div>; }
+export function RepeatableFields<T>({ addLabel, items, onAdd, onRemove, renderItem }: { addLabel?: string; items: T[]; onAdd: () => void; onRemove: (index: number) => void; renderItem: (item: T, index: number) => ReactNode }) { const t = useT(); return <div className="wd-repeatable"><div>{items.map((item, index) => <div className="wd-repeatable-row" key={index}><div>{renderItem(item, index)}</div><IconButton aria-label={t("Remove item {number}", { number: index + 1 })} onPress={() => onRemove(index)}><X size={14} /></IconButton></div>)}</div><Button onPress={onAdd}>{addLabel ?? t("Add item")}</Button></div>; }
 
 export function Form({ children, className, onSubmit, ...props }: FormHTMLAttributes<HTMLFormElement>) { return <form {...props} className={["wd-form", className].filter(Boolean).join(" ")} onSubmit={onSubmit}>{children}</form>; }
 export function Fieldset({ children, description, legend }: { children: ReactNode; description?: ReactNode; legend: ReactNode }) { return <fieldset className="wd-fieldset"><legend>{legend}</legend>{description ? <p>{description}</p> : null}{children}</fieldset>; }
-export function ValidationSummary({ errors }: { errors: string[] }) { if (!errors.length) return null; return <div className="wd-validation-summary" role="alert"><strong>Check the highlighted fields</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>; }
+export function ValidationSummary({ errors }: { errors: string[] }) { const t = useT(); if (!errors.length) return null; return <div className="wd-validation-summary" role="alert"><strong>{t("Check the highlighted fields")}</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>; }

@@ -1,5 +1,7 @@
+import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { CircleCheck, CircleDot, ShieldCheck } from "lucide-react";
+import { useDesignSystem } from "@/design-system";
 import {
   activeDeliveryQuote,
   agreementIsOperational,
@@ -26,6 +28,8 @@ export function PreExecutionFlow({
   root: string;
   compact?: boolean;
 }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const data = state.data;
   const accepted = activeDeliveryQuote(data);
   const requiredPayments = data.payments.filter(
@@ -84,49 +88,49 @@ export function PreExecutionFlow({
   const steps = [
     {
       href: `${root}/contracts`,
-      title: "Agreement & payments",
-      eyebrow: "Commercial baseline",
-      status: agreementReady && paymentsReady ? "Ready" : accepted ? "In progress" : "Waiting",
+      title: t("Agreement & payments"),
+      eyebrow: t("Commercial baseline"),
+      status: agreementReady && paymentsReady ? t("Ready") : accepted ? t("In progress") : t("Waiting"),
       detail: accepted
-        ? `${agreementReady ? "Agreement verified" : "Agreement pending"} · ${verifiedPayments}/${requiredPayments.length} release payments verified`
-        : "Accept a quotation to begin",
+        ? `${agreementReady ? t("Agreement verified") : t("Agreement pending")} · ${t("{verified}/{required} release payments verified", { verified: verifiedPayments, required: requiredPayments.length })}`
+        : t("Accept a quotation to begin"),
       state: agreementState,
       current: ["contracts", "payment-plan"].includes(section),
     },
     {
       href: `${root}/variations`,
-      title: "Change control",
-      eyebrow: "Change control",
-      status: openChanges ? `${openChanges} open` : "Clear",
+      title: t("Change control"),
+      eyebrow: t("Change control"),
+      status: openChanges ? t("{count} open", { count: openChanges }) : t("Clear"),
       detail: openChanges
-        ? "Resolve scope, price, and schedule impact before release"
+        ? t("Resolve scope, price, and schedule impact before release")
         : data.requests.length
-          ? `${data.requests.length} requests resolved or closed`
-          : "No unresolved client changes",
+          ? t("{count} requests resolved or closed", { count: data.requests.length })
+          : t("No unresolved client changes"),
       state: openChanges ? "attention" : "complete",
       current: section === "variations",
     },
     {
       href: `${root}/execution-release`,
-      title: "Approvals & release",
-      eyebrow: "Execution gate",
-      status: releasedReady ? "Released" : releaseState === "ready" ? "Ready to release" : `${checksDone}/7 ready`,
+      title: t("Approvals & release"),
+      eyebrow: t("Execution gate"),
+      status: releasedReady ? t("Released") : releaseState === "ready" ? t("Ready to release") : t("{done}/7 ready", { done: checksDone }),
       detail: releasedReady && data.release
-        ? `Released ${new Date(data.release.at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
-        : "Owner, materials, agreement, payments, and changes checked together",
+        ? t("Released {date}", { date: new Date(data.release.at).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric", timeZone }) })
+        : t("Owner, materials, agreement, payments, and changes checked together"),
       state: releaseState,
       current: approvalSections.has(section),
     },
   ];
 
   return (
-    <nav className={s.preExecutionFlow} aria-label="Planning readiness timeline" data-compact={compact || undefined}>
+    <nav className={s.preExecutionFlow} aria-label={t("Planning readiness timeline")} data-compact={compact || undefined}>
       <div className={s.flowIntro}>
         <div>
-          <span>Release readiness</span>
-          {!compact ? <strong>From accepted scope to execution release</strong> : null}
+          <span>{t("Release readiness")}</span>
+          {!compact ? <strong>{t("From accepted scope to execution release")}</strong> : null}
         </div>
-        <small>{checksDone} of 7 checks complete</small>
+        <small>{t("{done} of 7 checks complete", { done: checksDone })}</small>
       </div>
       <ol>
         {steps.map((step) => (

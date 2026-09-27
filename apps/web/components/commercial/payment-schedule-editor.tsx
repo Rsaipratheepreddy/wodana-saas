@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useEffect, useState } from "react";
 import {
   Archive,
@@ -24,6 +25,7 @@ import {
   InspectorSheet,
   NumericInput,
   TextInput,
+  useDesignSystem,
   VisuallyHidden,
 } from "@/design-system";
 import type { PaymentTerm, PaymentTemplate, Quote } from "@/lib/commercial/types";
@@ -70,6 +72,7 @@ export function PaymentScheduleEditor({
   workspaceId: string;
   readOnly: boolean;
 }) {
+  const t = useT();
   const [templates, setTemplates] = useState<PaymentTemplate[]>([]);
   const [library, setLibrary] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -195,19 +198,19 @@ export function PaymentScheduleEditor({
     >
       <div className={s.header}>
         <div>
-          <h2>Payment schedule</h2>
-          <p className={s.muted}>Accepted milestones carry into the agreement and payment tracking.</p>
+          <h2>{t("Payment schedule")}</h2>
+          <p className={s.muted}>{t("Accepted milestones carry into the agreement and payment tracking.")}</p>
         </div>
         {!readOnly ? (
-          <Button onPress={() => { void load(); setLibrary(true); }}>Choose schedule</Button>
+          <Button onPress={() => { void load(); setLibrary(true); }}>{t("Choose schedule")}</Button>
         ) : null}
       </div>
 
-      {error ? <Callout title="Payment schedule unavailable" tone="danger">{error}</Callout> : null}
+      {error ? <Callout title={t("Payment schedule unavailable")} tone="danger">{error}</Callout> : null}
 
       {!readOnly && templates.length ? (
         <section className={s.section}>
-          <h3>Saved schedules</h3>
+          <h3>{t("Saved schedules")}</h3>
           <div className={s.actions}>
             {templates.map((template) => (
               <span
@@ -224,12 +227,12 @@ export function PaymentScheduleEditor({
 
       {quote.paymentTemplate ? (
         <p className={s.muted}>
-          {quote.paymentTemplate.name} · template v{quote.paymentTemplate.version} · editable for this quotation
+          {t("{name} · template v{version} · editable for this quotation", { name: quote.paymentTemplate.name, version: quote.paymentTemplate.version })}
         </p>
       ) : null}
 
       {!terms.length ? (
-        <p className={s.notice}>Choose a reusable schedule or add milestones. Percentages must total 100% before review.</p>
+        <p className={s.notice}>{t("Choose a reusable schedule or add milestones. Percentages must total 100% before review.")}</p>
       ) : (
         <MilestoneRows
           currency={quote.currency}
@@ -243,17 +246,16 @@ export function PaymentScheduleEditor({
       {!readOnly ? (
         <div className={s.actions}>
           <Button onPress={() => onChange({ ...quote, paymentTerms: [...terms, newMilestone()] })} size="compact">
-            <Plus aria-hidden="true" size={14} />Add milestone
-          </Button>
+            <Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>
         </div>
       ) : null}
 
       <ControlledModalDialog
-        description="Reuse a saved schedule or create one. Issued quotations are never changed."
+        description={t("Reuse a saved schedule or create one. Issued quotations are never changed.")}
         isOpen={library}
         onOpenChange={setLibrary}
         size="lg"
-        title="Payment schedules"
+        title={t("Payment schedules")}
       >
         <div className={s.form}>
           {templates.map((template) => (
@@ -271,32 +273,30 @@ export function PaymentScheduleEditor({
                   </p>
                 </div>
                 <div className={s.actions}>
-                  <Button onPress={() => { setEdit(structuredClone(template)); setTemplateName(template.name); }} size="compact" variant="quiet">Edit</Button>
-                  <Button onPress={() => void openHistory(template)} size="compact" variant="quiet"><History aria-hidden="true" size={14} />History</Button>
-                  <Button onPress={() => setArchiveTarget(template)} size="compact" variant="quiet"><Archive aria-hidden="true" size={14} />Archive</Button>
-                  <Button onPress={() => apply(template)} size="compact" variant="primary">Use schedule</Button>
+                  <Button onPress={() => { setEdit(structuredClone(template)); setTemplateName(template.name); }} size="compact" variant="quiet">{t("Edit")}</Button>
+                  <Button onPress={() => void openHistory(template)} size="compact" variant="quiet"><History aria-hidden="true" size={14} />{t("History")}</Button>
+                  <Button onPress={() => setArchiveTarget(template)} size="compact" variant="quiet"><Archive aria-hidden="true" size={14} />{t("Archive")}</Button>
+                  <Button onPress={() => apply(template)} size="compact" variant="primary">{t("Use schedule")}</Button>
                 </div>
               </div>
             </div>
           ))}
 
           <Button onPress={() => { setEdit(starterTemplate()); setTemplateName(""); }}>
-            <Plus aria-hidden="true" size={14} />Create schedule
-          </Button>
+            <Plus aria-hidden="true" size={14} />{t("Create schedule")}</Button>
 
           {edit ? (
             <div className={s.section}>
               <TextInput
-                label="Schedule name"
+                label={t("Schedule name")}
                 onChange={setTemplateName}
-                placeholder="e.g. Residential · 50 / 40 / 10"
+                placeholder={t("e.g. Residential · 50 / 40 / 10")}
                 value={templateName}
               />
               <MilestoneRows onChange={(rows) => setEdit({ ...edit, milestones: rows })} readOnly={false} rows={edit.milestones} />
               <div className={s.actions}>
                 <Button onPress={() => setEdit({ ...edit, milestones: [...edit.milestones, newMilestone()] })} size="compact">
-                  <Plus aria-hidden="true" size={14} />Add milestone
-                </Button>
+                  <Plus aria-hidden="true" size={14} />{t("Add milestone")}</Button>
                 <Button
                   isDisabled={busy || !templateName.trim()}
                   isLoading={busy}
@@ -320,8 +320,7 @@ export function PaymentScheduleEditor({
                   }}
                   variant="primary"
                 >
-                  Save and use
-                </Button>
+                  {t("Save and use")}</Button>
               </div>
             </div>
           ) : null}
@@ -329,31 +328,30 @@ export function PaymentScheduleEditor({
       </ControlledModalDialog>
 
       <InspectorSheet
-        description="Every save is retained. Restoring creates a new revision and keeps later history."
+        description={t("Every save is retained. Restoring creates a new revision and keeps later history.")}
         isOpen={Boolean(historyTemplate)}
         onOpenChange={(open) => { if (!open && !busy) setHistoryTemplate(null); }}
         size="sm"
         title={historyTemplate ? `${historyTemplate.name} history` : "Schedule history"}
       >
-        {historyError ? <Callout title="Schedule history unavailable" tone="danger">{historyError}</Callout> : null}
-        {!historyError && !revisions.length ? <p className={s.muted}>No saved changes yet.</p> : null}
+        {historyError ? <Callout title={t("Schedule history unavailable")} tone="danger">{historyError}</Callout> : null}
+        {!historyError && !revisions.length ? <p className={s.muted}>{t("No saved changes yet.")}</p> : null}
         {revisions.length ? (
           <ol className={s.history}>
             {revisions.map((revision, index) => (
               <li key={revision.id}>
                 <div className={s.header}>
                   <div>
-                    <strong>Revision {revision.revisionNumber}</strong>
+                    <strong>{t("Revision")}{" "}{revision.revisionNumber}</strong>
                     <p className={s.muted}>
-                      {new Date(revision.createdAt).toLocaleString()} · {revision.changes.length} changed {revision.changes.length === 1 ? "field" : "fields"}
+                      {new Date(revision.createdAt).toLocaleString()} · {revision.changes.length} {t("changed")}{" "}{revision.changes.length === 1 ? "field" : "fields"}
                     </p>
                   </div>
                   {index === 0 ? (
-                    <Badge tone="neutral">Current</Badge>
+                    <Badge tone="neutral">{t("Current")}</Badge>
                   ) : (
                     <Button isDisabled={busy} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet">
-                      <RotateCcw aria-hidden="true" size={14} />Restore
-                    </Button>
+                      <RotateCcw aria-hidden="true" size={14} />{t("Restore")}</Button>
                   )}
                 </div>
               </li>
@@ -368,7 +366,7 @@ export function PaymentScheduleEditor({
         isOpen={Boolean(archiveTarget)}
         onConfirm={() => void archiveTemplate()}
         onOpenChange={(open) => { if (!open && !busy) setArchiveTarget(null); }}
-        title="Archive this payment schedule?"
+        title={t("Archive this payment schedule?")}
       />
       <ConfirmationDialog
         body="The selected milestones become the current schedule. The current version remains in history."
@@ -376,7 +374,7 @@ export function PaymentScheduleEditor({
         isOpen={Boolean(rollbackTarget)}
         onConfirm={() => void rollback()}
         onOpenChange={(open) => { if (!open && !busy) setRollbackTarget(null); }}
-        title="Restore this payment schedule revision?"
+        title={t("Restore this payment schedule revision?")}
       />
     </section>
   );
@@ -389,6 +387,8 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
   total?: number;
   currency?: string;
 }) {
+  const t = useT();
+  const region = useDesignSystem();
   const [drag, setDrag] = useState<string | null>(null);
 
   function move(id: string, to: number) {
@@ -417,10 +417,10 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
             draggable
             onDragEnd={() => setDrag(null)}
             onDragStart={(event) => { setDrag(row.id); event.dataTransfer.setData("text/plain", row.id); }}
-            title="Drag to reorder"
+            title={t("Drag to reorder")}
           ><GripVertical aria-hidden="true" size={16} /></span>
-          <IconButton aria-label={`Move ${row.title} up`} isDisabled={index === 0} onPress={() => move(row.id, index - 1)} size="compact"><ArrowUp aria-hidden="true" size={13} /></IconButton>
-          <IconButton aria-label={`Move ${row.title} down`} isDisabled={index === rows.length - 1} onPress={() => move(row.id, index + 1)} size="compact"><ArrowDown aria-hidden="true" size={13} /></IconButton>
+          <IconButton aria-label={t("Move {name} up", { name: row.title })} isDisabled={index === 0} onPress={() => move(row.id, index - 1)} size="compact"><ArrowUp aria-hidden="true" size={13} /></IconButton>
+          <IconButton aria-label={t("Move {name} down", { name: row.title })} isDisabled={index === rows.length - 1} onPress={() => move(row.id, index + 1)} size="compact"><ArrowDown aria-hidden="true" size={13} /></IconButton>
         </div>;
       } },
     }] : []),
@@ -433,8 +433,8 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
         const index = rows.findIndex((item) => item.id === row.id);
         return readOnly ? <>{row.title}<small className={s.detail}>{row.trigger}</small></> : (
           <div className={s.paymentFields}>
-            <TextInput label={<VisuallyHidden>Milestone {index + 1} title</VisuallyHidden>} onChange={(value) => patch(row.id, { title: value })} value={row.title} />
-            <TextInput label={<VisuallyHidden>Milestone {index + 1} trigger</VisuallyHidden>} onChange={(value) => patch(row.id, { trigger: value })} placeholder="When is it due?" value={row.trigger} />
+            <TextInput label={<VisuallyHidden>{t("Milestone {number} title", { number: index + 1 })}</VisuallyHidden>} onChange={(value) => patch(row.id, { title: value })} value={row.title} />
+            <TextInput label={<VisuallyHidden>{t("Milestone {number} trigger", { number: index + 1 })}</VisuallyHidden>} onChange={(value) => patch(row.id, { trigger: value })} placeholder={t("When is it due?")} value={row.trigger} />
           </div>
         );
       } },
@@ -448,7 +448,7 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
         const index = rows.findIndex((item) => item.id === row.id);
         return readOnly ? `${row.percent}%` : (
           <NumericInput
-            label={<VisuallyHidden>Milestone {index + 1} percentage</VisuallyHidden>}
+            label={<VisuallyHidden>{t("Milestone {number} percentage", { number: index + 1 })}</VisuallyHidden>}
             maxValue={100}
             minValue={0.01}
             onChange={(value) => patch(row.id, { percent: value })}
@@ -466,7 +466,7 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
       accessorFn: (row: PaymentTerm) => paymentMilestoneAmounts(total, rows)[rows.findIndex((item) => item.id === row.id)],
       meta: { renderCell: (row: PaymentTerm) => {
         const index = rows.findIndex((item) => item.id === row.id);
-        return money(paymentMilestoneAmounts(total, rows)[index], currency);
+        return money(paymentMilestoneAmounts(total, rows)[index], currency ?? region.currency, region.locale);
       } },
     }] : []),
     {
@@ -527,7 +527,7 @@ function MilestoneRows({ rows, onChange, readOnly, total, currency }: {
       selectable={false}
     />
     <p className={s.muted}>
-      Total: {rows.reduce((sum, row) => sum + row.percent, 0).toFixed(2)}% · Drag milestones or use the arrow buttons to reorder.
+      {t("Total: {percent}% · Drag milestones or use the arrow buttons to reorder.", { percent: rows.reduce((sum, row) => sum + row.percent, 0).toFixed(2) })}
     </p>
   </>;
 }

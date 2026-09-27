@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useWoddyRecord } from "@/components/crm/woddy-chat";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -74,6 +75,7 @@ export function CommercialPage({
   embedded?: boolean;
   projectId?: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const quotationList = section === "quotations" && !quotationId;
   const projectPlanningHref = (part: string, quote?: string) => {
@@ -248,7 +250,7 @@ export function CommercialPage({
         className={`${s.page} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
       >
         {section === "quotations" && quotationId && draft && (
-          <h1 className={s.visuallyHidden}>Quotations</h1>
+          <h1 className={s.visuallyHidden}>{t("Quotations")}</h1>
         )}
         {section !== "quotations" && section !== "contracts" && section !== "payment-plan" && (
           <h1 className={s.visuallyHidden}>{labels[section]}</h1>
@@ -265,9 +267,9 @@ export function CommercialPage({
           </p>
         )}
         {quotationList && state.palmFlowEnabled && !state.data.quotes.length && (
-          <section className={s.flowChooser} aria-label="Enquiry service path">
+          <section className={s.flowChooser} aria-label={t("Enquiry service path")}>
             <div>
-              <h2>Service path</h2>
+              <h2>{t("Service path")}</h2>
               <p>{state.data.palmFlow
                 ? "Confirmed for this enquiry. Create the quotation when its requirements are ready."
                 : "Choose what the client is buying before preparing the first quotation. This keeps inapplicable project stages out of the way."}</p>
@@ -291,7 +293,7 @@ export function CommercialPage({
             open={(id) => router.push(quoteHref(id))}
           />
         ) : section === "quotations" && quotationId && !draft ? (
-          <EmptyState illustration="search" title="Quotation not found" action={<Link className="wd-button" data-size="compact" data-variant="primary" href={rootHref}>Back to quotations</Link>} />
+          <EmptyState illustration="search" title={t("Quotation not found")} action={<Link className="wd-button" data-size="compact" data-variant="primary" href={rootHref}>{t("Back to quotations")}</Link>} />
         ) : quotePage ? (
           draft ? (
             <>
@@ -301,7 +303,7 @@ export function CommercialPage({
                     {draft.kind === "variation" ? "Variation" : "Quotation"}
                   </strong> : null}
                   <SelectField
-                    label={<span className="wd-visually-hidden">Quotation version</span>}
+                    label={<span className="wd-visually-hidden">{t("Quotation version")}</span>}
                     items={state.data.quotes.map((q) => ({ id: q.id, label: `V${q.number} · ${statusLabel[q.status]}` }))}
                     selectedKey={selected}
                     onSelectionChange={(key) => choose(String(key))}
@@ -310,9 +312,9 @@ export function CommercialPage({
                   {section !== "quotations" ? <span className={s.status} data-status={draft.status}>
                     {statusLabel[draft.status]}
                   </span> : null}
-                  {draft.qsEstimate && <span className={s.muted}>QS checked · {draft.qsEstimate.reviewedBy}</span>}
+                  {draft.qsEstimate && <span className={s.muted}>{t("QS checked ·")}{" "}{draft.qsEstimate.reviewedBy}</span>}
                   {dirty ? (
-                    <span className={s.muted}>Unsaved edits</span>
+                    <span className={s.muted}>{t("Unsaved edits")}</span>
                   ) : (
                     notice && (
                       <span role="status" className={s.muted}>
@@ -334,7 +336,7 @@ export function CommercialPage({
                 /> : null}
                 <div className={s.actions}>
                   <IconButton
-                    aria-label="Version history"
+                    aria-label={t("Version history")}
                     size="compact"
                     onPress={() => setDialog("history")}
                   >
@@ -347,8 +349,7 @@ export function CommercialPage({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Print / PDF
-                    </a>
+                      {t("Print / PDF")}</a>
                   )}
                   {state.canEdit && draft.status === "draft" && (
                     <>
@@ -358,24 +359,21 @@ export function CommercialPage({
                         hidden={section === "quotations"}
                         onPress={() => setDialog("scope")}
                       >
-                        Import scope
-                      </Button>
+                        {t("Import scope")}</Button>
                       <Button
                         size="compact"
                         isDisabled={busy || !dirty}
                         hidden={reviewOnly}
                         onPress={() => void run("save")}
                       >
-                        Save changes
-                      </Button>
+                        {t("Save changes")}</Button>
                       <Button
                         size="compact"
                         variant="primary"
                         isDisabled={busy || !draft.lines.length}
                         onPress={() => void run("submit")}
                       >
-                        Submit for review
-                      </Button>
+                        {t("Submit for review")}</Button>
                     </>
                   )}
                   {state.canEdit &&
@@ -387,8 +385,7 @@ export function CommercialPage({
                         isDisabled={busy}
                         onPress={() => void run("return")}
                       >
-                        Return to draft
-                      </Button>
+                        {t("Return to draft")}</Button>
                     )}
                   {state.data.palmFlow && state.canEstimate && draft.status === "internal_review" && draft.kind === "quotation" && (
                     <Button
@@ -397,8 +394,7 @@ export function CommercialPage({
                       isDisabled={busy}
                       onPress={() => void run("qs_approve")}
                     >
-                      Approve QS estimate
-                    </Button>
+                      {t("Approve QS estimate")}</Button>
                   )}
                   {!state.data.palmFlow && state.canApprove && draft.status === "internal_review" && (
                     <Button
@@ -407,8 +403,7 @@ export function CommercialPage({
                       isDisabled={busy}
                       onPress={() => void run("approve")}
                     >
-                      Approve pricing
-                    </Button>
+                      {t("Approve pricing")}</Button>
                   )}
                   {state.canEdit && draft.status === "internal_approved" && (
                     <Button
@@ -426,13 +421,11 @@ export function CommercialPage({
                       isDisabled={busy}
                       onPress={() => void run("withdraw")}
                     >
-                      Withdraw
-                    </Button>
+                      {t("Withdraw")}</Button>
                   )}
                   {state.canEdit && draft.status === "accepted" && (
                     <Link className={s.primary} href={`${root}/variations`}>
-                      Request a change
-                    </Link>
+                      {t("Request a change")}</Link>
                   )}
                   {state.canEdit &&
                     !["draft", "internal_review", "internal_approved", "accepted"].includes(
@@ -444,8 +437,7 @@ export function CommercialPage({
                         isDisabled={busy}
                         onPress={() => void run("revise")}
                       >
-                        Create revision
-                      </Button>
+                        {t("Create revision")}</Button>
                     )}
                 </div>
               </div>
@@ -461,7 +453,7 @@ export function CommercialPage({
               />
               <QuotationsReadonlyNote quote={draft} />
               </>}
-              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>Open quotation editor →</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={draft} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
+              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>{t("Open quotation editor →")}</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={draft} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
                 disabled={busy}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               >
@@ -484,8 +476,8 @@ export function CommercialPage({
               </fieldset>}
             </>
           ) : (
-            <EmptyState title={section === "boq" ? "Prepare quotation items" : "Create your first quotation"} description="Import the included scope, choose materials and set rates. The same items carry into the quotation."
-              action={state.canEdit ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void run("create")}><Plus size={15} />Create quotation</Button> : undefined} />
+            <EmptyState title={section === "boq" ? "Prepare quotation items" : "Create your first quotation"} description={t("Import the included scope, choose materials and set rates. The same items carry into the quotation.")}
+              action={state.canEdit ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void run("create")}><Plus size={15} />{t("Create quotation")}</Button> : undefined} />
           )
         ) : section === "client-portal" ? (
           <ClientContacts workspaceId={state.workspaceId} caseId={state.caseId} portalSlug={state.portalSlug} portalEnabled={Boolean(state.portalEnabled)} locale={design.locale} onChanged={reload} />
@@ -511,7 +503,7 @@ export function CommercialPage({
         <ControlledModalDialog
           isOpen={dialog === "history"}
           onOpenChange={(open) => !open && setDialog("")}
-          title="Version & activity history"
+          title={t("Version & activity history")}
         >
           <ul className={s.history}>
             {state.data.quotes
@@ -540,7 +532,7 @@ export function CommercialPage({
                 </li>
               ))}
           </ul>
-          <h3>Activity</h3>
+          <h3>{t("Activity")}</h3>
           <ul className={s.history}>
             {state.data.audit
               .slice()
@@ -559,7 +551,7 @@ export function CommercialPage({
         <ControlledModalDialog
           isOpen={dialog === "issue"}
           onOpenChange={(open) => !open && setDialog("")}
-          title="Issue this quotation"
+          title={t("Issue this quotation")}
           footer={
             <Button
               size="compact"
@@ -567,18 +559,16 @@ export function CommercialPage({
               isDisabled={busy || !approver}
               onPress={() => void run("issue", { approverId: approver })}
             >
-              Issue V{draft?.number}
+              {t("Issue V")}{draft?.number}
             </Button>
           }
         >
           <div className={s.form}>
             <p>
-              Freeze this version and make it available for the client’s
-              decision. Any previous pending version is replaced.
-            </p>
+              {t("Freeze this version and make it available for the client’s decision. Any previous pending version is replaced.")}</p>
             <SelectField
-              label="Client approver"
-              placeholder="Choose an approver"
+              label={t("Client approver")}
+              placeholder={t("Choose an approver")}
               items={state.contacts
                 .filter((c) => c.active && c.role === "approver")
                 .map((c) => ({ id: c.id, label: `${c.name} · ${c.phone}` }))}
@@ -587,10 +577,9 @@ export function CommercialPage({
             />
             {!state.contacts.some((c) => c.active && c.role === "approver") && (
               <p>
-                Add an approver in the{" "}
-                <Link href={`${root}/client-portal`}>Client portal tab</Link>{" "}
-                first.
-              </p>
+                {t("Add an approver in the")}{" "}
+                <Link href={`${root}/client-portal`}>{t("Client portal tab")}</Link>{" "}
+                {t("first.")}</p>
             )}
             {error && (
               <p role="alert" className={s.error}>
@@ -598,8 +587,7 @@ export function CommercialPage({
               </p>
             )}
             <p className={s.muted}>
-              Publishing to the portal does not send a WhatsApp message.
-            </p>
+              {t("Publishing to the portal does not send a WhatsApp message.")}</p>
           </div>
         </ControlledModalDialog>
         {confirmationDialog}
@@ -625,11 +613,12 @@ function QuotationsChangeSummary({
   draft: Quote;
   previous?: Quote;
 }) {
+  const t = useT();
   const changes = changedLines(draft, previous);
   return previous && changes.length ? (
     <section className={s.section}>
       <h3>
-        {changes.length} item changes since V{previous.number}
+        {changes.length} {t("item changes since V")}{previous.number}
       </h3>
       <ul>
         {changes.map((c, i) => (

@@ -2,6 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
+import { getServerT } from "@/lib/i18n/server";
 import { briefFields, type CaseContent } from "./content";
 import { type PreProjectCase, type PreProjectList, listSearch } from "./types";
 import type { DefinitionPageData, DefinitionState, ReadinessState } from "./definition";
@@ -82,7 +83,7 @@ export async function getPreProjects(query: URLSearchParams, pendingDeal = false
     return { workspaceId, items, total: items.length, canCreate: true, canStartLead: true };
   }
   const response = await read(workspaceId, token, `?${filters}`);
-  if (!response?.ok) return { workspaceId, items: [], total: 0, canCreate: false, error: response?.status === 403 ? "You don’t have permission to view planning records. Ask your workspace administrator for access." : "Planning could not be loaded. Please try again." };
+  if (!response?.ok) { const t = await getServerT(); return { workspaceId, items: [], total: 0, canCreate: false, error: response?.status === 403 ? t("You don’t have permission to view planning records. Ask your workspace administrator for access.") : t("Planning could not be loaded. Please try again.") }; }
   return { ...await response.json(), workspaceId };
 }
 export async function getPreProject(id: string): Promise<PreProjectCase | { error: string }> {
@@ -93,7 +94,7 @@ export async function getPreProject(id: string): Promise<PreProjectCase | { erro
   }
   const response = await read(workspaceId, token, `/${id}`);
   if (response?.status === 404) notFound();
-  if (!response?.ok) return { error: response?.status === 403 ? "You don’t have permission to open this planning." : "This planning could not be loaded. Please try again." };
+  if (!response?.ok) { const t = await getServerT(); return { error: response?.status === 403 ? t("You don’t have permission to open this planning.") : t("This planning could not be loaded. Please try again.") }; }
   return response.json();
 }
 
@@ -115,7 +116,7 @@ export async function getCaseContent(id:string,includeDesigns=false,includeSite=
   return {data:e2eContent(workspaceId),designs:[],...(includeDesigns?{designOptions:{folders:[],reviewers:[],actorId:"e2e-user",canReview:true,canRecordClient:true,portal:{enabled:true,slug:"e2e-client",hasApprover:true}}}:{}) ,...(includeSite?{site:{items:[],members:[],timezone:"Asia/Dubai",weekStartsOn:1,canVerify:true}}:{})};
  }
  const [brief,designs,site]=await Promise.all([read(workspaceId,token,`/${id}/brief`),includeDesigns?read(workspaceId,token,`/${id}/designs`):Promise.resolve(null),includeSite?read(workspaceId,token,`/${id}/site`):Promise.resolve(null)]);
- if(!brief?.ok||(includeDesigns&&!designs?.ok)||(includeSite&&!site?.ok))return {error:'This section could not be loaded. Please reload to try again.'};
+ if(!brief?.ok||(includeDesigns&&!designs?.ok)||(includeSite&&!site?.ok)){const t=await getServerT();return {error:t('This section could not be loaded. Please reload to try again.')};}
  const designData=designs?await designs.json():null;
  return {data:await brief.json(),designs:designData?.items??[],...(designData?{designOptions:designData}:{}),...(site?{site:await site.json()}:{})};
 }
@@ -152,7 +153,7 @@ export async function getDefinitionPageData(id: string): Promise<DefinitionPageD
     read(workspaceId, token, `/${id}/definition-baselines`),
     read(workspaceId, token, `/${id}/readiness?target=pricing`),
   ]);
-  if (!definition?.ok || !readiness?.ok) return { error: definition?.status === 403 || readiness?.status === 403 ? "You don’t have access to this scope confirmation." : "Scope confirmation could not be loaded. Please try again." };
+  if (!definition?.ok || !readiness?.ok) { const t = await getServerT(); return { error: definition?.status === 403 || readiness?.status === 403 ? t("You don’t have access to this scope confirmation.") : t("Scope confirmation could not be loaded. Please try again.") }; }
   return { workspaceId, caseId: id, definition: await definition.json() as DefinitionState, readiness: await readiness.json() as ReadinessState };
 }
 
@@ -162,6 +163,6 @@ export async function getDesignQueue(): Promise<{ items: DesignQueueItem[]; erro
   const { workspaceId, token } = await context();
   if (isE2eBypass()) return { items: [] };
   const response = await read(workspaceId, token, "/design-queue");
-  if (!response?.ok) return { items: [], error: "Design reviews could not be loaded." };
+  if (!response?.ok) { const t = await getServerT(); return { items: [], error: t("Design reviews could not be loaded.") }; }
   return await response.json() as { items: DesignQueueItem[] };
 }

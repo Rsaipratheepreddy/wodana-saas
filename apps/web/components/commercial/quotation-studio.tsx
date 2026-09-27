@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useRef, useState } from "react";
 import {
   BookCopy,
@@ -15,13 +16,14 @@ import {
   X,
 } from "lucide-react";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
-import { money, quoteTotals } from "@/lib/commercial/client";
+import { money, quoteTotals, statusLabel } from "@/lib/commercial/client";
+import { translateKnown } from "@/lib/i18n/keys";
 import { roomNames } from "@/lib/commercial/room-builder";
 import {
   addQuotationSuggestions,
   type QuotationAnalysis,
 } from "@/lib/commercial/quotation-assist";
-import { Checkbox, ControlledModalDialog, SelectField, useConfirmationDialog } from "@/design-system";
+import { Checkbox, ControlledModalDialog, SelectField, useConfirmationDialog, useDesignSystem } from "@/design-system";
 import type { QuotationEditor } from "./quotation-editor";
 import { CatalogOptionsProvider } from "./catalog-options-cache";
 import { QuotationTemplateLibrary } from "./quotation-sidebar-tools";
@@ -67,6 +69,8 @@ function Studio({
   costing,
   initialMode = "items",
 }: Props) {
+  const t = useT();
+  const { locale } = useDesignSystem();
   const [preview, setPreview] = useState(false),
     [settings, setSettings] = useState(false),
     [templates, setTemplates] = useState(false),
@@ -124,11 +128,10 @@ function Studio({
         editSession.current = null;
       }}
     >
-      {mode === "items" ? <header className={s.quoteHeader} aria-label="Quotation header">
+      {mode === "items" ? <header className={s.quoteHeader} aria-label={t("Quotation header")}>
         <label className={s.quoteTitle}>
-          Quotation title
-          <QuotationTextCell
-            label="Quotation title"
+          {t("Quotation title")}<QuotationTextCell
+            label={t("Quotation title")}
             value={quote.title}
             required
             max={240}
@@ -137,9 +140,8 @@ function Studio({
           />
         </label>
         <label>
-          Prepared for
-          <QuotationTextCell
-            label="Prepared for"
+          {t("Prepared for")}<QuotationTextCell
+            label={t("Prepared for")}
             value={quote.cover?.preparedFor ?? customerName}
             max={160}
             readOnly={readOnly}
@@ -156,12 +158,11 @@ function Studio({
           />
         </label>
         <label className={s.locationField}>
-          Location
-          <span className={s.locationInput}>
+          {t("Location")}<span className={s.locationInput}>
             <QuotationTextCell
-              label="Quotation location"
+              label={t("Quotation location")}
               value={quote.cover?.location ?? ""}
-              placeholder="Project location"
+              placeholder={t("Project location")}
               max={300}
               readOnly={readOnly}
               onChange={(location) =>
@@ -177,12 +178,12 @@ function Studio({
             />
             {!readOnly ? <button
               type="button"
-              aria-label="Use current location"
-              title={locationNotice || "Use current location"}
+              aria-label={t("Use current location")}
+              title={locationNotice || t("Use current location")}
               disabled={locating}
               onClick={() => {
                 if (!navigator.geolocation) {
-                  setLocationNotice("Location is not available in this browser.");
+                  setLocationNotice(t("Location is not available in this browser."));
                   return;
                 }
                 setLocating(true);
@@ -200,11 +201,11 @@ function Studio({
                         coordinates: { latitude, longitude, accuracy: Math.round(coords.accuracy) },
                       },
                     });
-                    setLocationNotice(`Pinned ${latitude}, ${longitude}`);
+                    setLocationNotice(t("Pinned {latitude}, {longitude}", { latitude, longitude }));
                     setLocating(false);
                   },
                   (error) => {
-                    setLocationNotice(error.code === error.PERMISSION_DENIED ? "Location permission was not allowed." : "Current location could not be detected.");
+                    setLocationNotice(t(error.code === error.PERMISSION_DENIED ? "Location permission was not allowed." : "Current location could not be detected."));
                     setLocating(false);
                   },
                   { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
@@ -214,9 +215,8 @@ function Studio({
           </span>
         </label>
         <label>
-          Valid until
-          <input
-            aria-label="Quotation valid until"
+          {t("Valid until")}<input
+            aria-label={t("Quotation valid until")}
             type="date"
             value={quote.validUntil}
             readOnly={readOnly}
@@ -227,15 +227,15 @@ function Studio({
         </label>
         <span className={s.currencyLabel}>
           {quote.currency}
-          <small>All prices</small>
+          <small>{t("All prices")}</small>
         </span>
       </header> : null}
       {mode === "items" ? <div className={s.viewBar}>
-        <div className={s.viewSwitch} aria-label="Quotation workspace view">
-          <button type="button" aria-pressed={false} onClick={() => { setMode("design"); setAiOpen(false); }}>Design</button>
-          <button type="button" aria-pressed onClick={() => setMode("items")}>Items & pricing</button>
+        <div className={s.viewSwitch} aria-label={t("Quotation workspace view")}>
+          <button type="button" aria-pressed={false} onClick={() => { setMode("design"); setAiOpen(false); }}>{t("Design")}</button>
+          <button type="button" aria-pressed onClick={() => setMode("items")}>{t("Items & pricing")}</button>
         </div>
-        <span>Build scope and pricing</span>
+        <span>{t("Build scope and pricing")}</span>
       </div> : null}
       {mode === "items" ? <QuotationPulse canViewCosts={Boolean(costing)} filter={pulseFilter} onFilter={setPulseFilter} quote={quote} /> : null}
       {mode === "design" ? (
@@ -246,21 +246,20 @@ function Studio({
           readOnly={readOnly}
           onChange={change}
           onEditItems={() => setItemDialog(true)}
-          toolbarStart={<div className={s.viewSwitch} aria-label="Quotation workspace view">
-            <button type="button" aria-pressed onClick={() => { setMode("design"); setAiOpen(false); }}>Design</button>
-            <button type="button" aria-pressed={false} onClick={() => setMode("items")}>Items & pricing</button>
+          toolbarStart={<div className={s.viewSwitch} aria-label={t("Quotation workspace view")}>
+            <button type="button" aria-pressed onClick={() => { setMode("design"); setAiOpen(false); }}>{t("Design")}</button>
+            <button type="button" aria-pressed={false} onClick={() => setMode("items")}>{t("Items & pricing")}</button>
           </div>}
-          toolbarEnd={<button type="button" className={s.previewButton} onClick={() => setPreview(true)}><Eye size={15} />Preview</button>}
+          toolbarEnd={<button type="button" className={s.previewButton} onClick={() => setPreview(true)}><Eye size={15} />{t("Preview")}</button>}
         />
       ) : <div className={s.split} data-ai-open={aiOpen}>
-        <section className={s.roomPanel} aria-label="Quotation room builder">
+        <section className={s.roomPanel} aria-label={t("Quotation room builder")}>
           <div className={s.roomPanelScroll}>
             <div className={s.roomHeading}>
               <div>
-                <h2>Quotation builder</h2>
+                <h2>{t("Quotation builder")}</h2>
                 <p>
-                  {rooms.length} areas · {quote.lines.length} items ·{" "}
-                  {quote.currency}
+                  {t("{areas} areas · {items} items · {currency}", { areas: rooms.length, items: quote.lines.length, currency: quote.currency })}
                 </p>
               </div>
               <div className={s.roomHeadingActions}>
@@ -268,8 +267,8 @@ function Studio({
                   <Search size={14} />
                   <input
                     type="search"
-                    aria-label="Search quotation rooms"
-                    placeholder="Find room, item or material…"
+                    aria-label={t("Search quotation rooms")}
+                    placeholder={t("Find room, item or material…")}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -277,8 +276,8 @@ function Studio({
                 <div className={s.toolbarGroup}>
                   <button
                     className={s.iconButton}
-                    title="Undo"
-                    aria-label="Undo"
+                    title={t("Undo")}
+                    aria-label={t("Undo")}
                     disabled={readOnly || !current || !past.length}
                     onClick={() => {
                       const previous = past.at(-1);
@@ -294,8 +293,8 @@ function Studio({
                   </button>
                   <button
                     className={s.iconButton}
-                    title="Redo"
-                    aria-label="Redo"
+                    title={t("Redo")}
+                    aria-label={t("Redo")}
                     disabled={readOnly || !current || !future.length}
                     onClick={() => {
                       const next = future.at(-1);
@@ -311,20 +310,20 @@ function Studio({
                   </button>
                 </div>
                 <details className={s.toolsMenu}>
-                  <summary><MoreHorizontal size={16}/><span>More</span></summary>
+                  <summary><MoreHorizontal size={16}/><span>{t("More")}</span></summary>
                   <div>
-                    <button aria-label="Base settings" onClick={() => setSettings(true)}><Settings2 size={15}/><span>Document settings</span></button>
-                    <button aria-label="Templates" onClick={() => setTemplates(true)}><BookCopy size={15}/><span>Templates</span></button>
-                    <button aria-label="Link change requests" onClick={() => setRequestDialog(true)}><Link2 size={15}/><span>Change requests{linkedRequests.length ? ` · ${linkedRequests.length}` : ""}</span></button>
+                    <button aria-label={t("Base settings")} onClick={() => setSettings(true)}><Settings2 size={15}/><span>{t("Document settings")}</span></button>
+                    <button aria-label={t("Templates")} onClick={() => setTemplates(true)}><BookCopy size={15}/><span>{t("Templates")}</span></button>
+                    <button aria-label={t("Link change requests")} onClick={() => setRequestDialog(true)}><Link2 size={15}/><span>{t("Change requests")}{linkedRequests.length ? ` · ${linkedRequests.length}` : ""}</span></button>
                   </div>
                 </details>
                 <button
                   className={s.previewButton}
-                  aria-label="Preview quotation"
+                  aria-label={t("Preview quotation")}
                   onClick={() => setPreview(true)}
                 >
                   <Eye size={16} />
-                  <span>Preview</span>
+                  <span>{t("Preview")}</span>
                 </button>
                 <button
                   className={s.aiJump}
@@ -341,14 +340,12 @@ function Studio({
                   }}
                 >
                   <Sparkles size={15} />
-                  AI assistant
-                </button>
+                  {t("AI assistant")}</button>
               </div>
             </div>
             {readOnly && (
               <p className={s.notice}>
-                This version is read-only. Create a revision to edit it.
-              </p>
+                {t("This version is read-only. Create a revision to edit it.")}</p>
             )}
             {aiNotice && (
               <p role="status" className={s.hint}>
@@ -358,15 +355,15 @@ function Studio({
             {quote.kind === "variation" && !readOnly && (
               <div className={s.variationField}>
                 <SelectField
-                  label="Change order effect"
-                  aria-label="Variation effect"
+                  label={t("Change order effect")}
+                  aria-label={t("Variation effect")}
                   accent="neutral"
                   selectedKey={quote.direction ?? "addition"}
                   items={[
-                    { id: "addition", label: "Additional work" },
+                    { id: "addition", label: t("Additional work") },
                     {
                       id: "deduction",
-                      label: "Scope deduction / client credit",
+                      label: t("Scope deduction / client credit"),
                     },
                   ]}
                   onSelectionChange={(key) => {
@@ -374,7 +371,7 @@ function Studio({
                       key === "deduction" ? "deduction" : "addition";
                     const applyDirection = () => patch({ direction, lines: [], rooms: [], paymentTerms: direction === "deduction" ? [] : quote.paymentTerms });
                     if (quote.lines.length) {
-                      requestConfirmation({ title: "Change variation effect?", body: "Changing between additional work and a deduction removes the current variation items so the commercial basis stays consistent.", confirmLabel: "Change and clear items", onConfirm: applyDirection });
+                      requestConfirmation({ title: t("Change variation effect?"), body: t("Changing between additional work and a deduction removes the current variation items so the commercial basis stays consistent."), confirmLabel: t("Change and clear items"), onConfirm: applyDirection });
                       return;
                     }
                     applyDirection();
@@ -382,19 +379,19 @@ function Studio({
                 />
                 <p>
                   {linkedRequests.length
-                    ? `Linked to ${linkedRequests.map((request) => `CR-${String(request.number).padStart(3, "0")}`).join(", ")}`
-                    : "Link the change request this quotation resolves."}
+                    ? t("Linked to {requests}", { requests: linkedRequests.map((request) => `CR-${String(request.number).padStart(3, "0")}`).join(", ") })
+                    : t("Link the change request this quotation resolves.")}
                 </p>
               </div>
             )}
             {quote.direction === "deduction" && !readOnly && (
               <div className={s.variationField}>
                 <SelectField
-                  label="Accepted contract item"
-                  aria-label="Accepted contract item"
+                  label={t("Accepted contract item")}
+                  aria-label={t("Accepted contract item")}
                   accent="neutral"
                   selectedKey={null}
-                  placeholder="Choose an item to deduct…"
+                  placeholder={t("Choose an item to deduct…")}
                   items={state.data.quotes
                     .filter(
                       (candidate) =>
@@ -449,18 +446,17 @@ function Studio({
             />
             {!readOnly && quote.direction !== "deduction" && (
               <button className={s.importButton} onClick={onImportScope}>
-                Import unconfirmed requirements
-                <ChevronRight size={13} />
+                {t("Import unconfirmed requirements")}<ChevronRight size={13} />
               </button>
             )}
           </div>
           <footer className={s.totalBar}>
             <span>
-              {rooms.length} areas · {quote.lines.length} items{pulseFilter !== "all" ? " · filtered" : ""}
+              {t(pulseFilter !== "all" ? "{areas} areas · {items} items · filtered" : "{areas} areas · {items} items", { areas: rooms.length, items: quote.lines.length })}
             </span>
             <div>
-              <small>Quotation total</small>
-              <strong>{money(totals.total, quote.currency)}</strong>
+              <small>{t("Quotation total")}</small>
+              <strong>{money(totals.total, quote.currency, locale)}</strong>
             </div>
           </footer>
         </section>
@@ -469,12 +465,12 @@ function Studio({
           id="quotation-ai-panel"
           hidden={!aiOpen}
           className={s.chatPanel}
-          aria-label="AI quotation assistant"
+          aria-label={t("AI quotation assistant")}
         >
           <div className={s.aiPanelHeading}>
-            <strong>Quotation assistant</strong>
+            <strong>{t("Quotation assistant")}</strong>
             <button
-              aria-label="Close AI assistant"
+              aria-label={t("Close AI assistant")}
               onClick={() => {
                 setAiOpen(false);
                 aiToggle.current?.focus();
@@ -486,12 +482,12 @@ function Studio({
           {rooms.length > 0 && (
             <div className={s.aiContext}>
               <SelectField
-                label="Use AI for"
-                aria-label="AI room context"
+                label={t("Use AI for")}
+                aria-label={t("AI room context")}
                 accent="neutral"
                 selectedKey={rooms.includes(aiRoom) ? `room:${aiRoom}` : "all"}
                 items={[
-                  { id: "all", label: "All rooms / sections" },
+                  { id: "all", label: t("All rooms / sections") },
                   ...rooms.map((room) => ({ id: `room:${room}`, label: room })),
                 ]}
                 onSelectionChange={(key) =>
@@ -522,17 +518,14 @@ function Studio({
         </aside>
       </div>}
       <ControlledModalDialog
-        title="Review AI suggestions"
+        title={t("Review AI suggestions")}
         size="lg"
         isOpen={review}
         onOpenChange={setReview}
       >
         <div className={s.settings}>
           <p className={s.hint}>
-            Choose items to add. Existing items, quantities, prices and notes
-            will not be replaced. New items start at quantity 1 and rate 0 for
-            you to price.
-          </p>
+            {t("Choose items to add. Existing items, quantities, prices and notes will not be replaced. New items start at quantity 1 and rate 0 for you to price.")}</p>
           <div className={s.aiSuggestions}>
             {analysis?.rooms.map((room) => (
               <fieldset key={room.id}>
@@ -573,8 +566,7 @@ function Studio({
           </div>
           <div className={s.proposalFooter}>
             <button className={s.linkButton} onClick={() => setReview(false)}>
-              Cancel
-            </button>
+              {t("Cancel")}</button>
             <button
               className={s.primary}
               disabled={readOnly || aiAdding || !selectedSuggestions.length}
@@ -602,22 +594,22 @@ function Studio({
                 setAiAdding(false);
                 setAiNotice(
                   count
-                    ? `${count} AI-suggested ${count === 1 ? "item added" : "items added"}. Check quantities and enter prices, then save.`
-                    : "No new items added. These items already exist or the quotation limit has been reached.",
+                    ? t(count === 1 ? "{count} AI-suggested item added. Check quantities and enter prices, then save." : "{count} AI-suggested items added. Check quantities and enter prices, then save.", { count })
+                    : t("No new items added. These items already exist or the quotation limit has been reached."),
                 );
               }}
             >
-              {aiAdding ? "Preparing items…" : "Add selected items"}
+              {t(aiAdding ? "Preparing items…" : "Add selected items")}
             </button>
           </div>
         </div>
       </ControlledModalDialog>
       <ControlledModalDialog
-        title="Linked change requests"
+        title={t("Linked change requests")}
         description={
-          quote.kind === "variation"
+          t(quote.kind === "variation"
             ? "Connect this change-order quotation to the request it prices. Client acceptance will update the linked request."
-            : "Connect requests that this quotation addresses. Links are kept through review and client acceptance."
+            : "Connect requests that this quotation addresses. Links are kept through review and client acceptance.")
         }
         isOpen={requestDialog}
         onOpenChange={setRequestDialog}
@@ -640,26 +632,24 @@ function Studio({
                 <strong>
                   CR-{String(request.number).padStart(3, "0")} · {request.title}
                 </strong>
-                <small>{request.status.replaceAll("_", " ")}</small>
+                <small>{statusLabel[request.status] ? translateKnown(t, statusLabel[request.status]) : request.status.replaceAll("_", " ")}</small>
               </span>
             </Checkbox>
           ))}
           {!availableRequests.length && (
             <p className={s.hint}>
-              No open change requests. New requests will appear here
-              automatically.
-            </p>
+              {t("No open change requests. New requests will appear here automatically.")}</p>
           )}
         </div>
       </ControlledModalDialog>
       <ControlledModalDialog
-        title="Quotation preview"
+        title={t("Quotation preview")}
         size="lg"
         isOpen={preview}
         onOpenChange={setPreview}
       >
         <div className={s.previewDialog}>
-          <article aria-label="Quotation document">
+          <article aria-label={t("Quotation document")}>
             <QuotationCanvasPreview
               quote={quote}
               brand={quote.brand ?? state.portalBrand}
@@ -689,7 +679,7 @@ function Studio({
         />
       )}
       <ControlledModalDialog
-        title="Reusable quotation templates"
+        title={t("Reusable quotation templates")}
         size="lg"
         isOpen={templates}
         onOpenChange={setTemplates}

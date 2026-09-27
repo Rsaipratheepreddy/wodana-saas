@@ -28,9 +28,10 @@ export type PhoneFieldProps = {
  * One phone control for every form: the country code sits inside the field, the number is checked
  * against that country, and a pasted or stored international number never repeats the code.
  */
-export function PhoneField({ label, value, onChange, countryCode, onCountryChange, locale, isRequired, kind = "mobile", description }: PhoneFieldProps) {
+export function PhoneField({ label, value, onChange, countryCode, onCountryChange, locale: localeProp, isRequired, kind = "mobile", description }: PhoneFieldProps) {
   const t = useT();
-  const { portalContainer } = useDesignSystem();
+  const { portalContainer, locale: regionLocale } = useDesignSystem();
+  const locale = localeProp ?? regionLocale;
   const countries = useMemo(() => phoneCountryOptions(locale), [locale]);
   const selected = countries.find((country) => country.id === countryCode);
   const [open, setOpen] = useState(false);
@@ -59,21 +60,21 @@ export function PhoneField({ label, value, onChange, countryCode, onCountryChang
 
   const example = countryCode && isSupportedCountry(countryCode) ? getExampleNumber(countryCode as CountryCode, mobileExamples) : undefined;
   const validate = (current: string) => phoneProblem(current, countryCode, {
-    tooShort: (country, code, digits) => `${t("Too short")} — ${country} ${t("mobile numbers are")} ${digits} ${t("digits after")} ${code}`,
-    tooLong: (country, code, digits) => `${t("Too long")} — ${country} ${t("mobile numbers are")} ${digits} ${t("digits after")} ${code}`,
-    invalid: (country) => `${t("Not a valid number for")} ${country}`,
-    notMobile: (country) => `${t("Not a mobile number for")} ${country}`,
+    tooShort: (country, code, digits) => t("Too short — {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
+    tooLong: (country, code, digits) => t("Too long — {country} mobile numbers are {digits} digits after {code}", { country, digits, code }),
+    invalid: (country) => t("Not a valid number for {country}", { country }),
+    notMobile: (country) => t("Not a mobile number for {country}", { country }),
     chooseCountry: t("Choose the country code"),
   }, { mobile: kind === "mobile", locale });
 
   const picker = <DialogTrigger isOpen={open} onOpenChange={(next) => { setOpen(next); if (!next) setSearch(""); }}>
-    <AriaButton aria-label={`${label} ${t("country code")}`} className="wd-phone-code">
+    <AriaButton aria-label={t("{label} country code", { label })} className="wd-phone-code">
       <span>{selected?.label ?? t("Code")}</span><ChevronDown aria-hidden="true" size={14} />
     </AriaButton>
     <Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-phone-popover" placement="bottom start">
-      <Dialog aria-label={`${label} ${t("country codes")}`} className="wd-phone-dialog">
+      <Dialog aria-label={t("{label} country codes", { label })} className="wd-phone-dialog">
         <SearchInput autoFocus label={t("Search country or code")} onChange={setSearch} placeholder={t("Search country or code")} value={search} />
-        <ListBox aria-label={`${label} ${t("country codes")}`} className="wd-phone-options" items={matches} selectionMode="single"
+        <ListBox aria-label={t("{label} country codes", { label })} className="wd-phone-options" items={matches} selectionMode="single"
           selectedKeys={countryCode ? new Set([countryCode]) : new Set()}
           onSelectionChange={(keys) => {
             if (keys === "all") return;

@@ -1,12 +1,15 @@
 import { parseDate, parseDateTime, startOfMonth, toZoned } from '@internationalized/date';
 import { type CaseAsset, type ItemDimension, type ScopeEntry } from './content';
+import { tKey, type MessageKey, type Translate } from '../i18n/keys';
 
 export type SiteKind='visit'|'measurement'|'observation';
 export type SiteRecord={id:string;version:number;kind:SiteKind;title:string;note:string;status:string;roomId:string|null;entryId:string|null;visitId:string|null;roomName?:string|null;entryTitle?:string|null;entryArchivedAt?:string|null;visitTitle?:string|null;assetIds:string[];assets:CaseAsset[];updatedAt?:string;recordedBy?:string;
  scheduledAt?:string;timezone?:string;durationMinutes?:number;assigneeId?:string|null;assigneeName?:string|null;location?:string;access?:string;outcome?:string;
  category?:string;resolution?:string;dimensions?:ItemDimension[];reviewNote?:string;verifiedBy?:string|null;verifiedAt?:string|null;evidenceConsent?:{confirmedAt:string;confirmedBy:string}};
 export type SiteData={items:SiteRecord[];members:{id:string;name:string}[];timezone:string;weekStartsOn?:number;canVerify:boolean};
-export const siteLabels:Record<string,string>={visit:'Visit',measurement:'Measurements',observation:'Observation',planned:'Planned',completed:'Completed',cancelled:'Cancelled',incomplete:'Incomplete',measured:'Awaiting verification',verified:'Verified',recheck:'Recheck needed',open:'Open',resolved:'Resolved',condition:'Existing condition',opening:'Doors & openings',electrical:'Electrical',plumbing:'Plumbing',access:'Access & delivery',constraint:'Site constraint',other:'Other'};
+export const siteLabels:Record<string,MessageKey>={visit:tKey('Visit'),measurement:tKey('Measurements'),observation:tKey('Observation'),planned:tKey('Planned'),completed:tKey('Completed'),cancelled:tKey('Cancelled'),incomplete:tKey('Incomplete'),measured:tKey('Awaiting verification'),verified:tKey('Verified'),recheck:tKey('Recheck needed'),open:tKey('Open'),resolved:tKey('Resolved'),condition:tKey('Existing condition'),opening:tKey('Doors & openings'),electrical:tKey('Electrical'),plumbing:tKey('Plumbing'),access:tKey('Access & delivery'),constraint:tKey('Site constraint'),other:tKey('Other')};
+/** A site record kind, status or category in the person's language; unknown values show as sent. */
+export function siteLabel(t:Translate,value:string){const label=siteLabels[value];return label?t(label):value;}
 export function newSiteRecord(kind:SiteKind,timezone:string,roomId:string|null=null,entry?:ScopeEntry):SiteRecord {
  return {id:crypto.randomUUID(),version:0,kind,title:entry?.title??'',note:'',status:kind==='visit'?'planned':kind==='observation'?'open':'incomplete',roomId:entry?.roomId??roomId,entryId:entry?.id??null,visitId:null,assetIds:[],assets:[],scheduledAt:'',timezone,durationMinutes:60,assigneeId:null,location:'',access:'',outcome:'',category:'condition',resolution:'',dimensions:entry?.specification?.dimensions??[]};
 }
@@ -34,7 +37,7 @@ export function visitFallsOn(record:SiteRecord,day:string,timezone:string) {
  const end=visitWallTime(new Date(Date.parse(record.scheduledAt)+(record.durationMinutes??60)*60000-1).toISOString(),timezone).slice(0,10);
  return start<=day&&day<=end;
 }
-export function visitDate(record:SiteRecord,locale='en') {
+export function visitDate(record:SiteRecord,locale:string) {
  return record.scheduledAt?new Intl.DateTimeFormat(locale,{timeZone:record.timezone,dateStyle:'medium',timeStyle:'short'}).format(new Date(record.scheduledAt)):'';
 }
 export function visitCalendar(record:SiteRecord) {

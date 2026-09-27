@@ -130,12 +130,12 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
           permissionCodes: Array.from(drafts[selectedRole.id] ?? []),
         }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, `${selectedRole.name} permissions could not be saved.`));
+      if (!response.ok) throw new Error(await responseMessage(response, t("{name} permissions could not be saved.", { name: selectedRole.name })));
       const saved = await response.json() as WorkspaceRole;
       mergeRole(saved);
-      setStatus(`${saved.name} permissions updated.`);
+      setStatus(t("{name} permissions updated.", { name: saved.name }));
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Permissions could not be saved.");
+      setFailure(error instanceof Error ? error.message : t("Permissions could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -147,7 +147,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     setFailure("");
     try {
       const response = await fetch(`/api/workspace/roles/${deletingRole.id}?workspaceId=${initialData.workspaceId}&version=${deletingRole.version}`, { method: "DELETE" });
-      if (!response.ok) throw new Error(await responseMessage(response, "The role could not be deleted."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The role could not be deleted.")));
       const remainingRoles = roles.filter((role) => role.id !== deletingRole.id);
       setRoles(remainingRoles);
       setDrafts((current) => {
@@ -156,10 +156,10 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         return next;
       });
       if (selectedRoleId === deletingRole.id) setSelectedRoleId(remainingRoles[0]?.id ?? "");
-      setStatus(`${deletingRole.name} was deleted.`);
+      setStatus(t("{name} was deleted.", { name: deletingRole.name }));
       setDeletingRole(null);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The role could not be deleted.");
+      setFailure(error instanceof Error ? error.message : t("The role could not be deleted."));
       setDeletingRole(null);
     } finally {
       setDeleting(false);
@@ -177,47 +177,47 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
   const normalizedPermissionSearch = permissionSearch.trim().toLocaleLowerCase();
   const visiblePermissions = initialData.permissions
     .filter((permission) => permissionAreaFilter === "all" || permissionArea(permission.code) === permissionAreaFilter)
-    .filter((permission) => !normalizedPermissionSearch || [permission.code, permission.description, permissionLabel(permission.code), permissionAreaLabel(permission.code)]
+    .filter((permission) => !normalizedPermissionSearch || [permission.code, permission.description, t(permission.description as never), permissionLabel(permission.code, t), permissionAreaLabel(permission.code, t)]
       .some((value) => value.toLocaleLowerCase().includes(normalizedPermissionSearch)))
     .sort((left, right) => (AREA_ORDER[permissionArea(left.code)] ?? 99) - (AREA_ORDER[permissionArea(right.code)] ?? 99)
-      || permissionLabel(left.code).localeCompare(permissionLabel(right.code)));
+      || permissionLabel(left.code, t).localeCompare(permissionLabel(right.code, t)));
   const columns: DataGridColumn<WorkspacePermissionDefinition>[] = [
     {
       id: "capability",
-      accessorFn: (permission) => permissionLabel(permission.code),
-      header: "Capability",
+      accessorFn: (permission) => permissionLabel(permission.code, t),
+      header: t("Capability"),
       size: 560,
       enableSorting: false,
       cell: ({ row }) => {
         const permission = row.original;
-        const label = permissionLabel(permission.code);
+        const label = permissionLabel(permission.code, t);
         const ModuleIcon = AREA_ICONS[permissionArea(permission.code)];
         return <span className={styles.moduleIdentity}>
           <span className={styles.moduleIcon}><ModuleIcon aria-hidden="true" size={15} /></span>
-          <span className={styles.moduleDetails}><strong>{label}</strong><small>{permission.description === label ? permission.code : permission.description}</small></span>
+          <span className={styles.moduleDetails}><strong>{label}</strong><small>{t(permission.description as never) === label ? permission.code : t(permission.description as never)}</small></span>
         </span>;
       },
     },
     {
       id: "productArea",
-      accessorFn: (permission) => permissionAreaLabel(permission.code),
-      header: "Product area",
+      accessorFn: (permission) => permissionAreaLabel(permission.code, t),
+      header: t("Product area"),
       size: 180,
       enableSorting: false,
       meta: { mobileHidden: true },
-      cell: ({ row }) => <span className={styles.parentModule}><Badge>{permissionAreaLabel(row.original.code)}</Badge></span>,
+      cell: ({ row }) => <span className={styles.parentModule}><Badge>{permissionAreaLabel(row.original.code, t)}</Badge></span>,
     },
     {
       id: "access",
       accessorFn: (permission) => selectedPermissions.has(permission.code),
-      header: "Access",
+      header: t("Access"),
       size: 120,
       enableSorting: false,
       meta: { align: "center" },
       cell: ({ row }) => {
         const permission = row.original;
         return <Switch
-          aria-label={`${selectedRole.name}: ${permissionLabel(permission.code)}`}
+          aria-label={t("{role}: {permission}", { role: selectedRole.name, permission: permissionLabel(permission.code, t) })}
           isDisabled={!isEditable || (initialData.delegablePermissions !== null && !initialData.delegablePermissions.includes(permission.code))}
           isSelected={selectedPermissions.has(permission.code)}
           onChange={(enabled) => togglePermission(permission.code, enabled)}
@@ -235,14 +235,14 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
             <SelectField
               accent="neutral"
               aria-label={t("Role")}
-              items={roles.map((role) => ({ id: role.id, label: role.name, description: role.isSystem ? "System role" : "Custom role" }))}
+              items={roles.map((role) => ({ id: role.id, label: role.name, description: role.isSystem ? t("System role") : t("Custom role") }))}
               label={<span className="wd-visually-hidden">{t("Role")}</span>}
               onSelectionChange={(key) => key && selectRole(String(key))}
               selectedKey={selectedRole.id}
             />
-            {canUseRoleActions ? <IconMenuButton ariaLabel={`Actions for ${selectedRole.name}`} items={[
-              ...(isEditable ? [{ id: "edit", label: "Edit role" }] : []),
-              ...(isDeletable ? [{ id: "delete", label: "Delete role", tone: "danger" as const }] : []),
+            {canUseRoleActions ? <IconMenuButton ariaLabel={t("Actions for {name}", { name: selectedRole.name })} items={[
+              ...(isEditable ? [{ id: "edit", label: t("Edit role") }] : []),
+              ...(isDeletable ? [{ id: "delete", label: t("Delete role"), tone: "danger" as const }] : []),
             ]} onAction={(action) => action === "edit" ? setEditingRole(selectedRole) : setDeletingRole(selectedRole)} /> : null}
             {isEditable && changed ? <>
               <Button isDisabled={saving} onPress={resetChanges} size="compact">{t("Reset")}</Button>
@@ -258,13 +258,13 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         <div className={styles.roleContext}>
           <div>
             <strong>{selectedRole.name}</strong>
-            <Badge>{selectedRole.isSystem ? "System" : "Custom"}</Badge>
-            <span>{selectedRole.memberCount ?? 0} {t("direct member")}{selectedRole.memberCount === 1 ? "" : "s"}</span>
-            {(selectedRole.teamCount ?? 0) > 0 ? <span>{selectedRole.teamCount} {t("team")}{selectedRole.teamCount === 1 ? "" : "s"}</span> : null}
-            {(selectedRole.pendingInvitationCount ?? 0) > 0 ? <span>{selectedRole.pendingInvitationCount} {t("pending invite")}{selectedRole.pendingInvitationCount === 1 ? "" : "s"}</span> : null}
+            <Badge>{selectedRole.isSystem ? t("System") : t("Custom")}</Badge>
+            <span>{selectedRole.memberCount === 1 ? t("1 direct member") : t("{count} direct members", { count: selectedRole.memberCount ?? 0 })}</span>
+            {(selectedRole.teamCount ?? 0) > 0 ? <span>{selectedRole.teamCount === 1 ? t("1 team") : t("{count} teams", { count: selectedRole.teamCount ?? 0 })}</span> : null}
+            {(selectedRole.pendingInvitationCount ?? 0) > 0 ? <span>{selectedRole.pendingInvitationCount === 1 ? t("1 pending invite") : t("{count} pending invites", { count: selectedRole.pendingInvitationCount ?? 0 })}</span> : null}
           </div>
-          <p>{selectedRole.description || "Product capabilities available to this role."}
-            {!selectedRole.isSystem && assignedCount > 0 ? " Reassign members, teams and pending invites before deleting this role." : null}</p>
+          <p>{selectedRole.description || t("Product capabilities available to this role.")}
+            {!selectedRole.isSystem && assignedCount > 0 ? ` ${t("Reassign members, teams and pending invites before deleting this role.")}` : null}</p>
         </div>
 
         <div className={styles.permissionToolbar}>
@@ -273,7 +273,7 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
               const count = area.id === "all"
                 ? initialData.permissions.length
                 : initialData.permissions.filter((permission) => permissionArea(permission.code) === area.id).length;
-              return count ? <button aria-pressed={permissionAreaFilter === area.id} key={area.id} onClick={() => setPermissionAreaFilter(area.id)} type="button">{area.label}<span>{count}</span></button> : null;
+              return count ? <button aria-pressed={permissionAreaFilter === area.id} key={area.id} onClick={() => setPermissionAreaFilter(area.id)} type="button">{t(area.label)}<span>{count}</span></button> : null;
             })}
           </div>
           <SearchInput label={t("Search permissions")} onChange={setPermissionSearch} placeholder={t("Search capabilities…")} value={permissionSearch} />
@@ -282,11 +282,11 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         <div className={styles.permissionGrid}>
           <DataGrid
             appearance="flush"
-            ariaLabel={`Permissions for ${selectedRole.name}`}
+            ariaLabel={t("Permissions for {name}", { name: selectedRole.name })}
             columns={columns}
             data={visiblePermissions}
-            emptyDescription="Try another product area or search term."
-            emptyTitle="No matching permissions"
+            emptyDescription={t("Try another product area or search term.")}
+            emptyTitle={t("No matching permissions")}
             getRowId={(permission) => permission.code}
             pageSize={100}
             pinFirstColumn={false}
@@ -299,17 +299,17 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
         </div>
         <p className={styles.permissionNote}>
           {selectedRole.isSystem
-            ? "System role permissions are managed by Wodana and cannot be changed."
+            ? t("System role permissions are managed by Wodana and cannot be changed.")
             : isEditable
-              ? `Save changes to apply access. ${initialData.delegablePermissions === null ? "Some approvals also require a named role and completed business checks." : "You can grant only permissions you hold."}`
+              ? `${t("Save changes to apply access.")} ${initialData.delegablePermissions === null ? t("Some approvals also require a named role and completed business checks.") : t("You can grant only permissions you hold.")}`
               : roleWithinDelegation
-                ? "You can review this role. Permission changes require role editing access."
-                : "This role contains permissions outside your access and is read-only for you."}
+                ? t("You can review this role. Permission changes require role editing access.")
+                : t("This role contains permissions outside your access and is read-only for you.")}
         </p>
       </SettingsPage>
 
-      <RoleDialog initialData={initialData} item={editingRole} key={editingRole === "new" ? "role-new" : editingRole?.id ?? "role-closed"} onClose={() => setEditingRole(null)} onSaved={(role) => { mergeRole(role, editingRole !== "new"); setSelectedRoleId(role.id); setEditingRole(null); setStatus(editingRole === "new" ? `${role.name} was saved.` : `${role.name} details saved. Any unsaved permission changes remain ready to apply.`); }} />
-      <ConfirmationDialog body={deletingRole ? <>{t("Delete")}{" "}<strong>{deletingRole.name}</strong>{t("? This cannot be undone.")}</> : null} confirmLabel={deleting ? "Deleting…" : "Delete role"} isOpen={Boolean(deletingRole)} onConfirm={() => void deleteRole()} onOpenChange={(open) => { if (!open && !deleting) setDeletingRole(null); }} title={t("Delete custom role?")} />
+      <RoleDialog initialData={initialData} item={editingRole} key={editingRole === "new" ? "role-new" : editingRole?.id ?? "role-closed"} onClose={() => setEditingRole(null)} onSaved={(role) => { mergeRole(role, editingRole !== "new"); setSelectedRoleId(role.id); setEditingRole(null); setStatus(editingRole === "new" ? t("{name} was saved.", { name: role.name }) : t("{name} details saved. Any unsaved permission changes remain ready to apply.", { name: role.name })); }} />
+      <ConfirmationDialog body={deletingRole ? t("Delete {name}? This cannot be undone.", { name: deletingRole.name }) : null} confirmLabel={deleting ? t("Deleting…") : t("Delete role")} isOpen={Boolean(deletingRole)} onConfirm={() => void deleteRole()} onOpenChange={(open) => { if (!open && !deleting) setDeletingRole(null); }} title={t("Delete custom role?")} />
     </DesignSystemProvider>
   );
 }
@@ -340,22 +340,22 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
           description,
         }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The role could not be saved."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The role could not be saved.")));
       const saved = await response.json() as WorkspaceRole;
       onSaved({ ...saved, memberCount: saved.memberCount ?? existing?.memberCount ?? 0 });
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The role could not be saved.");
+      setFailure(error instanceof Error ? error.message : t("The role could not be saved."));
     } finally {
       setSaving(false);
     }
   };
 
-  return <ControlledModalDialog description={existing ? "Update the role details. Product capabilities stay in the table." : "Create the role, then choose its product capabilities from the table."} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save role")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? "Edit custom role" : "Create custom role"}>
+  return <ControlledModalDialog description={existing ? t("Update the role details. Product capabilities stay in the table.") : t("Create the role, then choose its product capabilities from the table.")} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save role")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? t("Edit custom role") : t("Create custom role")}>
     <form className={styles.form} id={formId} onSubmit={save}>
       {failure ? <Callout title={t("Could not save role")} tone="danger">{failure}</Callout> : null}
       <div className={styles.formColumns}>
         <TextInput isRequired label={t("Role name")} onChange={(value) => { setName(value); if (!existing && !codeTouched) setCode(roleCode(value)); }} placeholder={t("Studio lead")} value={name} />
-        <TextInput description={existing ? "Role codes cannot be changed." : "Used internally for access assignments."} isDisabled={Boolean(existing)} isRequired label={t("Role code")} onChange={(value) => { setCodeTouched(true); setCode(roleCode(value)); }} placeholder={t("studio_lead")} value={code} />
+        <TextInput description={existing ? t("Role codes cannot be changed.") : t("Used internally for access assignments.")} isDisabled={Boolean(existing)} isRequired label={t("Role code")} onChange={(value) => { setCodeTouched(true); setCode(roleCode(value)); }} placeholder={t("studio_lead")} value={code} />
       </div>
       <TextAreaField label={t("Description")} onChange={setDescription} placeholder={t("What members with this role can do")} value={description} />
     </form>

@@ -1,4 +1,6 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, translateKnown } from "@/lib/i18n/keys";
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -50,6 +52,7 @@ import {
   TextAreaField,
   TextInput,
   useConfirmationDialog,
+  useDesignSystem,
 } from "@/design-system";
 import {
   CommercialCatalogPicker,
@@ -89,6 +92,8 @@ export function QuotationSheet({
   search = "",
   lineFilter,
 }: Props) {
+  const t = useT();
+  const { locale } = useDesignSystem();
   const [materialDraft, setMaterialDraft] = useState<QuoteLine | null>(null);
   const [roomDraft, setRoomDraft] = useState<{
     original: string | null;
@@ -128,7 +133,7 @@ export function QuotationSheet({
       );
     if (next.some((line) => line.rate > 1e8)) {
       setError(
-        "The calculated item rate cannot exceed 100,000,000. Reduce the material amounts.",
+        t("The calculated item rate cannot exceed 100,000,000. Reduce the material amounts."),
       );
       return;
     }
@@ -148,7 +153,7 @@ export function QuotationSheet({
       if (!current) return current;
       const next = pricedLine({ ...current, ...patch });
       if (next.rate > 1e8) {
-        setError("The calculated item rate cannot exceed 100,000,000.");
+        setError(t("The calculated item rate cannot exceed 100,000,000."));
         return current;
       }
       setError("");
@@ -169,7 +174,7 @@ export function QuotationSheet({
       ...quotationMaterialRows(line),
       {
         id: crypto.randomUUID(),
-        name: "New material",
+        name: t("New material"),
         type: "material",
         specification: "",
         quantity: 1,
@@ -271,8 +276,7 @@ export function QuotationSheet({
     >
       <div className={s.toolbar}>
         <span>
-          Each area is a clear section. Edit fields directly; totals update automatically.
-        </span>
+          {t("Each area is a clear section. Edit fields directly; totals update automatically.")}</span>
         {!readOnly && quote.direction !== "deduction" && (
           <button
             className={s.addArea}
@@ -281,31 +285,30 @@ export function QuotationSheet({
               setRoomDraft({ original: null, name: "", catalog: null });
             }}
             disabled={rooms.length >= 100}
-            aria-label="Add room / section"
+            aria-label={t("Add room / section")}
           >
             <Plus size={15} />
-            Add area
-          </button>
+            {t("Add area")}</button>
         )}
       </div>
       {error && (
         <p role="alert" className={s.error}>
-          {error}
-          <button onClick={() => setError("")}>Dismiss</button>
+          {translateKnown(t, error)}
+          <button onClick={() => setError("")}>{t("Dismiss")}</button>
         </p>
       )}
       {!visible.length && (
         <div className={s.empty}>
-          <h3>{search ? "Nothing matches this search" : "Your quotation sheet is ready"}</h3>
-          <p>{search ? "Try a room, item or material name." : "Add the confirmed scope above for the fastest start, or create a blank area for work outside the confirmed scope."}</p>
-          {!search && !readOnly && quote.direction !== "deduction" ? <Button variant="quiet" size="compact" onPress={() => { setError(""); setRoomDraft({ original: null, name: "", catalog: null }); }}><Plus size={14}/>Start with a blank area</Button> : null}
+          <h3>{t(search ? "Nothing matches this search" : "Your quotation sheet is ready")}</h3>
+          <p>{t(search ? "Try a room, item or material name." : "Add the confirmed scope above for the fastest start, or create a blank area for work outside the confirmed scope.")}</p>
+          {!search && !readOnly && quote.direction !== "deduction" ? <Button variant="quiet" size="compact" onPress={() => { setError(""); setRoomDraft({ original: null, name: "", catalog: null }); }}><Plus size={14}/>{t("Start with a blank area")}</Button> : null}
         </div>
       )}
       <div
         className={s.scroll}
         tabIndex={0}
         role="region"
-        aria-label="Editable quotation table"
+        aria-label={t("Editable quotation table")}
       >
         <table className={s.table}>
           <colgroup>
@@ -322,17 +325,17 @@ export function QuotationSheet({
           </colgroup>
           <thead>
             <tr>
-              <th>Photo</th>
-              <th scope="col">Item</th>
-              <th scope="col">Description</th>
-              <th scope="col">Materials</th>
-              <th scope="col">Variant</th>
-              <th>Quantity</th>
-              <th>Unit</th>
-              <th className={s.amount}>Rate · {quote.currency}</th>
-              <th className={s.amount}>Amount · {quote.currency}</th>
+              <th>{t("Photo")}</th>
+              <th scope="col">{t("Item")}</th>
+              <th scope="col">{t("Description")}</th>
+              <th scope="col">{t("Materials")}</th>
+              <th scope="col">{t("Variant")}</th>
+              <th>{t("Quantity")}</th>
+              <th>{t("Unit")}</th>
+              <th className={s.amount}>{t("Rate · {currency}", { currency: quote.currency })}</th>
+              <th className={s.amount}>{t("Amount · {currency}", { currency: quote.currency })}</th>
               <th>
-                <span className={s.sr}>Actions</span>
+                <span className={s.sr}>{t("Actions")}</span>
               </th>
             </tr>
           </thead>
@@ -353,7 +356,7 @@ export function QuotationSheet({
                     <div className={s.roomBar}>
                       <button
                         className={s.roomToggle}
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${room}`}
+                        aria-label={t(expanded ? "Collapse {room}" : "Expand {room}", { room })}
                         aria-expanded={expanded}
                         onClick={() =>
                           setCollapsedRooms((current) => {
@@ -375,10 +378,10 @@ export function QuotationSheet({
                         <strong>{room}</strong>
                       </button>
                       <span className={s.roomMeta}>
-                        {lines.length} {lines.length === 1 ? "item" : "items"}
+                        {t(lines.length === 1 ? "{count} item" : "{count} items", { count: lines.length })}
                       </span>
                       <strong className={s.roomAmount}>
-                        {money(areaTotal, quote.currency)}
+                        {money(areaTotal, quote.currency, locale)}
                       </strong>
                       {!readOnly && quote.direction !== "deduction" && (
                         <div className={s.areaAddActions}>
@@ -386,26 +389,24 @@ export function QuotationSheet({
                             className={s.addItemPrimary}
                             disabled={quote.lines.length >= 300}
                             onClick={() => setManualDraft({ room, reason: "" })}
-                            aria-label={`Add item to ${room}`}
+                            aria-label={t("Add item to {room}", { room })}
                           >
                             <Plus size={14} />
-                            Manual item
-                          </button> : null}
+                            {t("Manual item")}</button> : null}
                           <button
                             className={s.catalogAction}
                             disabled={quote.lines.length >= 300}
                             onClick={() => setPicker({ kind: "work", room })}
-                            aria-label={`Select item for ${room}`}
+                            aria-label={t("Select item for {room}", { room })}
                           >
-                            From library
-                          </button>
+                            {t("From library")}</button>
                         </div>
                       )}
                       {!readOnly && (
                         <div className={s.areaActions}>
                           <button
-                            aria-label={`Rename ${room}`}
-                            title="Edit area"
+                            aria-label={t("Rename {room}", { room })}
+                            title={t("Edit area")}
                             onClick={() => {
                               setError("");
                               setRoomDraft({
@@ -420,29 +421,29 @@ export function QuotationSheet({
                             <Pencil size={13} />
                           </button>
                           <button
-                            aria-label={`Move ${room} up`}
-                            title="Move area up"
+                            aria-label={t("Move {room} up", { room })}
+                            title={t("Move area up")}
                             disabled={index === 0}
                             onClick={() => move(room, -1)}
                           >
                             <ArrowUp size={13} />
                           </button>
                           <button
-                            aria-label={`Move ${room} down`}
-                            title="Move area down"
+                            aria-label={t("Move {room} down", { room })}
+                            title={t("Move area down")}
                             disabled={index === rooms.length - 1}
                             onClick={() => move(room, 1)}
                           >
                             <ArrowDown size={13} />
                           </button>
                           <button
-                            aria-label={`Remove ${room}`}
-                            title="Remove area"
+                            aria-label={t("Remove {room}", { room })}
+                            title={t("Remove area")}
                             onClick={() => {
                               requestConfirmation({
-                                title: `Remove ${room}?`,
-                                body: `${lines.length} quoted ${lines.length === 1 ? "item" : "items"} in this area will also be removed. You can undo this change before saving.`,
-                                confirmLabel: "Remove area",
+                                title: t("Remove {room}?", { room }),
+                                body: t(lines.length === 1 ? "{count} quoted item in this area will also be removed. You can undo this change before saving." : "{count} quoted items in this area will also be removed. You can undo this change before saving.", { count: lines.length }),
+                                confirmLabel: t("Remove area"),
                                 onConfirm: () => onChange({ ...quote, rooms: quote.rooms?.filter((r) => r.name !== room), lines: quote.lines.filter((l) => l.room !== room) }),
                               });
                             }}
@@ -459,7 +460,7 @@ export function QuotationSheet({
                     const rows = quotationMaterialRows(line);
                     return (
                       <tr className={s.item} key={line.id}>
-                        <td data-label="Photo">
+                        <td data-label={t("Photo")}>
                           <div className={s.photo}>
                             <span className={s.lineNumber}>
                               {index + 1}.{lineIndex + 1}
@@ -469,7 +470,7 @@ export function QuotationSheet({
                                 href={line.photo}
                                 target="_blank"
                                 rel="noreferrer"
-                                aria-label={`View photo for ${line.title}`}
+                                aria-label={t("View photo for {title}", { title: line.title })}
                               >
                                 <img src={line.photo} alt={line.title} />
                               </a>
@@ -477,7 +478,7 @@ export function QuotationSheet({
                             {!readOnly && (
                               <>
                                 <label
-                                  title={`Upload photo for ${line.title}`}
+                                  title={t("Upload photo for {title}", { title: line.title })}
                                   className={s.upload}
                                 >
                                   {uploading === line.id ? (
@@ -487,7 +488,7 @@ export function QuotationSheet({
                                   )}
                                   <input
                                     type="file"
-                                    aria-label={`Upload photo for ${line.title}`}
+                                    aria-label={t("Upload photo for {title}", { title: line.title })}
                                     accept="image/png,image/jpeg,image/webp"
                                     disabled={uploading !== null}
                                     onChange={async (e) => {
@@ -510,7 +511,7 @@ export function QuotationSheet({
                                           ) > 600000
                                         )
                                           throw new Error(
-                                            "Photo limit reached. Remove a photo or upload smaller images.",
+                                            t("Photo limit reached. Remove a photo or upload smaller images."),
                                           );
                                         patchLine(line.id, { photo });
                                       } catch (e) {
@@ -523,7 +524,7 @@ export function QuotationSheet({
                                 </label>
                                 {line.photo && (
                                   <button
-                                    aria-label={`Remove photo for ${line.title}`}
+                                    aria-label={t("Remove photo for {title}", { title: line.title })}
                                     onClick={() =>
                                       patchLine(line.id, { photo: "" })
                                     }
@@ -536,9 +537,9 @@ export function QuotationSheet({
                             {!line.photo && readOnly && "—"}
                           </div>
                         </td>
-                        <td className={s.itemName} data-label="Item">
+                        <td className={s.itemName} data-label={t("Item")}>
                           <Cell
-                            label={`Item name ${line.id}`}
+                            label={t("Item name {id}", { id: line.id })}
                             value={line.title}
                             required
                             readOnly={readOnly}
@@ -549,28 +550,28 @@ export function QuotationSheet({
                             onChange={(title) => patchLine(line.id, { title })}
                           />
                           <div className={s.lineMeta}>
-                            {line.manualReason ? <Badge tone="warning">Manual</Badge> : null}
-                            {readOnly ? line.optional ? <Badge tone="info">Option</Badge> : null : <Checkbox aria-label={`Price ${line.title} as option`} isSelected={Boolean(line.optional)} onChange={(optional) => patchLine(line.id, { optional })}>Option</Checkbox>}
+                            {line.manualReason ? <Badge tone="warning">{t("Manual")}</Badge> : null}
+                            {readOnly ? line.optional ? <Badge tone="info">{t("Option")}</Badge> : null : <Checkbox aria-label={t("Price {title} as option", { title: line.title })} isSelected={Boolean(line.optional)} onChange={(optional) => patchLine(line.id, { optional })}>{t("Option")}</Checkbox>}
                           </div>
                         </td>
                         <td
                           className={s.descriptionCell}
-                          data-label="Description"
+                          data-label={t("Description")}
                         >
                           <p
-                            aria-label={`Description for ${line.title}`}
+                            aria-label={t("Description for {title}", { title: line.title })}
                             title={quotationDescription(line)}
                           >
                             {quotationDescription(line) ||
-                              "Add materials or item notes."}
+                              t("Add materials or item notes.")}
                           </p>
                         </td>
-                        <td data-label="Materials">
+                        <td data-label={t("Materials")}>
                           <Button
                             variant="quiet"
                             size="compact"
                             className={s.materialLink}
-                            aria-label={`Materials for ${line.title}`}
+                            aria-label={t("Materials for {title}", { title: line.title })}
                             aria-haspopup="dialog"
                             onPress={() => {
                               setError("");
@@ -584,13 +585,13 @@ export function QuotationSheet({
                             <span>
                               {rows.length
                                 ? `${rows.length}`
-                                : readOnly
+                                : t(readOnly
                                   ? "View"
-                                  : "Add"}
+                                  : "Add")}
                             </span>
                           </Button>
                         </td>
-                        <td data-label="Variant">
+                        <td data-label={t("Variant")}>
                           {readOnly ? (
                             <span>{quotationLineVariant(line) || "—"}</span>
                           ) : (
@@ -598,7 +599,7 @@ export function QuotationSheet({
                               variant="quiet"
                               size="compact"
                               className={s.variantButton}
-                              aria-label={`Choose variant for ${line.title}`}
+                              aria-label={t("Choose variant for {title}", { title: line.title })}
                               onPress={() => {
                                 setVariantDraft(
                                   quotationLineVariant(line) || "",
@@ -611,18 +612,18 @@ export function QuotationSheet({
                               }}
                             >
                               <span>
-                                {quotationLineVariant(line) || "Choose variant"}
+                                {quotationLineVariant(line) || t("Choose variant")}
                               </span>
                               <ChevronDown size={14} />
                             </Button>
                           )}
                         </td>
-                        <td data-label="Quantity">
+                        <td data-label={t("Quantity")}>
                           {readOnly ? (
                             line.quantity
                           ) : (
                             <QuotationNumberInput
-                              label={`Quantity for ${line.title}`}
+                              label={t("Quantity for {title}", { title: line.title })}
                               value={line.quantity}
                               min={0.0001}
                               max={1e6}
@@ -632,9 +633,9 @@ export function QuotationSheet({
                             />
                           )}
                         </td>
-                        <td data-label="Unit">
+                        <td data-label={t("Unit")}>
                           <QuotationUnitPicker
-                            label={`Unit for ${line.title}`}
+                            label={t("Unit for {title}", { title: line.title })}
                             value={line.unit}
                             workspaceId={workspaceId}
                             caseId={caseId}
@@ -662,7 +663,7 @@ export function QuotationSheet({
                         </td>
                         <td
                           className={s.amount}
-                          data-label={`Rate · ${quote.currency}`}
+                          data-label={t("Rate · {currency}", { currency: quote.currency })}
                         >
                           {usesCatalogPricing(line) ? <QuotationCatalogPrice
                             line={line} currency={quote.currency} taxRate={quote.taxRate}
@@ -672,7 +673,7 @@ export function QuotationSheet({
                             line.rate.toFixed(2)
                           ) : (
                             <QuotationNumberInput
-                              label={`Rate for ${line.title}`}
+                              label={t("Rate for {title}", { title: line.title })}
                               value={line.rate}
                               money
                               onEditStart={() => {
@@ -698,22 +699,22 @@ export function QuotationSheet({
                         </td>
                         <td
                           className={s.amount}
-                          data-label={`Amount · ${quote.currency}`}
+                          data-label={t("Amount · {currency}", { currency: quote.currency })}
                         >
                           <strong>
                             {roundMoney(
                               line.quantity * line.rate,
-                            ).toLocaleString("en", {
+                            ).toLocaleString(locale, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}
                           </strong>
                         </td>
-                        <td data-label="Actions">
+                        <td data-label={t("Actions")}>
                           {!readOnly && (
                             <div className={s.actions}>
                               <button
-                                aria-label={`Duplicate ${line.title}`}
+                                aria-label={t("Duplicate {title}", { title: line.title })}
                                 disabled={quote.lines.length >= 300}
                                 onClick={() =>
                                   onChange({
@@ -734,9 +735,9 @@ export function QuotationSheet({
                                 <Copy size={14} />
                               </button>
                               <button
-                                aria-label={`Remove item ${line.title}`}
+                                aria-label={t("Remove item {title}", { title: line.title })}
                                 onClick={() => {
-                                  requestConfirmation({ title: `Remove ${line.title}?`, body: "The item will be removed from this draft. You can undo the change before saving.", confirmLabel: "Remove item", onConfirm: () => onChange({ ...quote, lines: quote.lines.filter((l) => l.id !== line.id) }) });
+                                  requestConfirmation({ title: t("Remove {title}?", { title: line.title }), body: t("The item will be removed from this draft. You can undo the change before saving."), confirmLabel: t("Remove item"), onConfirm: () => onChange({ ...quote, lines: quote.lines.filter((l) => l.id !== line.id) }) });
                                 }}
                               >
                                 <Trash2 size={14} />
@@ -750,11 +751,10 @@ export function QuotationSheet({
                 {expanded && !lines.length && (
                   <tr className={s.emptyArea}>
                     <td colSpan={10}>
-                      <span>No items in this area yet.</span>
+                      <span>{t("No items in this area yet.")}</span>
                       {!readOnly && quote.direction !== "deduction" && (canOverridePrice ?
                         <Button size="compact" onPress={() => setManualDraft({ room, reason: "" })}>
-                          <Plus size={14} /> Add a manual item
-                        </Button> : <Button size="compact" onPress={() => setPicker({ kind: "work", room })}>Choose from library</Button>
+                          <Plus size={14} /> {t("Add a manual item")}</Button> : <Button size="compact" onPress={() => setPicker({ kind: "work", room })}>{t("Choose from library")}</Button>
                       )}
                     </td>
                   </tr>
@@ -764,7 +764,7 @@ export function QuotationSheet({
           })}
         </table>
       </div>
-      <section className={s.bottom} aria-label="Quotation pricing and terms">
+      <section className={s.bottom} aria-label={t("Quotation pricing and terms")}>
         <div className={s.termsPanel}>
           <button
             className={s.sectionToggle}
@@ -772,8 +772,8 @@ export function QuotationSheet({
             onClick={() => setTermsOpen((open) => !open)}
           >
             <span>
-              <strong>Scope & terms</strong>
-              <small>Inclusions, exclusions and conditions</small>
+              <strong>{t("Scope & terms")}</strong>
+              <small>{t("Inclusions, exclusions and conditions")}</small>
             </span>
             {termsOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
           </button>
@@ -781,15 +781,15 @@ export function QuotationSheet({
             <div className={s.terms}>
               {(
                 [
-                  ["Included", "inclusions", 6000],
-                  ["Not included", "exclusions", 6000],
-                  ["Terms & conditions", "terms", 10000],
+                  [tKey("Included"), "inclusions", 6000],
+                  [tKey("Not included"), "exclusions", 6000],
+                  [tKey("Terms & conditions"), "terms", 10000],
                 ] as const
               ).map(([label, key, max]) => (
                 <label key={key}>
-                  {label}
+                  {t(label)}
                   <Cell
-                    label={label}
+                    label={t(label)}
                     value={quote[key] ?? ""}
                     max={max}
                     multiline
@@ -802,24 +802,24 @@ export function QuotationSheet({
           )}
         </div>
         <div className={s.summary}>
-          <h3>Pricing summary</h3>
+          <h3>{t("Pricing summary")}</h3>
           <dl>
             <div>
-              <dt>Items subtotal</dt>
-              <dd>{money(totals.subtotal, quote.currency)}</dd>
+              <dt>{t("Items subtotal")}</dt>
+              <dd>{money(totals.subtotal, quote.currency, locale)}</dd>
             </div>
             {quote.lines.some((line) => line.optional) ? <div>
-              <dt>Priced options · not included</dt>
-              <dd>{money(quote.lines.filter((line) => line.optional).reduce((sum, line) => sum + roundMoney(line.quantity * line.rate), 0), quote.currency)}</dd>
+              <dt>{t("Priced options · not included")}</dt>
+              <dd>{money(quote.lines.filter((line) => line.optional).reduce((sum, line) => sum + roundMoney(line.quantity * line.rate), 0), quote.currency, locale)}</dd>
             </div> : null}
             <div>
-              <dt>Discount · {quote.currency}</dt>
+              <dt>{t("Discount · {currency}", { currency: quote.currency })}</dt>
               <dd>
                 {readOnly ? (
-                  money(quote.discount, quote.currency)
+                  money(quote.discount, quote.currency, locale)
                 ) : (
                   <QuotationNumberInput
-                    label="Quotation discount"
+                    label={t("Quotation discount")}
                     value={quote.discount}
                     money
                     max={totals.subtotal}
@@ -829,13 +829,13 @@ export function QuotationSheet({
               </dd>
             </div>
             <div>
-              <dt>Tax rate %</dt>
+              <dt>{t("Tax rate %")}</dt>
               <dd>
                 {readOnly ? (
                   quote.taxRate
                 ) : (
                   <QuotationNumberInput
-                    label="Tax percentage"
+                    label={t("Tax percentage")}
                     value={quote.taxRate}
                     max={100}
                     onChange={(taxRate) => onChange({ ...quote, taxRate })}
@@ -844,49 +844,46 @@ export function QuotationSheet({
               </dd>
             </div>
             <div>
-              <dt>Taxable amount</dt>
-              <dd>{money(totals.net, quote.currency)}</dd>
+              <dt>{t("Taxable amount")}</dt>
+              <dd>{money(totals.net, quote.currency, locale)}</dd>
             </div>
             <div>
-              <dt>{quote.cover?.taxLabel || "Tax"}</dt>
-              <dd>{money(totals.tax, quote.currency)}</dd>
+              <dt>{translateKnown(t, quote.cover?.taxLabel || "Tax")}</dt>
+              <dd>{money(totals.tax, quote.currency, locale)}</dd>
             </div>
             <div className={s.grand}>
               <dt>
-                {quote.direction === "deduction"
+                {t(quote.direction === "deduction"
                   ? "Client credit"
-                  : "Quotation total"}
+                  : "Quotation total")}
               </dt>
-              <dd>{money(totals.total, quote.currency)}</dd>
+              <dd>{money(totals.total, quote.currency, locale)}</dd>
             </div>
             {canViewCosts ? <div>
-              <dt>Gross margin · internal</dt>
+              <dt>{t("Gross margin · internal")}</dt>
               <dd>{totals.margin.toFixed(1)}%</dd>
             </div> : null}
           </dl>
           {quote.discount > totals.subtotal && (
             <p role="alert" className={s.error}>
-              Reduce the discount: it exceeds the current subtotal.
-            </p>
+              {t("Reduce the discount: it exceeds the current subtotal.")}</p>
           )}
           <p>
-            Use another section for installation, delivery or other charges.
-            These rows are included in the subtotal.
-          </p>
+            {t("Use another section for installation, delivery or other charges. These rows are included in the subtotal.")}</p>
         </div>
       </section>
-      <section className={s.payments} aria-label="Payment schedule">
+      <section className={s.payments} aria-label={t("Payment schedule")}>
         <button
           className={s.sectionToggle}
           aria-expanded={paymentsOpen}
           onClick={() => setPaymentsOpen((open) => !open)}
         >
           <span>
-            <strong>Payment schedule</strong>
+            <strong>{t("Payment schedule")}</strong>
             <small>
               {quote.paymentTerms.length
-                ? `${quote.paymentTerms.length} milestones · ${quote.paymentTerms.reduce((sum, term) => sum + term.percent, 0)}% allocated`
-                : "Add milestones for the agreement"}
+                ? t("{count} milestones · {percent}% allocated", { count: quote.paymentTerms.length, percent: quote.paymentTerms.reduce((sum, term) => sum + term.percent, 0) })
+                : t("Add milestones for the agreement")}
             </small>
           </span>
           {paymentsOpen ? (
@@ -907,16 +904,16 @@ export function QuotationSheet({
         )}
       </section>
       <ControlledModalDialog
-        title="Authorize manual item"
-        description={manualDraft ? `${manualDraft.room} · This item has no confirmed scope or catalogue source.` : undefined}
+        title={t("Authorize manual item")}
+        description={manualDraft ? t("{room} · This item has no confirmed scope or catalogue source.", { room: manualDraft.room }) : undefined}
         isOpen={Boolean(manualDraft)}
         onOpenChange={(open) => { if (!open) setManualDraft(null); }}
-        footer={manualDraft ? <div className="wd-dialog-actions"><Button onPress={() => setManualDraft(null)}>Cancel</Button><Button variant="primary" isDisabled={!manualDraft.reason.trim()} onPress={() => addItem(manualDraft.room, manualDraft.reason)}>Add manual item</Button></div> : undefined}
+        footer={manualDraft ? <div className="wd-dialog-actions"><Button onPress={() => setManualDraft(null)}>{t("Cancel")}</Button><Button variant="primary" isDisabled={!manualDraft.reason.trim()} onPress={() => addItem(manualDraft.room, manualDraft.reason)}>{t("Add manual item")}</Button></div> : undefined}
       >
-        {manualDraft ? <TextAreaField label="Authorization reason" description="Recorded in the commercial audit history and never shown to the client." isRequired value={manualDraft.reason} onChange={(reason) => setManualDraft({ ...manualDraft, reason })} placeholder="Why is this item outside the confirmed scope or catalogue?" /> : null}
+        {manualDraft ? <TextAreaField label={t("Authorization reason")} description={t("Recorded in the commercial audit history and never shown to the client.")} isRequired value={manualDraft.reason} onChange={(reason) => setManualDraft({ ...manualDraft, reason })} placeholder={t("Why is this item outside the confirmed scope or catalogue?")} /> : null}
       </ControlledModalDialog>
       <ControlledModalDialog
-        title="Materials"
+        title={t("Materials")}
         description={
           materialDraft
             ? `${materialDraft.room} · ${materialDraft.title}`
@@ -938,7 +935,7 @@ export function QuotationSheet({
                 setError("");
               }}
             >
-              {readOnly ? "Close" : "Cancel"}
+              {t(readOnly ? "Close" : "Cancel")}
             </Button>
             {!readOnly && (
               <Button
@@ -955,21 +952,20 @@ export function QuotationSheet({
                   setMaterialDraft(null);
                 }}
               >
-                Apply materials
-              </Button>
+                {t("Apply materials")}</Button>
             )}
           </div>
         }
       >
         {materialDraft && (
           <>
-            <section aria-label="Finished item size" className={s.sizeSection}>
-              <div><strong>Finished item size</strong><small>Optional · shown on the client quotation. Confirm site measurements separately.</small></div>
+            <section aria-label={t("Finished item size")} className={s.sizeSection}>
+              <div><strong>{t("Finished item size")}</strong><small>{t("Optional · shown on the client quotation. Confirm site measurements separately.")}</small></div>
               <div className={s.sizeFields}>
-                {(["length", "height", "depth"] as const).map((key) => (
+                {([["length", tKey("Length")], ["height", tKey("Height")], ["depth", tKey("Depth")]] as const).map(([key, label]) => (
                   <NumericInput
                     key={key}
-                    label={key[0].toUpperCase() + key.slice(1)}
+                    label={t(label)}
                     minValue={0.0001}
                     maxValue={1e6}
                     isDisabled={readOnly}
@@ -978,7 +974,7 @@ export function QuotationSheet({
                   />
                 ))}
                 <SelectField
-                  label="Size unit"
+                  label={t("Size unit")}
                   isDisabled={readOnly}
                   selectedKey={materialDraft.dimensions?.unit ?? "cm"}
                   items={["mm", "cm", "m", "in", "ft"].map((unit) => ({ id: unit, label: unit }))}
@@ -1005,7 +1001,7 @@ export function QuotationSheet({
             />
             {error && (
               <p role="alert" className={s.error}>
-                {error}
+                {translateKnown(t, error)}
               </p>
             )}
           </>
@@ -1013,7 +1009,7 @@ export function QuotationSheet({
       </ControlledModalDialog>
       <ControlledModalDialog
         title={
-          roomDraft?.original ? "Rename room / section" : "Add room / section"
+          t(roomDraft?.original ? "Rename room / section" : "Add room / section")
         }
         isOpen={Boolean(roomDraft)}
         onOpenChange={(open) => {
@@ -1022,9 +1018,9 @@ export function QuotationSheet({
         footer={
           roomDraft && (
             <div className={s.dialogActions}>
-              <button onClick={() => setRoomDraft(null)}>Cancel</button>
+              <button onClick={() => setRoomDraft(null)}>{t("Cancel")}</button>
               <button
-                aria-label="Save section"
+                aria-label={t("Save section")}
                 onClick={() => {
                   const name = roomDraft.name.trim();
                   if (
@@ -1035,7 +1031,7 @@ export function QuotationSheet({
                         room.toLowerCase() === name.toLowerCase(),
                     )
                   ) {
-                    setError("Enter a unique room or section name.");
+                    setError(t("Enter a unique room or section name."));
                     return;
                   }
                   const old = quote.rooms?.find(
@@ -1077,7 +1073,7 @@ export function QuotationSheet({
                   setError("");
                 }}
               >
-                {roomDraft.original ? "Save area" : "Add area"}
+                {t(roomDraft.original ? "Save area" : "Add area")}
               </button>
             </div>
           )
@@ -1086,7 +1082,7 @@ export function QuotationSheet({
         {roomDraft && (
           <div className={s.dialog}>
             <TextInput
-              label="Area / room name"
+              label={t("Area / room name")}
               maxLength={120}
               value={roomDraft.name}
               onChange={(name) =>
@@ -1097,14 +1093,14 @@ export function QuotationSheet({
                 })
               }
               autoFocus
-              placeholder="e.g. Kitchen, Reception, Delivery"
+              placeholder={t("e.g. Kitchen, Reception, Delivery")}
             />
             {!roomDraft.original && (
               <CommercialCatalogPicker
                 workspaceId={workspaceId}
                 caseId={caseId}
                 kind="room"
-                label="Or start from the area library (optional)"
+                label={t("Or start from the area library (optional)")}
                 value={roomDraft.catalog}
                 onChange={(catalog) =>
                   setRoomDraft({
@@ -1117,7 +1113,7 @@ export function QuotationSheet({
             )}
             {error && (
               <p role="alert" className={s.error}>
-                {error}
+                {translateKnown(t, error)}
               </p>
             )}
           </div>
@@ -1125,11 +1121,11 @@ export function QuotationSheet({
       </ControlledModalDialog>
       <ControlledModalDialog
         title={
-          picker?.kind === "work"
+          t(picker?.kind === "work"
             ? "Select item"
             : picker?.kind === "variant"
               ? "Select variant"
-              : "Select material"
+              : "Select material")
         }
         isOpen={Boolean(picker)}
         onOpenChange={(open) => {
@@ -1140,13 +1136,13 @@ export function QuotationSheet({
           <div className={s.dialog}>
             {["material", "finish"].includes(picker.kind) && (
               <SelectField
-                label="Type"
+                label={t("Type")}
                 accent="neutral"
-                aria-label="Catalog material type"
+                aria-label={t("Catalog material type")}
                 selectedKey={picker.kind}
                 items={[
-                  { id: "material", label: "Material" },
-                  { id: "finish", label: "Finish" },
+                  { id: "material", label: t("Material") },
+                  { id: "finish", label: t("Finish") },
                 ]}
                 onSelectionChange={(key) =>
                   setPicker({
@@ -1164,7 +1160,7 @@ export function QuotationSheet({
                 workspaceId={workspaceId}
                 caseId={caseId}
                 kind={picker.kind}
-                label="Search catalog"
+                label={t("Search catalog")}
                 value={null}
                 onChange={choose}
                 linkedTo={
@@ -1179,20 +1175,17 @@ export function QuotationSheet({
             {picker.kind === "variant" ? (
               <>
                 <TextInput
-                  label="Custom variant"
-                  aria-label="Custom variant"
+                  label={t("Custom variant")}
+                  aria-label={t("Custom variant")}
                   value={variantDraft}
                   maxLength={240}
-                  placeholder="e.g. Premium finish"
+                  placeholder={t("e.g. Premium finish")}
                   onChange={setVariantDraft}
                 />
                 <p>
-                  Choose a linked catalog variant or enter your own. Existing
-                  materials and prices are kept; review them when changing the
-                  variant.
-                </p>
+                  {t("Choose a linked catalog variant or enter your own. Existing materials and prices are kept; review them when changing the variant.")}</p>
                 <div className={s.dialogActions}>
-                  <button onClick={() => setPicker(null)}>Cancel</button>
+                  <button onClick={() => setPicker(null)}>{t("Cancel")}</button>
                   <button
                     onClick={() => {
                       const line = quote.lines.find(
@@ -1208,12 +1201,11 @@ export function QuotationSheet({
                       setPicker(null);
                     }}
                   >
-                    Apply variant
-                  </button>
+                    {t("Apply variant")}</button>
                 </div>
               </>
             ) : (
-              <p>Check linked selling prices in the quotation rate column.</p>
+              <p>{t("Check linked selling prices in the quotation rate column.")}</p>
             )}
           </div>
         )}

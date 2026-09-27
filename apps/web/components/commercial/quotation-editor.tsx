@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import {
@@ -10,7 +11,7 @@ import { QuotationMaterialsEditor, QuotationMaterialsSummary } from "./quotation
 import { customUnit, selectUnit } from "@/lib/commercial/materials";
 import q from "./quotation-line-fields.module.css";
 import { PaymentScheduleEditor } from "./payment-schedule-editor";
-import { DataGrid, ControlledModalDialog, EmptyState } from "@/design-system";
+import { DataGrid, ControlledModalDialog, EmptyState, useDesignSystem } from "@/design-system";
 import type { Quote, QuoteLine, ChangeRequest } from "@/lib/commercial/types";
 import { money, newLine, quoteTotals } from "@/lib/commercial/client";
 import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
@@ -40,6 +41,8 @@ export function QuotationEditor({
   canOverridePrice?: boolean;
   canEditCosts?: boolean;
 }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
   const latest = useRef(quote);
   useLayoutEffect(() => { latest.current = quote; }, [quote]);
   const [item, setItem] = useState<QuoteLine | null>(null),
@@ -75,10 +78,10 @@ export function QuotationEditor({
   const rateCell = (l: QuoteLine) => (
     <div className={s.rateCell}>
       {usesCatalogPricing(l) ? <QuotationCatalogPrice line={l} currency={quote.currency} taxRate={quote.taxRate} workspaceId={workspaceId} caseId={caseId} readOnly={readOnly} canOverride={canOverridePrice} onApply={applyCatalogPrice} /> : readOnly ? (
-        money(l.rate, quote.currency)
+        money(l.rate, quote.currency, locale)
       ) : (
         <div className={q.moneyControl}><span>{quote.currency}</span><QuotationNumberInput
-          label={`Rate for ${l.title}`}
+          label={t("Rate for {title}", { title: l.title })}
           value={l.rate}
           money
           onChange={(rate) => line(l.id, { rate })}
@@ -91,17 +94,17 @@ export function QuotationEditor({
       <div className={`${s.toolbar} ${q.itemToolbar}`}>
         <div className={s.actions}>
           <select
-            aria-label="Filter quotation by room"
+            aria-label={t("Filter quotation by room")}
             value={room}
             onChange={(e) => setRoom(e.target.value)}
           >
-            <option>All rooms</option>
+            <option value="All rooms">{t("All rooms")}</option>
             {rooms.map((r) => (
               <option key={r}>{r}</option>
             ))}
           </select>
           <span className={s.muted}>
-            {quote.lines.length} items{costing ? " · Internal costing" : ""}
+            {t(costing ? "{count} items · Internal costing" : "{count} items", { count: quote.lines.length })}
           </span>
         </div>
         {!readOnly && (
@@ -115,25 +118,23 @@ export function QuotationEditor({
               }}
             >
               <Plus size={15} />
-              Add room
-            </button>
+              {t("Add room")}</button>
             <button
               className={s.button}
               onClick={() => {
                 const next = newLine(
-                  room === "All rooms" ? (rooms.at(-1) ?? "General") : room,
+                  room === "All rooms" ? (rooms.at(-1) ?? t("General")) : room,
                 );
                 openItem(next);
               }}
             >
               <Plus size={15} />
-              Add item
-            </button>
+              {t("Add item")}</button>
           </div>
         )}
       </div>
       {!rooms.length ? (
-        <EmptyState title="Build your quotation, one item at a time" description="Import the included scope from the brief, or add an item." />
+        <EmptyState title={t("Build your quotation, one item at a time")} description={t("Import the included scope from the brief, or add an item.")} />
       ) : (
         <div className={s.form}>{rooms.filter(r=>room==="All rooms"||room===r).map(r=><section key={r}><div className={`${s.roomHeading} ${q.roomHeader}`}>
                           <span>
@@ -141,7 +142,7 @@ export function QuotationEditor({
                             {!readOnly && (
                               <button
                                 className={s.icon}
-                                aria-label={`Edit room ${r}`}
+                                aria-label={t("Edit room {room}", { room: r })}
                                 onClick={() => {
                                   setEditingRoom(r);
                                   setNewRoom(r);
@@ -155,22 +156,20 @@ export function QuotationEditor({
                               </button>
                             )}
                             <small>
-                              {quote.lines.filter((l) => l.room === r).length}{" "}
-                              {quote.lines.filter((l) => l.room === r)
+                              {t(quote.lines.filter((l) => l.room === r)
                                 .length === 1
-                                ? "item"
-                                : "items"}
+                                ? "{count} item"
+                                : "{count} items", { count: quote.lines.filter((l) => l.room === r).length })}
                             </small>
                           </span>
                           <div>
                             {!readOnly && (
                               <button
                                 className={s.button}
-                                aria-label={`Add item to ${r}`}
+                                aria-label={t("Add item to {room}", { room: r })}
                                 onClick={() => openItem(newLine(r))}
                               >
-                                <Plus size={13} /> Add item
-                              </button>
+                                <Plus size={13} /> {t("Add item")}</button>
                             )}
                             <strong>
                               {money(
@@ -178,11 +177,12 @@ export function QuotationEditor({
                                   .filter((l) => l.room === r)
                                   .reduce((n, l) => n + l.quantity * l.rate, 0),
                                 quote.currency,
+                                locale,
                               )}
                             </strong>
                           </div>
-                        </div><DataGrid ariaLabel={`Quotation items · ${r}`} data={quote.lines.filter(l=>l.room===r)} getRowId={l=>l.id} selectable={false} searchLabel={`Search items in ${r}`} exportFileName="quotation-items.csv" columns={[{id:"title",header:"Item",size:290,accessorFn:(l:QuoteLine)=>l.title,meta:{renderCell:(l:QuoteLine)=><>
-                            {readOnly ? <strong>{l.title}</strong> : <button className={q.itemTitle} aria-label={`Edit details for ${l.title}`} onClick={() => openItem(l)}><strong>{l.title}</strong><Pencil size={12} /></button>}
+                        </div><DataGrid ariaLabel={t("Quotation items · {room}", { room: r })} data={quote.lines.filter(l=>l.room===r)} getRowId={l=>l.id} selectable={false} searchLabel={t("Search items in {room}", { room: r })} exportFileName="quotation-items.csv" columns={[{id:"title",header:t("Item"),size:290,accessorFn:(l:QuoteLine)=>l.title,meta:{renderCell:(l:QuoteLine)=><>
+                            {readOnly ? <strong>{l.title}</strong> : <button className={q.itemTitle} aria-label={t("Edit details for {title}", { title: l.title })} onClick={() => openItem(l)}><strong>{l.title}</strong><Pencil size={12} /></button>}
                             {l.specification && (
                               <small
                                 className={s.detail}
@@ -192,32 +192,32 @@ export function QuotationEditor({
                               </small>
                             )}
                           </>}},
-{id:"materials",header:"Materials & finishes",size:270,accessorFn:(l:QuoteLine)=>l.material,meta:{renderCell:(l:QuoteLine)=><><QuotationMaterialsSummary line={l} onEdit={readOnly ? undefined : () => openItem(l, "materials")} /></>}},
-{id:"rate",header:"Unit price",size:160,accessorFn:(l:QuoteLine)=>l.rate,meta:{renderCell:rateCell}},
-{id:"quantity",header:"Quantity / unit",size:150,accessorFn:(l:QuoteLine)=>l.quantity,meta:{renderCell:(l:QuoteLine)=><>
+{id:"materials",header:t("Materials & finishes"),size:270,accessorFn:(l:QuoteLine)=>l.material,meta:{renderCell:(l:QuoteLine)=><><QuotationMaterialsSummary line={l} onEdit={readOnly ? undefined : () => openItem(l, "materials")} /></>}},
+{id:"rate",header:t("Unit price"),size:160,accessorFn:(l:QuoteLine)=>l.rate,meta:{renderCell:rateCell}},
+{id:"quantity",header:t("Quantity / unit"),size:150,accessorFn:(l:QuoteLine)=>l.quantity,meta:{renderCell:(l:QuoteLine)=><>
                             <div className={q.quantityControl}>
                               {readOnly ? <span>{l.quantity} {!costing && l.unit}</span> : <>
-                                <QuotationNumberInput label={`Quantity for ${l.title}`} value={l.quantity} min={0.0001} max={1e6} onChange={(quantity) => line(l.id, { quantity })} />
-                                {!costing && <button className={q.unitButton} aria-label={`Change unit for ${l.title}`} title="Change unit in item details" onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}
+                                <QuotationNumberInput label={t("Quantity for {title}", { title: l.title })} value={l.quantity} min={0.0001} max={1e6} onChange={(quantity) => line(l.id, { quantity })} />
+                                {!costing && <button className={q.unitButton} aria-label={t("Change unit for {title}", { title: l.title })} title={t("Change unit in item details")} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}
                               </>}
                             </div>
                           </>}},
-...(costing?[{id:"unit",header:"Unit",size:110,accessorFn:(l:QuoteLine)=>l.unit,meta:{renderCell:(l:QuoteLine)=><>{readOnly ? l.unit : <button className={q.unitButton} aria-label={`Change unit for ${l.title}`} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}</>}}]:[]),
-...(costing?[{id:"cost",header:"Unit cost",size:150,accessorFn:(l:QuoteLine)=>l.unitCost,meta:{renderCell:(l:QuoteLine)=><>
+...(costing?[{id:"unit",header:t("Unit"),size:110,accessorFn:(l:QuoteLine)=>l.unit,meta:{renderCell:(l:QuoteLine)=><>{readOnly ? l.unit : <button className={q.unitButton} aria-label={t("Change unit for {title}", { title: l.title })} onClick={() => openItem(l)}>{l.unit}<Pencil size={10} /></button>}</>}}]:[]),
+...(costing?[{id:"cost",header:t("Unit cost"),size:150,accessorFn:(l:QuoteLine)=>l.unitCost,meta:{renderCell:(l:QuoteLine)=><>
                               {readOnly || !canEditCosts ? (
-                                money(l.unitCost ?? 0, quote.currency)
+                                money(l.unitCost ?? 0, quote.currency, locale)
                               ) : (
-                                <QuotationNumberInput label={`Cost for ${l.title}`} value={l.unitCost ?? 0} money onChange={(unitCost) => line(l.id, { unitCost })} />
+                                <QuotationNumberInput label={t("Cost for {title}", { title: l.title })} value={l.unitCost ?? 0} money onChange={(unitCost) => line(l.id, { unitCost })} />
                               )}
                             </>}}]:[]),
-{id:"total",header:"Amount",size:160,accessorFn:(l:QuoteLine)=>l.quantity*l.rate,meta:{renderCell:(l:QuoteLine)=><>
-                            {money(l.quantity * l.rate, quote.currency)}
+{id:"total",header:t("Amount"),size:160,accessorFn:(l:QuoteLine)=>l.quantity*l.rate,meta:{renderCell:(l:QuoteLine)=><>
+                            {money(l.quantity * l.rate, quote.currency, locale)}
                           </>}},
-...(!readOnly && costing?[{id:"action",header:"Action",size:110,enableSorting:false,enableColumnFilter:false,meta:{renderCell:(l:QuoteLine)=><>
+...(!readOnly && costing?[{id:"action",header:t("Action"),size:110,enableSorting:false,enableColumnFilter:false,meta:{renderCell:(l:QuoteLine)=><>
                               <div className={s.rowAction}>
                                 <button
                                   className={s.icon}
-                                  aria-label={`Duplicate ${l.title}`}
+                                  aria-label={t("Duplicate {title}", { title: l.title })}
                                   onClick={() =>
                                     patch({
                                       lines: [
@@ -237,7 +237,7 @@ export function QuotationEditor({
                                 </button>
                                 <button
                                   className={s.icon}
-                                  aria-label={`Remove ${l.title}`}
+                                  aria-label={t("Remove {title}", { title: l.title })}
                                   onClick={() =>
                                     patch({
                                       lines: quote.lines.filter(
@@ -256,8 +256,7 @@ export function QuotationEditor({
           <div className={s.bottom}>
             <div className={`${colors.theme} ${s.form}`}>
               <label>
-                Quotation title
-                <input
+                {t("Quotation title")}<input
                   value={quote.title}
                   disabled={readOnly}
                   onChange={(e) => patch({ title: e.target.value })}
@@ -265,8 +264,7 @@ export function QuotationEditor({
               </label>
               <div className={s.grid}>
                 <label>
-                  Valid until
-                  <input
+                  {t("Valid until")}<input
                     type="date"
                     value={quote.validUntil}
                     disabled={readOnly}
@@ -274,8 +272,7 @@ export function QuotationEditor({
                   />
                 </label>
                 <label>
-                  Currency
-                  <select
+                  {t("Currency")}<select
                     value={quote.currency}
                     disabled={readOnly}
                     onChange={(e) => patch({ currency: e.target.value })}
@@ -289,10 +286,10 @@ export function QuotationEditor({
                 </label>
               </div>
               <section>
-                <h3>Terms, exclusions & linked requests</h3>
+                <h3>{t("Terms, exclusions & linked requests")}</h3>
                 <div className={`${colors.theme} ${s.form}`}>
                   <label>
-                    Terms & payment expectations
+                    {t("Terms & payment expectations")}
                     <textarea
                       value={quote.terms}
                       disabled={readOnly}
@@ -300,8 +297,7 @@ export function QuotationEditor({
                     />
                   </label>
                   <label>
-                    Exclusions
-                    <textarea
+                    {t("Exclusions")}<textarea
                       value={quote.exclusions}
                       disabled={readOnly}
                       onChange={(e) => patch({ exclusions: e.target.value })}
@@ -328,8 +324,7 @@ export function QuotationEditor({
                             })
                           }
                         />
-                        Addresses CR-{String(r.number).padStart(3, "0")} ·{" "}
-                        {r.title}
+                        {t("Addresses CR-{number} · {title}", { number: String(r.number).padStart(3, "0"), title: r.title })}
                       </label>
                     ))}
                 </div>
@@ -337,17 +332,17 @@ export function QuotationEditor({
             </div>
             <dl className={s.summary}>
               <div>
-                <dt>Subtotal</dt>
-                <dd>{money(totals.subtotal, quote.currency)}</dd>
+                <dt>{t("Subtotal")}</dt>
+                <dd>{money(totals.subtotal, quote.currency, locale)}</dd>
               </div>
               <div>
-                <dt>Discount</dt>
+                <dt>{t("Discount")}</dt>
                 <dd>
                   {readOnly ? (
-                    money(quote.discount, quote.currency)
+                    money(quote.discount, quote.currency, locale)
                   ) : (
                     <input
-                      aria-label="Quotation discount"
+                      aria-label={t("Quotation discount")}
                       type="number"
                       min={0}
                       step=".01"
@@ -360,13 +355,13 @@ export function QuotationEditor({
                 </dd>
               </div>
               <div>
-                <dt>Tax {readOnly ? `(${quote.taxRate}%)` : "%"}</dt>
+                <dt>{t(readOnly ? "Tax ({rate}%)" : "Tax %", { rate: quote.taxRate })}</dt>
                 <dd>
                   {readOnly ? (
-                    money(totals.tax, quote.currency)
+                    money(totals.tax, quote.currency, locale)
                   ) : (
                     <input
-                      aria-label="Tax percentage"
+                      aria-label={t("Tax percentage")}
                       type="number"
                       min={0}
                       max={100}
@@ -380,22 +375,21 @@ export function QuotationEditor({
                 </dd>
               </div>
               <div className={s.total}>
-                <dt>Total</dt>
-                <dd>{money(totals.total, quote.currency)}</dd>
+                <dt>{t("Total")}</dt>
+                <dd>{money(totals.total, quote.currency, locale)}</dd>
               </div>
               {costing && (
                 <>
                   <div>
-                    <dt>Estimated cost</dt>
-                    <dd>{money(totals.cost, quote.currency)}</dd>
+                    <dt>{t("Estimated cost")}</dt>
+                    <dd>{money(totals.cost, quote.currency, locale)}</dd>
                   </div>
                   <div>
-                    <dt>Gross margin</dt>
+                    <dt>{t("Gross margin")}</dt>
                     <dd>{totals.margin.toFixed(1)}%</dd>
                   </div>
                   <p className={s.muted}>
-                    Costs and margin are visible to your team only.
-                  </p>
+                    {t("Costs and margin are visible to your team only.")}</p>
                 </>
               )}
             </dl>
@@ -411,13 +405,13 @@ export function QuotationEditor({
       <ControlledModalDialog
         isOpen={newRoom !== null}
         onOpenChange={(open) => !open && setNewRoom(null)}
-        title={editingRoom ? "Edit room" : "Add room"}
+        title={t(editingRoom ? "Edit room" : "Add room")}
       >
         <form
           className={`${colors.theme} ${s.form}`}
           onSubmit={(e) => {
             e.preventDefault();
-            const name = newRoom?.trim() || roomSource?.name || "General";
+            const name = newRoom?.trim() || roomSource?.name || t("General");
             if (
               rooms.some(
                 (r) =>
@@ -459,7 +453,7 @@ export function QuotationEditor({
             workspaceId={workspaceId}
             caseId={caseId}
             kind="room"
-            label="Room type from catalog"
+            label={t("Room type from catalog")}
             value={roomSource}
             onChange={(value) => {
               setRoomSource(value);
@@ -467,28 +461,24 @@ export function QuotationEditor({
             }}
           />
           <label>
-            Room name
-            <input
+            {t("Room name")}<input
               autoFocus
               required
               maxLength={120}
-              placeholder="e.g. Master bedroom"
+              placeholder={t("e.g. Master bedroom")}
               value={newRoom ?? ""}
               onChange={(e) => setNewRoom(e.target.value)}
             />
           </label>
           <p className={s.muted}>
-            Choose your room catalog, then name this space. For repeat rooms,
-            use names like Bedroom 1 and Bedroom 2.
-          </p>
+            {t("Choose your room catalog, then name this space. For repeat rooms, use names like Bedroom 1 and Bedroom 2.")}</p>
           {rooms.some(
             (r) =>
               r !== editingRoom &&
               r.toLowerCase() === newRoom?.trim().toLowerCase(),
           ) && (
             <p role="alert" className={s.error}>
-              A room with this name already exists.
-            </p>
+              {t("A room with this name already exists.")}</p>
           )}
           <button
             className={s.primary}
@@ -501,7 +491,7 @@ export function QuotationEditor({
               )
             }
           >
-            {editingRoom ? "Save room" : "Add room"}
+            {t(editingRoom ? "Save room" : "Add room")}
           </button>
           {editingRoom && !quote.lines.some((l) => l.room === editingRoom) && (
             <button
@@ -515,15 +505,14 @@ export function QuotationEditor({
                 setNewRoom(null);
               }}
             >
-              Remove empty room
-            </button>
+              {t("Remove empty room")}</button>
           )}
         </form>
       </ControlledModalDialog>
       <ControlledModalDialog
         isOpen={Boolean(item)}
         onOpenChange={(open) => !open && setItem(null)}
-        title={itemMode === "materials" ? "Materials & finishes" : "Item details"}
+        title={t(itemMode === "materials" ? "Materials & finishes" : "Item details")}
         size="lg"
         footer={
           <div className={s.actions}>
@@ -539,8 +528,7 @@ export function QuotationEditor({
                   }}
                 >
                   <Trash2 size={14} />
-                  Remove item
-                </button>
+                  {t("Remove item")}</button>
                 <button
                   className={s.button}
                   onClick={() => {
@@ -560,11 +548,10 @@ export function QuotationEditor({
                   }}
                 >
                   <Copy size={14} />
-                  Duplicate
-                </button>
+                  {t("Duplicate")}</button>
               </>
             )}
-            <button className={s.button} onClick={() => setItem(null)}>Cancel</button>
+            <button className={s.button} onClick={() => setItem(null)}>{t("Cancel")}</button>
             <button
               className={s.primary}
               disabled={
@@ -582,17 +569,16 @@ export function QuotationEditor({
                 }
               }}
             >
-              Apply to quotation
-            </button>
+              {t("Apply to quotation")}</button>
           </div>
         }
       >
         {item && (
           <div className={`${colors.theme} ${s.form} ${q.itemDialog}`}>
             <p className={s.itemContext}><strong>{item.title}</strong><span>{item.room}</span></p>
-            <div className={s.editorTabs} role="group" aria-label="Item editor">
-              <button aria-pressed={itemMode === "materials"} onClick={() => setItemMode("materials")}>Materials & finishes</button>
-              <button aria-pressed={itemMode === "details"} onClick={() => setItemMode("details")}>Item & pricing</button>
+            <div className={s.editorTabs} role="group" aria-label={t("Item editor")}>
+              <button aria-pressed={itemMode === "materials"} onClick={() => setItemMode("materials")}>{t("Materials & finishes")}</button>
+              <button aria-pressed={itemMode === "details"} onClick={() => setItemMode("details")}>{t("Item & pricing")}</button>
             </div>
             {itemMode === "materials" ? <QuotationMaterialsEditor item={item} onChange={setItem} workspaceId={workspaceId} caseId={caseId} /> : <>
             <div className={s.grid}>
@@ -618,7 +604,7 @@ export function QuotationEditor({
                             : undefined
                         : undefined
                     }
-                    label={role === "work" ? "Item from catalog" : role === "variant" ? "Variant from catalog" : "Unit from catalog"}
+                    label={t(role === "work" ? "Item from catalog" : role === "variant" ? "Variant from catalog" : "Unit from catalog")}
                     value={
                       item.catalogLinks?.find((c) => c.role === role)
                         ?.snapshot ?? null
@@ -655,16 +641,12 @@ export function QuotationEditor({
                 checked={roomFilter}
                 onChange={(e) => setRoomFilter(e.target.checked)}
               />{" "}
-              Show items linked to this room and variants linked to the selected
-              item
-            </label>}
+              {t("Show items linked to this room and variants linked to the selected item")}</label>}
             <p className={s.muted}>
-              Catalog selections keep their source links. Quantities and selling rates are set for this quotation.
-            </p>
+              {t("Catalog selections keep their source links. Quantities and selling rates are set for this quotation.")}</p>
             {itemMode === "details" && <><div className={s.grid}>
               <label>
-                Room
-                <input
+                {t("Room")}<input
                   list="quote-rooms"
                   value={item.room}
                   onChange={(e) => setItem({ ...item, room: e.target.value })}
@@ -676,17 +658,15 @@ export function QuotationEditor({
                 </datalist>
               </label>
               <label>
-                Item
-                <input
+                {t("Item")}<input
                   value={item.title}
                   onChange={(e) => setItem({ ...item, title: e.target.value })}
                 />
               </label>
             </div>
             <label>
-              Specification
-              <textarea
-                placeholder="Dimensions, construction and what is included…"
+              {t("Specification")}<textarea
+                placeholder={t("Dimensions, construction and what is included…")}
                 value={item.specification}
                 onChange={(e) =>
                   setItem({ ...item, specification: e.target.value })
@@ -696,32 +676,26 @@ export function QuotationEditor({
             </>}
             {itemMode === "details" && <div className={s.grid}>
               <label>
-                Quantity
-                <QuotationNumberInput label="Quantity" value={item.quantity} min={0.0001} max={1e6}  onChange={(quantity) => setItem({ ...item, quantity })} />
+                {t("Quantity")}<QuotationNumberInput label={t("Quantity")} value={item.quantity} min={0.0001} max={1e6}  onChange={(quantity) => setItem({ ...item, quantity })} />
               </label>
               <label>
-                Unit
-                <input
+                {t("Unit")}<input
                   value={item.unit}
                   onChange={(e) => setItem(customUnit(item, e.target.value))}
                 />
               </label>
               {costing ? <label>
-                Internal unit cost
-                {readOnly || !canEditCosts ? <span>{money(item.unitCost ?? 0, quote.currency)}</span> : <QuotationNumberInput label="Internal unit cost" value={item.unitCost ?? 0} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />}
+                {t("Internal unit cost")}{readOnly || !canEditCosts ? <span>{money(item.unitCost ?? 0, quote.currency, locale)}</span> : <QuotationNumberInput label={t("Internal unit cost")} value={item.unitCost ?? 0} min={0} max={1e8} money onChange={(unitCost) => setItem({ ...item, unitCost })} />}
               </label> : null}
               <label>
-                Selling rate
-                <QuotationNumberInput label="Selling rate" value={item.rate} min={0} max={1e8} money onChange={(rate) => setItem({ ...item, rate })} />
+                {t("Selling rate")}<QuotationNumberInput label={t("Selling rate")} value={item.rate} min={0} max={1e8} money onChange={(rate) => setItem({ ...item, rate })} />
               </label>
             </div>
             }
             </>}
             {item.scopeId && (
               <p className={s.muted}>
-                Linked to Requirement gathering scope v{item.scopeVersion}. These
-                commercial edits preserve the source record.
-              </p>
+                {t("Linked to Requirement gathering scope v{version}. These commercial edits preserve the source record.", { version: item.scopeVersion ?? "" })}</p>
             )}
           </div>
         )}

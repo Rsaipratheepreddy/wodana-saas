@@ -23,7 +23,7 @@ import { notFound, redirect, unstable_rethrow } from "next/navigation";
 import styles from "./workspace-screen.module.css";
 import { NoAccessState } from "@/design-system";
 import { canOpen, SALES_SECTION_ACCESS } from "@/lib/workspace/access";
-import { serverTranslator } from "@/lib/i18n/server";
+import { getServerT, serverTranslator } from "@/lib/i18n/server";
 import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
 
 export default async function WorkspaceScreen({
@@ -227,9 +227,11 @@ export default async function WorkspaceScreen({
     return <CrmScreenPage key={`${screen.id}-${query.record ?? "list"}-${query.view ?? "table"}`} initialFollowUpList={query.view === "activity"} initialCalendar={query.view === "calendar" || query.view === "schedule"} initialData={await getCrmScreenPageData(screen.id as CrmScreenId)} initialRecordId={typeof query.record === "string" && /^[\da-f-]{36}$/i.test(query.record) ? query.record : undefined} />;
   }
 
+  const t = await getServerT();
+  const label = t(screen.label as never);
   return (
-    <section aria-label={`${screen.label} workspace`} className={styles.screen}>
-      <h1 className={styles.visuallyHidden}>{screen.label}</h1>
+    <section aria-label={t("{name} workspace", { name: label })} className={styles.screen}>
+      <h1 className={styles.visuallyHidden}>{label}</h1>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 /** Valid edits reach Save immediately; a focus session remains one undo step. */
 export function QuotationTextCell({
@@ -27,6 +28,7 @@ export function QuotationTextCell({
   onEditStart?: () => void;
   onCancel?: () => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
   const starting = useRef(value);
@@ -38,7 +40,7 @@ export function QuotationTextCell({
     placeholder,
     autoFocus,
     title: invalid
-      ? "This field is required. Enter a value or press Escape to restore it."
+      ? t("This field is required. Enter a value or press Escape to restore it.")
       : value || label,
     value: draft ?? value,
     onFocus: () => {

@@ -1,8 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "@/lib/i18n/i18n-provider";
 import { companyProfileFixture } from "@/lib/workspace/company-profile";
 import { OnboardingFlow } from "./onboarding-flow";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }) }));
+// jsdom has no canvas: the welcome confetti would fail whenever a slow run lets its timer fire.
+vi.mock("canvas-confetti", () => ({ default: { create: () => Object.assign(() => undefined, { reset: () => undefined }) } }));
 
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
 
@@ -43,19 +48,19 @@ describe("OnboardingFlow", () => {
     expect(screen.getByRole('button', { name: 'Upload logo' })).toBeEnabled();
     expect(request).not.toHaveBeenCalled();
   });
-  it("switches Urdu to RTL without losing the company name or changing financial defaults", async () => {
+  it("switches Arabic to RTL without losing the company name or changing financial defaults", async () => {
     const user = userEvent.setup();
-    const { container } = render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" />);
+    const { container } = render(<I18nProvider language="en"><OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "not_started", currentStep: "workspace_profile", completedSteps: [], version: 1 }} isPreview userName="Katy Palmer" /></I18nProvider>);
     await user.clear(screen.getByRole("textbox", { name: "Company display name" }));
     await user.type(screen.getByRole("textbox", { name: "Company display name" }), "Palm Living");
     await user.click(screen.getByRole("button", { name: /Language/ }));
-    await user.click(screen.getByRole("option", { name: /Urdu/ }));
-    expect(container.querySelector('.wd-root')).toHaveAttribute('dir', 'rtl');
-    expect(container.querySelector('.wd-root')).toHaveAttribute('lang', 'ur');
-    expect(screen.getByRole("textbox", { name: "کمپنی کا نمایاں نام" })).toHaveValue("Palm Living");
-    await user.click(screen.getByRole('button', { name: 'محفوظ کریں اور جاری رکھیں' }));
-    expect((screen.getByRole('combobox', { name: 'بنیادی کرنسی' }) as HTMLInputElement).value).toContain(companyProfileFixture.workspace.defaultCurrency);
-    expect(document.cookie).toContain('wodana_language=ur');
+    await user.click(screen.getByRole("option", { name: /Arabic/ }));
+    await waitFor(() => expect(container.querySelector('.wd-root')).toHaveAttribute('dir', 'rtl'));
+    expect(container.querySelector('.wd-root')).toHaveAttribute('lang', 'ar');
+    expect(screen.getByRole("textbox", { name: "اسم الشركة المعروض" })).toHaveValue("Palm Living");
+    await user.click(screen.getByRole('button', { name: 'حفظ ومتابعة' }));
+    expect((screen.getByRole('combobox', { name: 'العملة الأساسية' }) as HTMLInputElement).value).toContain(companyProfileFixture.workspace.defaultCurrency);
+    expect(document.cookie).toContain('wodana_language=ar');
   });
   it("shows allocated seats separately and disables invites at capacity without blocking Continue", () => {
     render(<OnboardingFlow initialData={structuredClone(companyProfileFixture)} initialOnboarding={{ status: "in_progress", currentStep: "team", completedSteps: ["workspace_profile", "organization"], version: 3 }} seatCapacity={{ allocated: 5, reserved: 5, pending: 2 }} isPreview userName="Katy Palmer" />);

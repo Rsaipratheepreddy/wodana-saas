@@ -1,5 +1,6 @@
 import { personDisplayName } from "@/design-system/components/person";
 import type { CaseDesign, DesignOptions } from "./content";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 export type JourneyStageKey = "inspiration" | "site_visit" | "concepts" | "space_planning" | "material_selection" | "renders" | "approval";
 export const DELIVERABLE_STAGES: JourneyStageKey[] = ["space_planning", "concepts", "material_selection", "renders"];
@@ -21,9 +22,9 @@ export const STAGE_DOCUMENT_TYPE: Record<string, string> = {
   material_selection: "Material / finish board", renders: "3D render / visualization",
 };
 
-export const DESIGN_STATUS_LABEL: Record<string, string> = {
-  draft: "Draft", internal_review: "In review", internal_approved: "Ready to present", client_review: "With client",
-  approved: "Approved", changes_requested: "Changes requested", rejected: "Rejected", expired: "Client review expired",
+export const DESIGN_STATUS_LABEL: Record<string, MessageKey> = {
+  draft: tKey("Draft"), internal_review: tKey("In review"), internal_approved: tKey("Ready to present"), client_review: tKey("With client"),
+  approved: tKey("Approved"), changes_requested: tKey("Changes requested"), rejected: tKey("Rejected"), expired: tKey("Client review expired"),
 };
 export const designStatusTone = (status: string): "neutral" | "info" | "warning" | "success" | "danger" =>
   status === "approved" ? "success" : ["changes_requested", "rejected", "expired"].includes(status) ? "danger" : ["internal_review", "client_review"].includes(status) ? "info" : status === "internal_approved" ? "warning" : "neutral";
@@ -33,19 +34,22 @@ export const latestOf = (design: CaseDesign) => design.versions[0];
 /** What happens next on a design, as a translation key and its values. */
 export function nextStep(design: CaseDesign, options: Pick<DesignOptions, "reviewers">): { key: string; values?: Record<string, string> } {
   const latest = latestOf(design);
-  if (!latest) return { key: "Upload a file" };
-  if (latest.status === "draft") return { key: "Send for review" };
-  if (latest.status === "internal_review") return { key: "With {name}", values: { name: personDisplayName(options.reviewers.find((item) => item.id === latest.reviewerId)?.name) || "the reviewer" } };
-  if (latest.status === "internal_approved") return { key: "Present to the client" };
-  if (latest.status === "client_review") return { key: "Waiting for the client" };
-  if (latest.status === "approved") return { key: "Approved" };
-  return { key: "Upload a revision" };
+  if (!latest) return { key: tKey("Upload a file") };
+  if (latest.status === "draft") return { key: tKey("Send for review") };
+  if (latest.status === "internal_review") {
+    const name = personDisplayName(options.reviewers.find((item) => item.id === latest.reviewerId)?.name);
+    return name ? { key: tKey("With {name}"), values: { name } } : { key: tKey("With the reviewer") };
+  }
+  if (latest.status === "internal_approved") return { key: tKey("Present to the client") };
+  if (latest.status === "client_review") return { key: tKey("Waiting for the client") };
+  if (latest.status === "approved") return { key: tKey("Approved") };
+  return { key: tKey("Upload a revision") };
 }
 
 /** Stage progress wording as a translation key and its values: "2 of 3 approved", "Skipped", "Done". */
 export function stageDetail(stage: JourneyStageView): { key: string; values?: Record<string, number> } {
-  if (stage.status === "done") return { key: stage.progress && stage.progress.total === 0 && isDeliverableStage(stage.stage) ? "Skipped" : "Done" };
-  if (stage.status === "locked") return { key: "Not started" };
-  if (stage.progress && stage.progress.total) return { key: "{approved} of {total} approved", values: { approved: stage.progress.approved, total: stage.progress.total } };
-  return { key: stage.overdue ? "Overdue" : "In progress" };
+  if (stage.status === "done") return { key: stage.progress && stage.progress.total === 0 && isDeliverableStage(stage.stage) ? tKey("Skipped") : tKey("Done") };
+  if (stage.status === "locked") return { key: tKey("Not started") };
+  if (stage.progress && stage.progress.total) return { key: tKey("{approved} of {total} approved"), values: { approved: stage.progress.approved, total: stage.progress.total } };
+  return { key: stage.overdue ? tKey("Overdue") : tKey("In progress") };
 }

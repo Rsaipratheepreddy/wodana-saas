@@ -1,3 +1,5 @@
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
+
 export const homeWidgetIds = ["attention", "planning", "projects", "sales", "tools", "attendance"] as const;
 export type HomeWidgetId = typeof homeWidgetIds[number];
 export type HomeWidget = { id: HomeWidgetId; visible: boolean; wide: boolean };
@@ -22,10 +24,10 @@ export function homeActivityId(item: Record<string, unknown>): string | null {
   return match?.[1] ?? null;
 }
 
-export function homeActionLabel(item: Record<string, unknown>): string {
-  if (homeActivityId(item)) return "Update follow-up";
-  if (String(item.kind).includes("reply")) return "Reply to client";
-  if (String(item.kind).includes("lead") || item.kind === "sla_breach") return "Review enquiry";
-  if (String(item.kind).includes("opportunity")) return "Review deal";
-  return "View follow-ups";
+export function homeActionLabel(item: Record<string, unknown>): MessageKey {
+  if (homeActivityId(item)) return tKey("Update follow-up");
+  if (String(item.kind).includes("reply")) return tKey("Reply to client");
+  if (String(item.kind).includes("lead") || item.kind === "sla_breach") return tKey("Review enquiry");
+  if (String(item.kind).includes("opportunity")) return tKey("Review deal");
+  return tKey("View follow-ups");
 }

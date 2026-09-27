@@ -6,6 +6,7 @@ import { blankEntry, entryPayload, blankSpecification, caseRequest, specificatio
 import { CaseModal, CatalogChoiceField } from './case-controls';
 import styles from './case-content.module.css';
 import { MeasurementFields } from './measurement-fields';
+import { useT } from '@/lib/i18n/i18n-provider';
 
 type Props = {
   data: CaseContent;
@@ -18,6 +19,7 @@ type Props = {
 };
 
 export function MeasurementCreateForm({ data, entries, initialEntryId, initialRoom, onClose, onSaved }: Props) {
+  const t = useT();
   const [entryId, setEntryId] = useState(() => {
     if (initialEntryId) return initialEntryId;
     const matching = entries.filter(item => initialRoom === 'all' || item.roomId === initialRoom);
@@ -34,29 +36,29 @@ export function MeasurementCreateForm({ data, entries, initialEntryId, initialRo
   const dirty = Boolean(name || catalog || dimension.name || dimension.measured !== null || dimension.approximate !== null || dimension.evidence);
   const disabled = saving || !data.canEdit;
   const patch = (value: Partial<ItemDimension>) => setDimension(current => ({ ...current, ...value }));
-  return <CaseModal size="md" title="Add measurement" description="Choose what you measured and record its site size." dirty={dirty} busy={saving} onClose={onClose}
-    footer={data.canEdit && <Button type="submit" form="new-measurement-form" variant="primary" isLoading={saving}>Save measurement</Button>}>
+  return <CaseModal size="md" title={t("Add measurement")} description={t("Choose what you measured and record its site size.")} dirty={dirty} busy={saving} onClose={onClose}
+    footer={data.canEdit && <Button type="submit" form="new-measurement-form" variant="primary" isLoading={saving}>{t("Save measurement")}</Button>}>
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {<form id="new-measurement-form" onSubmit={async event => {
       event.preventDefault();
       if (disabled) return;
-      if (!selected && !name.trim()) { setError('Enter an item name or choose a catalog item.'); return; }
-      if (!dimension.name.trim() || dimension.measured === null || !Number.isFinite(dimension.measured) || dimension.measured <= 0) { setError('Choose a measurement type and enter its size.'); return; }
+      if (!selected && !name.trim()) { setError(t('Enter an item name or choose a catalog item.')); return; }
+      if (!dimension.name.trim() || dimension.measured === null || !Number.isFinite(dimension.measured) || dimension.measured <= 0) { setError(t('Choose a measurement type and enter its size.')); return; }
       const baseline = selected?.specification ?? blankSpecification();
-      if (baseline.dimensions.length >= 40) { setError('This item already has 40 measurements. Edit an existing measurement.'); return; }
+      if (baseline.dimensions.length >= 40) { setError(t('This item already has 40 measurements. Edit an existing measurement.')); return; }
       setSaving(true); setError('');
       try {
         const item = selected ?? created ?? await caseRequest<ScopeEntry>(data.workspaceId,data.caseId,'entries','PUT',entryPayload({...blankEntry(initialRoom==='all'?null:initialRoom),id:newId,title:name.trim(),catalogLinks:catalog?[{role:'work',recordId:catalog.id,snapshot:catalog}]:[]}));
         if(!selected) setCreated(item);
         const saved = await caseRequest<ItemSpecification>(data.workspaceId, data.caseId, `specifications/${item.id}`, 'PUT', specificationPayload({ ...baseline, dimensions: [...baseline.dimensions, { ...dimension, name: dimension.name.trim(), evidence: dimension.evidence.trim() }] }));
         onSaved(item, saved);
-      } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not save. Your measurement is still here.'); }
+      } catch (caught) { setError(caught instanceof Error ? caught.message : t('Could not save. Your measurement is still here.')); }
       finally { setSaving(false); }
     }}><fieldset disabled={disabled} className={styles.captureFields}>
-      {entries.length>0 && <SelectField label="Item" isDisabled={disabled||Boolean(created)} selectedKey={entryId || 'new'} onSelectionChange={key=>setEntryId(key==='new'?'':String(key))} items={[{id:'new',label:'New item'},...entries.map(item=>({id:item.id,label:item.title}))]}/>}
+      {entries.length>0 && <SelectField label={t('Item')} isDisabled={disabled||Boolean(created)} selectedKey={entryId || 'new'} onSelectionChange={key=>setEntryId(key==='new'?'':String(key))} items={[{id:'new',label:t('New item')},...entries.map(item=>({id:item.id,label:item.title}))]}/>}
       {!selected && <>
-        <CatalogChoiceField workspaceId={data.workspaceId} caseId={data.caseId} kind="work" label="Catalog item (optional)" disabled={disabled||Boolean(created)} value={catalog} onChange={value=>{setCatalog(value);if(value)setName(value.name);}}/>
-        <TextInput label="Item name" isRequired isDisabled={disabled||Boolean(created)} value={name} maxLength={240} onChange={setName} placeholder="e.g. Kitchen cabinet or bedroom wall"/>
+        <CatalogChoiceField workspaceId={data.workspaceId} caseId={data.caseId} kind="work" label={t("Catalog item (optional)")} disabled={disabled||Boolean(created)} value={catalog} onChange={value=>{setCatalog(value);if(value)setName(value.name);}}/>
+        <TextInput label={t("Item name")} isRequired isDisabled={disabled||Boolean(created)} value={name} maxLength={240} onChange={setName} placeholder={t("e.g. Kitchen cabinet or bedroom wall")}/>
       </>}
       <MeasurementFields value={dimension} onChange={patch} disabled={disabled} requireMeasured />
     </fieldset></form>}

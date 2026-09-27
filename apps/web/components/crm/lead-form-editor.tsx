@@ -4,6 +4,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import { DropIndicator, GridList, GridListItem, useDragAndDrop, type DropItem } from "react-aria-components";
 import { AlignLeft, ArrowDown, ArrowUp, CalendarDays, CheckSquare, ChevronDown, CircleDot, Copy, GripVertical, Hash, LockKeyhole, Mail, Phone, Plus, Trash2, Type } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { createCustomField, customEnquiryField, customFieldRef, fieldQuestion, type CustomEnquiryField, type EnquiryField, type EnquiryFieldType } from "@/lib/crm/enquiry-fields";
 import { CustomFieldSheet } from "./enquiry-fields-settings";
 import { Button, Checkbox, IconButton, SelectField, TextInput } from "@/design-system";
@@ -15,6 +16,8 @@ const QUESTION_ID = "application/x-wodana-form-question";
 const requiredFields = new Set(["displayName", "mobile", "emirate", "serviceType"]);
 const choiceTypes = new Set(["radio", "dropdown", "checkboxes"]);
 const fieldIcons = { text: Type, paragraph: AlignLeft, radio: CircleDot, checkboxes: CheckSquare, dropdown: ChevronDown, email: Mail, tel: Phone, number: Hash, date: CalendarDays, phone: Phone, select: ChevronDown, multi_select: CheckSquare };
+/** The question type names shown in the editor, by `formQuestionTypes` id. */
+const questionTypeLabels: Record<string, MessageKey> = { text: tKey("Short answer"), paragraph: tKey("Paragraph"), radio: tKey("Multiple choice"), checkboxes: tKey("Checkboxes"), dropdown: tKey("Dropdown"), email: tKey("Email"), tel: tKey("Phone number"), number: tKey("Number"), date: tKey("Date") };
 
 export function reorderQuestions(questions: LeadFormQuestion[], keys: Set<string>, target: string, position: "before" | "after") {
   if (keys.has(target) || !questions.some(question => question.id === target)) return questions;
@@ -31,6 +34,7 @@ export function reorderQuestions(questions: LeadFormQuestion[], keys: Set<string
  */
 export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onFieldCreated }: { draft: LeadFormSchema; setDraft: Dispatch<SetStateAction<LeadFormSchema | undefined>>; busy: boolean; fields: EnquiryField[]; workspaceId: string; onFieldCreated: (field: CustomEnquiryField) => void }) {
   const t = useT();
+  const questionTypes = formQuestionTypes.map(type => ({ ...type, label: questionTypeLabels[type.id] ? t(questionTypeLabels[type.id]) : type.label }));
   const [creating, setCreating] = useState(false);
   const available = fields.filter(field => field.visible && field.formField && !draft.questions.some(question => question.field === field.formField));
   const linkedName = (field?: string) => fields.find(item => item.formField === field)?.label;
@@ -61,7 +65,7 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
     const field = created ?? fields.find(item => item.key === key);
     if (busy || atLimit || (!copy && !field?.formField)) return;
     const question: LeadFormQuestion = copy
-      ? { ...structuredClone(copy), id: crypto.randomUUID(), field: "custom", title: `${copy.title} (copy)`, required: false }
+      ? { ...structuredClone(copy), id: crypto.randomUUID(), field: "custom", title: t("{title} (copy)", { title: copy.title }), required: false }
       : fieldQuestion(field!);
     setDraft(previous => {
       if (!previous || previous.questions.length >= 50) return previous;
@@ -71,7 +75,7 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
       return { ...previous, questions };
     });
     select(question.id);
-    setAnnouncement(`${question.title} added. Edit its label in Field settings.`);
+    setAnnouncement(t("{name} added. Edit its label in Field settings.", { name: question.title }));
   };
   const insert = async (items: DropItem[], target?: { id: string; position: string }) => {
     const item = items.find(item => item.kind === "text" && item.types.has(FIELD_TYPE));
@@ -94,10 +98,10 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
       if (event.target.dropPosition === "on") return;
       const position = event.target.dropPosition;
       setDraft(previous => previous && ({ ...previous, questions: reorderQuestions(previous.questions, new Set([...event.keys].map(String)), String(event.target.key), position) }));
-      setAnnouncement("Field order updated.");
+      setAnnouncement(t("Field order updated."));
     },
     renderDropIndicator: target => <DropIndicator target={target} className={styles.dropIndicator} />,
-    renderDragPreview: items => <div className={styles.dragPreview}><GripVertical size={16} />{String(items[0]?.["text/plain"] ?? "Field")}</div>,
+    renderDragPreview: items => <div className={styles.dragPreview}><GripVertical size={16} />{String(items[0]?.["text/plain"] ?? t("Field"))}</div>,
   });
   const updateQuestion = (id: string, changes: Partial<LeadFormQuestion>) => setDraft(previous => previous && ({ ...previous, questions: previous.questions.map(question => question.id === id ? { ...question, ...changes } : question) }));
   const move = (question: LeadFormQuestion, direction: number) => {
@@ -105,13 +109,13 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
     const target = draft.questions[index + direction];
     if (!target || busy) return;
     setDraft(previous => previous && ({ ...previous, questions: reorderQuestions(previous.questions, new Set([question.id]), target.id, direction < 0 ? "before" : "after") }));
-    setAnnouncement(`${question.title} moved ${direction < 0 ? "up" : "down"}.`);
+    setAnnouncement(direction < 0 ? t("{name} moved up.", { name: question.title }) : t("{name} moved down.", { name: question.title }));
   };
   const remove = (question: LeadFormQuestion, index: number) => {
     if (busy || requiredFields.has(question.field ?? "")) return;
     setDraft(previous => previous && ({ ...previous, questions: previous.questions.filter(item => item.id !== question.id) }));
     if (selected === question.id) setSelected(draft.questions[index - 1]?.id ?? draft.questions[index + 1]?.id ?? "");
-    setAnnouncement(`${question.title || "Field"} deleted.`);
+    setAnnouncement(question.title ? t("{name} deleted.", { name: question.title }) : t("Field deleted."));
   };
   return <div className={styles.editorLayout}>
     <aside className={styles.fieldPalette} aria-label={t("Enquiry fields")}>
@@ -126,49 +130,49 @@ export function LeadFormEditor({ draft, setDraft, busy, fields, workspaceId, onF
         }}
       </GridList>
       <Button size="compact" isDisabled={busy || atLimit} onPress={() => setCreating(true)}><Plus aria-hidden="true" size={14} />{t("New field")}</Button>
-      {atLimit && <p role="status" className={styles.hint}>50-field limit reached.</p>}
+      {atLimit && <p role="status" className={styles.hint}>{t("50-field limit reached.")}</p>}
     </aside>
-    <section className={styles.formCanvas} aria-label="Form fields">
+    <section className={styles.formCanvas} aria-label={t("Form fields")}>
       <div className={styles.formIntro}>
-        <input className={styles.formTitle} aria-label="Form title" placeholder="Add a form title" value={draft.title} maxLength={160} disabled={busy} onChange={event => { const title = event.target.value; setDraft(previous => previous && ({ ...previous, title })); }} />
-        <textarea className={styles.formDescription} aria-label="Form description" placeholder="Add a description or instructions for your form" rows={2} value={draft.description} maxLength={2000} disabled={busy} onChange={event => { const description = event.target.value; setDraft(previous => previous && ({ ...previous, description })); }} />
+        <input className={styles.formTitle} aria-label={t("Form title")} placeholder={t("Add a form title")} value={draft.title} maxLength={160} disabled={busy} onChange={event => { const title = event.target.value; setDraft(previous => previous && ({ ...previous, title })); }} />
+        <textarea className={styles.formDescription} aria-label={t("Form description")} placeholder={t("Add a description or instructions for your form")} rows={2} value={draft.description} maxLength={2000} disabled={busy} onChange={event => { const description = event.target.value; setDraft(previous => previous && ({ ...previous, description })); }} />
       </div>
-      <GridList aria-label="Reorder form fields" className={styles.questionList} items={draft.questions} dragAndDropHooks={questionDrag} dependencies={[selected, busy, newQuestion, draft.questions]} keyboardNavigationBehavior="tab" renderEmptyState={() => <p>{t("Drop an enquiry field here.")}</p>}>
+      <GridList aria-label={t("Reorder form fields")} className={styles.questionList} items={draft.questions} dragAndDropHooks={questionDrag} dependencies={[selected, busy, newQuestion, draft.questions]} keyboardNavigationBehavior="tab" renderEmptyState={() => <p>{t("Drop an enquiry field here.")}</p>}>
         {question => {
           const index = draft.questions.findIndex(item => item.id === question.id);
           const required = requiredFields.has(question.field ?? "");
           const linked = Boolean(question.field && question.field !== "custom");
-          return <GridListItem id={question.id} textValue={question.title || "Untitled field"} className={styles.questionCard} data-editing={selected === question.id || undefined}>
+          return <GridListItem id={question.id} textValue={question.title || t("Untitled field")} className={styles.questionCard} data-editing={selected === question.id || undefined}>
             <div className={styles.questionTop}>
-              <IconButton slot="drag" className={styles.dragHandle} aria-label={`Drag ${question.title || "field"} to reorder`} isDisabled={busy}><GripVertical size={17} /></IconButton>
+              <IconButton slot="drag" className={styles.dragHandle} aria-label={question.title ? t("Drag {name} to reorder", { name: question.title }) : t("Drag field to reorder")} isDisabled={busy}><GripVertical size={17} /></IconButton>
               <Button variant="quiet" className={styles.questionSelect} isDisabled={busy} onPress={() => setSelected(question.id)} aria-expanded={selected === question.id}>
-                <span className={styles.fieldNumber}>{index + 1}</span><span>{question.title || "Untitled field"}{question.required ? " *" : ""}<small>{formQuestionTypes.find(type => type.id === question.type)?.label}</small></span>
+                <span className={styles.fieldNumber}>{index + 1}</span><span>{question.title || t("Untitled field")}{question.required ? " *" : ""}<small>{questionTypes.find(type => type.id === question.type)?.label}</small></span>
               </Button>
-              {required && <span title="Required enquiry detail" className={styles.lockedField}><LockKeyhole size={13} /><span className="wd-visually-hidden">Required enquiry detail</span></span>}
-              <IconButton aria-label={`Move ${question.title || "field"} up`} size="compact" isDisabled={index === 0 || busy} onPress={() => move(question, -1)}><ArrowUp size={14} /></IconButton>
-              <IconButton aria-label={`Move ${question.title || "field"} down`} size="compact" isDisabled={index === draft.questions.length - 1 || busy} onPress={() => move(question, 1)}><ArrowDown size={14} /></IconButton>
-              {!required && <Button size="compact" variant="quiet" className={styles.deleteField} aria-label={`Delete ${question.title || "field"}`} isDisabled={busy} onPress={() => remove(question, index)}><Trash2 size={15} /><span>Delete</span></Button>}
+              {required && <span title={t("Required enquiry detail")} className={styles.lockedField}><LockKeyhole size={13} /><span className="wd-visually-hidden">{t("Required enquiry detail")}</span></span>}
+              <IconButton aria-label={question.title ? t("Move {name} up", { name: question.title }) : t("Move field up")} size="compact" isDisabled={index === 0 || busy} onPress={() => move(question, -1)}><ArrowUp size={14} /></IconButton>
+              <IconButton aria-label={question.title ? t("Move {name} down", { name: question.title }) : t("Move field down")} size="compact" isDisabled={index === draft.questions.length - 1 || busy} onPress={() => move(question, 1)}><ArrowDown size={14} /></IconButton>
+              {!required && <Button size="compact" variant="quiet" className={styles.deleteField} aria-label={question.title ? t("Delete {name}", { name: question.title }) : t("Delete field")} isDisabled={busy} onPress={() => remove(question, index)}><Trash2 size={15} /><span>{t("Delete")}</span></Button>}
             </div>
             <div className={styles.fieldExample} aria-hidden="true">
-              <p>{question.description || "Add help text for this field"}</p>
-              <div data-type={question.type}>{choiceTypes.has(question.type) ? question.options.map(option => option.label).join(" · ") || "Select an option" : question.type === "date" ? "Select a date" : "Answer will be written here"}{question.type === "dropdown" && <ChevronDown size={14} />}</div>
+              <p>{question.description || t("Add help text for this field")}</p>
+              <div data-type={question.type}>{choiceTypes.has(question.type) ? question.options.map(option => option.label).join(" · ") || t("Select an option") : question.type === "date" ? t("Select a date") : t("Answer will be written here")}{question.type === "dropdown" && <ChevronDown size={14} />}</div>
             </div>
             {selected === question.id && <fieldset disabled={busy} className={styles.inlineQuestionEditor}>
               <div className={styles.questionFields}>
-                <TextInput label="Field label" value={question.title} maxLength={240} autoFocus={newQuestion === question.id} onChange={title => updateQuestion(question.id, { title })} />
-                {linked ? <div className={styles.linkedType}><span>Field type</span><strong>{formQuestionTypes.find(type => type.id === question.type)?.label}</strong></div> : <SelectField label="Field type" items={formQuestionTypes} selectedKey={question.type} onSelectionChange={key => { const type = String(key); updateQuestion(question.id, { type, options: choiceTypes.has(type) ? question.options.length ? question.options : [1, 2].map(number => ({ id: crypto.randomUUID(), label: `Option ${number}` })) : [] }); }} />}
+                <TextInput label={t("Field label")} value={question.title} maxLength={240} autoFocus={newQuestion === question.id} onChange={title => updateQuestion(question.id, { title })} />
+                {linked ? <div className={styles.linkedType}><span>{t("Field type")}</span><strong>{questionTypes.find(type => type.id === question.type)?.label}</strong></div> : <SelectField label={t("Field type")} items={questionTypes} selectedKey={question.type} onSelectionChange={key => { const type = String(key); updateQuestion(question.id, { type, options: choiceTypes.has(type) ? question.options.length ? question.options : [1, 2].map(number => ({ id: crypto.randomUUID(), label: t("Option {number}", { number }) })) : [] }); }} />}
               </div>
-              <TextInput label="Help text · optional" value={question.description} maxLength={1000} onChange={description => updateQuestion(question.id, { description })} />
+              <TextInput label={t("Help text · optional")} value={question.description} maxLength={1000} onChange={description => updateQuestion(question.id, { description })} />
               {choiceTypes.has(question.type) && <div className={styles.optionList}>
-                {linked ? <><p className={styles.hint}>{t("Choices come from Settings → Fields.")}</p><p className={styles.choiceSummary}>{question.options.map(option => option.label).join(" · ") || "No choices configured yet."}</p></> : <>
-                  {question.options.map((option, optionIndex) => <div className={styles.optionRow} key={option.id}><TextInput label={`Option ${optionIndex + 1}`} value={option.label} maxLength={160} onChange={label => updateQuestion(question.id, { options: question.options.map(item => item.id === option.id ? { ...item, label } : item) })} /><IconButton aria-label={`Remove option ${optionIndex + 1}`} onPress={() => updateQuestion(question.id, { options: question.options.filter(item => item.id !== option.id) })}><Trash2 size={14} /></IconButton></div>)}
-                  <Button size="compact" variant="quiet" isDisabled={question.options.length >= 50} onPress={() => updateQuestion(question.id, { options: [...question.options, { id: crypto.randomUUID(), label: `Option ${question.options.length + 1}` }] })}><Plus size={14} />Add option</Button>
+                {linked ? <><p className={styles.hint}>{t("Choices come from Settings → Fields.")}</p><p className={styles.choiceSummary}>{question.options.map(option => option.label).join(" · ") || t("No choices configured yet.")}</p></> : <>
+                  {question.options.map((option, optionIndex) => <div className={styles.optionRow} key={option.id}><TextInput label={t("Option {number}", { number: optionIndex + 1 })} value={option.label} maxLength={160} onChange={label => updateQuestion(question.id, { options: question.options.map(item => item.id === option.id ? { ...item, label } : item) })} /><IconButton aria-label={t("Remove option {number}", { number: optionIndex + 1 })} onPress={() => updateQuestion(question.id, { options: question.options.filter(item => item.id !== option.id) })}><Trash2 size={14} /></IconButton></div>)}
+                  <Button size="compact" variant="quiet" isDisabled={question.options.length >= 50} onPress={() => updateQuestion(question.id, { options: [...question.options, { id: crypto.randomUUID(), label: t("Option {number}", { number: question.options.length + 1 }) }] })}><Plus size={14} />{t("Add option")}</Button>
                 </>}
               </div>}
               {linked ? <p className={styles.hint}>{t("Saves to")} · {linkedName(question.field) ?? t("A removed field")}{required ? ` · ${t("Required")}` : ""}</p> : <div className={styles.hint}>{t("Not saved to the enquiry yet.")} <Button size="compact" isLoading={linking === question.id} isDisabled={busy || (choiceTypes.has(question.type) && !question.options.some(option => option.label.trim()))} onPress={() => void makeField(question)}>{t("Make it a field")}</Button>{linkError && linking === null ? <span role="alert"> {linkError}</span> : null}</div>}
               <footer className={styles.questionFooter}>
-                <Checkbox isSelected={question.required} isDisabled={required || busy} onChange={value => updateQuestion(question.id, { required: value })}>Required</Checkbox>
-                {!linked && <Button size="compact" variant="quiet" isDisabled={atLimit || busy} onPress={() => add(question.type, { id: question.id, position: "after" }, question)}><Copy size={14} />Duplicate</Button>}
+                <Checkbox isSelected={question.required} isDisabled={required || busy} onChange={value => updateQuestion(question.id, { required: value })}>{t("Required")}</Checkbox>
+                {!linked && <Button size="compact" variant="quiet" isDisabled={atLimit || busy} onPress={() => add(question.type, { id: question.id, position: "after" }, question)}><Copy size={14} />{t("Duplicate")}</Button>}
               </footer>
             </fieldset>}
           </GridListItem>;

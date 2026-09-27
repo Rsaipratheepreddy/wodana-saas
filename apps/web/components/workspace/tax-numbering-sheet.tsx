@@ -12,7 +12,7 @@ const DIGITS = [3, 4, 5, 6, 7, 8].map((value) => ({ id: String(value), label: St
 async function send<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   const payload = await response.json().catch(() => null) as { message?: string } | null;
-  if (!response.ok) throw new Error(payload?.message ?? "Something went wrong. Try again.");
+  if (!response.ok) throw new Error(payload?.message ?? "");
   return payload as T;
 }
 
@@ -25,8 +25,8 @@ export function TaxNumberingSheet({ workspaceId, entityId, entityName, canManage
   const load = useCallback(async () => {
     setLoadError("");
     try { setData(await send<TaxNumbering>(`/api/workspace/legal-entities/${entityId}/tax-numbering?workspaceId=${workspaceId}`)); }
-    catch (error) { setLoadError(error instanceof Error ? error.message : ""); }
-  }, [entityId, workspaceId]);
+    catch (error) { setLoadError((error instanceof Error && error.message) || t("Something went wrong. Try again.")); }
+  }, [entityId, workspaceId, t]);
   const toggle = (next: boolean) => { setOpen(next); if (next && !data) void load(); };
 
   return <SideSheet isOpen={open} onOpenChange={toggle} size="lg" title={t("Tax & numbering")} description={entityName}
@@ -61,7 +61,7 @@ function TaxSection({ data, canManage, workspaceId, entityId, onSaved }: { data:
         body: JSON.stringify({ workspaceId, version: data.tax?.version, pricesIncludeTax, rates: rates.map((rate) => ({ ...rate, code: rate.code || rate.label })) }),
       });
       onSaved(next); setMessage({ tone: "success", text: t("Saved. New rates apply from now; issued documents keep theirs.") });
-    } catch (error) { setMessage({ tone: "error", text: error instanceof Error ? error.message : "" }); }
+    } catch (error) { setMessage({ tone: "error", text: (error instanceof Error && error.message) || t("Something went wrong. Try again.") }); }
     finally { setSaving(false); }
   };
 
@@ -107,7 +107,7 @@ function NumberingSection({ data, canManage, workspaceId, entityId, onSaved }: {
       }
       if (next) { onSaved(next); setRows(next.numbering); }
       setMessage({ tone: "success", text: t("Numbering saved.") });
-    } catch (error) { setMessage({ tone: "error", text: error instanceof Error ? error.message : "" }); }
+    } catch (error) { setMessage({ tone: "error", text: (error instanceof Error && error.message) || t("Something went wrong. Try again.") }); }
     finally { setSaving(false); }
   };
 

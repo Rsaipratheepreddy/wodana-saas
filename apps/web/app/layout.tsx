@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { RouteFade } from "@/components/route-fade";
 import { BlockedSaveBoundary } from "@/design-system/foundations/blocked-save-alert";
 import { I18nProvider } from "@/lib/i18n/i18n-provider";
-import { LANGUAGE_COOKIE, languageDirection, resolveLanguage } from "@/lib/i18n/languages";
+import { languageDirection } from "@/lib/i18n/languages";
+import { dictionaryFor } from "@/lib/i18n/messages";
+import { getServerLanguage } from "@/lib/i18n/server";
 import { fontVariables } from "./fonts";
 import "./globals.css";
 
@@ -13,8 +14,9 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  // The document follows the chosen language; screens that are not yet translated set their own direction.
-  const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
+  // The document follows the chosen language (the language cookie); the workspace layout refines it for a
+  // signed-in person who has not chosen on this device yet.
+  const language = await getServerLanguage();
   return (
     <html
       className={fontVariables}
@@ -24,7 +26,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       lang={language}
     >
       <body data-app-root>
-        <I18nProvider language={language}><BlockedSaveBoundary>{children}</BlockedSaveBoundary></I18nProvider>
+        <I18nProvider dictionary={dictionaryFor(language)} language={language}><BlockedSaveBoundary>{children}</BlockedSaveBoundary></I18nProvider>
         <RouteFade />
       </body>
     </html>

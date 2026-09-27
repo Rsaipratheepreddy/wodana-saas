@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 /** Purchasing: suppliers, what projects need to order, purchase orders, deliveries and their settings. */
 function allowed(path: string[], method: string) {
@@ -32,32 +33,33 @@ function allowed(path: string[], method: string) {
 }
 
 async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
+  const t = await getServerT();
   const { path } = await params;
   const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? "";
-  if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: "Invalid purchasing resource." }, { status: 400 });
+  if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid purchasing resource.") }, { status: 400 });
   // Delivery photos and supplier documents stream back as files.
   if (path[0] === "photos" || path[0] === "supplier-documents") {
     const preview = path[0] === "photos" && new URL(request.url).searchParams.get("preview") === "1";
     const result = await authenticatedBackendFetch(`/workspaces/${workspaceId}/purchasing/${path[0]}/${path[1]}${preview ? "?preview=1" : ""}`, { cache: "no-store" });
-    if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: "The photo could not be loaded." }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
+    if (result.unauthenticated || !result.upstream || !result.upstream.ok) return NextResponse.json({ message: t("The photo could not be loaded.") }, { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503 });
     const response = new NextResponse(result.upstream.body, { status: 200, headers: { "content-type": result.upstream.headers.get("content-type") ?? "application/octet-stream",
       "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" } });
     applyRotatedSession(response, result.rotatedSession);
     return response;
   }
-  if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: "Use your workspace to make this change." }, { status: 403 });
+  if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: t("Use your workspace to make this change.") }, { status: 403 });
   if (path[2] === "photos" || path[4] === "file") {
-    if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: "Choose a file up to 20 MB." }, { status: 400 });
+    if (Number(request.headers.get("content-length")) > 21 * 1024 * 1024) return NextResponse.json({ message: t("Choose a file up to 20 MB.") }, { status: 400 });
     const input = await request.formData().catch(() => null);
     const file = input?.get("file");
     const allowed = (type: string) => type.startsWith("image/") || (path[4] === "file" && type === "application/pdf");
-    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !allowed(file.type)) return NextResponse.json({ message: "Choose a photo or PDF up to 20 MB." }, { status: 400 });
+    if (!(file instanceof File) || !file.size || file.size > 20 * 1024 * 1024 || !allowed(file.type)) return NextResponse.json({ message: t("Choose a photo or PDF up to 20 MB.") }, { status: 400 });
     const body = new FormData(); body.set("file", file);
-    return workspaceJsonResponse(`/workspaces/${workspaceId}/purchasing/${path.join("/")}`, { method: "POST", body }, "The photo could not be uploaded.");
+    return workspaceJsonResponse(`/workspaces/${workspaceId}/purchasing/${path.join("/")}`, { method: "POST", body }, t("The photo could not be uploaded."));
   }
   const body = request.method === "GET" ? undefined : await request.text();
-  if (body && body.length > 2_000_000) return NextResponse.json({ message: "The request is too large." }, { status: 413 });
+  if (body && body.length > 2_000_000) return NextResponse.json({ message: t("The request is too large.") }, { status: 413 });
   return workspaceJsonResponse(`/workspaces/${workspaceId}/purchasing/${path.join("/")}`,
-    { method: request.method, headers: { "content-type": "application/json" }, body }, "Could not save.");
+    { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not save."));
 }
 export { handle as GET, handle as POST, handle as PUT };

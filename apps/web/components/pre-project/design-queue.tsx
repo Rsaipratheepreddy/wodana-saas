@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { DataGrid, EmptyState, useDesignSystem, type DataGridColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey } from "@/lib/i18n/keys";
 import type { DesignQueueItem } from "@/lib/pre-project/server";
 
-const STEP_LABEL: Record<DesignQueueItem["step"], string> = { review: "Review", record_client: "Record client decision", present: "Present to client", revise: "Upload a revision" };
-const STAGE_LABEL: Record<string, string> = { space_planning: "Space planning", concepts: "Concepts", material_selection: "Material selection", renders: "3D renders" };
+const STEP_LABEL: Record<DesignQueueItem["step"], string> = { review: tKey("Review"), record_client: tKey("Record client decision"), present: tKey("Present to client"), revise: tKey("Upload a revision") };
+const STAGE_LABEL: Record<string, string> = { space_planning: tKey("Space planning"), concepts: tKey("Concepts"), material_selection: tKey("Material selection"), renders: tKey("3D renders") };
 
 /** Home → Approvals → Designs: what's waiting on me; each row opens the drawing in Design. */
 export function DesignQueue({ items, error }: { items: DesignQueueItem[]; error?: string }) {

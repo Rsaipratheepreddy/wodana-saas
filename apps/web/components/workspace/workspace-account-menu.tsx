@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button as AriaButton, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { Avatar } from "@/design-system";
+import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceUser } from "./workspace-navigation";
 import styles from "./workspace.module.css";
@@ -35,20 +36,20 @@ export function WorkspaceAccountMenu({ user }: { user: WorkspaceUser }) {
     <div className={styles.accountMenu}>
       <DialogTrigger>
         <AriaButton
-          aria-label={`Account menu for ${user.name}`}
+          aria-label={t("Account menu for {name}", { name: user.name })}
           className={styles.accountButton}
         >
           <span aria-hidden="true" className={styles.avatar}><Avatar name={user.name} preset={user.avatarPreset} seed={user.id} src={user.avatarUrl} /></span>
         </AriaButton>
         <Popover className={styles.userPopover} offset={8} placement="bottom end">
-          <Dialog aria-label="Account menu" className={styles.accountDialog}>
+          <Dialog aria-label={t("Account menu")} className={styles.accountDialog}>
             {({ close }) => (
               <>
                 <div className={styles.accountSummary}>
                   <span aria-hidden="true" className={styles.avatar}><Avatar name={user.name} preset={user.avatarPreset} seed={user.id} src={user.avatarUrl} /></span>
                   <span>
                     <strong>{user.name}</strong>
-                    <small>{user.email}</small>
+                    <small dir="ltr">{user.email}</small>
                   </span>
                 </div>
                 <Link href="/workspace/settings/profile" onClick={close}>
@@ -57,6 +58,7 @@ export function WorkspaceAccountMenu({ user }: { user: WorkspaceUser }) {
                 <Link href="/workspace/settings/security" onClick={close}>
                   <ShieldCheck aria-hidden="true" size={16} /> {t("Sign-in security")}
                 </Link>
+                <LanguageSelect className={styles.accountLanguage} compact label={null} />
                 <button
                   className={styles.accountAction}
                   disabled={isSigningOut}

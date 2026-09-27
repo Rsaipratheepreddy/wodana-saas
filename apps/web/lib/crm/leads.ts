@@ -1,3 +1,4 @@
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { EnquiryFieldsState } from "./enquiry-fields";
 import type { LeadOptions, EnquiryDetails } from "./lead-options";
 
@@ -27,18 +28,18 @@ export const CRM_LEAD_TRANSITIONS: Record<CrmLeadStatus, CrmLeadStatus[]> = {
   duplicate: [],
 };
 
-// Keep persisted legacy values readable; the product exposes four stages.
+// Keep persisted legacy values readable; the product exposes four stages. Labels are keys: translate with t().
 export const CRM_LEAD_STAGES = [
-  { id: "new", label: "New" },
-  { id: "connected", label: "Contacted" },
-  { id: "qualified", label: "Qualified" },
-  { id: "disqualified", label: "Disqualified" },
+  { id: "new", label: tKey("New") },
+  { id: "connected", label: tKey("Contacted") },
+  { id: "qualified", label: tKey("Qualified") },
+  { id: "disqualified", label: tKey("Disqualified") },
 ] as const;
 export function leadStage(status: string): "new" | "connected" | "qualified" | "disqualified" {
   return status === "new" || status === "qualified" || status === "disqualified" ? status : "connected";
 }
-export function leadStageLabel(status: string) {
-  if (status === "duplicate") return "Duplicate";
+export function leadStageLabel(status: string): MessageKey {
+  if (status === "duplicate") return tKey("Duplicate");
   return CRM_LEAD_STAGES.find((stage) => stage.id === leadStage(status))!.label;
 }
 export function leadStageOptions(status: string) {

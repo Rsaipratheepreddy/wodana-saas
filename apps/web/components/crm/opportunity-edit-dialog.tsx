@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 import { parseDate } from "@internationalized/date";
 import { Button, ControlledModalDialog, DateField, InlineNotice, NumericInput, SelectField, TextInput } from "@/design-system";
 import { crmRequest, type RecordData } from "@/lib/crm/client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import styles from "./crm-workbench.module.css";
 
@@ -24,6 +26,7 @@ const localDate = (value: unknown) => localDateTime(value).slice(0, 10);
 export function OpportunityEditDialog({ workspaceId, opportunity, members, onClose, onSaved }: {
   workspaceId: string; opportunity: RecordData; members: Member[]; onClose: () => void; onSaved: () => Promise<void>;
 }) {
+  const t = useT();
   const currency = String(opportunity.currencyCode ?? opportunity.currency_code ?? "");
   const hasValue = opportunity.amount !== undefined;
   const [title, setTitle] = useState(String(opportunity.title ?? ""));
@@ -36,10 +39,10 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!title.trim()) { setError("Give the opportunity a title."); return; }
-    if (hasValue && Number.isFinite(amount) && amount < 0) { setError("The value can't be negative."); return; }
+    if (!title.trim()) { setError(t("Give the opportunity a title.")); return; }
+    if (hasValue && Number.isFinite(amount) && amount < 0) { setError(t("The value can't be negative.")); return; }
     const [followDate, followTime] = followUp.split("T");
-    if (Boolean(followDate) !== Boolean(followTime)) { setError("Choose both a date and a time for the follow-up, or clear both."); return; }
+    if (Boolean(followDate) !== Boolean(followTime)) { setError(t("Choose both a date and a time for the follow-up, or clear both.")); return; }
     setSaving(true); setError("");
     try {
       await crmRequest(workspaceId, `opportunities/${opportunity.id}`, "PATCH", {
@@ -51,22 +54,22 @@ export function OpportunityEditDialog({ workspaceId, opportunity, members, onClo
       });
       await onSaved();
       onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save."); setSaving(false); }
+    } catch (cause) { setError(cause instanceof Error ? translateKnown(t, cause.message) : t("Could not save.")); setSaving(false); }
   };
 
-  return <ControlledModalDialog isOpen isDismissable={!saving} onOpenChange={(open) => { if (!open && !saving) onClose(); }} size="md" title="Edit opportunity"
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>Cancel</Button><Button type="submit" form="edit-opportunity" variant="primary" isLoading={saving}>Save</Button></div>}>
+  return <ControlledModalDialog isOpen isDismissable={!saving} onOpenChange={(open) => { if (!open && !saving) onClose(); }} size="md" title={t("Edit opportunity")}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose} isDisabled={saving}>{t("Cancel")}</Button><Button type="submit" form="edit-opportunity" variant="primary" isLoading={saving}>{t("Save")}</Button></div>}>
     <form id="edit-opportunity" className={styles.editOpportunity} onSubmit={save}>
       {error ? <InlineNotice tone="error" message={error} /> : null}
-      <TextInput isRequired label="Title" maxLength={240} value={title} onChange={setTitle} />
+      <TextInput isRequired label={t("Title")} maxLength={240} value={title} onChange={setTitle} />
       <div className={styles.editRow}>
-        {hasValue ? <NumericInput label={currency ? `Value (${currency})` : "Value"} minValue={0} value={amount} onChange={setAmount} formatOptions={{ maximumFractionDigits: 2 }} /> : null}
-        <SelectField label="Sales owner" items={members} selectedKey={owner || null} onSelectionChange={(key) => setOwner(String(key ?? ""))} />
+        {hasValue ? <NumericInput label={currency ? t("Value ({currency})", { currency }) : t("Value")} minValue={0} value={amount} onChange={setAmount} formatOptions={{ maximumFractionDigits: 2 }} /> : null}
+        <SelectField label={t("Sales owner")} items={members} selectedKey={owner || null} onSelectionChange={(key) => setOwner(String(key ?? ""))} />
       </div>
       <div className={styles.editRow}>
-        <DateField label="Expected close" value={closeDate ? parseDate(closeDate) : null} onChange={(next) => setCloseDate(next?.toString() ?? "")} />
+        <DateField label={t("Expected close")} value={closeDate ? parseDate(closeDate) : null} onChange={(next) => setCloseDate(next?.toString() ?? "")} />
       </div>
-      <CrmDateTimeField label="Next follow-up" value={followUp} onChange={setFollowUp} />
+      <CrmDateTimeField label={t("Next follow-up")} value={followUp} onChange={setFollowUp} />
     </form>
   </ControlledModalDialog>;
 }

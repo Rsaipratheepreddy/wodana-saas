@@ -4,13 +4,15 @@ import { useRef, useState } from "react";
 import { today, type CalendarDate } from "@internationalized/date";
 import { Badge, Button, Checkbox, DateField, InlineNotice, SelectField, TextAreaField, TextInput, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { caseRequest, type CaseAsset, type CaseContent, type CaseDesign, type CaseRoom, type DesignOptions } from "@/lib/pre-project/content";
 import { DESIGN_STATUS_LABEL, DELIVERABLE_STAGES, designStatusTone, latestOf } from "@/lib/pre-project/design-workspace";
 import { RoomField } from "./room-manager";
 import styles from "./design-workspace.module.css";
 
 type Mode = null | "review" | "send_back" | "present" | "client_approved" | "client_changes" | "details";
-const SOURCES = [{ id: "meeting", label: "In a meeting" }, { id: "email", label: "By email" }, { id: "phone", label: "By phone" }, { id: "document", label: "Signed document" }];
+const SOURCES = [{ id: "meeting", label: tKey("In a meeting") }, { id: "email", label: tKey("By email") }, { id: "phone", label: tKey("By phone") }, { id: "document", label: tKey("Signed document") }];
+const STAGE_LABELS: Record<string, MessageKey> = { space_planning: tKey("Space planning"), concepts: tKey("Concepts"), material_selection: tKey("Material selection"), renders: tKey("3D renders") };
 
 /**
  * The review steps for a design's latest revision, shown beside the drawing: send for review,
@@ -98,7 +100,7 @@ export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: 
     {mode === "details" ? <div className={styles.actionForm}>
       <TextInput isRequired label={t("Title")} maxLength={240} value={title} onChange={setTitle} />
       <RoomField data={data} value={roomId} isDisabled={locked} onChange={(room) => setRoomId(room.id)} onRoomAdded={(room) => onRoomAdded?.(room)} />
-      <SelectField label={t("Stage")} isDisabled={locked} items={DELIVERABLE_STAGES.map((id) => ({ id, label: t(({ space_planning: "Space planning", concepts: "Concepts", material_selection: "Material selection", renders: "3D renders" } as Record<string, string>)[id] as never) }))} selectedKey={stage} onSelectionChange={(key) => setStage(key ? String(key) : null)} />
+      <SelectField label={t("Stage")} isDisabled={locked} items={DELIVERABLE_STAGES.map((id) => ({ id, label: t(STAGE_LABELS[id]) }))} selectedKey={stage} onSelectionChange={(key) => setStage(key ? String(key) : null)} />
       <div className={styles.actionRow}>
         <Button size="compact" variant="quiet" isDisabled={busy} onPress={() => void saveDetails(true)}>{t("Archive")}</Button>
         <span className={styles.spacer} />
@@ -128,7 +130,7 @@ export function DesignActions({ data, design, options, onUpdate, onRoomAdded }: 
     {mode === "client_approved" || mode === "client_changes" ? <div className={styles.actionForm}>
       <TextInput autoFocus isRequired label={t("Client")} maxLength={240} value={clientName} onChange={setClientName} />
       <div className={styles.actionPair}>
-        <SelectField label={t("How")} items={SOURCES.map((item) => ({ ...item, label: t(item.label as never) }))} selectedKey={source} onSelectionChange={(key) => key && setSource(String(key))} />
+        <SelectField label={t("How")} items={SOURCES.map((item) => ({ ...item, label: t(item.label) }))} selectedKey={source} onSelectionChange={(key) => key && setSource(String(key))} />
         <DateField label={t("When")} value={decidedOn} maxValue={today(timeZone)} onChange={(value) => value && setDecidedOn(value as CalendarDate)} />
       </div>
       <TextAreaField isRequired label={mode === "client_approved" ? t("What the client approved") : t("What the client wants changed")} value={note} onChange={setNote} />

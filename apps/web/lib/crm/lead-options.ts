@@ -1,3 +1,5 @@
+import { tKey } from "@/lib/i18n/keys";
+
 export type LeadOption = { id: string; label: string; allowedRoles?: string[] };
 export const UNRESOLVED_ENQUIRY_TYPE_ID = "not_sure";
 export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
@@ -24,6 +26,7 @@ export type EnquiryDetails = {
   internalNotes?: string; contact?: LeadContact;
   formAnswers?: Array<{ questionId: string; title: string; value: string | string[] }>;
 };
+/** The option's label; an empty value gives the "Not set" key (translate it with `translateKnown`). */
 export function leadOptionLabel(options: LeadOption[] | undefined, value: string | null | undefined) {
-  return options?.find(option => option.id === value)?.label ?? (value ? value.replaceAll("_", " ") : "Not set");
+  return options?.find(option => option.id === value)?.label ?? (value ? value.replaceAll("_", " ") : tKey("Not set"));
 }

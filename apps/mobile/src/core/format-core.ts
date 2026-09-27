@@ -9,7 +9,9 @@ const deviceZone = () => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
 };
 const safeLocale = (locale: string | null | undefined) => {
-  try { return new Intl.DateTimeFormat(locale || deviceLocale()).resolvedOptions().locale; } catch { return 'en'; }
+  const tag = locale || deviceLocale();
+  // The tag as given, not as resolved: an extension such as -u-nu-latn (Latin digits) must reach every formatter.
+  try { new Intl.DateTimeFormat(tag); return tag; } catch { return 'en'; }
 };
 const safeZone = (timeZone: string | null | undefined) => {
   const zone = timeZone || deviceZone();

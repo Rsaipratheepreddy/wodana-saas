@@ -1906,3 +1906,8 @@
 .flowHeader[data-navigation="chips"] .commercialSegment { min-height: var(--wd-control-sm); padding: 0 var(--wd-space-1); border-radius: 0; background: transparent; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 .flowHeader[data-navigation="chips"] .commercialSegment:hover { background: transparent; color: var(--wd-color-text); }
 .flowHeader[data-navigation="chips"] .commercialSegment[aria-current="page"] { background: transparent; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); box-shadow: inset 0 -2px 0 var(--wd-color-text); }
+
+/* Quick language switch in the account menu. */
+.accountLanguage {
+  padding: var(--wd-space-1) var(--wd-space-2);
+}

@@ -16,6 +16,7 @@ import {
   safeBackendMessage,
 } from "@/lib/auth/server";
 import { isSameOrigin, UUID } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const protectedActions = {
   setup: { path: "/security/mfa/totp/setup", needsCode: false },
@@ -46,11 +47,12 @@ function validSession(payload: unknown): payload is SessionPayload {
 }
 
 async function verifyChallenge(code: string) {
+  const t = await getServerT();
   const cookieStore = await cookies();
   const challengeToken = cookieStore.get(MFA_CHALLENGE_COOKIE)?.value;
   if (!challengeToken) {
     return NextResponse.json(
-      { message: "This verification request expired. Sign in again." },
+      { message: t("This verification request expired. Sign in again.") },
       { status: 410 },
     );
   }
@@ -67,14 +69,14 @@ async function verifyChallenge(code: string) {
     signal: AbortSignal.timeout(12_000),
   }).catch(() => null);
   if (!upstream) {
-    return NextResponse.json({ message: "Authentication service is unavailable." }, { status: 503 });
+    return NextResponse.json({ message: t("Authentication service is unavailable.") }, { status: 503 });
   }
   const payload = await upstream.json().catch(() => null);
   if (!upstream.ok) {
     const deviceLimit = upstream.status === 409 && payload?.code === "DEVICE_LIMIT_REACHED";
     const response = NextResponse.json(
       {
-        message: safeBackendMessage(payload, "The verification code could not be accepted."),
+        message: safeBackendMessage(payload, t("The verification code could not be accepted.")),
         ...(deviceLimit ? {
           code: payload.code,
           sessions: payload.sessions,
@@ -91,7 +93,7 @@ async function verifyChallenge(code: string) {
   }
   if (!validSession(payload)) {
     return NextResponse.json(
-      { message: "The sign-in service returned an incomplete session. Sign in again." },
+      { message: t("The sign-in service returned an incomplete session. Sign in again.") },
       { status: 502 },
     );
   }
@@ -131,9 +133,10 @@ async function protectedMfaAction(
   action: keyof typeof protectedActions,
   body: Record<string, unknown>,
 ) {
+  const t = await getServerT();
   const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : "";
   if (!UUID.test(workspaceId)) {
-    return NextResponse.json({ message: "A valid workspace is required." }, { status: 400 });
+    return NextResponse.json({ message: t("A valid workspace is required.") }, { status: 400 });
   }
   const definition = protectedActions[action];
   const result = await authenticatedBackendPost(definition.path, {
@@ -142,20 +145,20 @@ async function protectedMfaAction(
   });
   if (result.unauthenticated) {
     const response = NextResponse.json(
-      { message: "Your session has expired. Sign in again." },
+      { message: t("Your session has expired. Sign in again.") },
       { status: 401 },
     );
     applyRotatedSession(response, result.rotatedSession);
     return response;
   }
   if (!result.upstream) {
-    return NextResponse.json({ message: "The security service is unavailable." }, { status: 503 });
+    return NextResponse.json({ message: t("The security service is unavailable.") }, { status: 503 });
   }
   const payload = await result.upstream.json().catch(() => null);
   const response = NextResponse.json(
     result.upstream.ok
       ? payload
-      : { message: safeBackendMessage(payload, "The MFA request could not be completed.") },
+      : { message: safeBackendMessage(payload, t("The MFA request could not be completed.")) },
     { status: result.upstream.status },
   );
   applyRotatedSession(response, result.rotatedSession);
@@ -174,27 +177,28 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ action: string }> },
 ) {
+  const t = await getServerT();
   if (!isSameOrigin(request)) {
-    return NextResponse.json({ message: "Use the Wodana sign-in screen to continue." }, { status: 403 });
+    return NextResponse.json({ message: t("Use the Wodana sign-in screen to continue.") }, { status: 403 });
   }
   const action = (await params).action;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ message: "A valid MFA request is required." }, { status: 400 });
+  if (!body) return NextResponse.json({ message: t("A valid MFA request is required.") }, { status: 400 });
   if (action === "verify") {
     const code = typeof body.code === "string" ? body.code.trim() : "";
     if (code.length < 6 || code.length > 32) {
-      return NextResponse.json({ message: "Enter a valid authenticator or recovery code." }, { status: 400 });
+      return NextResponse.json({ message: t("Enter a valid authenticator or recovery code.") }, { status: 400 });
     }
     return verifyChallenge(code);
   }
   if (!(action in protectedActions)) {
-    return NextResponse.json({ message: "Unknown MFA action." }, { status: 404 });
+    return NextResponse.json({ message: t("Unknown MFA action.") }, { status: 404 });
   }
   const protectedAction = action as keyof typeof protectedActions;
   if (protectedActions[protectedAction].needsCode) {
     const code = typeof body.code === "string" ? body.code.trim() : "";
     if (code.length < 6 || code.length > 32) {
-      return NextResponse.json({ message: "Enter a valid authenticator or recovery code." }, { status: 400 });
+      return NextResponse.json({ message: t("Enter a valid authenticator or recovery code.") }, { status: 400 });
     }
     body.code = code;
   }

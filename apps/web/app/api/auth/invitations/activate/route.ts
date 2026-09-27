@@ -8,8 +8,10 @@ import {
   businessApiUrl,
   safeBackendMessage,
 } from "@/lib/auth/server";
+import { getServerT } from "@/lib/i18n/server";
 
 export async function POST(request: Request) {
+  const t = await getServerT();
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const tenantSlug = typeof body?.tenantSlug === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.tenantSlug)
     ? body.tenantSlug
@@ -21,11 +23,11 @@ export async function POST(request: Request) {
     cache: "no-store",
     signal: AbortSignal.timeout(12_000),
   }).catch(() => null);
-  if (!upstream) return NextResponse.json({ message: "Authentication service is unavailable." }, { status: 503 });
+  if (!upstream) return NextResponse.json({ message: t("Authentication service is unavailable.") }, { status: 503 });
   const payload = await upstream.json().catch(() => null) as Record<string, unknown> | null;
   if (!upstream.ok) {
     return NextResponse.json(
-      { message: safeBackendMessage(payload, "Unable to activate invitation.") },
+      { message: safeBackendMessage(payload, t("Unable to activate invitation.")) },
       { status: upstream.status },
     );
   }
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
     || !Number.isFinite(payload.refreshTokenExpiresIn) || Number(payload.refreshTokenExpiresIn) <= 0
     || typeof payload.selectedWorkspaceId !== "string") {
     return NextResponse.json(
-      { message: "The activation service returned an incomplete session. Sign in again." },
+      { message: t("The activation service returned an incomplete session. Sign in again.") },
       { status: 502 },
     );
   }
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     : null;
   if (typeof profile?.nextAction !== "string") {
     return NextResponse.json(
-      { message: "The activation service returned an incomplete onboarding state. Sign in again." },
+      { message: t("The activation service returned an incomplete onboarding state. Sign in again.") },
       { status: 502 },
     );
   }

@@ -13,7 +13,8 @@ export function Badge({ children, className, tone = "neutral", ...props }: HTMLA
 }
 
 export function Tag({ children, onRemove, tone = "neutral" }: { children: ReactNode; onRemove?: () => void; tone?: StatusTone }) {
-  return <span className="wd-tag" data-tone={tone}>{children}{onRemove ? <IconButton aria-label={`Remove ${String(children)}`} onPress={onRemove}><X size={13} /></IconButton> : null}</span>;
+  const t = useT();
+  return <span className="wd-tag" data-tone={tone}>{children}{onRemove ? <IconButton aria-label={t("Remove {name}", { name: String(children) })} onPress={onRemove}><X size={13} /></IconButton> : null}</span>;
 }
 
 const icons = { neutral: Info, info: Info, success: CheckCircle2, warning: TriangleAlert, danger: AlertCircle };
@@ -42,13 +43,14 @@ export function Progress({ label, value, max = 100 }: { label: string; value: nu
   return <div className="wd-progress" role="progressbar" aria-label={label} aria-valuemax={max} aria-valuemin={0} aria-valuenow={value}><span style={{ inlineSize: `${percent}%` }} /></div>;
 }
 
-export function Spinner({ label = "Loading" }: { label?: string }) { return <LoaderCircle aria-label={label} className="wd-spin" role="status" size={18} />; }
+export function Spinner({ label }: { label?: string }) { const t = useT(); return <LoaderCircle aria-label={label ?? t("Loading")} className="wd-spin" role="status" size={18} />; }
 
 type ToastRecord = { id: number; message: string; tone: StatusTone; title: string };
 type ToastApi = { push: (toast: Omit<ToastRecord, "id">) => void };
 const ToastContext = createContext<ToastApi | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const push = useCallback((toast: Omit<ToastRecord, "id">) => {
     const id = Date.now() + Math.random();
@@ -56,7 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 5000);
   }, []);
   const value = useMemo(() => ({ push }), [push]);
-  return <ToastContext.Provider value={value}>{children}<div aria-live="polite" className="wd-toast-region">{toasts.map((toast) => <div className="wd-toast" data-tone={toast.tone} key={toast.id}><strong>{toast.title}</strong><span>{toast.message}</span><IconButton aria-label="Dismiss notification" onPress={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}><X size={14} /></IconButton></div>)}</div></ToastContext.Provider>;
+  return <ToastContext.Provider value={value}>{children}<div aria-live="polite" className="wd-toast-region">{toasts.map((toast) => <div className="wd-toast" data-tone={toast.tone} key={toast.id}><strong>{toast.title}</strong><span>{toast.message}</span><IconButton aria-label={t("Dismiss notification")} onPress={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}><X size={14} /></IconButton></div>)}</div></ToastContext.Provider>;
 }
 
 export function useToast() {

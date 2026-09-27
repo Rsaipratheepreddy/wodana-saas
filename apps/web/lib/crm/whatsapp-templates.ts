@@ -1,3 +1,5 @@
+import { tKey } from "@/lib/i18n/keys";
+
 export type MetaTemplate = {
   id: string;
   name: string;
@@ -18,13 +20,14 @@ export function templateBody(template: MetaTemplate): string {
   );
 }
 // Inbox delivery currently supports static templates; parameterized messages use provider tools.
+// The reason is an i18n key: show it with `translateKnown`.
 export function inboxTemplateReason(template: MetaTemplate): string | null {
-  if (template.status !== "APPROVED") return "Awaiting Meta approval";
+  if (template.status !== "APPROVED") return tKey("Awaiting Meta approval");
   if (template.category === "AUTHENTICATION")
-    return "Used for secure portal login";
-  if (!templateBody(template)) return "This template has no message body";
+    return tKey("Used for secure portal login");
+  if (!templateBody(template)) return tKey("This template has no message body");
   if (!/^[a-z][a-z0-9_.-]{0,98}$/.test(template.name))
-    return "Use this template from integration tools";
+    return tKey("Use this template from integration tools");
   if (
     template.components?.some(
       (component) =>
@@ -38,7 +41,7 @@ export function inboxTemplateReason(template: MetaTemplate): string | null {
         ),
     )
   ) {
-    return "Requires additional details in integration tools";
+    return tKey("Requires additional details in integration tools");
   }
   return null;
 }

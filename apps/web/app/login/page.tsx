@@ -1,16 +1,15 @@
 import type { Metadata } from "next";
-import { cookies, headers } from "next/headers";
-import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
-import { translator } from "@/lib/i18n/messages";
+import { headers } from "next/headers";
+import { getServerT } from "@/lib/i18n/server";
 import { notFound } from "next/navigation";
 import { businessApiUrl } from "@/lib/auth/server";
 import { resolveTenantHost, type TenantBranding } from "@/lib/auth/resolve-tenant-host";
 import { LoginScreen } from "./login-screen";
 
-export const metadata: Metadata = {
-  title: "Sign in · Wodana",
-  description: "Sign in to your Wodana business workspace.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getServerT();
+  return { title: t("Sign in · Wodana"), description: t("Sign in to your Wodana business workspace.") };
+}
 
 async function getTenantBranding(requestedSlug?: string): Promise<TenantBranding> {
   const resolved = await resolveTenantHost((await headers()).get("host"));
@@ -44,8 +43,7 @@ export default async function LoginPage({
   searchParams: Promise<{ invitation?: string; reset?: string; next?: string; tenant?: string; reason?: string }>;
 }) {
   const query = await searchParams;
-  const language = resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value);
-  const t = translator(language);
+  const t = await getServerT();
   const tenant = await getTenantBranding(query.tenant);
   const nextPath = query.next?.startsWith("/workspace") || query.next?.startsWith("/internal") ? query.next : "/workspace";
   return (
@@ -58,7 +56,6 @@ export default async function LoginPage({
       nextPath={nextPath}
       initialStatusTone={query.reason === "password-reset" ? "info" : "error"}
       tenant={tenant}
-      language={language}
     />
   );
 }

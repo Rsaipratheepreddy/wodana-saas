@@ -1,15 +1,17 @@
 import type { Quote, QuotationTemplate } from "./types";
+import { translatorFor, type Translate } from "@/lib/i18n/keys";
 
 /** Apply a reviewed copy. Identity, currency, approvals and case links stay with the destination. */
 export function applyQuotationTemplate(
   quote: Quote,
   template: QuotationTemplate,
+  t: Translate = translatorFor({}),
 ): Quote {
   if (quote.status !== "draft" || quote.kind !== "quotation")
-    throw new Error("Templates can be used in draft quotations only.");
+    throw new Error(t("Templates can be used in draft quotations only."));
   if (quote.currency !== template.content.currency)
     throw new Error(
-      `This template is in ${template.content.currency}. Choose a matching currency first; rates are never converted automatically.`,
+      t("This template is in {currency}. Choose a matching currency first; rates are never converted automatically.", { currency: template.content.currency }),
     );
   const content = structuredClone(template.content);
   return {

@@ -1,11 +1,10 @@
 "use client";
 
 import { LogOut, Mail, MessageCircle, Phone } from "lucide-react";
-import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { Button, SelectField } from "@/design-system";
-import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
-import { LANGUAGE_COOKIE, languages } from "@/lib/i18n/languages";
+import { LanguageSelect } from "@/components/i18n/language-select";
+import { Button } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import type { PortalSite } from "@/lib/client-portal/types";
 import { formatPhoneForDisplay, whatsappUrl } from "@/lib/phone";
 import styles from "./portal.module.css";
@@ -13,13 +12,7 @@ import styles from "./portal.module.css";
 /** The tenant's own page: their logo and name on top, their contacts at the foot, Wodana only as "Powered by". */
 export function PortalFrame({ site, children, onSignOut }: { site: PortalSite; children: ReactNode; onSignOut?: () => void }) {
   const t = useT();
-  const router = useRouter();
-  const { language } = useLanguage();
   const whatsapp = site.support.whatsapp ? whatsappUrl(site.support.whatsapp) : null;
-  const chooseLanguage = (key: string) => {
-    document.cookie = `${LANGUAGE_COOKIE}=${key}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
-    router.refresh();
-  };
   return <div className={styles.page}>
     <header className={styles.header}>
       <span className={styles.brand}>
@@ -28,7 +21,10 @@ export function PortalFrame({ site, children, onSignOut }: { site: PortalSite; c
           ? <img alt={site.brand.name} className={styles.logo} src={site.brand.logoUrl} />
           : <span className={styles.brandName}>{site.brand.name}</span>}
       </span>
-      {onSignOut ? <Button size="compact" variant="quiet" onPress={onSignOut}><LogOut aria-hidden="true" data-directional="true" size={15} />{t("Sign out")}</Button> : null}
+      <div className={styles.headerEnd}>
+        <LanguageSelect className={styles.language} compact label={null} />
+        {onSignOut ? <Button size="compact" variant="quiet" onPress={onSignOut}><LogOut aria-hidden="true" data-directional="true" size={15} />{t("Sign out")}</Button> : null}
+      </div>
     </header>
     <main className={styles.main}>{children}</main>
     <footer className={styles.footer}>
@@ -39,10 +35,6 @@ export function PortalFrame({ site, children, onSignOut }: { site: PortalSite; c
         {site.gallerySlug ? <a href={`/gallery/${site.gallerySlug}`} rel="noreferrer" target="_blank">{t("Our work")}</a> : null}
       </div>
       <div className={styles.footerEnd}>
-        <div className={styles.language}>
-          <SelectField aria-label={t("Language")} label={null} selectedKey={language} onSelectionChange={(key) => key && chooseLanguage(String(key))}
-            items={languages.map((item) => ({ id: item.id, label: item.label }))} />
-        </div>
         <span className={styles.powered}>{t("Powered by Wodana")}</span>
       </div>
     </footer>

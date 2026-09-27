@@ -1,4 +1,5 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const allowed = (path: string[]) =>
   (path.length === 1 && path[0] === "settings")
@@ -7,15 +8,16 @@ const allowed = (path: string[]) =>
 
 /** Design settings and the design package price list (PLM-041). */
 async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
+  const t = await getServerT();
   const { path } = await params;
   const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? "";
-  if (!UUID.test(workspaceId) || !allowed(path)) return invalidRequest("Invalid design resource.");
-  if (request.method !== "GET" && !isSameOrigin(request)) return invalidRequest("This request must come from the workspace.");
+  if (!UUID.test(workspaceId) || !allowed(path)) return invalidRequest(t("Invalid design resource."));
+  if (request.method !== "GET" && !isSameOrigin(request)) return invalidRequest(t("This request must come from the workspace."));
   const body = request.method === "GET" ? undefined : await request.text();
-  if (body && body.length > 20_000) return invalidRequest("The request is too large.");
+  if (body && body.length > 20_000) return invalidRequest(t("The request is too large."));
   return workspaceJsonResponse(`/workspaces/${workspaceId}/design/${path.join("/")}`, {
     method: request.method, ...(body ? { headers: { "content-type": "application/json" }, body } : {}),
-  }, "Design settings could not be saved.");
+  }, t("Design settings could not be saved."));
 }
 
 export { handle as GET, handle as POST, handle as PUT };

@@ -1,3 +1,4 @@
+import { tKey } from "@/lib/i18n/keys";
 import type { CalendarEvent } from "./calendar";
 
 export type CalendarMember = { id: string; userId?: string; displayName: string; email?: string; status?: string };
@@ -16,7 +17,7 @@ export function crmCalendarEvents(items: Activity[]): CalendarEvent[] {
     const start = validDate(item.appointment?.startsAt ?? item.dueAt);
     if (!start) return [];
     const end = validDate(item.appointment?.endsAt);
-    return [{ id: item.id, title: item.title || "Untitled activity", start, ...(end ? { end } : {}), provider: "crm" as const, kind: item.type || "task", status: item.status, ownerId: item.ownerMembershipId, ownerName: item.ownerName, description: item.description, location: item.appointment?.location?.text }];
+    return [{ id: item.id, title: item.title || tKey("Untitled activity"), start, ...(end ? { end } : {}), provider: "crm" as const, kind: item.type || "task", status: item.status, ownerId: item.ownerMembershipId, ownerName: item.ownerName, description: item.description, location: item.appointment?.location?.text }];
   });
 }
 
@@ -39,7 +40,7 @@ export function googleCalendarEvents(items: GoogleItem[], safeLink: (value: unkn
     if (!start) return [];
     seen.add(id);
     const end = validDate(item.end?.dateTime ?? (item.end?.date ? `${item.end.date}T00:00:00` : undefined));
-    return [{ id, title: item.title || "Busy", start, ...(end ? { end } : {}), allDay, provider: "google" as const, status: item.status, href: safeLink(item.htmlLink), calendarName: item.calendarName, connectionId: item.connectionId, description: item.description, location: item.location, attendees: item.attendees }];
+    return [{ id, title: item.title || tKey("Busy"), start, ...(end ? { end } : {}), allDay, provider: "google" as const, status: item.status, href: safeLink(item.htmlLink), calendarName: item.calendarName, connectionId: item.connectionId, description: item.description, location: item.location, attendees: item.attendees }];
   });
 }
 

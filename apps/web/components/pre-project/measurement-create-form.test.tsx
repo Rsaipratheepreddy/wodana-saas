@@ -23,7 +23,8 @@ describe('direct measurement capture',()=>{
     const catalog=screen.getByRole('combobox',{name:'Catalog item (optional)'});
     await user.type(catalog,'Base');
     await waitFor(()=>expect(fetcher).toHaveBeenCalled());
-    await user.click(screen.getByRole('button',{name:'Show options Catalog item (optional)'}));
+    // The results may already have opened the list while typing; otherwise open it.
+    if(!screen.queryByRole('listbox'))await user.click(screen.getByRole('button',{name:'Show options Catalog item (optional)'}));
     await user.click(await screen.findByRole('option',{name:'Base cabinet · BC01'}));
     expect(screen.getByRole('textbox',{name:'Item name'})).toHaveValue('Base cabinet');
     await user.click(screen.getByRole('button',{name:/Measurement type/}));

@@ -57,7 +57,8 @@
     "web": "expo start --web --port 8082",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test scripts/*.test.mjs scripts/*.test.ts",
-    "sync:design": "node scripts/sync-design.mjs"
+    "sync:design": "node scripts/sync-design.mjs",
+    "sync:i18n": "node scripts/sync-i18n.mjs"
   },
   "private": true
 }

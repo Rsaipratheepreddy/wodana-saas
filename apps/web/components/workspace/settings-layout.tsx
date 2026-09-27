@@ -33,7 +33,7 @@ export function SettingsLayout({ module, pathname, children }: { module: Workspa
     .filter((group) => group.items.length);
   const items = groups.flatMap((group) => group.items);
   const active = [...items].sort((a, b) => b.href.length - a.href.length).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
-  const label = (id: string, fallback: string) => labels[id] ?? fallback;
+  const label = (id: string, fallback: string) => labels[id] ?? t(fallback as never);
 
   return <div className={styles.layout}>
     <nav aria-label={t("Settings")} className={styles.nav}><div className={styles.navInner}>

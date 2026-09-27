@@ -1,33 +1,35 @@
 import type { Quote, QuoteLine } from "./types";
+import { tKey, translatorFor, type Translate } from "@/lib/i18n/keys";
 export const statusLabel: Record<string, string> = {
-  draft: "Draft",
-  internal_review: "Internal review",
-  internal_approved: "Ready to issue",
-  issued: "Awaiting client",
-  accepted: "Accepted",
-  changes_requested: "Changes requested",
-  declined: "Declined",
-  superseded: "Replaced",
-  withdrawn: "Withdrawn",
-  open: "Open",
-  under_review: "Under review",
-  awaiting_decision: "Awaiting decision",
-  resolved: "Resolved",
-  pending: "Upcoming",
-  proof_submitted: "Proof submitted",
-  verified: "Verified",
-  executed: "Signed agreement verified",
-  submitted: "Submitted",
-  pending_finance: "Awaiting Finance",
-  pending_approval: "Awaiting Operations",
-  approved: "Approved",
-  returned: "Returned",
-  rejected: "Rejected",
-  proposed: "Proposed",
-  client_review: "Client review",
+  draft: tKey("Draft"),
+  internal_review: tKey("Internal review"),
+  internal_approved: tKey("Ready to issue"),
+  issued: tKey("Awaiting client"),
+  accepted: tKey("Accepted"),
+  changes_requested: tKey("Changes requested"),
+  declined: tKey("Declined"),
+  superseded: tKey("Replaced"),
+  withdrawn: tKey("Withdrawn"),
+  open: tKey("Open"),
+  under_review: tKey("Under review"),
+  awaiting_decision: tKey("Awaiting decision"),
+  resolved: tKey("Resolved"),
+  pending: tKey("Upcoming"),
+  proof_submitted: tKey("Proof submitted"),
+  verified: tKey("Verified"),
+  executed: tKey("Signed agreement verified"),
+  submitted: tKey("Submitted"),
+  pending_finance: tKey("Awaiting Finance"),
+  pending_approval: tKey("Awaiting Operations"),
+  approved: tKey("Approved"),
+  returned: tKey("Returned"),
+  rejected: tKey("Rejected"),
+  proposed: tKey("Proposed"),
+  client_review: tKey("Client review"),
 };
-export function money(value: number, currency = "AED") {
-  return new Intl.NumberFormat("en", {
+/** Money in the quote's currency, formatted for `locale` (the workspace region; pass `useDesignSystem().locale`). */
+export function money(value: number, currency: string, locale?: string) {
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
@@ -132,7 +134,7 @@ export async function jsonRequest<T>(
   const data = await r.json().catch(() => null);
   if (!r.ok)
     throw new Error(
-      data?.message ?? "Could not complete this action. Please try again.",
+      data?.message ?? tKey("Could not complete this action. Please try again."),
     );
   return data;
 }
@@ -142,18 +144,19 @@ export function commercialPath(workspaceId: string, path: string) {
 export function changedLines(
   current: Pick<Quote, "lines">,
   previous?: Pick<Quote, "lines">,
+  t: Translate = translatorFor({}),
 ) {
   if (!previous) return [];
   const changes: string[] = [];
   for (const l of current.lines) {
     const old = previous.lines.find((o) => o.id === l.id);
-    if (!old) changes.push(`Added: ${l.title}`);
+    if (!old) changes.push(t("Added: {title}", { title: l.title }));
     else if (JSON.stringify(l) !== JSON.stringify(old))
-      changes.push(`Updated: ${l.title}`);
+      changes.push(t("Updated: {title}", { title: l.title }));
   }
   for (const l of previous.lines)
     if (!current.lines.some((n) => n.id === l.id))
-      changes.push(`Removed: ${l.title}`);
+      changes.push(t("Removed: {title}", { title: l.title }));
   return changes;
 }
 

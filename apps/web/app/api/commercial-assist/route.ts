@@ -4,11 +4,13 @@ import {
   applyRotatedSession,
 } from "@/lib/auth/backend-session";
 import { isSameOrigin, UUID } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 const limits = new Map<string, { start: number; count: number }>();
 export async function POST(request: Request) {
+  const t = await getServerT();
   if (!isSameOrigin(request))
     return NextResponse.json(
-      { message: "Use your workspace to ask Woddy." },
+      { message: t("Use your workspace to ask Woddy.") },
       { status: 403 },
     );
   const body = await request.json().catch(() => null);
@@ -21,7 +23,7 @@ export async function POST(request: Request) {
     body.question.length > 2000
   )
     return NextResponse.json(
-      { message: "Enter a question up to 2,000 characters." },
+      { message: t("Enter a question up to 2,000 characters.") },
       { status: 400 },
     );
   const result = await authenticatedBackendFetch(
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
     const r = NextResponse.json(
       {
         message:
-          "Your commercial context is unavailable. Check your workspace access.",
+          t("Your commercial context is unavailable. Check your workspace access."),
       },
       {
         status: result.unauthenticated ? 401 : (result.upstream?.status ?? 503),
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         message:
-          "Woddy’s AI provider is not configured. Catalog search, editing and quotation workflows remain available.",
+          t("Woddy’s AI provider is not configured. Catalog search, editing and quotation workflows remain available."),
       },
       { status: 503 },
     );
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
   const w = limits.get(body.workspaceId) ?? { start: now, count: 0 };
   if (w.count >= 10)
     return NextResponse.json(
-      { message: "Please wait a minute before asking again." },
+      { message: t("Please wait a minute before asking again.") },
       { status: 429 },
     );
   w.count++;
@@ -185,7 +187,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         message:
-          "Woddy could not finish that answer. Please retry. No quotation changes were made.",
+          t("Woddy could not finish that answer. Please retry. No quotation changes were made."),
       },
       { status: 503 },
     );

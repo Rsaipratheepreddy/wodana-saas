@@ -32,6 +32,7 @@ import { WorkspaceBreadcrumbProvider, useWorkspaceBreadcrumb } from "./workspace
 import { WorkspaceIdentityProvider } from "./workspace-identity";
 import { resolveWorkspaceRoute } from "@/lib/workspace/route-map";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey } from "@/lib/i18n/keys";
 
 export type WorkspaceShellProps = {
   children: ReactNode;
@@ -47,6 +48,7 @@ export function WorkspaceShell({ children, modules, user, workspaces, unavailabl
 }
 
 function WorkspaceShellContent({ children, modules, user, workspaces, unavailableOrganizations = [] }: WorkspaceShellProps) {
+  const t = useT();
   const pathname = usePathname();
   const breadcrumb = useWorkspaceBreadcrumb();
   // A project page names itself in the breadcrumb (Projects › its name) once it has loaded.
@@ -65,7 +67,6 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
     : baseModule;
   // One route map names the page, its breadcrumb, the sidebar entry and whether it is a Settings page.
   const route = resolveWorkspaceRoute(pathname, builderSearch);
-  const t = useT();
   const recordTitle = projectPage ? breadcrumb?.title : selectedCase?.record.title;
   const pageTitle = route.record && recordTitle ? recordTitle : t(route.label as never);
   const crumbs = route.homeTab ? route.trail.slice(0, -1) : route.trail;
@@ -117,7 +118,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
         onOpenChange={(open) => setMobileNavigationPath(open ? pathname : null)}
       >
         <Modal className={styles.mobileModal}>
-          <Dialog aria-label="Mobile workspace navigation" className={styles.mobileDialog}>
+          <Dialog aria-label={t("Mobile workspace navigation")} className={styles.mobileDialog}>
             <WorkspaceSidebar
               activeModule={activeModule}
                   key={`mobile-${activeModule.id}-${preProjectRoute?.id ?? "module"}`}
@@ -138,15 +139,15 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
         <header className={styles.topbar}>
           <button
             aria-expanded={mobileOpen}
-            aria-label="Open navigation"
+            aria-label={t("Open navigation")}
             className={styles.mobileMenu}
             onClick={() => setMobileNavigationPath(pathname)}
             type="button"
           >
             <Menu size={19} />
           </button>
-          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="All planning" className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>Planning</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
-          {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to planning") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
+          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label={t("All planning")} className={styles.focusBack} href="/workspace/pre-projects"><ArrowLeft size={16} data-directional="true" /><span>{t("Planning")}</span></Link>{selectedCase ? <div><strong>{selectedCase.record.title}</strong><small>{selectedCase.record.customerName}</small></div> : null}</div> : null}
+          {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? t("Back to quotations") : t("Back to planning")) : t("Back to CRM")}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
           <nav aria-label={t("Breadcrumb")} className={styles.breadcrumbs}>
             <ol>
               {crumbs.map((crumb) => <li key={crumb.id}><Link href={crumb.id === "settings" ? settingsHref : crumb.href}>{t(crumb.label as never)}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li>)}
@@ -157,11 +158,11 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           <div className={styles.globalUtilities}>
             <div className={styles.woddyControl}>
               <button
-                aria-label="Ask Woddy"
+                aria-label={t("Ask Woddy")}
                 aria-haspopup="dialog"
                 className={styles.woddyButton}
                 onClick={woddy?.open}
-                title="Ask Woddy"
+                title={t("Ask Woddy")}
                 type="button"
               >
                 <WoddyMark
@@ -170,7 +171,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
                   priority
                   size={34}
                 />
-                <span className={styles.woddyLabel}>Ask Woddy</span>
+                <span className={styles.woddyLabel}>{t("Ask Woddy")}</span>
               </button>
             </div>
             <WorkspaceNotifications workspaceId={workspaceId} />
@@ -185,10 +186,10 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
               <Settings aria-hidden="true" size={16} />
             </Link> : null}
             <button
-              aria-label={theme === "light" ? "Use dark mode" : "Use light mode"}
+              aria-label={theme === "light" ? t("Use dark mode") : t("Use light mode")}
               className={styles.themeToggle}
               onClick={toggleTheme}
-              title={theme === "light" ? "Use dark mode" : "Use light mode"}
+              title={theme === "light" ? t("Use dark mode") : t("Use light mode")}
               type="button"
             >
               {theme === "light" ? <Moon aria-hidden="true" size={16} /> : <Sun aria-hidden="true" size={16} />}

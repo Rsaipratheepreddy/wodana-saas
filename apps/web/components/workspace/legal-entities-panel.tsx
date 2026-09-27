@@ -3,7 +3,8 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { Building2, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, SelectField, TextInput } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { countryFromLocale } from "@/lib/workspace/region-labels";
 import { TaxNumberingSheet } from "./tax-numbering-sheet";
 import type { CompanyAddress, LegalEntityRecord, WorkspaceRecord } from "@/lib/workspace/company-profile";
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
@@ -56,7 +57,7 @@ function createDraft(workspace: WorkspaceRecord, entity?: LegalEntityRecord, tem
     code: "",
     displayName: "",
     registeredName: "",
-    countryCode: template?.countryCode ?? "AE",
+    countryCode: template?.countryCode ?? countryFromLocale(workspace.defaultLocale) ?? "",
     baseCurrency: template?.baseCurrency ?? workspace.defaultCurrency,
     locale: template?.locale ?? workspace.defaultLocale,
     timezone: template?.timezone ?? workspace.defaultTimezone,
@@ -84,8 +85,8 @@ function responseMessage(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-function displayRegion(code: string) {
-  try { return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code; } catch { return code; }
+function displayRegion(code: string, locale: string) {
+  try { return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code; } catch { return code; }
 }
 
 export function LegalEntitiesPanel({
@@ -102,6 +103,7 @@ export function LegalEntitiesPanel({
   onChange: (entities: LegalEntityRecord[]) => void;
 }) {
   const t = useT();
+  const { locale } = useDesignSystem();
   const [entities, setEntities] = useState(initialEntities);
   const [editing, setEditing] = useState<LegalEntityRecord | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<LegalEntityRecord | null>(null);
@@ -153,9 +155,9 @@ export function LegalEntitiesPanel({
     const code = draft.code.trim().toUpperCase();
     const displayName = draft.displayName.trim();
     const registeredName = draft.registeredName.trim();
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(code)) { setError("Entity code must be 2–24 letters, numbers, hyphens, or underscores."); return; }
-    if (displayName.length < 2 || registeredName.length < 2) { setError("Enter a display name and registered company name."); return; }
-    if (!/^[A-Z]{2}$/.test(draft.countryCode) || !/^[A-Z]{3}$/.test(draft.baseCurrency) || !draft.locale || !draft.timezone) { setError("Choose country, currency, locale, and time zone."); return; }
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(code)) { setError(t("Entity code must be 2–24 letters, numbers, hyphens, or underscores.")); return; }
+    if (displayName.length < 2 || registeredName.length < 2) { setError(t("Enter a display name and registered company name.")); return; }
+    if (!/^[A-Z]{2}$/.test(draft.countryCode) || !/^[A-Z]{3}$/.test(draft.baseCurrency) || !draft.locale || !draft.timezone) { setError(t("Choose country, currency, locale, and time zone.")); return; }
     setSaving(true);
     setError("");
     setNotice("");
@@ -178,13 +180,13 @@ export function LegalEntitiesPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The business record could not be saved."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The business record could not be saved.")));
       const saved = await response.json() as LegalEntityRecord;
       commit(existing ? entities.map((entity) => entity.id === saved.id ? saved : entity) : [...entities, saved]);
       setEditing(null);
-      setNotice(existing ? `${saved.displayName} updated.` : `${saved.displayName} added.`);
+      setNotice(existing ? t("{name} updated.", { name: saved.displayName }) : t("{name} added.", { name: saved.displayName }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The business record could not be saved.");
+      setError(failure instanceof Error ? failure.message : t("The business record could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -201,13 +203,13 @@ export function LegalEntitiesPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId: workspace.id, version: archiveTarget.version }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The business record could not be archived."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The business record could not be archived.")));
       const archived = await response.json() as LegalEntityRecord;
       commit(entities.filter((entity) => entity.id !== archived.id));
       setArchiveTarget(null);
-      setNotice(`${archived.displayName} archived.`);
+      setNotice(t("{name} archived.", { name: archived.displayName }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The business record could not be archived.");
+      setError(failure instanceof Error ? failure.message : t("The business record could not be archived."));
       setArchiveTarget(null);
     } finally {
       setArchiving(false);
@@ -215,7 +217,7 @@ export function LegalEntitiesPanel({
   };
 
   return <>
-    <section aria-label={standalone ? "Business records" : undefined} aria-labelledby={standalone ? undefined : "legal-entities-heading"} className={`${styles.detailSection} ${styles.legalEntitiesSection}`}>
+    <section aria-label={standalone ? t("Business records") : undefined} aria-labelledby={standalone ? undefined : "legal-entities-heading"} className={`${styles.detailSection} ${styles.legalEntitiesSection}`}>
       <header>
         <div>{standalone ? <h2 className={styles.standaloneHeading}>{t("Businesses")}</h2> : <><h2 id="legal-entities-heading">{t("Business records")}</h2><p className={styles.sectionHint}>{t("Official company, trade-license and tax details used on contracts and invoices.")}</p></>}</div>
         {canManage ? <Button onPress={openCreate} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />{t("Add business")}</Button> : null}
@@ -228,13 +230,13 @@ export function LegalEntitiesPanel({
           <div className={styles.legalEntityDetails}>
             <strong>{entity.displayName}</strong>
             <small>{entity.code} · {entity.registeredName}</small>
-            <small>{displayRegion(entity.countryCode)} · {entity.baseCurrency} · {entity.timezone}</small>
+            <small>{displayRegion(entity.countryCode, locale)} · {entity.baseCurrency} · {entity.timezone}</small>
           </div>
           <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status === "active" ? t("Active") : t("Archived")}</Badge>
           <TaxNumberingSheet canManage={canManage} entityId={entity.id} entityName={entity.displayName} workspaceId={workspace.id} />
           {canManage ? <div className={styles.legalEntityActions}>
-            <Button aria-label={`Edit ${entity.displayName}`} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
-            {entities.length > 1 ? <Button aria-label={`Archive ${entity.displayName}`} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Archive")}</Button> : null}
+            <Button aria-label={t("Edit {name}", { name: entity.displayName })} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
+            {entities.length > 1 ? <Button aria-label={t("Archive {name}", { name: entity.displayName })} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Archive")}</Button> : null}
           </div> : null}
         </li>)}
       </ul>
@@ -242,13 +244,13 @@ export function LegalEntitiesPanel({
     </section>
 
     <ControlledModalDialog
-      description={existing ? "Update the official details and defaults for this business." : "Add official business details for documents, operating units and integrations."}
-      footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setEditing(null)}>{t("Cancel")}</Button><Button form="legal-entity-form" isLoading={saving} type="submit" variant="primary">{existing ? "Save business" : "Add business"}</Button></div>}
+      description={existing ? t("Update the official details and defaults for this business.") : t("Add official business details for documents, operating units and integrations.")}
+      footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setEditing(null)}>{t("Cancel")}</Button><Button form="legal-entity-form" isLoading={saving} type="submit" variant="primary">{existing ? t("Save business") : t("Add business")}</Button></div>}
       isDismissable={!saving}
       isOpen={Boolean(editing)}
       onOpenChange={(open) => { if (!open && !saving) setEditing(null); }}
       size="lg"
-      title={existing ? `Edit ${existing.displayName}` : "Add business"}
+      title={existing ? t("Edit {name}", { name: existing.displayName }) : t("Add business")}
     >
       <form className={styles.legalEntityForm} id="legal-entity-form" noValidate onSubmit={save}>
         {error ? <Callout title={t("Could not save business record")} tone="danger">{error}</Callout> : null}
@@ -272,8 +274,8 @@ export function LegalEntitiesPanel({
     </ControlledModalDialog>
 
     <ConfirmationDialog
-      body={archiveTarget ? <>{t("Archive")}{" "}<strong>{archiveTarget.displayName}</strong>{t("? Its operating units and integrations must already be reassigned or archived.")}</> : null}
-      confirmLabel={archiving ? "Archiving…" : "Archive business"}
+      body={archiveTarget ? t("Archive {name}? Its operating units and integrations must already be reassigned or archived.", { name: archiveTarget.displayName }) : null}
+      confirmLabel={archiving ? t("Archiving…") : t("Archive business")}
       isOpen={Boolean(archiveTarget)}
       onConfirm={() => void archive()}
       onOpenChange={(open) => { if (!open && !archiving) setArchiveTarget(null); }}

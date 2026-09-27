@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { Plus, Trash2 } from "lucide-react";
 import type { QuoteLine, QuotationMaterialRow } from "@/lib/commercial/types";
 import { money } from "@/lib/commercial/client";
@@ -8,6 +9,7 @@ import {
   IconButton,
   SelectField,
   TextAreaField,
+  useDesignSystem,
 } from "@/design-system";
 import {
   materialAmount,
@@ -39,26 +41,28 @@ export function QuotationMaterialBreakdown({
   onAdd: () => void;
   onCatalog: () => void;
 }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
   return (
     <section
       className={s.itemMaterials}
       id={`materials-${line.id}`}
-      aria-label={`${line.title} materials and notes`}
+      aria-label={t("{title} materials and notes", { title: line.title })}
     >
       <header className={s.materialsHeader}>
         <div>
-          <p>Quantities and costs below are per 1 {line.unit}.</p>
+          <p>{t("Quantities and costs below are per 1 {unit}.", { unit: line.unit })}</p>
         </div>
         <div className={s.pricingPicker}>
           <SelectField
-            label="Item rate"
+            label={t("Item rate")}
             accent="neutral"
-            aria-label={`Pricing method for ${line.title}`}
+            aria-label={t("Pricing method for {title}", { title: line.title })}
             isDisabled={readOnly}
             selectedKey={line.pricingMode ?? "item"}
             items={[
-              { id: "item", label: "Manual item rate" },
-              { id: "materials", label: "Calculate from materials" },
+              { id: "item", label: t("Manual item rate") },
+              { id: "materials", label: t("Calculate from materials") },
             ]}
             onSelectionChange={(key) =>
               onChange({
@@ -75,26 +79,24 @@ export function QuotationMaterialBreakdown({
             size="compact"
             isDisabled={rows.length >= 40}
             onPress={onAdd}
-            aria-label={`Add material to ${line.title}`}
+            aria-label={t("Add material to {title}", { title: line.title })}
           >
             <Plus size={13} />
-            Add material
-          </Button>
+            {t("Add material")}</Button>
           <Button
             size="compact"
             variant="quiet"
             isDisabled={rows.length >= 40}
             onPress={onCatalog}
-            aria-label={`Select material for ${line.title}`}
+            aria-label={t("Select material for {title}", { title: line.title })}
           >
-            Select from catalog
-          </Button>
+            {t("Select from catalog")}</Button>
         </div>
       )}
       <div className={s.materialScroll}>
         <table
           className={`${s.table} ${s.materialTable}`}
-          aria-label={`Materials belonging to ${line.title}`}
+          aria-label={t("Materials belonging to {title}", { title: line.title })}
         >
           <colgroup>
             <col style={{ width: "20%" }} />
@@ -108,19 +110,18 @@ export function QuotationMaterialBreakdown({
           </colgroup>
           <thead>
             <tr>
-              <th scope="col">Material</th>
-              <th scope="col">Specification</th>
-              <th scope="col">Type</th>
-              <th scope="col">Qty</th>
-              <th scope="col">Unit</th>
+              <th scope="col">{t("Material")}</th>
+              <th scope="col">{t("Specification")}</th>
+              <th scope="col">{t("Type")}</th>
+              <th scope="col">{t("Qty")}</th>
+              <th scope="col">{t("Unit")}</th>
               <th scope="col" className={s.amount}>
-                Rate · {currency}
+                {t("Rate · {currency}", { currency })}
               </th>
               <th scope="col" className={s.amount}>
-                Amount
-              </th>
+                {t("Amount")}</th>
               <th scope="col">
-                <span className={s.sr}>Actions</span>
+                <span className={s.sr}>{t("Actions")}</span>
               </th>
             </tr>
           </thead>
@@ -134,9 +135,9 @@ export function QuotationMaterialBreakdown({
                 });
               return (
                 <tr key={row.id}>
-                  <td data-label="Material">
+                  <td data-label={t("Material")}>
                     <Cell
-                      label={`Material name ${line.id}-${index + 1}`}
+                      label={t("Material name {id}", { id: `${line.id}-${index + 1}` })}
                       value={row.name}
                       required
                       multiline
@@ -144,31 +145,31 @@ export function QuotationMaterialBreakdown({
                       onChange={(name) => edit({ name })}
                     />
                   </td>
-                  <td data-label="Specification">
+                  <td data-label={t("Specification")}>
                     <Cell
-                      label={`Specification for ${row.name}`}
+                      label={t("Specification for {name}", { name: row.name })}
                       value={row.specification}
                       max={64000}
                       multiline
                       readOnly={readOnly}
-                      placeholder="Material specification"
+                      placeholder={t("Material specification")}
                       onChange={(specification) => edit({ specification })}
                     />
                   </td>
-                  <td data-label="Type">
+                  <td data-label={t("Type")}>
                     <div className={s.cellPicker}>
                       <SelectField
-                        label={`Type for ${row.name}`}
+                        label={t("Type for {name}", { name: row.name })}
                         accent="neutral"
-                        aria-label={`Type for ${row.name}`}
+                        aria-label={t("Type for {name}", { name: row.name })}
                         selectedKey={row.type}
                         isDisabled={readOnly}
-                        items={["material", "finish", "labour", "other"].map(
-                          (type) => ({
-                            id: type,
-                            label: type[0].toUpperCase() + type.slice(1),
-                          }),
-                        )}
+                        items={[
+                          { id: "material", label: t("Material") },
+                          { id: "finish", label: t("Finish") },
+                          { id: "labour", label: t("Labour") },
+                          { id: "other", label: t("Other") },
+                        ]}
                         onSelectionChange={(key) =>
                           edit({
                             type: key as QuotationMaterialRow["type"],
@@ -184,25 +185,24 @@ export function QuotationMaterialBreakdown({
                           edit({ suppliedByClient })
                         }
                       >
-                        Client supplied
-                      </Checkbox>
+                        {t("Client supplied")}</Checkbox>
                     </div>
                   </td>
-                  <td data-label="Quantity">
+                  <td data-label={t("Quantity")}>
                     {readOnly ? (
                       row.quantity
                     ) : (
                       <QuotationNumberInput
-                        label={`Quantity for material ${row.name}`}
+                        label={t("Quantity for material {name}", { name: row.name })}
                         value={row.quantity}
                         max={1e6}
                         onChange={(quantity) => edit({ quantity })}
                       />
                     )}
                   </td>
-                  <td data-label="Unit">
+                  <td data-label={t("Unit")}>
                     <QuotationUnitPicker
-                      label={`Unit for material ${row.name}`}
+                      label={t("Unit for material {name}", { name: row.name })}
                       value={row.unit}
                       workspaceId={workspaceId}
                       caseId={caseId}
@@ -210,31 +210,31 @@ export function QuotationMaterialBreakdown({
                       onChange={(unit) => edit({ unit })}
                     />
                   </td>
-                  <td className={s.amount} data-label={`Rate · ${currency}`}>
+                  <td className={s.amount} data-label={t("Rate · {currency}", { currency })}>
                     {readOnly ? (
                       row.rate.toFixed(2)
                     ) : (
                       <QuotationNumberInput
-                        label={`Rate for material ${row.name}`}
+                        label={t("Rate for material {name}", { name: row.name })}
                         value={row.rate}
                         money
                         onChange={(rate) => edit({ rate })}
                       />
                     )}
                   </td>
-                  <td className={s.amount} data-label="Amount">
-                    {materialAmount(row).toLocaleString("en", {
+                  <td className={s.amount} data-label={t("Amount")}>
+                    {materialAmount(row).toLocaleString(locale, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
                     {row.suppliedByClient && (
-                      <small>Client supplied · no charge</small>
+                      <small>{t("Client supplied · no charge")}</small>
                     )}
                   </td>
-                  <td data-label="Actions">
+                  <td data-label={t("Actions")}>
                     {!readOnly && (
                       <IconButton
-                        aria-label={`Remove material ${row.name}`}
+                        aria-label={t("Remove material {name}", { name: row.name })}
                         onPress={() =>
                           onChange({
                             materialRows: rows.filter(
@@ -255,14 +255,14 @@ export function QuotationMaterialBreakdown({
             <tr>
               <td colSpan={6}>
                 <div>
-                  {!rows.length && <span>No materials yet.</span>}
+                  {!rows.length && <span>{t("No materials yet.")}</span>}
                   <span className={s.materialSubtotal}>
-                    Materials / 1 {line.unit}
+                    {t("Materials / 1 {unit}", { unit: line.unit })}
                   </span>
                 </div>
               </td>
               <td className={s.amount}>
-                <strong>{money(materialsRate(rows), currency)}</strong>
+                <strong>{money(materialsRate(rows), currency, locale)}</strong>
               </td>
               <td />
             </tr>
@@ -271,12 +271,12 @@ export function QuotationMaterialBreakdown({
       </div>
       <div className={s.itemNotes}>
         <TextAreaField
-          label="Additional item notes"
-          aria-label={`Item notes for ${line.title}`}
+          label={t("Additional item notes")}
+          aria-label={t("Item notes for {title}", { title: line.title })}
           value={line.specification}
           maxLength={32000}
           isReadOnly={readOnly}
-          placeholder="Optional scope or installation notes"
+          placeholder={t("Optional scope or installation notes")}
           onChange={(specification) => onChange({ specification })}
         />
       </div>

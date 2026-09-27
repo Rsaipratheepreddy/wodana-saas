@@ -1,4 +1,5 @@
 import type { CatalogPriceSnapshot, QuoteLine } from "./types";
+import { translatorFor, type Translate } from "@/lib/i18n/keys";
 
 export type CatalogPriceResult = {
   status: CatalogPriceSnapshot["status"];
@@ -54,34 +55,41 @@ export type CatalogPriceProvenance = {
   issue?: string;
 };
 
-const displayDate = (value?: string) => value
-  ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`))
-  : "open ended";
-
-/** Human-readable selling-price evidence. Purchase costs are never included. */
-export function catalogPriceProvenance(snapshot?: CatalogPriceSnapshot): CatalogPriceProvenance | null {
+/**
+ * Human-readable selling-price evidence. Purchase costs are never included.
+ * Pass the person's `t` and the workspace `locale`/`timeZone`; without them it reads in English.
+ */
+export function catalogPriceProvenance(
+  snapshot?: CatalogPriceSnapshot,
+  { t = translatorFor({}), locale, timeZone = "UTC" }: { t?: Translate; locale?: string; timeZone?: string } = {},
+): CatalogPriceProvenance | null {
   if (!snapshot) return null;
+  // Effective and pricing dates are calendar dates: format them in UTC so they never shift a day.
+  const displayDate = (value?: string) => value
+    ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value.slice(0, 10)}T00:00:00Z`))
+    : t("open ended");
   if (snapshot.source === "manual_override" && snapshot.override) {
     return {
-      basis: `Manual override · ${snapshot.currency} ${snapshot.override.amount.toFixed(2)}`,
-      detail: `${snapshot.override.reason} · ${snapshot.override.by} · ${new Date(snapshot.override.at).toLocaleString("en-GB", { timeZone: "UTC" })} UTC`,
+      basis: t("Manual override · {currency} {amount}", { currency: snapshot.currency, amount: snapshot.override.amount.toFixed(2) }),
+      detail: `${snapshot.override.reason} · ${snapshot.override.by} · ${new Date(snapshot.override.at).toLocaleString(locale, { timeZone, timeZoneName: "short" })}`,
       ...(snapshot.issue?.message ? { issue: snapshot.issue.message } : {}),
     };
   }
   if (snapshot.rateCard) {
     const rate = snapshot.rateCard;
     const conversion = rate.sourceUnit
-      ? ` · converted from ${rate.sourceUnit.label} v${rate.sourceUnit.version} (factor ${rate.sourceUnit.conversionFactor})`
+      ? ` · ${t("converted from {unit} v{version} (factor {factor})", { unit: rate.sourceUnit.label, version: rate.sourceUnit.version, factor: rate.sourceUnit.conversionFactor })}`
       : "";
+    const dates = { from: displayDate(rate.effectiveFrom), to: displayDate(rate.effectiveTo), priced: displayDate(snapshot.pricingDate) };
     return {
-      basis: `${rate.reference?.trim() || "Catalog rate"} · v${rate.version}`,
-      detail: `Effective ${displayDate(rate.effectiveFrom)} to ${displayDate(rate.effectiveTo)} · priced ${displayDate(snapshot.pricingDate)}${rate.taxIncluded ? " · tax included" : " · tax extra"}${conversion}`,
-      ...(snapshot.status !== "resolved" || snapshot.issue?.message ? { issue: snapshot.issue?.message ?? "This price basis is no longer current." } : {}),
+      basis: `${rate.reference?.trim() || t("Catalog rate")} · v${rate.version}`,
+      detail: `${rate.taxIncluded ? t("Effective {from} to {to} · priced {priced} · tax included", dates) : t("Effective {from} to {to} · priced {priced} · tax extra", dates)}${conversion}`,
+      ...(snapshot.status !== "resolved" || snapshot.issue?.message ? { issue: snapshot.issue?.message ?? t("This price basis is no longer current.") } : {}),
     };
   }
   return {
-    basis: snapshot.source === "catalog" ? "Catalog price unavailable" : "Manual price",
-    detail: `Checked ${displayDate(snapshot.pricingDate)}`,
+    basis: snapshot.source === "catalog" ? t("Catalog price unavailable") : t("Manual price"),
+    detail: t("Checked {date}", { date: displayDate(snapshot.pricingDate) }),
     ...(snapshot.issue?.message ? { issue: snapshot.issue.message } : {}),
   };
 }

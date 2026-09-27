@@ -1,4 +1,6 @@
 import "server-only";
+
+import { tKey } from "@/lib/i18n/keys";
 import { NextResponse } from "next/server";
 import { applyRotatedSession, authenticatedBackendFetch } from "@/lib/auth/backend-session";
 import { intelligenceApiUrl, safeBackendMessage } from "@/lib/auth/server";
@@ -24,8 +26,8 @@ export async function providerResponse(
       },
     ).catch(() => undefined);
   }
-  const response = NextResponse.json(result.unauthenticated ? { message: "Sign in again to use this connection." }
-    : result.upstream?.ok ? payload : { message: safeBackendMessage(payload, "The provider is unavailable. Check the connection settings.") },
+  const response = NextResponse.json(result.unauthenticated ? { message: tKey("Sign in again to use this connection.") }
+    : result.upstream?.ok ? payload : { message: safeBackendMessage(payload, tKey("The provider is unavailable. Check the connection settings.")) },
     { status: result.unauthenticated ? 401 : result.upstream?.status ?? 503, headers: { "cache-control": "no-store" } });
   applyRotatedSession(response, result.rotatedSession);
   return response;

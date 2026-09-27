@@ -16,7 +16,7 @@ import styles from "./staff.module.css";
 export function ProjectPortalControl({ workspaceId, projectId, locale }: { workspaceId: string; projectId: string; locale?: string }) {
   const t = useT();
   const labels = usePortalLabels();
-  const api = useMemo(() => staffPortalApi(workspaceId), [workspaceId]);
+  const api = useMemo(() => staffPortalApi(workspaceId, t), [workspaceId, t]);
   const [portal, setPortal] = useState<ProjectPortal | null>(null);
   const [open, setOpen] = useState(false);
   const [sections, setSections] = useState<PortalSection[]>([]);

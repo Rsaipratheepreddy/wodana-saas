@@ -38,7 +38,7 @@ describe("catalogue selling-price basis", () => {
   });
 
   it("explains the versioned selling-rate basis without exposing purchase cost", () => {
-    expect(catalogPriceProvenance(line.catalogPrice!)).toEqual({
+    expect(catalogPriceProvenance(line.catalogPrice!, { locale: "en-GB" })).toEqual({
       basis: "Catalog rate · v2",
       detail: "Effective 1 Jan 2026 to open ended · priced 17 Sept 2026 · tax extra",
     });

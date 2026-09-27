@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DesignSystemProvider, SettingsPage } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import type { CompanyProfileData, LegalEntityRecord, WorkspaceTerminologyData } from "@/lib/workspace/company-profile";
 import { LegalEntitiesPanel } from "./legal-entities-panel";
 import { OrganizationAccountPanel } from "./organization-account-panel";
@@ -12,15 +13,15 @@ import styles from "./workspace-configuration-page.module.css";
 
 type ConfigurationView = "legal-entities" | "language" | "organizations";
 
-const copy: Record<ConfigurationView, { title: string }> = {
+const copy: Record<ConfigurationView, { title: MessageKey }> = {
   "legal-entities": {
-    title: "Business records",
+    title: tKey("Business records"),
   },
   language: {
-    title: "Workspace language",
+    title: tKey("Workspace language"),
   },
   organizations: {
-    title: "Manage workspaces",
+    title: tKey("Manage workspaces"),
   },
 };
 
@@ -49,7 +50,7 @@ export function WorkspaceConfigurationPage({
   const content = copy[view];
 
   return <DesignSystemProvider className={styles.provider} currency={initialData.workspace.defaultCurrency} locale={initialData.workspace.defaultLocale} timeZone={initialData.workspace.defaultTimezone}>
-    <SettingsPage aria-label={content.title} title={view === "legal-entities" ? t("Business records") : view === "language" ? t("Workspace language") : t("Manage workspaces")}>
+    <SettingsPage aria-label={t(content.title)} title={view === "legal-entities" ? t("Business records") : view === "language" ? t("Workspace language") : t("Manage workspaces")}>
       <div className={styles.content}>
         {view === "legal-entities" ? <LegalEntitiesPanel canManage={canManage} initialEntities={entities} onChange={setEntities} standalone workspace={initialData.workspace} /> : null}
         {view === "language" ? <TerminologyPanel canManage={canManage} data={terminology} onChange={setTerminology} standalone unavailable={terminologyUnavailable} workspaceId={initialData.workspace.id} /> : null}

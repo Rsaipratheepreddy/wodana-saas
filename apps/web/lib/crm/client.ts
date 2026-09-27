@@ -1,3 +1,5 @@
+import { tKey } from "@/lib/i18n/keys";
+
 export type RecordData = Record<string, unknown> & { id: string };
 export function rows(payload: unknown): RecordData[] {
   if (Array.isArray(payload)) return payload as RecordData[];
@@ -17,13 +19,14 @@ export async function crmRequest<T = RecordData>(workspaceId: string, path: stri
     ...(method !== "GET" && method !== "DELETE" ? { body: JSON.stringify(body ?? {}) } : {}),
   });
   const result = await response.json().catch(() => null);
-  if (!response.ok) throw new CrmRequestError(result?.message ?? "CRM is unavailable. Please try again.", response.status);
+  if (!response.ok) throw new CrmRequestError(result?.message ?? tKey("CRM is unavailable. Please try again."), response.status);
   return result as T;
 }
-export function label(value: unknown, fallback = "Not set"): string {
+export function label(value: unknown, fallback: string = tKey("Not set")): string {
   return typeof value === "string" && value ? value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : fallback;
 }
-export function dateText(value: unknown) {
-  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return "Not scheduled";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+/** Date and time in the workspace's locale and time zone (pass them from `useDesignSystem()`). */
+export function dateText(value: unknown, format: { locale?: string; timeZone?: string } = {}, empty: string = tKey("Not scheduled")) {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return empty;
+  return new Intl.DateTimeFormat(format.locale, { dateStyle: "medium", timeStyle: "short", timeZone: format.timeZone }).format(new Date(value));
 }

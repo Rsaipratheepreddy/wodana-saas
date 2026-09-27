@@ -8,6 +8,8 @@ import type { LeadsPageData } from "@/lib/crm/leads";
 import type { RequirementNote } from "@/lib/crm/note-document";
 import type { CaseAsset } from "@/lib/pre-project/content";
 import { crmRequest } from "@/lib/crm/client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import type { Translate } from "@/lib/i18n/keys";
 import { CrmProductShell } from "./crm-product-shell";
 import styles from "./crm-attachments.module.css";
 
@@ -17,12 +19,17 @@ function fileType(file: Attachment) {
   if (file.mimeType?.startsWith("image/")) return "Image";
   return file.name.split(".").length > 1 ? file.name.split(".").at(-1)!.toUpperCase() : "File";
 }
+function fileTypeLabel(file: Attachment, t: Translate) {
+  const type = fileType(file);
+  return type === "Image" ? t("Image") : type === "File" ? t("File") : type;
+}
 function fileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 export function CrmAttachments({ initialData }: { initialData: LeadsPageData }) {
+  const t = useT();
   const [leadId, setLeadId] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,28 +41,28 @@ export function CrmAttachments({ initialData }: { initialData: LeadsPageData }) 
     const controller = new AbortController(); setLoading(true);
     crmRequest<{items: RequirementNote[]}>(initialData.workspaceId, `leads/${leadId}/requirement-notes`, "GET", undefined, controller.signal)
       .then(data => { if (!controller.signal.aborted) setFiles(data.items.filter(note => !note.archived).flatMap(note => (note.assets ?? []).map(asset => ({ ...asset, noteId: note.id, noteTitle: note.title })))); })
-      .catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Please try again."); })
+      .catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : t("Please try again.")); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [leadId, initialData.workspaceId, initialData.canView, revision]);
+  }, [leadId, initialData.workspaceId, initialData.canView, revision, t]);
   const columns: DataGridColumn<Attachment>[] = [
-    { accessorKey: "name", header: "File", size: 320, cell: ({ row }) => {
+    { accessorKey: "name", header: t("File"), size: 320, cell: ({ row }) => {
       const file = row.original;
       const Icon = file.mimeType?.startsWith("image/") ? FileImage : file.mimeType === "application/pdf" ? FileText : File;
       return <a className={styles.fileLink} href={`/api/workspace/requirement-notes/lead/${leadId}/${file.noteId}/assets/${file.id}?workspaceId=${encodeURIComponent(initialData.workspaceId)}`} target="_blank" rel="noopener noreferrer"><span className={styles.fileIcon} data-type={fileType(file)}><Icon size={18} aria-hidden="true" /></span><span className={styles.fileName}>{file.name}</span><ArrowUpRight size={13} aria-hidden="true" /></a>;
     } },
-    { accessorKey: "noteTitle", header: "Requirement note", size: 240 },
-    { id: "type", accessorFn: fileType, header: "Type", size: 100, cell: ({ row }) => <Badge tone="neutral">{fileType(row.original)}</Badge> },
-    { accessorKey: "byteSize", header: "Size", size: 100, cell: ({ row }) => <span className={styles.size}>{fileSize(row.original.byteSize)}</span> },
+    { accessorKey: "noteTitle", header: t("Requirement note"), size: 240 },
+    { id: "type", accessorFn: (file) => fileTypeLabel(file, t), header: t("Type"), size: 100, cell: ({ row }) => <Badge tone="neutral">{fileTypeLabel(row.original, t)}</Badge> },
+    { accessorKey: "byteSize", header: t("Size"), size: 100, cell: ({ row }) => <span className={styles.size}>{fileSize(row.original.byteSize)}</span> },
   ];
-  return <CrmProductShell title="Attachments" description="" canView={initialData.canView} useWorkspaceColors pageClassName={styles.page}>
+  return <CrmProductShell title={t("Attachments")} description="" canView={initialData.canView} useWorkspaceColors pageClassName={styles.page}>
     <div className={styles.contextBar}>
-      <div className={styles.enquiryPicker}><SelectField aria-label="Choose enquiry" label={null} placeholder="Choose an enquiry" selectedKey={leadId || null} onSelectionChange={key => setLeadId(String(key ?? ""))} items={initialData.items.map(lead => ({ id: lead.id, label: `${lead.reference ? `${lead.reference} · ` : ""}${lead.title}`, description: lead.partyName }))} /></div>
-      <span className={styles.summary}>{leadId ? loading ? "Loading files…" : `${files.length} ${files.length === 1 ? "file" : "files"}` : "Files from enquiry requirement notes"}</span>
-      {leadId && <Link className={styles.manageLink} href={`/workspace/crm/leads?lead=${leadId}`}>Manage files <ArrowUpRight size={14} aria-hidden="true" /></Link>}
-      <IconButton aria-label="Refresh attachments" size="compact" isDisabled={!leadId || loading} onPress={() => setRevision(value => value + 1)}><RefreshCw size={15} /></IconButton>
+      <div className={styles.enquiryPicker}><SelectField aria-label={t("Choose enquiry")} label={null} placeholder={t("Choose an enquiry")} selectedKey={leadId || null} onSelectionChange={key => setLeadId(String(key ?? ""))} items={initialData.items.map(lead => ({ id: lead.id, label: `${lead.reference ? `${lead.reference} · ` : ""}${lead.title}`, description: lead.partyName }))} /></div>
+      <span className={styles.summary}>{leadId ? loading ? t("Loading files…") : files.length === 1 ? t("{count} file", { count: files.length }) : t("{count} files", { count: files.length }) : t("Files from enquiry requirement notes")}</span>
+      {leadId && <Link className={styles.manageLink} href={`/workspace/crm/leads?lead=${leadId}`}>{t("Manage files")} <ArrowUpRight size={14} aria-hidden="true" /></Link>}
+      <IconButton aria-label={t("Refresh attachments")} size="compact" isDisabled={!leadId || loading} onPress={() => setRevision(value => value + 1)}><RefreshCw size={15} /></IconButton>
     </div>
-    {error && <Callout title="Could not load attachments" tone="danger">{error}<Button size="compact" onPress={() => setRevision(value => value + 1)}>Retry</Button></Callout>}
-    <DataGrid ariaLabel="Enquiry attachments" columns={columns} data={files} getRowId={file => `${file.noteId}:${file.id}`} isLoading={loading} searchLabel="Search files" rowNumbers={false} selectable={false} emptyTitle={error ? "Attachments unavailable" : leadId ? "No attachments yet" : "Choose an enquiry"} emptyDescription={error ? "Retry loading the files above." : leadId ? "Add files to this enquiry’s requirement notes using Manage files." : "Select an enquiry above to browse its documents and images."} />
+    {error && <Callout title={t("Could not load attachments")} tone="danger">{error}<Button size="compact" onPress={() => setRevision(value => value + 1)}>{t("Retry")}</Button></Callout>}
+    <DataGrid ariaLabel={t("Enquiry attachments")} columns={columns} data={files} getRowId={file => `${file.noteId}:${file.id}`} isLoading={loading} searchLabel={t("Search files")} rowNumbers={false} selectable={false} emptyTitle={error ? t("Attachments unavailable") : leadId ? t("No attachments yet") : t("Choose an enquiry")} emptyDescription={error ? t("Retry loading the files above.") : leadId ? t("Add files to this enquiry’s requirement notes using Manage files.") : t("Select an enquiry above to browse its documents and images.")} />
   </CrmProductShell>;
 }

@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import { ArrowLeftRight, CalendarClock, CalendarDays, CloudUpload, FileText, LogIn, LogOut, Plane, Users } from 'lucide-react-native';
+import { ArrowLeftRight, CalendarClock, CalendarDays, CloudUpload, FileText, Languages, LogIn, LogOut, Plane, Users } from 'lucide-react-native';
 import { useAuth } from '../../auth/provider';
+import { useApi } from '../../core/api';
 import { useFormat } from '../../core/format';
-import { useT } from '../../core/i18n';
+import { languages, preferenceLocale, useLanguage, useT, type AppLanguage } from '../../core/i18n';
 import { useOutbox } from '../../core/outbox';
 import { useSession } from '../../core/session';
 import { ConfirmSheet } from '../../ui/dialogs';
+import { OptionSheet } from '../../ui/fields';
 import { Card, ListRow, Screen, Section, Shimmer } from '../../ui/layout';
 import { Avatar, Button, Chip, Row, Text } from '../../ui/primitives';
 import { useTheme } from '../../ui/theme';
@@ -36,6 +38,9 @@ export function MeScreen() {
   const teamTime = usePendingTime(hrms && team);
   const myRequests = useLeaveRequests('self', year, hrms);
   const [signingOut, setSigningOut] = useState(false);
+  const [choosingLanguage, setChoosingLanguage] = useState(false);
+  const language = useLanguage();
+  const api = useApi();
   const organization = useOrganization();
   const workspaces = session.profile.memberships.length;
 
@@ -48,6 +53,13 @@ export function MeScreen() {
   const upcoming = (myRequests.data ?? []).filter((item) => ['pending', 'approved'].includes(item.status) && item.endDate >= format.today()).length;
   const waiting = outbox.items.length;
   const employee = bootstrap.data?.employee;
+  const chooseLanguage = async (next: AppLanguage) => {
+    setChoosingLanguage(false);
+    if (next === language.language) return;
+    // Saved on the profile so the web and other phones follow; offline, this phone still switches.
+    await api.send('me/language', 'PUT', { preferredLocale: preferenceLocale(next, session.membership.workspaceLocale) }).catch(() => undefined);
+    await language.setLanguage(next);
+  };
 
   return <Screen large title={session.profile.displayName} subtitle={`${session.membership.workspaceName} · ${session.profile.primaryEmail}`}
     action={<Avatar name={session.profile.displayName} size={44} />}
@@ -85,12 +97,15 @@ export function MeScreen() {
     </Section> : null}
 
     <Section>
-      {workspaces > 1 ? <ListRow first icon={ArrowLeftRight} title={t('Switch workspace')} detail={session.membership.workspaceName}
+      <ListRow first icon={Languages} title={t('Language')} detail={language.label} onPress={() => setChoosingLanguage(true)} />
+      {workspaces > 1 ? <ListRow icon={ArrowLeftRight} title={t('Switch workspace')} detail={session.membership.workspaceName}
         onPress={() => { organization.chooseWorkspace(true); void client.signOut(); }} /> : null}
-      <ListRow first={workspaces <= 1} icon={LogOut} title={t('Sign out')} danger onPress={() => setSigningOut(true)} />
+      <ListRow icon={LogOut} title={t('Sign out')} danger onPress={() => setSigningOut(true)} />
     </Section>
     <Text variant="caption" tone="tertiary" style={{ textAlign: 'center' }}>{t('Version {version}', { version: Constants.expoConfig?.version ?? '' })}</Text>
 
+    <OptionSheet open={choosingLanguage} onClose={() => setChoosingLanguage(false)} title={t('Language')} value={language.language}
+      options={languages.map((item) => ({ value: item.id, label: item.label }))} onChange={(next) => { if (next) void chooseLanguage(next); }} />
     <ConfirmSheet open={signingOut} onClose={() => setSigningOut(false)} danger title={t('Sign out?')} action={t('Sign out')}
       detail={waiting ? t('{count} captures are still waiting to send. They send after you sign in again.', { count: waiting }) : undefined}
       onConfirm={() => client.signOut()} />

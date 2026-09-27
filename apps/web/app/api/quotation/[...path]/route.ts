@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const QUOTE_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
@@ -26,19 +27,20 @@ function allowed(path: string[], method: string) {
 }
 
 async function handle(request: Request, { params }: { params: Promise<{ path: string[] }> }) {
+  const t = await getServerT();
   const { path } = await params;
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
-  if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: "Invalid quotation resource." }, { status: 400 });
-  if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: "Use your workspace to make this change." }, { status: 403 });
+  if (!UUID.test(workspaceId) || !allowed(path, request.method)) return NextResponse.json({ message: t("Invalid quotation resource.") }, { status: 400 });
+  if (request.method !== "GET" && !isSameOrigin(request)) return NextResponse.json({ message: t("Use your workspace to make this change.") }, { status: 403 });
   const body = request.method === "GET" ? undefined : await request.text();
-  if (body && body.length > 1_000_000) return NextResponse.json({ message: "The request is too large." }, { status: 413 });
+  if (body && body.length > 1_000_000) return NextResponse.json({ message: t("The request is too large.") }, { status: 413 });
   const query = new URLSearchParams();
   const q = url.searchParams.get("q");
   if (path[4] === "catalog" && q) query.set("q", q.slice(0, 120));
   const limit = url.searchParams.get("limit");
   if (path[4] === "catalog" && limit && /^\d{1,2}$/.test(limit)) query.set("limit", limit);
   return workspaceJsonResponse(`/workspaces/${workspaceId}/quotation/${path.join("/")}${query.size ? `?${query}` : ""}`,
-    { method: request.method, headers: { "content-type": "application/json" }, body }, "Could not update the quotation.");
+    { method: request.method, headers: { "content-type": "application/json" }, body }, t("Could not update the quotation."));
 }
 export { handle as GET, handle as POST, handle as PUT, handle as PATCH };

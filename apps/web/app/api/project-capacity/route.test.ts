@@ -1,4 +1,5 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
+vi.mock('@/lib/i18n/server', async () => { const { translator } = await import('@/lib/i18n/messages'); return { getServerT: async () => translator('en'), getServerLanguage: async () => 'en' }; });
 const forward=vi.hoisted(()=>vi.fn());
 vi.mock('@/lib/workspace/workspace-api',()=>({UUID:/^[0-9a-f-]{36}$/,workspaceJsonResponse:forward}));
 import {GET} from './route';

@@ -33,6 +33,13 @@ test('money uses the currency\'s own decimals and the workspace locale', () => {
   assert.equal(aed.money(null), '');
 });
 
+test('another language keeps the workspace region and Latin digits', () => {
+  const arabic = makeFormat({ locale: 'ar-AE-u-nu-latn', timeZone: 'Asia/Dubai', currency: 'AED' });
+  assert.equal(arabic.locale, 'ar-AE-u-nu-latn');
+  assert.match(arabic.money('1250.5'), /1,250\.50/);
+  assert.match(arabic.number(3.5, 1), /^3[.,٫]5$/);
+});
+
 test('durations, clock labels and unknown settings degrade safely', () => {
   const format = makeFormat({ locale: 'not a locale', timeZone: 'Mars/Base', currency: '' });
   assert.equal(format.timeZone, format.timeZone === 'UTC' ? 'UTC' : format.timeZone);

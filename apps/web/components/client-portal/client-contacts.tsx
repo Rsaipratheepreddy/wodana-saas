@@ -23,7 +23,7 @@ export function ClientContacts({ workspaceId, caseId, portalSlug, portalEnabled,
   workspaceId: string; caseId: string; portalSlug: string | null; portalEnabled: boolean; locale?: string; onChanged?: () => void | Promise<unknown>;
 }) {
   const t = useT();
-  const api = useMemo(() => staffPortalApi(workspaceId), [workspaceId]);
+  const api = useMemo(() => staffPortalApi(workspaceId, t), [workspaceId, t]);
   const [state, setState] = useState<{ contacts: PortalContact[]; canManage: boolean; demo: boolean } | null>(null);
   const [edit, setEdit] = useState<Draft | null>(null);
   const [error, setError] = useState("");

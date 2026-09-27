@@ -1,3 +1,4 @@
+import { tKey } from '@/lib/i18n/keys';
 import type { AssistCatalogRecord, AssistLink } from './quotation-assist';
 import type { CommercialCatalogChoice } from '@/components/commercial/catalog-picker';
 export type ReferencePrice={label:string;amount:number;currency:string;basis:string};
@@ -19,9 +20,9 @@ export function itemContext(records:ContextRecord[],links:AssistLink[],workId:st
   const covered=new Set(components.flatMap(r=>targets(r.id,materialKinds).map(m=>m.id)));
   const direct=[...targets(workId,materialKinds),...(variantId?targets(variantId,materialKinds):[])].filter(r=>!covered.has(r.id));
   const price=(r:ContextRecord):ReferencePrice[]=>{
-    const attrs=r.content?.attributes??[];const unit=attrs.find(a=>a.name.toLowerCase()==='unit')?.value??targets(r.id,['unit'])[0]?.name??'Unit not specified';
+    const attrs=r.content?.attributes??[];const unit=attrs.find(a=>a.name.toLowerCase()==='unit')?.value??targets(r.id,['unit'])[0]?.name??tKey('Unit not specified');
     const imported=attrs.flatMap(a=>{const key=a.name.toLowerCase().replace(/\s+/g,'_');const match=key.match(/^((?:.*price.*|estimated_cost))_(inr|aed|usd)$/);const n=Number(a.value.replace(/,/g,''));if(!match||!Number.isFinite(n)||n<0||!a.value.trim())return [];return [{label:`Source ${match[1].replaceAll('_',' ')}`,amount:n,currency:match[2].toUpperCase(),basis:key.match(/_per_(.+?)_(?:inr|aed|usd)$/)?.[1]?.replaceAll('_',' ')??unit}];});
-    const prices=records.filter(p=>p.kind==='rate_card'&&belongs(p.id,r.kind,r.id)).flatMap(p=>{const c=p.content?.configuration,amount=Number(c?.amount),currency=String(c?.currency??'');if(!c||!Number.isFinite(amount)||!/^[A-Z]{3}$/.test(currency))return [];return [{label:String(c.priceType??'Reference price'),amount,currency,basis:targets(p.id,['unit'])[0]?.name??'Unit not specified'}];});
+    const prices=records.filter(p=>p.kind==='rate_card'&&belongs(p.id,r.kind,r.id)).flatMap(p=>{const c=p.content?.configuration,amount=Number(c?.amount),currency=String(c?.currency??'');if(!c||!Number.isFinite(amount)||!/^[A-Z]{3}$/.test(currency))return [];return [{label:String(c.priceType??tKey('Reference price')),amount,currency,basis:targets(p.id,['unit'])[0]?.name??tKey('Unit not specified')}];});
     return [...imported,...prices];
   };
   const choice=(r:ContextRecord):CommercialCatalogChoice=>({id:r.id,name:r.name,code:r.code,kind:r.kind,version:r.version,catalogId:r.catalogId,catalogName:r.catalogName,configuration:r.content?.configuration});

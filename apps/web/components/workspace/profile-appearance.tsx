@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Check, Trash2 } from "lucide-react";
 import { AVATAR_PRESETS, Avatar, Button, InlineNotice, PresetPortrait, SettingsPage, SettingsRow, SettingsSection } from "@/design-system";
+import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { removeMyPhoto, saveMyAvatar, uploadMyPhoto, type MyProfile } from "@/lib/workspace/profile";
 import styles from "./profile-appearance.module.css";
@@ -41,6 +42,12 @@ export function ProfileAppearance({ workspaceId, userId, name, email, initial }:
         <input accept={PHOTO_TYPES.join(",")} className={styles.fileInput} onChange={(event) => { choose(event.target.files?.[0]); event.target.value = ""; }} ref={input} tabIndex={-1} type="file" aria-hidden="true" />
         <Button isLoading={busy === "photo"} onPress={() => input.current?.click()} size="compact" variant="quiet"><Camera aria-hidden="true" size={14} />{profile.photoUrl ? t("Change photo") : t("Upload photo")}</Button>
         {profile.photoUrl ? <Button isDisabled={busy !== null} onPress={() => void run("photo", () => removeMyPhoto(workspaceId), t("Photo removed."))} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Remove")}</Button> : null}
+      </SettingsRow>
+    </SettingsSection>
+
+    <SettingsSection id="language" title={t("Language")}>
+      <SettingsRow label={t("Interface language")}>
+        <LanguageSelect className={styles.language} label={null} />
       </SettingsRow>
     </SettingsSection>
 

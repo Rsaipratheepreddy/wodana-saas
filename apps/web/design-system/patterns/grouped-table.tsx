@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { type CSSProperties, type ReactNode } from "react";
 import { Checkbox } from "../components/forms";
 
@@ -47,6 +48,7 @@ export function GroupedTable<T>({
   /** Makes each section's name a button, e.g. to edit the group. */
   onSectionAction?: (sectionId: string) => void;
 }) {
+  const t = useT();
   selectedIds ??= new Set();
   const setRowSelected = (id: string, selected: boolean) => {
     const next = new Set(selectedIds);
@@ -60,7 +62,7 @@ export function GroupedTable<T>({
     const selectedCount = rowIds.filter((id) => selectedIds.has(id)).length;
     return <tbody key={section.id}>
       <tr className="wd-grouped-table-heading">
-        {selectable ? <th scope="col"><Checkbox aria-label={`Select all ${section.label.toLowerCase()}`} isIndeterminate={selectedCount > 0 && selectedCount < rowIds.length} isSelected={Boolean(rowIds.length) && selectedCount === rowIds.length} onChange={(selected) => { const next = new Set(selectedIds); rowIds.forEach((id) => selected ? next.add(id) : next.delete(id)); onSelectionChange?.(next); }} /></th> : null}
+        {selectable ? <th scope="col"><Checkbox aria-label={t("Select all {name}", { name: section.label.toLowerCase() })} isIndeterminate={selectedCount > 0 && selectedCount < rowIds.length} isSelected={Boolean(rowIds.length) && selectedCount === rowIds.length} onChange={(selected) => { const next = new Set(selectedIds); rowIds.forEach((id) => selected ? next.add(id) : next.delete(id)); onSelectionChange?.(next); }} /></th> : null}
         {columns.map((column, index) => <th scope="col" data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{index === 0
           ? onSectionAction ? <button className="wd-grouped-table-section-button" onClick={() => onSectionAction(section.id)} type="button">{section.label}</button> : section.label
           : section.headerLabels?.[column.id] ?? column.label}</th>)}
@@ -71,7 +73,7 @@ export function GroupedTable<T>({
           data-actionable={onRowAction ? true : undefined} tabIndex={onRowAction ? 0 : undefined}
           onClick={onRowAction ? (event) => { if (!(event.target as HTMLElement).closest("button,input,a,select,textarea,[role=checkbox],label")) onRowAction(row); } : undefined}
           onKeyDown={onRowAction ? (event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowAction(row); } } : undefined}>
-          {selectable ? <td><Checkbox aria-label={`Select ${getRowLabel?.(row) ?? id}`} isSelected={selectedIds.has(id)} onChange={(selected) => setRowSelected(id, selected)} /></td> : null}
+          {selectable ? <td><Checkbox aria-label={t("Select {name}", { name: getRowLabel?.(row) ?? id })} isSelected={selectedIds.has(id)} onChange={(selected) => setRowSelected(id, selected)} /></td> : null}
           {columns.map((column) => <td data-mobile-hidden={column.mobileHidden || undefined} key={column.id}>{column.render(row)}</td>)}
         </tr>;
       }) : <tr className="wd-grouped-table-empty"><td colSpan={columns.length + (selectable ? 1 : 0)}>{section.emptyMessage}</td></tr>}

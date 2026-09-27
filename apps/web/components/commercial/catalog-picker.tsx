@@ -1,4 +1,6 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { useId, useRef, useState } from "react";
 import { ChevronDown, X } from "lucide-react";
 import c from "./catalog-picker.module.css";
@@ -29,6 +31,7 @@ export function CommercialCatalogPicker({
   disabled?: boolean;
   excludeIds?: string[];
 }) {
+  const t = useT();
   const recordId = value?.id ?? null;
   const [query, setQuery] = useState<{ recordId: string | null; text: string }>(
     {
@@ -101,7 +104,7 @@ export function CommercialCatalogPicker({
           autoComplete="off"
           disabled={disabled}
           value={search}
-          placeholder="Search or choose…"
+          placeholder={t("Search or choose…")}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -135,7 +138,7 @@ export function CommercialCatalogPicker({
         <button
           type="button"
           disabled={disabled}
-          aria-label={`Show options ${label}`}
+          aria-label={t("Show options {label}", { label })}
           onClick={() => {
             if (!open) input.current?.focus();
             setOpen(!open);
@@ -147,12 +150,12 @@ export function CommercialCatalogPicker({
       {open && (
         <div className={c.results}>
           {loading && !options.length && (
-            <p role="status">Searching catalogs…</p>
+            <p role="status">{t("Searching catalogs…")}</p>
           )}
           <div
             role="listbox"
             id={`${id}-options`}
-            aria-label={`${label} options`}
+            aria-label={t("{label} options", { label })}
           >
             {options.map((option, index) => (
               <button
@@ -171,13 +174,12 @@ export function CommercialCatalogPicker({
             ))}
           </div>
           <button type="button" className={c.refresh} onClick={refresh}>
-            Refresh catalog choices
-          </button>
+            {t("Refresh catalog choices")}</button>
           {!loading && !error && !options.length && (
             <p>
               {linkedTo
-                ? "No linked choices. Try another search or use an item from the catalog."
-                : "No matching records. Try another search."}
+                ? t("No linked choices. Try another search or use an item from the catalog.")
+                : t("No matching records. Try another search.")}
             </p>
           )}
         </div>
@@ -194,19 +196,17 @@ export function CommercialCatalogPicker({
           }}
         >
           <X size={11} />
-          Clear selection
-        </button>
+          {t("Clear selection")}</button>
       )}
       {error && (
         <div role="alert" className={s.error}>
-          {error}{" "}
+          {translateKnown(t, error)}{" "}
           <button
             type="button"
             className={s.catalogClear}
             onClick={refresh}
           >
-            Try again
-          </button>
+            {t("Try again")}</button>
         </div>
       )}
     </div>

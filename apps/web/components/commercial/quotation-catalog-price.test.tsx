@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceRegionProvider } from "@/design-system";
 import type { QuoteLine } from "@/lib/commercial/types";
 import { QuotationCatalogPrice } from "./quotation-catalog-price";
 
@@ -47,7 +48,8 @@ describe("quotation catalogue price", () => {
       unitLabel: "nos", quantity: 2, currency: "AED", pricingDate: "2026-09-17", taxRate: 5, resolvedAt: "2026-09-17T00:00:00Z",
       rateCard: { id: "rate", version: 3, amount: 350, baseUnitRate: 350, appliedUnitRate: 350, effectiveFrom: "2026-01-01", taxIncluded: false, costIncludes: "labour", reference: "Joinery 2026" },
     } };
-    render(<QuotationCatalogPrice line={priced} currency="AED" taxRate={5} workspaceId="workspace" caseId="case" readOnly canOverride={false} onApply={vi.fn()} />);
+    // Dates read the workspace region's way (en-AE: day month year).
+    render(<WorkspaceRegionProvider locale="en-AE" currency="AED" timeZone="Asia/Dubai"><QuotationCatalogPrice line={priced} currency="AED" taxRate={5} workspaceId="workspace" caseId="case" readOnly canOverride={false} onApply={vi.fn()} /></WorkspaceRegionProvider>);
     expect(screen.queryByText("Joinery 2026 · v3")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Review price for Joinery" }));
     expect(screen.getByText("Joinery 2026 · v3")).toBeInTheDocument();

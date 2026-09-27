@@ -8,6 +8,8 @@ import { WorkspaceAccessService } from "./workspace-access.service";
 
 export const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 export const AVATAR_PRESET_PATTERN = /^[ab](0[1-9]|10)$/;
+/** A language, optionally with a region: "ar", "ar-AE", "en-001". */
+export const LANGUAGE_LOCALE_PATTERN = /^[a-z]{2,3}(-([A-Z]{2}|\d{3}))?$/;
 const PHOTO_TYPES: Record<string, string> = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
 type ProfileRow = { avatarPreset: string | null; photoObjectKey: string | null; photoUpdatedAt: Date | null; version: number };
@@ -37,6 +39,22 @@ export class MemberProfileService {
       const saved = await this.upsert(client, workspaceId, user.userId, "avatar_preset = $3", [input.avatarPreset]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "member.avatar_changed", entityType: "workspace_member_profile", entityId: user.userId, before: { avatarPreset: current?.avatarPreset ?? null }, after: { avatarPreset: input.avatarPreset } });
       return this.view(workspaceId, user.userId, saved);
+    });
+  }
+
+  /**
+   * The person's interface language, saved on their user record so it follows them to every device and
+   * workspace. Stored as the language with the workspace region ("ar-AE"); saving the same value is a no-op.
+   */
+  async setLanguage(actor: RequestActor, workspaceId: string, locale: string) {
+    if (!LANGUAGE_LOCALE_PATTERN.test(locale)) throw new BadRequestException("Choose one of the listed languages");
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const current = await client.query<{ preferredLocale: string }>(`SELECT preferred_locale AS "preferredLocale" FROM users WHERE id = $1 FOR UPDATE`, [user.userId]);
+      const before = current.rows[0]?.preferredLocale ?? null;
+      if (before === locale) return { preferredLocale: locale };
+      await client.query(`UPDATE users SET preferred_locale = $2 WHERE id = $1`, [user.userId, locale]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "member.language_changed", entityType: "user", entityId: user.userId, before: { preferredLocale: before }, after: { preferredLocale: locale } });
+      return { preferredLocale: locale };
     });
   }
 

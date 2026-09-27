@@ -7,6 +7,7 @@ import {
   type CaseDesign,
 } from "@/lib/pre-project/content";
 import view from "./designs.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 export function FileCover({
   design,
@@ -17,6 +18,7 @@ export function FileCover({
   data: CaseContent;
   full?: boolean;
 }) {
+  const t = useT();
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const asset = design.versions[0]?.asset;
@@ -34,7 +36,7 @@ export function FileCover({
     <span className={view.cover}>
       {asset && (image || asset.hasPreview) && !failed ? (
         <>
-          {!loaded && <small role="status">Loading preview…</small>}
+          {!loaded && <small role="status">{t("Loading preview…")}</small>}
           {/* Authenticated same-origin files retain the case access checks. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -48,7 +50,7 @@ export function FileCover({
       ) : (
         <>
           <DocumentIcon size={36} />
-          <small>{failed ? 'Preview unavailable' : asset ? extension : 'No file uploaded'}</small>
+          <small>{failed ? t('Preview unavailable') : asset ? extension : t('No file uploaded')}</small>
           {full && asset && (
             <a
               href={caseApi(
@@ -59,7 +61,7 @@ export function FileCover({
               target="_blank"
               rel="noreferrer"
             >
-              Open original file ↗
+              {t("Open original file")} ↗
             </a>
           )}
         </>
