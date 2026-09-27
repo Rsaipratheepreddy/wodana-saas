@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AVATAR_KEYS, avatarVariant } from "@wodana/contracts";
+import { AVATAR_KEYS, avatarVariant } from "@wodana/contracts/brand";
 import { Avatar } from "@/design-system";
 import { ProfileAppearance } from "./profile-appearance";
 

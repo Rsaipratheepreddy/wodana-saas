@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Avatar } from "./avatar";
 import { Avatar as LegacyAvatar } from "@/components/ui/avatar";
-import { avatarVariant } from "@wodana/contracts";
+import { avatarVariant } from "@wodana/contracts/brand";
 import { identityStyle } from "@/lib/brand/identity";
 
 describe("shared avatar branding", () => {

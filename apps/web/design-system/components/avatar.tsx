@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import { useState, type HTMLAttributes, type ReactNode } from "react";
-import { avatarPath, chosenAvatarKey, roleAvatarPath } from "@wodana/contracts";
+import { avatarPath, chosenAvatarKey, roleAvatarPath } from "@wodana/contracts/brand";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { tKey } from "@/lib/i18n/keys";
 import { identityInitials, identityStyle, identityVariant } from "@/lib/brand/identity";

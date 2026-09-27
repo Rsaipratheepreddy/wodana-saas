@@ -4,7 +4,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Check, Trash2 } from "lucide-react";
-import { AVATAR_KEYS, AVATAR_ROLES, avatarPath, chosenAvatarKey, roleAvatarKey, type AvatarRole } from "@wodana/contracts";
+import { AVATAR_KEYS, AVATAR_ROLES, avatarPath, chosenAvatarKey, roleAvatarKey, type AvatarRole } from "@wodana/contracts/brand";
 import { Avatar, Button, InlineNotice, SettingsPage, SettingsRow, SettingsSection } from "@/design-system";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useT } from "@/lib/i18n/i18n-provider";
