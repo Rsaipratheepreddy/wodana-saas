@@ -17,7 +17,7 @@ from wodana_intelligence.integrations.provider_models import (
     EmailRequest,
     OperationRequest,
 )
-from wodana_intelligence.integrations.provider_service import ProviderService
+from wodana_intelligence.integrations.provider_service import ProviderService, guard_delivery
 
 
 async def execute_google(
@@ -57,6 +57,8 @@ async def execute_google(
         if request.action == "email.send"
         else DriveDocumentRequest.model_validate(request.payload)
     )
+    if isinstance(validated, EmailRequest):
+        guard_delivery(providers.settings, email=validated.to)
     key = f"wodana:google-operation:{workspace}:{connection}:{request.idempotency_key}"
     digest = hashlib.sha256(
         request.model_dump_json(exclude={"idempotency_key"}).encode()

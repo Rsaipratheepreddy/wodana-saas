@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+import logging
 import secrets
 from collections.abc import Mapping
 from contextlib import suppress
@@ -12,6 +13,7 @@ from cryptography.fernet import Fernet
 
 from wodana_intelligence.config import Settings
 from wodana_intelligence.integrations.business_core import BusinessCoreClient, BusinessCoreError
+from wodana_intelligence.integrations.delivery_allowlist import NOT_ALLOWLISTED
 from wodana_intelligence.integrations.google_service import IntegrationFlowError
 from wodana_intelligence.integrations.provider_client import SCOPES, ZOHO_REGIONS, ProviderClient
 from wodana_intelligence.integrations.provider_models import (
@@ -25,6 +27,21 @@ from wodana_intelligence.integrations.provider_models import (
     WhatsAppCompleteRequest,
     WhatsAppMessageRequest,
 )
+
+logger = logging.getLogger("wodana.providers")
+
+
+def guard_delivery(
+    settings: Settings, *, email: str | None = None, phone: str | None = None
+) -> None:
+    """Local and UAT: refuses a recipient not on DELIVERY_ALLOWLIST before anything is sent."""
+    allowlist = settings.allowlist()
+    allowed = allowlist.allows_email(email) if email is not None else allowlist.allows_phone(phone)
+    if not allowed:
+        logger.warning("External delivery suppressed (%s)", NOT_ALLOWLISTED)
+        raise IntegrationFlowError(
+            NOT_ALLOWLISTED, "This recipient isn't on DELIVERY_ALLOWLIST in this environment", 403
+        )
 
 
 class ProviderService:
@@ -482,8 +499,9 @@ class ProviderService:
     async def send_whatsapp_notification(
         self, workspace: str, request: OperationRequest
     ) -> dict[str, Any]:
-        runtime, credential = await self.runtime_internal(workspace, "whatsapp")
         payload = WhatsAppMessageRequest.model_validate(request.payload)
+        guard_delivery(self.settings, phone=payload.to)
+        runtime, credential = await self.runtime_internal(workspace, "whatsapp")
         key = f"wodana:provider-operation:{workspace}:{runtime['id']}:{request.idempotency_key}"
         digest = hashlib.sha256(
             request.model_dump_json(exclude={"idempotency_key"}).encode()
@@ -628,6 +646,7 @@ class ProviderService:
             action_payload: Any = invoice
         elif request.action == "message.send" and credential.provider == "whatsapp":
             action_payload = WhatsAppMessageRequest.model_validate(request.payload)
+            guard_delivery(self.settings, phone=action_payload.to)
         else:
             raise IntegrationFlowError(
                 "invalid_operation", "This action is not supported by the selected connection"

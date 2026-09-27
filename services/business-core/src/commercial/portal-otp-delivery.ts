@@ -1,5 +1,6 @@
-import { ServiceUnavailableException } from "@nestjs/common";
+import { Logger, ServiceUnavailableException } from "@nestjs/common";
 import type { ConfigService } from "@nestjs/config";
+import { deliveryAllowlist, NOT_ALLOWLISTED } from "../notifications/delivery-allowlist";
 export async function deliverPortalOtp(
   config: ConfigService,
   workspaceId: string,
@@ -7,6 +8,11 @@ export async function deliverPortalOtp(
   phone: string,
   code: string,
 ) {
+  // Local and UAT: a number that isn't on DELIVERY_ALLOWLIST gets nothing (the email fallback is guarded too).
+  if (!deliveryAllowlist(config).allowsPhone(phone)) {
+    new Logger("PortalOtpDelivery").warn(`Portal code by WhatsApp suppressed (${NOT_ALLOWLISTED})`);
+    throw new ServiceUnavailableException("WhatsApp could not accept the sign-in code. Please try again later or contact the project team.");
+  }
   const base =
     config.get<string>("INTELLIGENCE_API_URL") ??
     "http://127.0.0.1:8001/api/v1";

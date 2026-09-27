@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CalendarDays, ChevronDown, CircleDot, Globe, Mail, MessageCircle, Phone, PhoneCall, UserRound } from "lucide-react";
 import { Button, Callout, Tabs, SelectField, TextInput } from "@/design-system";
-import { leadStageLabel, leadStageOptions, type CrmLeadListItem, type LeadsPageData } from "@/lib/crm/leads";
+import { leadStageLabel, leadStageOptions, salesOwnerChoices, type CrmLeadListItem, type LeadsPageData } from "@/lib/crm/leads";
 import { crmRequest, dateText, label, type RecordData } from "@/lib/crm/client";
 import { CrmDateTimeField } from "./crm-date-time-field";
 import { NewFollowUpDialog } from "./follow-up-editor";
@@ -169,7 +169,7 @@ export function LeadWorkbench({ lead, initialData, onChanged, onQualify }: { lea
     {editing && detail ? <LeadEnquiryForm initialData={initialData} existing={{ id: lead.id, version, reference: String(enquiry?.reference ?? lead.reference ?? ""), title: String(enquiry?.title ?? lead.title), summary: String(enquiry?.summary ?? ""), serviceType: String(enquiry?.serviceType ?? lead.serviceType ?? ""), details: enquiryDetails, source: String(enquiry?.source ?? lead.source ?? ""), channel: String(enquiry?.channel ?? lead.channel ?? ""), referral: (enquiry?.referral ?? null) as never, party: { ...contact, displayName: String(enquiry?.partyName ?? lead.partyName), email: String(enquiry?.primaryEmail ?? contact.email ?? ""), phone: String(enquiry?.primaryPhone ?? contact.phone ?? ""), mobile: String(enquiry?.primaryMobile ?? contact.mobile ?? "") }, customFields: lead.customFields }} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await saved(); }} /> : null}
     {scheduling && <NewFollowUpDialog workspaceId={workspaceId} initialLead={{ ...live }} onClose={() => setScheduling(false)} onCreated={async () => { await saved(); setScheduling(false); }} />}
     {contacting && <LogContactDialog workspaceId={workspaceId} lead={{ id: lead.id, version: Number(version), name: customerDisplayName(lead.partyName) }} onClose={() => setContacting(false)} onLogged={async () => { setContacting(false); await saved(); }} />}
-    {assigning && <LeadAssignmentDialog lead={live} members={initialData.members} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}
+    {assigning && <LeadAssignmentDialog lead={live} members={salesOwnerChoices(initialData)} workspaceId={workspaceId} onClose={() => setAssigning(false)} onSaved={saved} />}
     {action ? <ActionDialog action={action} workspaceId={workspaceId} onClose={() => setAction(null)} onSaved={saved} /> : null}
   </div>;
 }

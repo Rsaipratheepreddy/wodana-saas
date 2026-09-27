@@ -8,7 +8,8 @@ test('areas and captures follow the server\'s permission codes, never role names
   const qs = makeAccess(['catalog.view', 'crm.opportunities.view', 'hrms.self', 'pre_projects.view', 'projects.report', 'projects.view'], [...everything]);
   assert.deepEqual(workAreas(qs), ['sales', 'survey', 'projects', 'people']);
   assert.deepEqual(captureActions(qs), ['photo', 'report', 'crew-day', 'snag', 'expense']);
-  assert.equal(canUseInbox(qs), false);
+  // Your own notices need only membership: a QS is told about the reviews waiting for them.
+  assert.equal(canUseInbox(qs), true);
 
   const sales = makeAccess(['crm.leads.view', 'crm.leads.manage', 'crm.activities.view', 'crm.activities.manage', 'crm.notifications.view', 'hrms.self'], ['workspace', 'crm', 'hrms']);
   assert.deepEqual(workAreas(sales), ['sales', 'people']);

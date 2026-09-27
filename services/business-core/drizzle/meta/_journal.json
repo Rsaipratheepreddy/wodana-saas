@@ -551,6 +551,13 @@
     {
       "idx": 78,
       "version": "7",
+      "when": 1796212800000,
+      "tag": "0079_finance_reviewer_reads_finance",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
       "when": 1796731200000,
       "tag": "0085_proposal_kit",
       "breakpoints": true

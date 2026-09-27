@@ -1,9 +1,11 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
 import pytest
+from fakes import FakeRedis
 
 from wodana_intelligence.worker.adapters import DeterministicTestAdapter, UnconfiguredAdapter
 from wodana_intelligence.worker.models import DeliveryJob, DomainEventV1
@@ -322,3 +324,39 @@ async def test_bounded_iteration_exits_after_configured_visits() -> None:
     assert [item["stepKey"] for item in core.executed] == ["work", "work"]
     assert core.advanced[-1]["stepKey"] == "finish"
     assert core.advanced[-1]["status"] == "completed"
+
+
+class HeartbeatRedis(FakeStreamRedis, FakeRedis):
+    def __init__(self) -> None:
+        FakeStreamRedis.__init__(self)
+        FakeRedis.__init__(self)
+
+
+@pytest.mark.asyncio
+async def test_every_worker_loop_writes_the_heartbeat_business_core_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = HeartbeatRedis()
+    worker = CrmWorker(
+        redis, FakeDueWorkCore(), DeterministicTestAdapter(), "group", "worker-7"  # type: ignore[arg-type]
+    )
+
+    async def stop_after_one_cycle(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", stop_after_one_cycle)
+    with pytest.raises(asyncio.CancelledError):
+        await worker.poll_due_work()
+
+    beat: dict[str, Any] = json.loads(redis.values["wodana:worker:heartbeat"])
+    assert beat["consumer"] == "worker-7"
+    age = datetime.now(timezone.utc) - datetime.fromisoformat(beat["at"])
+    assert age.total_seconds() < 5
+
+
+@pytest.mark.asyncio
+async def test_a_heartbeat_failure_never_stops_the_worker() -> None:
+    worker = CrmWorker(
+        FakeStreamRedis(), FakeDueWorkCore(), DeterministicTestAdapter(), "g", "w"  # type: ignore[arg-type]
+    )
+    await worker.beat()

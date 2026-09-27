@@ -2,7 +2,7 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { Button, Callout, ControlledModalDialog, SelectField, TextInput, TextAreaField } from "@/design-system";
-import type { LeadsPageData } from "@/lib/crm/leads";
+import { salesOwnerChoices, type LeadsPageData } from "@/lib/crm/leads";
 import type { EnquiryDetails, LeadContact, LeadOptions } from "@/lib/crm/lead-options";
 import { countryForPhone, phoneCountry } from "@/lib/crm/phone";
 import { CrmPhoneField } from "./crm-phone-field";
@@ -57,7 +57,9 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
   // A source limited to roles is offered only to people holding one (owners and admins always).
   const sourceItems = (options?.sources ?? []).filter((item) => !item.allowedRoles?.length || item.id === existing?.source || roles.some((role) => item.allowedRoles!.includes(role) || role === "owner" || role === "administrator"));
   const [mode, setMode] = useState("manual");
-  const [ownerMembershipId, setOwner] = useState("");
+  // A salesperson who can own enquiries starts as the owner of the one they create.
+  const ownerChoices = salesOwnerChoices(initialData);
+  const [ownerMembershipId, setOwner] = useState(() => ownerChoices.some(member => member.id === initialData.currentMembershipId) ? initialData.currentMembershipId! : "");
   const [queueId, setQueue] = useState("");
   const inFlight = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -148,7 +150,7 @@ export function LeadEnquiryForm({ initialData, existing, onClose, onSaved }: {
           : null}
         {!existing && <>
           <div className={styles.formColumns}><SelectField label="Assignment" items={[{ id: "manual", label: "Choose sales owner" }, { id: "automatic", label: "Use routing rules" }, { id: "unassigned", label: "Leave unassigned" }]} selectedKey={mode} onSelectionChange={key => key && setMode(String(key))} />
-            {mode === "manual" ? <SelectField isRequired label="Sales owner" items={initialData.members.filter(member => member.status === "active").map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? "Uses the matching rule or default team and available capacity." : "The enquiry stays visible in Unassigned."}</p>}
+            {mode === "manual" ? <SelectField isRequired label="Sales owner" items={ownerChoices.map(member => ({ id: member.id, label: member.displayName || member.email }))} selectedKey={ownerMembershipId || null} onSelectionChange={key => setOwner(String(key ?? ""))} /> : <p className={styles.routingHint}>{mode === "automatic" ? "Uses the matching rule or default team and available capacity." : "The enquiry stays visible in Unassigned."}</p>}
           </div>
         </>}
         <section className={styles.moreDetails} aria-label="Additional details">

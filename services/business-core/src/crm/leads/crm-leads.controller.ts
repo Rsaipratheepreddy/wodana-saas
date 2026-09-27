@@ -42,6 +42,11 @@ export class CrmLeadsController {
     return this.leads.get(actor, workspaceId, leadId);
   }
 
+  @Get("sales-owners")
+  salesOwners(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("queueId") queueId?: string) {
+    return this.leads.salesOwners(actor, workspaceId, queueId);
+  }
+
   @Post("queues")
   createQueue(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: CreateQueueDto) {
     return this.leads.createQueue(actor, workspaceId, input);

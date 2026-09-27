@@ -113,46 +113,76 @@ async function createQaActor(roleCode: string) {
   return { id: actorId, token: login.accessToken as string };
 }
 
-async function portalCommand(path: string, body: Record<string, unknown>, portalToken?: string) {
+/** The client's side of the portal (plan §6.22): its own session token, never a staff one. */
+async function portalRequest(path: string, method: "GET" | "POST", body?: Record<string, unknown>, portalToken?: string) {
   const response = await fetch(`${api}/client-portal/${workspaceSlug}/${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(portalToken ? { authorization: `Bearer ${portalToken}` } : {}) },
-    body: JSON.stringify(body),
+    method,
+    headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(portalToken ? { authorization: `Bearer ${portalToken}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null);
-  assert.equal(response.status, 201, `Client portal ${path}: ${response.status} ${JSON.stringify(payload)}`);
+  assert.equal(response.status, method === "GET" ? 200 : 201, `Client portal ${path}: ${response.status} ${JSON.stringify(payload)}`);
   return payload;
 }
 
+/** A client decision: a fresh code bound to the exact record and choice, then one idempotent command. */
+async function portalDecision(portalToken: string, action: string, purpose: string, body: Record<string, unknown>) {
+  const challenge = await portalRequest("challenge", "POST", { purpose }, portalToken);
+  const result = await portalRequest("command", "POST", { commandId: randomUUID(), action, ...body, challengeId: challenge.challengeId, code: "123456" }, portalToken);
+  assert.equal(result.ok, true, `Client portal ${action} must succeed`);
+  return result;
+}
+
+async function portalProject(portalToken: string, caseId: string) {
+  const view = await portalRequest("view", "GET", undefined, portalToken);
+  const project = view.projects.find((item: { id: string }) => item.id === caseId);
+  assert(project, "The case must be shared with this client");
+  return project;
+}
+
 async function enrollClientApprover(caseId: string) {
-  const portalPath = `/workspaces/${workspaceId}/commercial/portal-settings`;
-  const settings = await request(portalPath);
-  if (!settings.enabled)
-    await request(portalPath, "PUT", { version: settings.version, enabled: true, brand: settings.brand });
+  const portalPath = `/workspaces/${workspaceId}/client-portal`;
+  const current = await request(`${portalPath}/settings`);
+  assert.equal(current.demo, true, "Synthetic client codes must run in local test mode");
+  if (!current.settings.enabled)
+    await request(`${portalPath}/settings`, "PUT", { version: current.settings.version, enabled: true });
   const mobile = `+9715${randomInt(10_000_000, 100_000_000)}`;
-  await request(`/workspaces/${workspaceId}/commercial/cases/${caseId}/contacts`, "PUT",
+  await request(`${portalPath}/cases/${caseId}/contacts`, "PUT",
     { name: "Palm QA client", phone: mobile, role: "approver", active: true, testContact: true });
   const approver = (await state(caseId)).contacts.find((contact: { phone: string }) => contact.phone === mobile);
   assert(approver, "The client approver must be linked to this case");
-  const loginChallenge = await portalCommand("challenge", { phone: mobile, purpose: "login" });
-  assert(loginChallenge.testMode, "Synthetic client OTP must run in test mode");
-  const session = await portalCommand("login", { challengeId: loginChallenge.challengeId, code: "123456" });
+  const loginChallenge = await portalRequest("challenge", "POST", { phone: mobile });
+  const session = await portalRequest("login", "POST", { challengeId: loginChallenge.challengeId, code: "123456" });
   assert(session.token, "The client portal must open a session");
   return { mobile, approverId: approver.id as string, clientToken: session.token as string };
 }
 
+/** The issued revision as the client reads it, accepted with its code; the case records the decision. */
+async function clientAcceptsQuote(portalToken: string, caseId: string, quoteId: string) {
+  const issued = (await portalProject(portalToken, caseId)).decisions.quotes.find((item: { id: string }) => item.id === quoteId);
+  assert.equal(issued?.canDecide, true, "The issued quotation must wait for the client's decision");
+  await portalDecision(portalToken, "quote_decision", `quote:${caseId}:${quoteId}:accept`,
+    { caseId, quoteId, decision: "accept", selectedOptionLineIds: [], note: "", hash: issued.hash });
+  assert.equal((await state(caseId)).data.quotes.find((item: Quote) => item.id === quoteId)?.status, "accepted");
+}
+
+/** Quote lines and payment terms are written through the quotation builder (version-checked ops), never the case JSON. */
+async function buildQuote(caseId: string, quoteId: string, line: Record<string, unknown>, term: Record<string, unknown>) {
+  const path = `/workspaces/${workspaceId}/quotation/cases/${caseId}/quotes/${quoteId}`;
+  const lineId = randomUUID();
+  await request(`${path}/lines`, "POST", { ops: [{ op: "upsert", line: { id: lineId, ...line } }] }, 201);
+  await request(`${path}/payment-terms`, "PUT", { terms: [{ id: randomUUID(), ...term }] });
+  const built = (await state(caseId)).data.quotes.find((item: Quote) => item.id === quoteId) as Quote;
+  assert.deepEqual(built.lines.map((item) => item.id), [lineId], "The builder's line must be the quote's only line");
+  assert.equal(Number(built.lines[0].rate), Number(line.rate));
+  assert.equal(built.paymentTerms.length, 1);
+}
+
 async function approveDesignRoundThroughApi(caseId: string, quoteId: string) {
   const submitterToken = token;
-  const quote = (await state(caseId)).data.quotes.find((item: Quote) => item.id === quoteId) as Quote;
-  await command(caseId, "save", { quoteId, quote: {
-    ...quote,
-    lines: [{ id: randomUUID(), room: "Whole project", title: "Interior design package",
-      specification: "Moodboards and measured design scope", material: "", finish: "",
-      quantity: 1, unit: "package", unitCost: 9000, rate: 15000,
-      manualReason: "Bespoke design service" }],
-    paymentTerms: [{ id: randomUUID(), title: "Design deposit", percent: 100,
-      trigger: "Signed design agreement", requiredForRelease: true, requiredForProduction: false }],
-  } });
+  await buildQuote(caseId, quoteId,
+    { title: "Interior design package", description: "Moodboards and measured design scope", quantity: "1", unit: "package", unitCost: "9000", rate: "15000" },
+    { title: "Design deposit", percent: 100, trigger: "Signed design agreement", requiredForRelease: true, requiredForProduction: false });
   await command(caseId, "submit", { quoteId });
   await command(caseId, "approve", { quoteId }, 409);
   await command(caseId, "submit_owner_review", { quoteId }, 409);
@@ -164,11 +194,7 @@ async function approveDesignRoundThroughApi(caseId: string, quoteId: string) {
 
   const client = await enrollClientApprover(caseId);
   await command(caseId, "issue", { quoteId, approverId: client.approverId });
-  const decisionChallenge = await portalCommand("challenge",
-    { phone: client.mobile, purpose: `decision:${caseId}:${quoteId}:accept` }, client.clientToken);
-  await portalCommand("action", { caseId, action: "decision", quoteId, decision: "accept",
-    selectedOptionLineIds: [], note: "", challengeId: decisionChallenge.challengeId, code: "123456" }, client.clientToken);
-  assert.equal((await state(caseId)).data.quotes.find((item: Quote) => item.id === quoteId)?.status, "accepted");
+  await clientAcceptsQuote(client.clientToken, caseId, quoteId);
 
   await command(caseId, "agreement", { quoteId, reference: `QA-DESIGN-${suffix}`,
     terms: "Synthetic design agreement", evidence: "Synthetic signed agreement record", evidenceKind: "operational" });
@@ -243,41 +269,29 @@ async function approveDesignDeliverableThroughApi(caseId: string, actors: RoundA
   token = submitterToken;
   await designActivity("internal_approved");
   await designActivity("client_review");
-  const challenge = await portalCommand("challenge", {
-    phone: actors.mobile, purpose: `design-decision:${caseId}:${versionId}:accept`,
-  }, actors.clientToken);
-  await portalCommand("action", { caseId, action: "design-decision", versionId,
-    decision: "accept", note: "", challengeId: challenge.challengeId, code: "123456" }, actors.clientToken);
+  const shared = (await portalProject(actors.clientToken, caseId)).decisions.designs.find((item: { id: string }) => item.id === versionId);
+  assert.equal(shared?.canDecide, true, "The design shared for review must wait for the client's decision");
+  await portalDecision(actors.clientToken, "design_decision", `design:${caseId}:${versionId}:accept`,
+    { caseId, versionId, decision: "accept", note: "" });
   const designs = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/designs`);
   assert.equal(designs.items.find((item: { id: string }) => item.id === designId)?.versions?.[0]?.status, "approved");
 }
 
 async function approveMainRoundThroughApi(caseId: string, quoteId: string, actors: RoundActors, readyMade = false) {
   const submitterToken = token;
-  const quote = (await state(caseId)).data.quotes.find((item: Quote) => item.id === quoteId) as Quote;
-  await command(caseId, "save", { quoteId, quote: {
-    ...quote,
-    lines: [{ id: randomUUID(), room: readyMade ? "Living room" : "Whole project",
-      title: readyMade ? "Ready-made sofa and table" : "Fitout and furniture package",
-      specification: readyMade ? "Catalog furniture; no design or factory work" : "Fitted joinery and selected furniture",
-      material: readyMade ? "Supplier finished" : "Mixed", finish: "As specified",
-      quantity: 1, unit: "package", unitCost: readyMade ? 5000 : 40000, rate: readyMade ? 9000 : 70000,
-      manualReason: readyMade ? "Client-selected supplier package" : "Bespoke site-measured package" }],
-    paymentTerms: [{ id: randomUUID(), title: "Main agreement payment", percent: 100,
-      trigger: "Signed main agreement", requiredForRelease: true, requiredForProduction: true }],
-  } });
+  await buildQuote(caseId, quoteId, {
+    title: readyMade ? "Ready-made sofa and table" : "Fitout and furniture package",
+    description: readyMade ? "Catalog furniture; no design or factory work" : "Fitted joinery and selected furniture",
+    material: readyMade ? "Supplier finished" : "Mixed", quantity: "1", unit: "package",
+    unitCost: readyMade ? "5000" : "40000", rate: readyMade ? "9000" : "70000",
+  }, { title: "Main agreement payment", percent: 100, trigger: "Signed main agreement", requiredForRelease: true, requiredForProduction: true });
   await command(caseId, "submit", { quoteId });
   token = actors.qs.token;
   const estimated = await command(caseId, "qs_approve", { quoteId });
   assert.equal(estimated.data.quotes.find((item: Quote) => item.id === quoteId)?.qsEstimate?.reviewedById, actors.qs.id);
   token = submitterToken;
   await command(caseId, "issue", { quoteId, approverId: actors.approverId });
-  const challenge = await portalCommand("challenge", {
-    phone: actors.mobile, purpose: `decision:${caseId}:${quoteId}:accept`,
-  }, actors.clientToken);
-  await portalCommand("action", { caseId, action: "decision", quoteId, decision: "accept",
-    selectedOptionLineIds: [], note: "", challengeId: challenge.challengeId, code: "123456" }, actors.clientToken);
-  assert.equal((await state(caseId)).data.quotes.find((item: Quote) => item.id === quoteId)?.status, "accepted");
+  await clientAcceptsQuote(actors.clientToken, caseId, quoteId);
   await command(caseId, "agreement", { quoteId, reference: `QA-MAIN-${suffix}`,
     terms: "Synthetic main agreement", evidence: "Synthetic signed main agreement record", evidenceKind: "operational" });
   const executed = await command(caseId, "execute_agreement");
@@ -376,6 +390,16 @@ try {
   assert.deepEqual(quantitySurveyor.rows.map(row => row.code).sort(), [
     "commercial.costs.view", "commercial.estimate", "crm.opportunities.view", "pre_projects.view",
   ], "A new workspace must provision an assignable QS reviewer with only the required quotation access");
+  const financeReviewer = await tenantQuery<{ code: string }>(
+    `SELECT permission.code FROM roles role
+     JOIN role_permissions assigned ON assigned.role_id=role.id AND assigned.workspace_id=role.workspace_id
+     JOIN permissions permission ON permission.id=assigned.permission_id
+     WHERE role.workspace_id=$1 AND role.code='finance_reviewer'`,
+    [workspaceId],
+  );
+  assert.deepEqual(financeReviewer.rows.map(row => row.code).sort(), [
+    "commercial.finance.verify", "crm.opportunities.view", "payables.view", "pre_projects.view", "receivables.view",
+  ], "The Finance reviewer verifies payments and reads Finance (bills and invoices), nothing more");
   const activated = await request("/auth/invitations/activate", "POST", { invitationToken: provisioned.ownerInvitation.invitationToken, password }, 201, false);
   token = activated.accessToken;
   ownerId = (await request("/me")).id;
@@ -422,24 +446,6 @@ try {
   // The old release step is gone: a project starts from the accepted quotation.
   const oldRelease = await command(designCase, "release", { note: "Old path" }, 409);
   assert.match(JSON.stringify(oldRelease), /accepted quotation/);
-  const selections = await command(designCase, "sync_material_approvals");
-  const pendingSelections = selections.data.materialApprovals.filter((item: { quoteId: string }) => item.quoteId === mainQuoteId);
-  assert(pendingSelections.length > 0, "The main quotation must generate material-list decisions");
-  for (const selection of pendingSelections) {
-    await command(designCase, "submit_material_approval", {
-      materialApprovalId: selection.id, approverId: roundActors.approverId,
-    });
-    const challenge = await portalCommand("challenge", {
-      phone: roundActors.mobile, purpose: `material-decision:${designCase}:${selection.id}:accept`,
-    }, roundActors.clientToken);
-    await portalCommand("action", {
-      caseId: designCase, action: "material-decision", materialApprovalId: selection.id,
-      decision: "accept", note: "", challengeId: challenge.challengeId, code: "123456",
-    }, roundActors.clientToken);
-  }
-  const signedOff = (await state(designCase)).data as CommercialData;
-  assert(signedOff.materialApprovals.filter(item => item.quoteId === mainQuoteId)
-    .every(item => item.status === "approved"));
 
   // Start the project from the accepted main quotation: one project, a sealed scope, the route's stages.
   const projectMember = (await tenantQuery<{ id: string }>(
@@ -466,6 +472,19 @@ try {
   assert.equal(project.stages[0].status, "current");
   assert.equal((await tenantQuery<{ status: string }>(`SELECT status FROM pre_project_cases WHERE workspace_id=$1 AND id=$2`, [workspaceId, designCase])).rows[0].status, "released",
     "Planning is read-only once the project starts");
+
+  // Material List Sign-off: the project's list, sent as a revision, decided by the client in the portal.
+  project = await request(`${projects}/projects/${started.projectId}`, "POST", { action: "save_material", name: "Oak veneer", specification: "Crown cut, matt lacquer",
+    quantity: "12", unit: "sheet", boqLineIds: [live.lines[0].id], version: project.project.version }, 201);
+  project = await request(`${projects}/projects/${started.projectId}`, "POST", { action: "send_materials", version: project.project.version }, 201);
+  const materials = (await portalProject(roundActors.clientToken, designCase)).decisions.materials;
+  assert.equal(materials?.canDecide, true, "The sent material list must wait for the client's decision");
+  await portalDecision(roundActors.clientToken, "materials_decision", `materials:${designCase}:${materials.id}:submit`, {
+    caseId: designCase, revisionId: materials.id, decisions: materials.items.map((item: { id: string }) => ({ itemId: item.id, decision: "approved" })),
+  });
+  assert.equal((await tenantQuery<{ status: string }>(`SELECT status FROM project_material_revisions WHERE workspace_id=$1 AND id=$2`, [workspaceId, materials.id])).rows[0].status,
+    "signed_off", "Every material approved signs the list off");
+  project = await request(`${projects}/projects/${started.projectId}`);
   const kickoff = project.stages[0];
   const meeting = kickoff.checks.find((check: { kind: string }) => check.kind === "confirm");
   project = await request(`${projects}/projects/${started.projectId}`, "POST", { action: "confirm_check", stageId: kickoff.id, checkKey: meeting.key, version: project.project.version }, 201);
@@ -505,7 +524,7 @@ try {
   const furnitureStarted = await request(`${projects}/start/${furnitureCase}`, "POST", { quoteId: furnitureQuoteId, leadMembershipId: projectMember.id }, 201);
   const list = await request(`${projects}/projects`);
   assert.deepEqual(new Set(list.projects.map((row: { id: string }) => row.id)), new Set([started.projectId, furnitureStarted.projectId]));
-  console.log("PASS: Design fee rounds stay in Planning; accepted main quotations start one project each with a sealed scope, the route's stages, stage checks and holds.");
+  console.log("PASS: Design fee rounds stay in Planning; accepted main quotations start one project each with a sealed scope, the client's material list sign-off in the portal, the route's stages, stage checks and holds.");
 } finally {
   await admin.end();
 }

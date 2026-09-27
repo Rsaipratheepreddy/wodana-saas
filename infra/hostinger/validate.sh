@@ -19,7 +19,7 @@ if [[ "${MODE}" != "structure-only" ]]; then
   )
   auth_mode="$(sed -n 's/^AUTH_MODE=//p' "${ENV_FILE}" | tail -n 1 | tr -d '\r')"
   case "${auth_mode:-password}" in
-    password) required+=(LOCAL_AUTH_JWT_SECRET LOCAL_AUTH_ISSUER LOCAL_AUTH_AUDIENCE MAILGUN_API_KEY MAILGUN_DOMAIN) ;;
+    password) required+=(LOCAL_AUTH_JWT_SECRET LOCAL_AUTH_ISSUER LOCAL_AUTH_AUDIENCE MFA_ENCRYPTION_KEY MAILGUN_API_KEY MAILGUN_DOMAIN) ;;
     oidc) required+=(OIDC_ISSUER OIDC_AUDIENCE OIDC_JWKS_URI) ;;
     *) echo "Production AUTH_MODE must be password or oidc" >&2; exit 1 ;;
   esac
@@ -38,6 +38,13 @@ if [[ "${MODE}" != "structure-only" ]]; then
     (( ${#value} >= 32 )) || { echo "${key} must contain at least 32 characters" >&2; exit 1; }
   done
 
+  if [[ "${auth_mode:-password}" == "password" ]]; then
+    mfa_key="$(sed -n 's/^MFA_ENCRYPTION_KEY=//p' "${ENV_FILE}" | tail -n 1 | tr -d '\r')"
+    # 32 bytes: 64 hex characters or 43 base64url characters, as Business Core accepts.
+    [[ "${mfa_key}" =~ ^[0-9A-Fa-f]{64}$ || "${mfa_key}" =~ ^[A-Za-z0-9_-]{43}=?$ ]] \
+      || { echo "MFA_ENCRYPTION_KEY must be 32 bytes (openssl rand -hex 32)" >&2; exit 1; }
+  fi
+
   https_keys=(WEB_ORIGIN GOOGLE_REDIRECT_URI QUICKBOOKS_REDIRECT_URI ZOHO_REDIRECT_URI)
   if [[ "${auth_mode:-password}" == "password" ]]; then
     https_keys+=(LOCAL_AUTH_ISSUER)
@@ -48,6 +55,9 @@ if [[ "${MODE}" != "structure-only" ]]; then
     value="$(sed -n "s/^${key}=//p" "${ENV_FILE}" | tail -n 1 | tr -d '\r')"
     [[ "${value}" == https://* ]] || { echo "${key} must use HTTPS" >&2; exit 1; }
   done
+
+  allowlist="$(sed -n 's/^DELIVERY_ALLOWLIST=//p' "${ENV_FILE}" | tail -n 1 | tr -d '\r')"
+  [[ -z "${allowlist}" ]] || { echo "DELIVERY_ALLOWLIST is for local and UAT; remove it in production" >&2; exit 1; }
 fi
 
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --quiet

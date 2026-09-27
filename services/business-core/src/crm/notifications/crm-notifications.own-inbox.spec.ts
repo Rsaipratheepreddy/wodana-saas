@@ -1,0 +1,66 @@
+import { ForbiddenException } from "@nestjs/common";
+import { describe, expect, it, vi } from "vitest";
+import { CrmNotificationsService } from "./crm-notifications.service";
+
+const workspaceId = "11111111-1111-4111-8111-111111111111";
+const qsUserId = "22222222-2222-4222-8222-222222222222";
+const notificationId = "33333333-3333-4333-8333-333333333333";
+const actor = { subject: "omar", provider: "local", email: "omar.qs@example.com", displayName: "Omar" } as never;
+
+/**
+ * A member with no notification permission (a QS or Finance reviewer): membership opens the work,
+ * anything guarded by a permission is refused, as the real WorkspaceAccessService would.
+ */
+function memberWithoutPermissions(query: ReturnType<typeof vi.fn>) {
+  const client = { query };
+  const access = {
+    asMember: vi.fn(async (_actor: unknown, _workspace: string, work: (c: unknown, u: { userId: string }) => unknown) => work(client, { userId: qsUserId })),
+    withPermission: vi.fn(async (_actor: unknown, _workspace: string, permission: string) => { throw new ForbiddenException(`Permissions required: ${permission}`); }),
+    hasPermission: vi.fn(async () => false),
+  };
+  const service = new CrmNotificationsService({ tenantTransaction: vi.fn() } as never, access as never, { record: vi.fn() } as never, { record: vi.fn() } as never);
+  return { service, access };
+}
+
+describe("your own notifications need only membership", () => {
+  it("lists only the signed-in member's in-app notices", async () => {
+    const query = vi.fn(async () => ({ rows: [{ id: notificationId, subject: "Quote ready for QS review" }], rowCount: 1 }));
+    const { service, access } = memberWithoutPermissions(query);
+    await expect(service.inbox(actor, workspaceId)).resolves.toEqual([{ id: notificationId, subject: "Quote ready for QS review" }]);
+    expect(access.asMember).toHaveBeenCalledTimes(1);
+    expect(access.withPermission).not.toHaveBeenCalled();
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toMatch(/recipient_type='user' AND recipient_id=\$2 AND channel='in_app'/);
+    expect(values).toEqual([workspaceId, qsUserId]);
+  });
+
+  it("marks one of your notices read, and never someone else's", async () => {
+    const query = vi.fn(async () => ({ rows: [], rowCount: 0 }));
+    const { service } = memberWithoutPermissions(query);
+    await expect(service.read(actor, workspaceId, notificationId)).rejects.toThrow("Notification not found");
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toMatch(/recipient_type='user' AND recipient_id=\$3/);
+    expect(values).toEqual([workspaceId, notificationId, qsUserId]);
+
+    query.mockResolvedValueOnce({ rows: [{ id: notificationId, readAt: new Date(), version: 2 }], rowCount: 1 });
+    await expect(service.read(actor, workspaceId, notificationId)).resolves.toMatchObject({ id: notificationId, version: 2 });
+  });
+
+  it("marks all of your notices read", async () => {
+    const query = vi.fn(async () => ({ rows: [{ id: "a" }, { id: "b" }], rowCount: 2 }));
+    const { service, access } = memberWithoutPermissions(query);
+    await expect(service.readAll(actor, workspaceId)).resolves.toEqual({ updated: 2 });
+    expect(access.withPermission).not.toHaveBeenCalled();
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toMatch(/UPDATE notifications SET read_at=now\(\).*recipient_id=\$2 .*read_at IS NULL/);
+    expect(values).toEqual([workspaceId, qsUserId]);
+  });
+
+  it("keeps templates and policies (everyone's notices) behind their permissions", async () => {
+    const query = vi.fn();
+    const { service } = memberWithoutPermissions(query);
+    await expect(service.templates(actor, workspaceId)).rejects.toThrow("crm.notifications.view");
+    await expect(service.policies(actor, workspaceId)).rejects.toThrow("crm.notifications.view");
+    expect(query).not.toHaveBeenCalled();
+  });
+});

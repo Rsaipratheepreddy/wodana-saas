@@ -65,6 +65,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
+import { caseCurrency as currency, roundAmount, sumAmounts } from "./case-money";
 import type { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { ConfigService } from "@nestjs/config";
@@ -2218,7 +2219,7 @@ export class CommercialService {
             inclusions: text(v.inclusions ?? "", 6000),
             currency: quoteCurrency,
             validUntil: date(v.validUntil),
-            discount: roundAmount(v.discount),
+            discount: roundAmount(v.discount, quoteCurrency),
             taxRate: quoteTaxRate,
             terms: text(v.terms, 10000),
             exclusions: text(v.exclusions, 6000),
@@ -2542,7 +2543,7 @@ export class CommercialService {
             quoteId: accepted.id,
             quoteHash: accepted.hash ?? freezeHash(accepted),
             status: "pending_finance",
-            commission: roundAmount(commissionLines.reduce((total, line) => total + line.amount, 0)),
+            commission: sumAmounts(commissionLines.map((line) => line.amount), accepted.currency),
             commissionLines,
             paymentProofUrl,
             checklist,
@@ -2572,7 +2573,7 @@ export class CommercialService {
               throw new ConflictException("The accepted quotation changed. Submit the deal again.");
             const finalCommissionLines = dealInput(() => confirmCommissionAmounts(review.commissionLines ?? [], b.commissionLines, acceptedQuoteValue(accepted)));
             review.finalCommissionLines = finalCommissionLines;
-            review.commission = roundAmount(finalCommissionLines.reduce((total, line) => total + line.amount, 0));
+            review.commission = sumAmounts(finalCommissionLines.map((line) => line.amount), accepted.currency);
             review.status = "pending_approval";
           } else {
             review.status = "returned";
@@ -3073,7 +3074,7 @@ export class CommercialService {
           if (!data.agreement)
             throw new ConflictException("Record the agreement first.");
           const existing = data.payments.find((p) => p.id === b.paymentId);
-          if (existing?.invoice && roundAmount(b.amount) !== existing.amount)
+          if (existing?.invoice && roundAmount(b.amount, data.financeContext?.currency) !== existing.amount)
             throw new ConflictException(
               "A linked invoice fixes the milestone amount. Resolve its commercial correction first.",
             );
@@ -3088,7 +3089,7 @@ export class CommercialService {
                 [workspaceId, caseId, existing.id],
               )).rows[0]
             : undefined;
-          if (invoiced && (roundAmount(b.amount) !== existing!.amount || text(b.title, 160, true) !== existing!.title))
+          if (invoiced && (roundAmount(b.amount, data.financeContext?.currency) !== existing!.amount || text(b.title, 160, true) !== existing!.title))
             throw new ConflictException(
               `Tax invoice ${invoiced.number} is issued for this milestone. Credit it before changing its amount or title.`,
             );
@@ -3098,7 +3099,7 @@ export class CommercialService {
             );
           if (
             existing?.sourceQuoteId &&
-            (roundAmount(b.amount) !== existing.amount ||
+            (roundAmount(b.amount, data.financeContext?.currency) !== existing.amount ||
               text(b.title, 160, true) !== existing.title ||
               b.requiredForRelease !== existing.requiredForRelease ||
               (b.requiredForProduction === true) !==
@@ -3113,7 +3114,7 @@ export class CommercialService {
             currency: data.financeContext?.currency,
             agreementReference: data.agreement.reference,
             title: text(b.title, 160, true),
-            amount: roundAmount(b.amount),
+            amount: roundAmount(b.amount, data.financeContext?.currency),
             dueDate: date(b.dueDate),
             requiredForRelease: b.requiredForRelease === true,
             requiredForProduction: b.requiredForProduction === true,
@@ -3273,20 +3274,11 @@ export class CommercialService {
     }
   }
 }
-function roundAmount(value: unknown) {
-  return Math.round(number(value) * 100) / 100;
-}
 function uuid(value: unknown, label: string) {
   const id = text(value, 36, true);
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
     throw new BadRequestException(`Choose a valid ${label}.`);
   return id;
-}
-function currency(value: unknown) {
-  const code = text(value, 3, true).toUpperCase();
-  if (!["AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].includes(code))
-    throw new BadRequestException("Choose a supported currency.");
-  return code;
 }
 function catalogSnapshotRate(snapshot: CatalogPriceSnapshot) {
   if (snapshot.status !== "resolved") return 0;

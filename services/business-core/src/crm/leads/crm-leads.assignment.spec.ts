@@ -51,3 +51,41 @@ describe("named sales-owner eligibility", () => {
     )).rejects.toThrow("active sales owner with enquiry and follow-up access");
   });
 });
+
+describe("assignable sales owners", () => {
+  function owners(rows: Record<string, unknown>[], self: string | null = "sara") {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_queues")) return { rows: [{}], rowCount: 1 };
+      if (sql.includes("user_id=$2 AND status='active'")) return { rows: self ? [{ id: self }] : [], rowCount: self ? 1 : 0 };
+      return { rows, rowCount: rows.length };
+    });
+    const access = { withAnyPermission: vi.fn(async (_actor: unknown, _workspace: string, _permissions: string[], work: (client: unknown, user: { userId: string }) => unknown) => work({ query }, { userId: "user-sara" })) };
+    return { query, access, service: new CrmLeadsService({} as never, access as never, {} as never) };
+  }
+
+  it("lists the members the save rule accepts, to anyone who may create or assign enquiries, with the caller's own membership", async () => {
+    const { service, access, query } = owners([{ id: "sara", displayName: "Sara", email: "sara@example.com" }, { id: "zaid", displayName: "Zaid", email: "zaid@example.com" }]);
+    await expect(service.salesOwners({} as never, "workspace")).resolves.toEqual({
+      items: [{ id: "sara", displayName: "Sara", email: "sara@example.com", status: "active" }, { id: "zaid", displayName: "Zaid", email: "zaid@example.com", status: "active" }],
+      currentMembershipId: "sara",
+    });
+    expect(access.withAnyPermission).toHaveBeenCalledWith({}, "workspace", ["crm.leads.manage", "crm.leads.assign"], expect.any(Function));
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain("effective_member_roles");
+    expect(values).toEqual(["workspace", null, ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"], 3, null]);
+  });
+
+  it("narrows to the members available in a chosen queue", async () => {
+    const { service, query } = owners([], null);
+    const queue = "61000000-0000-4000-8000-000000000001";
+    await expect(service.salesOwners({} as never, "workspace", queue)).resolves.toEqual({ items: [], currentMembershipId: null });
+    const listed = query.mock.calls.find(([sql]) => sql.includes("crm_effective_queue_members")) as unknown as [string, unknown[]];
+    expect(listed[1]).toEqual(["workspace", null, ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"], 3, queue]);
+  });
+
+  it("refuses a malformed queue before reading anything", async () => {
+    const { service, access } = owners([]);
+    expect(() => service.salesOwners({} as never, "workspace", "not-a-queue")).toThrow("Queue is not valid");
+    expect(access.withAnyPermission).not.toHaveBeenCalled();
+  });
+});

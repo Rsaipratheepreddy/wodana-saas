@@ -258,10 +258,17 @@ export type LeadsPageData = {
   intake: CrmIntakeItem[];
   pipelines: CrmPipeline[];
   members: CrmWorkspaceMember[];
+  /** Who an enquiry can be given to (the server's own owner rule), readable by anyone who creates or assigns enquiries. */
+  salesOwners?: CrmWorkspaceMember[];
   nextCursor: string | null;
   referenceTime: string;
   workspaceId: string;
 };
+
+/** The people offered as sales owners: the server's list, or the member directory when an older server has none. */
+export function salesOwnerChoices(data: Pick<LeadsPageData, "members" | "salesOwners">) {
+  return (data.salesOwners ?? data.members).filter((member) => member.status === "active");
+}
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
@@ -274,6 +281,7 @@ export const leadsPageFixture: LeadsPageData = {
   nextCursor: null,
   referenceTime: "2026-09-06T08:00:00.000Z",
   members: [{ id: OWNER_ID, displayName: "Iglo Administrator", email: "admin@igloarchitects.com", status: "active" }],
+  salesOwners: [{ id: OWNER_ID, displayName: "Iglo Administrator", email: "admin@igloarchitects.com", status: "active" }],
   queues: [{
     id: QUEUE_ID,
     code: "design_enquiries",

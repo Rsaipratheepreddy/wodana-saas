@@ -26,7 +26,7 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     return {
       canView: false,
       items: [],
-      queues: [], assignmentPolicies: [], slaPolicies: [], intake: [], pipelines: [], members: [],
+      queues: [], assignmentPolicies: [], slaPolicies: [], intake: [], pipelines: [], members: [], salesOwners: [],
       nextCursor: null,
       referenceTime: new Date().toISOString(),
       workspaceId: membership.workspaceId,
@@ -45,12 +45,20 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
   }));
   const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
   const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
+  // The sales owners come from their own list: a salesperson may not read the member directory.
+  const ownersResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/crm/sales-owners`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!ownersResponse.ok && ownersResponse.status !== 403) throw new Error("CRM configuration could not be loaded.");
+  const owners = ownersResponse.ok
+    ? await ownersResponse.json() as { items: LeadsPageData["members"]; currentMembershipId: string | null }
+    : { items: [], currentMembershipId: null };
   return {
     defaultCurrency: workspace?.workspace?.defaultCurrency,
     defaultLocale: workspace?.workspace?.defaultLocale,
     canView: true,
     currentRoles: authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId)?.roles ?? [],
-    currentMembershipId: (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
+    currentMembershipId: owners.currentMembershipId
+      ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
+    salesOwners: owners.items,
     leadOptions: supporting[6],
     enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
     items: page.data ?? page.items ?? [],

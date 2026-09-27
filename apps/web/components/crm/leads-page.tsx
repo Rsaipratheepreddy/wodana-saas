@@ -20,7 +20,7 @@ import {
   formatDate,
   useConfirmationDialog,
 } from "@/design-system";
-import { CRM_LEAD_TRANSITIONS, leadStage, leadStageLabel, type CrmLeadListItem, type CrmLeadStatus, type LeadsPageData } from "@/lib/crm/leads";
+import { CRM_LEAD_TRANSITIONS, leadStage, leadStageLabel, salesOwnerChoices, type CrmLeadListItem, type CrmLeadStatus, type LeadsPageData } from "@/lib/crm/leads";
 import styles from "./leads-page.module.css";
 import theme from "./crm-workspace-colors.module.css";
 import { EnquiryFieldsSettings } from "./enquiry-fields-settings";
@@ -370,7 +370,7 @@ export function LeadsPage({ initialData: serverData, integrationsData, formBrand
         }} /> : null}
 
 
-        {assignment ? <LeadAssignmentDialog workspaceId={initialData.workspaceId} lead={assignment} members={initialData.members} onClose={() => setAssignment(null)} onSaved={(result) => {
+        {assignment ? <LeadAssignmentDialog workspaceId={initialData.workspaceId} lead={assignment} members={salesOwnerChoices(initialData)} onClose={() => setAssignment(null)} onSaved={(result) => {
           const saved = result as unknown as Pick<CrmLeadListItem, "id" | "ownerMembershipId" | "queueId" | "nextActionAt" | "version" | "status" | "updatedAt">;
           if (!saved.id || !Number.isInteger(saved.version)) throw new Error("Assignment response could not be confirmed.");
           setItems((current) => current.map((lead) => lead.id === saved.id ? {
