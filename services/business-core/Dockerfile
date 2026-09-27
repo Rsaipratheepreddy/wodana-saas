@@ -34,6 +34,7 @@ COPY packages/contracts /workspace/packages/contracts
 # The Palm Living seed (dist/seed/palm-showcase) reads the tenant's documents from /workspace/docs.
 COPY docs/fixtures /workspace/docs/fixtures
 COPY docs/projects/palm-living/proposal-kit.json /workspace/docs/projects/palm-living/proposal-kit.json
+COPY apps/mobile/assets/brand/palm-living-logo.png /workspace/docs/brand/palm-living-logo.png
 RUN mkdir -p /app/.data && chown node:node /app/.data
 USER node
 EXPOSE 8000
