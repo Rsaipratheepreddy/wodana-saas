@@ -58,12 +58,15 @@ export type ProjectRow = {
   quoteId: string; templateName: string | null; priority: "normal" | "high" | "critical"; health: "on_track" | "at_risk" | "off_track";
   startDate: string | null; promiseDate: string | null; currency: string; startedAt: string; holdReason: string | null; holdReviewOn: string | null;
   heldAt: string | null; version: number; clientName: string; opportunityId: string; opportunityReference: string | null; total: string;
+  completedAt: string | null; cancelledAt: string | null; cancelReason: string | null; closedByName: string | null;
 };
 
 const PROJECT_SELECT = `SELECT project.id, project.case_id AS "caseId", project.reference, project.name, project.status, project.quote_id AS "quoteId",
   project.template_name AS "templateName", project.priority, project.health, project.start_date::text AS "startDate", project.promise_date::text AS "promiseDate",
   project.currency, project.started_at AS "startedAt", project.hold_reason AS "holdReason", project.hold_review_on::text AS "holdReviewOn", project.held_at AS "heldAt",
-  project.version, coalesce(party.display_name, opportunity.title) AS "clientName", opportunity.id AS "opportunityId", opportunity.reference AS "opportunityReference",
+  project.version, project.completed_at AS "completedAt", project.cancelled_at AS "cancelledAt", project.cancel_reason AS "cancelReason",
+  (SELECT closer.display_name FROM users closer WHERE closer.id = coalesce(project.cancelled_by, project.completed_by)) AS "closedByName",
+  coalesce(party.display_name, opportunity.title) AS "clientName", opportunity.id AS "opportunityId", opportunity.reference AS "opportunityReference",
   -- Agreed value: the sealed baseline plus every sealed variation.
   (SELECT sum(seal.total)::text FROM project_scope_seals seal WHERE seal.workspace_id = project.workspace_id AND seal.project_id = project.id) AS total
   FROM delivery_projects project

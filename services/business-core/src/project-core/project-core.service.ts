@@ -18,6 +18,7 @@ import {
   activeMembers, ensureSettings, ensureTemplates, evaluateStages, membershipOf, readProject, readProjects, readStages, readTeam,
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
+import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { noticeProject, type ProjectNotice } from "./project-notices";
 import { deleteMaterial, readMaterials, recordMaterialDecision, saveMaterial, sendMaterials, suggestMaterials } from "./project-materials";
 import { applyVariation, assignLines, deletePackage, lineHistory, proposePackages, readScope, savePackage, seedBoq, SUPPLY, type Supply } from "./project-scope";
@@ -362,6 +363,16 @@ export class ProjectCoreService {
     });
   }
 
+  /** What closing the project would need settled first, and what it would do by itself. */
+  closeOut(actor: RequestActor, workspaceId: string, projectId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const { all } = await this.visible(client, workspaceId, projectId, user);
+      if (!all) throw new ForbiddenException("Only people who manage projects can close one.");
+      const closeOut = await readCloseOut(client, workspaceId, projectId);
+      return { ...closeOut, blockers: closeOutBlockers(closeOut, false) };
+    });
+  }
+
   // ---------- commands ----------
   command(actor: RequestActor, workspaceId: string, projectId: string, body: Record<string, unknown>) {
     return this.access.asMember(actor, workspaceId, async (client, user) => {
@@ -437,6 +448,35 @@ export class ProjectCoreService {
         if (project.status !== "on_hold") throw new ConflictException("The project isn't on hold.");
         await client.query(`UPDATE delivery_projects SET status = 'active', hold_reason = NULL, hold_review_on = NULL, held_at = NULL, held_by = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId]);
         notices.push({ key: `resume:${project.version}`, notice: { code: "project.resumed", note: "", memberships: teamIds() } });
+      } else if (action === "cancel") {
+        // Cancelling ends the contract: only someone who manages projects, with why, once nothing is left half-way.
+        if (!all) throw new ForbiddenException("Only people who manage projects can cancel one.");
+        open();
+        const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+        if (!reason || reason.length > 500) throw new BadRequestException("Say why the project is cancelled.");
+        const closeOut = await readCloseOut(client, workspaceId, projectId);
+        const blockers = closeOutBlockers(closeOut, false);
+        if (blockers.length) throw new ConflictException(`Before the project can be cancelled: ${blockers.join("; ")}.`);
+        const settled = await settleCloseOut(client, { workspaceId, projectId, reference: project.reference, closeOut, why: `${project.reference} cancelled: ${reason}`, actorId: user.userId,
+          today: await this.today(client, workspaceId) });
+        await client.query(
+          `UPDATE delivery_projects SET status = 'cancelled', cancelled_at = now(), cancelled_by = $3, cancel_reason = $4, hold_reason = NULL, hold_review_on = NULL, held_at = NULL, held_by = NULL
+            WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId, user.userId, reason]);
+        notices.push({ key: `cancelled:${project.version}`, notice: { code: "project.cancelled", note: reason, memberships: teamIds() } });
+        audit = { reason, ...settled };
+      } else if (action === "reopen") {
+        // A completed project opens again at its last stage, with why; a cancelled one stays cancelled.
+        if (!all) throw new ForbiddenException("Only people who manage projects can reopen one.");
+        if (project.status !== "completed") throw new ConflictException("Only a completed project can be reopened.");
+        const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+        if (!reason || reason.length > 500) throw new BadRequestException("Say why the project is reopened.");
+        const last = [...(await readStages(client, workspaceId, [projectId]))].reverse().find((stage) => stage.status === "done" || stage.status === "skipped");
+        if (last) await client.query(`UPDATE project_stages SET status = 'current', started_at = coalesce(started_at, now()), completed_at = NULL, completed_by = NULL, skip_reason = NULL
+          WHERE workspace_id = $1 AND id = $2`, [workspaceId, last.id]);
+        await client.query(`UPDATE delivery_projects SET status = 'active', completed_at = NULL, completed_by = NULL WHERE workspace_id = $1 AND id = $2`, [workspaceId, projectId]);
+        await client.query(`UPDATE stock_locations SET active = true WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, projectId]);
+        notices.push({ key: `reopened:${project.version}`, notice: { code: "project.reopened", note: reason, memberships: teamIds() } });
+        audit = { reason, stage: last?.key ?? null };
       } else if (["propose_packages", "save_package", "delete_package", "assign_lines"].includes(action)) {
         needManager();
         if (!["active", "on_hold"].includes(project.status)) throw new ConflictException("The project is closed.");
@@ -564,8 +604,15 @@ export class ProjectCoreService {
       const told = team.filter((member) => member.lead || (next.ownerRole && member.roles.includes(next.ownerRole))).map((member) => member.membershipId);
       notices.push({ key: `stage:${next.key}:${project.version}`, notice: { code: "project.stage_done", stage: next.name, previous: finished.name, memberships: told } });
     } else if (!stages.some((stage) => stage.id !== finished.id && (stage.status === "current" || stage.status === "upcoming"))) {
-      await client.query(`UPDATE delivery_projects SET status = 'completed' WHERE workspace_id = $1 AND id = $2`, [workspaceId, project.id]);
-      await recordAudit(client, { workspaceId, actorUserId: userId, action: "project.completed", entityType: "project", entityId: project.id });
+      // The last stage closes the project, once nothing is left open; leftover project stock becomes free stock.
+      const closeOut = await readCloseOut(client, workspaceId, project.id);
+      const blockers = closeOutBlockers(closeOut, true);
+      if (blockers.length) throw new ConflictException(`Before the project closes: ${blockers.join("; ")}.`);
+      const settled = await settleCloseOut(client, { workspaceId, projectId: project.id, reference: project.reference, closeOut, why: `${project.reference} completed`, actorId: userId,
+        today: await this.today(client, workspaceId) });
+      await client.query(`UPDATE delivery_projects SET status = 'completed', completed_at = now(), completed_by = $3 WHERE workspace_id = $1 AND id = $2`, [workspaceId, project.id, userId]);
+      await recordAudit(client, { workspaceId, actorUserId: userId, action: "project.completed", entityType: "project", entityId: project.id, after: settled });
+      notices.push({ key: `completed:${project.version}`, notice: { code: "project.completed", note: "", memberships: team.map((member) => member.membershipId) } });
     }
   }
 
@@ -586,7 +633,8 @@ export class ProjectCoreService {
     const current = stages.find((stage) => stage.status === "current");
     return {
       project: { ...summary(project), caseId: project.caseId, opportunityId: project.opportunityId, opportunityReference: project.opportunityReference,
-        holdReason: project.holdReason, holdReviewOn: project.holdReviewOn, startDate: project.startDate, templateName: project.templateName, version: project.version },
+        holdReason: project.holdReason, holdReviewOn: project.holdReviewOn, startDate: project.startDate, templateName: project.templateName, version: project.version,
+        closedAt: project.cancelledAt ?? project.completedAt, closedByName: project.closedByName, cancelReason: project.cancelReason },
       seal,
       roles: settings.roles,
       team: settings.roles.map((role) => ({ role: role.key, label: role.label, member: team.find((member) => member.roles.includes(role.key)) ?? null }))
@@ -597,6 +645,7 @@ export class ProjectCoreService {
       updates,
       members: manager ? await activeMembers(client, workspaceId) : [],
       canManage: manager,
+      canClose: all,
     };
   }
 
@@ -610,6 +659,10 @@ export class ProjectCoreService {
       if (!assigned) throw new NotFoundException("Project not found.");
     }
     return { project, all, membershipId };
+  }
+
+  private async today(client: Db, workspaceId: string) {
+    return (await client.query<{ today: string }>(`SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date::text AS today FROM workspaces WHERE id = $1`, [workspaceId])).rows[0].today;
   }
 
   private async viewer(client: Db, workspaceId: string, user: ActorUser) {

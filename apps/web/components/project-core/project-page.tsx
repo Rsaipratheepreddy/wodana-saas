@@ -10,6 +10,7 @@ import { projectApi } from "@/lib/project-core/client";
 import type { ProjectSection } from "@/lib/project-core/sections";
 import type { Priority, ProjectDetail } from "@/lib/project-core/types";
 import { useProjectFormat, useStatusLabel } from "./format";
+import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
 import { ProjectPlan } from "./project-plan";
 import { ProjectScope } from "./project-scope";
 import { ProjectStages } from "./project-stages";
@@ -32,7 +33,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [dialog, setDialog] = useState<"team" | "hold" | "dates" | "rename" | null>(null);
+  const [dialog, setDialog] = useState<"team" | "hold" | "dates" | "rename" | "cancel" | "reopen" | null>(null);
   useWorkspaceBreadcrumb(detail ? detail.project.name : undefined);
 
   const load = useCallback(async () => {
@@ -62,19 +63,33 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
   const until = project.status === "active" ? format.until(project.promiseDate) : null;
   const current = detail.stages.find((stage) => stage.status === "current");
   const manage = detail.canManage;
+  const open = project.status === "active" || project.status === "on_hold";
+  const actions = [
+    ...(open ? [{ id: "rename", label: t("Rename") }] : []),
+    ...(project.status === "active" ? [{ id: "hold", label: t("Put on hold") }] : []),
+    ...(open && detail.canClose ? [{ id: "cancel", label: t("Cancel the project") }] : []),
+    ...(project.status === "completed" && detail.canClose ? [{ id: "reopen", label: t("Reopen") }] : []),
+  ];
   const priorityLabel: Record<Priority, string> = { normal: t("Normal"), high: t("High"), critical: t("Critical") };
   const go = (next: ProjectSection) => router.replace(`/workspace/projects/${projectId}${next === "overview" ? "" : `/${next}`}`, { scroll: false });
 
   return <div className={styles.page}>
     <header className={styles.projectHead}>
       <h1>{project.name}</h1>
-      {manage ? <IconMenuButton ariaLabel={t("Project actions")} onAction={(id) => setDialog(id as "rename" | "hold")}
-        items={[{ id: "rename", label: t("Rename") }, ...(project.status === "active" ? [{ id: "hold", label: t("Put on hold") }] : [])]} /> : null}
+      {manage && actions.length ? <IconMenuButton ariaLabel={t("Project actions")} onAction={(id) => setDialog(id as "rename" | "hold" | "cancel" | "reopen")} items={actions} /> : null}
     </header>
 
     {project.status === "on_hold" ? <Callout tone="warning" title={t("On hold")}
       actions={manage ? <Button size="compact" onPress={() => void run("resume")}>{t("Resume")}</Button> : null}>
       {project.holdReason}{project.holdReviewOn ? ` · ${t("Review on {date}", { date: format.day(project.holdReviewOn) })}` : ""}
+    </Callout> : null}
+
+    {project.status === "cancelled" ? <Callout tone="neutral" title={t("Cancelled")}>
+      {[project.cancelReason, project.closedAt ? format.when(project.closedAt) : null, project.closedByName].filter(Boolean).join(" · ")}
+    </Callout> : null}
+    {project.status === "completed" ? <Callout tone="success" title={t("Completed")}
+      actions={detail.canClose ? <Button size="compact" onPress={() => setDialog("reopen")}>{t("Reopen")}</Button> : null}>
+      {[project.closedAt ? format.when(project.closedAt) : null, project.closedByName].filter(Boolean).join(" · ")}
     </Callout> : null}
 
     <dl className={styles.properties}>
@@ -112,6 +127,9 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
     {dialog === "hold" ? <HoldDialog onClose={() => setDialog(null)} onSave={async (reason, reviewOn) => { if (await run("hold", { reason, reviewOn })) setDialog(null); }} /> : null}
     {dialog === "dates" ? <DatesDialog startDate={project.startDate} promiseDate={project.promiseDate} onClose={() => setDialog(null)}
       onSave={async (startDate, promiseDate) => { if (await run("set_dates", { startDate, promiseDate })) setDialog(null); }} /> : null}
+    {dialog === "cancel" ? <CancelProjectDialog api={api} projectId={projectId} onClose={() => setDialog(null)}
+      onSave={async (reason) => { if (await run("cancel", { reason })) setDialog(null); }} /> : null}
+    {dialog === "reopen" ? <ReopenProjectDialog onClose={() => setDialog(null)} onSave={async (reason) => { if (await run("reopen", { reason })) setDialog(null); }} /> : null}
     {dialog === "rename" ? <RenameDialog name={project.name} onClose={() => setDialog(null)} onSave={async (name) => { if (await run("rename", { name })) setDialog(null); }} /> : null}
   </div>;
 }

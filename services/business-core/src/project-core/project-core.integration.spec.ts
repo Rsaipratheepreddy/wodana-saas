@@ -1863,6 +1863,135 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  /** The project service where each call is its own transaction, as in the app. */
+  function projectsAt(w: World, userId: string, permissions = ["projects.manage", "projects.view"]) {
+    const asMember = async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+      await w.client.query("SAVEPOINT project_command");
+      try {
+        const result = await fn(w.client, { userId });
+        await w.client.query("RELEASE SAVEPOINT project_command");
+        return result;
+      } catch (error) {
+        await w.client.query("ROLLBACK TO SAVEPOINT project_command");
+        throw error;
+      }
+    };
+    return new ProjectCoreService({ asMember, hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never);
+  }
+
+  it("cancels a project only once nothing is left half-way: unsent orders, open work and the running sprint close with it, and its stock becomes free stock", async () => {
+    await world(async (w) => {
+      const { projectId, vendor, buyer, manager, access, all } = await buying(w);
+      const core = projectsAt(w, w.manager);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "designer", membershipId: w.designerMembership, version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Oak veneer", quantity: "20", unit: "sheets", clientChoice: false, version: detail.project.version });
+      const need = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((item) => item.title === "Oak veneer")!;
+      // 10 sheets ordered and sent, 6 arrived at the warehouse and 2 of those taken to site; 5 more on an order never sent.
+      const sent = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "material", materialItemId: need.sourceId, quantity: "10", unitPrice: "100", taxRate: "0" }]);
+      await manager.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: sent.order.id, place: "warehouse", receivedOn: "2026-09-26", lines: [{ orderLineId: sent.lines[0].id, received: "6" }] });
+      const draft = randomUUID();
+      await buyer.orders.create(actor, w.workspaceId, { id: draft, vendorId: vendor, lines: [{ source: "material", materialItemId: need.sourceId, quantity: "5", unitPrice: "100", taxRate: "0" }] });
+      const store = new InventoryService(access(w.designer, all));
+      let stock = await store.stock(actor, w.workspaceId);
+      const oak = stock.rows[0];
+      const toSite = randomUUID();
+      await w.client.query(`INSERT INTO stock_locations (id, workspace_id, kind, name, project_id) VALUES ($1, $2, 'site', 'Villa site', $3)`, [toSite, w.workspaceId, projectId]);
+      const out = await store.send(actor, w.workspaceId, { id: randomUUID(), fromLocationId: oak.locationId, toLocationId: toSite, lines: [{ itemId: oak.itemId, projectId, quantity: "2" }] });
+      await store.transferCommand(actor, w.workspaceId, out.transfer.id, { action: "receive", lines: [{ id: out.lines[0].id, received: "2" }] });
+      // Open work in a running sprint.
+      const lead = w.work(w.manager);
+      const task = randomUUID(), sprintId = randomUUID();
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: task, title: "Kitchen shop drawings" });
+      let plan = await lead.command(actor, w.workspaceId, projectId, { action: "create_sprint", id: sprintId, startDate: "2026-09-28", endDate: "2026-10-09" });
+      plan = await lead.command(actor, w.workspaceId, projectId, { action: "set_sprint", itemIds: [task], sprintId });
+      await lead.command(actor, w.workspaceId, projectId, { action: "start_sprint", sprintId, version: plan.sprints[0].version });
+
+      detail = await core.get(actor, w.workspaceId, projectId);
+      await expect(projectsAt(w, w.manager, ["projects.view"]).command(actor, w.workspaceId, projectId, { action: "cancel", reason: "Client withdrew", version: detail.project.version }))
+        .rejects.toThrow(/Only people who manage projects/);
+      await expect(core.command(actor, w.workspaceId, projectId, { action: "cancel", reason: " ", version: detail.project.version })).rejects.toThrow(/Say why/);
+      let closeOut = await core.closeOut(actor, w.workspaceId, projectId);
+      expect(closeOut.owedOrders).toEqual([{ id: sent.order.id, number: sent.order.number, supplierName: "Nile Marble", lines: 1 }]);
+      expect(closeOut.siteStock).toEqual([{ itemName: "Oak veneer", unit: "sheets", quantity: "2.0000", locationName: "Villa site" }]);
+      expect([closeOut.drafts.map((item) => item.id), closeOut.openWork, closeOut.heldStock.map((item) => item.quantity)]).toEqual([[draft], 1, ["4.0000"]]);
+      await expect(core.command(actor, w.workspaceId, projectId, { action: "cancel", reason: "Client withdrew", version: detail.project.version }))
+        .rejects.toThrow(new RegExp(`Before the project can be cancelled: ${sent.order.number} is still owed goods; 1 item is still at the site`));
+
+      // The rest of the order is cancelled with the supplier, and the site's sheets come back.
+      await buyer.orders.command(actor, w.workspaceId, sent.order.id, { action: "cancel_line", lineId: sent.lines[0].id, reason: "Project cancelled", version: (await buyer.orders.get(actor, w.workspaceId, sent.order.id)).order.version });
+      const back = await store.send(actor, w.workspaceId, { id: randomUUID(), fromLocationId: toSite, toLocationId: oak.locationId, lines: [{ itemId: oak.itemId, projectId, quantity: "2" }] });
+      closeOut = await core.closeOut(actor, w.workspaceId, projectId);
+      expect(closeOut.blockers).toEqual([`move ${back.transfer.number} is on its way`]);
+      await store.transferCommand(actor, w.workspaceId, back.transfer.id, { action: "receive", lines: [{ id: back.lines[0].id, received: "2" }] });
+      expect((await core.closeOut(actor, w.workspaceId, projectId)).blockers).toEqual([]);
+
+      detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "cancel", reason: "Client withdrew", version: detail.project.version });
+      expect(detail.project).toMatchObject({ status: "cancelled", cancelReason: "Client withdrew", closedByName: "Omar Manager" });
+      expect(detail.project.closedAt).toBeTruthy();
+      expect((await buyer.orders.get(actor, w.workspaceId, draft)).order.status).toBe("cancelled");
+      const board = await lead.board(actor, w.workspaceId, projectId);
+      expect(board.items.map((item) => item.status)).toEqual(["cancelled"]);
+      expect(board.sprints[0].status).toBe("closed");
+      expect((await w.client.query("SELECT outcome FROM work_sprint_commitments WHERE sprint_id = $1", [sprintId])).rows).toEqual([{ outcome: "removed" }]);
+      // The sheets are free stock now, at the value they had; the site is no longer a place.
+      stock = await store.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => [row.projectId, row.onHand, row.value])).toEqual([[null, "6.0000", "600.0000"]]);
+      expect(stock.locations.some((location) => location.id === toSite)).toBe(false);
+      expect(stock.projects.some((project) => project.id === projectId)).toBe(false);
+      const told = (await w.client.query("SELECT recipient_id AS id, channel FROM notifications WHERE workspace_id = $1 AND event_type = 'project.cancelled' ORDER BY channel", [w.workspaceId])).rows;
+      expect(told).toEqual([{ id: w.designer, channel: "email" }, { id: w.designer, channel: "in_app" }]);
+      // A cancelled project is a record: nothing changes, and it doesn't reopen.
+      await expect(core.command(actor, w.workspaceId, projectId, { action: "post_update", health: "on_track", note: "", version: detail.project.version })).rejects.toThrow(/closed/);
+      await expect(core.command(actor, w.workspaceId, projectId, { action: "reopen", reason: "Mistake", version: detail.project.version })).rejects.toThrow(/Only a completed project/);
+      expect((await buyer.orders.needs(actor, w.workspaceId)).needs.some((item) => item.title === "Oak veneer")).toBe(false);
+    });
+  });
+
+  it("completes a project at its last stage only once its work is finished, frees its leftover stock, and reopens with why", async () => {
+    await world(async (w) => {
+      const { projectId, access, all } = await buying(w);
+      const core = projectsAt(w, w.manager);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "designer", membershipId: w.designerMembership, version: detail.project.version });
+      // Twenty spare hinges reserved for the project in the warehouse.
+      const store = new InventoryService(access(w.designer, all));
+      await store.saveLocation(actor, w.workspaceId, { id: randomUUID(), kind: "warehouse", name: "Warehouse" });
+      let stock = await store.stock(actor, w.workspaceId);
+      stock = await store.command(actor, w.workspaceId, { id: randomUUID(), action: "add", name: "Hinges", unit: "nos", locationId: stock.locations[0].id, quantity: "20", unitCost: "3", reason: "Opening stock" });
+      stock = await store.command(actor, w.workspaceId, { id: randomUUID(), action: "allocate", itemId: stock.rows[0].itemId, locationId: stock.rows[0].locationId, forProjectId: projectId, quantity: "20", reason: "Kitchen" });
+      const lead = w.work(w.manager);
+      const task = randomUUID();
+      await lead.command(actor, w.workspaceId, projectId, { action: "create", id: task, title: "Final clean" });
+      await w.client.query("UPDATE project_stages SET status = 'done', completed_at = now(), completed_by = $2 WHERE project_id = $1 AND key <> 'handover'", [projectId, w.manager]);
+      await w.client.query("UPDATE project_stages SET status = 'current', started_at = now() WHERE project_id = $1 AND key = 'handover'", [projectId]);
+      detail = await core.get(actor, w.workspaceId, projectId);
+      const handover = detail.stages.find((stage) => stage.key === "handover")!;
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "confirm_check", stageId: handover.id, checkKey: "accepted", version: detail.project.version });
+      await expect(core.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: handover.id, version: detail.project.version }))
+        .rejects.toThrow("Before the project closes: 1 piece of work is open.");
+      detail = await core.get(actor, w.workspaceId, projectId);
+      expect([detail.project.status, detail.stages.find((stage) => stage.key === "handover")!.status]).toEqual(["active", "current"]);
+
+      const item = (await lead.board(actor, w.workspaceId, projectId)).items[0];
+      await lead.command(actor, w.workspaceId, projectId, { action: "update", itemId: task, version: item.version, status: "done" });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "complete_stage", stageId: handover.id, version: detail.project.version });
+      expect(detail.project).toMatchObject({ status: "completed", closedByName: "Omar Manager", cancelReason: null });
+      stock = await store.stock(actor, w.workspaceId);
+      expect(stock.rows.map((row) => [row.projectId, row.onHand, row.value])).toEqual([[null, "20.0000", "60.0000"]]);
+      const told = (await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'project.completed'", [w.workspaceId])).rows;
+      expect(told).toEqual([{ id: w.designer }]);
+
+      await expect(projectsAt(w, w.manager, ["projects.view"]).command(actor, w.workspaceId, projectId, { action: "reopen", reason: "Handover signed too early", version: detail.project.version }))
+        .rejects.toThrow(/Only people who manage projects/);
+      await expect(core.command(actor, w.workspaceId, projectId, { action: "reopen", reason: "", version: detail.project.version })).rejects.toThrow(/Say why/);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "reopen", reason: "Handover signed too early", version: detail.project.version });
+      expect([detail.project.status, detail.project.closedAt, detail.stages.find((stage) => stage.key === "handover")!.status]).toEqual(["active", null, "current"]);
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'project.reopened'", [w.workspaceId])).rows).toEqual([{ id: w.designer }]);
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

@@ -2527,5 +2527,19 @@
   "Worth {value}": "Worth {value}",
   "Refuse the correction": "Refuse the correction",
   "Corrections needing approval": "Corrections needing approval",
-  "A stock count that changes more than this value waits for someone else. Empty: none do.": "A stock count that changes more than this value waits for someone else. Empty: none do."
+  "A stock count that changes more than this value waits for someone else. Empty: none do.": "A stock count that changes more than this value waits for someone else. Empty: none do.",
+  "Could not load.": "Could not load.",
+  "Cancel the project": "Cancel the project",
+  "Settle these first": "Settle these first",
+  "{count} lines still to come": "{count} lines still to come",
+  "Take this project's lines off": "Take this project's lines off",
+  "{order} · waiting for inspection": "{order} · waiting for inspection",
+  "On its way": "On its way",
+  "{quantity} still at {place}": "{quantity} still at {place}",
+  "Cancelling also": "Cancelling also",
+  "Cancelled; it was never sent": "Cancelled; it was never sent",
+  "{count} cancelled": "{count} cancelled",
+  "{quantity} at {place} becomes free stock": "{quantity} at {place} becomes free stock",
+  "Reopen the project": "Reopen the project",
+  "Why it's reopened": "Why it's reopened"
 }

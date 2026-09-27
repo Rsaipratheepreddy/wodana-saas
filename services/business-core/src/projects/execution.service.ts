@@ -1722,13 +1722,13 @@ export class ExecutionService {
             }), ctx.userId],
           );
         await ctx.client.query(
-          "UPDATE delivery_projects SET status='completed',version=version+1 WHERE workspace_id=$1 AND id=$2",
-          [w, id],
+          "UPDATE delivery_projects SET status='completed',completed_at=now(),completed_by=$3,version=version+1 WHERE workspace_id=$1 AND id=$2",
+          [w, id, ctx.userId],
         );
       }
       if (action === "reopen_project")
         await ctx.client.query(
-          "UPDATE delivery_projects SET status='active',version=version+1 WHERE workspace_id=$1 AND id=$2",
+          "UPDATE delivery_projects SET status='active',completed_at=NULL,completed_by=NULL,version=version+1 WHERE workspace_id=$1 AND id=$2 AND status='completed'",
           [w, id],
         );
       await this.projectNotifications.notify(

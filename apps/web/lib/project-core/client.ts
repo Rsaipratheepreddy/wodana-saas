@@ -1,4 +1,4 @@
-import type { LineHistoryEntry, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { CloseOut, LineHistoryEntry, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -23,6 +23,8 @@ export function projectApi(workspaceId: string) {
     scope: (projectId: string) => request<LiveScope>(path(`projects/${projectId}/scope`)),
     materials: (projectId: string) => request<MaterialsState>(path(`projects/${projectId}/materials`)),
     seal: (projectId: string, sealId: string) => request<SealedScope>(path(`projects/${projectId}/seals/${sealId}`)),
+    /** What cancelling the project needs settled first, and what it does by itself. */
+    closeOut: (projectId: string) => request<CloseOut>(path(`projects/${projectId}/close-out`)),
     line: (projectId: string, lineId: string) => request<{ history: LineHistoryEntry[] }>(path(`projects/${projectId}/lines/${lineId}`)),
     /** One change to the project, version-checked; returns the project as it is now. */
     command: (projectId: string, version: number, action: string, input: Record<string, unknown> = {}) =>

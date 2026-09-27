@@ -37,6 +37,7 @@ export type ProjectDetail = {
   project: ProjectSummary & {
     caseId: string; opportunityId: string; opportunityReference: string | null; holdReason: string | null; holdReviewOn: string | null;
     startDate: string | null; templateName: string | null; version: number;
+    closedAt: string | null; closedByName: string | null; cancelReason: string | null;
   };
   seal: { revisionLabel: string; quoteNumber: number; acceptedAt: string; acceptedBy: string; method: string | null; contentHash: string; sealedAt: string } | null;
   roles: ProjectRole[];
@@ -46,6 +47,22 @@ export type ProjectDetail = {
   updates: StatusUpdate[];
   members: Member[];
   canManage: boolean;
+  canClose: boolean;
+};
+
+/** An order or price request never sent. */
+export type CloseOutDraft = { id: string; number: string; kind: "order" | "request" };
+/** What closing a project needs settled first, and what it does by itself. */
+export type CloseOut = {
+  owedOrders: Array<{ id: string; number: string; supplierName: string; lines: number }>;
+  sharedDrafts: CloseOutDraft[];
+  inspections: Array<{ id: string; number: number; orderNumber: string }>;
+  moves: Array<{ id: string; number: number }>;
+  siteStock: Array<{ itemName: string; unit: string; quantity: string; locationName: string }>;
+  openWork: number;
+  drafts: CloseOutDraft[];
+  heldStock: Array<{ itemId: string; itemName: string; unit: string; quantity: string; locationId: string; locationName: string }>;
+  blockers: string[];
 };
 
 export type SealedLine = {

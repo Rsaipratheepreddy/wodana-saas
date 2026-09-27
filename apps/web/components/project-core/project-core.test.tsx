@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
-import type { LiveScope, MaterialsState, ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
+import type { CloseOut, LiveScope, MaterialsState, ProjectDetail, ProjectRow, SealedScope, StartState } from "@/lib/project-core/types";
 import { ProjectPage } from "./project-page";
 import { splitByPercent } from "./sealed-document";
 import { ProjectsPage } from "./projects-page";
@@ -15,7 +15,7 @@ const PID = "0c6b0c7e-4c4d-4a9e-9d64-3b6f0f2d7a11";
 const detail = (patch: Partial<ProjectDetail["project"]> = {}, stages?: ProjectDetail["stages"]): ProjectDetail => ({
   project: { id: PID, reference: "PRJ-0007", name: "Villa 12", clientName: "Maya Rahman", status: "active", priority: "normal", health: "on_track", promiseDate: "2099-12-12",
     currency: "AED", total: "412500.00", startedAt: "2026-09-22T09:00:00Z", caseId: "c1", opportunityId: "o1", opportunityReference: "O-1", holdReason: null, holdReviewOn: null,
-    startDate: null, templateName: "Standard", version: 4, ...patch },
+    startDate: null, templateName: "Standard", version: 4, closedAt: null, closedByName: null, cancelReason: null, ...patch },
   seal: { revisionLabel: "R3", quoteNumber: 14, acceptedAt: "2026-09-20T10:00:00Z", acceptedBy: "Maya Rahman", method: "signed_document", contentHash: "a".repeat(64), sealedAt: "2026-09-22T09:00:00Z" },
   roles: [{ key: "project_manager", label: "Project manager" }, { key: "designer", label: "Designer" }],
   team: [{ role: "project_manager", label: "Project manager", member: { membershipId: "m1", name: "Omar Haddad" } }, { role: "designer", label: "Designer", member: null }],
@@ -27,7 +27,7 @@ const detail = (patch: Partial<ProjectDetail["project"]> = {}, stages?: ProjectD
       checks: [{ key: "payment", kind: "payment_verified", passed: false, confirmedBy: null, confirmedAt: null, note: "" }], ready: false, owner: null, canWork: false },
   ],
   next: { stage: "Kickoff", kind: "confirm", text: "Kickoff meeting held", role: "project_manager", owner: "Omar Haddad" },
-  updates: [], members: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], canManage: true,
+  updates: [], members: [{ membershipId: "m1", name: "Omar Haddad" }, { membershipId: "m2", name: "Dana Karim" }], canManage: true, canClose: true,
 });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -106,6 +106,64 @@ describe("projects", () => {
     expect(await screen.findByText("Client travelling")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Finish/ })).not.toBeInTheDocument();
+  });
+
+  it("cancels a project only once nothing is left half-way, and says what cancelling does by itself", async () => {
+    const closeOut = (blocked: boolean): CloseOut => ({
+      owedOrders: blocked ? [{ id: "o1", number: "PO-0003", supplierName: "Nile Marble", lines: 1 }] : [], sharedDrafts: [], inspections: [], moves: [],
+      siteStock: blocked ? [{ itemName: "Oak veneer", unit: "sheets", quantity: "2.0000", locationName: "PRJ-0007 · Villa 12" }] : [],
+      openWork: 2, drafts: [{ id: "o2", number: "PO-0004", kind: "order" }],
+      heldStock: [{ itemId: "i1", itemName: "Oak veneer", unit: "sheets", quantity: "4.0000", locationId: "l1", locationName: "Warehouse" }],
+      blockers: blocked ? ["PO-0003 is still owed goods", "1 item is still at the site"] : [],
+    });
+    let blocked = true;
+    let current = detail();
+    const fetcher = mount((url, body) => {
+      if (url.includes("/close-out")) return closeOut(blocked);
+      if (body?.action === "cancel") current = detail({ status: "cancelled", cancelReason: String(body.reason), closedAt: "2026-09-27T08:00:00Z", closedByName: "Omar Haddad", version: 5 });
+      return current;
+    });
+    const { unmount } = render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Project actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Cancel the project" }));
+    let dialog = await screen.findByRole("dialog", { name: "Cancel the project" });
+    const first = await within(dialog).findByRole("region", { name: "Settle these first" });
+    expect(within(first).getByRole("link", { name: "PO-0003 · Nile Marble" })).toHaveAttribute("href", "/workspace/purchasing/orders?order=o1");
+    expect(within(first).getByText("2 sheets still at PRJ-0007 · Villa 12")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel the project" })).toBeDisabled();
+    unmount();
+
+    blocked = false;
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Project actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Cancel the project" }));
+    dialog = await screen.findByRole("dialog", { name: "Cancel the project" });
+    const also = await within(dialog).findByRole("region", { name: "Cancelling also" });
+    expect(within(also).getByText("Cancelled; it was never sent")).toBeInTheDocument();
+    expect(within(also).getByText("2 cancelled")).toBeInTheDocument();
+    expect(within(also).getByText("4 sheets at Warehouse becomes free stock")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("region", { name: "Settle these first" })).not.toBeInTheDocument();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's cancelled/ }), "Client withdrew");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel the project" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "cancel", reason: "Client withdrew", version: 4 })]));
+    expect(await screen.findByText(/Client withdrew · .* · Omar Haddad/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Project actions" })).not.toBeInTheDocument();
+  });
+
+  it("shows a completed project and reopens it with why", async () => {
+    let current = detail({ status: "completed", closedAt: "2026-09-27T08:00:00Z", closedByName: "Omar Haddad" });
+    const fetcher = mount((_url, body) => {
+      if (body?.action === "reopen") current = detail({ version: 5 });
+      return current;
+    });
+    render(<DesignSystemProvider><ProjectPage workspaceId="w" projectId={PID} section="overview" /></DesignSystemProvider>);
+    expect(await screen.findByText(/· Omar Haddad/)).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: "Reopen" })[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Reopen the project" });
+    expect(within(dialog).getByRole("button", { name: "Reopen" })).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it's reopened/ }), "Handover signed too early");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Reopen" }));
+    await waitFor(() => expect(posts(fetcher)).toEqual([expect.objectContaining({ action: "reopen", reason: "Handover signed too early", version: 4 })]));
   });
 
   it("starts a project only once the start rules pass and a project manager is chosen", async () => {

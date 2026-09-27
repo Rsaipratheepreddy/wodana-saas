@@ -56,6 +56,9 @@ export class ProjectCoreController {
   @Get("projects/:projectId/lines/:lineId")
   line(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Param("lineId", ParseUUIDPipe) lineId: string) { return this.projects.line(actor, workspaceId, projectId, lineId); }
 
+  @Get("projects/:projectId/close-out")
+  closeOut(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string) { return this.projects.closeOut(actor, workspaceId, projectId); }
+
   @Post("projects/:projectId")
   command(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("projectId", ParseUUIDPipe) projectId: string, @Body() input: Record<string, unknown>) { return this.projects.command(actor, workspaceId, projectId, input ?? {}); }
 

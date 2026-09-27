@@ -8,14 +8,15 @@ export type ProjectNotice =
   | { code: "project.started"; memberships: Array<{ membershipId: string; role: string }> }
   | { code: "project.team_added"; membershipId: string; role: string }
   | { code: "project.stage_done"; stage: string; previous: string; memberships: string[] }
-  | { code: "project.on_hold" | "project.resumed" | "project.off_track"; note: string; memberships: string[] }
+  | { code: "project.on_hold" | "project.resumed" | "project.off_track" | "project.cancelled" | "project.completed" | "project.reopened"; note: string; memberships: string[] }
   | { code: "project.variation_applied"; variation: string; amount: string; memberships: string[] }
   | { code: "project.materials_signed_off" | "project.materials_changes"; revision: string; note: string; memberships: string[] };
 
 /**
  * Who hears about a project: the team when it starts, a person when they're named for a role, the
  * lead and the next stage's owner when a stage finishes, and the team when it's held, resumed or
- * off track. The person who acted is never told about their own step.
+ * off track, and when it's cancelled (also by email), completed or reopened. The person who acted is never
+ * told about their own step.
  */
 export async function noticeProject(db: Db, input: { workspaceId: string; projectId: string; key: string; actorUserId: string; notice: ProjectNotice }) {
   const facts = (await db.query<{ title: string; clientName: string }>(
@@ -53,7 +54,7 @@ export async function noticeProject(db: Db, input: { workspaceId: string; projec
   } else if (notice.code === "project.variation_applied") {
     for (const person of await users(notice.memberships)) await tell(person.userId, { variation: notice.variation, amount: notice.amount }, false);
   } else {
-    for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, false);
+    for (const person of await users(notice.memberships)) await tell(person.userId, { note: notice.note }, notice.code === "project.cancelled");
   }
 }
 
