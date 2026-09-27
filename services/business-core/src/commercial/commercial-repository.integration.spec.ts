@@ -50,6 +50,16 @@ integration("commercial repository with PostgreSQL", () => {
 
   const commercial = (quotes: Quote[]): CommercialData => ({ ...emptyCommercial(), revision: 1, quotes });
 
+  it("reads the case revision from the column, which quote-builder edits move on their own", async () => {
+    await withCase(async (client, workspaceId, caseId) => {
+      await commercialRepository.save(client, workspaceId, caseId, commercial([quote("q1", 1)]));
+      await client.query("UPDATE commercial_cases SET revision = revision + 3 WHERE workspace_id=$1 AND case_id=$2", [workspaceId, caseId]);
+      const loaded = await commercialRepository.load(client, workspaceId, caseId);
+      expect(loaded?.revision).toBe(4);
+      expect(loaded?.content.revision).toBe(4);
+    });
+  });
+
   it("round-trips quotes, lines, money and untyped details exactly", async () => {
     await withCase(async (client, workspaceId, caseId) => {
       const first = quote("q1", 1, {
