@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { acceptedQuoteTotals, acceptedQuoteValue, quoteSelectionTotals, quoteTotals, paymentMilestoneAmounts } from "./client";
+import { acceptedQuoteTotals, acceptedQuoteValue, quoteCurrencyChoices, quoteSelectionTotals, quoteTotals, paymentMilestoneAmounts } from "./client";
+it("lists the workspace's own currency first, whether or not it is a common one", () => {
+ expect(quoteCurrencyChoices("SAR")).toEqual(["SAR", "AED", "INR", "USD", "EUR", "GBP", "QAR"]);
+ expect(quoteCurrencyChoices("KWD")[0]).toBe("KWD");
+ expect(new Set(quoteCurrencyChoices("KWD")).size).toBe(8);
+});
 it("rounds fractional room quantities and milestone amounts consistently to cents", () => {
  const room = quoteTotals({discount:0,taxRate:0,lines:[{id:"line",room:"Room",title:"Item",specification:"",material:"",finish:"",unit:"m²",unitCost:0,quantity:.5,rate:1.15}]});
  expect(room.total).toBe(.58);

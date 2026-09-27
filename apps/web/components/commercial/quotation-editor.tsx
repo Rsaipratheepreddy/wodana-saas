@@ -13,7 +13,7 @@ import q from "./quotation-line-fields.module.css";
 import { PaymentScheduleEditor } from "./payment-schedule-editor";
 import { DataGrid, ControlledModalDialog, EmptyState, useDesignSystem } from "@/design-system";
 import type { Quote, QuoteLine, ChangeRequest } from "@/lib/commercial/types";
-import { money, newLine, quoteTotals } from "@/lib/commercial/client";
+import { money, newLine, quoteCurrencyChoices, quoteTotals } from "@/lib/commercial/client";
 import { catalogPriceInput, usesCatalogPricing } from "@/lib/commercial/catalog-price";
 import { QuotationCatalogPrice } from "./quotation-catalog-price";
 import s from "./commercial.module.css";
@@ -42,7 +42,7 @@ export function QuotationEditor({
   canEditCosts?: boolean;
 }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  const { locale, currency: workspaceCurrency } = useDesignSystem();
   const latest = useRef(quote);
   useLayoutEffect(() => { latest.current = quote; }, [quote]);
   const [item, setItem] = useState<QuoteLine | null>(null),
@@ -277,7 +277,7 @@ export function QuotationEditor({
                     disabled={readOnly}
                     onChange={(e) => patch({ currency: e.target.value })}
                   >
-                    {["AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].map(
+                    {quoteCurrencyChoices(workspaceCurrency).map(
                       (c) => (
                         <option key={c}>{c}</option>
                       ),

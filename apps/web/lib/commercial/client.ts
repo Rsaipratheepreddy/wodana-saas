@@ -36,6 +36,10 @@ export function money(value: number, currency: string, locale?: string) {
     maximumFractionDigits: 2,
   }).format(value);
 }
+/** Currencies a quotation can be priced in: the workspace's own (pass `useDesignSystem().currency`) first, then common ones. */
+export function quoteCurrencyChoices(workspaceCurrency: string) {
+  return Array.from(new Set([workspaceCurrency, "AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].filter(Boolean)));
+}
 export const roundMoney = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export function paymentMilestoneAmounts(total: number, terms: { percent: number }[]) {
   const complete = Math.abs(terms.reduce((s, t) => s + t.percent, 0) - 100) < .001;
