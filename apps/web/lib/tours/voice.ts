@@ -51,38 +51,18 @@ export type Narrator = {
 };
 
 type SpeechEnvironment = {
-  speech?: SpeechSynthesis;
-  Utterance?: typeof SpeechSynthesisUtterance;
   createAudio?: (src: string) => HTMLAudioElement;
 };
 
-const PREFERRED_VOICE = /natural|neural|premium|enhanced|google|siri|samantha|daniel|lekha|maged/i;
-
-function voiceFor(speech: SpeechSynthesis, language: string): SpeechSynthesisVoice | null {
-  const matching = speech.getVoices().filter((voice) => voice.lang.toLowerCase().replace("_", "-").startsWith(language));
-  return matching.find((voice) => PREFERRED_VOICE.test(voice.name)) ?? matching.find((voice) => voice.default) ?? matching[0] ?? null;
-}
-
-async function voicesReady(speech: SpeechSynthesis): Promise<void> {
-  if (speech.getVoices().length) return;
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, 800);
-    speech.addEventListener?.("voiceschanged", () => { clearTimeout(timer); resolve(); }, { once: true });
-  });
-}
-
-/** Browser voice (SpeechSynthesis) in the UI language, recorded audio when present, else reading time. */
+/** Woddy speaks only with a recorded voice; without a recording the caption stays up for its reading time. The browser's synthetic voice is never used. */
 export function createNarrator(environment: SpeechEnvironment = typeof window === "undefined" ? {} : {
-  speech: window.speechSynthesis,
-  Utterance: window.SpeechSynthesisUtterance,
   createAudio: (src) => new Audio(src),
 }): Narrator {
-  const { speech, Utterance, createAudio } = environment;
+  const { createAudio } = environment;
   let playing: HTMLAudioElement | null = null;
 
   const stop = () => {
     if (playing) { playing.pause(); playing.src = ""; playing = null; }
-    try { speech?.cancel(); } catch { /* Nothing is speaking. */ }
   };
 
   const play = (src: string, { speed, signal }: Narration) => new Promise<boolean>((resolve) => {
@@ -90,6 +70,7 @@ export function createNarrator(environment: SpeechEnvironment = typeof window ==
     const audio = createAudio(src);
     playing = audio;
     audio.playbackRate = speed;
+    audio.volume = 1;
     const finish = (ok: boolean) => { signal.removeEventListener("abort", abort); if (playing === audio) playing = null; resolve(ok); };
     const abort = () => { audio.pause(); finish(true); };
     audio.addEventListener("ended", () => finish(true), { once: true });
@@ -98,38 +79,13 @@ export function createNarrator(environment: SpeechEnvironment = typeof window ==
     audio.play().catch(() => finish(false));
   });
 
-  const say = async ({ text, language, speed, signal }: Narration) => {
-    if (!speech || !Utterance) return false;
-    await voicesReady(speech);
-    const voice = voiceFor(speech, language);
-    if (!voice || signal.aborted) return false;
-    return new Promise<boolean>((resolve) => {
-      const utterance = new Utterance(text);
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
-      utterance.rate = speed;
-      // Some browsers never fire `end` for a line; don't wait forever.
-      const safety = setTimeout(() => finish(true), readingTime(text, speed) * 1.8 + 4000);
-      const started = Date.now();
-      function finish(ok: boolean) { clearTimeout(safety); signal.removeEventListener("abort", abort); resolve(ok); }
-      function abort() { speech!.cancel(); finish(true); }
-      utterance.onend = () => finish(true);
-      // Blocked before any interaction (autoplay rules), or no voice after all: read it instead.
-      utterance.onerror = (event) => finish(event.error === "interrupted" || event.error === "canceled" ? true : Date.now() - started > 1500);
-      signal.addEventListener("abort", abort, { once: true });
-      speech.cancel();
-      speech.speak(utterance);
-    });
-  };
-
   return {
     stop,
-    supported: () => Boolean(speech && Utterance),
+    supported: () => Boolean(createAudio),
     async speak(narration) {
       const { text, speed, voice, audio, signal } = narration;
       if (signal.aborted) return;
       if (voice && audio && await play(audio, narration)) return;
-      if (voice && await say(narration)) return;
       await pause(readingTime(text, speed), signal);
     },
   };
