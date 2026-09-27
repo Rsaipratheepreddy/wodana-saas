@@ -23,7 +23,6 @@ export function BurndownChart({ ariaLabel, points, summary }: { ariaLabel: strin
     <figcaption><span>{points[0]?.label}</span>{summary ? <strong>{summary}</strong> : null}<span>{points.at(-1)?.label}</span></figcaption>
   </figure>;
 }
-export function BarChart({ ariaLabel, data }: { ariaLabel: string; data: SeriesPoint[] }) { const max = Math.max(...data.map((point) => point.value), 1); return <figure className="wd-bar-chart" role="img" aria-label={ariaLabel}>{data.map((point) => <div key={point.label}><span><i style={{ blockSize: `${(point.value / max) * 100}%` }} /></span><small>{point.label}</small><strong>{point.value}</strong></div>)}</figure>; }
 
 export function Funnel({ steps }: { steps: Array<SeriesPoint & { color?: string }> }) { const max = Math.max(...steps.map((step) => step.value), 1); return <ol className="wd-funnel">{steps.map((step, index) => <li key={step.label} style={{ inlineSize: `${Math.max(24, (step.value / max) * 100)}%`, background: step.color }}><span>{index + 1}. {step.label}</span><strong>{step.value}</strong></li>)}</ol>; }
 
