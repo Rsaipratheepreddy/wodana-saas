@@ -132,5 +132,8 @@ Inspect without changing state:
 ```bash
 docker compose --env-file .env.production -f infra/hostinger/compose.production.yaml ps
 curl -fsS https://api.DOMAIN/api/v1/health/ready
-curl -fsS https://api.DOMAIN/api/v1/health/ready
 ```
+
+`checks.worker` in that response is the intelligence worker's heartbeat (`ok`, `stale (Ns)`,
+`not-reporting`). A stale or silent worker keeps the API ready but is listed under `degraded`:
+nothing is being delivered and no timer runs until the worker is back.

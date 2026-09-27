@@ -16,6 +16,9 @@ logger = logging.getLogger("wodana.worker.runtime")
 class CrmWorker:
     stream = "wodana:domain-events"
     dead_letter_stream = "wodana:domain-events:dead-letter"
+    # Read by Business Core's /health/ready (keep the key in step with health.controller.ts).
+    heartbeat_key = "wodana:worker:heartbeat"
+    heartbeat_ttl_seconds = 86_400
 
     def __init__(
         self,
@@ -361,12 +364,27 @@ class CrmWorker:
                 delivered += verified.result == "delivered"
         return delivered
 
+    async def beat(self) -> None:
+        """Proves the timer loop runs; Business Core's readiness reports it stale otherwise."""
+        try:
+            await self.redis.set(
+                self.heartbeat_key,
+                json.dumps(
+                    {"at": datetime.now(timezone.utc).isoformat(), "consumer": self.consumer}
+                ),
+                ex=self.heartbeat_ttl_seconds,
+            )
+        except Exception:  # the heartbeat never stops the worker's real work
+            logger.warning("Worker heartbeat could not be written")
+
     async def poll_due_work(self) -> None:
         while True:
+            await self.beat()
             # Reclaim transient failures continuously. A dependency can become
             # unavailable after startup, so a one-time recovery pass is not enough.
             await self.recover_pending()
             for workspace_id in await self.business_core.due_crm_workspaces():
+                await self.beat()  # a long pass over many workspaces is still alive
                 await self.business_core.process_due_slas(workspace_id)
                 await self.business_core.process_due_takeovers(workspace_id)
                 await self.business_core.process_due_sequences(workspace_id)
