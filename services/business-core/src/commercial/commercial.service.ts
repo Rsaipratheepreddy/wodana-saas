@@ -142,6 +142,8 @@ export function commercialCommandPermission(action: string) {
   if (["approve", "execute_agreement"].includes(action))
     return "commercial.approve";
   if (action === "release") return "commercial.release";
+  // Sending a quote back is the reviewer's step too (a QS may not edit the case); checked in the command.
+  if (action === "return") return "pre_projects.view";
   return "pre_projects.edit";
 }
 
@@ -2389,6 +2391,10 @@ export class CommercialService {
             q.approvedBy = user.displayName;
           }
           if (action === "return") {
+            const reviewPermission = data.palmFlow && q.kind === "quotation" ? "commercial.estimate" : "commercial.approve";
+            if (!(await this.access.hasPermission(client, workspaceId, user.userId, reviewPermission))
+              && !(await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit")))
+              throw new ForbiddenException("Only the quote's reviewer or someone who edits this case can send it back.");
             if (!["internal_review", "internal_approved"].includes(q.status))
               throw new ConflictException(
                 "This version cannot return to draft.",
