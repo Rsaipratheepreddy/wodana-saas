@@ -9365,5 +9365,15 @@
   "{used} of {total}": "{used} من {total}",
   "{percent}% of your allowance": "{percent}% من حصتك",
   "No limit set": "لم يُحدد حد",
-  "Storage by area": "التخزين حسب القسم"
+  "Storage by area": "التخزين حسب القسم",
+  "Return for changes": "إعادة لإجراء تعديلات",
+  "The discount is above {percent}% and needs approval": "الخصم أعلى من {percent}% ويحتاج إلى اعتماد",
+  "Waiting for {who}": "بانتظار {who}",
+  "For {line}": "لـ {line}",
+  "Stages not finished": "مراحل غير مكتملة",
+  "Snags open": "ملاحظات مفتوحة",
+  "Issue with work still open": "إصدار مع وجود أعمال مفتوحة",
+  "Why hand over with work still open": "سبب التسليم مع وجود أعمال مفتوحة",
+  "Issue anyway": "إصدار على أي حال",
+  "No sales pipeline is set up yet. Ask a workspace administrator to add one in Sales settings.": "لم يتم إعداد مسار مبيعات بعد. اطلب من مسؤول مساحة العمل إضافته في إعدادات المبيعات."
 }
