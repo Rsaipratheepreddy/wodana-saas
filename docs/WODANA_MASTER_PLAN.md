@@ -980,8 +980,8 @@ One adapter interface per capability. States: **Not configured → Connected →
 | E-sign | later (DocuSign/Zoho Sign) | agreements |
 
 **Built — accounting sync (Settings → Accounting; Business → Finance → Accounting):**
-- **Setup:** each company posts to one connected QuickBooks or Zoho Books account from a start date. Its item for invoice lines, expense account for bills, the accounts supplier payments come from and client payments go into, and a tax code for each rate it uses are chosen from the accounting system's own lists.
-- **Postings:** every document gets an outbox posting — tax invoices, credit notes (after their invoice), finance-verified client payments on invoiced milestones, approved supplier bills, and each supplier payment allocation (after its bill). A payment reversed after posting gets a void; one reversed before it's posted is cancelled.
+- **Setup:** each company posts to one connected QuickBooks or Zoho Books account from a start date. Its item for invoice lines, expense account for bills, the accounts supplier payments come from and client payments go into, its petty cash expense account and the account petty cash is paid from, and a tax code for each rate it uses are chosen from the accounting system's own lists.
+- **Postings:** every document gets an outbox posting — tax invoices, credit notes (after their invoice), finance-verified client payments on invoiced milestones, approved supplier bills, each supplier payment allocation (after its bill), and petty cash once reimbursed (an expense from the petty cash account, for the company that contracted the project). A payment reversed after posting gets a void; one reversed before it's posted is cancelled.
 - **Sending:** the integration worker leases due postings for five minutes, oldest document first, each after what it depends on was sent, and reports back.
   - A missing mapping (item, account, a taxed rate's code) blocks the posting with what to choose; posting the wrong tax is never an option.
   - Contacts are found by name or created, then remembered.

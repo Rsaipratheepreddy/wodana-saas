@@ -6,9 +6,10 @@ import { currencyDecimals } from "../purchasing/orders";
 
 type Db = Pick<PoolClient, "query">;
 
-export type PostingKind = "invoice" | "credit_note" | "invoice_payment" | "bill" | "bill_payment" | "bill_payment_void";
+export type PostingKind = "invoice" | "credit_note" | "invoice_payment" | "bill" | "bill_payment" | "bill_payment_void" | "expense";
 type Link = { id: string; legalEntityId: string; connectionId: string; provider: "quickbooks" | "zoho_books"; startDate: string; salesItemId: string | null;
-  expenseAccountId: string | null; paymentsAccountId: string | null; depositAccountId: string | null; companyName: string };
+  expenseAccountId: string | null; paymentsAccountId: string | null; depositAccountId: string | null; pettyCashAccountId: string | null; pettyCashPaidFromId: string | null;
+  companyName: string };
 type Contact = { kind: "customer" | "vendor"; providerId: string | null; name: string; email: string | null; taxNumber: string | null; currency: string };
 /** What the worker sends to the accounting system for one posting (the contract with the integration worker). */
 export type ClaimedPosting = {
@@ -29,7 +30,8 @@ async function readLinks(db: Db, workspaceId: string) {
   return (await db.query<Link>(
     `SELECT link.id, link.legal_entity_id AS "legalEntityId", link.connection_id AS "connectionId", connection.provider, link.start_date::text AS "startDate",
             link.sales_item_id AS "salesItemId", link.expense_account_id AS "expenseAccountId", link.payments_account_id AS "paymentsAccountId",
-            link.deposit_account_id AS "depositAccountId", entity.display_name AS "companyName"
+            link.deposit_account_id AS "depositAccountId", link.petty_cash_account_id AS "pettyCashAccountId", link.petty_cash_paid_from_id AS "pettyCashPaidFromId",
+            entity.display_name AS "companyName"
        FROM accounting_links link
        JOIN integration_connections connection ON connection.id = link.connection_id AND connection.workspace_id = link.workspace_id
         AND connection.provider IN ('quickbooks', 'zoho_books') AND connection.status IN ('connected', 'degraded')
@@ -85,8 +87,24 @@ export async function enqueuePostings(db: Db, workspaceId: string) {
       JOIN accounting_postings sent ON sent.workspace_id = allocation.workspace_id AND sent.link_id = $2 AND sent.kind = 'bill_payment' AND sent.source_id = allocation.id::text
        AND sent.status = 'sent'
      WHERE allocation.workspace_id = $1 AND payment.legal_entity_id = $3 AND $4::date IS NOT NULL`);
+    // Petty cash, once reimbursed, for projects this company contracted.
+    await add("expense", `SELECT claim.id::text AS id, NULL::uuid AS depends_on, ${REIMBURSED_ON} AS document_on, claim.amount AS total
+      FROM petty_cash_claims claim WHERE claim.workspace_id = $1 AND claim.status = 'reimbursed' AND ${REIMBURSED_ON} >= $4 AND ${PROJECT_COMPANY} = $3`);
   }
 }
+
+/** The day a claim was reimbursed, in the workspace's time zone. */
+const REIMBURSED_ON = `(claim.reimbursed_at AT TIME ZONE coalesce((SELECT nullif(default_timezone, '') FROM workspaces WHERE id = claim.workspace_id), 'UTC'))::date`;
+
+/**
+ * The company a project was contracted by: the company on its tax invoices, else the deal's contract
+ * company, else the workspace's only active company.
+ */
+const PROJECT_COMPANY = `coalesce(
+  (SELECT invoice.legal_entity_id FROM client_invoices invoice WHERE invoice.workspace_id = claim.workspace_id AND invoice.project_id = claim.project_id ORDER BY invoice.issued_at DESC LIMIT 1),
+  (SELECT nullif(cases.content->'financeContext'->>'legalEntityId', '')::uuid FROM delivery_projects project
+     JOIN commercial_cases cases ON cases.workspace_id = project.workspace_id AND cases.case_id = project.case_id WHERE project.workspace_id = claim.workspace_id AND project.id = claim.project_id),
+  (SELECT (array_agg(entity.id))[1] FROM legal_entities entity WHERE entity.workspace_id = claim.workspace_id AND entity.status = 'active' AND entity.archived_at IS NULL HAVING count(*) = 1))`;
 
 type Built = { contact: Contact | null; document: Record<string, unknown> } | { blocked: string };
 
@@ -195,6 +213,19 @@ export async function buildPosting(db: Db, workspaceId: string, link: Link, post
     return { contact: await contact(db, workspaceId, link.id, "vendor", bill.vendorId, { name: bill.supplierName, email: bill.email, taxNumber: bill.taxNumber, currency: bill.currency }),
       document: { number: bill.number, date: bill.invoiceDate, dueDate: bill.dueDate, currency: bill.currency, reference: bill.orders ?? "", lines,
         net: money(bill.net, bill.currency), tax: money(bill.tax, bill.currency), total: money(bill.total, bill.currency) } };
+  }
+
+  if (posting.kind === "expense") {
+    if (!link.pettyCashAccountId || !link.pettyCashPaidFromId)
+      return { blocked: "Choose the petty cash expense account and the account it's paid from in Settings → Accounting." };
+    const claim = (await db.query<{ number: number; amount: string; currency: string; reimbursedOn: string; description: string; reference: string | null; projectReference: string }>(
+      `SELECT claim.number, claim.amount::text AS amount, claim.currency, ${REIMBURSED_ON}::text AS "reimbursedOn", claim.description, claim.reimbursement_reference AS reference,
+              project.reference AS "projectReference"
+         FROM petty_cash_claims claim JOIN delivery_projects project ON project.workspace_id = claim.workspace_id AND project.id = claim.project_id
+        WHERE claim.workspace_id = $1 AND claim.id::text = $2`, [workspaceId, posting.sourceId])).rows[0];
+    const number = `PC-${String(claim.number).padStart(4, "0")}`;
+    return { contact: null, document: { number, date: claim.reimbursedOn, currency: claim.currency, amount: money(claim.amount, claim.currency),
+      description: `${claim.projectReference}: ${claim.description}`, reference: claim.reference ?? "", expenseAccountId: link.pettyCashAccountId, paidFromAccountId: link.pettyCashPaidFromId } };
   }
 
   // Supplier payments, one allocation at a time, and voids of the ones reversed after they were posted.
@@ -318,6 +349,7 @@ export async function applyResult(db: Db, workspaceId: string, result: PostingRe
 
 /** Who a posting's contact is in Wodana: the client's party (or their deal) or the supplier. */
 async function contactParty(db: Db, workspaceId: string, kind: PostingKind, sourceId: string) {
+  if (kind === "expense") return null;
   const query = kind === "invoice" ? `SELECT coalesce(opportunity.party_id, opportunity.id) AS id FROM client_invoices invoice
       JOIN pre_project_cases pre_case ON pre_case.workspace_id = invoice.workspace_id AND pre_case.id = invoice.case_id
       JOIN crm_opportunities opportunity ON opportunity.workspace_id = pre_case.workspace_id AND opportunity.id = pre_case.opportunity_id

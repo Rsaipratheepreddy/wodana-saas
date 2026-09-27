@@ -41,6 +41,7 @@ ZOHO_POSTING_SCOPES = (
     "ZohoBooks.vendorpayments.READ",
     "ZohoBooks.vendorpayments.CREATE",
     "ZohoBooks.vendorpayments.DELETE",
+    "ZohoBooks.expenses.CREATE",
 )
 SCOPES = {
     "quickbooks": ["com.intuit.quickbooks.accounting"],

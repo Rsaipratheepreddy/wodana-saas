@@ -15,7 +15,13 @@ from pydantic import BeforeValidator, Field, model_validator
 from wodana_intelligence.integrations.models import ApiModel
 
 PostingKind = Literal[
-    "invoice", "credit_note", "invoice_payment", "bill", "bill_payment", "bill_payment_void"
+    "invoice",
+    "credit_note",
+    "invoice_payment",
+    "bill",
+    "bill_payment",
+    "bill_payment_void",
+    "expense",
 ]
 PaymentMethod = Literal["bank", "cheque", "cash", "card", "other"]
 
@@ -161,6 +167,20 @@ class BillPaymentVoidDocument(ApiModel):
     reason: Reference = ""
 
 
+class ExpenseDocument(ApiModel):
+    """Petty cash reimbursed: paid from one account to an expense account. No contact, no tax."""
+
+    kind: Literal["expense"]
+    number: DocumentNumber
+    date: CalendarDate
+    currency: Currency
+    amount: Amount = Field(gt=0)
+    description: str = Field(min_length=1, max_length=2000)
+    reference: Reference = ""
+    expense_account_id: ProviderId
+    paid_from_account_id: ProviderId
+
+
 PostingDocument = Annotated[
     Union[
         InvoiceDocument,
@@ -169,6 +189,7 @@ PostingDocument = Annotated[
         BillDocument,
         BillPaymentDocument,
         BillPaymentVoidDocument,
+        ExpenseDocument,
     ],
     Field(discriminator="kind"),
 ]

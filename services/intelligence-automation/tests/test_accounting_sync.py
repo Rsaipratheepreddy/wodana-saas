@@ -203,12 +203,26 @@ def bill_payment_document(method: str = "bank") -> dict[str, Any]:
     }
 
 
+def expense_document() -> dict[str, Any]:
+    return {
+        "number": "PC-0012",
+        "date": "2026-09-26",
+        "currency": "AED",
+        "amount": "45.50",
+        "description": "PRJ-0007: Taxi to site",
+        "reference": "Cash box 12",
+        "expenseAccountId": "460",
+        "paidFromAccountId": "12",
+    }
+
+
 DOCUMENTS: dict[str, Callable[[], dict[str, Any]]] = {
     "invoice": invoice_document,
     "credit_note": credit_note_document,
     "invoice_payment": invoice_payment_document,
     "bill": bill_document,
     "bill_payment": bill_payment_document,
+    "expense": expense_document,
 }
 
 
@@ -1479,3 +1493,107 @@ async def test_zoho_lists_chart_of_accounts_and_taxes_for_mapping(
     [request] = books.requests
     assert request.url.params["per_page"] == "50"
     assert request.url.params["organization_id"] == "600123"
+
+
+# Petty cash expenses
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_petty_cash_is_a_cash_purchase_with_no_contact() -> None:
+    books = Books(
+        {
+            ("POST", "/purchase"): {
+                "Purchase": {"Id": "910", "DocNumber": "PC-0012", "TotalAmt": 45.5}
+            }
+        }
+    )
+    item = posting("expense")
+    [result] = await run(books, item)
+    assert result == {
+        "id": item["id"],
+        "leaseToken": item["leaseToken"],
+        "providerId": "910",
+        "providerNumber": "PC-0012",
+        "providerTotal": "45.5",
+    }
+    [request] = books.calls("POST", "/purchase")
+    assert request.url.params["requestid"] == item["id"]
+    body = books.body("POST", "/purchase")
+    assert body == {
+        "PaymentType": "Cash",
+        "AccountRef": {"value": "12"},
+        "DocNumber": "PC-0012",
+        "TxnDate": "2026-09-26",
+        "CurrencyRef": {"value": "AED"},
+        "PrivateNote": f"Cash box 12 {MARKER}",
+        "Line": [
+            {
+                "DetailType": "AccountBasedExpenseLineDetail",
+                "Amount": Decimal("45.50"),
+                "Description": "PRJ-0007: Taxi to site",
+                "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "460"}},
+            }
+        ],
+    }
+    # No customer or vendor is looked up or created for petty cash.
+    assert not books.calls("GET", "/query")
+
+
+@pytest.mark.asyncio
+async def test_zoho_petty_cash_is_an_expense_in_its_currency_with_the_marker() -> None:
+    books = Books(
+        {
+            ("GET", "/settings/currencies"): zoho(
+                {"currencies": [{"currency_code": "AED", "currency_id": "3000"}]}
+            ),
+            ("POST", "/expenses"): zoho({"expense": {"expense_id": "7100", "total": 45.5}}),
+        }
+    )
+    item = posting("expense", "zoho_books")
+    [result] = await run(books, item, provider="zoho_books")
+    assert (result["providerId"], result["providerTotal"]) == ("7100", "45.5")
+    assert books.body("POST", "/expenses") == {
+        "account_id": "460",
+        "paid_through_account_id": "12",
+        "date": "2026-09-26",
+        "amount": Decimal("45.50"),
+        "currency_id": "3000",
+        "description": "PRJ-0007: Taxi to site",
+        "reference_number": f"PC-0012 Cash box 12 {MARKER}",
+    }
+
+
+@pytest.mark.asyncio
+async def test_zoho_petty_cash_retry_finds_the_expense_it_already_created() -> None:
+    books = Books(
+        {
+            ("GET", "/expenses"): zoho(
+                {
+                    "expenses": [
+                        {"expense_id": "7000", "reference_number": "PC-0011 W1a2b3c4dX"},
+                        {
+                            "expense_id": "7100",
+                            "reference_number": f"PC-0012 Cash box 12 {MARKER}",
+                            "total": 45.5,
+                        },
+                    ]
+                }
+            )
+        }
+    )
+    [result] = await run(books, posting("expense", "zoho_books", attempt=1), provider="zoho_books")
+    assert result["providerId"] == "7100"
+    assert books.calls("GET", "/expenses")[0].url.params["search_text"] == MARKER
+    assert not books.calls("POST", "/expenses")
+
+
+@pytest.mark.asyncio
+async def test_expense_needs_both_accounts_and_an_amount_above_zero() -> None:
+    document = expense_document()
+    document["amount"] = "0"
+    del document["paidFromAccountId"]
+    [result] = await run(Books({}), posting("expense", document=document))
+    assert result["error"]["code"] == "invalid_posting"
+    assert result["error"]["retryable"] is False
+    message = result["error"]["message"]
+    assert "paid_from_account_id" in message or "paidFromAccountId" in message

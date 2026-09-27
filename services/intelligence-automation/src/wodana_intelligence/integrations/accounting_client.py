@@ -21,6 +21,7 @@ from wodana_intelligence.integrations.accounting_models import (
     BillPaymentVoidDocument,
     CreditNoteDocument,
     DocumentLine,
+    ExpenseDocument,
     InvoiceDocument,
     InvoicePaymentDocument,
     Posting,
@@ -53,6 +54,7 @@ _STALE_OBJECT = "5010"
 # QuickBooks limits DocNumber to 21 characters.
 _QUICKBOOKS_NUMBER_LIMIT = 21
 _ZOHO_REFERENCE_LIMIT = 100
+_ZOHO_EXPENSE_DESCRIPTION_LIMIT = 100
 
 
 @dataclass(frozen=True)
@@ -267,6 +269,31 @@ class QuickBooksAdapter:
         document = posting.document
         if isinstance(document, BillPaymentVoidDocument):
             return await self._void_bill_payment(credential, posting, document)
+        if isinstance(document, ExpenseDocument):
+            # Petty cash: a cash purchase from the account it was paid from, to the expense account.
+            return await self._create(
+                credential,
+                posting,
+                "Purchase",
+                {
+                    "PaymentType": "Cash",
+                    "AccountRef": {"value": document.paid_from_account_id},
+                    "DocNumber": document.number,
+                    "TxnDate": document.date.isoformat(),
+                    "CurrencyRef": {"value": document.currency},
+                    "PrivateNote": _note(document.reference, posting.marker),
+                    "Line": [
+                        {
+                            "DetailType": "AccountBasedExpenseLineDetail",
+                            "Amount": document.amount,
+                            "Description": document.description,
+                            "AccountBasedExpenseLineDetail": {
+                                "AccountRef": {"value": document.expense_account_id}
+                            },
+                        }
+                    ],
+                },
+            )
         party = _counterparty(counterparty)
         note = _note(document.reference, posting.marker)
         body: dict[str, Any]
@@ -583,6 +610,8 @@ class ZohoBooksAdapter:
                 if not (error.hint == "not_found" and posting.attempt > 0):
                     raise
             return PostingOutcome(provider_id=identity)
+        if isinstance(document, ExpenseDocument):
+            return await self._expense(credential, posting, document)
         party = _counterparty(counterparty)
         if isinstance(document, InvoiceDocument):
             return await self._numbered(
@@ -671,6 +700,41 @@ class ZohoBooksAdapter:
         }
         return await self._payment(
             credential, posting, party, "vendorpayments", "vendorpayment", "vendor_id", body
+        )
+
+    async def _expense(
+        self, credential: ProviderCredential, posting: Posting, document: ExpenseDocument
+    ) -> PostingOutcome:
+        # Zoho Books has no request ids: a repeated attempt first looks for the expense by marker.
+        if posting.attempt > 0:
+            data = await self.call(
+                credential, "GET", "/expenses", params={"search_text": posting.marker}
+            )
+            for row in _rows(data, "expenses"):
+                if posting.marker in str(row.get("reference_number", "")).split() and _text(
+                    row.get("expense_id")
+                ):
+                    return self._expense_outcome(row)
+        body = {
+            "account_id": document.expense_account_id,
+            "paid_through_account_id": document.paid_from_account_id,
+            "date": document.date.isoformat(),
+            "amount": document.amount,
+            "currency_id": await self._currency_id(credential, document.currency),
+            "description": document.description[:_ZOHO_EXPENSE_DESCRIPTION_LIMIT],
+            "reference_number": _with_marker(
+                _note(document.number, document.reference), posting.marker, _ZOHO_REFERENCE_LIMIT
+            ),
+        }
+        data = await self.call(credential, "POST", "/expenses", json=body)
+        return self._expense_outcome(_entity(data, "expense", "expense_id"))
+
+    @staticmethod
+    def _expense_outcome(row: dict[str, Any]) -> PostingOutcome:
+        return PostingOutcome(
+            provider_id=str(row["expense_id"]),
+            provider_number=None,
+            provider_total=_decimal(row.get("total", row.get("amount"))),
         )
 
     @staticmethod

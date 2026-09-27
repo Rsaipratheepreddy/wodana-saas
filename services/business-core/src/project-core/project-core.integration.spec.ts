@@ -3761,4 +3761,43 @@ integration("projects core (plan §6.10)", () => {
       expect(guarded).toEqual(["petty_cash_claims", "petty_cash_commands", "workcenter_rates", "workspace_labour_rates"]);
     });
   });
+
+  it("posts reimbursed petty cash to the accounting system as an expense from the petty cash account, once its accounts are chosen", async () => {
+    await world(async (w) => {
+      const { projectId, company, access, all } = await buying(w, { signoff: false });
+      const connection = randomUUID();
+      await w.client.query(`INSERT INTO integration_connections (id, workspace_id, legal_entity_id, provider, display_name, status) VALUES ($1, $2, $3, 'zoho_books', 'Studio Zoho', 'connected')`,
+        [connection, w.workspaceId, company]);
+      const accounting = new AccountingService(access(w.manager, [...all, "accounting.manage"]), {} as never);
+      const link = (input: Record<string, unknown>, version: number) => accounting.saveLink(actor, w.workspaceId, { legalEntityId: company, connectionId: connection, startDate: "2026-01-01", version, ...input });
+      await link({}, 0);
+      // A taxi fare reimbursed on the 26th, and one still waiting to be reimbursed.
+      const claim = async (number: number, reimbursed: boolean) => {
+        const id = randomUUID();
+        await w.client.query(`INSERT INTO petty_cash_claims (id, workspace_id, number, project_id, spent_on, amount, currency, description, category, no_receipt_reason, status, claimed_by,
+            submitted_at, decided_by, decided_at, reimbursed_by, reimbursed_at, reimbursement_reference)
+          VALUES ($1, $2, $3, $4, '2026-09-25', 45.5, 'AED', 'Taxi to site', 'transport', 'Street taxi', $5, $6, now(), $7, now(), $8, $9, $10)`,
+          [id, w.workspaceId, number, projectId, reimbursed ? "reimbursed" : "approved", w.designer, w.manager, reimbursed ? w.manager : null,
+            reimbursed ? "2026-09-26T08:00:00Z" : null, reimbursed ? "Cash box 12" : ""]);
+        return id;
+      };
+      await claim(1, true);
+      await claim(2, false);
+      // Without its accounts it waits, saying what to choose; only the reimbursed claim is there.
+      expect(await claimPostings(w.client, w.workspaceId, 20)).toEqual([]);
+      const rows = async () => (await w.client.query<{ kind: string; status: string; error: string | null; date: string }>(
+        `SELECT kind, status, error, document_date::text AS date FROM accounting_postings WHERE workspace_id = $1`, [w.workspaceId])).rows;
+      expect(await rows()).toEqual([{ kind: "expense", status: "blocked", date: "2026-09-26",
+        error: "Choose the petty cash expense account and the account it's paid from in Settings → Accounting." }]);
+      await link({ pettyCashAccountId: "460", pettyCashPaidFromId: "12" }, 1);
+      const claimed = await claimPostings(w.client, w.workspaceId, 20);
+      const project = (await w.client.query<{ reference: string }>(`SELECT reference FROM delivery_projects WHERE id = $1`, [projectId])).rows[0].reference;
+      expect(claimed).toEqual([expect.objectContaining({ kind: "expense", provider: "zoho_books", contact: null, document: { number: "PC-0001", date: "2026-09-26", currency: "AED",
+        amount: "45.50", description: `${project}: Taxi to site`, reference: "Cash box 12", expenseAccountId: "460", paidFromAccountId: "12" } })]);
+      await applyResult(w.client, w.workspaceId, { id: claimed[0].id, leaseToken: claimed[0].leaseToken, providerId: "E77", providerTotal: "45.5" });
+      const listed = (await accounting.postings(actor, w.workspaceId)).postings;
+      expect(listed).toEqual([expect.objectContaining({ kind: "expense", status: "sent", label: "PC-0001 · Taxi to site", errorCode: null })]);
+      expect((await accounting.settings(actor, w.workspaceId)).companies.find((item) => item.id === company)?.link).toMatchObject({ pettyCashAccountId: "460", pettyCashPaidFromId: "12" });
+    });
+  });
 });

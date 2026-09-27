@@ -3099,5 +3099,7 @@
   "No rate": "No rate",
   "Set rate": "Set rate",
   "{amount} a day from {date}": "{amount} a day from {date}",
-  "Day rate": "Day rate"
+  "Day rate": "Day rate",
+  "Expense account for petty cash": "Expense account for petty cash",
+  "Petty cash paid from": "Petty cash paid from"
 }

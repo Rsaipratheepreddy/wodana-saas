@@ -38,7 +38,8 @@ describe("accounting", () => {
     const fetcher = mount((url, body) => {
       if (url.includes("/tools?")) return { items: quickbooks[new URL(url, "http://x").searchParams.get("kind")!], hasMore: false };
       if (body) return settings({ companies: [{ ...settings().companies[0], link: { id: "l1", legalEntityId: "e1", connectionId: "c1", startDate: "2026-01-01", salesItemId: "1",
-        expenseAccountId: "7", paymentsAccountId: "35", depositAccountId: null, active: true, version: 1, taxCodes: [{ rate: "5.0000", providerTaxId: "TAX5" }], counts: {} } }] });
+        expenseAccountId: "7", paymentsAccountId: "35", depositAccountId: null, pettyCashAccountId: "7", pettyCashPaidFromId: "35", active: true, version: 1,
+        taxCodes: [{ rate: "5.0000", providerTaxId: "TAX5" }], counts: {} } }] });
       return settings();
     });
     render(<DesignSystemProvider><AccountingSettingsPage workspaceId="w" /></DesignSystemProvider>);
@@ -52,6 +53,12 @@ describe("accounting", () => {
     await userEvent.click(await screen.findByRole("option", { name: "Materials" }));
     await userEvent.click(within(section).getByRole("button", { name: /Supplier payments from/ }));
     await userEvent.click(await screen.findByRole("option", { name: "Emirates NBD" }));
+    // Petty cash goes to an expense account, paid from a bank or cash account.
+    await userEvent.click(within(section).getByRole("button", { name: /Expense account for petty cash/ }));
+    expect(screen.queryByRole("option", { name: "Emirates NBD" })).toBeNull();
+    await userEvent.click(await screen.findByRole("option", { name: "Materials" }));
+    await userEvent.click(within(section).getByRole("button", { name: /Petty cash paid from/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Emirates NBD" }));
     await userEvent.click(within(section).getByRole("button", { name: /Tax at 5%/ }));
     await userEvent.click(await screen.findByRole("option", { name: "SR" }));
     const [month, day, year] = within(within(section).getByRole("group", { name: /Post from/ })).getAllByRole("spinbutton");
@@ -59,7 +66,7 @@ describe("accounting", () => {
     await userEvent.click(within(section).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetcher.mock.calls.at(-1)![1]).toMatchObject({ method: "PUT" }));
     expect(JSON.parse(String(fetcher.mock.calls.at(-1)![1]!.body))).toMatchObject({ legalEntityId: "e1", connectionId: "c1", salesItemId: "1", expenseAccountId: "7",
-      paymentsAccountId: "35", depositAccountId: null, version: 0, taxCodes: [{ rate: "5", providerTaxId: "TAX5" }] });
+      paymentsAccountId: "35", depositAccountId: null, pettyCashAccountId: "7", pettyCashPaidFromId: "35", version: 0, taxCodes: [{ rate: "5", providerTaxId: "TAX5" }] });
   });
 
   it("lists the postings that need attention and retries one", async () => {

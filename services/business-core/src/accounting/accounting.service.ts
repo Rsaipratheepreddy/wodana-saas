@@ -42,12 +42,12 @@ export class AccountingService {
       if (!connection || !["quickbooks", "zoho_books"].includes(connection.provider)) throw new BadRequestException("Choose a connected QuickBooks or Zoho Books account.");
       if (connection.legalEntityId && connection.legalEntityId !== legalEntityId) throw new ConflictException("That accounting connection belongs to another company.");
       if (typeof body.startDate !== "string" || !DATE.test(body.startDate)) throw new BadRequestException("Choose the date to post from.");
-      const ids = Object.fromEntries(["salesItemId", "expenseAccountId", "paymentsAccountId", "depositAccountId"].map((key) => {
+      const ids = Object.fromEntries(["salesItemId", "expenseAccountId", "paymentsAccountId", "depositAccountId", "pettyCashAccountId", "pettyCashPaidFromId"].map((key) => {
         const value = body[key];
         if (value === undefined || value === null || value === "") return [key, null];
         if (typeof value !== "string" || !PROVIDER_ID.test(value)) throw new BadRequestException("An accounting reference is not valid.");
         return [key, value];
-      })) as Record<"salesItemId" | "expenseAccountId" | "paymentsAccountId" | "depositAccountId", string | null>;
+      })) as Record<"salesItemId" | "expenseAccountId" | "paymentsAccountId" | "depositAccountId" | "pettyCashAccountId" | "pettyCashPaidFromId", string | null>;
       const taxCodes = Array.isArray(body.taxCodes) ? (body.taxCodes as Array<Record<string, unknown>>) : [];
       const current = (await client.query<{ id: string; version: number; connectionId: string }>(
         `SELECT id, version, connection_id AS "connectionId" FROM accounting_links WHERE workspace_id = $1 AND legal_entity_id = $2 FOR UPDATE`, [workspaceId, legalEntityId])).rows[0];
@@ -60,13 +60,16 @@ export class AccountingService {
       if (current)
         await client.query(
           `UPDATE accounting_links SET connection_id = $3, start_date = $4, sales_item_id = $5, expense_account_id = $6, payments_account_id = $7, deposit_account_id = $8, active = $9,
-                  version = version + 1, updated_by = $10, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
-          [workspaceId, linkId, connectionId, body.startDate, ids.salesItemId, ids.expenseAccountId, ids.paymentsAccountId, ids.depositAccountId, active, user.userId]);
+                  petty_cash_account_id = $11, petty_cash_paid_from_id = $12, version = version + 1, updated_by = $10, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
+          [workspaceId, linkId, connectionId, body.startDate, ids.salesItemId, ids.expenseAccountId, ids.paymentsAccountId, ids.depositAccountId, active, user.userId,
+            ids.pettyCashAccountId, ids.pettyCashPaidFromId]);
       else
         await client.query(
-          `INSERT INTO accounting_links (id, workspace_id, legal_entity_id, connection_id, start_date, sales_item_id, expense_account_id, payments_account_id, deposit_account_id, active, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [linkId, workspaceId, legalEntityId, connectionId, body.startDate, ids.salesItemId, ids.expenseAccountId, ids.paymentsAccountId, ids.depositAccountId, active, user.userId]);
+          `INSERT INTO accounting_links (id, workspace_id, legal_entity_id, connection_id, start_date, sales_item_id, expense_account_id, payments_account_id, deposit_account_id, active, updated_by,
+                                         petty_cash_account_id, petty_cash_paid_from_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [linkId, workspaceId, legalEntityId, connectionId, body.startDate, ids.salesItemId, ids.expenseAccountId, ids.paymentsAccountId, ids.depositAccountId, active, user.userId,
+            ids.pettyCashAccountId, ids.pettyCashPaidFromId]);
       await client.query(`DELETE FROM accounting_tax_codes WHERE workspace_id = $1 AND link_id = $2`, [workspaceId, linkId]);
       const rates = new Set<string>();
       for (const item of taxCodes) {
@@ -141,9 +144,10 @@ export class AccountingService {
     const companies = (await client.query<{ id: string; name: string; currency: string }>(
       `SELECT id, display_name AS name, base_currency AS currency FROM legal_entities WHERE workspace_id = $1 AND archived_at IS NULL ORDER BY display_name`, [workspaceId])).rows;
     const links = (await client.query<{ id: string; legalEntityId: string; connectionId: string; startDate: string; salesItemId: string | null; expenseAccountId: string | null;
-      paymentsAccountId: string | null; depositAccountId: string | null; active: boolean; version: number }>(
+      paymentsAccountId: string | null; depositAccountId: string | null; pettyCashAccountId: string | null; pettyCashPaidFromId: string | null; active: boolean; version: number }>(
       `SELECT id, legal_entity_id AS "legalEntityId", connection_id AS "connectionId", start_date::text AS "startDate", sales_item_id AS "salesItemId", expense_account_id AS "expenseAccountId",
-              payments_account_id AS "paymentsAccountId", deposit_account_id AS "depositAccountId", active, version FROM accounting_links WHERE workspace_id = $1`, [workspaceId])).rows;
+              payments_account_id AS "paymentsAccountId", deposit_account_id AS "depositAccountId", petty_cash_account_id AS "pettyCashAccountId",
+              petty_cash_paid_from_id AS "pettyCashPaidFromId", active, version FROM accounting_links WHERE workspace_id = $1`, [workspaceId])).rows;
     const taxCodes = (await client.query<{ linkId: string; rate: string; providerTaxId: string }>(
       `SELECT link_id AS "linkId", rate::text AS rate, provider_tax_id AS "providerTaxId" FROM accounting_tax_codes WHERE workspace_id = $1 ORDER BY rate`, [workspaceId])).rows;
     // Every rate the company uses: its tax profile's rates, and any rate already on its invoices or bills.
@@ -180,6 +184,8 @@ export class AccountingService {
                 WHEN 'credit_note' THEN (SELECT credit.number FROM client_credit_notes credit WHERE credit.workspace_id = posting.workspace_id AND credit.id::text = posting.source_id)
                 WHEN 'bill' THEN (SELECT vendor.display_name || ' · ' || bill.number FROM supplier_invoices bill JOIN workspace_vendors vendor ON vendor.workspace_id = bill.workspace_id
                                    AND vendor.id = bill.vendor_id WHERE bill.workspace_id = posting.workspace_id AND bill.id::text = posting.source_id)
+                WHEN 'expense' THEN (SELECT 'PC-' || lpad(claim.number::text, 4, '0') || ' · ' || claim.description FROM petty_cash_claims claim
+                                   WHERE claim.workspace_id = posting.workspace_id AND claim.id::text = posting.source_id)
                 WHEN 'invoice_payment' THEN (SELECT receipt.reference FROM commercial_allocations allocation JOIN commercial_receipts receipt ON receipt.workspace_id = allocation.workspace_id
                                    AND receipt.case_id = allocation.case_id AND receipt.id = allocation.receipt_id WHERE allocation.workspace_id = posting.workspace_id AND allocation.id = posting.source_id)
                 ELSE (SELECT vendor.display_name || ' · ' || bill.number FROM supplier_payment_allocations allocation

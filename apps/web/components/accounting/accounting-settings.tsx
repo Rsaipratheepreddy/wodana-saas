@@ -39,7 +39,7 @@ function CompanyAccounting({ api, company, connections, onSaved }: { api: Accoun
   const [connectionId, setConnectionId] = useState(link?.connectionId ?? (connections.length === 1 ? connections[0].id : ""));
   const [startDate, setStartDate] = useState<string | null>(link?.startDate ?? null);
   const [ids, setIds] = useState({ salesItemId: link?.salesItemId ?? "", expenseAccountId: link?.expenseAccountId ?? "", paymentsAccountId: link?.paymentsAccountId ?? "",
-    depositAccountId: link?.depositAccountId ?? "" });
+    depositAccountId: link?.depositAccountId ?? "", pettyCashAccountId: link?.pettyCashAccountId ?? "", pettyCashPaidFromId: link?.pettyCashPaidFromId ?? "" });
   const [taxCodes, setTaxCodes] = useState<Record<string, string>>(Object.fromEntries((link?.taxCodes ?? []).map((item) => [item.rate.includes(".") ? item.rate.replace(/\.?0+$/, "") : item.rate, item.providerTaxId])));
   const [active, setActive] = useState(link?.active ?? true);
   const [options, setOptions] = useState<Options>(null);
@@ -84,6 +84,8 @@ function CompanyAccounting({ api, company, connections, onSaved }: { api: Accoun
         <SettingsRow label={t("Expense account for bills")}>{choose(t("Expense account for bills"), "expenseAccountId", loaded?.accounts ?? null, EXPENSE)}</SettingsRow>
         <SettingsRow label={t("Supplier payments from")}>{choose(t("Supplier payments from"), "paymentsAccountId", loaded?.accounts ?? null, MONEY)}</SettingsRow>
         <SettingsRow label={t("Client payments into")}>{choose(t("Client payments into"), "depositAccountId", loaded?.accounts ?? null, MONEY)}</SettingsRow>
+        <SettingsRow label={t("Expense account for petty cash")}>{choose(t("Expense account for petty cash"), "pettyCashAccountId", loaded?.accounts ?? null, EXPENSE)}</SettingsRow>
+        <SettingsRow label={t("Petty cash paid from")}>{choose(t("Petty cash paid from"), "pettyCashPaidFromId", loaded?.accounts ?? null, MONEY)}</SettingsRow>
         {company.rates.map((rate) => <SettingsRow key={rate} label={t("Tax at {rate}%", { rate })}>
           {loaded ? <SelectField aria-label={t("Tax at {rate}%", { rate })} label={null} placeholder={t("Choose")} selectedKey={taxCodes[rate] || null}
             onSelectionChange={(value) => setTaxCodes({ ...taxCodes, [rate]: value ? String(value) : "" })}

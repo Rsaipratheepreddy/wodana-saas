@@ -25,7 +25,7 @@ export function AccountingPostings({ api }: { api: AccountingApi }) {
   }, [api, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const kinds = useMemo<Record<PostingKind, string>>(() => ({ invoice: t("Invoice"), credit_note: t("Credit note"), invoice_payment: t("Client payment"), bill: t("Supplier bill"),
-    bill_payment: t("Supplier payment"), bill_payment_void: t("Payment reversed") }), [t]);
+    bill_payment: t("Supplier payment"), bill_payment_void: t("Payment reversed"), expense: t("Petty cash") }), [t]);
   const statuses = useMemo<Record<PostingStatus, [string, string]>>(() => ({ pending: [t("Waiting"), "info"], sent: [t("Posted"), "success"], failed: [t("Failed"), "danger"],
     blocked: [t("Needs a mapping"), "warning"], cancelled: [t("Not needed"), "neutral"] }), [t]);
   const needsAttention = (row: Posting) => row.status === "blocked" || (row.status === "failed" && !row.nextAt) || row.errorCode === "total_differs";
