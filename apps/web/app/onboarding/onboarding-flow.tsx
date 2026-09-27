@@ -20,8 +20,10 @@ import {
 import type { AuthProfile } from "@/lib/auth/server";
 import type { CompanyProfileData, CompanyProfileUpdate } from "@/lib/workspace/company-profile";
 import { countryOptions, currencyOptions, currencyFlagCode, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
-import { languages, LANGUAGE_COOKIE, languageDirection, type AppLanguage } from '@/lib/i18n/languages';
-import { translator, type MessageKey } from '@/lib/i18n/messages';
+import { LanguageSelect } from '@/components/i18n/language-select';
+import { useLanguage, useT } from '@/lib/i18n/i18n-provider';
+import { languageDirection } from '@/lib/i18n/languages';
+import type { MessageKey } from '@/lib/i18n/keys';
 import styles from "./onboarding.module.css";
 
 type Step = "workspace_profile" | "organization" | "team" | "integrations";
@@ -79,7 +81,6 @@ function nextStep(step: Step): Step {
 
 export function OnboardingFlow({
   initialData,
-  initialLanguage = "en",
   integrationData,
   oauthResult,
   seatCapacity = null,
@@ -93,7 +94,6 @@ export function OnboardingFlow({
   initialData: CompanyProfileData;
   integrationData?: IntegrationsPageData;
   oauthResult?: { code?: string; result?: string };
-  initialLanguage?: AppLanguage;
   availableRoles?: Array<{ id: string; label: string }>;
   initialInvites?: Array<{ email: string; roles: string[] }>;
   seatCapacity?: { allocated: number; reserved: number; pending: number } | null;
@@ -103,8 +103,8 @@ export function OnboardingFlow({
   isPreview?: boolean;
   userName: string;
 }) {
-  const [language, setLanguage] = useState(initialLanguage);
-  const t = translator(language);
+  const t = useT();
+  const { language } = useLanguage();
   const [newReservations, setNewReservations] = useState(0);
   const [data, setData] = useState(initialData);
   const [onboarding, setOnboarding] = useState(initialOnboarding);
@@ -484,12 +484,7 @@ export function OnboardingFlow({
       <main className={styles.layout}>
         <header className={styles.topbar}>
           <div className={styles.brand}><WodanaLogo size="small" /></div>
-          <div className={styles.languageChoice}><SelectField prefix={<Globe2 size={16} strokeWidth={2} aria-hidden="true" />} label={t("Language")} items={languages.map(item => ({ id: item.id, label: item.label }))} selectedKey={language} onSelectionChange={key => {
-            const selected = languages.find(item => item.id === key);
-            if (!selected) return;
-            setLanguage(selected.id);
-            document.cookie = `${LANGUAGE_COOKIE}=${selected.id}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
-          }} /></div>
+          <LanguageSelect className={styles.languageChoice} compact />
         </header>
         <section className={styles.panel}>
           <h1 className={styles.welcomeTitle}>{t("Happy to onboard")}</h1>

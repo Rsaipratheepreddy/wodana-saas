@@ -17,9 +17,10 @@ describe('language foundation', () => {
     const untranslated = missingTranslations().ar[0];
     if (untranslated) expect(translator('ar')(untranslated)).toBe(messages.en[untranslated]);
   });
-  it('resolves region variants and uses RTL for both Arabic and Urdu', () => {
-    expect(resolveLanguage('ur-PK')).toBe('ur');
+  it('resolves region variants and uses RTL for Arabic-script languages', () => {
+    expect(resolveLanguage('hi-IN')).toBe('hi');
     expect(resolveLanguage('AR-ae')).toBe('ar');
+    expect(resolveLanguage('ur-PK')).toBe('en');
     expect(resolveLanguage('unknown')).toBe('en');
     for (const locale of ['ur', 'ur-PK', 'ar-AE']) expect(languageDirection(locale)).toBe('rtl');
     for (const locale of ['en', 'hi-IN', 'te-IN', 'ml-IN', 'ta-IN', 'art']) expect(languageDirection(locale)).toBe('ltr');

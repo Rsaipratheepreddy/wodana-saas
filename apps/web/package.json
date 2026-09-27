@@ -14,7 +14,8 @@
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "i18n:missing": "node scripts/i18n-missing.mjs",
-    "i18n:extract": "node scripts/i18n-extract.mjs"
+    "i18n:extract": "node scripts/i18n-extract.mjs",
+    "i18n:translate": "node scripts/i18n-translate.mjs"
   },
   "dependencies": {
     "@internationalized/date": "^3.12.4",

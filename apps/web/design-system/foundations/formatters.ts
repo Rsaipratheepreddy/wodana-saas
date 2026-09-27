@@ -4,10 +4,11 @@ export type FormatContext = {
   timeZone?: string;
 };
 
+// Callers pass the workspace region (useDesignSystem()); these neutral values only apply when they do not.
 const defaults: Required<FormatContext> = {
-  locale: "en-IN",
-  currency: "INR",
-  timeZone: "Asia/Kolkata",
+  locale: "en",
+  currency: "USD",
+  timeZone: "UTC",
 };
 
 export function formatMoney(value: number, context: FormatContext = {}) {

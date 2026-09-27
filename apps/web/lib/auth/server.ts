@@ -14,6 +14,8 @@ export type AuthProfile = {
   id: string;
   primaryEmail: string;
   displayName: string;
+  /** The person's saved interface language with the workspace region ("ar-AE"); plain "en" means not chosen. */
+  preferredLocale?: string | null;
   platformRole?: "administrator" | null;
   memberships: Array<{
     workspaceId: string;

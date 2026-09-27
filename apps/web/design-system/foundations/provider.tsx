@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { UiLanguageContext } from "@/lib/i18n/i18n-provider";
-import { languageDirection } from "@/lib/i18n/languages";
+import { formattingLocale, languageDirection } from "@/lib/i18n/languages";
 import { I18nProvider } from "react-aria-components";
 
 export type DesignSystemTheme = "light" | "dark" | "high-contrast";
@@ -19,7 +19,10 @@ export type DesignSystemDirection = "ltr" | "rtl";
 export type DesignSystemSettings = {
   theme: DesignSystemTheme;
   density: DesignSystemDensity;
+  /** Formats numbers, money and dates: the person's language with the workspace region ("ar-AE-u-nu-latn"). */
   locale: string;
+  /** The workspace's own locale ("en-AE"): its region and conventions, before the person's language is applied. */
+  regionLocale: string;
   direction: DesignSystemDirection;
   currency: string;
   timeZone: string;
@@ -36,6 +39,7 @@ const DEFAULT_SETTINGS: DesignSystemSettings = {
   theme: "light",
   density: "comfortable",
   locale: "en",
+  regionLocale: "en",
   direction: "ltr",
   currency: "USD",
   timeZone: "UTC",
@@ -60,21 +64,23 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
     },
     ref,
   ) {
-    // Text direction follows the UI language the person chose; the workspace locale only formats
-    // numbers, dates and money. React Aria gets a locale in that language so keyboard and overlay
-    // placement mirror too.
-    // Money, dates and numbers follow the workspace's region: a nested provider inherits it unless told otherwise.
+    // Text direction follows the UI language the person chose. Money, dates and numbers follow the
+    // workspace's region (a nested provider inherits it unless told otherwise) written the person's way:
+    // their language with the region's conventions. React Aria gets that locale so keyboard, date fields
+    // and overlay placement mirror too.
     const parent = useContext(DesignSystemContext);
-    const locale = localeProp ?? parent.locale;
+    const regionLocale = localeProp ?? parent.regionLocale;
     const currency = currencyProp ?? parent.currency;
     const timeZone = timeZoneProp ?? parent.timeZone;
     const uiLanguage = useContext(UiLanguageContext);
+    const locale = formattingLocale(uiLanguage, regionLocale);
     const direction = directionOverride ?? languageDirection(uiLanguage ?? locale);
-    const region = locale.split("-")[1];
-    const ariaLocale = uiLanguage && languageDirection(locale) !== direction ? (region ? `${uiLanguage}-${region}` : uiLanguage) : locale;
+    // A forced direction (an LTR island inside an RTL page) needs a locale that reads that way.
+    const ariaLocale = languageDirection(locale) === direction ? locale
+      : [regionLocale, uiLanguage ?? "", direction === "rtl" ? "ar" : "en"].find((tag) => tag && languageDirection(tag) === direction) ?? locale;
     const value = useMemo(
-      () => ({ theme, density, locale, direction, currency, timeZone, portalContainer }),
-      [theme, density, locale, direction, currency, timeZone, portalContainer],
+      () => ({ theme, density, locale, regionLocale, direction, currency, timeZone, portalContainer }),
+      [theme, density, locale, regionLocale, direction, currency, timeZone, portalContainer],
     );
 
     return (
@@ -100,7 +106,11 @@ export const DesignSystemProvider = forwardRef<HTMLDivElement, DesignSystemProvi
 /** Sets the workspace region for every design-system provider below it. */
 export function WorkspaceRegionProvider({ locale, currency, timeZone, children }: { locale?: string; currency?: string; timeZone?: string; children: ReactNode }) {
   const parent = useContext(DesignSystemContext);
-  const value = useMemo(() => ({ ...parent, locale: locale ?? parent.locale, currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone }), [parent, locale, currency, timeZone]);
+  const uiLanguage = useContext(UiLanguageContext);
+  const value = useMemo(() => {
+    const regionLocale = locale ?? parent.regionLocale;
+    return { ...parent, locale: formattingLocale(uiLanguage, regionLocale), regionLocale, currency: currency ?? parent.currency, timeZone: timeZone ?? parent.timeZone };
+  }, [parent, uiLanguage, locale, currency, timeZone]);
   return <DesignSystemContext.Provider value={value}>{children}</DesignSystemContext.Provider>;
 }
 

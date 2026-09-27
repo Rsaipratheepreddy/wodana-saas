@@ -59,7 +59,9 @@
 .support a { color: var(--wd-color-text-secondary); text-underline-offset: 0.2em; }
 .powered { font-size: var(--wd-text-xs); color: var(--wd-color-text-tertiary); }
 .footerEnd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-4); }
+.headerEnd { display: flex; align-items: center; gap: var(--wd-space-2); }
 .language { min-inline-size: 9rem; }
+.language :global(.wd-select-button) { border-color: transparent; background: transparent; }
 
 .title {
   margin: 0;

@@ -18,8 +18,8 @@ import {
 import type { SecuritySession } from "@/lib/workspace/security";
 import { authRequest, confirmBrowserSession, openAuthenticatedWorkspace } from "@/lib/auth/client";
 import { deviceDetails } from "@/lib/auth/device-details";
-import { languageDirection, type AppLanguage } from "@/lib/i18n/languages";
-import { translator } from "@/lib/i18n/messages";
+import { LanguageSelect } from "@/components/i18n/language-select";
+import { useLanguage, useT } from "@/lib/i18n/i18n-provider";
 import styles from "./login.module.css";
 import { workspacePrimaryColorStyle } from "@/lib/workspace/primary-color";
 
@@ -44,7 +44,6 @@ export function LoginScreen({
   initialStatus,
   initialStatusTone = "error",
   tenant,
-  language = "en",
 }: {
   invitationToken?: string;
   passwordResetToken?: string;
@@ -52,9 +51,9 @@ export function LoginScreen({
   initialStatus?: string;
   initialStatusTone?: "error" | "info";
   tenant: TenantBranding;
-  language?: AppLanguage;
 }) {
-  const t = translator(language);
+  const t = useT();
+  const { language } = useLanguage();
   const router = useRouter();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const settingPassword = Boolean(invitationToken || passwordResetToken);
@@ -523,7 +522,7 @@ export function LoginScreen({
             : passwordResetToken ? t("Save new password") : invitationToken ? t("Activate invitation") : credentialStep === "identify" ? t("Continue") : t("Sign in");
 
   return (
-    <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} direction={languageDirection(language)} locale={language === "en" ? "en-AE" : language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
+    <DesignSystemProvider className={styles.loginRoot} data-tenant-slug={tenant.loginSlug} locale={language} portalContainer={portalContainer} ref={setPortalContainer} style={workspacePrimaryColorStyle(tenant)}>
       <main className={styles.loginLayout}>
         <div aria-hidden="true" className={styles.brandPanel} />
 
@@ -718,6 +717,7 @@ export function LoginScreen({
               <span>{t("Powered by")}</span>
               <WodanaLogo size="small" className={styles.poweredLogo} />
             </footer>
+            <LanguageSelect className={styles.languageChoice} compact label={null} />
           </div>
         </section>
       </main>
