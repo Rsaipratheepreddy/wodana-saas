@@ -1026,6 +1026,11 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
   const floor = input.settings.marginFloorPercent;
   if (input.canViewCosts && floor !== null && input.pricing.margin !== null && Dec.of(input.pricing.margin).cmp(floor) < 0)
     checks.push({ code: "Margin is below the {floor}% floor", values: { floor }, tone: "warning" });
+  // A discount above the firm's threshold is approved by someone who approves quotes (plan §6.5).
+  const approvalAt = input.settings.discountApprovalPercent;
+  if (approvalAt !== null && !Dec.of(input.pricing.subtotal).isZero()
+    && Dec.of(input.pricing.discounts.total).mul(100).cmp(Dec.of(approvalAt).mul(input.pricing.subtotal)) > 0)
+    checks.push({ code: "The discount is above {percent}% and needs approval", values: { percent: approvalAt }, tone: "warning" });
   if (input.draft && input.lines.length && !input.paymentTerms.length) checks.push({ code: "Add the payment milestones", tone: "warning" });
   // Requirement trace: nothing is sent while a requirement is undecided; an included one should have a line.
   if (input.kind === "quotation") {

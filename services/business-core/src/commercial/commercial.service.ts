@@ -1,4 +1,5 @@
 import { DesignPackagesService } from "../design/design-packages.service";
+import { Dec } from "../catalog-core/decimal";
 import { copyBuilderData } from "../quotation/quote-revision";
 import { noticeQuoteStep } from "../quotation/quote-notices";
 import { effectivePortalBrand } from "./effective-brand";
@@ -2378,6 +2379,15 @@ export class CommercialService {
               throw new ConflictException(
                 "Submit this version for review first.",
               );
+            // A discount above the firm's threshold needs someone who approves quotes, not only the QS (plan §6.5).
+            const threshold = (await client.query<{ percent: string | null }>(
+              `SELECT discount_approval_percent::text AS percent FROM workspace_quotation_settings WHERE workspace_id=$1`,
+              [workspaceId])).rows[0]?.percent ?? null;
+            const priced = totals(q);
+            if (threshold !== null && priced.subtotal > 0
+              && Dec.of(priced.discount).mul(100).cmp(Dec.of(threshold).mul(priced.subtotal)) > 0
+              && !(await this.access.hasPermission(client, workspaceId, user.userId, "commercial.approve")))
+              throw new ForbiddenException(`The discount is above the ${threshold}% your firm allows without approval. Someone who approves quotes must approve this quote.`);
             if (action === "qs_approve") {
               if (!data.palmFlow || q.kind !== "quotation")
                 throw new ConflictException("QS estimate review applies to a Palm quotation round.");
