@@ -142,12 +142,63 @@ export function permissionLabel(code: string, t: Translate = english) {
   return t("{action} {resource}", { action: verb, resource: t(RESOURCE_LABELS[resourceCode]) });
 }
 
+/** Erasing or exporting data, changing settings, verifying money and approvals deserve a second look. */
+const SENSITIVE_PERMISSIONS = /(\.(erase|export|delete|approve|verify|release|override|override_price)$)|(settings\.manage$)|(^workspace\.roles\.manage$)|(^commercial\.estimate$)/;
+
+export function isSensitivePermission(code: string) {
+  return SENSITIVE_PERMISSIONS.test(code);
+}
+
+export type PermissionSection = {
+  id: Exclude<PermissionAreaId, "all">;
+  label: string;
+  permissions: WorkspacePermissionDefinition[];
+};
+
+/** Capabilities grouped by product area, in the area order, each area sorted by label. */
+export function permissionSections(permissions: WorkspacePermissionDefinition[], t: Translate = english): PermissionSection[] {
+  return PERMISSION_AREAS
+    .filter((area): area is { id: Exclude<PermissionAreaId, "all">; label: MessageKey } => area.id !== "all")
+    .map((area) => ({
+      id: area.id,
+      label: t(area.label),
+      permissions: permissions
+        .filter((permission) => permissionArea(permission.code) === area.id)
+        .sort((left, right) => permissionLabel(left.code, t).localeCompare(permissionLabel(right.code, t))),
+    }))
+    .filter((section) => section.permissions.length > 0);
+}
+
+export type SectionState = "all" | "none" | "mixed";
+
+export function sectionState(section: PermissionSection, granted: ReadonlySet<string>): { on: number; total: number; state: SectionState } {
+  const on = section.permissions.filter((permission) => granted.has(permission.code)).length;
+  const total = section.permissions.length;
+  return { on, total, state: on === 0 ? "none" : on === total ? "all" : "mixed" };
+}
+
+/** One sentence that ends with punctuation, so notes can follow it without running on. */
+export function roleSentence(description: string | null | undefined, fallback: string) {
+  const text = (description ?? "").trim() || fallback;
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
+export type RoleMemberSummary = {
+  id: string;
+  displayName: string;
+  avatarPreset?: string | null;
+  photoUrl?: string | null;
+  roles: string[];
+};
+
 export type RolesPermissionsPageData = {
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
   delegablePermissions: string[] | null;
   memberCount: number | null;
+  /** Active people with their role codes (direct and inherited), when the reader may see members. */
+  members?: RoleMemberSummary[] | null;
   permissions: WorkspacePermissionDefinition[];
   roles: WorkspaceRole[];
   workspaceId: string;
@@ -210,6 +261,9 @@ export const rolesPermissionsFixture: RolesPermissionsPageData = {
   canDelete: true,
   delegablePermissions: null,
   memberCount: 1,
+  members: [
+    { id: "00000000-0000-4000-8000-000000000011", displayName: "Olivia (QA Owner)", avatarPreset: null, photoUrl: null, roles: ["owner"] },
+  ],
   permissions: workspacePermissionFixture,
   roles: [
     {

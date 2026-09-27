@@ -1,25 +1,27 @@
-/* Small charts: brand colour for the current value, a tint of it for history, neutral tracks. */
+/* Small charts: the data-viz palette (never the brand action colour), quiet neutral history and tinted tracks.
+   Hooks: --wd-mini-bars-current and --wd-progress-ring-color let a card choose its series colour. */
 .wd-chart-flow:dir(rtl) { transform: scaleX(-1); }
 
-.wd-sparkline { display: inline-flex; inline-size: 100%; block-size: var(--wd-space-8); color: var(--wd-color-action-primary); }
+.wd-sparkline { display: inline-flex; inline-size: 100%; block-size: var(--wd-space-8); color: var(--wd-color-viz-1); }
 .wd-sparkline[data-tone="neutral"] { color: var(--wd-color-text-tertiary); }
 .wd-sparkline svg { inline-size: 100%; block-size: 100%; overflow: visible; }
 .wd-sparkline polyline { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .wd-sparkline circle { fill: currentColor; }
 
 .wd-mini-bars { display: inline-flex; }
-.wd-mini-bars-plot { display: inline-flex; align-items: flex-end; gap: var(--wd-space-1); block-size: var(--wd-space-8); }
-.wd-mini-bars-plot i { inline-size: var(--wd-space-1-5); border-radius: var(--wd-radius-2xs); block-size: max(var(--wd-space-0-5), calc(var(--wd-bar) * 100%)); background: color-mix(in srgb, var(--wd-color-action-primary) 30%, var(--wd-color-surface)); transition: block-size var(--wd-duration-base) var(--wd-ease-out); }
-.wd-mini-bars-plot i[data-current] { background: var(--wd-color-action-primary); }
+/* Eight slim rounded bars, lighter than the figure beside them; a week with nothing is a 2px stub. */
+.wd-mini-bars-plot { display: inline-flex; align-items: flex-end; gap: var(--wd-space-1); block-size: var(--wd-space-6); }
+.wd-mini-bars-plot i { inline-size: var(--wd-space-1); border-radius: var(--wd-radius-pill); block-size: max(var(--wd-space-0-5), calc(var(--wd-bar) * 100%)); background: var(--wd-color-border-strong); transition: block-size var(--wd-duration-base) var(--wd-ease-out); }
+.wd-mini-bars-plot i[data-current] { background: var(--wd-mini-bars-current, var(--wd-color-viz-1)); }
 
 .wd-bar-chart-v2 { margin: 0; display: grid; container-type: inline-size; }
 .wd-bar-chart-plot { display: flex; align-items: stretch; gap: var(--wd-space-2); block-size: calc(var(--wd-space-24) + var(--wd-space-16)); border-radius: var(--wd-radius-xs); outline-offset: var(--wd-space-1); }
 .wd-bar-chart-plot:focus-visible { outline: 2px solid var(--wd-color-focus); }
 .wd-bar-chart-column { position: relative; flex: 1; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--wd-space-1-5); min-inline-size: 0; }
-.wd-bar-chart-track { display: flex; align-items: flex-end; justify-content: center; border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-subtle); overflow: hidden; }
-.wd-bar-chart-track i { inline-size: 100%; block-size: max(var(--wd-space-1), calc(var(--wd-bar) * 100%)); border-radius: var(--wd-radius-xs); background: color-mix(in srgb, var(--wd-color-action-primary) 26%, var(--wd-color-surface)); transition: block-size var(--wd-duration-slow) var(--wd-ease-out), background var(--wd-duration-fast) var(--wd-ease-standard); }
-.wd-bar-chart-column[data-current] .wd-bar-chart-track i { background: var(--wd-color-action-primary); }
-.wd-bar-chart-column[data-active] .wd-bar-chart-track i { background: var(--wd-color-action-primary-hover); }
+.wd-bar-chart-track { display: flex; align-items: flex-end; justify-content: center; border-radius: var(--wd-radius-xs); background: var(--wd-color-viz-1-soft); overflow: hidden; }
+.wd-bar-chart-track i { inline-size: 100%; block-size: max(var(--wd-space-1), calc(var(--wd-bar) * 100%)); border-radius: var(--wd-radius-xs); background: color-mix(in srgb, var(--wd-color-viz-1) 68%, var(--wd-color-surface)); transition: block-size var(--wd-duration-slow) var(--wd-ease-out), background var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-bar-chart-column[data-current] .wd-bar-chart-track i { background: var(--wd-color-viz-1); }
+.wd-bar-chart-column[data-active] .wd-bar-chart-track i { background: color-mix(in srgb, var(--wd-color-viz-1) 82%, var(--wd-color-text)); }
 .wd-bar-chart-column small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .wd-bar-chart-tip { position: absolute; inset-block-start: calc(-1 * var(--wd-space-2)); inset-inline-start: 50%; translate: -50% 0; z-index: var(--wd-z-popover); padding: var(--wd-space-1) var(--wd-space-2); border-radius: var(--wd-radius-xs); background: var(--wd-color-text); color: var(--wd-color-text-inverse); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; unicode-bidi: plaintext; }
 .wd-bar-chart-tip:dir(rtl) { translate: 50% 0; }
@@ -33,16 +35,16 @@
 .wd-split-bar-legend li { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
 .wd-split-bar-legend strong { unicode-bidi: plaintext; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); font-variant-numeric: tabular-nums; }
 .wd-split-bar-legend i { inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); }
-.wd-split-bar [data-series="0"] { background: var(--wd-color-action-primary); }
-.wd-split-bar [data-series="1"] { background: color-mix(in srgb, var(--wd-color-action-primary) 62%, var(--wd-color-surface)); }
-.wd-split-bar [data-series="2"] { background: color-mix(in srgb, var(--wd-color-action-primary) 34%, var(--wd-color-surface)); }
+.wd-split-bar [data-series="0"] { background: var(--wd-color-viz-1); }
+.wd-split-bar [data-series="1"] { background: var(--wd-color-viz-2); }
+.wd-split-bar [data-series="2"] { background: var(--wd-color-viz-6); }
 .wd-split-bar [data-series="3"] { background: var(--wd-color-text-tertiary); }
 
 .wd-progress-ring { position: relative; display: inline-grid; place-items: center; inline-size: var(--wd-space-24); block-size: var(--wd-space-24); flex: none; }
 .wd-progress-ring svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; rotate: -90deg; }
 .wd-progress-ring circle { fill: none; stroke-width: 3.2; }
 .wd-progress-ring-track { stroke: var(--wd-color-surface-subtle); }
-.wd-progress-ring-value { stroke: var(--wd-color-action-primary); stroke-linecap: round; transition: stroke-dasharray var(--wd-duration-slow) var(--wd-ease-out); }
+.wd-progress-ring-value { stroke: var(--wd-progress-ring-color, var(--wd-color-viz-3)); stroke-linecap: round; transition: stroke-dasharray var(--wd-duration-slow) var(--wd-ease-out); }
 .wd-progress-ring-label { position: relative; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {

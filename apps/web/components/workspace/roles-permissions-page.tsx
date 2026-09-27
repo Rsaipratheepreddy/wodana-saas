@@ -1,36 +1,30 @@
 "use client";
 
 import { useT } from "@/lib/i18n/i18n-provider";
-import { useMemo, useState, type FormEvent } from "react";
-import { Building2, ClipboardCheck, FolderKanban, Handshake, Package, Plus, Sparkles, Users, Wallet } from "lucide-react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, IconMenuButton, SearchInput, SelectField, SettingsPage, Switch, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import Link from "next/link";
+import { useId, useMemo, useState, type FormEvent } from "react";
+import { ChevronDown, ChevronRight, Lock, Plus } from "lucide-react";
+import { Avatar, AvatarGroup, Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, DesignSystemProvider, IconMenuButton, SearchInput, SegmentedControl, SelectField, SettingsPage, Switch, TextAreaField, TextInput } from "@/design-system";
 import type { WorkspaceRole } from "@/lib/workspace/members";
 import {
-  PERMISSION_AREAS,
-  permissionArea,
-  permissionAreaLabel,
+  isSensitivePermission,
   permissionLabel,
-  type PermissionAreaId,
+  permissionSections,
+  roleSentence,
+  sectionState,
+  type PermissionSection,
+  type RoleMemberSummary,
   type RolesPermissionsPageData,
   type WorkspacePermissionDefinition,
 } from "@/lib/workspace/roles-permissions";
 import styles from "./roles-permissions-page.module.css";
 
 const SYSTEM_ROLE_ORDER: Record<string, number> = { owner: 0, administrator: 1, member: 2, viewer: 3 };
+const PEOPLE_HREF = "/workspace/members";
+const AVATAR_STACK = 3;
 
-const AREA_ICONS = {
-  company: Building2,
-  sales: Handshake,
-  planning: ClipboardCheck,
-  commercial: Wallet,
-  projects: FolderKanban,
-  supply: Package,
-  clients: Users,
-  people: Users,
-  platform: Sparkles,
-} as const;
-
-const AREA_ORDER = Object.fromEntries(PERMISSION_AREAS.map((area, index) => [area.id, index]));
+type AccessFilter = "all" | "granted" | "denied";
+type RoleDialogItem = { mode: "new" } | { mode: "edit"; role: WorkspaceRole } | { mode: "duplicate"; role: WorkspaceRole } | null;
 
 function responseMessage(response: Response, fallback: string) {
   return response.json()
@@ -54,30 +48,45 @@ function permissionDrafts(roles: WorkspaceRole[]) {
   return Object.fromEntries(roles.map((role) => [role.id, new Set(role.permissions)]));
 }
 
-function samePermissions(left: Set<string> | undefined, right: string[]) {
-  return Boolean(left && left.size === right.length && right.every((permission) => left.has(permission)));
+function changedPermissions(draft: Set<string> | undefined, saved: string[]) {
+  if (!draft) return 0;
+  const savedSet = new Set(saved);
+  return saved.filter((code) => !draft.has(code)).length + [...draft].filter((code) => !savedSet.has(code)).length;
+}
+
+function peopleHref(role: WorkspaceRole) {
+  return `${PEOPLE_HREF}?role=${encodeURIComponent(role.code)}`;
 }
 
 export function RolesPermissionsPage({ initialData }: { initialData: RolesPermissionsPageData }) {
   const t = useT();
+  const baseId = useId();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const initialRoles = useMemo(() => sortRoles(initialData.roles), [initialData.roles]);
+  const sections = useMemo(() => permissionSections(initialData.permissions, t), [initialData.permissions, t]);
+  const membersByRole = useMemo(() => {
+    const byRole = new Map<string, RoleMemberSummary[]>();
+    for (const member of initialData.members ?? []) {
+      for (const code of new Set(member.roles)) byRole.set(code, [...(byRole.get(code) ?? []), member]);
+    }
+    return byRole;
+  }, [initialData.members]);
   const [roles, setRoles] = useState(initialRoles);
   const [drafts, setDrafts] = useState<Record<string, Set<string>>>(() => permissionDrafts(initialRoles));
   const [selectedRoleId, setSelectedRoleId] = useState(
     initialRoles.find((role) => !role.isSystem)?.id ?? initialRoles[0]?.id ?? "",
   );
-  const [editingRole, setEditingRole] = useState<WorkspaceRole | "new" | null>(null);
+  const [dialog, setDialog] = useState<RoleDialogItem>(null);
   const [deletingRole, setDeletingRole] = useState<WorkspaceRole | null>(null);
+  const [blockedRole, setBlockedRole] = useState<WorkspaceRole | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [failure, setFailure] = useState("");
   const [status, setStatus] = useState("");
-  const [permissionAreaFilter, setPermissionAreaFilter] = useState<PermissionAreaId>("all");
-  const [permissionSearch, setPermissionSearch] = useState("");
+  const [search, setSearch] = useState("");
+  const [accessFilter, setAccessFilter] = useState<AccessFilter>("all");
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(sections[0] ? [sections[0].id] : []));
   const selectedRole = roles.find((role) => role.id === selectedRoleId) ?? roles[0];
-  const changed = Boolean(selectedRole && !selectedRole.isSystem
-    && !samePermissions(drafts[selectedRole.id], selectedRole.permissions));
 
   const mergeRole = (role: WorkspaceRole, preservePermissionDraft = false) => {
     setRoles((current) => {
@@ -100,24 +109,72 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
     setStatus("");
   };
 
-  const togglePermission = (permissionCode: string, enabled: boolean) => {
-    if (!selectedRole || selectedRole.isSystem || !initialData.canEdit ||
-      (initialData.delegablePermissions !== null && !initialData.delegablePermissions.includes(permissionCode))) return;
+  if (!selectedRole) return null;
+  const selectedPermissions = drafts[selectedRole.id] ?? new Set(selectedRole.permissions);
+  const roleWithinDelegation = initialData.delegablePermissions === null
+    || selectedRole.permissions.every((code) => initialData.delegablePermissions?.includes(code));
+  const isEditable = initialData.canEdit && !selectedRole.isSystem && roleWithinDelegation;
+  const canGrant = (code: string) => isEditable
+    && (initialData.delegablePermissions === null || initialData.delegablePermissions.includes(code));
+  const assignedCount = (selectedRole.memberCount ?? 0) + (selectedRole.teamCount ?? 0) + (selectedRole.pendingInvitationCount ?? 0);
+  const canDelete = initialData.canDelete && !selectedRole.isSystem && roleWithinDelegation;
+  const changeCount = isEditable ? changedPermissions(drafts[selectedRole.id], selectedRole.permissions) : 0;
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+
+  const rowDescription = (permission: WorkspacePermissionDefinition) => {
+    const label = permissionLabel(permission.code, t);
+    const description = t(permission.description as never);
+    return description === label ? permission.code : description;
+  };
+  const matchesSearch = (permission: WorkspacePermissionDefinition, query: string) => !query
+    || [permission.code, permission.description, permissionLabel(permission.code, t), rowDescription(permission)]
+      .some((value) => value.toLocaleLowerCase().includes(query));
+  const matchesFilter = (permission: WorkspacePermissionDefinition) => accessFilter === "all"
+    || (accessFilter === "granted") === selectedPermissions.has(permission.code);
+  const visibleSections = sections
+    .map((section) => ({ section, rows: section.permissions.filter((permission) => matchesSearch(permission, normalizedSearch) && matchesFilter(permission)) }))
+    .filter(({ rows }) => rows.length > 0);
+
+  const changeSearch = (value: string) => {
+    setSearch(value);
+    const query = value.trim().toLocaleLowerCase();
+    if (query) setOpenSections(new Set(sections.filter((section) => section.permissions.some((permission) => matchesSearch(permission, query))).map((section) => section.id)));
+  };
+
+  const toggleOpen = (sectionId: string) => setOpenSections((current) => {
+    const next = new Set(current);
+    if (next.has(sectionId)) next.delete(sectionId); else next.add(sectionId);
+    return next;
+  });
+
+  const updateDraft = (mutate: (next: Set<string>) => void) => {
+    if (!isEditable) return;
     setDrafts((current) => {
-      const nextPermissions = new Set(current[selectedRole.id] ?? selectedRole.permissions);
-      if (enabled) nextPermissions.add(permissionCode); else nextPermissions.delete(permissionCode);
-      return { ...current, [selectedRole.id]: nextPermissions };
+      const next = new Set(current[selectedRole.id] ?? selectedRole.permissions);
+      mutate(next);
+      return { ...current, [selectedRole.id]: next };
     });
   };
 
+  const togglePermission = (code: string, enabled: boolean) => {
+    if (!canGrant(code)) return;
+    updateDraft((next) => { if (enabled) next.add(code); else next.delete(code); });
+  };
+
+  const toggleSection = (section: PermissionSection, enabled: boolean) => updateDraft((next) => {
+    for (const permission of section.permissions) {
+      if (!canGrant(permission.code)) continue;
+      if (enabled) next.add(permission.code); else next.delete(permission.code);
+    }
+  });
+
   const resetChanges = () => {
-    if (!selectedRole) return;
     setDrafts((current) => ({ ...current, [selectedRole.id]: new Set(selectedRole.permissions) }));
     setFailure("");
   };
 
   const saveChanges = async () => {
-    if (!selectedRole || selectedRole.isSystem || !initialData.canEdit || !changed) return;
+    if (!isEditable || changeCount === 0) return;
     setSaving(true);
     setFailure("");
     try {
@@ -157,173 +214,222 @@ export function RolesPermissionsPage({ initialData }: { initialData: RolesPermis
       });
       if (selectedRoleId === deletingRole.id) setSelectedRoleId(remainingRoles[0]?.id ?? "");
       setStatus(t("{name} was deleted.", { name: deletingRole.name }));
-      setDeletingRole(null);
     } catch (error) {
       setFailure(error instanceof Error ? error.message : t("The role could not be deleted."));
-      setDeletingRole(null);
     } finally {
       setDeleting(false);
+      setDeletingRole(null);
     }
   };
 
-  if (!selectedRole) return null;
-  const selectedPermissions = drafts[selectedRole.id] ?? new Set(selectedRole.permissions);
-  const roleWithinDelegation = initialData.delegablePermissions === null
-    || selectedRole.permissions.every((code) => initialData.delegablePermissions?.includes(code));
-  const isEditable = initialData.canEdit && !selectedRole.isSystem && roleWithinDelegation;
-  const assignedCount = (selectedRole.memberCount ?? 0) + (selectedRole.teamCount ?? 0) + (selectedRole.pendingInvitationCount ?? 0);
-  const isDeletable = initialData.canDelete && !selectedRole.isSystem && roleWithinDelegation && assignedCount === 0;
-  const canUseRoleActions = isEditable || isDeletable;
-  const normalizedPermissionSearch = permissionSearch.trim().toLocaleLowerCase();
-  const visiblePermissions = initialData.permissions
-    .filter((permission) => permissionAreaFilter === "all" || permissionArea(permission.code) === permissionAreaFilter)
-    .filter((permission) => !normalizedPermissionSearch || [permission.code, permission.description, t(permission.description as never), permissionLabel(permission.code, t), permissionAreaLabel(permission.code, t)]
-      .some((value) => value.toLocaleLowerCase().includes(normalizedPermissionSearch)))
-    .sort((left, right) => (AREA_ORDER[permissionArea(left.code)] ?? 99) - (AREA_ORDER[permissionArea(right.code)] ?? 99)
-      || permissionLabel(left.code, t).localeCompare(permissionLabel(right.code, t)));
-  const columns: DataGridColumn<WorkspacePermissionDefinition>[] = [
-    {
-      id: "capability",
-      accessorFn: (permission) => permissionLabel(permission.code, t),
-      header: t("Capability"),
-      size: 560,
-      enableSorting: false,
-      cell: ({ row }) => {
-        const permission = row.original;
-        const label = permissionLabel(permission.code, t);
-        const ModuleIcon = AREA_ICONS[permissionArea(permission.code)];
-        return <span className={styles.moduleIdentity}>
-          <span className={styles.moduleIcon}><ModuleIcon aria-hidden="true" size={15} /></span>
-          <span className={styles.moduleDetails}><strong>{label}</strong><small>{t(permission.description as never) === label ? permission.code : t(permission.description as never)}</small></span>
-        </span>;
-      },
-    },
-    {
-      id: "productArea",
-      accessorFn: (permission) => permissionAreaLabel(permission.code, t),
-      header: t("Product area"),
-      size: 180,
-      enableSorting: false,
-      meta: { mobileHidden: true },
-      cell: ({ row }) => <span className={styles.parentModule}><Badge>{permissionAreaLabel(row.original.code, t)}</Badge></span>,
-    },
-    {
-      id: "access",
-      accessorFn: (permission) => selectedPermissions.has(permission.code),
-      header: t("Access"),
-      size: 120,
-      enableSorting: false,
-      meta: { align: "center" },
-      cell: ({ row }) => {
-        const permission = row.original;
-        return <Switch
-          aria-label={t("{role}: {permission}", { role: selectedRole.name, permission: permissionLabel(permission.code, t) })}
-          isDisabled={!isEditable || (initialData.delegablePermissions !== null && !initialData.delegablePermissions.includes(permission.code))}
-          isSelected={selectedPermissions.has(permission.code)}
-          onChange={(enabled) => togglePermission(permission.code, enabled)}
-        />;
-      },
-    },
+  const roleKindLabel = (role: WorkspaceRole) => role.isSystem ? t("Built-in") : t("Custom");
+  const memberLabel = (role: WorkspaceRole) => {
+    const count = role.memberCount ?? membersByRole.get(role.code)?.length ?? 0;
+    return count === 1 ? t("1 member") : t("{count} members", { count });
+  };
+  const memberStack = (role: WorkspaceRole) => {
+    const members = membersByRole.get(role.code) ?? [];
+    if (!members.length) return null;
+    // Decorative: the member count beside it carries the information.
+    return <AvatarGroup aria-hidden="true" className={styles.stack} label={t("People with {name}", { name: role.name })}>
+      {members.slice(0, AVATAR_STACK).map((member) => <Avatar key={member.id} name={member.displayName} preset={member.avatarPreset ?? "auto"} seed={member.id} size="sm" src={member.photoUrl} />)}
+    </AvatarGroup>;
+  };
+
+  const roleActions = [
+    ...(isEditable ? [{ id: "edit", label: t("Edit details") }] : []),
+    ...(initialData.canCreate ? [{ id: "duplicate", label: t("Duplicate") }] : []),
+    ...(canDelete ? [{ id: "delete", label: t("Delete"), tone: "danger" as const }] : []),
   ];
+  const onRoleAction = (action: string) => {
+    if (action === "edit") setDialog({ mode: "edit", role: selectedRole });
+    if (action === "duplicate") setDialog({ mode: "duplicate", role: selectedRole });
+    if (action === "delete") { if (assignedCount > 0) setBlockedRole(selectedRole); else setDeletingRole(selectedRole); }
+  };
+
+  const headingId = `${baseId}-role`;
 
   return (
     <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-      <SettingsPage aria-label={t("Roles & permissions")} title={t("Roles & permissions")} width="wide">
+      <SettingsPage
+        actions={initialData.canCreate ? <Button onPress={() => setDialog({ mode: "new" })} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />{t("New role")}</Button> : null}
+        aria-label={t("Roles & permissions")}
+        title={t("Roles & permissions")}
+        width="wide"
+      >
+        {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
+        {failure ? <Callout title={t("Role action failed")} tone="danger">{failure}</Callout> : null}
 
-        <div aria-label={t("Role actions")} className={styles.toolbar}>
-          <div className={styles.actions}>
+        <div className={styles.layout}>
+          <nav aria-label={t("Roles")} className={styles.rolesPane}>
+            <ul>
+              {roles.map((role) => <li key={role.id}>
+                <button aria-current={role.id === selectedRole.id ? "true" : undefined} className={styles.roleItem} onClick={() => selectRole(role.id)} type="button">
+                  <span className={styles.roleItemName}>{role.name}</span>{" "}
+                  <Badge>{roleKindLabel(role)}</Badge>{" "}
+                  <span className={styles.roleItemMembers}>{memberStack(role)}{memberLabel(role)}</span>
+                </button>
+              </li>)}
+            </ul>
+          </nav>
+
+          <div className={styles.mobileRoles}>
             <SelectField
               accent="neutral"
               aria-label={t("Role")}
-              items={roles.map((role) => ({ id: role.id, label: role.name, description: role.isSystem ? t("System role") : t("Custom role") }))}
+              items={roles.map((role) => ({ id: role.id, label: role.name, description: roleKindLabel(role) }))}
               label={<span className="wd-visually-hidden">{t("Role")}</span>}
               onSelectionChange={(key) => key && selectRole(String(key))}
               selectedKey={selectedRole.id}
             />
-            {canUseRoleActions ? <IconMenuButton ariaLabel={t("Actions for {name}", { name: selectedRole.name })} items={[
-              ...(isEditable ? [{ id: "edit", label: t("Edit role") }] : []),
-              ...(isDeletable ? [{ id: "delete", label: t("Delete role"), tone: "danger" as const }] : []),
-            ]} onAction={(action) => action === "edit" ? setEditingRole(selectedRole) : setDeletingRole(selectedRole)} /> : null}
-            {isEditable && changed ? <>
-              <Button isDisabled={saving} onPress={resetChanges} size="compact">{t("Reset")}</Button>
-              <Button isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">{t("Save changes")}</Button>
-            </> : null}
-            {initialData.canCreate ? <Button onPress={() => setEditingRole("new")} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />{t("Custom role")}</Button> : null}
           </div>
+
+          <section aria-labelledby={headingId} className={styles.detail}>
+            <header className={styles.roleHeader}>
+              <div className={styles.roleTitle}>
+                <h2 id={headingId}>{selectedRole.name}</h2>
+                <Badge>{roleKindLabel(selectedRole)}</Badge>
+                {roleActions.length ? <IconMenuButton ariaLabel={t("Actions for {name}", { name: selectedRole.name })} items={roleActions} onAction={onRoleAction} /> : null}
+              </div>
+              <p className={styles.roleDescription}>{roleSentence(selectedRole.description, t("Product capabilities available to this role."))}</p>
+              <p className={styles.roleMeta}>
+                <Link href={peopleHref(selectedRole)}>{memberLabel(selectedRole)}</Link>
+                {(selectedRole.teamCount ?? 0) > 0 ? <span>{selectedRole.teamCount === 1 ? t("1 team") : t("{count} teams", { count: selectedRole.teamCount ?? 0 })}</span> : null}
+                {(selectedRole.pendingInvitationCount ?? 0) > 0 ? <span>{selectedRole.pendingInvitationCount === 1 ? t("1 pending invite") : t("{count} pending invites", { count: selectedRole.pendingInvitationCount ?? 0 })}</span> : null}
+              </p>
+              {selectedRole.isSystem
+                ? <p className={styles.lockNote}><Lock aria-hidden="true" size={12} />{t("System role permissions are managed by Wodana and cannot be changed.")}</p>
+                : !isEditable
+                  ? <p className={styles.lockNote}><Lock aria-hidden="true" size={12} />{roleWithinDelegation
+                    ? t("You can review this role. Permission changes require role editing access.")
+                    : t("This role contains permissions outside your access and is read-only for you.")}</p>
+                  : null}
+            </header>
+
+            <div className={styles.toolbar}>
+              <SearchInput label={t("Search capabilities")} onChange={changeSearch} placeholder={t("Search capabilities…")} value={search} />
+              <SegmentedControl
+                label={t("Access")}
+                onChange={(value) => setAccessFilter(value as AccessFilter)}
+                options={[{ id: "all", label: t("All") }, { id: "granted", label: t("Granted") }, { id: "denied", label: t("Not granted") }]}
+                value={accessFilter}
+              />
+            </div>
+
+            <div className={styles.sections}>
+              {visibleSections.map(({ section, rows }) => {
+                const { on, total, state } = sectionState(section, selectedPermissions);
+                const open = openSections.has(section.id);
+                const panelId = `${baseId}-${section.id}`;
+                const Chevron = open ? ChevronDown : ChevronRight;
+                return <section className={styles.section} key={section.id}>
+                  <div className={styles.sectionHeader}>
+                    <button aria-controls={panelId} aria-expanded={open} className={styles.sectionToggle} onClick={() => toggleOpen(section.id)} type="button">
+                      <Chevron aria-hidden="true" className={styles.chevron} size={14} />
+                      <span className={styles.sectionName}>{section.label}</span>{" "}
+                      <span className={styles.sectionCount}>{t("{on} of {total} on", { on, total })}</span>
+                    </button>
+                    {isEditable ? <button
+                      aria-checked={state === "mixed" ? "mixed" : state === "all"}
+                      aria-label={t("All {area} capabilities for {role}", { area: section.label, role: selectedRole.name })}
+                      className={styles.sectionSwitch}
+                      disabled={!section.permissions.some((permission) => canGrant(permission.code))}
+                      onClick={() => toggleSection(section, state !== "all")}
+                      role="checkbox"
+                      type="button"
+                    ><span aria-hidden="true" className={styles.sectionSwitchTrack}><span /></span></button> : null}
+                  </div>
+                  <ul className={styles.rows} hidden={!open} id={panelId}>
+                    {rows.map((permission) => {
+                      const label = permissionLabel(permission.code, t);
+                      return <li className={styles.row} key={permission.code}>
+                        <div className={styles.rowText}>
+                          <span className={styles.rowName}>{label}{isSensitivePermission(permission.code) ? <Badge tone="warning">{t("Sensitive")}</Badge> : null}</span>
+                          <span className={styles.rowDescription}>{rowDescription(permission)}</span>
+                        </div>
+                        <Switch
+                          aria-label={t("{role}: {permission}", { role: selectedRole.name, permission: label })}
+                          isDisabled={!canGrant(permission.code)}
+                          isSelected={selectedPermissions.has(permission.code)}
+                          onChange={(enabled) => togglePermission(permission.code, enabled)}
+                        />
+                      </li>;
+                    })}
+                  </ul>
+                </section>;
+              })}
+              {visibleSections.length === 0 ? <div className={styles.empty}>
+                <p>{t("No matching capabilities")}</p>
+                <Button onPress={() => { changeSearch(""); setAccessFilter("all"); }} size="compact">{t("Show all")}</Button>
+              </div> : null}
+            </div>
+
+            {isEditable ? <p className={styles.note}>
+              {initialData.delegablePermissions === null ? t("Some approvals also require a named role and completed business checks.") : t("You can grant only permissions you hold.")}
+            </p> : null}
+          </section>
         </div>
 
-        {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
-        {failure ? <Callout title={t("Role action failed")} tone="danger">{failure}</Callout> : null}
-
-        <div className={styles.roleContext}>
-          <div>
-            <strong>{selectedRole.name}</strong>
-            <Badge>{selectedRole.isSystem ? t("System") : t("Custom")}</Badge>
-            <span>{selectedRole.memberCount === 1 ? t("1 direct member") : t("{count} direct members", { count: selectedRole.memberCount ?? 0 })}</span>
-            {(selectedRole.teamCount ?? 0) > 0 ? <span>{selectedRole.teamCount === 1 ? t("1 team") : t("{count} teams", { count: selectedRole.teamCount ?? 0 })}</span> : null}
-            {(selectedRole.pendingInvitationCount ?? 0) > 0 ? <span>{selectedRole.pendingInvitationCount === 1 ? t("1 pending invite") : t("{count} pending invites", { count: selectedRole.pendingInvitationCount ?? 0 })}</span> : null}
-          </div>
-          <p>{selectedRole.description || t("Product capabilities available to this role.")}
-            {!selectedRole.isSystem && assignedCount > 0 ? ` ${t("Reassign members, teams and pending invites before deleting this role.")}` : null}</p>
-        </div>
-
-        <div className={styles.permissionToolbar}>
-          <div aria-label={t("Permission product area")} className={styles.areaFilters} role="group">
-            {PERMISSION_AREAS.map((area) => {
-              const count = area.id === "all"
-                ? initialData.permissions.length
-                : initialData.permissions.filter((permission) => permissionArea(permission.code) === area.id).length;
-              return count ? <button aria-pressed={permissionAreaFilter === area.id} key={area.id} onClick={() => setPermissionAreaFilter(area.id)} type="button">{t(area.label)}<span>{count}</span></button> : null;
-            })}
-          </div>
-          <SearchInput label={t("Search permissions")} onChange={setPermissionSearch} placeholder={t("Search capabilities…")} value={permissionSearch} />
-        </div>
-
-        <div className={styles.permissionGrid}>
-          <DataGrid
-            appearance="flush"
-            ariaLabel={t("Permissions for {name}", { name: selectedRole.name })}
-            columns={columns}
-            data={visiblePermissions}
-            emptyDescription={t("Try another product area or search term.")}
-            emptyTitle={t("No matching permissions")}
-            getRowId={(permission) => permission.code}
-            pageSize={100}
-            pinFirstColumn={false}
-            rowNumbers={false}
-            selectable={false}
-            showFooter
-            showToolbar={false}
-            totalRowCount={visiblePermissions.length}
-          />
-        </div>
-        <p className={styles.permissionNote}>
-          {selectedRole.isSystem
-            ? t("System role permissions are managed by Wodana and cannot be changed.")
-            : isEditable
-              ? `${t("Save changes to apply access.")} ${initialData.delegablePermissions === null ? t("Some approvals also require a named role and completed business checks.") : t("You can grant only permissions you hold.")}`
-              : roleWithinDelegation
-                ? t("You can review this role. Permission changes require role editing access.")
-                : t("This role contains permissions outside your access and is read-only for you.")}
-        </p>
+        {isEditable && changeCount > 0 ? <div aria-label={t("Unsaved changes")} className={styles.saveBar} role="region">
+          <span>{changeCount === 1 ? t("1 change") : t("{count} changes", { count: changeCount })}</span>
+          <Button isDisabled={saving} onPress={resetChanges} size="compact">{t("Discard")}</Button>
+          <Button isLoading={saving} onPress={() => void saveChanges()} size="compact" variant="primary">{t("Save")}</Button>
+        </div> : null}
       </SettingsPage>
 
-      <RoleDialog initialData={initialData} item={editingRole} key={editingRole === "new" ? "role-new" : editingRole?.id ?? "role-closed"} onClose={() => setEditingRole(null)} onSaved={(role) => { mergeRole(role, editingRole !== "new"); setSelectedRoleId(role.id); setEditingRole(null); setStatus(editingRole === "new" ? t("{name} was saved.", { name: role.name }) : t("{name} details saved. Any unsaved permission changes remain ready to apply.", { name: role.name })); }} />
-      <ConfirmationDialog body={deletingRole ? t("Delete {name}? This cannot be undone.", { name: deletingRole.name }) : null} confirmLabel={deleting ? t("Deleting…") : t("Delete role")} isOpen={Boolean(deletingRole)} onConfirm={() => void deleteRole()} onOpenChange={(open) => { if (!open && !deleting) setDeletingRole(null); }} title={t("Delete custom role?")} />
+      <RoleDialog
+        initialData={initialData}
+        item={dialog}
+        key={dialog ? `${dialog.mode}-${dialog.mode === "new" ? "new" : dialog.role.id}` : "role-closed"}
+        onClose={() => setDialog(null)}
+        onSaved={(role) => {
+          const editing = dialog?.mode === "edit";
+          mergeRole(role, editing);
+          setSelectedRoleId(role.id);
+          setDialog(null);
+          setStatus(editing
+            ? t("{name} details saved. Any unsaved permission changes remain ready to apply.", { name: role.name })
+            : t("{name} was saved.", { name: role.name }));
+        }}
+      />
+      <ConfirmationDialog
+        body={deletingRole ? t("Delete {name}? This cannot be undone.", { name: deletingRole.name }) : null}
+        confirmLabel={deleting ? t("Deleting…") : t("Delete role")}
+        isOpen={Boolean(deletingRole)}
+        onConfirm={() => void deleteRole()}
+        onOpenChange={(open) => { if (!open && !deleting) setDeletingRole(null); }}
+        title={t("Delete custom role?")}
+      />
+      <ControlledModalDialog
+        footer={<div className="wd-dialog-actions">
+          <Button onPress={() => setBlockedRole(null)}>{t("Keep editing")}</Button>
+          {blockedRole ? <Link className="wd-button" data-size="standard" data-variant="primary" href={peopleHref(blockedRole)}>{t("Open People")}</Link> : null}
+        </div>}
+        isOpen={Boolean(blockedRole)}
+        onOpenChange={(open) => { if (!open) setBlockedRole(null); }}
+        title={t("Delete custom role?")}
+      >
+        {t("Reassign members, teams and pending invites before deleting this role.")}
+      </ControlledModalDialog>
     </DesignSystemProvider>
   );
 }
 
-function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: RolesPermissionsPageData; item: WorkspaceRole | "new" | null; onClose: () => void; onSaved: (role: WorkspaceRole) => void }) {
+function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: RolesPermissionsPageData; item: RoleDialogItem; onClose: () => void; onSaved: (role: WorkspaceRole) => void }) {
   const t = useT();
-  const existing = item && item !== "new" ? item : null;
-  const [name, setName] = useState(existing?.name ?? "");
-  const [code, setCode] = useState(existing?.code ?? "");
+  const existing = item?.mode === "edit" ? item.role : null;
+  const source = item?.mode === "duplicate" ? item.role : null;
+  const initialName = existing?.name ?? (source ? t("{name} copy", { name: source.name }) : "");
+  const [name, setName] = useState(initialName);
+  const [code, setCode] = useState(existing?.code ?? roleCode(initialName));
   const [codeTouched, setCodeTouched] = useState(false);
-  const [description, setDescription] = useState(existing?.description ?? "");
+  const [description, setDescription] = useState(existing?.description ?? source?.description ?? "");
   const [failure, setFailure] = useState("");
   const [saving, setSaving] = useState(false);
   const formId = `role-${existing?.id ?? "new"}`;
+  const copiedPermissions = source
+    ? source.permissions.filter((permission) => initialData.delegablePermissions === null || initialData.delegablePermissions.includes(permission))
+    : [];
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -335,7 +441,7 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           workspaceId: initialData.workspaceId,
-          ...(existing ? { version: existing.version } : { code, permissionCodes: [] }),
+          ...(existing ? { version: existing.version } : { code, permissionCodes: copiedPermissions }),
           name,
           description,
         }),
@@ -350,7 +456,14 @@ function RoleDialog({ initialData, item, onClose, onSaved }: { initialData: Role
     }
   };
 
-  return <ControlledModalDialog description={existing ? t("Update the role details. Product capabilities stay in the table.") : t("Create the role, then choose its product capabilities from the table.")} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save role")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={existing ? t("Edit custom role") : t("Create custom role")}>
+  const title = existing ? t("Edit custom role") : source ? t("Duplicate {name}", { name: source.name }) : t("Create custom role");
+  const intro = existing
+    ? t("Update the role details. Product capabilities stay in the list.")
+    : source
+      ? t("The copy starts with the same capabilities; adjust them after saving.")
+      : t("Create the role, then choose its product capabilities from the list.");
+
+  return <ControlledModalDialog description={intro} footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={onClose}>{t("Cancel")}</Button><Button form={formId} isLoading={saving} type="submit" variant="primary">{t("Save role")}</Button></div>} isDismissable={!saving} isOpen={Boolean(item)} onOpenChange={(open) => { if (!open && !saving) onClose(); }} title={title}>
     <form className={styles.form} id={formId} onSubmit={save}>
       {failure ? <Callout title={t("Could not save role")} tone="danger">{failure}</Callout> : null}
       <div className={styles.formColumns}>

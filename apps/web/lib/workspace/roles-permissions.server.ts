@@ -54,6 +54,13 @@ export async function getRolesPermissionsPageData(): Promise<RolesPermissionsPag
     ...capabilities,
     delegablePermissions: canDelegateAll ? null : membership.allowedPermissions ?? [],
     memberCount: members?.length ?? null,
+    members: members?.map((member) => ({
+      id: member.id,
+      displayName: member.displayName,
+      avatarPreset: member.avatarPreset ?? null,
+      photoUrl: member.photoUrl ?? null,
+      roles: [...member.roles, ...(member.inheritedRoles ?? [])],
+    })) ?? null,
     permissions,
     roles: await rolesResponse.json() as WorkspaceRole[],
     workspaceId: membership.workspaceId,
