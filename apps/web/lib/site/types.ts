@@ -8,7 +8,7 @@ export type SiteReport = {
   recoveryOwnerId: string | null; recoveryOwnerName: string | null; recoveryOn: string | null; noWorkReason: string; notes: string; decidedByName: string | null; decisionNote: string; version: number;
   workforce: Array<{ trade: string; people: number }>;
   lines: Array<{ id: string; boqLineId: string; title: string; unit: string; installed: string; note: string }>;
-  photos: Array<{ id: string; name: string }>;
+  photos: Array<{ id: string; name: string; shared?: boolean }>;
 };
 /** A scope line with what approved reports installed and what submitted ones would add. */
 export type SiteLine = { id: string; title: string; unit: string; quantity: string; supply: string | null; catalogItemId: string | null; areaName: string | null; installed: string; pending: string };

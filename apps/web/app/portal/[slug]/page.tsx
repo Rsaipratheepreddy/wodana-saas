@@ -1,22 +1,20 @@
-import { ClientPortal } from "@/components/commercial/client-portal";
-import { businessApiUrl } from "@/lib/auth/server";
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  if (!/^[a-z0-9-]{1,80}$/.test(slug))
-    return <main style={{ padding: "2rem" }}>Portal not found.</main>;
-  const r = await fetch(businessApiUrl(`/client-portal/${slug}/brand`), {
-    cache: "no-store",
-  }).catch(() => null);
-  if (!r?.ok)
-    return (
-      <main style={{ padding: "2rem" }}>
-        <h1>Portal unavailable</h1>
-        <p>Please check your company link or contact your project team.</p>
-      </main>
-    );
-  return <ClientPortal settings={await r.json()} />;
+import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { PortalApp } from "@/components/client-portal/portal-app";
+import { PortalUnavailable } from "@/components/client-portal/portal-unavailable";
+import { loadSite, siteMetadata } from "@/lib/client-portal/server";
+import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
+import { translator } from "@/lib/i18n/messages";
+
+type Props = { params: Promise<{ slug: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const t = translator(resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value));
+  return siteMetadata(await loadSite((await params).slug).catch(() => null), t("Your project"));
+}
+
+/** A tenant's client portal by its link (/portal/{link}). */
+export default async function Page({ params }: Props) {
+  const site = await loadSite((await params).slug);
+  return site ? <PortalApp site={site} /> : <PortalUnavailable />;
 }

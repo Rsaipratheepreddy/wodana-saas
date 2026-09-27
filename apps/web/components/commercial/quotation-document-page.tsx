@@ -4,7 +4,7 @@ import type { Quote, QuoteLine, PortalBrand } from "@/lib/commercial/types";
 import { acceptedQuoteTotals, money, quoteTotals, paymentMilestoneAmounts } from "@/lib/commercial/client";
 import { quotationDescription } from "@/lib/commercial/presentation";
 import { QuotationCover } from "./quotation-cover";
-import { BrandLogo } from "./portal-settings";
+import { BrandLogo } from "./brand-logo";
 import d from "./quotation-studio.module.css";
 import {referenceItemGroups} from '@/lib/commercial/quotation-reference-template';
 

@@ -11,7 +11,7 @@ const files = execSync("git ls-files 'app/**/*.css' 'components/**/*.css' 'desig
   .split("\n").filter((file) => file && !(EXCLUDED as RegExp).test(file) && existsSync(file));
 
 // Raw hex colours bypass themes (dark mode, tenant brand). Lower this number as modules are rebuilt; never raise it.
-const RAW_HEX_CEILING = 427;
+const RAW_HEX_CEILING = 386;
 
 describe("design token discipline", () => {
   it("uses spacing, type and radius tokens instead of raw values", () => {

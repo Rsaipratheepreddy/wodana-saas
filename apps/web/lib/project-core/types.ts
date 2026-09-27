@@ -32,7 +32,7 @@ export type ProjectStage = {
   startedAt: string | null; completedAt: string | null; completedByName: string | null; skipReason: string | null;
   checks: EvaluatedCheck[]; ready: boolean; owner: Member | null; canWork: boolean;
 };
-export type StatusUpdate = { id: string; health: Health; note: string; byName: string; at: string };
+export type StatusUpdate = { id: string; health: Health; note: string; byName: string; at: string; sharedAt?: string | null };
 
 export type ProjectDetail = {
   project: ProjectSummary & {

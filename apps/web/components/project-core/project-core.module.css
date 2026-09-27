@@ -160,6 +160,8 @@ li[data-passed] > .autoMark { border-style: solid; border-color: var(--wd-color-
 .feed { display: grid; margin: 0; padding: 0; list-style: none; }
 .feed li { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: var(--wd-space-1) var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
 .feed li small { grid-column: 2; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.feedShare { grid-column: 2; }
+.composerShare { grid-column: 1 / -1; }
 .feedText { overflow-wrap: anywhere; }
 
 /* Team */

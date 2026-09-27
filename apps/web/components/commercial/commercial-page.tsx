@@ -26,7 +26,7 @@ import {
   money,
   statusLabel,
 } from "@/lib/commercial/client";
-import { ClientAccess } from "./client-access";
+import { ClientContacts } from "@/components/client-portal/client-contacts";
 import { ScopeImport } from "./scope-import";
 import { PreProjectSectionLoading } from "../pre-project/section-loading";
 import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
@@ -493,7 +493,7 @@ export function CommercialPage({
               action={state.canEdit ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void run("create")}><Plus size={15} />Create quotation</Button> : undefined} />
           )
         ) : section === "client-portal" ? (
-          <ClientAccess state={state} reload={reload} />
+          <ClientContacts workspaceId={state.workspaceId} caseId={state.caseId} portalSlug={state.portalSlug} portalEnabled={Boolean(state.portalEnabled)} locale={design.locale} onChanged={reload} />
         ) : section === "variations" ? (
           <CommercialRequests
             state={state}

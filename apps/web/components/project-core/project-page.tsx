@@ -131,7 +131,7 @@ export function ProjectPage({ workspaceId, projectId, section: initialSection }:
       { id: "petty-cash", label: t("Petty cash"), panel: <ProjectPettyCash workspaceId={workspaceId} projectId={projectId} /> },
       { id: "handover", label: t("Handover"), panel: <ProjectHandover workspaceId={workspaceId} projectId={projectId} /> },
       { id: "warranty", label: t("Warranty"), panel: <ProjectWarranty workspaceId={workspaceId} projectId={projectId} /> },
-      { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} /> },
+      { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} workspaceId={workspaceId} projectId={projectId} /> },
     ]} />
 
     {dialog === "team" ? <ProjectTeam detail={detail} run={run} onClose={() => setDialog(null)} /> : null}
