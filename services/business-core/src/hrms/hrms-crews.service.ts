@@ -10,6 +10,7 @@ import { RequestActor } from "../auth/actor";
 import { readTradeRates, rateOn, tradeKey, tradeName } from "../project-core/labour-rates";
 import { HrmsAccessService, HrmsContext } from "./hrms-access.service";
 import { CrewDayDecisionDto, CrewDayDto, CrewDaySubmitDto, CrewDto, WorkerDto } from "./hrms.dto";
+import { clearance } from "./hrms-documents.service";
 import { dateOnly, formatDates, localDate, locationEvidence } from "./hrms-domain";
 
 type CrewDayRow = {
@@ -304,6 +305,13 @@ export class HrmsCrewsService {
       if (["missing", "outside", "uncertain"].includes(arrival.status)) issues.push(`Location ${arrival.status}`);
       if (day.project_id && !site) issues.push("Site boundary is not set up");
       if (day.work_date !== (await this.today(ctx))) issues.push("Marked on a later day");
+      if (day.project_id) {
+        const present = (await ctx.client.query<{ id: string }>(
+          `SELECT worker_id AS id FROM hrms_crew_day_workers WHERE workspace_id=$1 AND crew_day_id=$2 AND presence <> 'absent'`, [workspaceId, id])).rows;
+        const blocked = (await clearance(ctx.client, workspaceId, present.map((row) => ({ kind: "worker" as const, id: row.id })), day.work_date))
+          .filter((person) => !person.cleared).map((person) => person.name);
+        if (blocked.length) issues.push(`Not cleared for site: ${blocked.join(", ")}`);
+      }
       const reason = input.exceptionReason.trim();
       if (issues.length && reason.length < 3)
         throw new BadRequestException({ message: "Retake the photo or give a reason.", issues });

@@ -71,6 +71,8 @@ export type HrmsSettings = {
   maxGpsAccuracyM: number;
   maxCaptureAgeSeconds: number;
   mediaRetentionDays: number;
+  /** Document kinds a person needs to go on site. */
+  siteDocuments?: HrmsDocumentKind[];
   version: number;
 };
 export type HrmsBootstrap = {
@@ -355,3 +357,73 @@ export type CrewDay = {
 };
 export type CrewDayInput = { version: number; crewId: string; projectId?: string | null; workDate: string; note: string; workers: Array<{ workerId: string; presence: CrewPresence; overtimeHours: number }> };
 export type CrewDaySubmit = { version: number; captureId?: string | null; position?: CapturePosition | null; exceptionReason: string };
+
+/** H3 — documents with expiry and who may go to each site. */
+export type HrmsDocumentKind = "identity" | "work_permit" | "residence" | "licence" | "insurance" | "safety_induction" | "medical" | "other";
+export type HrmsDocument = {
+  id: string;
+  membershipId: string | null;
+  workerId: string | null;
+  personName?: string;
+  kind: HrmsDocumentKind;
+  title: string;
+  number: string;
+  issuedOn: string | null;
+  expiresOn: string | null;
+  fileName: string | null;
+  note: string;
+  version: number;
+  createdAt: string;
+  /** On the workspace's today: expiring means within 30 days. */
+  status: "valid" | "expiring" | "expired";
+};
+export type HrmsDocuments = { documents: HrmsDocument[]; siteDocuments: HrmsDocumentKind[]; canManage: boolean };
+export type DocumentInput = { version: number; membershipId?: string | null; workerId?: string | null; kind: HrmsDocumentKind; title: string; number: string; issuedOn?: string | null; expiresOn?: string | null; note: string };
+export type SiteClearance = {
+  subject: { kind: "member" | "worker"; id: string };
+  name: string;
+  /** Designation for staff; trade and crew for workers. */
+  detail: string;
+  cleared: boolean;
+  missing: HrmsDocumentKind[];
+  expired: HrmsDocumentKind[];
+  documents: Array<{ kind: HrmsDocumentKind; title: string; number: string; expiresOn: string | null }>;
+};
+export type SiteAccess = {
+  projectId: string;
+  day: string;
+  required: HrmsDocumentKind[];
+  entries: Array<{ id: string; crewId: string | null; workerId: string | null; membershipId: string | null; name: string }>;
+  people: SiteClearance[];
+  canManage: boolean;
+};
+export type SiteAccessInput = { projectId: string; crewId?: string | null; workerId?: string | null; membershipId?: string | null };
+
+/** H4 — studio timesheets and utilisation. */
+export type TimeEntry = { id?: string; workDate: string; projectId: string | null; projectName?: string | null; stageId: string | null; stageName?: string | null; minutes: number; note: string };
+export type TimeWeek = {
+  membershipId: string;
+  name: string;
+  weekStart: string;
+  /** Each day of the week: the minutes the person's calendar expects (less leave) and leave taken. */
+  days: Array<{ date: string; scheduledMinutes: number; leaveDays: number }>;
+  timesheet: { id: string; status: "draft" | "submitted" | "approved" | "returned"; version: number; submittedAt: string | null; decidedByName: string | null; decisionNote: string } | null;
+  entries: TimeEntry[];
+  totalMinutes: number;
+};
+export type MyTimeWeek = TimeWeek & { options: Array<{ id: string; name: string; stages: Array<{ id: string; name: string }> }> };
+export type TeamTimeWeek = { weekStart: string; people: Array<TimeWeek & { scheduledMinutes: number; canDecide: boolean }> };
+export type TimeWeekInput = { version: number; entries: Array<{ workDate: string; projectId?: string | null; stageId?: string | null; minutes: number; note: string }> };
+export type ProjectHours = { projectId: string; from: string | null; to: string | null; totalMinutes: number; rows: Array<{ membershipId: string; name: string; stageId: string | null; stageName: string | null; minutes: number }> };
+export type Utilisation = { from: string; to: string; people: Array<{ membershipId: string; name: string; scheduledMinutes: number; projectMinutes: number; internalMinutes: number; utilisation: number | null }> };
+
+/** H5 — the month's payroll inputs. */
+export type PayrollMonth = {
+  month: string;
+  from: string;
+  to: string;
+  people: Array<{ membershipId: string; name: string; employeeCode: string; designation: string; department: string; scheduledDays: number; workedDays: number; workedHours: number;
+    overtimeHours: number; paidLeaveDays: number; unpaidLeaveDays: number; absentDays: number; toReview: number }>;
+  workers: Array<{ workerId: string; name: string; workerCode: string; trade: string; crew: string | null; days: number; overtimeHours: number; uncosted: number;
+    amounts: Array<{ currency: string; amount: string }> }>;
+};

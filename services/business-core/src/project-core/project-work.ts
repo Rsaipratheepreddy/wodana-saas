@@ -21,6 +21,8 @@ export type WorkItem = {
   subtasks: number; subtasksDone: number; comments: number;
   /** What it's waiting on: a predecessor not yet finished (finish-to-start) or not yet started (start-to-start). */
   blockedBy: WorkRef[];
+  /** While it's open: when its assignee is away on approved leave within its dates (dates only — never the kind of leave). */
+  assigneeAway: Array<{ startDate: string; endDate: string }>;
 };
 
 const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number, item.type, item.parent_id AS "parentId", item.package_id AS "packageId",
@@ -34,7 +36,13 @@ const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number
   coalesce((SELECT jsonb_agg(jsonb_build_object('id', before.id, 'number', before.number, 'title', before.title, 'type', before.type, 'status', before.status) ORDER BY before.number)
      FROM work_item_links link JOIN work_items before ON before.workspace_id = link.workspace_id AND before.id = link.predecessor_id
     WHERE link.workspace_id = item.workspace_id AND link.successor_id = item.id
-      AND ((link.kind = 'fs' AND before.status NOT IN ('done', 'cancelled')) OR (link.kind = 'ss' AND before.status = 'todo'))), '[]'::jsonb) AS "blockedBy"
+      AND ((link.kind = 'fs' AND before.status NOT IN ('done', 'cancelled')) OR (link.kind = 'ss' AND before.status = 'todo'))), '[]'::jsonb) AS "blockedBy",
+  coalesce((SELECT jsonb_agg(jsonb_build_object('startDate', greatest(away.start_date, coalesce(item.start_date, item.due_date))::text,
+                                                'endDate', least(away.end_date, coalesce(item.due_date, item.start_date))::text) ORDER BY away.start_date)
+     FROM hrms_leave_requests away
+    WHERE away.workspace_id = item.workspace_id AND away.membership_id = item.assignee_membership_id AND away.status IN ('approved', 'cancellation_pending')
+      AND item.status NOT IN ('done', 'cancelled') AND coalesce(item.start_date, item.due_date) IS NOT NULL
+      AND away.start_date <= coalesce(item.due_date, item.start_date) AND away.end_date >= coalesce(item.start_date, item.due_date)), '[]'::jsonb) AS "assigneeAway"
   FROM work_items item
   LEFT JOIN workspace_memberships membership ON membership.workspace_id = item.workspace_id AND membership.id = item.assignee_membership_id
   LEFT JOIN users assignee ON assignee.id = membership.user_id`;

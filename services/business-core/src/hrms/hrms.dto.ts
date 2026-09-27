@@ -56,6 +56,12 @@ export class SettingsDto {
   @IsInt() @Min(5) @Max(500) maxGpsAccuracyM = 100;
   @IsInt() @Min(30) @Max(600) maxCaptureAgeSeconds = 120;
   @IsInt() @Min(30) @Max(3650) mediaRetentionDays = 365;
+  /** Document kinds a person needs to go on site; left out, the current choice stays. */
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(["identity", "work_permit", "residence", "licence", "insurance", "safety_induction", "medical", "other"], { each: true })
+  siteDocuments?: string[];
 }
 export class EmployeeDto {
   @IsInt() @Min(0) version: number;
@@ -223,4 +229,68 @@ export class CrewDayQueryDto {
   @IsOptional() @IsUUID() projectId?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
+}
+
+export class DocumentDto {
+  @IsInt() @Min(0) version: number;
+  @IsOptional() @IsUUID() membershipId?: string | null;
+  @IsOptional() @IsUUID() workerId?: string | null;
+  @IsIn(["identity", "work_permit", "residence", "licence", "insurance", "safety_induction", "medical", "other"]) kind:
+    | "identity" | "work_permit" | "residence" | "licence" | "insurance" | "safety_induction" | "medical" | "other";
+  @IsString() @MinLength(1) @MaxLength(120) title: string;
+  @IsString() @MaxLength(80) number = "";
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) issuedOn?: string | null;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) expiresOn?: string | null;
+  @IsString() @MaxLength(2000) note = "";
+}
+export class DocumentQueryDto {
+  @IsOptional() @IsUUID() membershipId?: string;
+  @IsOptional() @IsUUID() workerId?: string;
+}
+export class SiteAccessDto {
+  @IsUUID() projectId: string;
+  @IsOptional() @IsUUID() crewId?: string | null;
+  @IsOptional() @IsUUID() workerId?: string | null;
+  @IsOptional() @IsUUID() membershipId?: string | null;
+}
+export class SiteAccessQueryDto {
+  @IsUUID() projectId: string;
+}
+
+export class TimeEntryDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) workDate: string;
+  @IsOptional() @IsUUID() projectId?: string | null;
+  @IsOptional() @IsUUID() stageId?: string | null;
+  @IsInt() @Min(1) @Max(1440) minutes: number;
+  @IsString() @MaxLength(500) note = "";
+}
+export class TimeWeekDto {
+  @IsInt() @Min(0) version: number;
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => TimeEntryDto)
+  entries: TimeEntryDto[];
+}
+export class TimeDecisionDto {
+  @IsInt() @Min(1) version: number;
+  @IsIn(["approve", "return"]) decision: "approve" | "return";
+  @IsString() @MaxLength(2000) note = "";
+}
+export class DateQueryDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) date: string;
+}
+export class RangeQueryDto {
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) from: string;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) to: string;
+}
+export class ProjectHoursQueryDto {
+  @IsUUID() projectId: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
+}
+
+export class PayrollQueryDto {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/) month: string;
+  @IsOptional() @IsIn(["employees", "workers"]) kind: "employees" | "workers" = "employees";
 }

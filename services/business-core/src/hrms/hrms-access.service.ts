@@ -309,7 +309,7 @@ export class HrmsAccessService {
   }
   async settings(ctx: HrmsContext) {
     const result = await ctx.client.query(
-      `SELECT default_calendar_id AS "defaultCalendarId",fallback_approver_id AS "fallbackApproverId",max_gps_accuracy_m AS "maxGpsAccuracyM",max_capture_age_seconds AS "maxCaptureAgeSeconds",media_retention_days AS "mediaRetentionDays",version FROM hrms_settings WHERE workspace_id=$1`,
+      `SELECT default_calendar_id AS "defaultCalendarId",fallback_approver_id AS "fallbackApproverId",max_gps_accuracy_m AS "maxGpsAccuracyM",max_capture_age_seconds AS "maxCaptureAgeSeconds",media_retention_days AS "mediaRetentionDays",site_documents::text[] AS "siteDocuments",version FROM hrms_settings WHERE workspace_id=$1`,
       [ctx.workspaceId],
     );
     if (!result.rowCount)

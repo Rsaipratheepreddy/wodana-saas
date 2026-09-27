@@ -473,7 +473,8 @@ export class HrmsAttendanceService {
       this.historyIn(ctx, input),
     );
   }
-  private async historyIn(ctx: HrmsContext, input: HistoryDto) {
+  /** Days for the people in scope (also used by payroll, inside its own transaction). */
+  async historyIn(ctx: HrmsContext, input: HistoryDto) {
     const dates = dateRange(input.from, input.to);
     let members: string[] = [];
     if (input.scope === "team") {

@@ -1033,6 +1033,20 @@ HR in a fit-out firm covers four groups: studio staff (hours per project against
 - **Cost:** each approved crew day is a labour cost of its project at those rates; the named people replace the site report's headcount for their trades that day, so nothing is counted twice. Overtime hours are kept for payroll.
 - Notices: a crew day to approve (the project's managers), approved or sent back (who marked it).
 
+**Built (H3) — documents and site access (backend; screens follow):**
+- **Documents** per employee or worker: identity, work permit, residence, licence, insurance, safety induction, medical or other; a number, issue and expiry dates, a scan (PDF or image up to 10 MB) and a note. HR keeps them; a person sees their own; the audit notes a number changed without keeping it. Status on the workspace's today: valid, expiring (within 30 days) or expired.
+- The workspace chooses which kinds a person needs **on site** (Settings → Attendance & leave → Rules).
+- **Site access** per project: crews (all their active workers), workers and staff added by the project's managers (supervisors see it). Each person is cleared when every required kind has a document that hasn't expired; the list shows who is and what's missing or expired, with the numbers security asks for.
+- A crew day with someone present who isn't cleared needs a reason.
+- **Reminders** once per document and expiry: 30 days before to HR (in-app and email) and the employee; on expiry to HR and, for a worker, their crew's lead.
+
+**Built (H4) — studio timesheets, utilisation and leave in planning (backend; screens follow):**
+- People log hours per day against a project they're on and its stage, or internal work, a week at a time (the workspace's first day of the week); days that haven't happened and days before joining are refused, at most 24 hours a day. The week is submitted and approved or sent back by their manager — never by themself (database-enforced) — and an approved week can't change. Notices: to approve (manager), approved or sent back (the person).
+- A project's approved hours by person and stage (its managers, and people who run projects or see costs); utilisation per person over a period: approved project hours over the hours their calendar expects less leave, internal hours apart.
+- **Planning:** open work shows when its assignee is away on approved leave within its dates — the dates only, never the kind of leave.
+
+**Built (H5) — payroll inputs (backend; screens follow):** for a month, per employee: scheduled days, days and hours worked, hours beyond the day, paid and unpaid leave, days away without leave and items still to review; per crew worker: days on approved crew days, overtime hours and the amount at their fixed rates (per currency). As CSV (UTF-8, ISO dates, decimal points) for the payroll provider. HR only; nothing here pays anyone.
+
 ### 6.29 Staff mobile (Expo)
 - **Tabs:** Today · Tasks · Capture (+) · Inbox · Me.
 - **Actions:** respond to enquiries (call/WhatsApp/note), site visit (measurements, photos, markup), task progress (qty + photo), daily report, receive delivery (PO or site), raise/close snag, handover walk-through, approvals (approve or return with reason), attendance.

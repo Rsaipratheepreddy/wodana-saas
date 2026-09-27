@@ -32,7 +32,10 @@ import {
   CrewDayQueryDto,
   CrewDaySubmitDto,
   CrewDto,
+  DateQueryDto,
   DecisionDto,
+  DocumentDto,
+  DocumentQueryDto,
   EmployeeDto,
   HistoryDto,
   HolidayDto,
@@ -40,12 +43,22 @@ import {
   LeaveDto,
   LeaveQueryDto,
   LeaveTypeDto,
+  PayrollQueryDto,
+  ProjectHoursQueryDto,
+  RangeQueryDto,
   ReviewDto,
   SettingsDto,
+  SiteAccessDto,
+  SiteAccessQueryDto,
+  TimeDecisionDto,
+  TimeWeekDto,
   VersionDto,
   WorkerDto,
 } from "./hrms.dto";
 import { HrmsCrewsService } from "./hrms-crews.service";
+import { HrmsTimeService } from "./hrms-time.service";
+import { HrmsPayrollService } from "./hrms-payroll.service";
+import { DOCUMENT_MAX_BYTES, DocumentUpload, HrmsDocumentsService } from "./hrms-documents.service";
 import { HrmsAccessService } from "./hrms-access.service";
 import { HrmsSettingsService } from "./hrms-settings.service";
 import {
@@ -63,7 +76,122 @@ export class HrmsController {
     private readonly attendance: HrmsAttendanceService,
     private readonly leave: HrmsLeaveService,
     private readonly crewsService: HrmsCrewsService,
+    private readonly documentsService: HrmsDocumentsService,
+    private readonly timeService: HrmsTimeService,
+    private readonly payrollService: HrmsPayrollService,
   ) {}
+  @Get("payroll") payroll(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: PayrollQueryDto) {
+    return this.payrollService.month(a, w, q.month);
+  }
+  @Get("payroll/export")
+  @Header("Cache-Control", "private, no-store")
+  async payrollExport(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: PayrollQueryDto) {
+    return new StreamableFile(Buffer.from(await this.payrollService.export(a, w, q.month, q.kind), "utf8"), {
+      type: "text/csv; charset=utf-8",
+      disposition: `attachment; filename="payroll-${q.kind}-${q.month}.csv"`,
+    });
+  }
+  @Get("time/mine") myTime(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: DateQueryDto) {
+    return this.timeService.mine(a, w, q.date);
+  }
+  @Put("time/weeks/:weekStart") saveWeek(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("weekStart") weekStart: string,
+    @Body() b: TimeWeekDto,
+  ) {
+    return this.timeService.saveWeek(a, w, weekStart, b);
+  }
+  @Post("time/:id/submit") submitWeek(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: VersionDto,
+  ) {
+    return this.timeService.submit(a, w, id, b);
+  }
+  @Post("time/:id/decision") decideWeek(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: TimeDecisionDto,
+  ) {
+    return this.timeService.decide(a, w, id, b);
+  }
+  @Get("time/team") teamTime(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: DateQueryDto) {
+    return this.timeService.team(a, w, q.date);
+  }
+  @Get("time/project") projectHours(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: ProjectHoursQueryDto) {
+    return this.timeService.projectHours(a, w, q.projectId, q.from, q.to);
+  }
+  @Get("time/utilisation") utilisation(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: RangeQueryDto) {
+    return this.timeService.utilisation(a, w, q.from, q.to);
+  }
+  @Get("documents") documents(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Query() q: DocumentQueryDto,
+  ) {
+    return this.documentsService.documents(a, w, q);
+  }
+  @Put("documents/:id") saveDocument(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: DocumentDto,
+  ) {
+    return this.documentsService.saveDocument(a, w, id, b);
+  }
+  @Put("documents/:id/file")
+  @ApiConsumes("multipart/form-data")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: DOCUMENT_MAX_BYTES, files: 1 } }))
+  documentFile(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @UploadedFile() file: DocumentUpload,
+  ) {
+    return this.documentsService.uploadFile(a, w, id, file);
+  }
+  @Get("documents/:id/file")
+  @Header("Cache-Control", "private, no-store")
+  async documentFileContent(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    const file = await this.documentsService.readFile(a, w, id);
+    return new StreamableFile(file.body, { type: file.contentType, disposition: `inline; filename="${encodeURIComponent(file.fileName)}"` });
+  }
+  @Post("documents/:id/remove") removeDocument(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() b: VersionDto,
+  ) {
+    return this.documentsService.removeDocument(a, w, id, b);
+  }
+  @Get("site-access") siteAccess(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Query() q: SiteAccessQueryDto,
+  ) {
+    return this.documentsService.siteAccess(a, w, q.projectId);
+  }
+  @Post("site-access") addSiteAccess(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Body() b: SiteAccessDto,
+  ) {
+    return this.documentsService.addSiteAccess(a, w, b);
+  }
+  @Post("site-access/:id/remove") removeSiteAccess(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.documentsService.removeSiteAccess(a, w, id);
+  }
   @Get("crews") crews(
     @CurrentActor() a: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
@@ -345,6 +473,9 @@ export class HrmsController {
     HrmsAttendanceService,
     HrmsLeaveService,
     HrmsCrewsService,
+    HrmsDocumentsService,
+    HrmsTimeService,
+    HrmsPayrollService,
     BrandAssetStorageService,
   ],
 })

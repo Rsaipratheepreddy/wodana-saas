@@ -35,7 +35,7 @@ export class HrmsSettingsService {
     return this.access.run(actor, workspaceId, async (ctx) => {
       this.access.require(ctx, "hrms.self", "hrms.team", "hrms.manage");
       const settings = await ctx.client.query(
-        `SELECT default_calendar_id AS "defaultCalendarId",fallback_approver_id AS "fallbackApproverId",max_gps_accuracy_m AS "maxGpsAccuracyM",max_capture_age_seconds AS "maxCaptureAgeSeconds",media_retention_days AS "mediaRetentionDays",version FROM hrms_settings WHERE workspace_id=$1`,
+        `SELECT default_calendar_id AS "defaultCalendarId",fallback_approver_id AS "fallbackApproverId",max_gps_accuracy_m AS "maxGpsAccuracyM",max_capture_age_seconds AS "maxCaptureAgeSeconds",media_retention_days AS "mediaRetentionDays",site_documents::text[] AS "siteDocuments",version FROM hrms_settings WHERE workspace_id=$1`,
         [workspaceId],
       );
       const mine = await ctx.client.query(
@@ -346,8 +346,8 @@ export class HrmsSettingsService {
       if (input.fallbackApproverId)
         await this.access.memberExists(ctx, input.fallbackApproverId);
       const row = await ctx.client.query(
-        `INSERT INTO hrms_settings(workspace_id,default_calendar_id,fallback_approver_id,max_gps_accuracy_m,max_capture_age_seconds,media_retention_days) VALUES($1,$2,$3,$4,$5,$6)
-   ON CONFLICT(workspace_id) DO UPDATE SET default_calendar_id=EXCLUDED.default_calendar_id,fallback_approver_id=EXCLUDED.fallback_approver_id,max_gps_accuracy_m=EXCLUDED.max_gps_accuracy_m,max_capture_age_seconds=EXCLUDED.max_capture_age_seconds,media_retention_days=EXCLUDED.media_retention_days,version=hrms_settings.version+1 RETURNING version`,
+        `INSERT INTO hrms_settings(workspace_id,default_calendar_id,fallback_approver_id,max_gps_accuracy_m,max_capture_age_seconds,media_retention_days,site_documents) VALUES($1,$2,$3,$4,$5,$6,coalesce($7::varchar(24)[],'{}'))
+   ON CONFLICT(workspace_id) DO UPDATE SET default_calendar_id=EXCLUDED.default_calendar_id,fallback_approver_id=EXCLUDED.fallback_approver_id,max_gps_accuracy_m=EXCLUDED.max_gps_accuracy_m,max_capture_age_seconds=EXCLUDED.max_capture_age_seconds,media_retention_days=EXCLUDED.media_retention_days,site_documents=coalesce($7::varchar(24)[],hrms_settings.site_documents),version=hrms_settings.version+1 RETURNING version`,
         [
           workspaceId,
           input.defaultCalendarId,
@@ -355,6 +355,7 @@ export class HrmsSettingsService {
           input.maxGpsAccuracyM,
           input.maxCaptureAgeSeconds,
           input.mediaRetentionDays,
+          input.siteDocuments ?? null,
         ],
       );
       await this.access.audit(

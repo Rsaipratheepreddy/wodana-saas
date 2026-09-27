@@ -8,8 +8,12 @@ import { HrmsAccessService } from "./hrms-access.service";
 import { readProjectCosts } from "../project-core/project-money";
 import { HrmsAttendanceService } from "./hrms-attendance.service";
 import { HrmsCrewsService } from "./hrms-crews.service";
+import { HrmsDocumentsService } from "./hrms-documents.service";
+import { HrmsPayrollService } from "./hrms-payroll.service";
+import { HrmsTimeService } from "./hrms-time.service";
+import { readItems } from "../project-core/project-work";
 import { HrmsLeaveService } from "./hrms-leave.service";
-import { processHrmsCheckouts } from "./hrms-reminders";
+import { processHrmsCheckouts, processHrmsDocuments } from "./hrms-reminders";
 import { HrmsSettingsService } from "./hrms-settings.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
@@ -26,7 +30,7 @@ type World = {
   ownerMember: string;
   designerMember: string;
   supervisorMember: string;
-  as: (userId: string) => { settings: HrmsSettingsService; leave: HrmsLeaveService; attendance: HrmsAttendanceService; crews: HrmsCrewsService };
+  as: (userId: string) => { settings: HrmsSettingsService; leave: HrmsLeaveService; attendance: HrmsAttendanceService; crews: HrmsCrewsService; documents: HrmsDocumentsService; time: HrmsTimeService; payroll: HrmsPayrollService };
 };
 
 integration("HRMS works on day one (plan §6.28, H1)", () => {
@@ -58,6 +62,8 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       await client.query("INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)", [workspaceId, ownerMember, hrRole]);
       await client.query("SET LOCAL session_replication_role = origin");
       await seedDefaultNotificationTemplates(client, workspaceId);
+      const files = new Map<string, Buffer>();
+      const storage = { put: async (key: string, body: Buffer) => { files.set(key, body); }, read: async (key: string) => ({ body: files.get(key)! }), remove: async (key: string) => { files.delete(key); } };
       // Each call is its own transaction, as in the app: a command that fails part-way leaves nothing behind.
       const as = (userId: string) => {
         const access = new HrmsAccessService({
@@ -74,7 +80,9 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
           },
           effectivePermissions: async (_c: unknown, _w: string, codes: string[]) => [...new Set(codes)],
         } as never, new CrmEventsService());
-        return { settings: new HrmsSettingsService(access), leave: new HrmsLeaveService(access), attendance: new HrmsAttendanceService(access, {} as never, {} as never), crews: new HrmsCrewsService(access) };
+        const attendance = new HrmsAttendanceService(access, {} as never, {} as never);
+        return { settings: new HrmsSettingsService(access), leave: new HrmsLeaveService(access), attendance, crews: new HrmsCrewsService(access),
+          documents: new HrmsDocumentsService(access, storage as never), time: new HrmsTimeService(access), payroll: new HrmsPayrollService(access, attendance) };
       };
       await work({ client, workspaceId, owner, designer, supervisor, ownerMember, designerMember, supervisorMember, as });
     } finally {
@@ -312,6 +320,135 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       const labour = costs.entries.filter((entry) => entry.source === "labour").map((entry) => [entry.description, entry.amount]);
       expect(labour).toEqual(expect.arrayContaining([["Crew: Carpentry A, 2 people", "425.0000"], ["Site labour: Painter, 2 people", "400.0000"]]));
       expect(labour).toHaveLength(2);
+    });
+  });
+  it("documents with expiry decide who is cleared for a project's site; crews with someone not cleared need a reason", async () => {
+    await world(async (w) => {
+      const project = randomUUID();
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
+      const plus = (days: number) => new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Mall kiosk','P-2',$5,now(),$4)", [project, w.workspaceId, randomUUID(), w.owner, randomUUID()]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      await w.client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,true,true,'{project_manager}'),($1,$2,$4,false,true,'{site_supervisor}')",
+        [w.workspaceId, project, w.ownerMember, w.supervisorMember]);
+      const owner = w.as(w.owner), supervisor = w.as(w.supervisor), designer = w.as(w.designer);
+      const boot = await owner.settings.bootstrap(actor, w.workspaceId);
+      await owner.settings.saveSettings(actor, w.workspaceId, { ...boot.settings!, fallbackApproverId: null, siteDocuments: ["identity", "safety_induction"] });
+      let state = await owner.crews.saveCrew(actor, w.workspaceId, { version: 0, name: "Fit-out crew", trade: "Carpenter", leadMembershipId: w.supervisorMember, active: true });
+      const crew = state.crews[0].id;
+      state = await owner.crews.saveWorker(actor, w.workspaceId, { version: 0, name: "Omar", trade: "Carpenter", crewId: crew, workerCode: "", phone: "", active: true });
+      state = await owner.crews.saveWorker(actor, w.workspaceId, { version: 0, name: "Joseph", trade: "Carpenter", crewId: crew, workerCode: "", phone: "", active: true });
+      const [omar, joseph] = ["Omar", "Joseph"].map((name) => state.workers.find((worker: { name: string }) => worker.name === name).id);
+
+      // Omar has both, Joseph's induction ran out yesterday; the supervisor has nothing yet.
+      const induction = randomUUID();
+      await owner.documents.saveDocument(actor, w.workspaceId, randomUUID(), { version: 0, workerId: omar, kind: "identity", title: "Passport", number: "N1234567", expiresOn: plus(400), note: "" });
+      await owner.documents.saveDocument(actor, w.workspaceId, randomUUID(), { version: 0, workerId: omar, kind: "safety_induction", title: "Mall induction", number: "", expiresOn: plus(20), note: "" });
+      await owner.documents.saveDocument(actor, w.workspaceId, randomUUID(), { version: 0, workerId: joseph, kind: "identity", title: "Passport", number: "P7654321", note: "" });
+      await owner.documents.saveDocument(actor, w.workspaceId, induction, { version: 0, workerId: joseph, kind: "safety_induction", title: "Mall induction", number: "", expiresOn: plus(-1), note: "" });
+      await expect(supervisor.documents.saveDocument(actor, w.workspaceId, randomUUID(), { version: 0, workerId: omar, kind: "other", title: "x", number: "", note: "" })).rejects.toThrow("You do not have access");
+      await expect(owner.documents.saveDocument(actor, w.workspaceId, randomUUID(), { version: 0, workerId: omar, membershipId: w.designerMember, kind: "other", title: "x", number: "", note: "" })).rejects.toThrow("Choose one person or one worker.");
+      const all = await owner.documents.documents(actor, w.workspaceId, {});
+      expect(all.documents.map((row: { title: string; status: string }) => [row.title, row.status]))
+        .toEqual([["Mall induction", "expired"], ["Mall induction", "expiring"], ["Passport", "valid"], ["Passport", "valid"]]);
+      // Someone who doesn't run HR sees only their own documents.
+      expect((await designer.documents.documents(actor, w.workspaceId, {})).documents).toEqual([]);
+      await expect(designer.documents.documents(actor, w.workspaceId, { workerId: omar })).rejects.toThrow("Only HR sees workers' documents.");
+
+      // A file: a PDF is kept; something else isn't.
+      await owner.documents.uploadFile(actor, w.workspaceId, induction, { buffer: Buffer.from("%PDF-1.7 test"), size: 13, mimetype: "application/pdf", originalname: "induction.pdf" });
+      await expect(owner.documents.uploadFile(actor, w.workspaceId, induction, { buffer: Buffer.from("hello"), size: 5, mimetype: "text/plain" })).rejects.toThrow("Attach a PDF or an image");
+      expect((await owner.documents.readFile(actor, w.workspaceId, induction)).contentType).toBe("application/pdf");
+
+      // The site's list: the crew and the supervisor.
+      await expect(designer.documents.siteAccess(actor, w.workspaceId, project)).rejects.toThrow("Only the project's managers and site supervisors");
+      await owner.documents.addSiteAccess(actor, w.workspaceId, { projectId: project, crewId: crew });
+      await expect(supervisor.documents.addSiteAccess(actor, w.workspaceId, { projectId: project, membershipId: w.supervisorMember })).rejects.toThrow("Only the project's managers change");
+      const site = await owner.documents.addSiteAccess(actor, w.workspaceId, { projectId: project, membershipId: w.supervisorMember });
+      await owner.documents.addSiteAccess(actor, w.workspaceId, { projectId: project, crewId: crew });
+      expect(site.entries).toHaveLength(2);
+      expect(site.people.map((person: { name: string; cleared: boolean; missing: string[]; expired: string[] }) => [person.name, person.cleared, person.missing, person.expired])).toEqual([
+        ["Joseph", false, [], ["safety_induction"]],
+        ["Omar", true, [], []],
+        ["Sam Supervisor", false, ["identity", "safety_induction"], []],
+      ]);
+      expect((await supervisor.documents.siteAccess(actor, w.workspaceId, project)).canManage).toBe(false);
+
+      // Marking Joseph present on that site needs a reason.
+      const day = randomUUID();
+      await supervisor.crews.saveDay(actor, w.workspaceId, day, { version: 0, crewId: crew, projectId: project, workDate: today, note: "",
+        workers: [{ workerId: omar, presence: "present", overtimeHours: 0 }, { workerId: joseph, presence: "present", overtimeHours: 0 }] });
+      const refused = await supervisor.crews.submitDay(actor, w.workspaceId, day, { version: 1, exceptionReason: "" }).catch((error) => error.getResponse());
+      expect(refused.issues).toContain("Not cleared for site: Joseph");
+
+      // Reminders: Omar's induction (20 days) to HR with an email; Joseph's expired one to HR and his crew's lead.
+      expect(await processHrmsDocuments(w.client, w.workspaceId)).toEqual({ sent: 3 });
+      expect(await processHrmsDocuments(w.client, w.workspaceId)).toEqual({ sent: 0 });
+      expect((await notices(w, "hrms.document_expiring")).map((row) => [row.recipient, row.channel])).toEqual([[w.owner, "email"], [w.owner, "in_app"]]);
+      expect((await notices(w, "hrms.document_expired")).map((row) => row.recipient).sort()).toEqual([w.owner, w.supervisor].sort());
+    });
+  });
+  it("timesheets: hours per project and stage, approved by the manager; planning sees who's away; the month's payroll", async () => {
+    await world(async (w) => {
+      const project = randomUUID(), stage = randomUUID();
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query("INSERT INTO delivery_projects(id,workspace_id,case_id,name,reference,quote_id,started_at,created_by) VALUES($1,$2,$3,'Villa 7','P-3',$5,now(),$4)", [project, w.workspaceId, randomUUID(), w.owner, randomUUID()]);
+      await w.client.query("INSERT INTO project_stages(id,workspace_id,project_id,position,key,name,status,started_at) VALUES($1,$2,$3,1,'design','Design','current',now())", [stage, w.workspaceId, project]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      await w.client.query("INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active,role_keys) VALUES($1,$2,$3,false,true,'{designer}')", [w.workspaceId, project, w.designerMember]);
+      const owner = w.as(w.owner), designer = w.as(w.designer);
+      const people = await owner.settings.people(actor, w.workspaceId);
+      const dana = people.find((person: { membershipId: string }) => person.membershipId === w.designerMember);
+      await owner.settings.saveEmployee(actor, w.workspaceId, w.designerMember, { ...dana, version: dana.version, managerId: w.supervisorMember, employeeCode: "D-1" });
+
+      // A past Monday-to-Sunday week (the workspace's week starts on Monday).
+      const week = "2026-09-14";
+      const mine = await designer.time.mine(actor, w.workspaceId, "2026-09-16");
+      expect(mine.weekStart).toBe(week);
+      expect(mine.days.map((day: { scheduledMinutes: number }) => day.scheduledMinutes)).toEqual([540, 540, 540, 540, 540, 0, 0]);
+      expect(mine.options).toEqual([{ id: project, name: "P-3 · Villa 7", stages: [{ id: stage, name: "Design" }] }]);
+      await expect(designer.time.saveWeek(actor, w.workspaceId, "2026-09-15", { version: 0, entries: [] })).rejects.toThrow("first day of a week");
+      await expect(designer.time.saveWeek(actor, w.workspaceId, week, { version: 0, entries: [{ workDate: "2026-09-14", projectId: randomUUID(), minutes: 60, note: "" }] }))
+        .rejects.toThrow("Choose a project you're on.");
+      const saved = await designer.time.saveWeek(actor, w.workspaceId, week, { version: 0, entries: [
+        { workDate: "2026-09-14", projectId: project, stageId: stage, minutes: 360, note: "Layouts" },
+        { workDate: "2026-09-15", projectId: project, stageId: stage, minutes: 300, note: "3D" },
+        { workDate: "2026-09-15", minutes: 120, note: "Studio meeting" },
+      ] });
+      expect(saved.totalMinutes).toBe(780);
+      await designer.time.submit(actor, w.workspaceId, saved.timesheet!.id, { version: saved.timesheet!.version });
+      expect(await notices(w, "hrms.timesheet_submitted")).toEqual([expect.objectContaining({ recipient: w.supervisor, body: expect.stringContaining("13 hours logged.") })]);
+      await expect(designer.time.saveWeek(actor, w.workspaceId, week, { version: saved.timesheet!.version + 1, entries: [] })).rejects.toThrow("already submitted");
+      await expect(owner.time.decide(actor, w.workspaceId, saved.timesheet!.id, { version: 2, decision: "return", note: "" })).rejects.toThrow("Say what to change.");
+      await w.as(w.supervisor).time.decide(actor, w.workspaceId, saved.timesheet!.id, { version: 2, decision: "approve", note: "" });
+      expect(await notices(w, "hrms.timesheet_approved", w.designer)).toHaveLength(1);
+      const hours = await owner.time.projectHours(actor, w.workspaceId, project);
+      expect(hours).toMatchObject({ totalMinutes: 660, rows: [{ membershipId: w.designerMember, stageName: "Design", minutes: 660 }] });
+      await expect(designer.time.projectHours(actor, w.workspaceId, project)).rejects.toThrow("Only the project's managers");
+      const use = await owner.time.utilisation(actor, w.workspaceId, week, "2026-09-20");
+      expect(use.people.find((row: { membershipId: string }) => row.membershipId === w.designerMember)).toMatchObject({ scheduledMinutes: 2700, projectMinutes: 660, internalMinutes: 120, utilisation: 24.4 });
+
+      // Planning: work assigned to Dana over days she's away shows those dates, never the kind of leave.
+      const types = await owner.leave.types(actor, w.workspaceId);
+      const sick = types.find((type: { name: string }) => type.name === "Sick leave").id;
+      const away = await designer.leave.request(actor, w.workspaceId, { actionId: randomUUID(), leaveTypeId: sick, startDate: "2026-10-06", endDate: "2026-10-07", dayPart: "full", reason: "Surgery" });
+      await w.as(w.supervisor).leave.decide(actor, w.workspaceId, away.id, { decision: "approve", reason: "Get well" });
+      await w.client.query("SET LOCAL session_replication_role = replica");
+      await w.client.query(`INSERT INTO work_items(id,workspace_id,project_id,number,type,title,status,priority,assignee_membership_id,start_date,due_date,created_by)
+        VALUES($1,$2,$3,1,'task','Shop drawings','todo','normal',$4,'2026-10-05','2026-10-09',$5)`, [randomUUID(), w.workspaceId, project, w.designerMember, w.owner]);
+      await w.client.query("SET LOCAL session_replication_role = origin");
+      expect((await readItems(w.client, w.workspaceId, project))[0].assigneeAway).toEqual([{ startDate: "2026-10-06", endDate: "2026-10-07" }]);
+
+      // Payroll for September: Dana's two days worked are timesheets, not attendance, so her attendance shows days away.
+      const payroll = await owner.payroll.month(actor, w.workspaceId, "2026-09");
+      const row = payroll.people.find((person: { membershipId: string }) => person.membershipId === w.designerMember);
+      expect(row).toMatchObject({ employeeCode: "D-1", workedDays: 0, paidLeaveDays: 0, unpaidLeaveDays: 0 });
+      expect(row.scheduledDays).toBeGreaterThan(0);
+      expect(row.absentDays).toBe(row.scheduledDays);
+      const csv = await owner.payroll.export(actor, w.workspaceId, "2026-09", "employees");
+      expect(csv.startsWith("\ufeff\"Employee\",\"Code\"")).toBe(true);
+      await expect(designer.payroll.month(actor, w.workspaceId, "2026-09")).rejects.toThrow("You do not have access");
     });
   });
 });
