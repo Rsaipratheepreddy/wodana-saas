@@ -6,9 +6,10 @@ if (!databaseUrl) {
   throw new Error("MIGRATION_DATABASE_URL or DATABASE_URL is required");
 }
 
+// Each entry is read before a tenant is known (sign-in, MFA, vendor links, login branding)
+// or by a leased cross-tenant job; everything else with workspace_id must force RLS.
 const intentionalExceptions = [
   "auth_mfa_challenges",
-  "client_portal_settings",
   "commercial_reconciliation_jobs",
   "customer_account_organizations",
   "mfa_security_events",

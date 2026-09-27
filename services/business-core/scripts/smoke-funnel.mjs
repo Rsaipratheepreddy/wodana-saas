@@ -903,26 +903,20 @@ const reopened = await request(`/workspaces/${workspaceId}/pre-projects/${caseId
 assert.equal(reopened.status, "active");
 assert.equal(reopened.phase, "define");
 
-const portalSettings = await request(
-  `/workspaces/${workspaceId}/commercial/portal-settings`,
-);
-await request(`/workspaces/${workspaceId}/commercial/portal-settings`, {
-  body: {
-    version: portalSettings.version,
-    enabled: true,
-    brand: palmFixture ? {
-      ...portalSettings.brand,
-      name: "Palm Living",
-      primaryColor: palmLivingBrandFixture.secondaryColor,
-      accentColor: palmLivingBrandFixture.primaryColor,
-      layout: "minimal",
-    } : portalSettings.brand,
-  },
+// The client portal is switched on in Settings → Client portal; its brand is the tenant's own (Appearance).
+const portalPath = `/workspaces/${workspaceId}/client-portal`;
+const portalSettings = await request(`${portalPath}/settings`);
+assert.equal(portalSettings.canManage, true);
+assert.equal(portalSettings.demo, true, "The isolated smoke signs clients in with local test codes only.");
+const enabledPortal = await request(`${portalPath}/settings`, {
+  body: { version: portalSettings.settings.version, enabled: true },
   method: "PUT",
+  expected: 200,
 });
+assert.equal(enabledPortal.settings.enabled, true);
 const commercialPath = `/workspaces/${workspaceId}/commercial/cases/${caseId}`;
 const mobile = `+9715${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
-await request(`${commercialPath}/contacts`, {
+const portalContacts = await request(`${portalPath}/cases/${caseId}/contacts`, {
   body: {
     name: fixture.customerName,
     phone: mobile,
@@ -930,7 +924,9 @@ await request(`${commercialPath}/contacts`, {
     testContact: true,
   },
   method: "PUT",
+  expected: 200,
 });
+assert(portalContacts.contacts.some((contact) => contact.phone === mobile && contact.role === "approver" && contact.testContact));
 
 const roomId = randomUUID();
 const scopeId = randomUUID();
@@ -1143,8 +1139,12 @@ const definitionReplay = await request(`${contentPath}/definition-baselines`, {
 assert.equal(definitionReplay.id, definitionBaseline.id);
 assert.equal(definitionReplay.replayed, true);
 
+// The client signs in with a code (the local test contact always gets 123456) and decides with a fresh
+// code bound to the exact record and choice ("definition:<case>:<baseline>:accept").
+const portalSite = await request(`/client-portal/${slug}/site`, { headers: {} });
+assert.equal(portalSite.slug, slug);
 const loginChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: { phone: mobile, purpose: "login" },
+  body: { phone: mobile },
   headers: {},
 });
 const clientToken = (
@@ -1153,36 +1153,32 @@ const clientToken = (
     headers: {},
   })
 ).token;
+assert(clientToken, "The client portal must open a session.");
 const clientHeaders = { authorization: `Bearer ${clientToken}` };
-const definitionPortal = await request(`/client-portal/${slug}/data`, {
+async function portalDecision(action, purpose, body) {
+  const challenge = await request(`/client-portal/${slug}/challenge`, {
+    body: { purpose },
+    headers: clientHeaders,
+  });
+  const command = { commandId: randomUUID(), action, caseId, ...body, challengeId: challenge.challengeId, code: "123456" };
+  const result = await request(`/client-portal/${slug}/command`, { body: command, headers: clientHeaders });
+  assert.equal(result.ok, true);
+  return { command, result };
+}
+const definitionPortal = await request(`/client-portal/${slug}/view`, {
   headers: clientHeaders,
 });
-const portalBaseline = definitionPortal.cases.find((item) => item.id === caseId).definitionBaseline;
+const portalBaseline = definitionPortal.projects.find((item) => item.id === caseId).decisions.definition;
 assert.equal(portalBaseline.id, definitionBaseline.id);
 assert.equal(portalBaseline.canDecide, true);
 assert.equal(JSON.stringify(portalBaseline).includes("objectKey"), false);
-const definitionChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: {
-    phone: mobile,
-    purpose: `definition-decision:${caseId}:${definitionBaseline.id}:accept`,
-  },
-  headers: clientHeaders,
-});
-const definitionDecision = {
-  caseId,
-  action: "definition-decision",
-  baselineId: definitionBaseline.id,
-  decision: "accept",
-  note: "",
-  challengeId: definitionChallenge.challengeId,
-  code: "123456",
-};
-await request(`/client-portal/${slug}/action`, {
-  body: definitionDecision,
-  headers: clientHeaders,
-});
-const definitionDecisionReplay = await request(`/client-portal/${slug}/action`, {
-  body: definitionDecision,
+const definitionDecision = await portalDecision(
+  "definition_decision",
+  `definition:${caseId}:${definitionBaseline.id}:accept`,
+  { baselineId: definitionBaseline.id, decision: "accept", note: "" },
+);
+const definitionDecisionReplay = await request(`/client-portal/${slug}/command`, {
+  body: definitionDecision.command,
   headers: clientHeaders,
 });
 assert.equal(definitionDecisionReplay.replayed, true);
@@ -1252,25 +1248,11 @@ const replacementBaseline = await request(`${contentPath}/definition-baselines`,
 });
 assert.equal(replacementBaseline.number, 2);
 assert.equal(replacementBaseline.supersedesId, definitionBaseline.id);
-const replacementChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: {
-    phone: mobile,
-    purpose: `definition-decision:${caseId}:${replacementBaseline.id}:accept`,
-  },
-  headers: clientHeaders,
-});
-await request(`/client-portal/${slug}/action`, {
-  body: {
-    caseId,
-    action: "definition-decision",
-    baselineId: replacementBaseline.id,
-    decision: "accept",
-    note: "",
-    challengeId: replacementChallenge.challengeId,
-    code: "123456",
-  },
-  headers: clientHeaders,
-});
+await portalDecision(
+  "definition_decision",
+  `definition:${caseId}:${replacementBaseline.id}:accept`,
+  { baselineId: replacementBaseline.id, decision: "accept", note: "" },
+);
 const preparationReadiness = await request(`${contentPath}/readiness?target=pricing`);
 assert.equal(preparationReadiness.ready, true);
 assert.equal(preparationReadiness.summary.evaluatedItemCount, 1);
@@ -1383,22 +1365,13 @@ commercialState = await request(commercialPath);
 const approverId = commercialState.contacts.find((contact) => contact.phone === mobile).id;
 await commercial("issue", { approverId });
 
-const decisionChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: { phone: mobile, purpose: `decision:${caseId}:${quoteId}:accept` },
-  headers: clientHeaders,
+const issuedInPortal = (await request(`/client-portal/${slug}/view`, { headers: clientHeaders }))
+  .projects.find((item) => item.id === caseId).decisions.quotes.find((item) => item.id === quoteId);
+assert.equal(issuedInPortal.canDecide, true);
+await portalDecision("quote_decision", `quote:${caseId}:${quoteId}:accept`, {
+  quoteId, decision: "accept", selectedOptionLineIds: [], note: "", hash: issuedInPortal.hash,
 });
-await request(`/client-portal/${slug}/action`, {
-  body: {
-    caseId,
-    action: "decision",
-    quoteId,
-    decision: "accept",
-    note: "",
-    challengeId: decisionChallenge.challengeId,
-    code: "123456",
-  },
-  headers: clientHeaders,
-});
+assert.equal((await request(commercialPath)).data.quotes.find((candidate) => candidate.id === quoteId).status, "accepted");
 
 await commercial("agreement", {
   quoteId,
