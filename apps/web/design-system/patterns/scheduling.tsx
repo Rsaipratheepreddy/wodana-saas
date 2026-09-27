@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, Clock3 } from "lucide-react";
 import { Badge } from "../components/status";
 import { formatDate } from "../foundations/formatters";
@@ -25,6 +25,10 @@ export type GanttRow = {
   tone?: "default" | "late" | "done" | "blocked"; depth?: 0 | 1;
   /** On the critical path: drawn with a strong edge (the row's label says so too). */
   critical?: boolean;
+  /** Short text on the bar (e.g. "WO-0001 · 40 h"); it runs on beside the bar when the bar is too short. */
+  barLabel?: string;
+  /** The bar runs past the visible days on that side, so that end is drawn squared off. */
+  continues?: "start" | "end" | "both";
 };
 export type GanttGroup = { id: string; label: string; rows: GanttRow[] };
 
@@ -37,6 +41,22 @@ export function Gantt({ ariaLabel, days, groups, labelHeader, markers = [], onRo
 }) {
   const column = (from: number, to: number) => ({ gridColumn: `${from + 1} / ${to + 2}` });
   const box = useRef<HTMLDivElement>(null);
+  // Which side still has days out of view: that edge fades, so a bar cut by the edge reads as continuing.
+  const [more, setMore] = useState<{ start: boolean; end: boolean }>({ start: false, end: false });
+  useEffect(() => {
+    const frame = box.current;
+    if (!frame) return;
+    const measure = () => {
+      const hidden = frame.scrollWidth - frame.clientWidth;
+      const from = Math.abs(frame.scrollLeft);
+      setMore({ start: hidden > 1 && from > 1, end: hidden > 1 && hidden - from > 1 });
+    };
+    measure();
+    frame.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(frame);
+    return () => { frame.removeEventListener("scroll", measure); observer?.disconnect(); };
+  }, [days.length]);
   // Open on today: two days before it sit right after the names, whichever way the page reads.
   useEffect(() => {
     const frame = box.current;
@@ -53,8 +73,10 @@ export function Gantt({ ariaLabel, days, groups, labelHeader, markers = [], onRo
     else list[list.length - 1].to = index;
     return list;
   }, []);
-  return <div aria-label={ariaLabel} className="wd-gantt" ref={box} role="region" tabIndex={0}>
-    <div className="wd-gantt-canvas" style={{ "--wd-gantt-days": days.length } as React.CSSProperties}>
+  // The frame is the size the days fit into: a day is as wide as the space allows, never narrower than a
+  // readable minimum, and the timeline scrolls (without a scrollbar) only when the days don't fit.
+  return <div className="wd-gantt-frame" data-more-end={more.end || undefined} data-more-start={more.start || undefined}><div aria-label={ariaLabel} className="wd-gantt wd-scroll-quiet" ref={box} role="region" tabIndex={0} style={{ "--wd-gantt-days": days.length } as React.CSSProperties}>
+    <div className="wd-gantt-canvas">
       <div aria-hidden="true" className="wd-gantt-shade">
         {days.map((day) => <i data-off={day.off || undefined} data-today={day.today || undefined} key={day.date} />)}
         {markers.map((marker) => <b key={marker.label} style={column(marker.index, marker.index)} title={marker.label} />)}
@@ -70,16 +92,16 @@ export function Gantt({ ariaLabel, days, groups, labelHeader, markers = [], onRo
         <div className="wd-gantt-group">{group.label}</div>
         {group.rows.map((row) => <div className="wd-gantt-row" key={row.id}>
           <span className="wd-gantt-label" data-depth={row.depth || undefined}>
-            {onRowAction ? <button aria-label={row.ariaLabel} onClick={() => onRowAction(row.id)} type="button">{row.label}</button> : row.label}
+            {onRowAction ? <button aria-label={row.ariaLabel} onClick={() => onRowAction(row.id)} title={row.ariaLabel} type="button">{row.label}</button> : row.label}
           </span>
           <div className="wd-gantt-track">
             {row.baseline ? <span aria-hidden="true" className="wd-gantt-baseline" style={column(row.baseline.start, row.baseline.end)} /> : null}
-            {row.start !== undefined && row.end !== undefined ? <span aria-hidden="true" className="wd-gantt-bar" data-tone={row.tone ?? "default"} data-critical={row.critical || undefined} onClick={onRowAction ? () => onRowAction(row.id) : undefined} style={column(row.start, row.end)} /> : null}
+            {row.start !== undefined && row.end !== undefined ? <span aria-hidden="true" className="wd-gantt-bar" data-tone={row.tone ?? "default"} data-critical={row.critical || undefined} data-continues={row.continues} onClick={onRowAction ? () => onRowAction(row.id) : undefined} style={column(row.start, row.end)}>{row.barLabel ? <span className="wd-gantt-bar-label">{row.barLabel}</span> : null}</span> : null}
           </div>
         </div>)}
       </section>)}
     </div>
-  </div>;
+  </div></div>;
 }
 
 export function Availability({ label, slots }: { label: string; slots: Array<{ start: string; end: string; available: boolean }> }) { return <div className="wd-availability"><header><CalendarDays size={15} /><strong>{label}</strong></header>{slots.map((slot) => <span data-available={slot.available} key={`${slot.start}-${slot.end}`}>{slot.start}–{slot.end}</span>)}</div>; }

@@ -703,9 +703,18 @@
 .wd-week-schedule article small { display: block; }
 .wd-week-hours { padding-block-start: var(--wd-space-12); }
 .wd-week-hours span { block-size: 3rem; display: block; padding: var(--wd-space-1); color: var(--wd-muted); font-size: var(--wd-text-2xs); }
-.wd-gantt { --wd-gantt-label: 16rem; --wd-gantt-day: var(--wd-space-8); max-inline-size: 100%; overflow: auto; border-block-start: 1px solid var(--wd-color-structural-divider); }
+.wd-gantt-frame { position: relative; container-type: inline-size; max-inline-size: 100%; }
+/* Days out of view: that edge fades over the timeline (never over the names). */
+.wd-gantt-frame::before, .wd-gantt-frame::after { content: ""; position: absolute; inset-block: 0; z-index: 3; inline-size: var(--wd-space-10); opacity: 0; pointer-events: none; transition: opacity var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-gantt-frame::before { inset-inline-start: var(--wd-gantt-label, 18rem); background: linear-gradient(to right, var(--wd-color-surface), transparent); }
+.wd-gantt-frame::after { inset-inline-end: 0; background: linear-gradient(to left, var(--wd-color-surface), transparent); }
+:where([dir="rtl"]) .wd-gantt-frame::before { background: linear-gradient(to left, var(--wd-color-surface), transparent); }
+:where([dir="rtl"]) .wd-gantt-frame::after { background: linear-gradient(to right, var(--wd-color-surface), transparent); }
+.wd-gantt-frame[data-more-start]::before, .wd-gantt-frame[data-more-end]::after { opacity: 1; }
+@media (max-width: 640px) { .wd-gantt-frame::before { inset-inline-start: 10rem; } }
+.wd-gantt { --wd-gantt-label: 18rem; --wd-gantt-day: max(var(--wd-space-6), calc((100cqi - var(--wd-gantt-label)) / var(--wd-gantt-days, 28))); max-inline-size: 100%; overflow: auto; border-block-start: 1px solid var(--wd-color-structural-divider); }
 .wd-gantt:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
-.wd-gantt-canvas { position: relative; inline-size: max-content; min-inline-size: 100%; }
+.wd-gantt-canvas { position: relative; inline-size: max-content; min-inline-size: 100%; padding-block-end: var(--wd-space-6); }
 .wd-gantt-shade { position: absolute; inset-block: 0; inset-inline-start: var(--wd-gantt-label); display: grid; grid-template-columns: repeat(var(--wd-gantt-days), var(--wd-gantt-day)); pointer-events: none; }
 .wd-gantt-shade > i { grid-row: 1; }
 .wd-gantt-shade > i[data-off] { background: var(--wd-color-surface-subtle); }
@@ -718,20 +727,26 @@
 .wd-gantt-month { grid-row: 1; padding: var(--wd-space-1) var(--wd-space-1-5) 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); white-space: nowrap; }
 .wd-gantt-month > span { position: sticky; inset-inline-start: calc(var(--wd-gantt-label) + var(--wd-space-1-5)); }
 .wd-gantt-day { grid-row: 2; display: grid; place-items: center; block-size: var(--wd-space-6); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-variant-numeric: tabular-nums; }
-.wd-gantt-day[data-today] { color: var(--wd-color-action-primary); font-weight: var(--wd-weight-semibold); }
+/* The header carries the same shading as the columns, so days off and today read as continuous stripes. */
+.wd-gantt-day[data-off] { background: var(--wd-color-surface-subtle); }
+.wd-gantt-day[data-today] { background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-weight: var(--wd-weight-semibold); }
 .wd-gantt-group { min-block-size: var(--wd-control-sm); align-items: center; }
 .wd-gantt-group, .wd-gantt-label { position: sticky; inset-inline-start: 0; z-index: 1; }
 .wd-gantt-group { grid-template-columns: var(--wd-gantt-label); padding-inline: var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); inline-size: var(--wd-gantt-label); background: var(--wd-color-surface); }
 .wd-gantt-row { min-block-size: var(--wd-control-sm); align-items: center; }
 .wd-gantt-row:hover .wd-gantt-label { background: var(--wd-color-surface-hover); }
-.wd-gantt-label { display: flex; align-items: center; min-inline-size: 0; block-size: 100%; padding-inline: var(--wd-space-3); background: var(--wd-color-surface); font-size: var(--wd-text-sm); }
+.wd-gantt-label { display: flex; align-items: center; min-inline-size: 0; block-size: 100%; padding-block: var(--wd-space-1); padding-inline: var(--wd-space-3); background: var(--wd-color-surface); font-size: var(--wd-text-sm); }
 .wd-gantt-label[data-depth] { padding-inline-start: var(--wd-space-8); }
 .wd-gantt-label > button { display: flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; inline-size: 100%; padding: 0; border: 0; background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
 .wd-gantt-label > button > * { flex: none; }
-.wd-gantt-label > button > :last-child { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wd-gantt-label > button > :last-child { flex: 1; min-inline-size: 0; white-space: normal; overflow-wrap: break-word; line-height: 1.3; }
 .wd-gantt-label > button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
 .wd-gantt-track { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(var(--wd-gantt-days), var(--wd-gantt-day)); grid-template-rows: var(--wd-space-5) var(--wd-space-1); align-content: center; row-gap: var(--wd-space-0-5); }
-.wd-gantt-bar { grid-row: 1; margin-inline: var(--wd-space-0-5); border: 1px solid var(--wd-color-info); border-radius: var(--wd-radius-xs); background: var(--wd-color-info-subtle); cursor: pointer; }
+.wd-gantt-bar { position: relative; grid-row: 1; min-inline-size: 0; margin-inline: var(--wd-space-0-5); border: 1px solid var(--wd-color-info); border-radius: var(--wd-radius-xs); background: var(--wd-color-info-subtle); cursor: pointer; }
+.wd-gantt-bar-label { position: absolute; inset-block-start: 50%; inset-inline-start: var(--wd-space-1-5); transform: translateY(-50%); white-space: nowrap; color: var(--wd-color-text); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); line-height: 1; pointer-events: none; }
+/* A bar that runs past the visible days is squared off on that side. */
+.wd-gantt-bar[data-continues="end"], .wd-gantt-bar[data-continues="both"] { margin-inline-end: 0; border-inline-end-width: 0; border-start-end-radius: 0; border-end-end-radius: 0; }
+.wd-gantt-bar[data-continues="start"], .wd-gantt-bar[data-continues="both"] { margin-inline-start: 0; border-inline-start-width: 0; border-start-start-radius: 0; border-end-start-radius: 0; }
 .wd-gantt-bar[data-tone="done"] { border-color: var(--wd-color-success); background: var(--wd-color-success-subtle); }
 .wd-gantt-bar[data-tone="late"] { border-color: var(--wd-color-danger); background: var(--wd-color-danger-subtle); }
 .wd-gantt-bar[data-tone="blocked"] { border-color: var(--wd-color-warning); background: var(--wd-color-warning-subtle); }
