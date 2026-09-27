@@ -2374,7 +2374,7 @@ export class CommercialService {
               );
             if (action === "qs_approve") {
               if (!data.palmFlow || q.kind !== "quotation")
-                throw new ConflictException("QS estimate review applies to a Palm quotation round.");
+                throw new ConflictException("QS estimate review applies to a quotation round in the deal-first workflow.");
               const estimate = totals(q);
               if (estimate.cost <= 0)
                 throw new ConflictException("Enter the QS cost estimate for the quotation items before approving pricing.");
@@ -2384,7 +2384,7 @@ export class CommercialService {
                 reviewedById: user.userId, reviewedBy: user.displayName,
               };
             } else if (data.palmFlow && q.kind === "quotation") {
-              throw new ConflictException("A Quantity Surveyor must review this Palm quotation before it is issued.");
+              throw new ConflictException("A Quantity Surveyor must review this quotation before it is issued.");
             }
             q.status = "internal_approved";
             q.approvedBy = user.displayName;
