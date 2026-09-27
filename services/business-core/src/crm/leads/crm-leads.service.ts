@@ -36,6 +36,34 @@ import { evaluateQualification, QualificationEvaluation } from "./qualification-
 import { hasResolvedEnquiryType } from "./lead-options";
 
 const ACTIVE_LEAD_STATUSES = ["new", "attempting_contact", "connected", "nurturing", "paused"];
+/** Who can own an enquiry: an active member (with an active account) holding enquiry view and manage and follow-up access. */
+const SALES_OWNER_PERMISSIONS = ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"];
+/**
+ * The sales owners one rule decides, for both the list people pick from and the check on save:
+ * $1 workspace, $2 one membership or null for all, $3/$4 the permissions and their count,
+ * $5 a queue (available in it) or null.
+ */
+const ELIGIBLE_SALES_OWNERS_SQL = `SELECT membership.id, coalesce(nullif(btrim(account.display_name), ''), account.primary_email) AS "displayName",
+         account.primary_email AS email
+       FROM workspace_memberships membership
+       JOIN users account ON account.id=membership.user_id AND account.status='active'
+       WHERE membership.workspace_id=$1 AND ($2::uuid IS NULL OR membership.id=$2) AND membership.status='active'
+         AND (SELECT count(DISTINCT permission.code)
+              FROM effective_member_roles assigned
+              JOIN role_permissions granted ON granted.role_id=assigned.role_id
+              JOIN permissions permission ON permission.id=granted.permission_id
+              WHERE assigned.workspace_id=membership.workspace_id
+                AND assigned.membership_id=membership.id
+                AND permission.code=ANY($3::text[]))=$4
+         AND ($5::uuid IS NULL OR EXISTS (
+           SELECT 1 FROM crm_effective_queue_members queue_member
+           WHERE queue_member.workspace_id=membership.workspace_id
+             AND queue_member.queue_id=$5 AND queue_member.membership_id=membership.id
+             AND queue_member.is_available
+             AND (queue_member.unavailable_until IS NULL OR queue_member.unavailable_until<=now())
+         ))
+       ORDER BY lower(coalesce(nullif(btrim(account.display_name), ''), account.primary_email)), membership.id`;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 const TRANSITIONS: Record<string, Set<string>> = {
   new: new Set(["attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused"]),
@@ -492,6 +520,24 @@ export class CrmLeadsService {
         action: "crm.queue.created.v1", entityType: "crm_queue", entityId: String(response.id), after: response,
       });
       return response;
+    });
+  }
+
+  /**
+   * The sales owners an enquiry can be given to (optionally those available in one queue), for anyone
+   * who may create or assign enquiries — without the member directory. Includes the caller's own
+   * membership, so a salesperson can pick (and default to) themselves.
+   */
+  salesOwners(actor: RequestActor, workspaceId: string, queueId?: string) {
+    if (queueId !== undefined && queueId !== "" && !UUID_PATTERN.test(queueId)) throw new BadRequestException("Queue is not valid");
+    return this.access.withAnyPermission(actor, workspaceId, ["crm.leads.manage", "crm.leads.assign"], async (client, actorUser) => {
+      const queue = queueId || null;
+      if (queue) await this.requireQueue(client, workspaceId, queue);
+      const owners = await client.query<{ id: string; displayName: string; email: string }>(ELIGIBLE_SALES_OWNERS_SQL,
+        [workspaceId, null, SALES_OWNER_PERMISSIONS, SALES_OWNER_PERMISSIONS.length, queue]);
+      const self = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`, [workspaceId, actorUser.userId]);
+      return { items: owners.rows.map((owner) => ({ ...owner, status: "active" })), currentMembershipId: self.rows[0]?.id ?? null };
     });
   }
 
@@ -1233,26 +1279,8 @@ export class CrmLeadsService {
     membershipId: string,
     queueId: string | null,
   ) {
-    const eligible = await client.query(
-      `SELECT 1
-       FROM workspace_memberships membership
-       JOIN users account ON account.id=membership.user_id AND account.status='active'
-       WHERE membership.workspace_id=$1 AND membership.id=$2 AND membership.status='active'
-         AND (SELECT count(DISTINCT permission.code)
-              FROM effective_member_roles assigned
-              JOIN role_permissions granted ON granted.role_id=assigned.role_id
-              JOIN permissions permission ON permission.id=granted.permission_id
-              WHERE assigned.workspace_id=membership.workspace_id
-                AND assigned.membership_id=membership.id
-                AND permission.code=ANY($3::text[]))=$4
-         AND ($5::uuid IS NULL OR EXISTS (
-           SELECT 1 FROM crm_effective_queue_members queue_member
-           WHERE queue_member.workspace_id=membership.workspace_id
-             AND queue_member.queue_id=$5 AND queue_member.membership_id=membership.id
-             AND queue_member.is_available
-             AND (queue_member.unavailable_until IS NULL OR queue_member.unavailable_until<=now())
-         ))`,
-      [workspaceId, membershipId, ["crm.leads.view", "crm.leads.manage", "crm.activities.manage"], 3, queueId],
+    const eligible = await client.query(ELIGIBLE_SALES_OWNERS_SQL,
+      [workspaceId, membershipId, SALES_OWNER_PERMISSIONS, SALES_OWNER_PERMISSIONS.length, queueId],
     );
     if (!eligible.rowCount) {
       throw new UnprocessableEntityException(

@@ -173,3 +173,37 @@ it("doesn't ask for a region when the workspace lists none", async () => {
   await user.click(screen.getByRole("button", { name: "Create enquiry" }));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
 });
+
+const SARA = "20000000-0000-4000-8000-000000000001";
+const ZAID = "20000000-0000-4000-8000-000000000002";
+const salesperson = (data: typeof leadsPageFixture) => {
+  // A salesperson can't read the member directory; the sales owners come from their own list.
+  data.members = [];
+  data.currentMembershipId = SARA;
+  data.salesOwners = [{ id: SARA, displayName: "Sara", email: "sara@example.com", status: "active" }, { id: ZAID, displayName: "Zaid", email: "zaid@example.com", status: "active" }];
+};
+
+it("lets a salesperson own the enquiry they create: they are the default sales owner", async () => {
+  const { user, fetchMock, onSaved } = setup(undefined, salesperson);
+  expect(screen.getByRole("button", { name: /Sales owner/ })).toHaveTextContent("Sara");
+  await user.type(screen.getByLabelText(/Customer name/), "Walk-in customer");
+  await completeRequired(user);
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ assignment: { mode: "manual", ownerMembershipId: SARA } });
+});
+
+it("offers every assignable sales owner, not only the salesperson", async () => {
+  const { user, fetchMock, onSaved } = setup(undefined, salesperson);
+  await choose(user, /Sales owner/, "Zaid");
+  await user.type(screen.getByLabelText(/Customer name/), "Referred customer");
+  await completeRequired(user);
+  await user.click(screen.getByRole("button", { name: "Create enquiry" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("saved"));
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ assignment: { mode: "manual", ownerMembershipId: ZAID } });
+});
+
+it("doesn't preselect someone who can't own enquiries", async () => {
+  setup(undefined, (data) => { salesperson(data); data.currentMembershipId = "20000000-0000-4000-8000-000000000009"; });
+  expect(screen.getByRole("button", { name: /Sales owner/ })).not.toHaveTextContent(/Sara|Zaid/);
+});
