@@ -2,13 +2,25 @@
 
 import { ChevronLeft, ChevronRight, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 import type { WoddyPose } from "@wodana/contracts/brand";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n/i18n-provider";
+import { cursorOffset, placeBubble, pointerTip, restingTip, spotlightHole, viewport, watchTarget, type TargetView } from "@/lib/tours/position";
 import { Button, IconButton } from "../components/actions";
 import { Woddy } from "../components/woddy";
 
-type Box = { top: number; left: number; width: number; height: number };
+/** The person working on the current step, as the cursor and the switch card show them. */
+export type TourPersonaView = {
+  id: string;
+  /** "Finance" */
+  label: string;
+  /** "Now as Finance" */
+  switchLine: string;
+  /** The brand role picture. */
+  avatar: string;
+  /** A colour token (`var(--wd-color-…)`) for the cursor and name chip. */
+  color: string;
+};
 
 export type TourOverlayProps = {
   /** The tour's name, for assistive technology. */
@@ -42,90 +54,60 @@ export type TourOverlayProps = {
   direction?: "ltr" | "rtl";
   /** Tenant brand variables, so the cursor and actions follow the workspace colour. */
   style?: CSSProperties;
-  /** Where the step is (seeking, moving, acting, speaking, resting); exposed for replay scripts. */
+  /** Where the step is (switching, loading, seeking, moving, acting, speaking, resting); exposed for replay scripts. */
   phase?: string;
+  /** Who is working on this step: the cursor takes their colour and name. */
+  persona?: TourPersonaView | null;
 };
-
-const SPOT_PADDING = 8;
-const GAP = 16;
-const EDGE = 16;
-
-function boxOf(element: HTMLElement | null): Box | null {
-  if (!element?.isConnected) return null;
-  const rect = element.getBoundingClientRect();
-  if (!rect.width && !rect.height) return null;
-  // A field's open suggestions belong to it: keep them in the spotlight and out from under the bubble.
-  const controlled = element.getAttribute("aria-controls");
-  const list = controlled && element.getAttribute("aria-expanded") === "true" ? document.getElementById(controlled)?.getBoundingClientRect() : null;
-  if (!list || (!list.width && !list.height)) return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
-  const top = Math.min(rect.top, list.top), left = Math.min(rect.left, list.left);
-  return { top, left, width: Math.max(rect.right, list.right) - left, height: Math.max(rect.bottom, list.bottom) - top };
-}
-
-function sameBox(a: Box | null, b: Box | null) {
-  if (!a || !b) return a === b;
-  return Math.abs(a.top - b.top) < 0.5 && Math.abs(a.left - b.left) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
-}
-
-/** Keeps a live viewport box for an element (it scrolls, resizes and moves with the page). */
-function useLiveBox(element: HTMLElement | null) {
-  const [box, setBox] = useState<Box | null>(null);
-  useEffect(() => {
-    let frame = 0;
-    let last: Box | null = null;
-    const tick = () => {
-      const next = boxOf(element);
-      if (!sameBox(last, next)) { last = next; setBox(next); }
-      frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(frame);
-  }, [element]);
-  return box;
-}
 
 function reducedMotion() {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 
-function viewport() {
-  return { width: document.documentElement.clientWidth || window.innerWidth, height: window.innerHeight };
+/**
+ * Keeps a live view of an element: its box and the part of it that can be seen right now. Until a new element
+ * has been measured the last measurement stands, so nothing jumps to a guessed place in between.
+ */
+function useTargetView(element: HTMLElement | null) {
+  const [view, setView] = useState<TargetView | null>(null);
+  useEffect(() => watchTarget(element, setView), [element]);
+  return element ? view : null;
 }
 
-/** Where the bubble goes: beside the target, never on it; pinned to the bottom when the target fills the screen. */
-function placeBubble(target: Box | null, bubble: { width: number; height: number }, view: { width: number; height: number }) {
-  const clampLeft = (left: number) => Math.min(Math.max(EDGE, left), view.width - bubble.width - EDGE);
-  const clampTop = (top: number) => Math.min(Math.max(EDGE, top), view.height - bubble.height - EDGE);
-  if (!target) return { top: view.height - bubble.height - EDGE * 2, left: (view.width - bubble.width) / 2 };
-  const below = view.height - (target.top + target.height);
-  if (below >= bubble.height + GAP * 2) return { top: target.top + target.height + GAP, left: clampLeft(target.left) };
-  if (target.top >= bubble.height + GAP * 2) return { top: target.top - bubble.height - GAP, left: clampLeft(target.left) };
-  const after = view.width - (target.left + target.width);
-  if (after >= bubble.width + GAP * 2) return { top: clampTop(target.top), left: target.left + target.width + GAP };
-  if (target.left >= bubble.width + GAP * 2) return { top: clampTop(target.top), left: target.left - bubble.width - GAP };
-  return { top: view.height - bubble.height - EDGE, left: clampLeft(view.width - bubble.width - EDGE) };
-}
+const subscribeNothing = () => () => undefined;
 
 /**
- * Woddy explains: a soft spotlight on the part being explained, Woddy's cursor gliding there and clicking,
- * and a caption bubble with the line, the step count and the player controls. Rendered in the top layer so
- * app dialogs neither hide nor dismiss it; the page underneath is not interactive while it shows.
+ * Woddy explains: a soft spotlight on the part being explained, the cursor of the person working on the step
+ * gliding there and clicking, and a caption bubble with the line, the step count and the player controls.
+ * Rendered in the top layer so app dialogs neither hide nor dismiss it; the page underneath is not interactive
+ * while it shows. The cursor never points at a stale place: it follows its target as the page scrolls or
+ * changes, and hides while the target is out of sight or another screen is loading.
  */
 export function TourOverlay(props: TourOverlayProps) {
   const t = useT();
-  const { title, step, total, text, note, pose, pointer, spotlight, clicks, glideMs, playing, finished, speed, speeds, onSpeed, voice, onVoice, onToggle, onBack, onNext, onExit, nextTour, direction = "ltr", style, phase } = props;
+  const { title, step, total, text, note, pose, pointer, spotlight, clicks, glideMs, playing, finished, speed, speeds, onSpeed, voice, onVoice, onToggle, onBack, onNext, onExit, nextTour, direction = "ltr", style, phase, persona } = props;
   const bubble = useRef<HTMLElement>(null);
   const [bubbleSize, setBubbleSize] = useState({ width: 352, height: 160 });
-  const [mounted, setMounted] = useState(false);
-  const spot = useLiveBox(spotlight);
-  const aim = useLiveBox(pointer);
+  // Rendered in the browser only (it measures the page); false during server rendering and hydration.
+  const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
+  const loading = phase === "loading";
+  const switching = phase === "switching";
+  const spot = useTargetView(loading || switching ? null : spotlight);
+  const aim = useTargetView(loading || switching ? null : pointer);
   const rtl = direction === "rtl";
   // A new spotlight target remounts the cut-out, so under reduced motion it fades in instead of sliding.
   const [spotKey, setSpotKey] = useState(0);
   const [spotFor, setSpotFor] = useState<HTMLElement | null>(null);
   if (spotFor !== spotlight) { setSpotFor(spotlight); if (reducedMotion()) setSpotKey((key) => key + 1); }
-
-  useEffect(() => { setMounted(true); }, []);
+  // The cursor glides to a new target, then follows it exactly (no lag while the page scrolls under it).
+  const [gliding, setGliding] = useState(false);
+  const [glideFor, setGlideFor] = useState<HTMLElement | null>(null);
+  if (glideFor !== pointer) { setGlideFor(pointer); setGliding(true); }
+  useEffect(() => {
+    if (!gliding) return;
+    const timer = window.setTimeout(() => setGliding(false), glideMs + 60);
+    return () => window.clearTimeout(timer);
+  }, [gliding, glideMs, glideFor]);
 
   // Focus moves to the bubble while it shows and returns where it was afterwards.
   useEffect(() => {
@@ -164,24 +146,20 @@ export function TourOverlay(props: TourOverlayProps) {
 
   if (!mounted) return null;
   const view = viewport();
-  const hole = spot ? {
-    top: Math.max(0, spot.top - SPOT_PADDING),
-    left: Math.max(0, spot.left - SPOT_PADDING),
-    width: Math.min(view.width, spot.width + SPOT_PADDING * 2),
-    height: Math.min(view.height - Math.max(0, spot.top - SPOT_PADDING), spot.height + SPOT_PADDING * 2),
-  } : null;
+  const hole = spot ? spotlightHole(spot.box, view) : null;
   const place = placeBubble(hole, bubbleSize, view);
   // Logical offsets: inline-start is the right edge in right-to-left.
   const inlineStart = (left: number, width: number) => (rtl ? view.width - left - width : left);
   const spotStyle: CSSProperties = hole
     ? { insetBlockStart: hole.top, insetInlineStart: inlineStart(hole.left, hole.width), inlineSize: hole.width, blockSize: hole.height }
     : { insetBlockStart: view.height / 2, insetInlineStart: view.width / 2, inlineSize: 0, blockSize: 0 };
-  // The cursor tip rests near the target's start, or beside the bubble when nothing is pointed at.
-  const tip = aim
-    ? { x: rtl ? aim.left + aim.width - Math.min(aim.width / 2, 56) : aim.left + Math.min(aim.width / 2, 56), y: aim.top + Math.min(aim.height / 2, 28) }
-    : { x: rtl ? place.left + bubbleSize.width - 24 : place.left + 24, y: place.top - 12 };
-  const cursorStyle: CSSProperties = { transform: `translate(${rtl ? tip.x - view.width : tip.x}px, ${tip.y}px)` };
-  const rootStyle = { ...style, "--wd-tour-glide": `${Math.round(glideMs)}ms` } as CSSProperties;
+  // The cursor points at what can be seen of its target; with nothing to point at it rests by the bubble; it
+  // hides while its target is out of sight, while another screen loads and while someone else takes over.
+  const hidden = finished || loading || switching || Boolean(pointer && !aim?.visible);
+  const tip = aim?.visible ? pointerTip(aim.visible, rtl) : restingTip({ ...place, width: bubbleSize.width }, rtl);
+  const offset = cursorOffset(tip, view, rtl);
+  const cursorStyle: CSSProperties = { transform: `translate(${offset.x}px, ${offset.y}px)` };
+  const rootStyle = { ...style, "--wd-tour-glide": `${Math.round(glideMs)}ms`, ...(persona ? { "--wd-tour-actor": persona.color } : {}) } as CSSProperties;
   const bubbleStyle: CSSProperties = { insetBlockStart: place.top, insetInlineStart: inlineStart(place.left, bubbleSize.width) };
   const nextSpeed = speeds[(speeds.indexOf(speed) + 1) % speeds.length] ?? 1;
 
@@ -195,16 +173,25 @@ export function TourOverlay(props: TourOverlayProps) {
   };
 
   return createPortal(
-    <div className="wd-tour" data-missing={note ? true : undefined} data-phase={finished ? "finished" : phase} data-react-aria-top-layer="true" data-rtl={rtl || undefined} data-step={step} dir={direction} style={rootStyle}>
+    <div className="wd-tour" data-actor={persona?.id} data-missing={note ? true : undefined} data-phase={finished ? "finished" : phase} data-react-aria-top-layer="true" data-rtl={rtl || undefined} data-step={step} dir={direction} style={rootStyle}>
       <div className="wd-tour-blocker" aria-hidden="true" onPointerDown={(event) => event.preventDefault()} onClick={(event) => event.preventDefault()} />
       <div className="wd-tour-spotlight" data-empty={!hole || undefined} key={spotKey} style={spotStyle} aria-hidden="true" />
-      <div className="wd-tour-cursor" data-hidden={finished || undefined} style={cursorStyle} aria-hidden="true">
+      <div className="wd-tour-cursor" data-follow={!gliding || undefined} data-hidden={hidden || undefined} style={cursorStyle} aria-hidden="true">
         <svg className="wd-tour-pointer" viewBox="0 0 24 24" width="26" height="26">
           <path d="M3 2.5 20.5 10.2c.9.4.8 1.7-.1 2l-7 2.1-2.4 6.8c-.3.9-1.6 1-2 .1L2.1 3.4c-.3-.6.3-1.2.9-.9Z" />
         </svg>
-        <Woddy className="wd-tour-cursor-woddy" decorative pose="hello" size={24} />
+        {persona ? <span className="wd-tour-actor">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static brand avatar from /public */}
+          <img alt="" className="wd-tour-actor-avatar" decoding="async" draggable={false} height={20} src={persona.avatar} width={20} />
+          <span className="wd-tour-actor-name">{persona.label}</span>
+        </span> : <Woddy className="wd-tour-cursor-woddy" decorative pose="hello" size={24} />}
         {clicks ? <span className="wd-tour-ripple" key={clicks} /> : null}
       </div>
+      {switching && persona ? <div className="wd-tour-switch" key={persona.id} role="status">
+        {/* eslint-disable-next-line @next/next/no-img-element -- static brand avatar from /public */}
+        <img alt="" className="wd-tour-switch-avatar" decoding="async" draggable={false} height={56} src={persona.avatar} width={56} />
+        <span className="wd-tour-switch-line">{persona.switchLine}</span>
+      </div> : null}
       <section
         aria-describedby="wd-tour-text"
         aria-label={title}
@@ -215,9 +202,10 @@ export function TourOverlay(props: TourOverlayProps) {
         style={bubbleStyle}
         tabIndex={-1}
       >
-        <Woddy className="wd-tour-woddy" decorative pose={pose} size={48} />
+        <Woddy className="wd-tour-woddy" decorative pose={loading ? "thinking" : pose} size={48} />
         <div className="wd-tour-copy">
-          <p className="wd-tour-text" dir="auto" id="wd-tour-text" aria-live="polite" data-note={note ? true : undefined}>{note ?? text}</p>
+          {loading ? <p className="wd-tour-loading" role="status"><span aria-hidden="true" className="wd-tour-dots"><span /><span /><span /></span>{t("Opening…")}</p>
+            : <p className="wd-tour-text" dir="auto" id="wd-tour-text" aria-live="polite" data-note={note ? true : undefined}>{note ?? text}</p>}
           {finished ? <div className="wd-tour-finish">
             {nextTour ? <Button size="compact" variant="primary" onPress={nextTour.onStart}>{t("Next: {title}", { title: nextTour.title })}</Button> : null}
             <Button size="compact" onPress={onExit}>{t("Done")}</Button>

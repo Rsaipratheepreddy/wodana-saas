@@ -34,7 +34,8 @@ export function tourLines(languages = LANGUAGES) {
           step: index + 1,
           stepId: step.id,
           language,
-          text: language === "en" ? step.narration : words[step.narration] ?? voice,
+          // What the bubble shows: the short caption when the step has one, else the narration.
+          text: language === "en" ? step.caption ?? step.narration : words[step.caption ?? step.narration] ?? voice,
           voice,
           audio: `public/tours/audio/${language}/${tour.id}/${step.id}.mp3`,
         });

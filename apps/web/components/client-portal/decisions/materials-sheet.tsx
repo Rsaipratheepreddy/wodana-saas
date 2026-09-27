@@ -32,7 +32,7 @@ export function MaterialsSheet({ list, caseId, api, format, channels, onDecided 
       onDecided();
     }} />;
 
-  return <div className={styles.sheet}>
+  return <div className={styles.sheet} data-tour="portal-materials-sheet">
     <div className={styles.rowHead}><StateLabel state={list.status} /><span className={styles.muted}>{t("Sent {date}", { date: format.date(list.sentAt) })}</span></div>
     <div>
       {list.items.map((item) => <div className={styles.materialRow} key={item.id}>

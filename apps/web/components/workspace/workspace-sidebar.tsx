@@ -66,6 +66,8 @@ import type {
   WorkspaceNavigationSection,
 } from "./workspace-navigation";
 import { MessagingMark } from "@/components/brand/messaging-mark";
+import { useTours } from "@/components/tours/tour-provider";
+import { inPersonaView } from "@/lib/tours/personas";
 import { ModuleIcon as WorkspaceModuleIconTile } from "@/design-system/atoms/module-icon";
 import { productNavigation, productNavigationActive } from "./workspace-navigation";
 import styles from "./workspace.module.css";
@@ -152,6 +154,8 @@ export function WorkspaceSidebar({
   workspaces,
 }: WorkspaceSidebarProps) {
   const t = useT();
+  // A tour's demo "view as": destinations outside the current person's work step back (presentation only).
+  const tourActor = useTours()?.persona?.id ?? null;
   const contextualNavigation = useMemo(() => productNavigation(modules), [modules]);
   const instanceId = useId().replaceAll(":", "");
   const searchParams = useSearchParams();
@@ -317,7 +321,7 @@ export function WorkspaceSidebar({
                       const defaultOpen = active || Boolean(item.children?.some((child) => child.href.split("?")[0] === pathname));
                       const showSubmenu = Boolean(item.children?.length) && submenuIsOpen(item.id, defaultOpen);
                       return (
-                        <div className={styles.navigationItemGroup} data-destination={item.id} key={item.id}>
+                        <div className={styles.navigationItemGroup} data-destination={item.id} data-persona-muted={!inPersonaView(tourActor, item.id) || undefined} key={item.id}>
                           <div className={styles.navigationItemRow} data-active={active || undefined}>
                             {item.children?.length ? (
                               <AriaButton

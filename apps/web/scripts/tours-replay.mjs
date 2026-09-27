@@ -2,7 +2,8 @@
 // Replays every Woddy tour headless against a running app and fails when a step's target is missing.
 // Usage (from apps/web): TOURS_BASE_URL=http://localhost:3000 TOURS_COOKIES=/path/cookies.json node scripts/tours-replay.mjs [tour-id…]
 // TOURS_COOKIES is a JSON array of { name, value } session cookies for a signed-in test account (never a real one).
-// Each step is allowed to act and settle, then the replay moves on without waiting for the narration.
+// Each step is allowed to act and settle, then the replay moves on without waiting for the narration. No write may
+// reach the network, and after the tour the workspace must be back where it started with demo mode off.
 import { readFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
 import { tours } from "./tours-lines.mjs";
@@ -38,7 +39,14 @@ for (const tour of tours.filter((item) => !only.length || only.includes(item.id)
         if (root.hasAttribute("data-missing")) return { current, phase, missing: true };
         return phase === "speaking" || phase === "resting" ? { current, phase, missing: false } : null;
       }, step, { timeout: STEP_TIMEOUT, polling: 100 }).then((handle) => handle.jsonValue());
-      if (state.phase === "finished") break;
+      if (state.phase === "finished") {
+        // Leaving: the workspace comes back as it was, with demo mode gone (nothing may stay blocked).
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => !document.querySelector(".wd-tour, .wd-tour-loader"), null, { timeout: STEP_TIMEOUT });
+        const after = await page.evaluate(() => ({ path: location.pathname, demo: document.documentElement.dataset.tourDemo ?? null }));
+        if (after.demo || after.path !== "/workspace") missing.push(`exit left ${after.demo ? "demo mode on" : `the page at ${after.path}`}`);
+        break;
+      }
       step = state.current;
       const definition = tour.steps[step - 1];
       if (state.missing) missing.push(`${step}. ${definition?.id} (${definition?.target})`);

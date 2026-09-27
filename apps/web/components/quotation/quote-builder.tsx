@@ -465,7 +465,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     <header className={styles.top}>
       <Link href={backHref} className={styles.back} aria-label={t("All quotes")}><ArrowLeft aria-hidden="true" data-directional="true" size={16} /></Link>
       <h1>{t("Q-{number}", { number: state.quote.number })} · {state.quote.title}</h1>
-      <Badge tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
+      <Badge data-tour="quote-status" tone={QUOTE_STATUS[state.quote.status]?.tone ?? "neutral"}>{t((QUOTE_STATUS[state.quote.status]?.label ?? state.quote.status) as never)}</Badge>
       {state.family.length > 1 ? <span className={styles.revisions}><SegmentedControl label={t("Revisions")} value={state.quote.id} onChange={(id) => router.push(quoteHref(id))}
         options={state.family.map((item, index) => ({ id: item.id, label: t("R{number}", { number: index + 1 }) }))} /></span> : null}
       <span className={styles.tabs}><SegmentedControl label={t("Quote")} tour="quote-tab" value={tab} onChange={(key) => setTab(key as QuoteTab)}
@@ -473,8 +473,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       <span className={styles.saving} aria-live="polite">{saving ? t("Saving…") : null}</span>
       <span className={styles.spacer} />
       <PeopleHere people={people} />
-      {toFix ? <button type="button" className={styles.toFix} onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
-      <button type="button" className={styles.total} aria-label={t("Totals: {amount}", { amount: money(state.pricing.total, currency, decimals, locale) })} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
+      {toFix ? <button type="button" className={styles.toFix} data-tour="quote-checks" onClick={() => openPanel("totals")}><CircleAlert aria-hidden="true" size={14} />{toFix === 1 ? t("1 to fix") : t("{count} to fix", { count: toFix })}</button> : null}
+      <button type="button" className={styles.total} data-tour="quote-total" aria-label={t("Totals: {amount}", { amount: money(state.pricing.total, currency, decimals, locale) })} onClick={() => openPanel("totals")}>{money(state.pricing.total, currency, decimals, locale)}</button>
       <IconButton className={styles.withCount} aria-label={openThreads ? t("Comments · {count}", { count: openThreads }) : t("Comments")} aria-pressed={panelShown && activePanel === "comments"} onPress={() => (panelShown && activePanel === "comments" ? showSide(false) : openPanel("comments"))}>
         <MessageCircle aria-hidden="true" size={17} />{openThreads ? <span className={styles.countDot}>{openThreads}</span> : null}
       </IconButton>

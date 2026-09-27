@@ -25,7 +25,7 @@ export function Tabs({ defaultSelectedKey, items, selectedKey, onSelectionChange
 export type PillTabItem = { id: string; label: ReactNode; done?: boolean };
 
 /** Simple pill tabs that switch what's shown below; the selected one is filled. Arrow keys move between them. */
-export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void }) {
+export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange, tour }: { ariaLabel: string; items: PillTabItem[]; selectedKey: string; onSelectionChange: (key: string) => void; /** Names each tab `data-tour="<tour>-<id>"` for Woddy's tours. */ tour?: string }) {
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
     if (!keys.includes(event.key)) return;
@@ -38,7 +38,7 @@ export function PillTabs({ ariaLabel, items, selectedKey, onSelectionChange }: {
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
   };
   return <div aria-label={ariaLabel} className="wd-pill-tabs" role="tablist" onKeyDown={move}>
-    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={() => onSelectionChange(item.id)}>
+    {items.map((item) => <button aria-selected={item.id === selectedKey} className="wd-pill-tab" data-done={item.done || undefined} data-tour={tour ? `${tour}-${item.id}` : undefined} data-tour-safe={tour ? "" : undefined} key={item.id} role="tab" tabIndex={item.id === selectedKey ? 0 : -1} type="button" onClick={() => onSelectionChange(item.id)}>
       {item.done ? <Check aria-hidden="true" size={13} strokeWidth={2.5} /> : null}{item.label}
     </button>)}
   </div>;

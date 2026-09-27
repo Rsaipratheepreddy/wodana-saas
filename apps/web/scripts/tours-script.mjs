@@ -28,7 +28,7 @@ const markdown = [
   "",
   "Record the **Voice** line of each step as one MP3 at the path shown. Voice lines never name a person or a record:",
   "the caption fills `{name}`, `{client}` and `{project}` from the screen, and the recording says the name-free version.",
-  "When a file is missing, the player falls back to the browser voice or to on-screen pacing.",
+  "When a file is missing, the caption stays on screen for its reading time (there is no browser voice).",
   "",
   ...tours.flatMap((tour) => [
     `## ${tour.title} (\`${tour.id}\`)`,

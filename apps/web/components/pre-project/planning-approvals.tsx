@@ -52,7 +52,7 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
   const selectedQuote = quotes.find(item => review === `quote:${item.id}`);
   const detail = review === "scope" ? <DefinitionPage initial={definition} />
     : selectedQuote ? <CommercialPage reviewOnly key={selectedQuote.id} initial={commercial} record={record} section="quotations" quotationId={selectedQuote.id} search={search} /> : null;
-  return <section className={s.page}>
+  return <section className={s.page} data-tour="case-approvals">
     <h1 className={s.visuallyHidden}>{t("Approvals")}</h1>
     {review ? <>{<Link className={s.back} href={href()}>← {t("All approvals")}</Link>}{detail ?? <Callout tone="warning" title={t("Review unavailable")}>{t("This item may have been archived or replaced. Return to the queue for its current version.")}</Callout>}</> : <>
       {"error" in content && <Callout tone="warning" title={t("Designs could not be loaded")}>{content.error}</Callout>}
@@ -66,9 +66,9 @@ export function PlanningApprovals({ record, content, definition, commercial, sea
           emptyTitle={t(filter === "all" ? "No items to review" : filter === "Requirements" ? "No requirements to review" : filter === "Designs" ? "No designs to review" : "No quotations to review")}
           emptyDescription="" onRowAction={row => router.push(href(row.id))}
           columns={[
-            {id:"title",header:t("Item"),size:300,accessorFn:row => row.title,cell:({row:{original:item}}) => <div className={s.item}><Link href={href(item.id)}>{item.title}</Link><small>{item.version}</small></div>},
+            {id:"title",header:t("Item"),size:300,accessorFn:row => row.title,cell:({row:{original:item}}) => <div className={s.item} data-tour={item.type === "Quotations" ? "approval-quote" : undefined}><Link href={href(item.id)}>{item.title}</Link><small>{item.version}</small></div>},
             {id:"type",header:t("Type"),size:140,accessorFn:row => typeLabels[row.type] ? t(typeLabels[row.type]) : row.type,meta:{mobileHidden:true}},
-            {id:"status",header:t("Status"),size:190,accessorFn:row => row.status,cell:({row:{original:item}}) => <span className={s.status} data-complete={item.done} data-ready={item.ready}>{item.status}</span>},
+            {id:"status",header:t("Status"),size:190,accessorFn:row => row.status,cell:({row:{original:item}}) => <span className={s.status} data-complete={item.done} data-ready={item.ready} data-tour={item.type === "Quotations" ? "approval-quote-status" : undefined}>{item.status}</span>},
             {id:"action",header:t("Action"),size:150,enableSorting:false,enableColumnFilter:false,cell:({row:{original:item}}) => <Link aria-label={t("Review {title} {version}", { title: item.title, version: item.version })} href={href(item.id)}>{t(item.ready ? "Review & send" : "Review")}</Link>},
           ]}
           footerActions={<Link href={`${root}/execution-release`}>{t("Release readiness")} →</Link>}

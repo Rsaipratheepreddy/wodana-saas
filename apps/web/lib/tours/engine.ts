@@ -1,8 +1,19 @@
 import { TOUR_PACE } from "./timing";
-import type { Tour, TourSpeed, TourStep, WoddyMood } from "./types";
+import type { Tour, TourActor, TourSpeed, TourStep, WoddyMood } from "./types";
 
-export type TourStatus = "idle" | "running" | "paused" | "finished";
-export type TourPhase = "seeking" | "moving" | "acting" | "speaking" | "resting";
+/**
+ * - `preparing`: the first screen is opening behind the loader; the tour shows once its first target is ready.
+ * - `running`, `paused`: the tour is on screen.
+ * - `finished`: the last line has been said; the bubble offers the next tour.
+ */
+export type TourStatus = "idle" | "preparing" | "running" | "paused" | "finished";
+/**
+ * - `switching`: another person takes over ("Now as Finance");
+ * - `loading`: a step is opening another screen (the bubble shows a short loading state, the cursor waits);
+ * - `seeking`, `moving`, `acting`, `speaking`, `resting`: finding the target, gliding there, clicking or typing,
+ *   narrating, and the pause before the next step.
+ */
+export type TourPhase = "switching" | "loading" | "seeking" | "moving" | "acting" | "speaking" | "resting";
 
 export type TourSnapshot = {
   status: TourStatus;
@@ -20,6 +31,10 @@ export type TourSnapshot = {
   speed: TourSpeed;
   /** Counts clicks, so the overlay can replay its ripple. */
   clicks: number;
+  /** Who is working on the current step (the cursor's colour and name, and the "view as" presentation). */
+  actor: TourActor | null;
+  /** How far the first screen has got while preparing, 0 to 1. */
+  progress: number;
 };
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
@@ -27,9 +42,11 @@ type Field = HTMLInputElement | HTMLTextAreaElement;
 /** Everything the runner needs from the page. The browser host lives in `components/tours`; tests fake it. */
 export type TourHost = {
   path(): string;
+  /** The path and query, for the values a tour captures (`{case}`, `{project}`). Defaults to the path. */
+  location?(): string;
   navigate(href: string): void;
-  /** The first visible element marked `data-tour="<target>"`. */
-  find(target: string): HTMLElement | null;
+  /** The first visible element marked `data-tour="<target>"`; with `record`, the first one that opens that record. */
+  find(target: string, record?: string): HTMLElement | null;
   /** Scrolls the element into view; resolves when it has settled. */
   reveal(element: HTMLElement): Promise<void> | void;
   /** A real-looking click. Only ever called for `data-tour-safe` controls. */
@@ -50,9 +67,38 @@ export type TourHost = {
 
 const IDLE: TourSnapshot = {
   status: "idle", tour: null, index: 0, phase: "seeking", pointer: null, spotlight: null, missing: false, text: "", mood: "hello", speed: 1, clicks: 0,
+  actor: null, progress: 0,
 };
 
 const ACTS = new Set(["click", "open", "type"]);
+/** Where a step with no target waits on its screen before the tour shows. */
+const PAGE = "page-content";
+
+/** The person working on a step: its own actor, or the last one named before it. */
+export function actorAt(tour: Tour, index: number): TourActor | null {
+  for (let at = Math.min(index, tour.steps.length - 1); at >= 0; at -= 1) {
+    const actor = tour.steps[at]?.actor;
+    if (actor) return actor;
+  }
+  return null;
+}
+
+/**
+ * A route with its `{placeholders}` filled from captured values, or null when one is still unknown.
+ * `a|b` means "a, or else b": the first alternative whose records are known.
+ */
+export function fillRoute(route: string, values: Record<string, string>): string | null {
+  for (const option of route.split("|")) {
+    let unknown = false;
+    const filled = option.trim().replace(/\{(\w+)\}/g, (_token, key: string) => {
+      const value = values[key];
+      if (!value) { unknown = true; return ""; }
+      return encodeURIComponent(value);
+    });
+    if (!unknown) return filled;
+  }
+  return null;
+}
 
 /**
  * Plays a tour step by step at a human pace: find the target (skipping it with a note when it never
@@ -78,6 +124,7 @@ export class TourRunner {
 
   getSnapshot = () => this.state;
 
+  /** Opens the first screen behind the loader (`preparing`), then plays the tour from its first step. */
   start(tour: Tour, values: Record<string, string> = {}) {
     this.halt();
     // Starting over from another tour: undo its demo changes first (never the page's own dialogs).
@@ -85,7 +132,7 @@ export class TourRunner {
     this.values = { ...values };
     this.acted = -1;
     this.opened = [];
-    this.set({ ...IDLE, speed: this.state.speed, status: "running", tour, mood: tour.steps[0]?.woddy ?? "hello" });
+    this.set({ ...IDLE, speed: this.state.speed, status: "preparing", tour, mood: tour.steps[0]?.woddy ?? "hello" });
     void this.loop();
   }
 
@@ -112,7 +159,7 @@ export class TourRunner {
 
   go(index: number) {
     const { tour } = this.state;
-    if (!tour || this.state.status === "idle") return;
+    if (!tour || this.state.status === "idle" || this.state.status === "preparing") return;
     this.halt();
     this.leave(tour.steps[index]);
     if (index >= tour.steps.length) return this.finish();
@@ -123,6 +170,7 @@ export class TourRunner {
 
   setSpeed(speed: TourSpeed) { this.set({ speed }); }
 
+  /** Stops at once: nothing more is said, typed text is cleared and the dialogs the tour opened close. */
   exit() {
     this.halt();
     this.cleanup();
@@ -151,6 +199,11 @@ export class TourRunner {
     this.controller = controller;
     const { signal } = controller;
     try {
+      if (this.state.status === "preparing") {
+        await this.prepare(signal);
+        if (signal.aborted) return;
+        this.set({ status: "running", progress: 1 });
+      }
       while (!signal.aborted && this.state.status === "running" && this.state.tour) {
         const { tour, index } = this.state;
         const step = tour.steps[index];
@@ -170,24 +223,49 @@ export class TourRunner {
 
   private pace(ms: number) { return ms / this.state.speed; }
 
+  /** The first screen, opened while the loader shows: its route, then its first target (or the page itself). */
+  private async prepare(signal: AbortSignal) {
+    const { tour } = this.state;
+    const step = tour?.steps[0];
+    if (!tour || !step) return;
+    this.set({ progress: 0.35 });
+    const route = step.route ? fillRoute(step.route, this.values) : null;
+    if (route && this.host.path() !== route.split("?")[0]) this.host.navigate(route);
+    this.set({ progress: 0.65 });
+    await this.waitFor(step.target ?? PAGE, signal, TOUR_PACE.prepareTimeout);
+    this.capture(tour);
+  }
+
   private async play(tour: Tour, step: TourStep, index: number, signal: AbortSignal) {
+    const actor = actorAt(tour, index);
+    if (actor !== this.state.actor) {
+      // Another person takes over: a short, clear switch before anything moves.
+      this.set({ phase: "switching", actor, pointer: null, spotlight: null, missing: false, mood: step.woddy, text: this.host.line(tour, step, this.values) });
+      await this.host.sleep(this.pace(TOUR_PACE.persona), signal);
+      if (signal.aborted) return;
+    }
     this.set({ phase: "seeking", spotlight: null, missing: false, mood: step.woddy, text: this.host.line(tour, step, this.values) });
-    if (step.route && this.host.path() !== step.route.split("?")[0]) this.host.navigate(step.route);
+    if (step.route) {
+      const route = fillRoute(step.route, this.values);
+      if (!route) return this.skip(signal);
+      if (this.host.path() !== route.split("?")[0]) {
+        // Another screen: the cursor waits out of sight and the bubble shows a short loading state.
+        this.set({ phase: "loading", pointer: null });
+        this.host.navigate(route);
+      }
+    }
     if (step.target) {
       const element = await this.waitFor(step.target, signal);
       if (signal.aborted) return;
-      if (!element) {
-        this.set({ phase: "resting", missing: true, mood: "thinking" });
-        await this.host.sleep(this.pace(TOUR_PACE.missing), signal);
-        return;
-      }
+      if (!element) return this.skip(signal);
+      if (this.state.phase === "loading") this.set({ phase: "seeking" });
       await this.host.reveal(element);
       if (signal.aborted) return;
       this.set({ phase: "moving", pointer: element, spotlight: element });
       await this.host.sleep(this.pace(TOUR_PACE.glide), signal);
       if (signal.aborted) return;
       // The page may have re-rendered while the cursor moved: act on the element that is there now.
-      const current = element.isConnected ? element : this.host.find(step.target) ?? element;
+      const current = element.isConnected ? element : this.find(step.target) ?? element;
       if (current !== element) this.set({ pointer: current, spotlight: current });
       if (ACTS.has(step.action) && this.acted !== index) {
         this.set({ phase: "acting" });
@@ -196,16 +274,22 @@ export class TourRunner {
         if (signal.aborted) return;
       }
     } else {
-      this.set({ pointer: null });
+      if (step.route) await this.waitFor(PAGE, signal);
+      if (signal.aborted) return;
+      this.set({ pointer: null, phase: "seeking" });
     }
     if (step.waitFor) {
       const shown = await this.waitFor(step.waitFor, signal);
       if (signal.aborted) return;
       if (shown) {
         await this.host.reveal(shown);
-        this.set({ spotlight: shown });
+        // What appeared opened in a dialog over the target: the cursor follows it there, never pointing behind it.
+        const pointer = this.state.pointer;
+        const covered = !pointer?.isConnected || this.opened.some((overlay) => overlay.contains(shown) && !overlay.contains(pointer));
+        this.set({ spotlight: shown, ...(covered || this.state.phase === "loading" ? { pointer: covered ? shown : pointer } : {}), ...(this.state.phase === "loading" ? { phase: "seeking" as const } : {}) });
       }
     }
+    this.capture(tour);
     this.readExamples(tour);
     const text = this.host.line(tour, step, this.values);
     this.set({ phase: "speaking", text });
@@ -213,6 +297,12 @@ export class TourRunner {
     if (signal.aborted) return;
     this.set({ phase: "resting" });
     await this.host.sleep(this.pace(TOUR_PACE.pause), signal);
+  }
+
+  /** The step can't be shown right now: a short note, then the tour carries on. */
+  private async skip(signal: AbortSignal) {
+    this.set({ phase: "resting", missing: true, mood: "thinking", pointer: null, spotlight: null });
+    await this.host.sleep(this.pace(TOUR_PACE.missing), signal);
   }
 
   private async act(step: TourStep, element: HTMLElement, signal: AbortSignal) {
@@ -247,20 +337,40 @@ export class TourRunner {
     await this.host.sleep(this.pace(TOUR_PACE.rest), signal);
     if (signal.aborted) return;
     const safe = element.closest("[data-tour-safe]");
-    const href = step.action === "open" ? element.closest("a")?.getAttribute("href") : null;
+    const link = step.action === "open" ? element.closest("a")?.getAttribute("href") : null;
+    // Already there (a tab of the page that is open): nothing to open.
+    const href = link && link !== (this.host.location?.() ?? this.host.path()) ? link : null;
     // Only links and controls marked safe are ever used: nothing a tour touches can save.
     if (!href && !safe) return;
     this.set({ clicks: this.state.clicks + 1 });
     const before = new Set(this.host.overlays());
+    const from = this.host.path();
     if (href) this.host.navigate(href);
     else this.host.press(element);
     await this.host.sleep(this.pace(TOUR_PACE.rest), signal);
+    // The click opened another screen: the cursor waits out of sight until it has loaded.
+    if (href && href.split("?")[0] !== from) this.set({ phase: "loading", pointer: null, spotlight: null });
     this.opened.push(...this.host.overlays().filter((overlay) => !before.has(overlay)));
   }
 
-  private async waitFor(target: string, signal: AbortSignal): Promise<HTMLElement | null> {
-    for (let waited = 0; waited <= TOUR_PACE.targetTimeout; waited += TOUR_PACE.poll) {
-      const element = this.host.find(target);
+  /**
+   * `a|b`: the first of the targets that is on screen. `a#{case}`: the `a` that opens the record captured as
+   * `case` (skipped while that record is unknown), e.g. the row of the job the tour follows.
+   */
+  private find(target: string): HTMLElement | null {
+    for (const option of target.split("|")) {
+      const [name, template] = option.trim().split("#");
+      const record = template ? fillRoute(template, this.values) : undefined;
+      if (template && !record) continue;
+      const element = this.host.find(name, record ?? undefined);
+      if (element) return element;
+    }
+    return null;
+  }
+
+  private async waitFor(target: string, signal: AbortSignal, timeout: number = TOUR_PACE.targetTimeout): Promise<HTMLElement | null> {
+    for (let waited = 0; waited <= timeout; waited += TOUR_PACE.poll) {
+      const element = this.find(target);
       if (element) return element;
       await this.host.sleep(TOUR_PACE.poll, signal);
       if (signal.aborted) return null;
@@ -268,11 +378,21 @@ export class TourRunner {
     return null;
   }
 
+  /** Records the ids a later step returns to (the case, the quote, the project), read from the address. */
+  private capture(tour: Tour) {
+    if (!tour.captures?.length) return;
+    const where = this.host.location?.() ?? this.host.path();
+    for (const { key, pattern } of tour.captures) {
+      const match = where.match(new RegExp(pattern, "u"));
+      if (match?.[1]) this.values[key] = decodeURIComponent(match[1]);
+    }
+  }
+
   /** Real examples from the screen (the first enquiry, the open case…) fill the narration's placeholders. */
   private readExamples(tour: Tour) {
     for (const example of tour.examples ?? []) {
       if (this.values[example.key]) continue;
-      const element = this.host.find(example.source);
+      const element = this.find(example.source);
       const text = (element?.getAttribute("title") || element?.textContent)?.replace(/\s+/gu, " ").trim();
       if (text) this.values[example.key] = text;
     }
@@ -281,7 +401,7 @@ export class TourRunner {
   /** Leaving a step: typed text goes; dialogs the tour opened close unless the next step points inside them. */
   private leave(upcoming: TourStep | undefined) {
     this.clearTyped();
-    const keep = upcoming?.target ? this.host.find(upcoming.target) : null;
+    const keep = upcoming?.target ? this.find(upcoming.target) : null;
     this.opened = this.opened.filter((overlay) => {
       if (!overlay.isConnected) return false;
       if (keep && overlay.contains(keep)) return true;

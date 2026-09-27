@@ -4,11 +4,193 @@ Voice: Brady J (`3svOJAOhuPHXwQC2H5eq`), model `eleven_multilingual_v2`.
 
 | Language | Lines | Characters |
 | --- | ---: | ---: |
-| en | 50 | 6655 |
+| en | 80 | 11146 |
 
 Record the **Voice** line of each step as one MP3 at the path shown. Voice lines never name a person or a record:
 the caption fills `{name}`, `{client}` and `{project}` from the screen, and the recording says the name-free version.
-When a file is missing, the player falls back to the browser voice or to on-screen pacing.
+When a file is missing, the caption stays on screen for its reading time (there is no browser voice).
+
+## From enquiry to handover (`full-journey`)
+
+**1. greeting** · en · `public/tours/audio/en/full-journey/greeting.mp3`
+
+> Hi there! I'm Woddy. Let's follow one job from the first enquiry to the handover, and see who does what along the way. I'll do the clicking, and nothing gets saved.
+
+Caption: Hi {name}! Let's follow one job from enquiry to handover.
+
+**2. enquiry** · en · `public/tours/audio/en/full-journey/enquiry.mp3`
+
+> It starts with a raw enquiry: a call, a WhatsApp message or a form on your website. Sales sees every one of them in this list, with where it came from and who is following up.
+
+Caption: A new enquiry lands in one list.
+
+**3. qualify** · en · `public/tours/audio/en/full-journey/qualify.mp3`
+
+> Sales qualifies it. The stage, the owner and the next follow-up sit at the top, so the job is assigned to someone and nobody forgets to call back.
+
+Caption: Qualify it: a stage, an owner and a follow-up.
+
+**4. convert** · en · `public/tours/audio/en/full-journey/convert.mp3`
+
+> When the need is clear, Sales converts the enquiry into an opportunity, with a value and a next step, and planning can start. This is a demo, so I'll close it without saving.
+
+Caption: Convert it into an opportunity.
+
+**5. planning** · en · `public/tours/audio/en/full-journey/planning.mp3`
+
+> Every job now has a planning case, in the order the work happens. Requirements come first: every room and every wish in the client's own words, so the designer and the estimator start from the same brief.
+
+Caption: Planning starts with the client's requirements.
+
+**6. site-visit** · en · `public/tours/audio/en/full-journey/site-visit.mp3`
+
+> The designer visits the site. Measurements, photos and plans are kept here, so nobody prices a wall they haven't measured.
+
+Caption: The site visit: measurements, photos and plans.
+
+**7. moodboard** · en · `public/tours/audio/en/full-journey/moodboard.mp3`
+
+> The moodboard sets the look: the materials, colours and references the client likes, agreed before any drawing starts.
+
+Caption: The moodboard sets the look.
+
+**8. design** · en · `public/tours/audio/en/full-journey/design.mp3`
+
+> Designs get an internal review first, then go to the client for approval. Anything waiting for a review sits in Approvals, so nothing is left unseen.
+
+Caption: Designs: an internal review, then the client's approval.
+
+**9. quotes** · en · `public/tours/audio/en/full-journey/quotes.mp3`
+
+> Now the job is priced. Every quote for it, the design fee, the fit-out and any later variation, lives in one list.
+
+Caption: Every quote for the job, in one list.
+
+**10. quote-lines** · en · `public/tours/audio/en/full-journey/quote-lines.mp3`
+
+> Lines come from your catalog, room by room, at the prices your firm has set, so one quote matches the next.
+
+Caption: Lines from the catalog, room by room.
+
+**11. terms** · en · `public/tours/audio/en/full-journey/terms.mp3`
+
+> Terms say what's included, what isn't and how long the price holds.
+
+Caption: What's included, what isn't, and how long it holds.
+
+**12. payments** · en · `public/tours/audio/en/full-journey/payments.mp3`
+
+> Payments split the total into milestones, like a deposit, a payment before carpentry and one at handover.
+
+Caption: The total, split into payment milestones.
+
+**13. send-review** · en · `public/tours/audio/en/full-journey/send-review.mp3`
+
+> When the quote is ready, Sales sends it for review. From that moment it's locked, so no price can change while it's being checked.
+
+Caption: Send for review: the quote locks while it's checked.
+
+**14. qs-review** · en · `public/tours/audio/en/full-journey/qs-review.mp3`
+
+> This is where the job's approvals wait, and the reviewer also gets a notification and an email. Depending on your workflow, a quantity surveyor checks the cost estimate against the price, or a manager approves it, for this exact revision. If anything changes afterwards, it needs a fresh review.
+
+Caption: A quantity surveyor or a manager reviews this exact revision.
+
+**15. owner-check** · en · `public/tours/audio/en/full-journey/owner-check.mp3`
+
+> Some quotes need more. If the discount goes above the limit your firm sets, only a manager or an owner can approve it. And a reviewer who isn't happy returns the quote with a note: it goes back to draft for the changes, then comes back for a fresh review.
+
+Caption: Above the discount limit, a manager approves. Returns come with a note.
+
+**16. send-client** · en · `public/tours/audio/en/full-journey/send-client.mp3`
+
+> Once it's approved, Send to client puts this exact proposal in the client's portal, with an email. Every requirement has to be decided before it can go.
+
+Caption: Approved, it goes to the client's portal.
+
+**17. client-home** · en · `public/tours/audio/en/full-journey/client-home.mp3`
+
+> Now we're the client. This is their own portal, in your brand and on any phone: where the job stands, what's needed from them, and the latest news from the team.
+
+Caption: The client's own portal, in your brand.
+
+**18. client-decisions** · en · `public/tours/audio/en/full-journey/client-decisions.mp3`
+
+> Decisions holds everything the client is asked to approve, each at the exact revision the team sent: quotations, designs and the material list.
+
+Caption: Everything waiting for the client's decision.
+
+**19. client-quote** · en · `public/tours/audio/en/full-journey/client-quote.mp3`
+
+> The client reads the quotation exactly as it was issued, picks any options and accepts it with a one-time code, or asks for changes. The material list is signed off the same way, item by item, before anything is ordered.
+
+Caption: Accept with a one-time code. Materials are signed off item by item.
+
+**20. deal** · en · `public/tours/audio/en/full-journey/deal.mp3`
+
+> Back in the office. When the client accepts, Sales submits the deal with the signed agreement and the payment proof. Finance verifies the payment, then an owner approves, and nobody can approve their own submission.
+
+Caption: Finance verifies the payment, then an owner approves.
+
+**21. release** · en · `public/tours/audio/en/full-journey/release.mp3`
+
+> With the owner's approval, the project is released. The accepted quote becomes its baseline: the scope, the value and the payment plan.
+
+Caption: Released: the accepted quote becomes the project's baseline.
+
+**22. plan** · en · `public/tours/audio/en/full-journey/plan.mp3`
+
+> The manager plans the work: tasks with owners and dates for every stage, so the office and the site see the same list.
+
+Caption: The plan: tasks, owners and dates.
+
+**23. to-order** · en · `public/tours/audio/en/full-journey/to-order.mp3`
+
+> The buyer sees every material the projects still need, how much is left to order and when the site needs it.
+
+Caption: What the projects still need to order.
+
+**24. orders** · en · `public/tours/audio/en/full-journey/orders.mp3`
+
+> Purchase orders go to suppliers, with an approval for the bigger amounts, and each one shows whether the supplier has confirmed it.
+
+Caption: Orders to suppliers, approved when they're big.
+
+**25. receipt** · en · `public/tours/audio/en/full-journey/receipt.mp3`
+
+> Deliveries are received against their order, so short or damaged items are caught at the door, not on site.
+
+Caption: Deliveries checked against the order.
+
+**26. factory** · en · `public/tours/audio/en/full-journey/factory.mp3`
+
+> Joinery is made in your own factory: what's left to make, the work orders, the schedule and the batches on the shop floor.
+
+Caption: The factory: what to make, and when.
+
+**27. site** · en · `public/tours/audio/en/full-journey/site.mp3`
+
+> On site, the supervisor posts daily reports and photos and logs the snags to fix, so a client's question is answered with a picture.
+
+Caption: Daily reports, photos and snags from site.
+
+**28. handover** · en · `public/tours/audio/en/full-journey/handover.mp3`
+
+> Handover gathers the final checks, the documents and the client's acceptance, so the keys go over with everything in order.
+
+Caption: Handover: final checks, documents and sign-off.
+
+**29. warranty** · en · `public/tours/audio/en/full-journey/warranty.mp3`
+
+> The warranty starts when the client accepts the handover. Their claims come in through the portal and are tracked here until they're fixed.
+
+Caption: Warranty claims, tracked until they're fixed.
+
+**30. recap** · en · `public/tours/audio/en/full-journey/recap.mp3`
+
+> That's the whole journey: an enquiry, a plan, an approved quote, the client's yes, and a project delivered and handed over, with the right person at every step.
+
+Caption: From the first enquiry to the handover, one connected flow.
 
 ## Home at a glance (`home`)
 

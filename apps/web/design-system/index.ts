@@ -42,3 +42,4 @@ export * from "./patterns/activity";
 export * from "./components/phone-field";
 export * from "./components/illustration";
 export * from "./patterns/tour-overlay";
+export * from "./patterns/tour-loader";
