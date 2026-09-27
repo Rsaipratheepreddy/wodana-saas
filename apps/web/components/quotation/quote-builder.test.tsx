@@ -99,8 +99,12 @@ describe("quotation builder", () => {
 
   it("picks the unit from the workspace's units", async () => {
     const fetcher = mount({ ...state([line({})]), units: [{ code: "lm", label: "running metre" }, { code: "nos", label: "number" }] });
-    await userEvent.click(screen.getByRole("combobox", { name: "Unit" }));
-    await userEvent.click(await screen.findByRole("option", { name: "nos" }));
+    // A click opens the whole list; typing narrows it.
+    await userEvent.click(screen.getByRole("button", { name: "Unit" }));
+    expect(await screen.findAllByRole("option")).toHaveLength(3);
+    await userEvent.type(screen.getByRole("combobox", { name: "Unit" }), "{Control>}a{/Control}no");
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["nos"]);
+    await userEvent.click(screen.getByRole("option", { name: "nos" }));
     await waitFor(() => expect(posted(fetcher)).toContainEqual({ ops: [{ op: "upsert", line: expect.objectContaining({ id: "a", unit: "nos" }) }] }));
   });
 
@@ -111,6 +115,18 @@ describe("quotation builder", () => {
     await userEvent.type(cell, "Site protection");
     fireEvent.blur(cell);
     await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: expect.objectContaining({ title: "Site protection", areaId: KITCHEN }) }] }]));
+  });
+
+  it("reads numbers the workspace's way and puts back anything that isn't one", async () => {
+    const fetcher = mount(state([line({})]));
+    const quantity = screen.getByRole("textbox", { name: "Quantity" });
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, ".{Enter}");
+    expect(posted(fetcher)).toEqual([]);
+    expect(quantity).toHaveValue("4");
+    await userEvent.clear(quantity);
+    await userEvent.type(quantity, "1,250.5{Enter}");
+    await waitFor(() => expect(posted(fetcher)).toEqual([{ ops: [{ op: "upsert", line: { id: "a", quantity: "1250.5", version: 3 } }] }]));
   });
 
   it("puts the cell back on Escape without saving", async () => {

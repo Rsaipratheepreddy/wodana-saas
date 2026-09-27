@@ -549,7 +549,7 @@ export class QuotationBuilderService {
     if (line.kind === "relocate" && !line.fromAreaId) throw new BadRequestException("Choose the area the item moves from.");
     if (line.kind === "relocate" && line.fromAreaId && line.fromAreaId === line.areaId) throw new BadRequestException("Moving an item needs a different area.");
     if (line.formula) { try { checkFormula(line.formula); } catch (error) { throw new BadRequestException(error instanceof FormulaError ? `Formula: ${error.message}` : "Check the formula."); } }
-    const measurements = { length: line.length, width: line.width, height: line.height, count: line.count };
+    const measurements = { length: line.length, width: line.width, height: line.height, count: line.count, dimensionUnit: line.dimensionUnit };
     const quantity = lineQuantity({ ...measurements, formula: line.formula, quantity: line.quantity });
     line.quantity = quantity.quantity;
     const components = line.components ?? await readComponents(client, workspaceId, caseId, quoteId, line.id);
@@ -674,11 +674,12 @@ export class QuotationBuilderService {
       materials: (await client.query<{ name: string }>(
         `SELECT name FROM (
            SELECT item.name FROM catalog_items item WHERE item.workspace_id = $1 AND item.item_type = 'material' AND item.status = 'active'
-           UNION SELECT DISTINCT line.material FROM commercial_quote_lines line WHERE line.workspace_id = $1 AND line.material <> ''
+           UNION SELECT DISTINCT btrim(part) FROM commercial_quote_lines line, regexp_split_to_table(line.material, '/') AS part
+            WHERE line.workspace_id = $1 AND line.material <> '' AND btrim(part) <> ''
          ) choice ORDER BY lower(name) LIMIT 300`, [workspaceId])).rows.map((row) => row.name),
       lines: lines.map((line) => {
         const parts = components.filter((part) => part.lineId === line.id);
-        const measurements = { length: line.length, width: line.width, height: line.height, count: line.count };
+        const measurements = { length: line.length, width: line.width, height: line.height, count: line.count, dimensionUnit: line.dimensionUnit };
         const quantity = lineQuantity({ ...measurements, formula: line.formula, quantity: line.quantity });
         const built = line.pricingMode === "build_up" ? buildUp(parts, measurements, line.markupPercent, decimals) : null;
         return {
@@ -984,7 +985,7 @@ async function quoteChecks(db: Db, workspaceId: string, caseId: string, input: {
     const name = { name: line.title };
     if (line.kind !== "client_supplied" && Dec.of(line.rate).isZero()) checks.push({ code: "{name} has no price", values: name, lineId: line.id, tone: "danger" });
     if (Dec.of(line.quantity).isZero()) checks.push({ code: "{name} has no quantity", values: name, lineId: line.id, tone: "danger" });
-    const measurements = { length: line.length, width: line.width, height: line.height, count: line.count };
+    const measurements = { length: line.length, width: line.width, height: line.height, count: line.count, dimensionUnit: line.dimensionUnit };
     if (line.formula && lineQuantity({ ...measurements, formula: line.formula, quantity: line.quantity }).error) checks.push({ code: "{name}: the formula doesn't work out", values: name, lineId: line.id, tone: "danger" });
     if (line.pricingMode === "build_up" && !buildUp(input.components.filter((part) => part.lineId === line.id), measurements, line.markupPercent, input.decimals).complete)
       checks.push({ code: "{name}: some parts have no price", values: name, lineId: line.id, tone: "warning" });

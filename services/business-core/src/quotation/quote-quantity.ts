@@ -2,15 +2,21 @@ import { Dec } from "../catalog-core/decimal";
 import { evaluateFormula, FormulaError, formulaInputs, parseFormula } from "../catalog-core/formula";
 import { applyWaste } from "../catalog-core/waste";
 
-/** A line's measurements; a formula can use these names (and the derived area and perimeter). */
-export type Measurements = { length?: string | null; width?: string | null; height?: string | null; count?: string | null };
+/**
+ * A line's measurements; a formula can use these names (and the derived area and perimeter). Sizes are
+ * written in their unit (e.g. cm) and a formula always works in metres, so `area` of 240 × 60 cm is 1.44 m².
+ */
+export type Measurements = { length?: string | null; width?: string | null; height?: string | null; count?: string | null; dimensionUnit?: string | null };
+/** Metres per size unit; a size without a unit is taken as metres. */
+const TO_METRES: Record<string, string> = { mm: "0.001", cm: "0.01", m: "1", in: "0.0254", ft: "0.3048" };
 export const MEASUREMENT_NAMES = ["length", "width", "height", "count", "area", "perimeter", "wall"] as const;
 
 export function measurementVariables(input: Measurements) {
   const variables: Record<string, Dec> = {};
+  const scale = Dec.of(TO_METRES[input.dimensionUnit ?? "m"] ?? "1");
   for (const name of ["length", "width", "height", "count"] as const) {
     const value = input[name];
-    if (value !== null && value !== undefined && value !== "") variables[name] = Dec.of(value);
+    if (value !== null && value !== undefined && value !== "") variables[name] = name === "count" ? Dec.of(value) : Dec.of(value).mul(scale);
   }
   const { length, width, height } = variables;
   if (length && width) { variables.area = length.mul(width); variables.perimeter = length.add(width).mul(2); }

@@ -1,5 +1,4 @@
 import { PlanningApprovals } from "@/components/pre-project/planning-approvals";
-import { QuotationBuilderShell } from "@/components/commercial/quotation-builder-shell";
 import { QuoteBuilder } from "@/components/quotation/quote-builder";
 import { QuoteList } from "@/components/quotation/quote-list";
 import { CommercialPage } from '@/components/commercial/commercial-page';
@@ -40,8 +39,9 @@ export default async function CasePage({ params, searchParams }: {
     if (!commercialState.data.quotes.some(quote => quote.id === query.get("quote"))) notFound();
     const backHref = caseHref(caseId, new URLSearchParams(listSearch(query).toString()), "quotations");
     // The document pages (cover, terms, PDF) until the document styles are rebuilt; the lines are built in the quotation builder.
-    if (query.get("view") === "document") return <QuotationBuilderShell key={query.get("quote")!} initial={commercialState} quoteId={query.get("quote")!} backHref={`${backHref.split("?")[0]}?quote=${encodeURIComponent(query.get("quote")!)}`} />;
-    return <QuoteBuilder key={query.get("quote")!} workspaceId={commercialState.workspaceId} caseId={caseId} quoteId={query.get("quote")!} backHref={backHref} initialTab={(["terms", "payments", "document"] as const).find((tab) => tab === query.get("tab")) ?? "items"} />;
+    // The document is the quote editor's Document tab (the older standalone editor could change lines behind the sheet).
+    const tab = query.get("view") === "document" ? "document" : (["terms", "payments", "document"] as const).find((item) => item === query.get("tab")) ?? "items";
+    return <QuoteBuilder key={query.get("quote")!} workspaceId={commercialState.workspaceId} caseId={caseId} quoteId={query.get("quote")!} backHref={backHref} initialTab={tab} />;
   }
   if (route.section === "quotations" && commercialState && !("error" in commercialState)) return <QuoteList key={caseId} initial={commercialState} baseHref={caseHref(caseId, new URLSearchParams(), "quotations").split("?")[0]} />;
   if (route.section === "approvals" && content && definition && commercialState) return <PlanningApprovals record={record} content={content} definition={definition} commercial={commercialState} search={listSearch(query).toString()} review={query.get("review") ?? undefined} />;

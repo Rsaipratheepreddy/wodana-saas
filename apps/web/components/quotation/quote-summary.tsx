@@ -77,13 +77,15 @@ function QuoteTax({ state, api, onState, onError, value }: { state: BuilderState
   const t = useT();
   const [rate, setRate] = useState(state.quote.taxRate);
   const save = async () => {
-    const next = rate.replace(/[^\d.]/g, "") || "0";
+    const next = rate.trim();
+    // Only a number from 0 to 100 is a tax rate; anything else puts the rate back.
+    if (!/^\d{1,3}(\.\d{1,4})?$/.test(next) || Number(next) > 100) { setRate(state.quote.taxRate); if (next) onError(t("Tax must be a number from 0 to 100.")); return; }
     if (Number(next) === Number(state.quote.taxRate)) return;
     try { onState(await api.tax(next)); } catch (cause) { onError(cause instanceof Error ? cause.message : t("Could not save.")); setRate(state.quote.taxRate); }
   };
   return <div>
     <dt className={styles.withAction}>{t("Tax")}
-      <input className={styles.taxInput} aria-label={t("Tax %")} inputMode="decimal" disabled={!state.canEdit} value={rate} onChange={(event) => setRate(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />%
+      <input className={styles.taxInput} aria-label={t("Tax %")} inputMode="decimal" disabled={!state.canEdit} value={rate} onChange={(event) => setRate(event.target.value.replace(/[^\d.]/g, ""))} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />%
     </dt>
     <dd>{value}</dd>
   </div>;

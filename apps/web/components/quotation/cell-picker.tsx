@@ -1,6 +1,6 @@
 "use client";
 
-import { ComboBox, Input, ListBox, ListBoxItem, Popover } from "react-aria-components";
+import { Button, ComboBox, Input, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { Plus } from "lucide-react";
 import { useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
@@ -23,13 +23,15 @@ export function CellPicker({ label, value, options, noneLabel, onChange, onCreat
   const t = useT();
   const { portalContainer, direction } = useDesignSystem();
   const items = [{ id: NONE, name: noneLabel }, ...options, ...(onCreate && createLabel ? [{ id: CREATE, name: createLabel }] : [])];
-  return <ComboBox aria-label={label} className={styles.picker} data-bordered={bordered || undefined} data-empty={value === null || undefined} items={items} selectedKey={value ?? NONE} menuTrigger="focus" isDisabled={isDisabled}
+  // Typing filters the list; a click opens the whole list; moving through the row with Tab doesn't pop it open.
+  return <ComboBox aria-label={label} className={styles.picker} data-bordered={bordered || undefined} data-empty={value === null || undefined} defaultItems={items} selectedKey={value ?? NONE} menuTrigger="input" isDisabled={isDisabled}
     onSelectionChange={(key) => {
       if (key === null) return;
       if (key === CREATE) { onCreate?.(); return; }
       onChange(key === NONE ? null : String(key));
     }}>
     <Input className={styles.pickerInput} onFocus={(event) => event.currentTarget.select()} />
+    <Button className={styles.pickerOpener} aria-label={label} excludeFromTabOrder />
     <Popover UNSTABLE_portalContainer={portalContainer ?? undefined} className="wd-popover wd-picker-popover" dir={direction} placement="bottom start">
       <ListBox renderEmptyState={() => <p className="wd-picker-empty">{t("No matches")}</p>}>
         {(item: Option) => <ListBoxItem className="wd-picker-item" id={item.id} textValue={item.name}>

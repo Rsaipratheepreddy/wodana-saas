@@ -9,7 +9,7 @@ import { catalogImageUrl } from "@/lib/quotation/client";
 import type { CommercialState, Quote } from "@/lib/commercial/types";
 import type { quoteApi } from "@/lib/quotation/client";
 import { QuotationBuilderShell } from "@/components/commercial/quotation-builder-shell";
-import { ProposalColumnsContext, type ProposalColumn } from "@/lib/commercial/proposal-columns";
+import { ProposalColumnsContext, ProposalFactsContext, type ProposalColumn, type ProposalFacts } from "@/lib/commercial/proposal-columns";
 import styles from "./quote-builder.module.css";
 
 /**
@@ -17,8 +17,10 @@ import styles from "./quote-builder.module.css";
  * letter, the items room by room, payments, terms), with every text and picture editable. It opens with
  * the lines as they are now and saves only its design, so the sheet stays the single source of the items.
  */
-export function QuoteProposal({ workspaceId, caseId, quoteId, api, sizeUnit, columns, onPayments }: {
+export function QuoteProposal({ workspaceId, caseId, quoteId, api, sizeUnit, columns, facts, onPayments }: {
   workspaceId: string; caseId: string; quoteId: string; api: ReturnType<typeof quoteApi>; sizeUnit: string;
+  /** The quote's reference, dates and engine amounts (the client's contact details are added here). */
+  facts: Omit<ProposalFacts, "phone" | "email" | "address">;
   /** The firm's own columns the client sees; they join the items table. */
   columns: ProposalColumn[];
   onPayments: () => void;
@@ -38,10 +40,11 @@ export function QuoteProposal({ workspaceId, caseId, quoteId, api, sizeUnit, col
   if (!state) return <Skeleton lines={6} shape="rows" />;
   const sheet = (quote: Quote) => withSheetFields(quote, workspaceId, caseId, sizeUnit);
   if (!state.data.quotes.some((quote) => quote.id === quoteId)) return <ErrorState title={t("The proposal didn't load")} />;
-  return <div className={styles.proposal}><ProposalColumnsContext.Provider value={columns}>
+  const known: ProposalFacts = { ...facts, phone: state.customerPhone ?? "", email: state.customerEmail ?? "", address: state.customerAddress ?? "" };
+  return <div className={styles.proposal}><ProposalFactsContext.Provider value={known}><ProposalColumnsContext.Provider value={columns}>
     <QuotationBuilderShell backHref="" initial={{ ...state, data: { ...state.data, quotes: state.data.quotes.map(sheet) } }} quoteId={quoteId}
       embedded={{ save: async (change) => { const result = await api.proposal(change); return { ...result, quote: sheet(result.quote) }; }, onPayments }} />
-  </ProposalColumnsContext.Provider></div>;
+  </ProposalColumnsContext.Provider></ProposalFactsContext.Provider></div>;
 }
 
 type SheetLine = Quote["lines"][number] & {

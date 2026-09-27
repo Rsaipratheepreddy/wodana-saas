@@ -34,7 +34,8 @@ export function QuotationBuilderShell({ backHref, initial, quoteId, embedded }: 
     const { confirmationDialog, requestConfirmation } = useConfirmationDialog();
     const original = initial.data.quotes.find(quote => quote.id === quoteId)!;
     const [draft, setDraft] = useState<Quote>(() => ({ ...original, ...(!original.presentation ? { terms: referenceTermsFor(original) } : {}), presentation: builderPresentation(original, initial.portalBrand?.name ?? '', initial.customerName,initial) }));
-    const [saved, setSaved] = useState(() => JSON.stringify(original));
+    // The baseline is the draft as opened (normalised), so opening the document doesn't count as a change.
+    const [saved, setSaved] = useState(() => JSON.stringify(draft));
     const [revision, setRevision] = useState(initial.data.revision);
     const [active, setActive] = useState(draft.presentation!.pageOrder![0]);
     const [scopeView, setScopeView] = useState(false), [detailsOpen, setDetailsOpen] = useState(false);

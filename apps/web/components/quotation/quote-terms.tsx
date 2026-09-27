@@ -16,7 +16,10 @@ export function QuoteTerms({ state, api, onSaved, onError }: { state: BuilderSta
   const pending = useRef<{ terms?: string; exclusions?: string }>({});
   const timer = useRef<number | undefined>(undefined);
   const readOnly = !state.canEdit;
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  // Leaving the tab before the save runs sends it at once, so nothing typed is lost.
+  const flushRef = useRef<() => void>(() => undefined);
+  useEffect(() => { flushRef.current = () => { window.clearTimeout(timer.current); const body = pending.current; pending.current = {}; if (Object.keys(body).length) void api.proposal(body).then((result) => onSaved({ terms: result.quote.terms ?? "", exclusions: result.quote.exclusions ?? "" })).catch(() => undefined); }; });
+  useEffect(() => () => flushRef.current(), []);
   const change = (patch: { terms?: string; exclusions?: string }) => {
     pending.current = { ...pending.current, ...patch };
     setSaved("saving");

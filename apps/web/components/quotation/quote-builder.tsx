@@ -116,7 +116,8 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
       catch (cause) {
         queue.current = [];
         setError(cause instanceof Error ? cause.message : t("Could not save."));
-        if (cause instanceof QuotationRequestError && cause.status === 409) await load();
+        // Show the quote as it really is again (no half-applied value stays on screen).
+        await load();
       }
     }
     sending.current = false; setSaving(false);
@@ -285,6 +286,13 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   const canAsk = state.canEdit && state.assistant?.available !== false;
   const openThreads = threads.filter((thread) => thread.status === "open").length;
   const customColumns = state.columns ?? [];
+  const day = (value: Date) => new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "long", year: "numeric" }).format(value);
+  const proposalFacts = {
+    reference: `${t("Q-{number}", { number: state.quote.number })} · ${t("R{number}", { number: Math.max(1, state.family.findIndex((item) => item.id === state.quote.id) + 1) })}`,
+    date: day(new Date()), validUntil: state.quote.validUntil ? day(new Date(`${state.quote.validUntil}T12:00:00Z`)) : "", approvedBy: state.quote.approvedBy ?? "",
+    subtotal: state.pricing.subtotal, discount: state.pricing.discounts.total, net: state.pricing.net, tax: state.pricing.tax, total: state.pricing.total,
+    lineAmount: Object.fromEntries(state.pricing.lines.map((line) => [line.id, String(Number(line.gross) - Number(line.lineDiscount))])),
+  };
   const toFix = state.quote.status === "draft" ? state.checks.length : 0;
   const views: Array<{ id: Panel; label: string }> = [
     ...(state.canEdit ? [{ id: "assistant" as const, label: t("Assistant") }, { id: "catalog" as const, label: t("Catalog") }] : []),
@@ -309,7 +317,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   // Column headings, repeated under each area's band so a long quote stays readable. Each heading's
   // edge can be dragged (or moved with the arrow keys) to resize its column.
   const heading = (key: string, content: React.ReactNode, options: { numeric?: boolean; label?: string } = {}) => <span role="columnheader" data-numeric={options.numeric || undefined}
-    data-stick={key === "picture" || key === "item" ? key : undefined}
+    data-stick={key === "picture" || key === "item" || key === "amount" ? key : undefined}
     aria-label={options.label} title={options.label}>
     {content}
     {RESIZABLE.has(key) || key.startsWith("custom:") ? <span role="separator" aria-orientation="vertical" aria-label={t("Resize {column}", { column: options.label ?? String(content) })} tabIndex={0} className={styles.resizer}
@@ -339,7 +347,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     {heading("unit", t("Unit"), { label: t("Unit") })}
     {heading("rate", t("Rate"), { numeric: true, label: t("Rate") })}
     {heading("amount", t("Amount"), { numeric: true, label: t("Amount") })}
-    <span role="columnheader" className={styles.gutter}>{state.canEdit ? <IconButton aria-label={t("Add a column")} size="compact" onPress={() => setColumnFor("new")}><Plus aria-hidden="true" size={15} /></IconButton> : null}</span>
+    <span role="columnheader" className={styles.gutter} data-stick="menu">{state.canEdit ? <IconButton aria-label={t("Add a column")} size="compact" onPress={() => setColumnFor("new")}><Plus aria-hidden="true" size={15} /></IconButton> : null}</span>
   </div>;
 
   const renderGroup = (group: LineGroup, context: { areaId: string | null; workPackageId: string | null }, depth: number, tone?: string) => {
@@ -445,10 +453,11 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
         }) + (state.quote.clientDecision.note ? ` — ${state.quote.clientDecision.note}` : "")} /> : null}
         <RevisionChanges key={state.quote.id} state={state} api={api} />
         {error ? <InlineNotice tone="error" message={error} /> : null}
-        {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={t("This quote has been sent. Start a new revision to change it.")} /> : null}
+        {!state.canEdit && state.quote.status !== "draft" ? <InlineNotice tone="info" message={["internal_review", "internal_approved"].includes(state.quote.status)
+          ? t("This quote is in review. It can be changed again if it's sent back.") : t("This quote has been sent. Start a new revision to change it.")} /> : null}
 
         {tab === "document" ? <QuoteProposal workspaceId={workspaceId} caseId={caseId} quoteId={quoteId} api={api} sizeUnit={state.sizeUnit ?? "cm"} onPayments={() => setTab("payments")}
-          columns={customColumns.filter((custom) => custom.showInProposal).map(({ id, name }) => ({ id, name }))} />
+          columns={customColumns.filter((custom) => custom.showInProposal).map(({ id, name }) => ({ id, name }))} facts={proposalFacts} />
           : tab === "terms" ? <QuoteTerms key={`terms:${state.quote.id}`} state={state} api={api} onError={setError}
             onSaved={(proposal) => setState((current) => (current ? { ...current, proposal } : current))} />
             : tab === "payments" ? <QuotePayments key={`payments:${state.quote.id}:${JSON.stringify(state.quote.paymentTerms)}`} state={state} api={api} onState={setState} onError={setError} /> : <>
@@ -460,14 +469,15 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
           <div ref={scroller} className={styles.gridScroll} style={{ "--visible": visible ? `${visible}px` : "100%" } as React.CSSProperties}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width, customColumns), "--stick-serial": `${widths.width("gutter")}px`, "--stick-picture": `${widths.width("gutter") + widths.width("serial")}px`,
-            "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px` } as React.CSSProperties}
+            "--stick-item": `${widths.width("gutter") + widths.width("serial") + (columns.picture ? widths.width("picture") : 0)}px`, "--stick-menu": `${widths.width("menu")}px` } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
               const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
               focus.current = { lineId: row?.dataset.lineId ?? null, field: ({ Item: "title", Quantity: "quantity", Unit: "unit", Rate: "rate", Area: "area", "Work package": "trade" } as Record<string, string>)[label] ?? null };
             }}
             onBlurCapture={() => { focus.current = { lineId: null, field: null }; }}>
-            {groups.filter((group) => group.lines.length || state.canEdit).map((group, index) => renderGroup(group, view === "trade"
+            {groups.filter((group) => group.lines.length || (state.canEdit && (view !== "trade" || group.key === NO_TRADE || drafts.some((draft) => draft.workPackageId === group.key))))
+              .map((group, index) => renderGroup(group, view === "trade"
               ? { areaId: null, workPackageId: group.key === NO_TRADE ? null : group.key }
               : { areaId: group.key === GENERAL ? null : group.key, workPackageId: null }, 0, GROUP_TONES[index % GROUP_TONES.length]))}
             {empty && !state.canEdit ? <EmptyState title={t("No items yet")} /> : null}
@@ -573,6 +583,10 @@ function merge(ops: LineOp[], state: BuilderState | null): LineOp[] {
       out.push(next);
     } else if (op.op === "delete") {
       out.push({ ...op, version: version(op.id) ?? op.version });
+    } else if (op.op === "catalog") {
+      // Choosing a catalog item on a line that exists: send the version we last saw, as an edit does.
+      const known = version(op.line.id);
+      out.push(known !== undefined && op.line.version === undefined ? { ...op, line: { ...op.line, version: known } } : op);
     } else out.push(op);
   }
   return out;

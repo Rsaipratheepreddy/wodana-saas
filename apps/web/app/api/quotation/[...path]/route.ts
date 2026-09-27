@@ -36,6 +36,8 @@ async function handle(request: Request, { params }: { params: Promise<{ path: st
   const query = new URLSearchParams();
   const q = url.searchParams.get("q");
   if (path[4] === "catalog" && q) query.set("q", q.slice(0, 120));
+  const limit = url.searchParams.get("limit");
+  if (path[4] === "catalog" && limit && /^\d{1,2}$/.test(limit)) query.set("limit", limit);
   return workspaceJsonResponse(`/workspaces/${workspaceId}/quotation/${path.join("/")}${query.size ? `?${query}` : ""}`,
     { method: request.method, headers: { "content-type": "application/json" }, body }, "Could not update the quotation.");
 }

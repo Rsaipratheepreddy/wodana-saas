@@ -33,3 +33,12 @@ describe("materials build-up", () => {
     expect(result).toMatchObject({ complete: false, cost: null, rate: "0.00" });
   });
 });
+
+describe("sizes in their unit", () => {
+  it("works a formula out in metres from sizes written in centimetres", () => {
+    expect(lineQuantity({ length: "240", width: "60", dimensionUnit: "cm", formula: "area", quantity: "1" }).quantity).toBe("1.44");
+    expect(lineQuantity({ length: "2400", width: "600", dimensionUnit: "mm", formula: "area", quantity: "1" }).quantity).toBe("1.44");
+    expect(lineQuantity({ length: "2.4", width: "0.6", formula: "area", quantity: "1" }).quantity).toBe("1.44");
+    expect(lineQuantity({ length: "240", count: "3", dimensionUnit: "cm", formula: "length * count", quantity: "1" }).quantity).toBe("7.2");
+  });
+});

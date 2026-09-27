@@ -4227,5 +4227,8 @@
   "It goes from every quote. Values already on sent quotes stay on their records.": "It goes from every quote. Values already on sent quotes stay on their records.",
   "Add a column": "Add a column",
   "Hide from the client's proposal": "Hide from the client's proposal",
-  "Show on the client's proposal": "Show on the client's proposal"
+  "Show on the client's proposal": "Show on the client's proposal",
+  "This quote is in review. It can be changed again if it's sent back.": "This quote is in review. It can be changed again if it's sent back.",
+  "Rename to “{name}”": "Rename to “{name}”",
+  "Tax must be a number from 0 to 100.": "Tax must be a number from 0 to 100."
 }

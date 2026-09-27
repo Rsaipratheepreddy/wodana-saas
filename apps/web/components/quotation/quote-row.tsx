@@ -116,8 +116,8 @@ export function QuoteRow({ line, draft, serial, column, columns, customColumns =
       {line.pricingMode === "build_up" ? <button type="button" className={styles.formulaChip} onClick={onOpen} data-error={line.buildUpComplete === false || undefined}><Sigma aria-hidden="true" size={12} />{plain(line.rate, locale, decimals)}</button>
         : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
     </span>
-    <span role="gridcell" className={styles.amountCell}>{draft ? "" : money(amount, currency, decimals, locale)}</span>
-    <span role="gridcell" className={`${styles.menuCell} ${styles.gutter}`}>
+    <span role="gridcell" className={styles.amountCell} data-stick="amount">{draft ? "" : money(amount, currency, decimals, locale)}</span>
+    <span role="gridcell" className={`${styles.menuCell} ${styles.gutter}`} data-stick="menu">
       {!draft && onComments ? <CommentButton threads={comments} label={t("Comments on {name}", { name: line.title })} onOpen={onComments} /> : null}
       {!draft ? <IconMenuButton ariaLabel={t("Line actions for {name}", { name: line.title })} onAction={onMenu} items={[
         ...(canAsk ? [{ id: "ask", label: t("Ask AI about this line") }] : []),
@@ -209,8 +209,11 @@ function FloatingList({ anchor, id, label, className, onClose, children }: { anc
     };
     measure();
     const close = () => onClose();
+    // The field can grow (a new tag wraps the cell): follow it.
+    const watcher = new ResizeObserver(measure);
+    if (anchor.current) watcher.observe(anchor.current);
     window.addEventListener("scroll", close, true); window.addEventListener("resize", measure);
-    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", measure); };
+    return () => { watcher.disconnect(); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", measure); };
   }, [anchor, direction, onClose]);
   if (!place) return null;
   return createPortal(<ul id={id} role="listbox" aria-label={label} className={className} dir={direction}
@@ -225,23 +228,42 @@ const toneOf = (name: string) => TAG_TONES[[...name.toLowerCase()].reduce((sum, 
 
 /** A cell that edits in place: commits on Enter or leaving the cell, Escape puts the value back. */
 function CellInput({ label, value, disabled, numeric, allowEmpty, placeholder, onCommit }: { label: string; value: string; disabled?: boolean; numeric?: boolean; allowEmpty?: boolean; placeholder?: string; onCommit: (value: string) => void }) {
+  const { locale } = useDesignSystem();
   const [text, setText] = useState(value);
   const [focused, setFocused] = useState(false);
   const cancelled = useRef(false);
   const shown = focused ? text : value;
   const commit = () => {
     if (cancelled.current) { cancelled.current = false; return; }
-    const next = numeric ? text.replace(/[^\d.]/g, "") : text.trim();
-    if (next !== (numeric ? value.replace(/[^\d.]/g, "") : value) && (!numeric || allowEmpty || next !== "")) onCommit(next);
+    if (!numeric) { const next = text.trim(); if (next !== value) onCommit(next); return; }
+    // Numbers are read the way the workspace writes them ("2,55" or "2.55"); anything that isn't one puts the value back.
+    const next = readNumber(text, locale), before = readNumber(value, locale);
+    if (next === null) { if (allowEmpty && !text.trim() && before !== null) onCommit(""); else setText(value); return; }
+    if (next !== before) onCommit(next);
   };
   return <input aria-label={label} className={styles.cell} data-numeric={numeric || undefined} inputMode={numeric ? "decimal" : undefined} disabled={disabled} value={shown} placeholder={placeholder}
     onFocus={(event) => { setText(value); setFocused(true); event.currentTarget.select(); }}
-    onChange={(event) => setText(numeric ? onlyNumber(event.target.value) : event.target.value)}
+    onChange={(event) => setText(numeric ? event.target.value.replace(/[^\d.,]/g, "") : event.target.value)}
     onBlur={() => { setFocused(false); commit(); }}
     onKeyDown={(event) => {
       if (event.key === "Escape") { cancelled.current = true; setText(value); event.currentTarget.blur(); }
       if (event.key === "Enter") { event.preventDefault(); moveDown(event); }
     }} />;
+}
+
+/**
+ * A typed number as the server takes it ("1234.5"), reading the workspace's decimal mark and ignoring
+ * its thousands mark; null when it isn't a number (empty, ".", "1.2.3").
+ */
+export function readNumber(text: string, locale: string) {
+  const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
+  const decimal = parts.find((part) => part.type === "decimal")?.value ?? ".";
+  const group = parts.find((part) => part.type === "group")?.value ?? ",";
+  let clean = text.trim().replace(/\s/g, "");
+  if (!clean) return null;
+  if (decimal !== ".") clean = clean.split(group === "." ? "." : "\u0000").join("").replace(decimal, ".");
+  else clean = clean.split(group).join("");
+  return /^\d+(\.\d+)?$/.test(clean) ? String(Number(clean)) : /^\d+\.$/.test(clean) ? String(Number(clean.slice(0, -1))) : null;
 }
 
 /** What a number cell accepts as you type: digits and one decimal point, nothing else. */
@@ -328,7 +350,7 @@ function ItemCell({ line, canEdit, search, thumb, onCommit, onCatalog, onNewCata
           {thumb ? <span className={styles.hitThumb}>{option.hit.imageId ? <img src={thumb(option.hit.imageId)} alt="" /> : null}</span> : null}
           <span className={styles.hitName}>{option.hit.name}<small>{[option.hit.categoryName, option.hit.code].filter(Boolean).join(" · ")}</small></span>
           <span className={styles.hitPrice}>{option.hit.rate ? `${plain(option.hit.rate, locale, 2)} / ${option.hit.unitCode}` : option.hit.hasBuildUp ? t("Priced from parts") : t("No price")}</span>
-        </> : <span className={styles.hitName}><span className={styles.customHit}><Plus aria-hidden="true" size={13} />{option.type === "catalog" ? t("Add “{name}” to the catalog too", { name: text.trim() }) : t("Add “{name}” as a new line", { name: text.trim() })}</span></span>}
+        </> : <span className={styles.hitName}><span className={styles.customHit}><Plus aria-hidden="true" size={13} />{option.type === "catalog" ? t("Add “{name}” to the catalog too", { name: text.trim() }) : draft ? t("Add “{name}” as a new line", { name: text.trim() }) : t("Rename to “{name}”", { name: text.trim() })}</span></span>}
       </li>)}
     </FloatingList> : null}
   </div>;

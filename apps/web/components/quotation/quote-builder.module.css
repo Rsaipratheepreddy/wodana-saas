@@ -31,7 +31,7 @@
 .tabs { display: inline-flex; flex: none; margin-inline-start: var(--wd-space-3); }
 .canvasHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
 
-.panel { position: sticky; inset-block-start: calc(var(--top) + var(--wd-space-3)); display: flex; flex-direction: column; block-size: calc(100dvh - var(--top) - var(--wd-space-6)); min-inline-size: 0; margin: var(--wd-space-3) var(--wd-space-3) var(--wd-space-3) 0; overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-sm); }
+.panel { position: sticky; inset-block-start: calc(var(--top) + var(--wd-space-3)); display: flex; flex-direction: column; block-size: calc(100dvh - var(--top) - var(--wd-space-6)); min-inline-size: 0; margin-block: var(--wd-space-3); margin-inline: 0 var(--wd-space-3); overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface); box-shadow: var(--wd-shadow-sm); }
 .panel[hidden], .panelBody[hidden] { display: none; }
 .panelHead { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-3) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .panelBody { display: flex; flex: 1 1 auto; flex-direction: column; min-block-size: 0; }
@@ -51,7 +51,10 @@
 /* The table: quiet rows, one hairline between them; tools appear on hover. */
 /* The sheet: every cell framed like a spreadsheet, the headings on a tinted row. The edge columns
    (drag handle, line actions) sit outside the frame. The builder lists the column widths as --cols. */
-.gridScroll { min-inline-size: 0; overflow-x: auto; }
+.gridScroll { min-inline-size: 0; overflow-x: auto; scrollbar-color: var(--wd-color-border-strong) transparent; scrollbar-width: thin; }
+/* Always show the sideways scrollbar (macOS hides it otherwise), so wider sheets are clearly scrollable. */
+.gridScroll::-webkit-scrollbar { block-size: var(--wd-space-2); }
+.gridScroll::-webkit-scrollbar-thumb { border-radius: var(--wd-radius-pill); background: var(--wd-color-border-strong); }
 .grid { display: flex; flex-direction: column; inline-size: 100%; min-inline-size: max-content; }
 .columns, .row { display: grid; grid-template-columns: var(--cols); align-items: stretch; }
 .columns > span, .row > [role="gridcell"] { position: relative; display: flex; align-items: center; min-inline-size: 0; border-block-end: 1px solid var(--wd-color-table-border); border-inline-end: 1px solid var(--wd-color-table-border); }
@@ -62,6 +65,13 @@
 .columns > [data-stick="serial"], .row > [data-stick="serial"] { inset-inline-start: var(--stick-serial); }
 .columns > [data-stick="picture"], .row > [data-stick="picture"] { inset-inline-start: var(--stick-picture); }
 .columns > [data-stick="item"], .row > [data-stick="item"] { inset-inline-start: var(--stick-item); }
+/* …and the money stays in view on the other side. */
+.columns > [data-stick="menu"], .row > [data-stick="menu"] { inset-inline-end: 0; background: var(--wd-color-surface); }
+.columns > [data-stick="amount"], .row > [data-stick="amount"] { inset-inline-end: var(--stick-menu); border-inline-start: 1px solid var(--wd-color-table-border); }
+/* On a narrow screen only # stays frozen, so there's room for the numbers. */
+@media (max-width: 64rem) {
+  .columns > [data-stick="picture"], .row > [data-stick="picture"], .columns > [data-stick="item"], .row > [data-stick="item"] { position: relative; inset-inline-start: auto; }
+}
 .columns > .gutter, .row > .gutter { border-block-end: 0; border-inline-end: 0; }
 .columns { margin-block-start: var(--wd-space-2); color: var(--wd-color-table-header-ink); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
 .columns > span:not(.gutter) { gap: var(--wd-space-1-5); min-block-size: var(--wd-space-10); padding-inline: var(--wd-space-2-5); border-block-start: 1px solid var(--wd-color-table-border); background: var(--wd-color-table-header); white-space: nowrap; }
@@ -149,7 +159,11 @@
 .formulaChip:focus-visible { outline: 2px solid var(--wd-color-focus); }
 
 /* A line's area or work package, chosen in the cell. */
-.picker { inline-size: 100%; block-size: 100%; min-inline-size: 0; }
+.picker { position: relative; inline-size: 100%; block-size: 100%; min-inline-size: 0; }
+/* The whole cell opens the list on click; once the field has focus, typing filters it. */
+.pickerOpener { position: absolute; inset: 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.picker:focus-within .pickerOpener { pointer-events: none; }
+.pickerOpener:disabled { cursor: default; }
 .picker[data-bordered] { flex: 1 1 auto; block-size: auto; }
 .picker[data-bordered] .pickerInput { border: 1px solid var(--wd-color-border-control); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); }
 .picker[data-bordered] .pickerInput:focus { border-color: var(--wd-color-focus); box-shadow: 0 0 0 1px var(--wd-color-focus); }
