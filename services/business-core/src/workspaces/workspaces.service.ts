@@ -143,7 +143,8 @@ const COMMERCIAL_REVIEW_ROLES = [
     code: "finance_reviewer",
     name: "Finance reviewer",
     description: "Verify deal payment evidence and confirm final commissions before operations approval",
-    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify"],
+    // Reads Finance (supplier bills and client invoices) to verify what came in and what is owed.
+    permissions: ["pre_projects.view", "crm.opportunities.view", "commercial.finance.verify", "payables.view", "receivables.view"],
   },
   {
     code: "operations_approver",

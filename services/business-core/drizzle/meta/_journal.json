@@ -547,6 +547,13 @@
       "when": 1796040000000,
       "tag": "0077_quote_custom_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1796212800000,
+      "tag": "0079_finance_reviewer_reads_finance",
+      "breakpoints": true
     }
   ]
 }

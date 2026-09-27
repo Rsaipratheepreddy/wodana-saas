@@ -390,6 +390,16 @@ try {
   assert.deepEqual(quantitySurveyor.rows.map(row => row.code).sort(), [
     "commercial.costs.view", "commercial.estimate", "crm.opportunities.view", "pre_projects.view",
   ], "A new workspace must provision an assignable QS reviewer with only the required quotation access");
+  const financeReviewer = await tenantQuery<{ code: string }>(
+    `SELECT permission.code FROM roles role
+     JOIN role_permissions assigned ON assigned.role_id=role.id AND assigned.workspace_id=role.workspace_id
+     JOIN permissions permission ON permission.id=assigned.permission_id
+     WHERE role.workspace_id=$1 AND role.code='finance_reviewer'`,
+    [workspaceId],
+  );
+  assert.deepEqual(financeReviewer.rows.map(row => row.code).sort(), [
+    "commercial.finance.verify", "crm.opportunities.view", "payables.view", "pre_projects.view", "receivables.view",
+  ], "The Finance reviewer verifies payments and reads Finance (bills and invoices), nothing more");
   const activated = await request("/auth/invitations/activate", "POST", { invitationToken: provisioned.ownerInvitation.invitationToken, password }, 201, false);
   token = activated.accessToken;
   ownerId = (await request("/me")).id;
