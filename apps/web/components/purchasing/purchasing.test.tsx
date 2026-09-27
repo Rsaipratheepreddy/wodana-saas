@@ -26,7 +26,7 @@ const state = (patch: Partial<SupplierState> = {}): SupplierState => ({
 const controls = (patch: Partial<SupplierControlsState> = {}): SupplierControlsState => ({
   supplier: supplier({ id: "s2", name: "Ritver Paints" }), documents: [], bankAccounts: [],
   scorecard: { orders: [], deliveredLines: 0, onTimePercent: null, received: "0", rejected: "0", rejectPercent: null, returns: 0, priceRequests: 0, replyPercent: null, replyDays: null },
-  openOrders: [], canManage: true, canApprove: true, me: "u2", ...patch,
+  openOrders: [], contracts: [], catalogItems: [{ id: "c1", name: "Wood glue", unit: "pcs" }], canManage: true, canApprove: true, me: "u2", ...patch,
 });
 /** Supplier detail (documents, bank, performance) answers for /suppliers/<id>; everything else as given. */
 const withControls = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown, detail: () => unknown = () => controls()) =>
@@ -130,6 +130,36 @@ describe("suppliers", () => {
     expect(await within(sheet).findByRole("button", { name: "Approve" })).toBeInTheDocument();
   });
 
+  it("adds a rate contract with its prices and period", async () => {
+    let detail = controls();
+    const fetcher = mount(withControls((url, body) => {
+      if (url.includes("/contracts")) detail = controls({ contracts: [{ id: "k1", reference: String(body?.reference ?? ""), currency: "AED", validFrom: "2026-01-01", validTo: "2026-12-31", note: "",
+        status: "active", cancelReason: null, state: "valid", createdByName: "Bina", lines: [{ id: "kl1", catalogItemId: "c1", itemName: "Wood glue", unit: "pcs", unitPrice: "25.0000", minimum: null, packSize: "6.0000", leadDays: null }] }] });
+      return url.includes("/contracts") ? detail : state();
+    }, () => detail));
+    page();
+    await userEvent.click(await screen.findByText("Ritver Paints"));
+    const sheet = await screen.findByRole("dialog", { name: "Ritver Paints" });
+    await userEvent.click(await within(sheet).findByRole("tab", { name: "Rate contracts" }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Add rate contract" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add rate contract" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Reference/ }), "RC-2026");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Currency/ }), "aed");
+    for (const [name, value] of [["Valid from", ["1", "1", "2026"]], ["Valid to", ["12", "31", "2026"]]] as const) {
+      const group = within(dialog).getByRole("group", { name: new RegExp(name) });
+      const [month, day, year] = within(group).getAllByRole("spinbutton");
+      await userEvent.type(month, value[0]); await userEvent.type(day, value[1]); await userEvent.type(year, value[2]);
+    }
+    await userEvent.click(within(dialog).getByRole("button", { name: /Item, line 1/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Wood glue (pcs)" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Price, line 1" }), "25");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Pack size, line 1" }), "6");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ reference: "RC-2026", currency: "AED", validFrom: "2026-01-01", validTo: "2026-12-31",
+      lines: [{ catalogItemId: "c1", unitPrice: "25", packSize: "6", minimum: null }] }));
+    expect(await within(sheet).findByText(/Wood glue: .*25\.00 \/ pcs · packs of 6/)).toBeInTheDocument();
+  });
+
   it("imports a supplier list: reads the columns, shows what will be added, then imports", async () => {
     const plan: SupplierImportPlan = { canApprove: false, plan: [
       { name: "SIOM Marble", rows: ["list.csv:2"], existingId: null, action: "create", categories: ["Marble"], approval: "pending", preferredFor: [], approvalSkipped: true,
@@ -186,7 +216,7 @@ describe("ordering", () => {
         alternateStatus: null, alternateDescription: null, alternateSpecification: "", alternateUnitPrice: null, alternateNote: "", alternateOfferedBy: null, originalDescription: null, originalSpecification: null }],
     events: [{ id: "e1", kind: "created", detail: {}, byName: "Bina Buyer", at: "2026-09-27T09:00:00Z" }], revisions: [],
     supplier: { id: "s1", name: "Nile Marble & Granite", email: "orders@nile.example", phone: null, contactName: "Mohamed", approval: "approved", deal: "discount", dealPercent: "10.00" },
-    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], me: "u2", supplierHold: null, ...rights,
+    receipts: [], returns: [], canBuy: true, canApprove: true, canApproveThis: false, canReceive: true, overOrdered: [], packs: [], contracts: [], me: "u2", supplierHold: null, ...rights,
   });
   const ordersList = { orders: [orderState().order], settings: needs.settings, canBuy: true, canApprove: true };
 

@@ -575,6 +575,7 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Bank details** are recorded as the supplier sent them (letter, email, in person, phone) and wait. Someone other than whoever recorded them records the call-back (who was called, on a number the firm already had) and then approves (the old account is retired) or refuses with why. Only people who approve suppliers see the whole number; others see the last four digits. One set of new details at a time.
 - **Duplicates:** the same name, tax number or phone number (any formatting) on another supplier is refused.
 - **Performance** from the records: orders and their value, lines delivered on time, rejected quantity and rate, returns, and how often and how fast the supplier answers price requests.
+- **Rate contracts:** prices agreed with a supplier for a period (reference, currency, valid from/to), per catalog item, with pack size, minimum and lead time. While one is valid its price is an order line's default (before the catalog price) and its pack terms drive the pack hint; a line priced above it shows "Above the RC price". A contract is cancelled with why, not edited; expired or cancelled contracts price nothing.
 
 - **Records:** vendors (`draft → pending_approval → approved → on_hold → blocked → archived`), sites, contacts, documents with expiry, bank accounts (Finance approval + call-back evidence), rate contracts + lines (price, validity, MOQ, pack size, lead time), scorecard view (on-time %, QC reject %, price variance, RFQ response time).
 - **Rules:**

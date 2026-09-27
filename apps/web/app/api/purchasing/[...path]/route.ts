@@ -8,7 +8,8 @@ function allowed(path: string[], method: string) {
   if (path.length === 2 && path[0] === "suppliers" && path[1] === "import") return method === "POST";
   if (path.length === 3 && path[0] === "suppliers" && UUID.test(path[1]) && ["approval", "archive"].includes(path[2])) return method === "POST";
   if (path.length === 2 && path[0] === "suppliers" && UUID.test(path[1])) return method === "GET";
-  if (path.length === 3 && path[0] === "suppliers" && UUID.test(path[1]) && ["documents", "bank-accounts"].includes(path[2])) return method === "POST";
+  if (path.length === 3 && path[0] === "suppliers" && UUID.test(path[1]) && ["documents", "bank-accounts", "contracts"].includes(path[2])) return method === "POST";
+  if (path.length === 5 && path[0] === "suppliers" && UUID.test(path[1]) && path[2] === "contracts" && UUID.test(path[3]) && path[4] === "cancel") return method === "POST";
   if (path.length === 4 && path[0] === "suppliers" && UUID.test(path[1]) && path[2] === "bank-accounts" && UUID.test(path[3])) return method === "POST";
   if (path.length === 5 && path[0] === "suppliers" && UUID.test(path[1]) && path[2] === "documents" && UUID.test(path[3]) && path[4] === "file") return method === "POST";
   if (path.length === 2 && path[0] === "supplier-documents" && UUID.test(path[1])) return method === "GET";

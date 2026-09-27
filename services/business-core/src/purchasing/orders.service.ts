@@ -16,6 +16,7 @@ import {
 } from "./orders";
 import { outstanding, readReceipts, settleOrder } from "./receiving";
 import { readReturns } from "./returns.service";
+import { contractPrice } from "./supplier-controls.service";
 import { PAYMENT_TERMS, percent, readSupplier, type Supplier } from "./suppliers";
 
 type Db = PoolClient;
@@ -23,6 +24,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NO_VENDOR = "00000000-0000-4000-8000-000000000000";
 
 type LineInput = {
   id: string; source: "material" | "line" | "free"; materialItemId: string | null; boqLineId: string | null; projectId: string | null;
@@ -393,7 +395,7 @@ export class OrdersService {
 
   /** The same checks as an order's lines, for another purchasing step (a price request). */
   async checkLines(client: Db, workspaceId: string, value: unknown, currency: string) {
-    return this.lines(client, workspaceId, value, { tax: "0", discount: "0", vendorId: "00000000-0000-4000-8000-000000000000", currency });
+    return this.lines(client, workspaceId, value, { tax: "0", discount: "0", vendorId: NO_VENDOR, currency });
   }
 
   /** A supplier that can take orders (not archived), for another purchasing step. */
@@ -423,6 +425,7 @@ export class OrdersService {
         ? { approval: supplier.approval, note: supplier.approvalNote } : null,
       overOrdered: ["draft", "pending_approval"].includes(order.status) ? await this.overOrdered(client, workspaceId, orderId) : [],
       packs: await this.packs(client, workspaceId, order),
+      contracts: await this.contracts(client, workspaceId, order),
     };
   }
 
@@ -509,6 +512,9 @@ export class OrdersService {
       const quantity = amount(input.quantity, `Line ${index + 1}: quantity`);
       if (Dec.of(quantity).cmp(0) <= 0) throw new BadRequestException(`Line ${index + 1}: order more than zero.`);
       let unitPrice = input.unitPrice === undefined || input.unitPrice === null || input.unitPrice === "" ? null : amount(input.unitPrice, `Line ${index + 1}: price`);
+      // A valid rate contract's price first, then the supplier's catalog price.
+      if (unitPrice === null && origin?.catalogItemId && defaults.vendorId !== NO_VENDOR)
+        unitPrice = (await contractPrice(client, workspaceId, defaults.vendorId, origin.catalogItemId, defaults.currency))?.unitPrice ?? null;
       if (unitPrice === null && origin?.catalogItemId)
         unitPrice = (await client.query<{ cost: string }>(
           `SELECT cost::text AS cost FROM catalog_supplier_links WHERE workspace_id = $1 AND item_id = $2 AND vendor_id = $3 AND cost IS NOT NULL AND currency = $4 ORDER BY preferred DESC, updated_at DESC LIMIT 1`,
@@ -536,19 +542,47 @@ export class OrdersService {
     return origin.unit;
   }
 
-  /** The supplier's pack size and minimum for lines from their catalog, with the quantity that fits when the line doesn't. */
-  private async packs(client: Db, workspaceId: string, order: OrderDetail) {
-    const rows = (await client.query<{ lineId: string; quantity: string; packSize: string | null; minimum: string | null }>(
-      `SELECT DISTINCT ON (line.id) line.id AS "lineId", line.quantity::text AS quantity, link.pack_size::text AS "packSize", link.minimum_order::text AS minimum
+  /** Lines under a valid rate contract with this supplier: its reference and price, and whether the line costs more. */
+  private async contracts(client: Db, workspaceId: string, order: OrderDetail) {
+    const rows = (await client.query<{ lineId: string; unitPrice: string; catalogItemId: string | null }>(
+      `SELECT line.id AS "lineId", line.unit_price::text AS "unitPrice", coalesce(material.catalog_item_id, scope.catalog_item_id) AS "catalogItemId"
          FROM purchase_order_lines line
          LEFT JOIN project_material_items material ON material.workspace_id = line.workspace_id AND material.id = line.material_item_id
          LEFT JOIN project_boq_lines scope ON scope.workspace_id = line.workspace_id AND scope.id = line.boq_line_id
-         JOIN catalog_supplier_links link ON link.workspace_id = line.workspace_id AND link.item_id = coalesce(material.catalog_item_id, scope.catalog_item_id) AND link.vendor_id = $3
-        WHERE line.workspace_id = $1 AND line.order_id = $2 AND (coalesce(link.pack_size, 0) > 0 OR coalesce(link.minimum_order, 0) > 0)
-        ORDER BY line.id, link.preferred DESC, link.updated_at DESC`, [workspaceId, order.id, order.vendorId])).rows;
+        WHERE line.workspace_id = $1 AND line.order_id = $2`, [workspaceId, order.id])).rows;
+    const out: Array<{ lineId: string; reference: string; unitPrice: string; above: boolean }> = [];
+    for (const row of rows.filter((item) => item.catalogItemId)) {
+      const contract = await contractPrice(client, workspaceId, order.vendorId, row.catalogItemId!, order.currency);
+      if (contract) out.push({ lineId: row.lineId, reference: contract.reference, unitPrice: contract.unitPrice, above: Dec.of(row.unitPrice).cmp(contract.unitPrice) > 0 });
+    }
+    return out;
+  }
+
+  /**
+   * The supplier's pack size and minimum for lines from their catalog (a valid rate contract's own
+   * first), with the quantity that fits when the line doesn't.
+   */
+  private async packs(client: Db, workspaceId: string, order: OrderDetail) {
+    const rows = (await client.query<{ lineId: string; quantity: string; catalogItemId: string; packSize: string | null; minimum: string | null }>(
+      `SELECT line.id AS "lineId", line.quantity::text AS quantity, coalesce(material.catalog_item_id, scope.catalog_item_id) AS "catalogItemId",
+              link.pack_size::text AS "packSize", link.minimum_order::text AS minimum
+         FROM purchase_order_lines line
+         LEFT JOIN project_material_items material ON material.workspace_id = line.workspace_id AND material.id = line.material_item_id
+         LEFT JOIN project_boq_lines scope ON scope.workspace_id = line.workspace_id AND scope.id = line.boq_line_id
+         LEFT JOIN LATERAL (SELECT pack_size, minimum_order FROM catalog_supplier_links link
+                             WHERE link.workspace_id = line.workspace_id AND link.item_id = coalesce(material.catalog_item_id, scope.catalog_item_id) AND link.vendor_id = $3
+                             ORDER BY link.preferred DESC, link.updated_at DESC LIMIT 1) link ON true
+        WHERE line.workspace_id = $1 AND line.order_id = $2 AND coalesce(material.catalog_item_id, scope.catalog_item_id) IS NOT NULL`, [workspaceId, order.id, order.vendorId])).rows;
     const plain = (value: string | null) => (value === null || Dec.of(value).isZero() ? null : Dec.of(value).toString());
-    return rows.map((row) => ({ lineId: row.lineId, packSize: plain(row.packSize), minimum: plain(row.minimum), suggested: packQuantity(row.quantity, plain(row.packSize), plain(row.minimum)) }))
-      .filter((row) => Dec.of(row.suggested).cmp(rows.find((item) => item.lineId === row.lineId)!.quantity) !== 0);
+    const out: Array<{ lineId: string; packSize: string | null; minimum: string | null; suggested: string }> = [];
+    for (const row of rows) {
+      const contract = await contractPrice(client, workspaceId, order.vendorId, row.catalogItemId, order.currency);
+      const packSize = plain(contract?.packSize ?? row.packSize), minimum = plain(contract?.minimum ?? row.minimum);
+      if (!packSize && !minimum) continue;
+      const suggested = packQuantity(row.quantity, packSize, minimum);
+      if (Dec.of(suggested).cmp(row.quantity) !== 0) out.push({ lineId: row.lineId, packSize, minimum, suggested });
+    }
+    return out;
   }
 
   /** Lines on this order that take a project past what it needs, by how much. */

@@ -82,6 +82,8 @@ export type OrderState = {
   overOrdered: Array<{ lineId: string; description: string; unit: string; over: string }>;
   /** The supplier's pack size and minimum where a line doesn't fit them, and the quantity that does. */
   packs: Array<{ lineId: string; packSize: string | null; minimum: string | null; suggested: string }>;
+  /** Lines under a valid rate contract: its reference and price, and whether the line costs more. */
+  contracts: Array<{ lineId: string; reference: string; unitPrice: string; above: boolean }>;
   /** After cancelling the rest of a line and ordering it elsewhere: the new draft order. */
   reordered?: string | null;
   /** After sending: how the supplier's email went. */
@@ -186,7 +188,13 @@ export type Scorecard = {
   orders: Array<{ currency: string; orders: number; value: string }>; deliveredLines: number; onTimePercent: string | null; received: string; rejected: string;
   rejectPercent: string | null; returns: number; priceRequests: number; replyPercent: string | null; replyDays: string | null;
 };
+export type RateContract = {
+  id: string; reference: string; currency: string; validFrom: string; validTo: string; note: string; status: "active" | "cancelled"; cancelReason: string | null;
+  state: "upcoming" | "valid" | "expired" | "cancelled"; createdByName: string;
+  lines: Array<{ id: string; catalogItemId: string; itemName: string; unit: string; unitPrice: string; minimum: string | null; packSize: string | null; leadDays: number | null }>;
+};
 export type SupplierControlsState = {
-  supplier: Supplier; documents: VendorDocument[]; bankAccounts: BankAccount[]; scorecard: Scorecard;
+  supplier: Supplier; documents: VendorDocument[]; bankAccounts: BankAccount[]; scorecard: Scorecard; contracts: RateContract[];
+  catalogItems: Array<{ id: string; name: string; unit: string }>;
   openOrders: Array<{ id: string; number: string; status: OrderStatus; total: string; currency: string }>; canManage: boolean; canApprove: boolean; me: string;
 };

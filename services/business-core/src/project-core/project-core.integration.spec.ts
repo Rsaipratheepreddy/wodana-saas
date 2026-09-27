@@ -1780,6 +1780,40 @@ integration("projects core (plan §6.10)", () => {
     });
   });
 
+  it("prices orders from a valid rate contract: its price by default, its pack terms, flagged when a line costs more, and not once it's cancelled or expired", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, access, all } = await buying(w);
+      const controls = new SupplierControlsService(access(w.designer, all));
+      const catalog = randomUUID(), glue = randomUUID();
+      await w.client.query("INSERT INTO catalogs(id,workspace_id,code,name) VALUES($1,$2,'core','Core')", [catalog, w.workspaceId]);
+      await w.client.query("INSERT INTO catalog_items(id,workspace_id,catalog_id,code,name,item_type,unit_code) VALUES($1,$2,$3,'GL','Wood glue','material','pcs')", [glue, w.workspaceId, catalog]);
+      await w.client.query("INSERT INTO catalog_supplier_links(id,workspace_id,item_id,vendor_id,cost,currency,preferred) VALUES($1,$2,$3,$4,30,'AED',true)", [randomUUID(), w.workspaceId, glue, vendor]);
+      const contractId = randomUUID();
+      await expect(controls.saveContract(actor, w.workspaceId, vendor, { id: randomUUID(), reference: "RC-1", currency: "AED", validFrom: "2026-10-01", validTo: "2026-01-01",
+        lines: [{ catalogItemId: glue, unitPrice: "25" }] })).rejects.toThrow(/ends after it starts/);
+      let supplier = await controls.saveContract(actor, w.workspaceId, vendor, { id: contractId, reference: "RC-2026", currency: "AED", validFrom: "2026-01-01", validTo: "2026-12-31",
+        lines: [{ catalogItemId: glue, unitPrice: "25", packSize: "6" }] });
+      expect(supplier.contracts.map((contract) => [contract.reference, contract.state, contract.lines.map((line) => [line.itemName, line.unitPrice])])).toEqual([["RC-2026", "valid", [["Wood glue", "25.0000"]]]]);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_material", name: "Wood glue", quantity: "10", unit: "pcs", clientChoice: false, version: detail.project.version });
+      const need = (await buyer.orders.needs(actor, w.workspaceId)).needs.find((item) => item.title === "Wood glue")!;
+      await w.client.query("UPDATE project_material_items SET catalog_item_id = $2 WHERE id = $1", [need.sourceId, glue]);
+      let order = await buyer.orders.create(actor, w.workspaceId, { id: randomUUID(), vendorId: vendor, lines: [{ source: "material", materialItemId: need.sourceId, quantity: "10" }] });
+      expect(order.lines[0].unitPrice).toBe("25.0000");
+      expect(order.contracts).toEqual([{ lineId: order.lines[0].id, reference: "RC-2026", unitPrice: "25.0000", above: false }]);
+      expect(order.packs).toEqual([{ lineId: order.lines[0].id, packSize: "6", minimum: null, suggested: "12" }]);
+      order = await buyer.orders.command(actor, w.workspaceId, order.order.id, { action: "save", version: order.order.version,
+        lines: order.lines.map((line) => ({ id: line.id, source: line.source, materialItemId: line.materialItemId, quantity: "12", unitPrice: "28" })) });
+      expect(order.contracts[0]).toMatchObject({ above: true });
+      // Cancelled, the contract no longer prices anything: the catalog price does.
+      await expect(controls.cancelContract(actor, w.workspaceId, vendor, contractId, {})).rejects.toThrow(/Say why/);
+      supplier = await controls.cancelContract(actor, w.workspaceId, vendor, contractId, { reason: "Renegotiated for 2027" });
+      expect(supplier.contracts[0]).toMatchObject({ state: "cancelled", cancelReason: "Renegotiated for 2027" });
+      const next = await buyer.orders.create(actor, w.workspaceId, { id: randomUUID(), vendorId: vendor, lines: [{ source: "material", materialItemId: need.sourceId, quantity: "1" }] });
+      expect([next.lines[0].unitPrice, next.contracts]).toEqual(["30.0000", []]);
+    });
+  });
+
   it("validates roles and routes in settings", async () => {
     await world(async (w) => {
       const service = w.as(w.manager);

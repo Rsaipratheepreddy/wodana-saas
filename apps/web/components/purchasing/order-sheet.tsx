@@ -111,6 +111,7 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
     line.alternateStatus === "accepted" && line.originalDescription ? t("Instead of {item}", { item: [line.originalDescription, line.originalSpecification].filter(Boolean).join(", ") }) : "",
     line.alternateStatus === "rejected" ? t("Supplier's alternative refused") : "",
   ].filter(Boolean).join(" · ");
+  const contractOf = (lineId: string) => (state?.contracts ?? []).find((item) => item.lineId === lineId);
   const canDecide = (line: OrderLine) => Boolean(state?.canApprove && line.alternateStatus === "offered" && line.alternateOfferedBy !== state?.me);
   /** What has arrived on a line so far, once anything has. */
   const arrived = (line: OrderLine | undefined) => {
@@ -195,6 +196,9 @@ export function OrderSheet({ api, orderId, settings, onChanged, onClose, onRecei
               <small>{[line.projectReference, line.specification].filter(Boolean).join(" · ")}</small>
               {!draft && arrived(state.lines[index]) ? <small className={styles.arrived}>{arrived(state.lines[index])}</small> : null}
               {!draft && state.lines[index] && lineFacts(state.lines[index]) ? <small>{lineFacts(state.lines[index])}</small> : null}
+              {contractOf(line.id) ? <small className={contractOf(line.id)!.above ? styles.lateText : undefined}>{contractOf(line.id)!.above
+                ? t("Above the {reference} price of {price}", { reference: contractOf(line.id)!.reference, price: money(contractOf(line.id)!.unitPrice) })
+                : t("{reference} price", { reference: contractOf(line.id)!.reference })}</small> : null}
               {!draft && state.lines[index]?.alternateStatus === "offered" ? <span className={styles.alternate} role="note">
                 <small>{t("The supplier offers {item} at {price}: {note}", { item: [state.lines[index].alternateDescription, state.lines[index].alternateSpecification].filter(Boolean).join(", "),
                   price: money(state.lines[index].alternateUnitPrice ?? state.lines[index].unitPrice), note: state.lines[index].alternateNote })}</small>

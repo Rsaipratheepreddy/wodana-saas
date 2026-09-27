@@ -351,6 +351,13 @@
       "when": 1793620800000,
       "tag": "0049_supplier_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793707200000,
+      "tag": "0050_rate_contracts",
+      "breakpoints": true
     }
   ]
 }

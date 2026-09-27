@@ -46,6 +46,17 @@ export class PurchasingController {
     return sendMedia(file, request, response);
   }
 
+  @Post("suppliers/:supplierId/contracts")
+  saveContract(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string, @Body() input: Record<string, unknown>) {
+    return this.controls.saveContract(actor, workspaceId, supplierId, input ?? {});
+  }
+
+  @Post("suppliers/:supplierId/contracts/:contractId/cancel")
+  cancelContract(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string,
+    @Param("contractId", ParseUUIDPipe) contractId: string, @Body() input: Record<string, unknown>) {
+    return this.controls.cancelContract(actor, workspaceId, supplierId, contractId, input ?? {});
+  }
+
   @Post("suppliers/:supplierId/bank-accounts")
   requestBank(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supplierId", ParseUUIDPipe) supplierId: string, @Body() input: Record<string, unknown>) {
     return this.controls.requestBankAccount(actor, workspaceId, supplierId, input ?? {});

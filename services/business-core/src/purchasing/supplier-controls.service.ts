@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import type { PoolClient } from "pg";
 import type { RequestActor } from "../auth/actor";
@@ -47,6 +48,39 @@ async function readBankAccounts(db: Db, workspaceId: string, vendorId: string, f
       ORDER BY array_position(ARRAY['pending', 'approved', 'rejected', 'retired'], account.status::text), account.requested_at DESC`, [workspaceId, vendorId])).rows;
   // Only people who verify bank details see the whole number; everyone else sees its last four digits.
   return full ? rows : rows.map((row) => ({ ...row, accountNumber: `•••• ${row.accountNumber.replace(/\s+/g, "").slice(-4)}` }));
+}
+
+export type RateContract = {
+  id: string; reference: string; currency: string; validFrom: string; validTo: string; note: string; status: "active" | "cancelled"; cancelReason: string | null;
+  state: "upcoming" | "valid" | "expired" | "cancelled"; createdByName: string;
+  lines: Array<{ id: string; catalogItemId: string; itemName: string; unit: string; unitPrice: string; minimum: string | null; packSize: string | null; leadDays: number | null }>;
+};
+
+async function readContracts(db: Db, workspaceId: string, vendorId: string): Promise<RateContract[]> {
+  const contracts = (await db.query<Omit<RateContract, "lines">>(
+    `SELECT contract.id, contract.reference, contract.currency, contract.valid_from::text AS "validFrom", contract.valid_to::text AS "validTo", contract.note, contract.status,
+            contract.cancel_reason AS "cancelReason", person.display_name AS "createdByName",
+            CASE WHEN contract.status = 'cancelled' THEN 'cancelled' WHEN contract.valid_from > clock.today THEN 'upcoming' WHEN contract.valid_to < clock.today THEN 'expired' ELSE 'valid' END AS state
+       FROM supplier_rate_contracts contract JOIN users person ON person.id = contract.created_by
+       CROSS JOIN (SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date AS today FROM workspaces WHERE id = $1) clock
+      WHERE contract.workspace_id = $1 AND contract.vendor_id = $2 ORDER BY contract.valid_to DESC, contract.reference`, [workspaceId, vendorId])).rows;
+  const lines = (await db.query<RateContract["lines"][number] & { contractId: string }>(
+    `SELECT line.id, line.contract_id AS "contractId", line.catalog_item_id AS "catalogItemId", item.name AS "itemName", item.unit_code AS unit, line.unit_price::text AS "unitPrice",
+            line.minimum::text AS minimum, line.pack_size::text AS "packSize", line.lead_days AS "leadDays"
+       FROM supplier_rate_contract_lines line JOIN catalog_items item ON item.workspace_id = line.workspace_id AND item.id = line.catalog_item_id
+      WHERE line.workspace_id = $1 AND line.contract_id = ANY($2::uuid[]) ORDER BY item.name`, [workspaceId, contracts.map((contract) => contract.id)])).rows;
+  return contracts.map((contract) => ({ ...contract, lines: lines.filter((line) => line.contractId === contract.id).map(({ contractId: _c, ...line }) => line) }));
+}
+
+/** The valid contract price for a supplier's catalog item in a currency today, if there is one. */
+export async function contractPrice(db: Db, workspaceId: string, vendorId: string, catalogItemId: string, currency: string) {
+  return (await db.query<{ reference: string; unitPrice: string; minimum: string | null; packSize: string | null }>(
+    `SELECT contract.reference, line.unit_price::text AS "unitPrice", line.minimum::text AS minimum, line.pack_size::text AS "packSize"
+       FROM supplier_rate_contract_lines line JOIN supplier_rate_contracts contract ON contract.workspace_id = line.workspace_id AND contract.id = line.contract_id
+       CROSS JOIN (SELECT (now() AT TIME ZONE coalesce(nullif(default_timezone, ''), 'UTC'))::date AS today FROM workspaces WHERE id = $1) clock
+      WHERE line.workspace_id = $1 AND contract.vendor_id = $2 AND line.catalog_item_id = $3 AND contract.currency = $4 AND contract.status = 'active'
+        AND clock.today BETWEEN contract.valid_from AND contract.valid_to
+      ORDER BY line.unit_price, contract.valid_to DESC LIMIT 1`, [workspaceId, vendorId, catalogItemId, currency])).rows[0] ?? null;
 }
 
 /**
@@ -207,6 +241,52 @@ export class SupplierControlsService {
     });
   }
 
+  /** A rate contract: prices agreed for a period, per catalog item. It's cancelled (with why), not edited. */
+  saveContract(actor: RequestActor, workspaceId: string, vendorId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "vendors.manage", async (client, user) => {
+      await this.vendor(client, workspaceId, vendorId, true);
+      const id = uuid(body.id, "Contract");
+      if ((await client.query(`SELECT 1 FROM supplier_rate_contracts WHERE workspace_id = $1 AND id = $2`, [workspaceId, id])).rowCount) return this.view(client, workspaceId, vendorId, user.userId);
+      const reference = required(body.reference, 80, "Give the contract its reference.");
+      if ((await client.query(`SELECT 1 FROM supplier_rate_contracts WHERE workspace_id = $1 AND vendor_id = $2 AND lower(reference) = lower($3)`, [workspaceId, vendorId, reference])).rowCount)
+        throw new ConflictException("This supplier already has a contract with that reference.");
+      const currency = String(body.currency ?? "").toUpperCase();
+      if (!/^[A-Z]{3}$/.test(currency)) throw new BadRequestException("Choose a currency.");
+      const validFrom = date(body.validFrom, "Valid from"), validTo = date(body.validTo, "Valid to");
+      if (validTo < validFrom) throw new BadRequestException("The contract ends after it starts.");
+      if (!Array.isArray(body.lines) || !body.lines.length) throw new BadRequestException("Add the items and their prices.");
+      const seen = new Set<string>();
+      const lines = [];
+      for (const raw of body.lines as Array<Record<string, unknown>>) {
+        const catalogItemId = uuid(raw?.catalogItemId, "Item");
+        if (seen.has(catalogItemId)) throw new BadRequestException("An item is on the contract twice.");
+        seen.add(catalogItemId);
+        if (!(await client.query(`SELECT 1 FROM catalog_items WHERE workspace_id = $1 AND id = $2`, [workspaceId, catalogItemId])).rowCount) throw new BadRequestException("Choose items from the catalog.");
+        const price = positive(raw.unitPrice, "Price", true)!;
+        lines.push({ catalogItemId, price, minimum: positive(raw.minimum, "Minimum"), packSize: positive(raw.packSize, "Pack size"),
+          leadDays: raw.leadDays === undefined || raw.leadDays === null || raw.leadDays === "" ? null : wholeDays(raw.leadDays) });
+      }
+      await client.query(`INSERT INTO supplier_rate_contracts (id, workspace_id, vendor_id, reference, currency, valid_from, valid_to, note, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, workspaceId, vendorId, reference, currency, validFrom, validTo, text(body.note, 1000, "Note"), user.userId]);
+      for (const line of lines)
+        await client.query(`INSERT INTO supplier_rate_contract_lines (id, workspace_id, contract_id, catalog_item_id, unit_price, minimum, pack_size, lead_days) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [randomUUID(), workspaceId, id, line.catalogItemId, line.price, line.minimum, line.packSize, line.leadDays]);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "supplier.contract_added", entityType: "supplier", entityId: vendorId, after: { id, reference, currency, validFrom, validTo, lines } });
+      return this.view(client, workspaceId, vendorId, user.userId);
+    });
+  }
+
+  cancelContract(actor: RequestActor, workspaceId: string, vendorId: string, contractId: string, body: Record<string, unknown>) {
+    return this.access.withPermission(actor, workspaceId, "vendors.manage", async (client, user) => {
+      const reason = required(body.reason, 500, "Say why the contract is cancelled.");
+      const updated = await client.query(`UPDATE supplier_rate_contracts SET status = 'cancelled', cancel_reason = $4 WHERE workspace_id = $1 AND vendor_id = $2 AND id = $3 AND status = 'active'`,
+        [workspaceId, vendorId, uuid(contractId, "Contract"), reason]);
+      if (!updated.rowCount) throw new ConflictException("That contract isn't active.");
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "supplier.contract_cancelled", entityType: "supplier", entityId: vendorId, after: { contractId, reason } });
+      return this.view(client, workspaceId, vendorId, user.userId);
+    });
+  }
+
   // ---------- helpers ----------
   private async view(client: Db, workspaceId: string, vendorId: string, userId: string) {
     const supplier = await this.vendor(client, workspaceId, vendorId);
@@ -215,7 +295,10 @@ export class SupplierControlsService {
     const openOrders = (await client.query<{ id: string; number: string; status: string; total: string; currency: string }>(
       `SELECT id, number, status, total::text AS total, currency FROM purchase_orders WHERE workspace_id = $1 AND vendor_id = $2 AND status = ANY($3::text[]) ORDER BY created_at DESC`,
       [workspaceId, vendorId, OPEN_ORDER])).rows;
+    const catalogItems = (await client.query<{ id: string; name: string; unit: string }>(
+      `SELECT id, name, unit_code AS unit FROM catalog_items WHERE workspace_id = $1 AND status = 'active' ORDER BY name LIMIT 1000`, [workspaceId])).rows;
     return { supplier, documents: await readDocuments(client, workspaceId, vendorId), bankAccounts: await readBankAccounts(client, workspaceId, vendorId, canApprove),
+      contracts: await readContracts(client, workspaceId, vendorId), catalogItems,
       scorecard: await readScorecard(client, workspaceId, vendorId), openOrders, canManage: await has("vendors.manage"), canApprove, me: userId };
   }
 
@@ -323,6 +406,19 @@ function required(value: unknown, max: number, message: string) {
   const result = text(value, max, "Text");
   if (!result) throw new BadRequestException(message);
   return result;
+}
+
+function positive(value: unknown, label: string, needed = false) {
+  if (value === undefined || value === null || value === "") { if (needed) throw new BadRequestException(`${label} is needed.`); return null; }
+  const textValue = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d{1,14}(\.\d{1,4})?$/.test(textValue) || (!needed && Dec.of(textValue).isZero())) throw new BadRequestException(`${label} must be a number with up to 4 decimals.`);
+  return textValue;
+}
+
+function wholeDays(value: unknown) {
+  const days = Number(value);
+  if (!Number.isInteger(days) || days < 0 || days > 365) throw new BadRequestException("Lead time is a whole number of days, up to a year.");
+  return days;
 }
 
 function date(value: unknown, label: string) {

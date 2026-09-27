@@ -37,6 +37,8 @@ export function purchasingApi(workspaceId: string) {
     addDocument: (id: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/documents`), "POST", input),
     uploadDocument: (id: string, documentId: string, file: File) => upload<SupplierControlsState>(at(`suppliers/${id}/documents/${documentId}/file`), file),
     documentUrl: (documentId: string) => at(`supplier-documents/${documentId}`),
+    saveContract: (id: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/contracts`), "POST", input),
+    cancelContract: (id: string, contractId: string, reason: string) => request<SupplierControlsState>(at(`suppliers/${id}/contracts/${contractId}/cancel`), "POST", { reason }),
     requestBankAccount: (id: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/bank-accounts`), "POST", input),
     bankAccountCommand: (id: string, accountId: string, input: Record<string, unknown>) => request<SupplierControlsState>(at(`suppliers/${id}/bank-accounts/${accountId}`), "POST", input),
     previewImport: (rows: SupplierImportRow[]) => request<SupplierImportPlan>(at("suppliers/import"), "POST", { rows }),
