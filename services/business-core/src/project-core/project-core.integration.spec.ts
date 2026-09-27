@@ -27,6 +27,8 @@ import { SuppliersService } from "../purchasing/suppliers.service";
 import { FactoryService } from "../factory/factory.service";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
 import { tellScopeChanges } from "../factory/factory-changes";
+import { SiteService } from "../site/site.service";
+import { processSiteReports } from "../site/site-reminders";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -2324,6 +2326,91 @@ integration("projects core (plan §6.10)", () => {
       expect(history).toEqual(expect.arrayContaining(["created", "status", "photo", "reopened"]));
       const reopened = (await w.client.query("SELECT recipient_id AS id, body FROM notifications WHERE workspace_id = $1 AND event_type = 'work.snag_reopened'", [w.workspaceId])).rows;
       expect(reopened).toEqual([{ id: w.designer, body: "Omar Manager: Scratch still visible in daylight" }]);
+    });
+  });
+
+  it("runs the site's day: reports with photos or a reason, installation approved by someone else and taken from site stock, corrections, incidents and missing reports", async () => {
+    await world(async (w) => {
+      const { core, projectId, vendor, buyer, manager: office } = await buying(w);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const [, general] = scope.packages;
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      const lights = scope.lines.find((line) => line.title === "Under-cabinet lights")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "site_supervisor", membershipId: w.designerMembership, version: detail.project.version });
+      // The lights are fitted by our own people: site work, nothing in stock.
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: general.id, name: "Electrical", supply: "site_work", version: detail.project.version });
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-site-")) }));
+      const as = (userId: string, permissions = ["projects.view"]) => new SiteService({
+        asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT site"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT site"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT site"); throw error; } },
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never, storage);
+      const supervisor = as(w.designer);
+      const pm = as(w.manager);
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { action: "start_site", on: "2026-09-21" })).rejects.toThrow("Only the project manager starts or finishes site work.");
+      let site = await pm.command(actor, w.workspaceId, projectId, { action: "start_site", on: "2026-09-21" });
+      expect(site.site).toEqual({ startedOn: "2026-09-21", finishedOn: null });
+
+      // Three metres of cabinets arrive at the site.
+      const order = await placeOrder(buyer.orders, w.workspaceId, vendor, [{ source: "line", boqLineId: cabinets.id, quantity: "4.5", unitPrice: "900", taxRate: "0" }]);
+      await office.receiving.receive(actor, w.workspaceId, { id: randomUUID(), orderId: order.order.id, place: `site:${projectId}`, receivedOn: "2026-09-24", lines: [{ orderLineId: order.lines[0].id, received: "3" }] });
+
+      const report = randomUUID();
+      site = await supervisor.command(actor, w.workspaceId, projectId, { id: report, action: "save_report", reportDate: "2026-09-25", weather: "Hot", workforce: [{ trade: "Carpenters", people: 4 }],
+        lines: [{ boqLineId: cabinets.id, installed: "3.5" }, { boqLineId: lights.id, installed: "1" }] });
+      let mine = site.reports.find((row) => row.id === report)!;
+      await expect(supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version })).rejects.toThrow("Add a photo, or say why no work was done.");
+      const png = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "kitchen.png", mimetype: "image/png", size: 0 };
+      site = await supervisor.uploadPhoto(actor, w.workspaceId, projectId, report, randomUUID(), png);
+      mine = site.reports.find((row) => row.id === report)!;
+      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version });
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_waiting'", [w.workspaceId])).rows).toEqual([{ id: w.manager }]);
+
+      // More cabinets than arrived can't be installed: it goes back to the supervisor.
+      mine = site.reports.find((row) => row.id === report)!;
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: report, version: mine.version })).rejects.toThrow("Kitchen cabinets: only 3 m is at the site.");
+      site = await pm.command(actor, w.workspaceId, projectId, { action: "return", reportId: report, note: "Only 3 m arrived", version: mine.version });
+      mine = site.reports.find((row) => row.id === report)!;
+      site = await supervisor.command(actor, w.workspaceId, projectId, { id: report, action: "save_report", reportDate: "2026-09-25", weather: "Hot", workforce: [{ trade: "Carpenters", people: 4 }],
+        lines: [{ boqLineId: cabinets.id, installed: "3" }, { boqLineId: lights.id, installed: "1" }], version: mine.version });
+      mine = site.reports.find((row) => row.id === report)!;
+      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: report, version: mine.version });
+      mine = site.reports.find((row) => row.id === report)!;
+      site = await pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: report, version: mine.version });
+      expect(site.lines.filter((line) => [cabinets.id, lights.id].includes(line.id)).map((line) => [line.title, line.installed])).toEqual([["Kitchen cabinets", "3.0000"], ["Under-cabinet lights", "1.0000"]]);
+      expect((await buyer.stock.stock(actor, w.workspaceId)).rows.filter((row) => row.itemName === "Kitchen cabinets").map((row) => row.onHand)).toEqual([]);
+
+      // A correction a day later puts half a metre back; the lights can't pass their scope.
+      const fix = randomUUID();
+      site = await supervisor.command(actor, w.workspaceId, projectId, { id: fix, action: "save_report", reportDate: "2026-09-26", noWorkReason: "Snagging only",
+        lines: [{ boqLineId: cabinets.id, installed: "-0.5", note: "One door refitted" }, { boqLineId: lights.id, installed: "1" }] });
+      mine = site.reports.find((row) => row.id === fix)!;
+      site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: fix, version: mine.version });
+      mine = site.reports.find((row) => row.id === fix)!;
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: fix, version: mine.version })).rejects.toThrow("Under-cabinet lights: the scope has 1 nos; 1 is installed already.");
+
+      // The manager's own report is approved by someone else; an incident reaches the manager at once, blocked work needs who recovers it.
+      await expect(pm.command(actor, w.workspaceId, projectId, { id: randomUUID(), action: "save_report", reportDate: "2026-09-26", forecast: "blocked", impact: "Tiles late" }))
+        .rejects.toThrow("Name who recovers it and by when.");
+      const own = randomUUID();
+      site = await pm.command(actor, w.workspaceId, projectId, { id: own, action: "save_report", reportDate: "2026-09-26", noWorkReason: "Inspection only" });
+      mine = site.reports.find((row) => row.id === own)!;
+      site = await pm.command(actor, w.workspaceId, projectId, { action: "submit", reportId: own, version: mine.version });
+      mine = site.reports.find((row) => row.id === own)!;
+      await expect(pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: own, version: mine.version })).rejects.toThrow("Someone other than its author approves a report.");
+      const incident = randomUUID();
+      site = await supervisor.command(actor, w.workspaceId, projectId, { id: incident, action: "save_report", reportDate: "2026-09-24", safety: "incident", safetyNote: "Ladder slipped, no injury",
+        noWorkReason: "Stopped after the incident" });
+      mine = site.reports.find((row) => row.id === incident)!;
+      await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: incident, version: mine.version });
+      expect((await w.client.query("SELECT channel FROM notifications WHERE workspace_id = $1 AND event_type = 'site.incident' ORDER BY channel", [w.workspaceId])).rows).toEqual([{ channel: "email" }, { channel: "in_app" }]);
+
+      // Every day is worked here: yesterday has no report, so the manager hears.
+      await w.client.query("INSERT INTO hrms_calendars (workspace_id, name, timezone, working_days) VALUES ($1, 'Site', 'Asia/Dubai', ARRAY[0, 1, 2, 3, 4, 5, 6])", [w.workspaceId]);
+      await w.client.query("DELETE FROM site_reports WHERE project_id = $1 AND report_date = (now() AT TIME ZONE 'Asia/Dubai')::date - 1", [projectId]);
+      expect((await processSiteReports(w.client, w.workspaceId)).sent).toBeGreaterThanOrEqual(1);
+      expect((await w.client.query("SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = 'site.report_overdue'", [w.workspaceId])).rows).toEqual([{ id: w.manager }]);
     });
   });
 

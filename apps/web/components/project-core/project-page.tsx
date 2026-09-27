@@ -12,6 +12,7 @@ import type { Priority, ProjectDetail } from "@/lib/project-core/types";
 import { useProjectFormat, useStatusLabel } from "./format";
 import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
 import { ProjectPlan } from "./project-plan";
+import { ProjectSite } from "../site/project-site";
 import { ProjectScope } from "./project-scope";
 import { ProjectStages } from "./project-stages";
 import { ProjectTeam } from "./project-team";
@@ -121,6 +122,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
       { id: "overview", label: t("Overview"), panel: <ProjectStages detail={detail} run={run} caseHref={(part) => `/workspace/pre-projects/cases/${project.caseId}/${part}`} onTeam={() => setDialog("team")} /> },
       { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} /> },
       { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },
+      { id: "site", label: t("Site"), panel: <ProjectSite workspaceId={workspaceId} projectId={projectId} /> },
       { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} /> },
     ]} />
 

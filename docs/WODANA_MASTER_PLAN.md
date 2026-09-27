@@ -801,6 +801,12 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
 - **Screens:** Mobile: Today (my site tasks) → update qty + photo, daily report in under 60 seconds, receive delivery, raise snag. Web: Site tab (reports feed + approval queue).
 - **AI:** draft the daily report from photos and a voice note; weekly client update from approved reports.
 
+- **Built (project → Site):**
+  - The project manager starts and finishes site work. While it runs, the daily run reminds the site supervisor from 19:00 when nobody has submitted today's report, and tells the project manager when a worked day ended without one.
+  - A report (one per person, project and day): who worked by trade, the weather, what was installed against the scope, safety (none, an observation, an incident with what happened) and the outlook (at risk or blocked, with what's at risk, who recovers it and by when), notes, and photos — or why no work was done. It's a draft until submitted; the project manager is told.
+  - Someone other than its author approves it or sends it back with what to change. Approved installation never passes the scope line and, for goods bought or made, takes them from the project's stock at its site — nothing is installed that didn't arrive. A correction is a later report taking some back, with why.
+  - An incident tells the project manager at once (in-app and email); a blocked day tells them too.
+
 ### 6.18 Quality and snags
 - **Records:** inspections (shared: output, receipt, installation, handover), checklists (templates per package type), snags (space, task, severity, source `inspection|delivery|client|warranty`, owner, due date, photos before/after), commissioning checks.
 - **States:** snag `open → in_progress → ready_for_review → closed | reopened`.
