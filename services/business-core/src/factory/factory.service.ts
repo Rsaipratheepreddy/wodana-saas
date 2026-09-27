@@ -17,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const NUMBER = /^\d{1,14}(\.\d{1,4})?$/;
 const VIEW = ["factory.view", "factory.manage", "factory.report", "factory.approve"];
-type Notice = { code: "factory.released" | "factory.report_waiting" | "factory.check_failed" | "factory.ready" | "factory.substitution"; users: string[]; note: string; key: string };
+type Notice = { code: "factory.released" | "factory.report_waiting" | "factory.check_failed" | "factory.ready" | "factory.substitution" | "factory.drawing_revised"; users: string[]; note: string; key: string };
 const MATERIAL_ACTIONS = ["add_material", "set_material", "remove_material", "suggest_materials", "issue_material", "return_material", "substitute", "decide_substitution"];
 
 /**
@@ -91,8 +91,42 @@ export class FactoryService {
         client.query(`UPDATE work_orders SET ${sql}, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId, ...values]);
       const notices: Notice[] = [];
       let audit: Record<string, unknown> = {};
+      // A variation that removed or reduced the scope line stops new work on it until the work orders fit the line again.
+      const scopeProblem = order.lineStatus === "omitted" ? "A variation removed its scope line: cancel it, or close it short."
+        : Dec.of(order.scopeOver).cmp(0) > 0 ? `A variation reduced its scope line: ${plain(order.scopeOver)} ${order.unit} more are on work orders than it needs. Reduce or cancel a work order first.`.replace("  ", " ")
+        : null;
+      if (scopeProblem && ["release", "start", "report"].includes(action)) throw new ConflictException(scopeProblem);
 
-      if (action === "update") {
+      if (action === "set_quantity") {
+        await need("factory.manage", "You can't change work orders.");
+        status("planned", "released", "in_production", "on_hold");
+        const quantity = amount(body.quantity, "Quantity");
+        // Never below what's made or on its way through approval and checks; never past the line.
+        const floor = Dec.of(order.passed).add(order.toCheck).add(order.pending);
+        if (Dec.of(quantity).cmp(0) <= 0 || Dec.of(quantity).cmp(floor) < 0)
+          throw new ConflictException(`${plain(floor.toString())} ${order.unit} is already made or waiting for approval and checks.`.replace("  ", " "));
+        // What's left of the line (negative when a variation reduced it) is all it can grow by.
+        const lineLeft = (await readToMake(client, workspaceId, order.boqLineId))[0]?.left ?? "0";
+        const most = order.lineStatus === "omitted" ? Dec.of(order.quantity) : Dec.of(order.quantity).add(lineLeft);
+        if (Dec.of(quantity).cmp(most) > 0) throw new ConflictException(`At most ${plain(most.toString())} ${order.unit}: the rest of the line is on other work orders.`.replace("  ", " "));
+        await set(`quantity = $3`, [quantity]);
+        audit = { from: order.quantity, to: quantity };
+      } else if (action === "revise_drawing") {
+        await need("factory.manage", "You can't record drawing changes.");
+        status("planned", "released", "in_production", "on_hold");
+        const reference = text(body.reference, 200);
+        const note = text(body.note, 300);
+        if (!reference) throw new BadRequestException("Say which drawing it is now (its number or revision).");
+        if (!note) throw new BadRequestException("Say what changed.");
+        const running = ["released", "in_production", "on_hold"].includes(order.status);
+        await set(`drawing_ref = $3, drawing_approved_by = $4, drawing_approved_at = now(), drawing_revised_by = $4`, [reference, user.userId]);
+        // Work already going stops until someone else decides it goes on with the new drawing.
+        if (running) await set(`status = 'on_hold', hold_kind = 'drawing', hold_reason = $3, held_from = CASE WHEN status = 'on_hold' THEN held_from ELSE status END`,
+          [`Drawing changed to ${reference}: ${note}`.slice(0, 500)]);
+        if (running) notices.push({ code: "factory.drawing_revised", users: [...await this.team(client, workspaceId, order.projectId, ["factory_lead"], true), ...await this.holders(client, workspaceId, ["factory.approve"])],
+          note: `${reference}: ${note}`, key: `drawing:${orderId}:${reference}` });
+        audit = { reference, note, held: running };
+      } else if (action === "update") {
         await need("factory.manage", "You can't plan work orders.");
         status("planned", "released", "on_hold");
         const schedule = await this.schedule(client, workspaceId, body, order);
@@ -170,12 +204,17 @@ export class FactoryService {
         status("planned", "released", "in_production");
         const reason = text(body.reason, 500);
         if (!reason) throw new BadRequestException("Say why it's on hold.");
-        await set(`status = 'on_hold', hold_reason = $3, held_from = status`, [reason]);
+        await set(`status = 'on_hold', hold_kind = 'manual', hold_reason = $3, held_from = status`, [reason]);
         audit = { reason };
       } else if (action === "resume") {
-        await need("factory.manage", "You can't resume work orders.");
         status("on_hold");
-        await set(`status = held_from, hold_reason = NULL, held_from = NULL`);
+        if (order.holdKind === "drawing") {
+          // Going on after a drawing change is someone else's decision.
+          await need("factory.approve", "Someone who approves factory work decides whether it goes on with the new drawing.");
+          const reviser = (await client.query<{ by: string | null }>(`SELECT drawing_revised_by AS by FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, orderId])).rows[0]?.by;
+          if (reviser === user.userId) throw new ForbiddenException("Someone else decides whether it goes on with the drawing you changed.");
+        } else await need("factory.manage", "You can't resume work orders.");
+        await set(`status = held_from, hold_reason = NULL, held_from = NULL, hold_kind = NULL`);
       } else if (action === "cancel" || action === "short_close") {
         await need("factory.manage", "You can't close work orders.");
         status("planned", "released", "in_production", "on_hold");
@@ -185,7 +224,7 @@ export class FactoryService {
         if (action === "short_close" && !anything) throw new ConflictException("Nothing was made on it yet: cancel it instead.");
         if (action === "short_close" && Dec.of(order.pending).add(order.toCheck).cmp(0) > 0) throw new ConflictException("Decide the reports and check what was made first.");
         if (!reason) throw new BadRequestException(action === "cancel" ? "Say why it's cancelled." : "Say why the rest won't be made.");
-        await set(`status = $3, closed_by = $4, closed_at = now(), close_reason = $5, hold_reason = NULL, held_from = NULL`, [action === "cancel" ? "cancelled" : "short_closed", user.userId, reason]);
+        await set(`status = $3, closed_by = $4, closed_at = now(), close_reason = $5, hold_reason = NULL, held_from = NULL, hold_kind = NULL`, [action === "cancel" ? "cancelled" : "short_closed", user.userId, reason]);
         audit = { reason };
       } else if (MATERIAL_ACTIONS.includes(action)) {
         audit = await this.materialCommand(client, workspaceId, order, action, body, recordId, user.userId, notices, need);
@@ -252,6 +291,8 @@ export class FactoryService {
     const drawing = (await client.query<{ at: string | null }>(`SELECT drawing_approved_at AS at FROM work_orders WHERE workspace_id = $1 AND id = $2`, [workspaceId, order.id])).rows[0];
     const checks: Array<{ key: string; passed: boolean; missing: string; detail?: string[] }> = [
       { key: "running", passed: project?.status === "active", missing: project?.status === "on_hold" ? "the project is on hold" : "the project isn't running" },
+      { key: "scope", passed: order.lineStatus === "active" && Dec.of(order.scopeOver).cmp(0) <= 0,
+        missing: order.lineStatus === "omitted" ? "a variation removed its scope line" : `a variation reduced its scope line by ${plain(order.scopeOver)} ${order.unit}`.replace("  ", " ") },
     ];
     if (settings.requireDrawing) checks.push({ key: "drawing", passed: Boolean(drawing?.at), missing: "the drawing isn't approved" });
     if (settings.requirePayment) checks.push({ key: "payment", passed: project ? await productionPaid(client, workspaceId, project.caseId, project.quoteId) : false, missing: "the payment before production isn't verified" });
@@ -287,7 +328,8 @@ export class FactoryService {
       notices.push({ code: "factory.check_failed", users: await this.team(client, workspaceId, order.projectId, ["factory_lead"], true), note: `${plain(failed)} ${order.unit} failed: ${failReason}`.replace("  ", " "), key: `failed:${checkId}` });
     const total = Dec.of(order.passed).add(passed);
     if (total.cmp(order.quantity) >= 0) {
-      await client.query(`UPDATE work_orders SET status = 'ready', ready_at = now(), hold_reason = NULL, held_from = NULL, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND id = $2`,
+      await client.query(`UPDATE work_orders SET status = 'ready', ready_at = now(), hold_reason = NULL, held_from = NULL, hold_kind = NULL, version = version + 1, updated_at = now()
+        WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, order.id]);
       notices.push({ code: "factory.ready", users: await this.team(client, workspaceId, order.projectId, ["installation_lead"], true), note: "", key: `ready:${order.id}` });
     } else {

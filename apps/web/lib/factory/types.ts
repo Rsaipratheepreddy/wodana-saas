@@ -16,9 +16,13 @@ export type WorkOrderRow = {
   plannedStart: string | null; plannedEnd: string | null; notes: string; version: number;
   /** Good output approved, waiting for approval, passed its check (ready), approved but not checked yet, still to make, scrapped. */
   made: string; pending: string; passed: string; toCheck: string; left: string; scrapped: string;
+  /** Its scope line now: removed by a variation, or how much more its work orders hold than the line needs. */
+  lineStatus: "active" | "omitted"; lineQuantity: string; scopeOver: string;
+  /** Why it's on hold: put on hold, or stopped because its drawing changed (someone else lets it go on). */
+  holdKind: "manual" | "drawing" | null;
 };
 
-export type ReleaseCheck = { key: "running" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
+export type ReleaseCheck = { key: "running" | "scope" | "drawing" | "payment" | "materials" | "schedule"; passed: boolean; missing: string; detail?: string[] };
 export type OutputReport = {
   id: string; good: string; scrap: string; scrapReason: string; note: string; status: "pending" | "approved" | "refused"; reportedBy: string; reportedByName: string; reportedAt: string;
   decidedByName: string | null; decisionNote: string;

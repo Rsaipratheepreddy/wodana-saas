@@ -22,7 +22,7 @@ export function ToMake({ api, state, error, onReload, onPlanned }: { api: Factor
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   if (!state) return <Skeleton lines={6} />;
   const needle = search.trim().toLocaleLowerCase();
-  const lines = state.toMake.filter((line) => (show === "all" || Number(line.left) > 0)
+  const lines = state.toMake.filter((line) => (show === "all" || Number(line.left) !== 0)
     && (!needle || `${line.title} ${line.specification} ${line.projectReference} ${line.projectName}`.toLocaleLowerCase().includes(needle)));
   const columns: GroupedTableColumn<MakeLine>[] = [
     { id: "item", label: t("Item"), width: "46%", render: (line) => <span className={styles.nameCell}><span>{line.title}</span>
@@ -30,6 +30,7 @@ export function ToMake({ api, state, error, onReload, onPlanned }: { api: Factor
     { id: "quantity", label: t("Quantity"), width: "18%", render: (line) => <span className={styles.number}>{`${quantityText(line.quantity)} ${line.unit}`.trim()}</span> },
     { id: "planned", label: t("On work orders"), width: "18%", mobileHidden: true, render: (line) => Number(line.planned) ? <span className={styles.number}>{`${quantityText(line.planned)} ${line.unit}`.trim()}</span> : "—" },
     { id: "left", label: t("Left"), width: "18%", render: (line) => Number(line.left) > 0 ? <strong className={styles.number}>{`${quantityText(line.left)} ${line.unit}`.trim()}</strong>
+      : Number(line.left) < 0 ? <span className={styles.lateText}>{t("{quantity} more on work orders than it needs", { quantity: `${quantityText(line.left.replace("-", ""))} ${line.unit}`.trim() })}</span>
       : <span className={styles.muted}>{t("Planned")}</span> },
   ];
   const sections: GroupedTableSection<MakeLine>[] = [...new Set(lines.map((line) => line.projectId))].map((projectId) => {

@@ -23,6 +23,9 @@ export type WorkOrderRow = {
   plannedStart: string | null; plannedEnd: string | null; notes: string; version: number;
   /** Good output approved; waiting for approval; passed its check (ready); approved but not checked yet; still to make. */
   made: string; pending: string; passed: string; toCheck: string; left: string; scrapped: string;
+  /** Its scope line now: removed by a variation, or how much more its work orders hold than the line needs. */
+  lineStatus: "active" | "omitted"; lineQuantity: string; scopeOver: string;
+  holdKind: "manual" | "drawing" | null;
 };
 
 const TOTALS = `
@@ -39,8 +42,15 @@ const ORDER_SELECT = `SELECT wo.id, wo.number, wo.project_id AS "projectId", pro
   reported.made::text AS made, reported.pending::text AS pending, reported.scrapped::text AS scrapped, quality.passed::text AS passed,
   -- Approved good output that hasn't been checked yet (what failed is made again, so it isn't counted).
   greatest(reported.made - quality.passed - quality.failed, 0)::text AS "toCheck",
-  greatest(wo.quantity - quality.passed - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left"
+  greatest(wo.quantity - quality.passed - greatest(reported.made - quality.passed - quality.failed, 0) - reported.pending, 0)::text AS "left",
+  line.status AS "lineStatus", line.quantity::text AS "lineQuantity",
+  greatest(coalesce(on_line.quantity, 0) - CASE WHEN line.status = 'active' THEN line.quantity ELSE 0 END, 0)::text AS "scopeOver", wo.hold_kind AS "holdKind"
   FROM work_orders wo
+  JOIN project_boq_lines line ON line.workspace_id = wo.workspace_id AND line.id = wo.boq_line_id
+  LEFT JOIN LATERAL (SELECT sum(CASE WHEN other.status = 'short_closed'
+                                     THEN coalesce((SELECT sum(checked.passed) FROM work_order_checks checked WHERE checked.workspace_id = other.workspace_id AND checked.work_order_id = other.id), 0)
+                                     ELSE other.quantity END) AS quantity
+                       FROM work_orders other WHERE other.workspace_id = wo.workspace_id AND other.boq_line_id = wo.boq_line_id AND other.status <> 'cancelled') on_line ON true
   JOIN delivery_projects project ON project.workspace_id = wo.workspace_id AND project.id = wo.project_id
   LEFT JOIN project_packages package ON package.workspace_id = wo.workspace_id AND package.id = wo.package_id
   LEFT JOIN workcenters center ON center.workspace_id = wo.workspace_id AND center.id = wo.workcenter_id

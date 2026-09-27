@@ -2668,5 +2668,15 @@
   "More than it still needs ({quantity}).": "More than it still needs ({quantity}).",
   "Why more": "Why more",
   "{quantity} is already issued.": "{quantity} is already issued.",
-  "Refuse the swap": "Refuse the swap"
+  "Refuse the swap": "Refuse the swap",
+  "{quantity} more on work orders than it needs": "{quantity} more on work orders than it needs",
+  "Scope unchanged": "Scope unchanged",
+  "Drawing changed": "Drawing changed",
+  "Go on with the new drawing": "Go on with the new drawing",
+  "A variation removed its scope line: cancel it, or close it short.": "A variation removed its scope line: cancel it, or close it short.",
+  "A variation reduced its scope line: {quantity} more are on work orders than it needs.": "A variation reduced its scope line: {quantity} more are on work orders than it needs.",
+  "New drawing (number or revision)": "New drawing (number or revision)",
+  "What changed": "What changed",
+  "{quantity} is already made or waiting.": "{quantity} is already made or waiting.",
+  "Scope changed": "Scope changed"
 }

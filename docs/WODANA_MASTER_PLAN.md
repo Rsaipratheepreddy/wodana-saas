@@ -774,6 +774,9 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - *Swap for another* (with why) waits for someone else with `factory.approve`; approved, the old material is replaced (what was issued of it can still come back).
   - Release: when a work order lists materials, each must be issued or covered by the project's own stock after what its other running work orders still need of it; otherwise its package's materials must be in.
   - The daily run tells the people who buy about a work order that should start within a week (or already should have) and still waits for materials — once, then weekly.
+- **Changes after planning (built):**
+  - *Deduction variation:* when a variation removes a work order's scope line or leaves it with less than its work orders hold, those work orders can't be released, started or reported on ("Scope changed"); the factory managers are told when the variation is applied. *Change quantity* brings a work order back within the line (never below what's made or waiting, never past the line); a removed line's work orders are cancelled or closed short. *To make* shows how much more is on work orders than a line needs.
+  - *Drawing revision:* *Drawing changed* (new reference and what changed) records the new drawing and puts released or running work on hold; the factory lead, project manager and approvers are told. Someone other than who recorded it lets it go on (*Go on with the new drawing*); otherwise it's closed short and made goods are written off in Inventory.
 
 ### 6.17 Site execution
 - **Records:** daily_reports (date, author, workforce by trade, weather, safety state `none|observation|incident`, forecast state `none|watch|blocked`, impact/recovery plan/next update date, photos), daily_report_lines → task_progress_entries, installation records (task progress), site deliveries, access/permit notes, commissioning checks.

@@ -18,6 +18,7 @@ import {
   activeMembers, ensureSettings, ensureTemplates, evaluateStages, membershipOf, readProject, readProjects, readStages, readTeam,
   readTemplates, setRole, writeTemplate, type ProjectRow, type StageRow, type TeamMember,
 } from "./project-core.store";
+import { tellScopeChanges } from "../factory/factory-changes";
 import { closeOutBlockers, readCloseOut, settleCloseOut } from "./project-closeout";
 import { readProgress } from "./project-work";
 import { noticeProject, type ProjectNotice } from "./project-notices";
@@ -529,6 +530,8 @@ export class ProjectCoreService {
           [sealId, workspaceId, projectId, quote.id, quote.number, label, decision.quoteHash, JSON.stringify(snapshot), canonicalHash(snapshot), scope.quote.currency,
             scope.pricing.total, decision.decidedAt, decision.decidedBy, decision.method ?? "portal", decision.recordedBy ?? null, user.userId]);
         await applyVariation(client, workspaceId, projectId, { id: sealId, label }, scope.lines, user.userId);
+        // Work orders the variation removed or reduced stop; the factory hears which.
+        await tellScopeChanges(client, workspaceId, projectId, user.userId, sealId);
         notices.push({ key: `variation:${quote.id}`, notice: { code: "project.variation_applied", variation: label, amount: `${scope.quote.currency} ${scope.pricing.total}`, memberships: teamIds() } });
         audit = { quoteId: quote.id, label, total: scope.pricing.total };
       } else if (["confirm_check", "unconfirm_check", "complete_stage", "skip_stage", "reopen_stage"].includes(action)) {

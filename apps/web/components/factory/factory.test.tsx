@@ -18,7 +18,7 @@ const row = (patch: Partial<WorkOrderState["order"]> = {}): WorkOrderState["orde
   id: "w1", number: 7, projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12", packageId: "k1", packageName: "Kitchen joinery", boqLineId: "l1", title: "Kitchen cabinets",
   specification: "", quantity: "3.0000", unit: "m", status: "planned", workcenterId: "c1", workcenterName: "Joinery", plannedStart: "2099-10-05", plannedEnd: "2099-10-16", notes: "", version: 2,
   made: "0", pending: "0", passed: "0", toCheck: "0", left: "3.0000", scrapped: "0", drawingRef: "", drawingApprovedAt: null, drawingApprovedByName: null, holdReason: null,
-  closeReason: null, closedAt: null, releasedAt: null, readyAt: null, ...patch,
+  closeReason: null, closedAt: null, releasedAt: null, readyAt: null, lineStatus: "active", lineQuantity: "4.5000", scopeOver: "0", holdKind: null, ...patch,
 });
 const factory = (patch: Partial<FactoryState> = {}): FactoryState => ({ toMake: [line], orders: [row()], workcenters: [joinery], canManage: true, canReport: true, canApprove: true, canIssue: true, ...patch });
 const order = (patch: Partial<WorkOrderState["order"]> = {}, extra: Partial<WorkOrderState> = {}): WorkOrderState => ({
@@ -164,6 +164,35 @@ describe("factory", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why more/ }), "Offcuts too short");
     await userEvent.click(within(dialog).getByRole("button", { name: "Issue" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "issue_material", materialId: "m1", locationId: "f1", quantity: "3", from: "free", reason: "Offcuts too short" }));
+  });
+
+  it("stops a work order whose scope a variation reduced, and lets someone else go on after a drawing change", async () => {
+    nav.query = "order=w1";
+    let current = order({ status: "planned", scopeOver: "1.0000" });
+    const fetcher = mount((url, body) => {
+      if (url.includes("/orders/w1")) {
+        if (body?.action === "set_quantity") current = order({ quantity: String(body.quantity), version: 3 });
+        return current;
+      }
+      return factory();
+    });
+    const { unmount } = page("orders");
+    const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(await within(sheet).findByText("A variation reduced its scope line: 1 m more are on work orders than it needs.")).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "More" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Change quantity" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change quantity" });
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Quantity" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Quantity" }), "2");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toEqual({ action: "set_quantity", quantity: "2", version: 2 }));
+    unmount();
+
+    mount((url) => (url.includes("/orders/w1") ? order({ status: "on_hold", holdKind: "drawing", holdReason: "Drawing changed to K-01 rev C: Handles moved", releasedAt: "2026-09-27T09:00:00Z" }) : factory()));
+    page("orders");
+    const held = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
+    expect(await within(held).findByText("On hold: Drawing changed to K-01 rev C: Handles moved")).toBeInTheDocument();
+    expect(within(held).getByRole("button", { name: "Go on with the new drawing" })).toBeInTheDocument();
   });
 
   it("sets what a work order needs before release and adds a workcenter", async () => {

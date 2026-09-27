@@ -26,6 +26,7 @@ import { InventoryService } from "../inventory/inventory.service";
 import { SuppliersService } from "../purchasing/suppliers.service";
 import { FactoryService } from "../factory/factory.service";
 import { processFactoryDeadlines } from "../factory/factory-reminders";
+import { tellScopeChanges } from "../factory/factory-changes";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -2168,6 +2169,62 @@ integration("projects core (plan §6.10)", () => {
       expect((await processFactoryDeadlines(w.client, w.workspaceId)).sent).toBe(0);
       const told = (await w.client.query("SELECT recipient_id AS recipient, body FROM notifications WHERE workspace_id = $1 AND event_type = 'factory.material_short'", [w.workspaceId])).rows;
       expect(told).toEqual([{ recipient: w.manager, body: "PRJ-0001 · Villa 12: Brass hinges 12 nos." }]);
+    });
+  });
+
+  it("stops work orders a variation reduced or removed until they fit the line, and holds running work when the drawing changes until someone else lets it go on", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const maker = new FactoryService(access(w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]));
+      const checker = new FactoryService(access(w.manager, ["factory.view", "factory.approve"]));
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      const cabinets = scope.lines.find((line) => line.title === "Kitchen cabinets")!;
+      const worktop = scope.lines.find((line) => line.title === "Worktop")!;
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      const settings = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: settings.settings.version, requireDrawing: false, requirePayment: false, requireMaterials: false });
+      const joinery = randomUUID();
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery" });
+      const plan = (id: string, lineId: string, quantity: string) => maker.plan(actor, w.workspaceId, { id, lineId, quantity, workcenterId: joinery, plannedStart: "2026-10-05", plannedEnd: "2026-10-09" });
+      const first = randomUUID(), second = randomUUID(), third = randomUUID();
+      let one = await plan(first, cabinets.id, "3");
+      let two = await plan(second, cabinets.id, "1.5");
+      let three = await plan(third, worktop.id, "2.25");
+
+      // A variation takes a metre off the cabinets and the worktop out altogether.
+      await w.client.query("UPDATE project_boq_lines SET quantity = 3.5 WHERE id = $1", [cabinets.id]);
+      await w.client.query("UPDATE project_boq_lines SET status = 'omitted' WHERE id = $1", [worktop.id]);
+      const role = randomUUID();
+      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'factory', 'Factory')", [role, w.workspaceId]);
+      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code = 'factory.manage'", [w.workspaceId, role]);
+      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, w.designerMembership, role]);
+      expect(await tellScopeChanges(w.client, w.workspaceId, projectId, w.manager, "vo-1")).toBe(2);
+      expect(await tellScopeChanges(w.client, w.workspaceId, projectId, w.manager, "vo-1")).toBe(0);
+      const told = (await w.client.query("SELECT body FROM notifications WHERE workspace_id = $1 AND event_type = 'factory.scope_changed' ORDER BY body", [w.workspaceId])).rows.map((row) => row.body);
+      expect(told).toEqual(["PRJ-0001 · Villa 12: 1 m more on WO-0001, WO-0002 than the line now needs.", "PRJ-0001 · Villa 12: removed from the scope; WO-0003 can't go on."]);
+
+      two = await maker.order(actor, w.workspaceId, second);
+      expect(two.releaseChecks.find((check) => check.key === "scope")).toMatchObject({ passed: false, missing: "a variation reduced its scope line by 1 m" });
+      await expect(maker.command(actor, w.workspaceId, second, { action: "release", version: two.order.version }))
+        .rejects.toThrow("A variation reduced its scope line: 1 m more are on work orders than it needs. Reduce or cancel a work order first.");
+      await expect(maker.command(actor, w.workspaceId, second, { action: "set_quantity", quantity: "1", version: two.order.version })).rejects.toThrow("At most 0.5 m: the rest of the line is on other work orders.");
+      two = await maker.command(actor, w.workspaceId, second, { action: "set_quantity", quantity: "0.5", version: two.order.version });
+      two = await maker.command(actor, w.workspaceId, second, { action: "release", version: two.order.version });
+      expect(two.order.status).toBe("released");
+      await expect(maker.command(actor, w.workspaceId, third, { action: "release", version: three.order.version })).rejects.toThrow("A variation removed its scope line: cancel it, or close it short.");
+      three = await maker.command(actor, w.workspaceId, third, { action: "cancel", reason: "Worktop taken out by VO-1", version: three.order.version });
+
+      // Running work stops when the drawing changes; someone else lets it go on.
+      one = await maker.command(actor, w.workspaceId, first, { action: "release", version: one.order.version });
+      one = await maker.command(actor, w.workspaceId, first, { action: "start", version: one.order.version });
+      await expect(maker.command(actor, w.workspaceId, first, { action: "revise_drawing", reference: "K-01 rev C", version: one.order.version })).rejects.toThrow("Say what changed.");
+      one = await maker.command(actor, w.workspaceId, first, { action: "revise_drawing", reference: "K-01 rev C", note: "Handles moved to the top rail", version: one.order.version });
+      expect([one.order.status, one.order.holdKind, one.order.holdReason]).toEqual(["on_hold", "drawing", "Drawing changed to K-01 rev C: Handles moved to the top rail"]);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: randomUUID(), good: "1" })).rejects.toThrow(/on hold/);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "resume", version: one.order.version })).rejects.toThrow("Someone else decides whether it goes on with the drawing you changed.");
+      one = await checker.command(actor, w.workspaceId, first, { action: "resume", version: one.order.version });
+      expect([one.order.status, one.order.holdKind, one.order.drawingRef]).toEqual(["in_production", null, "K-01 rev C"]);
     });
   });
 

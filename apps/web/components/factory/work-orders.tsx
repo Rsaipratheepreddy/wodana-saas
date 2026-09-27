@@ -36,7 +36,10 @@ export function WorkOrders({ api, state, error, openId, onReload, onOpen }: {
       <span className={styles.number}>{t("{ready} of {quantity}", { ready: quantityText(row.passed) || "0", quantity: `${quantityText(row.quantity)} ${row.unit}`.trim() })}</span>
       {Number(row.pending) || Number(row.toCheck) ? <small>{[Number(row.pending) ? t("{quantity} to approve", { quantity: quantityText(row.pending) }) : "",
         Number(row.toCheck) ? t("{quantity} to check", { quantity: quantityText(row.toCheck) }) : ""].filter(Boolean).join(" · ")}</small> : null}</span> } },
-    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 150, meta: { renderCell: (row) => <WorkOrderStatusLabel status={row.status} /> } },
+    { id: "status", header: t("Status"), accessorFn: (row) => row.status, size: 170, meta: { renderCell: (row) => <span className={styles.nameCell}>
+      <WorkOrderStatusLabel status={row.status} />
+      {OPEN.includes(row.status) && (row.lineStatus === "omitted" || Number(row.scopeOver) > 0) ? <small className={styles.lateText}>{t("Scope changed")}</small>
+        : row.holdKind === "drawing" && row.status === "on_hold" ? <small>{t("Drawing changed")}</small> : null}</span> } },
   ], [t, format]);
   if (error && !state) return <ErrorState description={error} onRetry={onReload} />;
   return <>
