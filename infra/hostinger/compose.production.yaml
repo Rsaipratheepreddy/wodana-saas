@@ -9,6 +9,7 @@ x-intelligence-environment: &intelligence-environment
   DEPENDENCY_CHECKS_ENABLED: "true"
   WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  # Always live here: "test" is refused in production and "unconfigured" fails every delivery.
   NOTIFICATION_ADAPTER_MODE: live
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET}
@@ -121,6 +122,14 @@ services:
       LOCAL_AUTH_JWT_SECRET: ${LOCAL_AUTH_JWT_SECRET:-}
       LOCAL_AUTH_ISSUER: ${LOCAL_AUTH_ISSUER:-}
       LOCAL_AUTH_AUDIENCE: ${LOCAL_AUTH_AUDIENCE:-}
+      # Encrypts MFA secrets; password mode refuses to start without a 32-byte key (validate.sh checks it).
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
+      MFA_ENCRYPTION_KEY_VERSION: ${MFA_ENCRYPTION_KEY_VERSION:-1}
+      MFA_TOTP_ISSUER: ${MFA_TOTP_ISSUER:-Wodana}
+      MFA_STEP_UP_MINUTES: ${MFA_STEP_UP_MINUTES:-10}
+      # Optional: the AI gateway stays off without a key (each workspace also turns AI on in Settings).
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
       OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
@@ -218,6 +227,9 @@ services:
       NEXT_PUBLIC_BUSINESS_API_URL: https://api.${BASE_DOMAIN}/api/v1
       NEXT_PUBLIC_INTELLIGENCE_API_URL: https://api.${BASE_DOMAIN}/api/v1
       LOGIN_TENANT_SLUG: ${LOGIN_TENANT_SLUG:-}
+      # Optional: the web assistants (Woddy, quotation and commercial assist) stay off without a key.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
