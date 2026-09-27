@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Search, RefreshCw, ExternalLink, Check, FileText } from "lucide-react";
-import { ControlledModalDialog } from "@/design-system";
+import { ControlledModalDialog, useDesignSystem } from "@/design-system";
 import { jsonRequest, money } from "@/lib/commercial/client";
 import type { Payment } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -53,7 +53,7 @@ export function PaymentInvoice({
   busy,
   canVerifyFinance,
   run,
-  currency = "AED",
+  currency: currencyProp,
   customerName = "",
 }: {
   workspaceId: string;
@@ -65,6 +65,8 @@ export function PaymentInvoice({
   customerName?: string;
 }) {
   const t = useT();
+  const { currency: workspaceCurrency } = useDesignSystem();
+  const currency = currencyProp ?? workspaceCurrency;
   const [open, setOpen] = useState(false),
     [connectionId, setConnectionId] = useState(
       payment.invoice?.connectionId ?? "",

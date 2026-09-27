@@ -17,7 +17,7 @@ import {
   NumericInput,
   SelectField,
   TextAreaField,
-  TextInput, EmptyState
+  TextInput, EmptyState, useDesignSystem
 } from "@/design-system";
 import { acceptedQuoteTotals, acceptedQuoteValue, money, statusLabel } from "@/lib/commercial/client";
 import {
@@ -343,6 +343,7 @@ export function CommercialRequests({ state, run, busy, error }: Props) {
 }
 export function AgreementPayments({ state, run, busy, error, initialView = "agreement" }: Props & { initialView?: "agreement" | "payments" }) {
   const t = useT();
+  const { currency: workspaceCurrency } = useDesignSystem();
   const accepted = state.data.palmFlow
       ? state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation" && q.round === "main")
         ?? state.data.quotes.find(q => q.status === "accepted" && q.kind === "quotation" && q.round === "design")
@@ -501,7 +502,7 @@ export function AgreementPayments({ state, run, busy, error, initialView = "agre
                             (q) => q.id === p.sourceQuoteId,
                           )?.currency ??
                           state.currency ??
-                          "AED"
+                          workspaceCurrency
                         }
                         customerName={state.customerName}
                         workspaceId={state.workspaceId}

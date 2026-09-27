@@ -3,6 +3,7 @@
 import { useT } from "@/lib/i18n/i18n-provider";
 import { useDesignSystem } from "@/design-system";
 import type { Quote, PortalBrand } from "@/lib/commercial/types";
+import { quoteCurrencyChoices } from "@/lib/commercial/client";
 import type { CSSProperties } from "react";
 import { BrandLogo } from "./brand-logo";
 import s from "./quotation-cover.module.css";
@@ -37,7 +38,7 @@ export function QuotationCover({
   onChange?: (patch: Partial<Quote>) => void;
 }) {
   const t = useT();
-  const { locale } = useDesignSystem();
+  const { locale, currency: workspaceCurrency } = useDesignSystem();
   const cover = quote.cover ?? {
     preparedFor: customerName,
     location: "",
@@ -174,7 +175,7 @@ export function QuotationCover({
               value={quote.currency}
               onChange={(e) => onChange({ currency: e.target.value })}
             >
-              {["AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].map((c) => (
+              {quoteCurrencyChoices(workspaceCurrency).map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
