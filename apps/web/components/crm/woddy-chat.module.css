@@ -40,7 +40,7 @@
 .footer .sendButton:global(.wd-button[data-variant="primary"]) { inline-size: 2.15rem; block-size: 2.15rem; min-block-size: 2.15rem; padding: 0; flex-shrink: 0; border: 0; border-radius: 50%; background: var(--crm-gradient); color: var(--crm-on-gradient); box-shadow: none; }
 .footer form:focus-within { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .footer > small { display: block; margin-block-start: var(--wd-space-2); line-height: 1.5; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
-.error { color: var(--wd-color-text); border-inline-start: 2px solid var(--wd-color-border); padding-inline-start: var(--wd-space-2); line-height: 1.5; }
+.error { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text); border-inline-start: 2px solid var(--wd-color-border); padding-inline-start: var(--wd-space-2); line-height: 1.5; }
 @keyframes arrive { from { transform: translateX(var(--woddy-slide, 100%)); opacity: .5; } to { transform: translateX(0); opacity: 1; } }
 :global([dir="rtl"]) .panel { --woddy-slide: -100%; }
 @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }

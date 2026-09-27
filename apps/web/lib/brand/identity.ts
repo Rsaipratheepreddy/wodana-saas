@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 
-export const WODDY_MARK_SRC = "/brand/wodana/woddy-mark-v4.png";
 export const IDENTITY_VARIANT_COUNT = 6;
 
 type IdentityImageOptions = {

@@ -183,7 +183,7 @@ export function OrganizationStructurePage({ initialData }: { initialData: Organi
             </div>
             <div className={styles.cardFooter}>
               <div className={styles.memberControls}>
-                <div aria-label={t("{count} team members", { count: team.members.length })} className={styles.avatars}>{team.members.slice(0, 4).map((member) => <Avatar key={member.membershipId} name={member.displayName} size="sm" />)}{team.members.length > 4 ? <span>+{team.members.length - 4}</span> : null}</div>
+                <div aria-label={t("{count} team members", { count: team.members.length })} className={styles.avatars}>{team.members.slice(0, 4).map((member) => <Avatar key={member.membershipId} name={member.displayName} roles={(team.roleIds ?? []).map((id) => initialData.roles.find((role) => role.id === id)?.code ?? "")} seed={member.membershipId} size="sm" />)}{team.members.length > 4 ? <span>+{team.members.length - 4}</span> : null}</div>
                 {initialData.canManage ? <IconButton aria-label={t("Edit members in {name}", { name: team.name })} onPress={() => setEditingTeam(team)} size="standard"><Pencil aria-hidden="true" size={14} /></IconButton> : null}
               </div>
               <span>{unitsById.get(team.businessUnitId)?.name ?? t("Business unit")} · {lead ? t("{name}, lead", { name: lead.displayName }) : team.members.length === 1 ? t("1 member") : t("{count} members", { count: team.members.length })}</span>

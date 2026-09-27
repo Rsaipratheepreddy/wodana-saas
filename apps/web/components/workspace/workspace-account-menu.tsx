@@ -39,14 +39,14 @@ export function WorkspaceAccountMenu({ user }: { user: WorkspaceUser }) {
           aria-label={t("Account menu for {name}", { name: user.name })}
           className={styles.accountButton}
         >
-          <span aria-hidden="true" className={styles.avatar}><Avatar name={user.name} preset={user.avatarPreset} seed={user.id} src={user.avatarUrl} /></span>
+          <span aria-hidden="true" className={styles.avatar}><Avatar name={user.name} preset={user.avatarPreset} roles={user.roles} seed={user.id} src={user.avatarUrl} /></span>
         </AriaButton>
         <Popover className={styles.userPopover} offset={8} placement="bottom end">
           <Dialog aria-label={t("Account menu")} className={styles.accountDialog}>
             {({ close }) => (
               <>
                 <div className={styles.accountSummary}>
-                  <span aria-hidden="true" className={styles.avatar}><Avatar name={user.name} preset={user.avatarPreset} seed={user.id} src={user.avatarUrl} /></span>
+                  <span aria-hidden="true" className={styles.avatar}><Avatar name={user.name} preset={user.avatarPreset} roles={user.roles} seed={user.id} src={user.avatarUrl} /></span>
                   <span>
                     <strong>{user.name}</strong>
                     <small dir="ltr">{user.email}</small>

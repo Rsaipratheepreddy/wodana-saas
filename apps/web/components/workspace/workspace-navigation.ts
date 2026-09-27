@@ -95,6 +95,8 @@ export type WorkspaceUser = {
   /** A chosen default avatar id, or "auto" for the stable default. */
   avatarPreset?: string;
   id?: string;
+  /** Workspace role codes: the main one chooses the default role avatar. */
+  roles?: string[];
   email: string;
   name: string;
 };

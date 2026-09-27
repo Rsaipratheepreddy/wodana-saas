@@ -1,7 +1,9 @@
 import type { LucideIcon } from 'lucide-react-native';
-import type { ComponentProps, ReactNode } from 'react';
+import { Image } from 'expo-image';
+import { useState, type ComponentProps, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, Text as NativeText, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { haptic } from '../core/haptics';
+import { roleAvatar } from './brand-characters';
 import { useStyles, useTheme, type Theme } from './theme';
 
 type Variant = 'display' | 'title' | 'heading' | 'subheading' | 'body' | 'label' | 'caption' | 'overline' | 'number';
@@ -101,11 +103,21 @@ export function Chip({ label, tone = 'neutral', icon: Icon, onPress, selected }:
     style={({ pressed }) => [style, { paddingHorizontal: space(3), paddingVertical: space(2), opacity: pressed ? 0.7 : 1 }]}>{body}</Pressable>;
 }
 
-export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+/**
+ * A round picture for a name. For a person (`person`), their own photo wins; without one they get the role
+ * avatar of their main role (woman or man chosen from their id, so it never changes). Initials show while
+ * the picture loads or if it fails, and are all a workspace or other non-person ever shows.
+ */
+export function Avatar({ name, size = 36, person }: { name: string; size?: number; person?: { id?: string | null; roles?: ReadonlyArray<string> | null; photoUrl?: string | null } }) {
   const { colors, font } = useTheme();
+  const [failed, setFailed] = useState<string | null>(null);
   const initials = name.split(/\s+/).map((part) => part.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '·';
-  return <View accessible={false} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.actionPrimarySubtle, alignItems: 'center', justifyContent: 'center' }}>
+  const photo = person?.photoUrl && failed !== person.photoUrl ? { uri: person.photoUrl } : null;
+  const picture = photo ?? (person && failed !== 'role' ? roleAvatar(person.roles, person.id ?? name) : null);
+  return <View accessible={false} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.actionPrimarySubtle, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
     <Text style={{ color: colors.actionPrimary, fontFamily: font.semibold, fontSize: size * 0.38, lineHeight: size * 0.5 }}>{initials}</Text>
+    {picture ? <Image source={picture} contentFit="cover" transition={0} onError={() => setFailed(photo ? person?.photoUrl ?? 'role' : 'role')}
+      style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2 }} /> : null}
   </View>;
 }
 

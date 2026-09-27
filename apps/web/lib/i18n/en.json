@@ -9381,5 +9381,20 @@
   "Expand {name}": "Expand {name}",
   "Collapse {name}": "Collapse {name}",
   "Order {name}": "Order {name}",
-  "Selected lines": "Selected lines"
+  "Selected lines": "Selected lines",
+  "Woddy": "Woddy",
+  "Woddy says hello": "Woddy says hello",
+  "Woddy is thinking": "Woddy is thinking",
+  "Woddy is working on it": "Woddy is working on it",
+  "Woddy is celebrating": "Woddy is celebrating",
+  "Woddy could not do it": "Woddy could not do it",
+  "Site supervisor": "Site supervisor",
+  "Carpenter": "Carpenter",
+  "Electrician": "Electrician",
+  "Painter": "Painter",
+  "Installer": "Installer",
+  "Woman": "Woman",
+  "Man": "Man",
+  "Your chosen avatar is shown. Choose it again to go back to your role’s avatar.": "Your chosen avatar is shown. Choose it again to go back to your role’s avatar.",
+  "Your role’s avatar is shown. Choose another picture if you prefer.": "Your role’s avatar is shown. Choose another picture if you prefer."
 }

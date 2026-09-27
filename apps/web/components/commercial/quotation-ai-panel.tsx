@@ -15,6 +15,7 @@ import {
 import type { Quote } from "@/lib/commercial/types";
 import { roomNames } from "@/lib/commercial/room-builder";
 import type { QuotationAnalysis } from "@/lib/commercial/quotation-assist";
+import { Woddy, woddyPoseFor } from "@/design-system";
 import s from "./quotation-workspace.module.css";
 
 type Message = { id: string; role: "user" | "assistant"; text: string };
@@ -133,9 +134,7 @@ export function QuotationAiPanel({
   return (
     <section className={s.chat} aria-label={t("Woody quotation chat")}>
       <header className={s.chatHeader}>
-        <span className={s.woodyMark}>
-          <Sparkles size={16} />
-        </span>
+        <Woddy className={s.woodyMark} decorative pose={error ? woddyPoseFor.error : busy ? woddyPoseFor.running : analysis ? woddyPoseFor.done : messages.length ? woddyPoseFor.idle : woddyPoseFor.empty} size={30} />
         <div>
           <strong>{t("Woody · AI assistant")}</strong>
           <small>{t("Suggest with AI. Edit manually anytime.")}</small>

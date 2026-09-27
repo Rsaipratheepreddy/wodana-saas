@@ -27,7 +27,7 @@ export function TeamInsights({ api, days, onPerson }: { api: ProjectApi; days: 3
   const number = (value: number) => <span className={styles.count} data-zero={value === 0 || undefined}>{value}</span>;
   const columns: GroupedTableColumn<WorkInsightRow>[] = [
     { id: "person", label: t("Person"), width: "24%", render: (row) => row.name
-      ? <span className={styles.person}><Avatar name={row.name} size="sm" />{row.name}</span> : <span className={styles.muted}>{t("No one")}</span> },
+      ? <span className={styles.person}><Avatar name={row.name} seed={row.name} size="sm" />{row.name}</span> : <span className={styles.muted}>{t("No one")}</span> },
     { id: "open", label: t("Open"), width: "9%", render: (row) => number(row.open) },
     { id: "late", label: t("Late"), width: "9%", render: (row) => <span className={styles.count} data-late={row.late > 0 || undefined} data-zero={row.late === 0 || undefined}>{row.late}</span> },
     { id: "week", label: t("Due in 7 days"), width: "12%", mobileHidden: true, render: (row) => number(row.dueThisWeek) },

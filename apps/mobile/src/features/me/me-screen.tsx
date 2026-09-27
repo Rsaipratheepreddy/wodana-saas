@@ -64,7 +64,7 @@ export function MeScreen() {
 
   const name = personDisplayName(session.profile.displayName, session.profile.primaryEmail);
   return <Screen large title={name} subtitle={`${session.membership.workspaceName} · ${session.profile.primaryEmail}`}
-    action={<Avatar name={name} size={44} />}
+    action={<Avatar name={name} size={44} person={{ id: session.profile.id, roles: session.membership.roles }} />}
     onRefresh={() => { void bootstrap.refetch(); void current.refetch(); void balances.refetch(); }} refreshing={current.isRefetching}>
     {hrms && employee?.enabled !== false ? <Card tone={open ? 'action' : 'default'}>
       <Row style={{ justifyContent: 'space-between' }}>

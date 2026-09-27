@@ -582,6 +582,13 @@
       "when": 1800705600000,
       "tag": "0131_default_sales_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1800709200000,
+      "tag": "0132_role_avatar_presets",
+      "breakpoints": true
     }
   ]
 }

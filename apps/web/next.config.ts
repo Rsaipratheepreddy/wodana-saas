@@ -67,6 +67,11 @@ const nextConfig: NextConfig = {
     return [
       { source: "/:path*", headers: securityHeaders },
       {
+        // Brand characters (role avatars, Woddy) change by file name only, so browsers may keep them.
+        source: "/brand/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }],
+      },
+      {
         // HRMS check-in can be reached through client-side navigation from any
         // staff page, so its document policy must allow these same-origin APIs.
         // The browser still requires the user's camera/location permission.

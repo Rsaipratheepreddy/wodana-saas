@@ -1,5 +1,4 @@
 export * from "./foundations/provider";
-export * from "./components/avatar-presets";
 export * from "./foundations/formatters";
 export * from "./foundations/haptics";
 export * from "./foundations/time-zone";
@@ -10,6 +9,7 @@ export * from "./primitives/typography";
 export * from "./components/actions";
 export * from "./components/advanced-forms";
 export * from "./components/avatar";
+export * from "./components/woddy";
 export * from "./components/person";
 export * from "./components/forms";
 export * from "./components/navigation";

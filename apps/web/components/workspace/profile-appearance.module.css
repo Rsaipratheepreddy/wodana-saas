@@ -2,7 +2,8 @@
 .muted { margin: var(--wd-space-2) 0 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr)); gap: var(--wd-space-2); padding-block: var(--wd-space-3); }
 .option { position: relative; display: grid; aspect-ratio: 1; place-items: center; border: 0; border-radius: var(--wd-radius-round); padding: 0; overflow: visible; background: var(--wd-color-surface-muted); color: var(--wd-color-text); cursor: pointer; transition: box-shadow 120ms ease; }
-.option svg { inline-size: 100%; block-size: 100%; border-radius: var(--wd-radius-round); }
+.option img { inline-size: 100%; block-size: 100%; border-radius: var(--wd-radius-round); object-fit: contain; }
+.option[data-role="mine"]:not([data-selected]) { box-shadow: 0 0 0 2px color-mix(in srgb, var(--wd-color-action-primary) 45%, transparent); }
 .option:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--wd-color-text) 12%, transparent); }
 .option:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
 .option[data-selected] { box-shadow: 0 0 0 2px var(--wd-color-success); }

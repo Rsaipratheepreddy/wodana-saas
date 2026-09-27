@@ -145,7 +145,7 @@ export function TaskScreen() {
 
     <Section title={t('Activity')}>
       {work.activity.slice(-30).map((entry, index) => entry.kind === 'comment'
-        ? <ListRow key={entry.id} first={index === 0} leading={<Avatar name={entry.by} size={32} />} title={entry.by} detail={(entry as { body: string }).body}
+        ? <ListRow key={entry.id} first={index === 0} leading={<Avatar name={entry.by} size={32} person={{ id: entry.by }} />} title={entry.by} detail={(entry as { body: string }).body}
           meta={<Text variant="caption" tone="tertiary">{format.ago(entry.at)}</Text>} />
         : <ListRow key={entry.id} first={index === 0} title={`${entry.by} ${t(EVENT[entry.kind] ?? entry.kind)}`} meta={<Text variant="caption" tone="tertiary">{format.ago(entry.at)}</Text>} />)}
       {editable || board.data?.aftercare ? <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.space(2), padding: theme.space(3), borderTopWidth: work.activity.length ? 1 : 0, borderTopColor: theme.colors.structuralDivider }}>

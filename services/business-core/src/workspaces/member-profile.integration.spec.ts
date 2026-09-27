@@ -45,12 +45,12 @@ integration("member profile: avatar and photo", () => {
   it("chooses an avatar, checks the version and audits the change", async () => {
     await withMember(async (client, { workspaceId, service }) => {
       expect(await service.getMine(actor, workspaceId)).toEqual({ avatarPreset: null, photoUrl: null, version: 0 });
-      const chosen = await service.setAvatar(actor, workspaceId, { avatarPreset: "b03" });
-      expect(chosen).toMatchObject({ avatarPreset: "b03", version: 1 });
+      const chosen = await service.setAvatar(actor, workspaceId, { avatarPreset: "sales-f" });
+      expect(chosen).toMatchObject({ avatarPreset: "sales-f", version: 1 });
       // Same choice again is a no-op (idempotent), a stale version is refused.
-      expect(await service.setAvatar(actor, workspaceId, { avatarPreset: "b03", version: 1 })).toMatchObject({ version: 1 });
-      await expect(service.setAvatar(actor, workspaceId, { avatarPreset: "a01", version: 0 })).rejects.toThrow(/another window/);
-      await expect(service.setAvatar(actor, workspaceId, { avatarPreset: "z99" })).rejects.toThrow(/listed avatars/);
+      expect(await service.setAvatar(actor, workspaceId, { avatarPreset: "sales-f", version: 1 })).toMatchObject({ version: 1 });
+      await expect(service.setAvatar(actor, workspaceId, { avatarPreset: "owner-m", version: 0 })).rejects.toThrow(/another window/);
+      await expect(service.setAvatar(actor, workspaceId, { avatarPreset: "b03" })).rejects.toThrow(/listed avatars/);
       const audit = await client.query("SELECT action FROM audit_events WHERE workspace_id=$1", [workspaceId]);
       expect(audit.rows).toEqual([{ action: "member.avatar_changed" }]);
     });

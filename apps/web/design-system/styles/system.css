@@ -153,7 +153,15 @@
 .wd-avatar img { inline-size: 100%; block-size: 100%; object-fit: cover; }
 .wd-avatar[data-portrait] { background: var(--wd-color-surface-muted); color: var(--wd-color-text); }
 .wd-avatar-portrait { inline-size: 100%; block-size: 100%; }
+/* The role avatar sits over the initials in the same cell: initials show only until it has loaded. */
+.wd-avatar > .wd-avatar-initials, .wd-avatar[data-role-avatar] > img { grid-area: 1 / 1; }
+.wd-avatar[data-role-avatar] > img { object-fit: contain; }
 .wd-avatar-wrap { position: relative; display: inline-flex; }
+/* Woddy, the assistant: a static picture; only the idle pose may bob, never under reduced motion. */
+.wd-woddy { display: inline-block; flex: 0 0 auto; block-size: auto; object-fit: contain; user-select: none; }
+.wd-woddy[data-motion="idle"] { animation: wd-woddy-idle 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes wd-woddy-idle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(calc(var(--wd-space-0-5) * -1)); } }
+@media (prefers-reduced-motion: reduce) { .wd-woddy[data-motion="idle"] { animation: none; } }
 .wd-presence { position: absolute; inset-inline-end: -1px; inset-block-end: -1px; inline-size: 0.55rem; block-size: 0.55rem; border: 2px solid var(--wd-surface); border-radius: 50%; background: var(--wd-faint); }
 .wd-presence[data-presence="online"] { background: var(--wd-success); }
 .wd-presence[data-presence="busy"] { background: var(--wd-danger); }
@@ -953,7 +961,8 @@
 /* Activity, audit, notifications, sharing, and presence */
 .wd-activity-feed { border-block-start: 1px solid var(--wd-line); padding: 0; margin: 0; list-style: none; }
 .wd-activity-feed > li { min-block-size: 3.25rem; display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); align-items: start; gap: var(--wd-space-2); border-block-end: 1px solid var(--wd-line); padding-block: var(--wd-space-3); }
-.wd-activity-feed > li > span { inline-size: 1.75rem; block-size: 1.75rem; display: grid; place-items: center; border-radius: 50%; background: var(--wd-brand-100); color: var(--wd-brand-700); }
+.wd-activity-feed > li > span { position: relative; inline-size: 1.75rem; block-size: 1.75rem; display: grid; place-items: center; border-radius: 50%; }
+.wd-activity-feed > li > span > i { position: absolute; inset-block-end: calc(var(--wd-space-0-5) * -1); inset-inline-end: calc(var(--wd-space-0-5) * -1); display: grid; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); border-radius: 50%; background: var(--wd-brand-100); color: var(--wd-brand-700); outline: 2px solid var(--wd-surface); }
 .wd-activity-feed > li > div { display: grid; gap: var(--wd-space-0-5); }
 .wd-activity-feed p { margin: 0; }
 .wd-activity-feed time { color: var(--wd-muted); font-size: var(--wd-text-xs); }
