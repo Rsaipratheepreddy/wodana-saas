@@ -3533,5 +3533,7 @@
   "Height ({unit})": "Height ({unit})",
   "H": "H",
   "L × D × H ({unit})": "L × D × H ({unit})",
-  "New line in {name}": "New line in {name}"
+  "New line in {name}": "New line in {name}",
+  "Resize {column}": "Resize {column}",
+  "Depth": "Depth"
 }

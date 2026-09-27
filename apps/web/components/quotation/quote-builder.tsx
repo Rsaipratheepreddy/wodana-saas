@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, PanelRight, Plus, Ruler, Sparkles, Store, Type, X } from "lucide-react";
+import { ArrowLeft, Bookmark, CircleAlert, Columns3, Image as ImageIcon, Layers, MapPin, PanelRight, Plus, Sparkles, Store, Type, X } from "lucide-react";
 import { Badge, EmptyState, ErrorState, IconButton, IconMenuButton, InlineNotice, MenuButton, SegmentedControl, Skeleton, useDesignSystem } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { catalogImageUrl, quoteApi, QuotationRequestError } from "@/lib/quotation/client";
@@ -22,6 +22,7 @@ import { InsertTemplate, SaveTemplate } from "./quote-templates";
 import { QuoteChat, type AssistantCommands } from "./quote-chat";
 import { QuoteCatalog } from "./quote-catalog";
 import { NameDialog } from "./name-dialog";
+import { useColumnWidths } from "./use-column-widths";
 import { ChangeAgreedItem } from "./quote-variation";
 import { CommentButton, CommentPanel, CommentsList, PeopleHere, threadsAt, usePulse } from "./quote-collab";
 import styles from "./quote-builder.module.css";
@@ -34,7 +35,7 @@ type Draft = { id: string; areaId: string | null; workPackageId: string | null }
  */
 export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, initialTab = "items", quoteHref: hrefOf }: { workspaceId: string; caseId: string; quoteId: string; backHref: string; quoteHref?: (id: string) => string; initial?: BuilderState; initialTab?: QuoteTab }) {
   const t = useT();
-  const { locale, timeZone } = useDesignSystem();
+  const { locale, timeZone, direction } = useDesignSystem();
   const router = useRouter();
   const api = useMemo(() => quoteApi(workspaceId, caseId, quoteId), [workspaceId, caseId, quoteId]);
   const [state, setState] = useState<BuilderState | null>(initial ?? null);
@@ -49,6 +50,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
   // Which optional columns show is a per-person choice, remembered on this device.
   const shownColumns = useSyncExternalStore(subscribeColumns, readColumns, () => COLUMNS_DEFAULT);
   const columns: RowColumns = JSON.parse(shownColumns);
+  const widths = useColumnWidths(COLUMN_WIDTHS);
   const toggleColumn = (key: keyof RowColumns) => { try { window.localStorage.setItem(COLUMNS_KEY, JSON.stringify({ ...columns, [key]: !columns[key] })); } catch { /* storage unavailable */ } window.dispatchEvent(new Event(COLUMNS_KEY)); };
   const [inserting, setInserting] = useState(false);
   const [changing, setChanging] = useState(false);
@@ -279,20 +281,32 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
     else if (action === "template") setSavingTemplate({ scope, target: group.key, name: group.name });
   };
 
-  // Column headings, repeated under each area's band so a long quote stays readable.
+  // Column headings, repeated under each area's band so a long quote stays readable. Each heading's
+  // edge can be dragged (or moved with the arrow keys) to resize its column.
+  const heading = (key: string, content: React.ReactNode, options: { numeric?: boolean; label?: string } = {}) => <span role="columnheader" data-numeric={options.numeric || undefined}
+    aria-label={options.label} title={options.label}>
+    {content}
+    {RESIZABLE.has(key) ? <span role="separator" aria-orientation="vertical" aria-label={t("Resize {column}", { column: options.label ?? String(content) })} tabIndex={0} className={styles.resizer}
+      onPointerDown={widths.startResize(key)} onDoubleClick={() => widths.reset(key)}
+      onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "ArrowLeft") { event.preventDefault(); widths.nudge(key, ((event.key === "ArrowRight") !== (direction === "rtl") ? 1 : -1) * 16); } }} /> : null}
+  </span>;
   const headerRow = () => <div role="row" className={styles.columns}>
-    <span role="columnheader" />
+    <span role="columnheader" className={styles.gutter} />
     <span role="columnheader" data-numeric>{t("#")}</span>
-    {columns.picture ? <span role="columnheader" aria-label={t("Picture")} title={t("Picture")}><ImageIcon aria-hidden="true" size={13} /></span> : null}
-    <span role="columnheader"><Type aria-hidden="true" size={13} />{t("Item")}</span>
-    {column ? <span role="columnheader"><MapPin aria-hidden="true" size={13} />{t("Area")}</span> : null}
-    {columns.size ? <span role="columnheader" className={styles.sizeHead}><Ruler aria-hidden="true" size={13} />{t("L × D × H ({unit})", { unit: state.sizeUnit ?? "cm" })}</span> : null}
-    {columns.material ? <span role="columnheader"><Layers aria-hidden="true" size={13} />{t("Material")}</span> : null}
-    <span role="columnheader" data-numeric>{t("Qty")}</span>
-    <span role="columnheader">{t("Unit")}</span>
-    <span role="columnheader" data-numeric>{t("Rate")}</span>
-    <span role="columnheader" data-numeric>{t("Amount")}</span>
-    <span role="columnheader" />
+    {columns.picture ? heading("picture", <ImageIcon aria-hidden="true" size={13} />, { label: t("Picture") }) : null}
+    {heading("item", <><Type aria-hidden="true" size={13} />{t("Item")}</>, { label: t("Item") })}
+    {column ? heading("pick", <><MapPin aria-hidden="true" size={13} />{t("Area")}</>, { label: t("Area") }) : null}
+    {columns.size ? <>
+      {heading("length", <>{t("L")}<small>{state.sizeUnit ?? "cm"}</small></>, { numeric: true, label: t("Length") })}
+      {heading("width", <>{t("D")}<small>{state.sizeUnit ?? "cm"}</small></>, { numeric: true, label: t("Depth") })}
+      {heading("height", <>{t("H")}<small>{state.sizeUnit ?? "cm"}</small></>, { numeric: true, label: t("Height") })}
+    </> : null}
+    {columns.material ? heading("material", <><Layers aria-hidden="true" size={13} />{t("Material")}</>, { label: t("Material") }) : null}
+    {heading("qty", t("Qty"), { numeric: true, label: t("Qty") })}
+    {heading("unit", t("Unit"), { label: t("Unit") })}
+    {heading("rate", t("Rate"), { numeric: true, label: t("Rate") })}
+    {heading("amount", t("Amount"), { numeric: true, label: t("Amount") })}
+    <span role="columnheader" className={styles.gutter} />
   </div>;
 
   const renderGroup = (group: LineGroup, context: { areaId: string | null; workPackageId: string | null }, depth: number, tone?: string) => {
@@ -407,7 +421,7 @@ export function QuoteBuilder({ workspaceId, caseId, quoteId, backHref, initial, 
             <button type="button" onClick={() => openPanel("catalog")}><Store aria-hidden="true" size={18} /><strong>{t("Pick from the catalog")}</strong><small>{t("Search and add")}</small></button>
             <button type="button" onClick={() => setInserting(true)}><Bookmark aria-hidden="true" size={18} /><strong>{t("Insert a template")}</strong><small>{t("Saved areas and quotes")}</small></button>
           </div> : null}
-          <div className={styles.gridScroll}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns) } as React.CSSProperties}
+          <div className={styles.gridScroll}><div role="grid" aria-label={t("Quote lines")} className={styles.grid} style={{ "--cols": gridColumns(column, columns, widths.width) } as React.CSSProperties}
             onFocusCapture={(event) => {
               const row = (event.target as HTMLElement).closest<HTMLElement>("[data-line-id]");
               const label = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
@@ -483,9 +497,13 @@ const COLUMNS_KEY = "wodana.quote.columns";
 const COLUMNS_DEFAULT = JSON.stringify({ picture: true, size: true, material: true });
 const readColumns = () => { try { const saved = JSON.parse(window.localStorage.getItem(COLUMNS_KEY) ?? "null"); return saved ? JSON.stringify({ ...JSON.parse(COLUMNS_DEFAULT), ...saved }) : COLUMNS_DEFAULT; } catch { return COLUMNS_DEFAULT; } };
 const subscribeColumns = (notify: () => void) => { window.addEventListener(COLUMNS_KEY, notify); window.addEventListener("storage", notify); return () => { window.removeEventListener(COLUMNS_KEY, notify); window.removeEventListener("storage", notify); }; };
-/** The table's column widths, in the order the cells are drawn (sizes come from the stylesheet). */
-const gridColumns = (column: RowColumn, columns: RowColumns) => ["handle", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
-  ...(columns.size ? ["size", "size", "size"] : []), ...(columns.material ? ["material"] : []), "qty", "unit", "rate", "amount", "menu"].map((name) => `var(--col-${name})`).join(" ");
+/** Starting widths (px) of the table's columns; the item column also takes any room left over. */
+const COLUMN_WIDTHS: Record<string, number> = { gutter: 20, serial: 36, picture: 72, item: 220, pick: 140, length: 64, width: 64, height: 64, material: 140, qty: 56, unit: 68, rate: 84, amount: 108, menu: 48 };
+const RESIZABLE = new Set(["picture", "item", "pick", "length", "width", "height", "material", "qty", "unit", "rate", "amount"]);
+/** The grid's columns, in the order the cells are drawn. */
+const gridColumns = (column: RowColumn, columns: RowColumns, width: (key: string) => number) => ["gutter", "serial", ...(columns.picture ? ["picture"] : []), "item", ...(column ? ["pick"] : []),
+  ...(columns.size ? ["length", "width", "height"] : []), ...(columns.material ? ["material"] : []), "qty", "unit", "rate", "amount", "menu"]
+  .map((key) => (key === "item" ? `minmax(${width(key)}px, 1fr)` : `${width(key)}px`)).join(" ");
 
 const EMPTY_LINE: BuilderLine = {
   id: "", position: 0, version: 0, kind: "item", areaId: null, fromAreaId: null, workPackageId: null, title: "", description: "", unit: "", quantity: "1",

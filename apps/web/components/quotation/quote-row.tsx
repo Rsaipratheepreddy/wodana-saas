@@ -67,7 +67,7 @@ export function QuoteRow({ line, draft, serial, column, columns, areas, trades, 
     onDragOver={(event) => { if (canEdit) { event.preventDefault(); event.currentTarget.dataset.dropTarget = "true"; } }}
     onDragLeave={(event) => { delete event.currentTarget.dataset.dropTarget; }}
     onDrop={(event) => { event.preventDefault(); delete event.currentTarget.dataset.dropTarget; onDropBefore(); }}>
-    <span role="gridcell" className={styles.handleCell}>
+    <span role="gridcell" className={`${styles.handleCell} ${styles.gutter}`}>
       {editingBy.length ? <span className={styles.editing} title={editingBy.map((person) => person.name).join(", ")}><Avatar name={editingBy[0].name} size="sm" /></span> : null}
       {canEdit && !draft && !editingBy.length ? <button type="button" className={styles.handle} draggable aria-label={t("Move {name}", { name: line.title })} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", line.id); onDragStart(); }}><GripVertical aria-hidden="true" size={14} /></button> : null}
     </span>
@@ -111,7 +111,7 @@ export function QuoteRow({ line, draft, serial, column, columns, areas, trades, 
         : <CellInput label={t("Rate")} value={line.kind === "client_supplied" ? "0" : plain(line.rate, locale, 6)} disabled={!canEdit || draft || line.kind === "client_supplied" || fixed} numeric onCommit={(value) => onChange({ rate: value })} />}
     </span>
     <span role="gridcell" className={styles.amountCell}>{draft ? "" : money(amount, currency, decimals, locale)}</span>
-    <span role="gridcell" className={styles.menuCell}>
+    <span role="gridcell" className={`${styles.menuCell} ${styles.gutter}`}>
       {!draft && onComments ? <CommentButton threads={comments} label={t("Comments on {name}", { name: line.title })} onOpen={onComments} /> : null}
       {!draft ? <IconMenuButton ariaLabel={t("Line actions for {name}", { name: line.title })} onAction={onMenu} items={[
         ...(canAsk ? [{ id: "ask", label: t("Ask AI about this line") }] : []),
@@ -139,7 +139,7 @@ function MaterialCell({ value, options, disabled, onCommit }: { value: string; o
   const query = (text ?? "").trim().toLowerCase();
   const items = options.filter((name) => !query || name.toLowerCase().includes(query)).slice(0, 40).map((name) => ({ id: name, name }));
   const commit = (next: string) => { setText(null); if (next.trim() !== value) onCommit(next.trim()); };
-  return <ComboBox aria-label={t("Material")} className={styles.picker} allowsCustomValue menuTrigger="input" inputValue={shown} items={items} isDisabled={disabled}
+  return <ComboBox aria-label={t("Material")} className={styles.picker} allowsCustomValue menuTrigger="focus" inputValue={shown} items={items} isDisabled={disabled}
     onInputChange={setText} onSelectionChange={(key) => { if (key !== null) commit(String(key)); }}>
     <Input className={styles.pickerInput} onFocus={(event) => event.currentTarget.select()}
       onBlur={() => { if (text !== null) commit(text); }}
@@ -163,13 +163,16 @@ function CellInput({ label, value, disabled, numeric, allowEmpty, placeholder, o
   };
   return <input aria-label={label} className={styles.cell} data-numeric={numeric || undefined} inputMode={numeric ? "decimal" : undefined} disabled={disabled} value={shown} placeholder={placeholder}
     onFocus={(event) => { setText(value); setFocused(true); event.currentTarget.select(); }}
-    onChange={(event) => setText(event.target.value)}
+    onChange={(event) => setText(numeric ? onlyNumber(event.target.value) : event.target.value)}
     onBlur={() => { setFocused(false); commit(); }}
     onKeyDown={(event) => {
       if (event.key === "Escape") { cancelled.current = true; setText(value); event.currentTarget.blur(); }
       if (event.key === "Enter") { event.preventDefault(); moveDown(event); }
     }} />;
 }
+
+/** What a number cell accepts as you type: digits and one decimal point, nothing else. */
+const onlyNumber = (value: string) => value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
 
 /** Enter moves to the same cell in the next row (like a spreadsheet). */
 function moveDown(event: KeyboardEvent<HTMLInputElement>) {
