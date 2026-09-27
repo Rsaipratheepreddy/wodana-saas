@@ -1,12 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 244">
-  <defs>
-    <mask id="wodana-house">
-      <polygon points="130,13 248,69 248,232 80,232 12,190 12,69" fill="#fff" stroke="#fff" stroke-width="24" stroke-linejoin="round"/>
-    </mask>
-  </defs>
-  <g mask="url(#wodana-house)">
-    <rect width="260" height="244" fill="#01A92D"/>
-    <path d="M80 254V100Q80 62 118 62H176Q214 62 214 100V254Z" fill="#fff"/>
-    <path d="M102 254V134Q102 84 152 84H170Q192 84 192 106V254Z" fill="#007A20"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="277 250 700 678"><path fill="#01A92D" d="M283 505Q283 475 310 458L588 272Q625 250 662 272L942 458Q970 475 970 505V860Q970 922 905 922H487V822Q487 845 468 857L378 912Q350 928 318 912Q283 892 283 860Z"/><path fill="#fff" d="M487 922V600Q487 478 610 478L780 543Q837 565 837 625V922Z"/><path fill="#007A2A" d="M551 922V625Q551 548 625 550L735 592Q771 606 771 645V922Z"/></svg>
