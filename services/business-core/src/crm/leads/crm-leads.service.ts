@@ -436,6 +436,10 @@ export class CrmLeadsService {
           ORDER BY touched_at, id`,
         [workspaceId, lead.enquiry_id],
       );
+      // The owner's name travels with the enquiry, so a role that can't list the team still sees who owns it.
+      const owner = lead.owner_membership_id ? await client.query<{ ownerName: string | null }>(
+        `SELECT person.display_name AS "ownerName" FROM workspace_memberships member JOIN users person ON person.id = member.user_id
+         WHERE member.workspace_id = $1 AND member.id = $2`, [workspaceId, lead.owner_membership_id]) : { rows: [] };
       const canViewOpportunities = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.view");
       const opportunities = canViewOpportunities ? await client.query(`SELECT opportunity.id, opportunity.title, opportunity.status,
           source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference"
@@ -456,7 +460,7 @@ export class CrmLeadsService {
         ? null
         : await evaluateQualification(client, workspaceId, leadId);
       return {
-        ...this.mapLead(lead), enquiry: { ...enquiry.rows[0], attribution: attribution.rows }, opportunities: opportunities.rows,
+        ...this.mapLead(lead), ownerName: owner.rows[0]?.ownerName ?? null, enquiry: { ...enquiry.rows[0], attribution: attribution.rows }, opportunities: opportunities.rows,
         qualification: qualification.rows, assignments: assignments.rows, sla: sla.rows,
         qualificationState: {
           ready: qualificationState ? qualificationState.ready : true,
