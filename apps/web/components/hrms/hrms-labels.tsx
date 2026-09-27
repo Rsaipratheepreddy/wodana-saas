@@ -1,8 +1,9 @@
 "use client";
 
-import type { AttendanceDay, WorkMode } from "@wodana/contracts";
+import type { AttendanceDay, CrewDay, CrewPresence, HrmsDocument, HrmsDocumentKind, SiteClearance, WorkMode } from "@wodana/contracts";
 import { Badge, type StatusTone } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
+import styles from "./hrms.module.css";
 
 export type DayState = "checked_in" | "checked_out" | "missing_checkout" | "needs_review" | "on_leave" | "leave_requested" | "day_off" | "not_checked_in";
 
@@ -48,6 +49,54 @@ export function ReviewStatus({ status }: { status: string }) {
   return <Badge tone={status === "approved" ? "success" : status === "rejected" ? "danger" : "warning"}>{labels[status] ?? status}</Badge>;
 }
 
+const NOT_CLEARED = "Not cleared for site: ";
+type SheetState = CrewDay["status"];
+const SHEET_TONES: Record<SheetState, StatusTone> = { draft: "neutral", submitted: "warning", approved: "success", returned: "danger" };
+
+/** Where a crew day or a week's timesheet stands: being written, waiting for approval, approved or sent back. */
+export function SheetStatus({ status }: { status: SheetState }) {
+  const t = useT();
+  const labels: Record<SheetState, string> = { draft: t("Draft"), submitted: t("Waiting for approval"), approved: t("Approved"), returned: t("Sent back") };
+  return <Badge tone={SHEET_TONES[status] ?? "neutral"}>{labels[status] ?? status}</Badge>;
+}
+
+export const DOCUMENT_KINDS: HrmsDocumentKind[] = ["identity", "work_permit", "residence", "licence", "insurance", "safety_induction", "medical", "other"];
+
+/** Names for the kinds of document a person or worker keeps. */
+export function useDocumentKinds(): Record<HrmsDocumentKind, string> {
+  const t = useT();
+  return {
+    identity: t("Identity"), work_permit: t("Work permit"), residence: t("Residence"), licence: t("Licence"), insurance: t("Insurance"),
+    safety_induction: t("Safety induction"), medical: t("Medical"), other: t("Other"),
+  };
+}
+
+const DOCUMENT_TONES: Record<HrmsDocument["status"], StatusTone> = { valid: "success", expiring: "warning", expired: "danger" };
+
+/** Whether a document is in date on the workspace's today: valid, expiring within 30 days, or expired. */
+export function DocumentStatus({ status }: { status: HrmsDocument["status"] }) {
+  const t = useT();
+  const labels: Record<HrmsDocument["status"], string> = { valid: t("Valid"), expiring: t("Expiring"), expired: t("Expired") };
+  return <Badge tone={DOCUMENT_TONES[status] ?? "neutral"}>{labels[status] ?? status}</Badge>;
+}
+
+/** Whether someone may go on site: cleared, or what's missing or expired. */
+export function ClearanceStatus({ person }: { person: Pick<SiteClearance, "cleared" | "missing" | "expired"> }) {
+  const t = useT();
+  const kinds = useDocumentKinds();
+  if (person.cleared) return <Badge tone="success">{t("Cleared")}</Badge>;
+  return <span className={styles.inline}>
+    {person.missing.length ? <Badge tone="danger">{t("Missing {documents}", { documents: person.missing.map((kind) => kinds[kind]).join(", ") })}</Badge> : null}
+    {person.expired.length ? <Badge tone="warning">{t("Expired {documents}", { documents: person.expired.map((kind) => kinds[kind]).join(", ") })}</Badge> : null}
+  </span>;
+}
+
+/** Whether a worker was there: the whole day, half of it, or not. */
+export function usePresenceLabels(): Record<CrewPresence, string> {
+  const t = useT();
+  return { present: t("Present"), half_day: t("Half day"), absent: t("Absent") };
+}
+
 /** Names for the ways of working, what an event or review is, where a capture was, and the evidence issues the server finds. */
 export function useHrmsLabels() {
   const t = useT();
@@ -68,6 +117,9 @@ export function useHrmsLabels() {
     "Workplace boundary is not configured": t("The workplace has no location set"),
     "Departure from the previous site is unverified": t("Leaving the last place isn't confirmed"),
     "Attendance overlaps approved leave": t("On approved leave"),
+    "No group photo": t("No group photo"),
+    "Site boundary is not set up": t("The site has no location set"),
+    "Marked on a later day": t("Marked on a later day"),
   };
   return {
     mode: (mode: string) => modes[mode as WorkMode] ?? mode,
@@ -75,6 +127,6 @@ export function useHrmsLabels() {
     review: (kind: string) => reviews[kind] ?? kind,
     location: (status: string | null | undefined) => (status ? locations[status] ?? status : ""),
     part: (part: string) => parts[part] ?? part,
-    issue: (issue: string) => issues[issue] ?? issue,
+    issue: (issue: string) => issues[issue] ?? (issue.startsWith(NOT_CLEARED) ? t("Not cleared for site: {names}", { names: issue.slice(NOT_CLEARED.length) }) : issue),
   };
 }

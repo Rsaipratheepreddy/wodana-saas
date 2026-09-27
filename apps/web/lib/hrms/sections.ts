@@ -1,5 +1,8 @@
-/** The tabs of People, one thing each: my attendance (the default, at /workspace/hrms), my leave, my team and everyone's HR record. */
-export const HRMS_SECTIONS = ["attendance", "leave", "team", "people"] as const;
+/**
+ * The tabs of People, one thing each: my attendance (the default, at /workspace/hrms), my hours, my leave,
+ * documents, my team, everyone's HR record, the crews without logins and the month's payroll.
+ */
+export const HRMS_SECTIONS = ["attendance", "time", "leave", "documents", "team", "people", "crews", "payroll"] as const;
 export type HrmsSection = (typeof HRMS_SECTIONS)[number];
 
 /** Old addresses, each to where it lives now. */

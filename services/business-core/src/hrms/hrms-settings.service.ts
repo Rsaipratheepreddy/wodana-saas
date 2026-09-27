@@ -67,6 +67,11 @@ export class HrmsSettingsService {
           manage: ctx.permissions.has("hrms.manage"),
           evidence: ctx.permissions.has("hrms.evidence"),
           manageProjects: ctx.permissions.has("projects.manage"),
+          // Crews: people who run HR or projects, crew leads, and the managers and site supervisors of a running project.
+          crews: ctx.permissions.has("hrms.manage") || ctx.permissions.has("projects.manage") || Boolean((await ctx.client.query(
+            `SELECT 1 FROM hrms_crews WHERE workspace_id=$1 AND lead_membership_id=$2
+             UNION ALL SELECT 1 FROM project_assignments WHERE workspace_id=$1 AND membership_id=$2 AND active AND (is_manager OR 'site_supervisor' = ANY(role_keys)) LIMIT 1`,
+            [workspaceId, ctx.membershipId])).rowCount),
         },
       };
     });

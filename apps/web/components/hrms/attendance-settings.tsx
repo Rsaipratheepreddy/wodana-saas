@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { HrmsBootstrap, HrmsPerson } from "@wodana/contracts";
+import type { HrmsBootstrap, HrmsDocumentKind, HrmsPerson } from "@wodana/contracts";
 import {
-  Button, EmptyState, InlineNotice, NoAccessState, NumericInput, PageSkeleton, SelectField, SettingsPage, SettingsRow, Skeleton, Tabs,
+  Button, Checkbox, EmptyState, InlineNotice, NoAccessState, NumericInput, PageSkeleton, SelectField, SettingsPage, SettingsRow, Skeleton, Tabs,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { hrmsApi, type HrmsApi } from "@/lib/hrms/api";
 import { HRMS_SETTINGS_TABS, type HrmsSettingsTab } from "@/lib/hrms/sections";
 import { CalendarSettings } from "./calendar-settings";
 import { useHrmsFormat } from "./hrms-format";
+import { DOCUMENT_KINDS, useDocumentKinds } from "./hrms-labels";
 import { LeaveTypeSettings } from "./leave-type-settings";
 import { WorkplaceSettings } from "./workplace-settings";
 import styles from "./hrms.module.css";
@@ -50,16 +51,21 @@ export function AttendanceSettingsPage({ workspaceId }: { workspaceId: string })
   </SettingsPage>;
 }
 
-/** Which calendar people follow unless given another, who decides when someone has no manager, and how strictly attendance evidence is checked. */
+/**
+ * Which calendar people follow unless given another, who decides when someone has no manager, how strictly
+ * attendance evidence is checked, and the documents everyone needs to go on site.
+ */
 function RuleSettings({ api, boot, onSaved }: { api: HrmsApi; boot: HrmsBootstrap; onSaved: () => void }) {
   const t = useT();
   const format = useHrmsFormat();
+  const kinds = useDocumentKinds();
   const initial = {
     defaultCalendarId: boot.settings?.defaultCalendarId ?? boot.calendars[0]?.id ?? "",
     fallbackApproverId: boot.settings?.fallbackApproverId ?? null,
     maxGpsAccuracyM: boot.settings?.maxGpsAccuracyM ?? 100,
     maxCaptureAgeSeconds: boot.settings?.maxCaptureAgeSeconds ?? 120,
     mediaRetentionDays: boot.settings?.mediaRetentionDays ?? 365,
+    siteDocuments: boot.settings?.siteDocuments ?? ([] as HrmsDocumentKind[]),
   };
   const [form, setForm] = useState(initial);
   const [people, setPeople] = useState<HrmsPerson[] | null>(null);
@@ -97,6 +103,10 @@ function RuleSettings({ api, boot, onSaved }: { api: HrmsApi; boot: HrmsBootstra
     <SettingsRow label={t("Keep photos for")}>
       <NumericInput aria-label={t("Keep photos for")} label={null} suffix={format.unit("day")} minValue={30} maxValue={3650} step={1} value={form.mediaRetentionDays}
         onChange={(value) => set("mediaRetentionDays", value)} />
+    </SettingsRow>
+    <SettingsRow label={t("Needed on site")}>
+      <div className={styles.switches} role="group" aria-label={t("Needed on site")}>{DOCUMENT_KINDS.map((kind) => <Checkbox key={kind} isSelected={form.siteDocuments.includes(kind)}
+        onChange={(on) => set("siteDocuments", DOCUMENT_KINDS.filter((item) => (item === kind ? on : form.siteDocuments.includes(item))))}>{kinds[kind]}</Checkbox>)}</div>
     </SettingsRow>
     </div>
     <div className={styles.actions}>

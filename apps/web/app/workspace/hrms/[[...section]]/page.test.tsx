@@ -25,7 +25,7 @@ describe("People routes", () => {
   it("opens attendance by default and each tab by its address, for the active workspace", async () => {
     render(await open());
     expect(screen.getByTestId("people")).toHaveTextContent("workspace-selected:attendance");
-    for (const section of ["leave", "team", "people"]) {
+    for (const section of ["time", "leave", "documents", "team", "people", "crews", "payroll"]) {
       const view = render(await open([section]));
       expect(view.getAllByTestId("people").at(-1)).toHaveTextContent(`workspace-selected:${section}`);
     }
@@ -37,7 +37,7 @@ describe("People routes", () => {
     await expect(open(["settings"])).rejects.toThrow("redirect:/workspace/settings/attendance");
     await expect(open(["workplaces"])).rejects.toThrow("redirect:/workspace/settings/attendance?tab=workplaces");
     await expect(open(["leave-settings"])).rejects.toThrow("redirect:/workspace/settings/attendance?tab=leave-types");
-    await expect(open(["payroll"])).rejects.toThrow("not-found");
+    await expect(open(["salaries"])).rejects.toThrow("not-found");
     await expect(open(["leave", "extra"])).rejects.toThrow("not-found");
   });
 });

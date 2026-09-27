@@ -2,28 +2,36 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { parseDate } from "@internationalized/date";
-import type { AttendanceDay, AttendanceReview, HrmsBootstrap, LeaveRequest } from "@wodana/contracts";
+import type { AttendanceDay, AttendanceReview, HrmsBootstrap, LeaveRequest, TeamTimeWeek } from "@wodana/contracts";
 import {
   Button, DataGrid, DateRangeField, EmptyState, ErrorState, InlineNotice, InspectorSheet, SegmentedControl, SelectField, TextAreaField, type DataGridColumn,
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi } from "@/lib/hrms/api";
+import { addDays } from "@/lib/hrms/time";
 import { dayWhere } from "./attendance-tab";
 import { EvidencePhoto, Facts, download } from "./hrms-controls";
 import { useHrmsFormat } from "./hrms-format";
 import { DayStatus, LeaveStatus, ReviewStatus, dayState, useHrmsLabels } from "./hrms-labels";
+import { TeamTime, TeamUtilisation, TimesheetSheet } from "./time-tab";
 import styles from "./hrms.module.css";
 
-type View = "today" | "approve" | "days";
-type Approval = { key: string; id: string; kind: "leave" | "review"; name: string; what: string; askedOn: string; reason: string; leave?: LeaveRequest; review?: AttendanceReview };
-export type TeamOpen = { leave: string | null; review: string | null };
+type View = "today" | "approve" | "days" | "time" | "utilisation";
+type Timesheet = TeamTimeWeek["people"][number];
+type Approval = {
+  key: string; id: string; kind: "leave" | "review" | "timesheet"; name: string; what: string; askedOn: string; reason: string;
+  leave?: LeaveRequest; review?: AttendanceReview; timesheet?: Timesheet;
+};
+export type TeamOpen = { leave: string | null; review: string | null; timesheet: string | null };
+const decidable = (row: Approval) => (row.leave?.canDecide ?? row.review?.canDecide ?? row.timesheet?.canDecide) === true;
+const closed: TeamOpen = { leave: null, review: null, timesheet: null };
 
 const MIN_REASON = 3;
 
 /** My team: who's in today, the leave and attendance reviews waiting for my decision, and everyone's days for a period. */
 export function TeamTab({ api, boot, open, onOpen }: { api: HrmsApi; boot: HrmsBootstrap; open: TeamOpen; onOpen: (open: Partial<TeamOpen>) => void }) {
   const t = useT();
-  const linked = Boolean(open.leave || open.review);
+  const linked = Boolean(open.leave || open.review || open.timesheet);
   const [view, setView] = useState<View>(linked ? "approve" : "today");
   const [following, setFollowing] = useState(linked);
   // A link to a request or review shows what's waiting.
@@ -31,13 +39,16 @@ export function TeamTab({ api, boot, open, onOpen }: { api: HrmsApi; boot: HrmsB
     setFollowing(linked);
     if (linked) setView("approve");
   }
-  const approvals = useApprovals(api);
-  const count = approvals.rows?.filter((row) => (row.leave?.canDecide ?? row.review?.canDecide) === true).length ?? 0;
+  const approvals = useApprovals(api, boot);
+  const count = approvals.rows?.filter(decidable).length ?? 0;
   const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as View)} options={[
     { id: "today", label: t("Today") }, { id: "approve", label: count ? t("To approve ({count})", { count }) : t("To approve") }, { id: "days", label: t("Days") },
+    { id: "time", label: t("Time") }, { id: "utilisation", label: t("Utilisation") },
   ]} />;
   if (view === "approve") return <Approvals api={api} boot={boot} approvals={approvals} switcher={switcher} open={open} onOpen={onOpen} />;
   if (view === "days") return <TeamDays api={api} boot={boot} switcher={switcher} />;
+  if (view === "time") return <TeamTime api={api} boot={boot} switcher={switcher} />;
+  if (view === "utilisation") return <TeamUtilisation api={api} boot={boot} switcher={switcher} />;
   return <TeamToday api={api} boot={boot} switcher={switcher} />;
 }
 
@@ -65,18 +76,21 @@ function TeamToday({ api, boot, switcher }: { api: HrmsApi; boot: HrmsBootstrap;
     emptyContent={<EmptyState title={t("No one to show")} />} />;
 }
 
-function useApprovals(api: HrmsApi) {
+function useApprovals(api: HrmsApi, boot: HrmsBootstrap) {
   const t = useT();
   const format = useHrmsFormat();
   const labels = useHrmsLabels();
-  const [data, setData] = useState<{ reviews: AttendanceReview[]; requests: LeaveRequest[] } | null>(null);
+  const today = format.today(boot.workspace.timezone);
+  const [data, setData] = useState<{ reviews: AttendanceReview[]; requests: LeaveRequest[]; weeks: TeamTimeWeek[] } | null>(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
-      const [reviews, requests] = await Promise.all([api.reviews("team"), api.leaveRequests("team")]);
-      setData({ reviews, requests }); setError("");
+      // Timesheets wait a week at most before they're chased: this week's and last week's.
+      const [reviews, requests, ...weeks] = await Promise.all([api.reviews("team"), api.leaveRequests("team"),
+        api.teamTime(today).catch(() => null), api.teamTime(addDays(today, -7)).catch(() => null)]);
+      setData({ reviews, requests, weeks: weeks.filter((week): week is TeamTimeWeek => Boolean(week?.people)) }); setError("");
     } catch (cause) { setError(format.failure(cause, t("What's waiting didn't load."))); }
-  }, [api, format, t]);
+  }, [api, today, format, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const rows = useMemo<Approval[] | null>(() => data ? [
     ...data.requests.map((leave) => {
@@ -86,17 +100,22 @@ function useApprovals(api: HrmsApi) {
     }),
     ...data.reviews.map((review) => ({ key: `review:${review.id}`, id: review.id, kind: "review" as const, name: review.name ?? "",
       what: [labels.review(review.kind), review.requestedAt ? format.moment(review.requestedAt) : ""].filter(Boolean).join(" · "), askedOn: review.createdAt, reason: review.reason, review })),
+    ...[...new Map(data.weeks.flatMap((week) => week.people.filter((person) => person.timesheet?.status === "submitted").map((person) => [person.timesheet!.id, {
+      key: `timesheet:${person.timesheet!.id}`, id: person.timesheet!.id, kind: "timesheet" as const, name: person.name,
+      what: t("Hours, {dates}", { dates: format.range(week.weekStart, addDays(week.weekStart, 6)) }), askedOn: person.timesheet!.submittedAt ?? "",
+      reason: format.duration(person.totalMinutes), timesheet: person,
+    }] as const))).values()],
   ] : null, [data, format, labels, t]);
   return { rows, error, reload: load };
 }
 
-/** Leave and attendance reviews I can decide, oldest first; each opens with its evidence to approve or reject with a reason. */
+/** Leave, attendance reviews and timesheets I can decide, oldest first; each opens with what it rests on to approve, or reject or send back with a reason. */
 function Approvals({ api, boot, approvals, switcher, open, onOpen }: {
   api: HrmsApi; boot: HrmsBootstrap; approvals: ReturnType<typeof useApprovals>; switcher: ReactNode; open: TeamOpen; onOpen: (open: Partial<TeamOpen>) => void;
 }) {
   const t = useT();
   const format = useHrmsFormat();
-  const waiting = (approvals.rows ?? []).filter((row) => (row.leave?.canDecide ?? row.review?.canDecide) === true).sort((a, b) => a.askedOn.localeCompare(b.askedOn));
+  const waiting = (approvals.rows ?? []).filter(decidable).sort((a, b) => a.askedOn.localeCompare(b.askedOn));
   const columns = useMemo<DataGridColumn<Approval>[]>(() => [
     { id: "person", header: t("Person"), accessorFn: (row) => row.name, size: 200, meta: { primary: true } },
     { id: "what", header: t("What"), accessorFn: (row) => row.what, size: 280 },
@@ -105,13 +124,15 @@ function Approvals({ api, boot, approvals, switcher, open, onOpen }: {
   ], [t, format]);
   if (approvals.error && !approvals.rows) return <><div className={styles.toolbar}>{switcher}</div><ErrorState description={approvals.error} onRetry={() => void approvals.reload()} /></>;
   // A link may point at something already decided: it opens to show how.
-  const item = approvals.rows?.find((row) => (open.leave ? row.kind === "leave" && row.id === open.leave : row.kind === "review" && row.id === open.review)) ?? null;
+  const item = approvals.rows?.find((row) => (open.leave ? row.kind === "leave" && row.id === open.leave
+    : open.timesheet ? row.kind === "timesheet" && row.id === open.timesheet : row.kind === "review" && row.id === open.review)) ?? null;
   return <>
     <DataGrid<Approval> appearance="flush" ariaLabel={t("To approve")} columns={columns} data={waiting} getRowId={(row) => row.key} isLoading={!approvals.rows}
-      onRowAction={(row) => onOpen(row.kind === "leave" ? { leave: row.id, review: null } : { review: row.id, leave: null })} rowNumbers={false} selectable={false} wrapText
+      onRowAction={(row) => onOpen({ ...closed, [row.kind]: row.id })} rowNumbers={false} selectable={false} wrapText
       searchLabel={t("Search requests")} toolbarLeading={switcher} emptyContent={<EmptyState title={t("Nothing to approve")} />} />
-    {item ? <ApprovalSheet api={api} boot={boot} item={item} onClose={() => onOpen({ leave: null, review: null })}
-      onDecided={() => { onOpen({ leave: null, review: null }); void approvals.reload(); }} /> : null}
+    {item?.timesheet ? <TimesheetSheet api={api} week={item.timesheet} canDecide={item.timesheet.canDecide} onClose={() => onOpen(closed)}
+      onDecided={() => { onOpen(closed); void approvals.reload(); }} />
+      : item ? <ApprovalSheet api={api} boot={boot} item={item} onClose={() => onOpen(closed)} onDecided={() => { onOpen(closed); void approvals.reload(); }} /> : null}
   </>;
 }
 

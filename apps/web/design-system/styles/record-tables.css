@@ -218,6 +218,12 @@
 .wd-grid-toolbar[data-leading] .wd-record-search:focus-within .wd-search-field, .wd-grid-toolbar[data-leading] .wd-record-search:has(input:not(:placeholder-shown)) .wd-search-field { border-color: var(--wd-color-structural-divider); background: var(--wd-color-surface); }
 .wd-grid-toolbar[data-leading] .wd-record-search .wd-search-field svg { color: var(--wd-color-text); }
 .wd-grid-toolbar[data-leading] .wd-record-actions .wd-button[data-variant="primary"] { block-size: var(--wd-control-sm); min-block-size: var(--wd-control-sm); }
+/* On a phone the leading slot (a view switch, a period, filters) takes its own line above the tools, so it never shrinks away. */
+@media (max-width: 48rem) {
+  .wd-grid-toolbar.wd-grid-toolbar[data-leading] { flex-wrap: wrap; padding-block-end: var(--wd-space-2); }
+  .wd-grid-toolbar[data-leading] > .wd-grid-leading { flex-basis: 100%; }
+  .wd-grid-toolbar[data-leading] > .wd-record-tools { margin-inline-end: auto; }
+}
 
 /* Column headers never truncate: the column menu overlays on hover instead of taking space. */
 .wd-table th .wd-column-head-content { position: relative; }

@@ -15,7 +15,7 @@ import { useProjectFormat } from "./format";
 import { PlanSprints } from "./plan-sprints";
 import { PlanTimeline } from "./plan-timeline";
 import { useSupplyLabels } from "./project-scope";
-import { BOARD_STATUSES, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
+import { AwayChip, BOARD_STATUSES, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import { useWorkColumns, type WorkRow } from "./work-columns";
 import { WorkSheet } from "./work-sheet";
 import styles from "./work.module.css";
@@ -179,6 +179,7 @@ function WorkCard({ item, parent }: { item: WorkItem; parent?: WorkItem }) {
       {blocked ? <span className={styles.blocked}>{t("Blocked")}</span> : null}
       {item.dueDate ? <span className={styles.muted} data-late={due?.late || undefined}>{format.day(item.dueDate)}</span> : null}
       {item.subtasks ? <span className={styles.muted}>{t("{done} of {count}", { done: item.subtasksDone, count: item.subtasks })}</span> : null}
+      <AwayChip item={item} />
       <span className={styles.spacer} />
       {item.assigneeName ? <Avatar name={item.assigneeName} size="sm" /> : null}
     </span> : null}

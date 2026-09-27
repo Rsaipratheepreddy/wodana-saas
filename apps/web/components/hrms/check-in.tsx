@@ -157,8 +157,13 @@ export function PendingCaptureNotice({ attendance, timezone }: { attendance: Att
 
 export type Photo = { blob: Blob; takenAt: string };
 
-/** The front camera: live, then a still taken from it (a JPEG, at most 1200 px wide), or unavailable. */
-function CameraCapture({ onChange, children }: { onChange: (photo: Photo | null) => void; children?: ReactNode }) {
+/**
+ * A camera — the front one for a selfie, the back one for a group photo: live, then a still taken from it
+ * (a JPEG, at most 1200 px wide), or unavailable.
+ */
+export function CameraCapture({ onChange, children, facing = "user", photoLabel }: {
+  onChange: (photo: Photo | null) => void; children?: ReactNode; facing?: "user" | "environment"; photoLabel?: string;
+}) {
   const t = useT();
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -172,7 +177,7 @@ function CameraCapture({ onChange, children }: { onChange: (photo: Photo | null)
     setState("starting");
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("No camera");
-      const next = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1200 } }, audio: false });
+      const next = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1200 } }, audio: false });
       if (attempt !== run.current) { next.getTracks().forEach((track) => track.stop()); return; }
       stream.current = next;
       if (video.current) { video.current.srcObject = next; await video.current.play().catch(() => undefined); }
@@ -180,7 +185,7 @@ function CameraCapture({ onChange, children }: { onChange: (photo: Photo | null)
     } catch {
       if (attempt === run.current) setState("unavailable");
     }
-  }, []);
+  }, [facing]);
   useEffect(() => {
     queueMicrotask(() => void start());
     return () => { run.current += 1; stop(); };
@@ -205,7 +210,7 @@ function CameraCapture({ onChange, children }: { onChange: (photo: Photo | null)
   return <>
     <div className={styles.camera}>
       <video ref={video} muted playsInline hidden={state !== "live"} aria-label={t("Camera preview")} />
-      {state === "taken" && preview ? <img alt={t("Your photo")} src={preview} /> : null}
+      {state === "taken" && preview ? <img alt={photoLabel ?? t("Your photo")} src={preview} /> : null}
       {state === "starting" || state === "unavailable" ? <div className={styles.cameraEmpty}>
         {state === "starting" ? <Camera aria-hidden="true" size={20} /> : <CameraOff aria-hidden="true" size={20} />}
         <span>{state === "starting" ? t("Starting the camera…") : t("Camera unavailable")}</span>
@@ -221,7 +226,7 @@ function CameraCapture({ onChange, children }: { onChange: (photo: Photo | null)
 }
 
 /** Where the device is, taken as the dialog opens and again with the photo. */
-function usePosition() {
+export function usePosition() {
   const [value, setValue] = useState<CapturePosition | null>(null);
   const [state, setState] = useState<"locating" | "found" | "unavailable">("locating");
   const alive = useRef(true);
@@ -242,6 +247,18 @@ function usePosition() {
     return () => { alive.current = false; };
   }, [locate]);
   return { value, state, locate };
+}
+
+/** How sure the device's location is, with a retry when it couldn't be found. */
+export function PositionStatus({ position }: { position: ReturnType<typeof usePosition> }) {
+  const t = useT();
+  const format = useHrmsFormat();
+  return <>
+    <span className={styles.location}><MapPin aria-hidden="true" size={14} />
+      {position.state === "locating" ? t("Finding your location…") : position.value ? t("Location ±{distance}", { distance: format.metres(position.value.accuracyM) }) : t("Location unavailable")}
+    </span>
+    {position.state === "unavailable" ? <Button size="compact" variant="quiet" onPress={position.locate}>{t("Try again")}</Button> : null}
+  </>;
 }
 
 /** Where someone can work: offices, and the sites of the projects they are on. */
@@ -341,10 +358,7 @@ export function CheckInDialog({ api, employee, kind, attendance, onClose }: {
         {options.length === 1 ? <p className={styles.muted}>{options[0].label}{"description" in options[0] && options[0].description ? ` · ${options[0].description}` : ""}</p> : null}
       </> : active ? <p className={styles.muted}>{[active.context.location?.name ?? labels.mode(active.mode), t("since {time}", { time: format.time(active.startedAt, employee.calendar.timezone) })].join(" · ")}</p> : null}
       <CameraCapture onChange={(next) => { setPhoto(next); if (next) position.locate(); }}>
-        <span className={styles.location}><MapPin aria-hidden="true" size={14} />
-          {position.state === "locating" ? t("Finding your location…") : position.value ? t("Location ±{distance}", { distance: format.metres(position.value.accuracyM) }) : t("Location unavailable")}
-        </span>
-        {position.state === "unavailable" ? <Button size="compact" variant="quiet" onPress={position.locate}>{t("Try again")}</Button> : null}
+        <PositionStatus position={position} />
       </CameraCapture>
       <TextInput label={t("Note")} value={note} onChange={setNote} />
       {issues ? <InlineNotice tone="info" title={t("Needs a reason")} message={<ul className={styles.issues}>{issues.map((issue) => <li key={issue}>{labels.issue(issue)}</li>)}</ul>} /> : null}

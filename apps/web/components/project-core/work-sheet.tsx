@@ -12,7 +12,7 @@ import type { ProjectApi } from "@/lib/project-core/client";
 import type { WorkActivity, WorkBoard, WorkDetail, WorkItem, WorkMove, WorkStatus, WorkType } from "@/lib/project-core/types";
 import { SavedPhotos } from "../purchasing/delivery-photos";
 import { useProjectFormat } from "./format";
-import { ALL_STATUSES, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
+import { ALL_STATUSES, AwayChip, PRIORITIES, StatusIcon, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import styles from "./work.module.css";
 
 type Run = (action: string, input?: Record<string, unknown>) => Promise<boolean>;
@@ -121,6 +121,7 @@ function WorkBody({ detail, board, run, notice, onOpenItem, preview, photos }: {
             onAction={(id) => void update({ assigneeId: id === "none" ? null : id })}
             items={[...(detail.assigneeId ? [{ id: "none", label: t("No one") }] : []), ...board.people.filter((member) => member.membershipId !== detail.assigneeId).map((member) => ({ id: member.membershipId, label: member.name }))]} />
           : detail.assigneeName ?? person?.name ?? t("No one")}
+        <AwayChip item={detail} />
       </dd></div>
       <div><dt>{t("Priority")}</dt><dd>
         {edit ? <MenuButton size="compact" label={labels.priority[detail.priority]} onAction={(id) => void update({ priority: id })}

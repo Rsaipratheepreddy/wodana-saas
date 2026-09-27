@@ -143,6 +143,18 @@ describe("Settings → Attendance & leave", () => {
       latitude: 25.1, longitude: 55.2, radiusM: 150, active: true }]));
   });
 
+  it("chooses the documents everyone needs to go on site, saved with the rules", async () => {
+    nav.query = "tab=rules";
+    const calls = mount(undefined, bootstrap({ settings: { ...bootstrap().settings!, siteDocuments: ["work_permit"] } }));
+    page();
+    const kinds = await screen.findByRole("group", { name: "Needed on site" });
+    expect(within(kinds).getByRole("checkbox", { name: "Work permit" })).toBeChecked();
+    await userEvent.click(within(kinds).getByRole("checkbox", { name: "Safety induction" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writes(calls, "settings")).toHaveLength(1));
+    expect(writes(calls, "settings")[0]).toMatchObject({ version: 3, siteDocuments: ["work_permit", "safety_induction"] });
+  });
+
   it("is for whoever manages HR", async () => {
     mount(undefined, bootstrap({ permissions: { self: true, team: true, manage: false, evidence: false, manageProjects: false } }));
     page();

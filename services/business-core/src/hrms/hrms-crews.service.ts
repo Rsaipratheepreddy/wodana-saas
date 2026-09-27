@@ -126,10 +126,32 @@ export class HrmsCrewsService {
       if (query.to) dateOnly(query.to);
       const rows = await this.dayRows(ctx, { projectId: query.projectId ?? null, from: query.from ?? null, to: query.to ?? null });
       const result = [];
-      for (const row of rows)
-        result.push({ ...row, canMark: await this.canMark(ctx, row.crewId, row.projectId), canDecide: await this.canDecide(ctx, row) });
-      return { days: result, canSeeCosts: this.canSeeCosts(ctx) };
+      for (const row of rows) result.push(await this.withFlags(ctx, row));
+      return { days: result, canSeeCosts: this.canSeeCosts(ctx), canMark: await this.markableCrews(ctx, query.projectId ?? null).then((crews) => crews.length > 0),
+        markableCrewIds: await this.markableCrews(ctx, query.projectId ?? null) };
     });
+  }
+
+  /** One crew day, with what this person may do with it. */
+  crewDay(actor: RequestActor, workspaceId: string, id: string) {
+    return this.access.run(actor, workspaceId, async (ctx) => {
+      await this.assertCanSeeCrews(ctx);
+      const [row] = await this.dayRows(ctx, { id, projectId: null, from: null, to: null });
+      if (!row) throw new NotFoundException("Crew day not found.");
+      return this.withFlags(ctx, row);
+    });
+  }
+
+  private async withFlags<R extends { crewId: string; projectId: string | null; status: string; markedBy: string }>(ctx: HrmsContext, row: R) {
+    return { ...row, canMark: await this.canMark(ctx, row.crewId, row.projectId), canDecide: await this.canDecide(ctx, row), canSeeCosts: this.canSeeCosts(ctx) };
+  }
+
+  /** The active crews this person may mark a day for (at this project when given). */
+  private async markableCrews(ctx: HrmsContext, projectId: string | null) {
+    const crews = (await ctx.client.query<{ id: string }>(`SELECT id FROM hrms_crews WHERE workspace_id=$1 AND active ORDER BY lower(name)`, [ctx.workspaceId])).rows;
+    const result: string[] = [];
+    for (const crew of crews) if (await this.canMark(ctx, crew.id, projectId)) result.push(crew.id);
+    return result;
   }
 
   private async dayRows(ctx: HrmsContext, filter: { id?: string; projectId: string | null; from: string | null; to: string | null }) {
@@ -251,7 +273,7 @@ export class HrmsCrewsService {
           [workspaceId, id, line.workerId, line.presence, line.overtimeHours],
         );
       await this.access.audit(ctx, before ? "crew_day_updated" : "crew_day_marked", id, { ...input });
-      return (await this.dayRows(ctx, { id, projectId: null, from: null, to: null }))[0];
+      return this.withFlags(ctx, (await this.dayRows(ctx, { id, projectId: null, from: null, to: null }))[0]);
     });
   }
 
@@ -332,7 +354,7 @@ export class HrmsCrewsService {
         deepLink: day.project_id ? `/workspace/projects/${day.project_id}/site?crewDay=${id}` : `/workspace/hrms/crews?crewDay=${id}`,
         key: `hrms.crew_day_submitted:${id}:${row.version}`,
       }]);
-      return row;
+      return this.withFlags(ctx, row);
     });
   }
 
@@ -374,7 +396,7 @@ export class HrmsCrewsService {
         deepLink: day.project_id ? `/workspace/projects/${day.project_id}/site?crewDay=${id}` : `/workspace/hrms/crews?crewDay=${id}`,
         key: `${code}:${id}:${row.version}`,
       }]);
-      return row;
+      return this.withFlags(ctx, row);
     });
   }
 

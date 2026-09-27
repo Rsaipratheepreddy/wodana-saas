@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
+import { Badge, useDesignSystem } from "@/design-system";
 import { CircleAlert, CircleCheck, CircleDashed, CircleDot, CircleSlash, CircleUser, Hammer, OctagonAlert, SquareCheck, type LucideIcon } from "lucide-react";
 import { useT } from "@/lib/i18n/i18n-provider";
-import type { Severity, SnagSource, WorkPriority, WorkStatus, WorkType } from "@/lib/project-core/types";
+import type { Severity, SnagSource, WorkItem, WorkPriority, WorkStatus, WorkType } from "@/lib/project-core/types";
 import styles from "./work.module.css";
 
 export const BOARD_STATUSES: WorkStatus[] = ["todo", "in_progress", "in_review", "done"];
@@ -40,4 +41,16 @@ export function StatusIcon({ status }: { status: WorkStatus }) {
 export function StatusLabel({ status }: { status: WorkStatus }) {
   const labels = useWorkLabels();
   return <span className={styles.statusLabel}><StatusIcon status={status} />{labels.status[status]}</span>;
+}
+
+/** When the assignee is away on approved leave within the work's dates: "Away 6–7 Oct". */
+export function AwayChip({ item }: { item: Pick<WorkItem, "assigneeAway" | "status"> }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
+  if (!item.assigneeAway?.length || !isOpen(item.status)) return null;
+  const format = new Intl.DateTimeFormat(locale, { timeZone: "UTC", day: "numeric", month: "short" });
+  const day = (value: string) => new Date(`${value}T00:00:00Z`);
+  const dates = item.assigneeAway.map((range) => (range.startDate === range.endDate ? format.format(day(range.startDate))
+    : format.formatRange ? format.formatRange(day(range.startDate), day(range.endDate)) : `${format.format(day(range.startDate))}–${format.format(day(range.endDate))}`)).join(", ");
+  return <Badge tone="warning">{t("Away {dates}", { dates })}</Badge>;
 }

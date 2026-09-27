@@ -479,6 +479,11 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       await expect(supervisor.crews.submitDay(actor, w.workspaceId, day, { version: 4, exceptionReason: "Resubmitting" })).rejects.toThrow("The person who marked the day submits it.");
       await owner.crews.submitDay(actor, w.workspaceId, day, { version: 4, exceptionReason: "Resubmitting" });
       await expect(owner.crews.decideDay(actor, w.workspaceId, day, { version: 5, decision: "approve", note: "" })).rejects.toThrow("Someone else approves");
+      // What each person may do comes with the day and the list.
+      expect(await supervisor.crews.crewDay(actor, w.workspaceId, day)).toMatchObject({ status: "submitted", canMark: true, canDecide: false, canSeeCosts: false });
+      expect(await supervisor.crews.crewDays(actor, w.workspaceId, { projectId: project })).toMatchObject({ canMark: true, markableCrewIds: [crew] });
+      expect((await w.as(w.supervisor).settings.bootstrap(actor, w.workspaceId)).permissions.crews).toBe(true);
+      expect((await w.as(w.designer).settings.bootstrap(actor, w.workspaceId)).permissions.crews).toBe(false);
 
       // A week sent back is a draft again.
       const people = await owner.settings.people(actor, w.workspaceId);
@@ -487,6 +492,8 @@ integration("HRMS works on day one (plan §6.28, H1)", () => {
       const designer = w.as(w.designer);
       const week = await designer.time.saveWeek(actor, w.workspaceId, "2026-09-14", { version: 0, entries: [{ workDate: "2026-09-14", minutes: 480, note: "Studio" }] });
       await designer.time.submit(actor, w.workspaceId, week.timesheet!.id, { version: 1 });
+      expect((await owner.time.pending(actor, w.workspaceId)).weeks.map((row: { weekStart: string; canDecide: boolean }) => [row.weekStart, row.canDecide])).toEqual([["2026-09-14", true]]);
+      await expect(supervisor.time.pending(actor, w.workspaceId)).rejects.toThrow("You do not have access");
       await owner.time.decide(actor, w.workspaceId, week.timesheet!.id, { version: 2, decision: "return", note: "Split it by project" });
       const again = await designer.time.saveWeek(actor, w.workspaceId, "2026-09-14", { version: 3, entries: [{ workDate: "2026-09-14", minutes: 420, note: "Studio" }] });
       expect(again.timesheet).toMatchObject({ status: "draft", decisionNote: "Split it by project" });

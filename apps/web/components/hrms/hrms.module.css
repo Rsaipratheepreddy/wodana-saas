@@ -57,8 +57,47 @@
 .cameraActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
 .location { display: inline-flex; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
 
+/* A row of a list that opens its record. */
+.rowButton { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); min-inline-size: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.rowButton:focus-visible { outline: 0; border-radius: var(--wd-radius-xs); box-shadow: var(--wd-focus); }
+
+/* A timesheet day's total: logged, then expected (or leave). */
+.dayTotal { display: inline-grid; justify-items: end; gap: var(--wd-space-0-5); }
+.dayTotal small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.dayTotal [data-over] { color: var(--wd-color-danger); }
+
+/* A crew's day: one row a worker — name, whether they were there, overtime. */
+.crewGroup { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; border: 0; min-inline-size: 0; }
+.crewGroup legend { padding: 0; margin-block-end: var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.crewHead { display: flex; justify-content: space-between; padding-inline-end: var(--wd-space-10); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.crewWorkers { display: grid; margin: 0; padding: 0; list-style: none; }
+.crewWorkers > li { display: grid; grid-template-columns: minmax(0, 1fr) auto 7rem var(--wd-control-sm); align-items: center; gap: var(--wd-space-2) var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.crewWorkers > li:last-child { border-block-end: 0; }
+.crewWorkers small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.total { display: flex; justify-content: space-between; gap: var(--wd-space-3); margin: 0; padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+
+.addRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-2); }
+
+/* The gate list: printed on its own, never shown on screen. */
+.gateList { display: none; }
+@media print {
+  :global(body) > :not(.gateList) { display: none !important; }
+  .gateList { display: grid; gap: var(--wd-space-6); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+  .gateList header { display: flex; align-items: center; gap: var(--wd-space-4); }
+  .gateList header img { block-size: var(--wd-space-12); inline-size: auto; }
+  .gateList header div { display: grid; gap: var(--wd-space-1); }
+  .gateList h1 { margin: 0; font-size: var(--wd-text-xl); }
+  .gateList p { margin: 0; color: var(--wd-color-text-secondary); }
+  .gateList table { inline-size: 100%; border-collapse: collapse; }
+  .gateList th, .gateList td { padding-block: var(--wd-space-2); padding-inline-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); text-align: start; vertical-align: top; }
+  .gateList tr { break-inside: avoid; }
+}
+
 @media (max-width: 640px) {
   .page { padding: var(--wd-space-4); }
+  .crewWorkers > li { grid-template-columns: minmax(0, 1fr) 7rem var(--wd-control-sm); }
+  /* The presence choice takes its own line under the name and overtime. */
+  .crewWorkers > li > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
   .pair, .trio { grid-template-columns: minmax(0, 1fr); }
   .facts > div { grid-template-columns: minmax(0, 1fr); }
   .location { margin-inline-start: 0; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allowedHrmsRoute, allowedProjectsRoute } from "./routes";
+import { allowedHrmsRoute, allowedProjectsRoute, hrmsUpload, streamedHrmsRoute } from "./routes";
 import { hrmsUrl, localDay, wallTime, zonedInstant } from "./client";
 import { hrmsHref } from "./sections";
 
@@ -36,6 +36,44 @@ describe("HRMS web boundary", () => {
     expect(allowedHrmsRoute("DELETE", `holidays/${ID}`)).toBe(false);
   });
 
+  it("allows crews, workers and crew days, only by id and only with the right method", () => {
+    expect(allowedHrmsRoute("GET", "crews")).toBe(true);
+    expect(allowedHrmsRoute("PUT", "crews")).toBe(true);
+    expect(allowedHrmsRoute("PUT", "workers")).toBe(true);
+    expect(allowedHrmsRoute("GET", "crew-days")).toBe(true);
+    expect(allowedHrmsRoute("PUT", `crew-days/${ID}`)).toBe(true);
+    expect(allowedHrmsRoute("POST", `crew-days/${ID}/submit`)).toBe(true);
+    expect(allowedHrmsRoute("POST", `crew-days/${ID}/decision`)).toBe(true);
+    for (const [method, path] of [
+      ["POST", "crews"], ["DELETE", "crews"], ["GET", "workers"], ["POST", "workers"], ["GET", `crews/${ID}`], ["PUT", `workers/${ID}`],
+      ["POST", "crew-days"], ["PUT", "crew-days"], ["GET", `crew-days/${ID}`], ["POST", `crew-days/${ID}`], ["PUT", `crew-days/${ID}/submit`],
+      ["POST", "crew-days/not-an-id/submit"], ["POST", `crew-days/${ID}/approve`], ["DELETE", `crew-days/${ID}`],
+    ]) expect(allowedHrmsRoute(method, path), `${method} ${path}`).toBe(false);
+  });
+
+  it("allows documents, site access, timesheets and payroll, only by id and only with the right method", () => {
+    for (const [method, path] of [
+      ["GET", "documents"], ["PUT", `documents/${ID}`], ["PUT", `documents/${ID}/file`], ["GET", `documents/${ID}/file`], ["POST", `documents/${ID}/remove`],
+      ["GET", "site-access"], ["POST", "site-access"], ["POST", `site-access/${ID}/remove`],
+      ["GET", "time/mine"], ["PUT", "time/weeks/2026-09-21"], ["POST", `time/${ID}/submit`], ["POST", `time/${ID}/decision`], ["GET", "time/team"], ["GET", "time/project"],
+      ["GET", "time/utilisation"], ["GET", "payroll"], ["GET", "payroll/export"],
+    ]) expect(allowedHrmsRoute(method, path), `${method} ${path}`).toBe(true);
+    for (const [method, path] of [
+      ["POST", "documents"], ["PUT", "documents"], ["DELETE", `documents/${ID}`], ["POST", `documents/${ID}/file`], ["GET", `documents/${ID}`],
+      ["PUT", "site-access"], ["GET", `site-access/${ID}`], ["DELETE", `site-access/${ID}`],
+      ["PUT", "time/weeks/next-week"], ["PUT", "time/weeks/2026-9-1"], ["GET", "time/weeks/2026-09-21"], ["POST", "time/mine"], ["POST", `time/${ID}/approve`], ["GET", "time/everyone"],
+      ["POST", "payroll"], ["GET", "payroll/run"], ["PUT", "payroll/export"],
+    ]) expect(allowedHrmsRoute(method, path), `${method} ${path}`).toBe(false);
+  });
+
+  it("takes files only where they belong, each in its own field and size", () => {
+    expect(hrmsUpload(`captures/${ID}/photo`)).toEqual({ path: expect.any(RegExp), field: "photo", maxBytes: 6 * 1024 * 1024 });
+    expect(hrmsUpload(`documents/${ID}/file`)).toEqual({ path: expect.any(RegExp), field: "file", maxBytes: 10 * 1024 * 1024 });
+    for (const path of ["documents", `documents/${ID}`, "crews", `crew-days/${ID}`]) expect(hrmsUpload(path)).toBeNull();
+    for (const path of [`captures/${ID}/photo`, `documents/${ID}/file`, "attendance/export", "payroll/export"]) expect(streamedHrmsRoute(path)).toBe(true);
+    for (const path of ["payroll", "documents", "attendance/history"]) expect(streamedHrmsRoute(path)).toBe(false);
+  });
+
   it("serves the work contexts and workplaces from projects, not the retired assignment and site views", () => {
     expect(allowedProjectsRoute("GET", "")).toBe(true);
     expect(allowedProjectsRoute("GET", "locations")).toBe(true);
@@ -61,5 +99,8 @@ describe("HRMS web boundary", () => {
     expect(hrmsHref("attendance")).toBe("/workspace/hrms");
     expect(hrmsHref("attendance", { day: "2026-09-07" })).toBe("/workspace/hrms?day=2026-09-07");
     expect(hrmsHref("team", { leave: ID, review: null })).toBe(`/workspace/hrms/team?leave=${ID}`);
+    expect(hrmsHref("crews", { crewDay: ID })).toBe(`/workspace/hrms/crews?crewDay=${ID}`);
+    expect(hrmsHref("documents", { document: ID })).toBe(`/workspace/hrms/documents?document=${ID}`);
+    expect(hrmsHref("time", { week: "2026-09-21" })).toBe("/workspace/hrms/time?week=2026-09-21");
   });
 });

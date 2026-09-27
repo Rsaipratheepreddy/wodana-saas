@@ -118,6 +118,9 @@ export class HrmsController {
   ) {
     return this.timeService.decide(a, w, id, b);
   }
+  @Get("time/pending") pendingTime(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string) {
+    return this.timeService.pending(a, w);
+  }
   @Get("time/team") teamTime(@CurrentActor() a: RequestActor, @Param("workspaceId", ParseUUIDPipe) w: string, @Query() q: DateQueryDto) {
     return this.timeService.team(a, w, q.date);
   }
@@ -218,6 +221,13 @@ export class HrmsController {
     @Query() q: CrewDayQueryDto,
   ) {
     return this.crewsService.crewDays(a, w, q);
+  }
+  @Get("crew-days/:id") crewDay(
+    @CurrentActor() a: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) w: string,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.crewsService.crewDay(a, w, id);
   }
   @Put("crew-days/:id") saveCrewDay(
     @CurrentActor() a: RequestActor,

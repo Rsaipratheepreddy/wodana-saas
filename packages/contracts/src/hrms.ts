@@ -87,6 +87,8 @@ export type HrmsBootstrap = {
     manage: boolean;
     evidence: boolean;
     manageProjects: boolean;
+    /** Crews: HR, people who run projects, crew leads, and running projects' managers and site supervisors. */
+    crews?: boolean;
   };
 };
 export type WorkContext = {
@@ -354,7 +356,10 @@ export type CrewDay = {
   workers: Array<{ workerId: string; name: string; trade: string; presence: CrewPresence; overtimeHours: string; dayRate: string | null; currency: string | null }>;
   canMark: boolean;
   canDecide: boolean;
+  canSeeCosts?: boolean;
 };
+/** GET crew-days: the days, and whether (and for which crews) this person may mark one here. */
+export type CrewDays = { days: CrewDay[]; canSeeCosts: boolean; canMark: boolean; markableCrewIds: string[] };
 export type CrewDayInput = { version: number; crewId: string; projectId?: string | null; workDate: string; note: string; workers: Array<{ workerId: string; presence: CrewPresence; overtimeHours: number }> };
 export type CrewDaySubmit = { version: number; captureId?: string | null; position?: CapturePosition | null; exceptionReason: string };
 
@@ -412,6 +417,8 @@ export type TimeWeek = {
   totalMinutes: number;
 };
 export type MyTimeWeek = TimeWeek & { options: Array<{ id: string; name: string; stages: Array<{ id: string; name: string }> }> };
+/** GET time/pending: every week waiting for this person's decision. */
+export type PendingTimeWeeks = { weeks: Array<TimeWeek & { canDecide: boolean }> };
 export type TeamTimeWeek = { weekStart: string; people: Array<TimeWeek & { scheduledMinutes: number; canDecide: boolean }> };
 export type TimeWeekInput = { version: number; entries: Array<{ workDate: string; projectId?: string | null; stageId?: string | null; minutes: number; note: string }> };
 export type ProjectHours = { projectId: string; from: string | null; to: string | null; totalMinutes: number; rows: Array<{ membershipId: string; name: string; stageId: string | null; stageName: string | null; minutes: number }> };

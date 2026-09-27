@@ -4,7 +4,7 @@ import { Avatar, type GroupedTableColumn } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkBoard, WorkItem } from "@/lib/project-core/types";
 import { useProjectFormat } from "./format";
-import { StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
+import { AwayChip, StatusLabel, TypeIcon, isOpen, useWorkLabels } from "./work-labels";
 import styles from "./work.module.css";
 
 /** A work item as a table row; subtasks listed under their task are one level in. */
@@ -21,7 +21,7 @@ export function useWorkColumns<T extends WorkRow>(board: WorkBoard): GroupedTabl
       <Meta row={row} waiting={board.materials[row.id]?.length ?? 0} parent={row.depth === 0 && row.parentId ? board.items.find((item) => item.id === row.parentId) : undefined} />
     </span> },
     { id: "assignee", label: t("Assignee"), width: "20%", mobileHidden: true, render: (row) => row.assigneeName
-      ? <span className={styles.person}><Avatar name={row.assigneeName} size="sm" />{row.assigneeName}</span> : <span className={styles.muted}>—</span> },
+      ? <span className={styles.person}><Avatar name={row.assigneeName} size="sm" />{row.assigneeName}<AwayChip item={row} /></span> : <span className={styles.muted}>—</span> },
     { id: "due", label: t("Due"), width: "12%", mobileHidden: true, render: (row) => {
       if (!row.dueDate) return <span className={styles.muted}>—</span>;
       const due = isOpen(row.status) ? format.until(row.dueDate) : null;

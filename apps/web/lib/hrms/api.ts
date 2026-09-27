@@ -4,16 +4,35 @@ import type {
   AttendanceReview,
   AttendanceSession,
   CalendarInput,
+  CrewDay,
+  CrewDayInput,
+  CrewDaySubmit,
+  CrewInput,
+  DocumentInput,
   HolidayInput,
   HrmsBootstrap,
   HrmsCalendar,
+  HrmsCrewState,
+  HrmsDocument,
+  HrmsDocumentKind,
+  HrmsDocuments,
   HrmsHoliday,
   HrmsPerson,
   LeaveBalance,
   LeaveRequest,
   LeaveType,
   LeaveTypeInput,
+  MyTimeWeek,
+  PayrollMonth,
+  ProjectHours,
+  SiteAccess,
+  SiteAccessInput,
+  TeamTimeWeek,
+  TimeWeek,
+  TimeWeekInput,
+  Utilisation,
   WorkContext,
+  WorkerInput,
   WorkLocation,
 } from "@wodana/contracts";
 import { hrmsRequest, hrmsUrl } from "./client";
@@ -30,11 +49,20 @@ export type PersonInput = {
 export type AllowanceInput = { membershipId: string; leaveTypeId: string; year: number; days: number; version: number };
 export type SettingsInput = {
   version: number; defaultCalendarId: string; fallbackApproverId: string | null; maxGpsAccuracyM: number; maxCaptureAgeSeconds: number; mediaRetentionDays: number;
+  /** Document kinds a person needs to go on site; left out, the current choice stays. */
+  siteDocuments?: HrmsDocumentKind[];
 };
 export type LocationInput = {
   id?: string; version: number; name: string; kind: WorkLocation["kind"]; projectId: string | null; caseId: string | null; address: string; latitude: number; longitude: number;
   radiusM: number; active: boolean;
 };
+
+/** Crew days for a project (or every one the person can see), with whether day rates show. */
+export type CrewDayList = { days: CrewDay[]; canSeeCosts: boolean };
+export type CrewDayQuery = { projectId?: string | null; from?: string; to?: string };
+export type CrewDayDecision = { version: number; decision: "approve" | "return"; note: string };
+export type WeekDecision = { version: number; decision: "approve" | "return"; note: string };
+export type PayrollKind = "employees" | "workers";
 
 const query = (values: Record<string, string | number | null | undefined>) => {
   const params = new URLSearchParams();
@@ -87,6 +115,41 @@ export function hrmsApi(workspaceId: string) {
     saveLocation: (input: LocationInput) => send<unknown>("PUT", "locations", input, "projects"),
     /** Projects and planning cases the person can work on. */
     contexts: () => get<WorkContext[]>("", "projects"),
+    /** Crews and workers without logins; day rates only for people who run HR. */
+    crews: () => get<HrmsCrewState>("crews"),
+    saveCrew: (input: CrewInput) => send<HrmsCrewState>("PUT", "crews", input),
+    saveWorker: (input: WorkerInput) => send<HrmsCrewState>("PUT", "workers", input),
+    crewDays: (input: CrewDayQuery = {}) => get<CrewDayList>(`crew-days${query({ projectId: input.projectId, from: input.from, to: input.to })}`),
+    /** A crew day as a draft, by its own id; saving again updates it. */
+    saveCrewDay: (id: string, input: CrewDayInput) => send<CrewDay>("PUT", `crew-days/${id}`, input),
+    submitCrewDay: (id: string, input: CrewDaySubmit) => send<CrewDay>("POST", `crew-days/${id}/submit`, input),
+    decideCrewDay: (id: string, input: CrewDayDecision) => send<CrewDay>("POST", `crew-days/${id}/decision`, input),
+    /** Documents: HR sees everyone's (or one person's or worker's); others only their own. */
+    documents: (input: { membershipId?: string | null; workerId?: string | null } = {}) => get<HrmsDocuments>(`documents${query(input)}`),
+    /** A document by its own id (version 0 when new): one person or one worker. */
+    saveDocument: (id: string, input: DocumentInput) => send<HrmsDocument>("PUT", `documents/${id}`, input),
+    uploadDocumentFile: (id: string, file: File) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return send<HrmsDocument>("PUT", `documents/${id}/file`, form);
+    },
+    documentFileUrl: (id: string) => hrmsUrl(workspaceId, `documents/${id}/file`),
+    removeDocument: (id: string, version: number) => send<{ id: string }>("POST", `documents/${id}/remove`, { version }),
+    /** Who may go to a project's site: its list, and each person with the documents it needs. */
+    siteAccess: (projectId: string) => get<SiteAccess>(`site-access${query({ projectId })}`),
+    addSiteAccess: (input: SiteAccessInput) => send<SiteAccess>("POST", "site-access", input),
+    removeSiteAccess: (id: string) => send<SiteAccess>("POST", `site-access/${id}/remove`, {}),
+    /** My week of hours around a date, with the projects and stages I can log to. */
+    myTime: (date: string) => get<MyTimeWeek>(`time/mine${query({ date })}`),
+    saveWeek: (weekStart: string, input: TimeWeekInput) => send<MyTimeWeek>("PUT", `time/weeks/${weekStart}`, input),
+    submitWeek: (id: string, version: number) => send<TimeWeek>("POST", `time/${id}/submit`, { version }),
+    decideWeek: (id: string, input: WeekDecision) => send<TimeWeek>("POST", `time/${id}/decision`, input),
+    teamTime: (date: string) => get<TeamTimeWeek>(`time/team${query({ date })}`),
+    projectHours: (projectId: string, from?: string | null, to?: string | null) => get<ProjectHours>(`time/project${query({ projectId, from, to })}`),
+    utilisation: (from: string, to: string) => get<Utilisation>(`time/utilisation${query({ from, to })}`),
+    /** The month's payroll inputs (HR only), and each list as CSV. */
+    payroll: (month: string) => get<PayrollMonth>(`payroll${query({ month })}`),
+    payrollExportUrl: (month: string, kind: PayrollKind) => hrmsUrl(workspaceId, `payroll/export${query({ month, kind })}`),
   };
 }
 export type HrmsApi = ReturnType<typeof hrmsApi>;

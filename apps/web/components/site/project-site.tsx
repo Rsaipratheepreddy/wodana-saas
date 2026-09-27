@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { parseDate } from "@internationalized/date";
 import { Plus, X } from "lucide-react";
-import { Button, ControlledModalDialog, DateField, EmptyState, ErrorState, IconButton, InlineNotice, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
+import { Button, ControlledModalDialog, DateField, EmptyState, ErrorState, IconButton, InlineNotice, SegmentedControl, SelectField, Skeleton, TextAreaField, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { siteApi } from "@/lib/site/client";
 import type { Outlook, Safety, SiteReport, SiteState } from "@/lib/site/types";
+import { ProjectCrewDays } from "../hrms/crew-days";
+import { ProjectSiteAccess } from "../hrms/site-access";
 import { useProjectFormat } from "../project-core/format";
 import { PhotoPicker, SavedPhotos } from "../purchasing/delivery-photos";
 import { quantityText } from "../purchasing/order-labels";
@@ -14,12 +17,17 @@ import styles from "./site.module.css";
 
 const numeric = (value: string) => value.replace(/[^\d.-]/g, "");
 
+type SiteView = "reports" | "crew-days" | "access";
+
 /**
  * A project's site: whether site work is running, the reports waiting for approval, and the day-by-day
- * reports — who worked, what was installed, safety and whether the plan is at risk.
+ * reports — who worked, what was installed, safety and whether the plan is at risk; and, beside them, each
+ * crew's day (a notice's `?crewDay=` link opens that one).
  */
-export function ProjectSite({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
+export function ProjectSite({ workspaceId, projectId, projectName = "" }: { workspaceId: string; projectId: string; projectName?: string }) {
   const t = useT();
+  const linkedDay = useSearchParams()?.get("crewDay") ?? null;
+  const [view, setView] = useState<SiteView>(linkedDay ? "crew-days" : "reports");
   const format = useProjectFormat();
   const api = useMemo(() => siteApi(workspaceId, projectId), [workspaceId, projectId]);
   const [state, setState] = useState<SiteState | null>(null);
@@ -42,6 +50,15 @@ export function ProjectSite({ workspaceId, projectId }: { workspaceId: string; p
   };
   if (error && !state) return <ErrorState description={error} onRetry={() => void load()} />;
   if (!state) return <Skeleton lines={6} shape="rows" />;
+  const onTeam = state.canReport || state.canManage;
+  const switcher = <SegmentedControl label={t("Show")} value={view} onChange={(value) => setView(value as SiteView)}
+    options={[{ id: "reports", label: t("Reports") }, { id: "crew-days", label: t("Crew days") }, ...(onTeam ? [{ id: "access", label: t("Access") }] : [])]} />;
+  if (view === "crew-days") return <div className={styles.site}>
+    <ProjectCrewDays workspaceId={workspaceId} projectId={projectId} openId={linkedDay} switcher={switcher} me={state.me} onTeam={onTeam} />
+  </div>;
+  if (view === "access") return <div className={styles.site}>
+    <ProjectSiteAccess workspaceId={workspaceId} projectId={projectId} projectName={projectName} members={state.members} switcher={switcher} />
+  </div>;
   const running = Boolean(state.site.startedOn && !state.site.finishedOn);
   const waiting = state.canApprove ? state.reports.filter((report) => report.status === "submitted" && report.authorId !== state.me) : [];
   const safety: Record<Safety, string> = { none: t("No safety issue"), observation: t("Safety observation"), incident: t("Incident") };
@@ -78,6 +95,7 @@ export function ProjectSite({ workspaceId, projectId }: { workspaceId: string; p
 
   return <div className={styles.site}>
     <div className={styles.toolbar}>
+      {switcher}
       <span className={styles.muted}>{running ? t("Site work since {date}", { date: format.day(state.site.startedOn) })
         : state.site.finishedOn ? t("Site work {from} – {to}", { from: format.day(state.site.startedOn), to: format.day(state.site.finishedOn) }) : t("Site work hasn't started")}</span>
       <span className={styles.spacer} />

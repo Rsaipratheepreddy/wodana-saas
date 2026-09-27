@@ -6,16 +6,18 @@ import { useT } from "@/lib/i18n/i18n-provider";
 import { projectApi } from "@/lib/project-core/client";
 import type { CostEntry, CostSource, PackageMoney, ProjectMoney as Money } from "@/lib/project-core/types";
 import { subtractExact } from "@/lib/purchasing/amounts";
+import { ProjectHours } from "../hrms/project-hours";
 import { useProjectFormat } from "./format";
 import styles from "./project-money.module.css";
 
-type View = "packages" | "entries";
+type View = "packages" | "entries" | "hours";
 const numeric = (value: string) => value.replace(/[^\d.]/g, "");
 const plain = (value: string) => (value.includes(".") ? value.replace(/\.?0+$/, "") : value) || "0";
 
 /**
  * A project's money for people who see costs: what the client paid, what was spent and is still
- * committed, the margin, and each package's budget against its costs — or every cost, entry by entry.
+ * committed, the margin, and each package's budget against its costs — or every cost, entry by entry,
+ * or the studio's approved hours on it.
  */
 export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; projectId: string }) {
   const t = useT();
@@ -63,7 +65,7 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
   const entries = state.entries.filter((entry) => !needle || `${entry.description} ${entry.reference ?? ""} ${entry.packageName ?? ""}`.toLocaleLowerCase().includes(needle));
   const packages = state.packages.filter((row) => !needle || packageName(row.name).toLocaleLowerCase().includes(needle));
   const toolbar = <SegmentedControl label={t("Show")} value={view} onChange={(value) => { setView(value as View); setSearch(""); }}
-    options={[{ id: "packages", label: t("By package") }, { id: "entries", label: t("Every cost") }]} />;
+    options={[{ id: "packages", label: t("By package") }, { id: "entries", label: t("Every cost") }, { id: "hours", label: t("Hours") }]} />;
   return <div className={styles.money}>
     <dl className={styles.facts}>
       <div><dt>{t("Received")}</dt><dd>{money(income.received, income.currency)}<small>{t("{invoiced} invoiced of {requested} requested", { invoiced: money(income.invoiced, income.currency), requested: money(income.requested, income.currency) })}</small></dd></div>
@@ -78,7 +80,8 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
     </dl>
     {state.margin === null ? <InlineNotice tone="info" message={t("The project is in {project} and costs are in {costs}, so there's no margin here.", { project: income.currency, costs: state.currency })} /> : null}
     {state.uncosted ? <InlineNotice tone="info" message={t("{count} costs have no price or exchange rate yet and aren't counted.", { count: state.uncosted })} /> : null}
-    {view === "packages"
+    {view === "hours" ? <ProjectHours workspaceId={workspaceId} projectId={projectId} switcher={toolbar} />
+      : view === "packages"
       ? <DataGrid<PackageMoney> appearance="flush" ariaLabel={t("Budget by package")} columns={packageColumns} data={packages} getRowId={(row) => row.id ?? "none"} rowNumbers={false} wrapText
           onSearchChange={setSearch} searchValue={search} searchLabel={t("Search packages")} toolbarLeading={toolbar}
           emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No packages yet")} />} />

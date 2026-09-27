@@ -67,8 +67,8 @@ export function useHrmsFormat() {
       number: (value: number) => number.format(value),
       /** A distance in the locale's units: "150 m". */
       metres: (value: number) => new Intl.NumberFormat(locale, { style: "unit", unit: "meter", maximumFractionDigits: 0 }).format(value),
-      /** A unit's symbol or name for a field's suffix: "m", "s", "days". */
-      unit: (unit: "meter" | "second" | "day") => {
+      /** A unit's symbol or name for a field's suffix: "m", "s", "h", "days". */
+      unit: (unit: "meter" | "second" | "hour" | "day") => {
         const parts = new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: unit === "day" ? "long" : "narrow" }).formatToParts(unit === "day" ? 2 : 1);
         return parts.filter((part) => part.type === "unit").map((part) => part.value).join("") || unit;
       },

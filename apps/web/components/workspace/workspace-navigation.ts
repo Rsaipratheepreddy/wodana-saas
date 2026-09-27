@@ -334,6 +334,11 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
           { href: "/workspace/hrms/leave", icon: "calendar", id: "hrms-leave", label: "Leave" },
           { href: "/workspace/hrms/team", icon: "teams", id: "hrms-team", label: "Team" },
           { href: "/workspace/hrms/people", icon: "members", id: "hrms-people", label: "People" },
+          // Tabs of People reached from the page itself and from notices; named here for the breadcrumb.
+          { href: "/workspace/hrms/time", icon: "calendar", id: "hrms-time", label: "Time", showInSidebar: false },
+          { href: "/workspace/hrms/documents", icon: "members", id: "hrms-documents", label: "Documents", showInSidebar: false },
+          { href: "/workspace/hrms/crews", icon: "teams", id: "hrms-crews", label: "Crews", showInSidebar: false },
+          { href: "/workspace/hrms/payroll", icon: "members", id: "hrms-payroll", label: "Payroll", showInSidebar: false },
         ],
       },
     ],

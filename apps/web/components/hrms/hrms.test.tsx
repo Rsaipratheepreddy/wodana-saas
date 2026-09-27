@@ -77,6 +77,7 @@ const mount = (routes: Routes = () => undefined, boot: HrmsBootstrap = bootstrap
       else if (path === "attendance/history") value = history(call.query.get("from")!, call.query.get("to")!);
       else if (path === "leave/types") value = types;
       else if (path === "leave/balances" || path === "leave/requests" || path === "reviews" || path === "people" || path.startsWith("projects:")) value = [];
+      else if (path === "time/team") value = { weekStart: call.query.get("date"), people: [] };
       else value = { id: "saved" };
     }
     if (value instanceof Fail) return { ok: false, status: value.status, json: async () => value.body };
@@ -333,10 +334,12 @@ describe("People", () => {
   });
 
   it("shows only the tabs the person may use", async () => {
-    mount(undefined, bootstrap({ permissions: { self: true, team: false, manage: false, evidence: false, manageProjects: false } }));
+    // Not a crew's lead either: the crews list refuses them.
+    mount(({ path }) => (path === "crews" ? new Fail(403, { message: "You do not have access to crews." }) : undefined),
+      bootstrap({ permissions: { self: true, team: false, manage: false, evidence: false, manageProjects: false } }));
     page();
     await enabled("Check in");
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Attendance", "Leave"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Attendance", "Time", "Leave", "Documents"]);
     await act(async () => { await userEvent.click(screen.getByRole("tab", { name: "Leave" })); });
     expect(nav.replace).toHaveBeenLastCalledWith("/workspace/hrms/leave");
   });

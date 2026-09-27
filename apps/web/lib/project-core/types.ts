@@ -169,6 +169,8 @@ export type WorkItem = {
   needsMaterials: boolean;
   /** For a snag: how serious, where it came from, its area, and who marked it fixed. */
   severity: Severity | null; source: SnagSource | null; areaId: string | null; fixedBy: string | null;
+  /** For open work: when its assignee is away on approved leave within its dates (dates only). */
+  assigneeAway?: Array<{ startDate: string; endDate: string }>;
 };
 export type Severity = "minor" | "major" | "critical";
 export type SnagSource = "internal" | "inspection" | "delivery" | "client" | "warranty";

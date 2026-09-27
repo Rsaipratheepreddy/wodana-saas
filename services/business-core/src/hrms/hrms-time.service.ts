@@ -227,6 +227,22 @@ export class HrmsTimeService {
     });
   }
 
+  /** Every week waiting for this person's decision, whichever week it is. */
+  pending(actor: RequestActor, workspaceId: string) {
+    return this.access.run(actor, workspaceId, async (ctx) => {
+      this.access.require(ctx, "hrms.team", "hrms.manage");
+      const sheets = (await ctx.client.query<{ id: string; membershipId: string; weekStart: string }>(
+        `SELECT id, membership_id AS "membershipId", week_start::text AS "weekStart" FROM hrms_timesheets
+          WHERE workspace_id=$1 AND status='submitted' AND membership_id<>$2 ORDER BY submitted_at`,
+        [workspaceId, ctx.membershipId],
+      )).rows;
+      const weeks = [];
+      for (const sheet of sheets)
+        if (await this.access.canManageEmployee(ctx, sheet.membershipId)) weeks.push({ ...(await this.week(ctx, sheet.membershipId, sheet.weekStart)), canDecide: true });
+      return { weeks };
+    });
+  }
+
   /** A project's approved hours by person and stage, for people who run it or see its costs. */
   projectHours(actor: RequestActor, workspaceId: string, projectId: string, from?: string, to?: string) {
     return this.access.run(actor, workspaceId, async (ctx) => {

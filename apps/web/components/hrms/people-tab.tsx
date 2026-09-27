@@ -8,13 +8,16 @@ import {
 } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import type { HrmsApi, PersonInput } from "@/lib/hrms/api";
+import { PersonDocuments } from "./documents-tab";
 import { useHrmsFormat } from "./hrms-format";
 import styles from "./hrms.module.css";
 
 const tracked = (person: HrmsPerson) => person.enabled !== false;
 
 /** Everyone's HR record: title, team, who they report to, their calendar and whether attendance is tracked for them. */
-export function PeopleTab({ api, boot, openId, onOpen }: { api: HrmsApi; boot: HrmsBootstrap; openId: string | null; onOpen: (id: string | null) => void }) {
+export function PeopleTab({ api, boot, openId, onOpen, onOpenDocument }: {
+  api: HrmsApi; boot: HrmsBootstrap; openId: string | null; onOpen: (id: string | null) => void; onOpenDocument?: (id: string) => void;
+}) {
   const t = useT();
   const format = useHrmsFormat();
   const [people, setPeople] = useState<HrmsPerson[] | null>(null);
@@ -44,15 +47,16 @@ export function PeopleTab({ api, boot, openId, onOpen }: { api: HrmsApi; boot: H
     <DataGrid<HrmsPerson> appearance="flush" ariaLabel={t("People")} columns={columns} data={rows} getRowId={(row) => row.membershipId} isLoading={!people}
       onRowAction={(row) => onOpen(row.membershipId)} onSearchChange={setSearch} searchValue={search} searchLabel={t("Search people")} rowNumbers={false} selectable={false} wrapText
       emptyContent={needle ? <NoResultsState onClear={() => setSearch("")} /> : <EmptyState title={t("No one yet")} />} />
-    {open && people ? <PersonSheet key={open.membershipId} api={api} boot={boot} person={open} people={people} onClose={() => onOpen(null)} onSaved={() => void load()} /> : null}
+    {open && people ? <PersonSheet key={open.membershipId} api={api} boot={boot} person={open} people={people} onClose={() => onOpen(null)} onSaved={() => void load()}
+      onOpenDocument={onOpenDocument} /> : null}
   </>;
 }
 
 type Draft = Omit<PersonInput, "version">;
 
 /** One person's HR record, and their leave for the year with the allowance of each limited kind. */
-function PersonSheet({ api, boot, person, people, onClose, onSaved }: {
-  api: HrmsApi; boot: HrmsBootstrap; person: HrmsPerson; people: HrmsPerson[]; onClose: () => void; onSaved: () => void;
+function PersonSheet({ api, boot, person, people, onClose, onSaved, onOpenDocument }: {
+  api: HrmsApi; boot: HrmsBootstrap; person: HrmsPerson; people: HrmsPerson[]; onClose: () => void; onSaved: () => void; onOpenDocument?: (id: string) => void;
 }) {
   const t = useT();
   const format = useHrmsFormat();
@@ -130,6 +134,7 @@ function PersonSheet({ api, boot, person, people, onClose, onSaved }: {
               : <span className={styles.muted}>{t("Unlimited")}</span>}
           </li>)}</ul>}
       </section> : null}
+      {onOpenDocument ? <PersonDocuments api={api} membershipId={person.membershipId} onOpen={onOpenDocument} /> : null}
     </div>
   </InspectorSheet>;
 }
