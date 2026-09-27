@@ -16,6 +16,8 @@ export class ClientPortalController {
 
   @Get("site") site(@Param("slug") slug: string) { return this.portal.site(slug); }
 
+  @Get("invite/:token") invitation(@Param("slug") slug: string, @Param("token") token: string) { return this.portal.invitation(slug, token.slice(0, 200)); }
+
   @Post("challenge") challenge(@Param("slug") slug: string, @Body() body: unknown, @Headers("authorization") auth = "", @Headers("x-portal-requester") requester?: string) {
     return this.portal.challenge(slug, object(body), bearer(auth), requester?.slice(0, 100));
   }
@@ -64,6 +66,16 @@ export class ClientPortalAdminController {
   @Put("projects/:projectId") saveProject(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Param("projectId", ParseUUIDPipe) projectId: string, @Body() body: unknown) {
     return this.admin.saveProject(actor, workspaceId, projectId, object(body));
+  }
+
+  @Post("projects/:projectId/invite") inviteClient(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string, @Body() body: unknown) {
+    return this.admin.inviteClient(actor, workspaceId, projectId, object(body));
+  }
+
+  @Post("projects/:projectId/revoke") revokeClient(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("projectId", ParseUUIDPipe) projectId: string, @Body() body: unknown) {
+    return this.admin.revokeClient(actor, workspaceId, projectId, object(body));
   }
 
   @Get("cases/:caseId/contacts") contacts(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("caseId", ParseUUIDPipe) caseId: string) {

@@ -110,7 +110,22 @@ export type PortalContact = {
   lastSignedInAt: string | null; version: number; signedIn: boolean;
 };
 
+export type InviteDelivery = "sent" | "not_configured" | "failed" | "suppressed";
+export type ClientAccessStatus = "not_invited" | "invited" | "active" | "revoked";
+/** Why the client can't be invited right now. */
+export type InviteBlock = "portal_off" | "paused" | "no_client" | "no_phone" | "no_email";
+
+/** The project's client and their place in the portal: invited, active (last visit), revoked, or what stops an invite. */
+export type ClientAccess = {
+  name: string | null; phone: string | null; email: string | null; grantId: string | null; partyId: string | null;
+  status: ClientAccessStatus; invitedAt: string | null; expiresAt: string | null; delivery: InviteDelivery | null; lastVisitAt: string | null;
+  version: number; resendAfter: number; blocked: InviteBlock | null;
+};
+
 export type ProjectPortal = {
   enabled: boolean; sections: PortalSection[]; access: { sections: PortalSection[] | null; paused: boolean; pausedAt: string | null; version: number };
-  contacts: PortalContact[]; caseId: string; canManage: boolean;
+  contacts: PortalContact[]; caseId: string; canManage: boolean; portalUrl: string; client: ClientAccess;
 };
+
+/** What an invitation link opens: the client's number ready to sign in, or a link that no longer works. */
+export type PortalInvite = { status: "valid"; name: string; phone: string } | { status: "expired" };

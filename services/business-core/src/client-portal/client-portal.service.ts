@@ -15,6 +15,8 @@ import {
   answerRequest, assertDecisionOpen, claimWarranty, comment, decideDefinition, decideDesign, decideHandover, decideMaterials, decideQuote, grantFor, raiseRequest,
   type DecisionContext,
 } from "./portal-decisions";
+import { openInvitation } from "./portal-invitations";
+import { tellStaffClientSignedIn } from "./portal-notices";
 import { isImage, readView, workspaceToday } from "./portal-read";
 import { readPortalSettings, type PortalSettings } from "./portal-settings";
 import { findSite, readSite } from "./portal-site";
@@ -87,11 +89,25 @@ export class ClientPortalService {
     });
   }
 
+  /** Signs the client in; the first time they open a project, the people running it hear about it. */
   async login(slug: string, body: Record<string, unknown>) {
-    const result = await this.within(slug, (client, workspaceId) =>
-      signIn(client, workspaceId, this.codes, { challengeId: typeof body.challengeId === "string" ? body.challengeId : "", code: typeof body.code === "string" ? body.code : "" }));
+    const result = await this.within(slug, async (client, workspaceId) => {
+      const session = await signIn(client, workspaceId, this.codes, { challengeId: typeof body.challengeId === "string" ? body.challengeId : "", code: typeof body.code === "string" ? body.code : "" });
+      if (session?.firstSignIns.length) await tellStaffClientSignedIn(client, workspaceId, session.firstSignIns);
+      return session;
+    });
     if (!result) throw new BadRequestException("That code isn't right or has expired. Check it, or ask for a new one.");
-    return result;
+    const { firstSignIns: _first, ...session } = result;
+    return session;
+  }
+
+  /** What an invitation link opens: the client's number ready to sign in, or that the link no longer works. */
+  invitation(slug: string, token: string) {
+    return this.within(slug, async (client, workspaceId) => {
+      const found = await openInvitation(client, workspaceId, token);
+      if (!found) throw new NotFoundException("This invite link isn't valid any more.");
+      return found;
+    });
   }
 
   view(slug: string, token: string) {

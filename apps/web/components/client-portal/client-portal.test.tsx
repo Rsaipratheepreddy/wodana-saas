@@ -168,6 +168,18 @@ describe("client portal", () => {
     expect(screen.getByText("Powered by Wodana")).toBeInTheDocument();
   });
 
+  it("opens from an invitation link with the client's number ready, and says when the link has expired", async () => {
+    const fetcher = mount((url) => (url.endsWith("/view") ? { status: 401, body: {} } : { body: { challengeId: "ch1", channel: "whatsapp", expiresIn: 300, resendAfter: 30 } }));
+    const user = userEvent.setup();
+    const first = render(<PortalApp site={site} invite={{ status: "valid", name: "Maya", phone: "+12025550123" }} />);
+    await user.click(await screen.findByRole("button", { name: "Send code by WhatsApp" }));
+    await waitFor(() => expect(sent(fetcher, "challenge")).toEqual([{ phone: "+12025550123", channel: "whatsapp" }]));
+    first.unmount();
+    render(<PortalApp site={site} invite={{ status: "expired" }} />);
+    expect(await screen.findByText("This invite link has expired. Sign in with your mobile number, or ask your project team for a new one.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Mobile number/ })).toHaveValue("");
+  });
+
   it("reads right to left in Arabic", async () => {
     mount(() => ({ body: view() }));
     const { container } = render(<I18nProvider language="ar"><PortalApp site={site} /></I18nProvider>);
