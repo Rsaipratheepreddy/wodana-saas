@@ -95,13 +95,15 @@ describe("factory", () => {
     nav.query = "order=w1";
     const producing = { status: "in_production" as const, releasedAt: "2026-09-27T09:00:00Z" };
     const reports: WorkOrderState["reports"] = [
-      { id: "r1", good: "2.0000", scrap: "0.5000", scrapReason: "Chipped edge", note: "", status: "pending", reportedBy: "u2", reportedByName: "Faisal", reportedAt: "2026-09-27T11:00:00Z", decidedByName: null, decisionNote: "" },
-      { id: "r2", good: "0.5000", scrap: "0", scrapReason: "", note: "", status: "pending", reportedBy: "u1", reportedByName: "Me", reportedAt: "2026-09-27T12:00:00Z", decidedByName: null, decisionNote: "" }];
+      { id: "r1", good: "2.0000", scrap: "0.5000", scrapReason: "Chipped edge", note: "", status: "pending", reportedBy: "u2", reportedByName: "Faisal", reportedAt: "2026-09-27T11:00:00Z", decidedByName: null, decisionNote: "",
+        hours: "6.50" },
+      { id: "r2", good: "0.5000", scrap: "0", scrapReason: "", note: "", status: "pending", reportedBy: "u1", reportedByName: "Me", reportedAt: "2026-09-27T12:00:00Z", decidedByName: null, decisionNote: "",
+        hours: null }];
     const fetcher = mount((url) => (url.includes("/orders/w1") ? order({ ...producing, pending: "2.5000", left: "0.5000" }, { reports }) : factory()));
     page("orders");
     const sheet = await screen.findByRole("dialog", { name: "WO-0007 · Kitchen cabinets" });
     const output = await within(sheet).findByRole("region", { name: "Output" });
-    expect(within(output).getByText("2 m made · 0.5 m scrapped: Chipped edge")).toBeInTheDocument();
+    expect(within(output).getByText("2 m made · 0.5 m scrapped: Chipped edge · 6.5 hours")).toBeInTheDocument();
     // My own report waits for someone else; theirs I can approve.
     expect(within(output).getAllByRole("button", { name: "Approve" })).toHaveLength(1);
     expect(within(output).getByText("Waiting for approval")).toBeInTheDocument();
@@ -117,8 +119,14 @@ describe("factory", () => {
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Scrapped" }), "0.25");
     expect(within(dialog).getByRole("button", { name: "Report output" })).toBeDisabled();
     await userEvent.type(within(dialog).getByRole("textbox", { name: /Why it was scrapped/ }), "Split");
+    // The hours it took are optional; more than 1,000 on one report isn't taken.
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Hours worked" }), "1000.5");
+    expect(within(dialog).getByText("More than 0 and at most 1000, with up to 2 decimals.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Report output" })).toBeDisabled();
+    await userEvent.clear(within(dialog).getByRole("textbox", { name: "Hours worked" }));
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Hours worked" }), "4.5");
     await userEvent.click(within(dialog).getByRole("button", { name: "Report output" }));
-    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "report", good: "0.5", scrap: "0.25", scrapReason: "Split", id: expect.any(String) }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ action: "report", good: "0.5", scrap: "0.25", scrapReason: "Split", hours: "4.5", id: expect.any(String) }));
   });
 
   it("checks quality: what failed needs why", async () => {
@@ -272,7 +280,7 @@ describe("factory", () => {
   });
 
   it("sets what a work order needs before release and adds a workcenter", async () => {
-    let data: FactorySettingsState = { settings, workcenters: [], canManage: true };
+    let data: FactorySettingsState = { settings, workcenters: [], canManage: true, canSeeRates: true, rates: [], currency: "AED", today: "2026-09-27" };
     const fetcher = mount((url, body) => {
       if (body && url.includes("/settings")) data = { ...data, settings: { ...data.settings, requirePayment: body.requirePayment === true, version: 2 } };
       if (body && url.includes("/workcenters")) data = { ...data, workcenters: [{ id: String(body.id), name: String(body.name), hoursPerDay: String(body.hoursPerDay), active: true }] };
@@ -288,5 +296,36 @@ describe("factory", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ name: "Paint shop", hoursPerDay: "7.5", active: true }));
     expect(await screen.findByText("Paint shop")).toBeInTheDocument();
+  });
+
+  it("prices a workcenter's hours from a date: a new rate adds to its history, and an unchanged one changes nothing", async () => {
+    const paint = { id: "c2", name: "Paint shop", hoursPerDay: "7.50", active: true };
+    let data: FactorySettingsState = { settings, workcenters: [joinery, paint], canManage: true, canSeeRates: true, currency: "AED", today: "2026-09-27", rates: [
+      { id: "r1", workcenterId: "c1", from: "2026-01-01", rate: "45.5000", currency: "AED", version: 1 }, { id: "r2", workcenterId: "c1", from: "2026-10-01", rate: "50.0000", currency: "AED", version: 1 }] };
+    const fetcher = mount((url, body) => {
+      if (body) data = { ...data, rates: [...data.rates, { id: "r3", workcenterId: String(body.id), from: String(body.rateFrom), rate: String(body.hourlyRate), currency: "AED", version: 1 }] };
+      return data;
+    });
+    render(<DesignSystemProvider><FactorySettingsPage workspaceId="w" /></DesignSystemProvider>);
+    expect(await screen.findByText(/8 hours a day · AED\s?45\.50 an hour · AED\s?50\.00 an hour from/)).toBeInTheDocument();
+    expect(screen.getByText("7.5 hours a day · No hourly rate")).toBeInTheDocument();
+
+    // The paint shop's first rate, from today.
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[1]);
+    let dialog = await screen.findByRole("dialog", { name: "Paint shop" });
+    expect(within(dialog).queryByText("From")).toBeNull();
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Hourly rate" }), "38");
+    expect(within(dialog).getByText("From")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ id: "c2", hourlyRate: "38", rateFrom: "2026-09-27", rateVersion: 0 }));
+    expect(await screen.findByText(/7\.5 hours a day · AED\s?38\.00 an hour/)).toBeInTheDocument();
+
+    // The joinery's rate in force shows; it can't be cleared, only changed.
+    await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    dialog = await screen.findByRole("dialog", { name: "Joinery" });
+    const rate = within(dialog).getByRole("textbox", { name: "Hourly rate" });
+    expect(rate).toHaveValue("45.5");
+    await userEvent.clear(rate);
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });

@@ -17,6 +17,9 @@ const state = (patch: Partial<Money> = {}): Money => ({
     { key: "stock:1", on: "2026-09-25", source: "stock", description: "Received: Oak veneer 6 sheets", reference: "FAC-PO-2026-00001", packageId: null, packageName: null, amount: "540.0000" },
     { key: "bill:1", on: "2026-09-26", source: "price_difference", description: "Under-cabinet lights: invoiced at a different price", reference: "Nile Marble INV-L", packageId: "k1",
       packageName: "Lights", amount: "20.0000" },
+    { key: "labour:1", on: "2026-09-22", source: "labour", description: "Site labour: Carpenters, 4 people", reference: "Dana Designer", packageId: null, packageName: null, amount: "720.0000" },
+    { key: "labour:2", on: "2026-09-27", source: "labour", description: "Factory labour: Joinery, 6.5 hours", reference: "WO-0001", packageId: "k2", packageName: "Fitting", amount: "295.7500" },
+    { key: "petty_cash:1", on: "2026-09-25", source: "petty_cash", description: "Taxi to the tile supplier", reference: "PC-0001", packageId: null, packageName: null, amount: "45.5000" },
   ],
   uncosted: 1, canManage: true, ...patch,
 });
@@ -45,6 +48,18 @@ describe("project money", () => {
     const costs = await grid("Every cost");
     expect(costs).toHaveTextContent("Received: Oak veneer 6 sheets");
     expect(costs).toHaveTextContent("Invoice price");
+  });
+
+  it("names labour and petty cash among the costs, each with where it came from", async () => {
+    mount(() => state());
+    render(<DesignSystemProvider><ProjectMoney workspaceId="w" projectId="p1" /></DesignSystemProvider>);
+    await grid("Budget by package");
+    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "Every cost" }));
+    const costs = await grid("Every cost");
+    const row = (text: string) => within(costs).getByText(text).closest("tr")!;
+    expect(row("Site labour: Carpenters, 4 people")).toHaveTextContent(/Dana Designer · Not in a package.*Labour.*720/);
+    expect(row("Factory labour: Joinery, 6.5 hours")).toHaveTextContent(/WO-0001 · Fitting.*Labour.*295\.75/);
+    expect(row("Taxi to the tile supplier")).toHaveTextContent(/PC-0001 · Not in a package.*Petty cash.*45\.50/);
   });
 
   it("sets a package's budget, version-checked", async () => {

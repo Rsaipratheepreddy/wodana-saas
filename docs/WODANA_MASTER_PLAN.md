@@ -897,7 +897,10 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
     - its own stock used on its own work, moves inside its stock, and factory output (whose materials were counted when issued) change nothing;
     - services and outside work as received, at the order's net price;
     - approved supplier invoices: the price difference on order lines, and charges not on an order;
-    - other currencies at the rate of their day; entries with no cost or rate are counted and shown as not costed.
+    - site labour: the people per trade on approved site reports, at the trade's day rate on the report's day (not in a package);
+    - factory labour: the hours reported with approved output, at its workcenter's hourly rate on the day it was reported (in the work order's package);
+    - approved petty cash, on the day it was spent (in its package when it names one; reimbursing it adds nothing);
+    - other currencies at the rate of their day; entries with no cost, labour rate or exchange rate are counted and shown as not costed.
   - **Committed:** the rest of each line on placed, open orders (and goods not yet inspected) at the order's net price.
   - **Client side:**
     - agreed = the sealed baseline plus sealed variations (in total and before tax);
@@ -907,7 +910,11 @@ Approving is its own permission (`vendors.approve`), so adding a supplier never 
   - **Spending guard (Settings → Purchasing → Project money):** when an order is placed or approved, each project on it is checked against its money in hand (received − spent − committed, in the workspace's currency; projects kept in another currency aren't compared, and a missing rate counts as short).
     - Off lets it through. Warn lets it through, records it on the order, and tells the projects' managers and cost managers.
     - Strict stops it with what's in hand and what it needs. The buyer can ask; someone with `projects.funds_override` (Owner by default) lets it go ahead with why. Changing the order's lines clears that.
-  - **Still to come:** labour and petty cash costs.
+  - **Labour rates:** a day rate per trade (Settings → Projects → Labour rates, listing the trades site reports use without one) and an hourly rate per workcenter (Settings → Factory), each from a date: a new rate never rewrites the days before it; the same date again corrects that rate, version-checked. Factory output is reported with the hours it took (optional, at most 1,000).
+  - **Petty cash (project → Petty cash; Finance → Petty cash):**
+    - Anyone on the project's team claims what they spent for it (PC-n): the day, the amount in the workspace's currency, what for, the kind, optionally the package, and a receipt or why there's none. It's a draft until submitted.
+    - The project's manager (or someone who manages projects) approves it or rejects it with why — never their own claim, which the database refuses too. Approved, it's a cost of the project; people with `payables.manage` reimburse it once, with a reference. Each person sees their own claims; whoever decides sees them all.
+    - Notices: submitted (the project's managers), approved or rejected (the claimant), to reimburse (people with `payables.manage`), reimbursed (the claimant).
 
 ### 6.22 Client portal
 - **Access:** passwordless (email/phone OTP), per deal and project grants, multiple client contacts with roles (decision-maker vs viewer).

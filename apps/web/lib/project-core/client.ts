@@ -1,4 +1,4 @@
-import type { CloseOut, LineHistoryEntry, ProjectMoney, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
+import type { CloseOut, LabourRates, LineHistoryEntry, ProjectMoney, LiveScope, MaterialsState, OpenWork, PackagePlan, SprintDetail, WorkInsights, ProjectDetail, ProjectRow, ReadyCase, SealedScope, SettingsState, StartState, WorkBoard, WorkDetail, WorkMove } from "./types";
 
 export const projectPath = (workspaceId: string, path: string) => `/api/project-core/${path}?${new URLSearchParams({ workspaceId })}`;
 
@@ -70,6 +70,9 @@ export function projectApi(workspaceId: string) {
     saveRoute: (input: Record<string, unknown>) => request<SettingsState>(path("routes"), "POST", input),
     saveWorkTemplate: (supply: string, input: Record<string, unknown>) => request<SettingsState>(path(`work-templates/${supply}`), "PUT", input),
     archiveRoute: (id: string) => request<SettingsState>(path(`routes/${id}/archive`), "POST", {}),
+    labourRates: () => request<LabourRates>(path("labour-rates")),
+    /** save (a trade's day rate from a date; version of the rate at that date, 0 when new) · remove (a rate, by id and version). */
+    labourRateCommand: (action: "save" | "remove", input: Record<string, unknown>) => request<LabourRates>(path("labour-rates"), "POST", { ...input, action }),
   };
 }
 export type ProjectApi = ReturnType<typeof projectApi>;

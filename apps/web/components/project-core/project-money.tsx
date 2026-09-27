@@ -31,7 +31,8 @@ export function ProjectMoney({ workspaceId, projectId }: { workspaceId: string; 
   }, [api, projectId, t]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   const money = useCallback((value: string | null, currency?: string) => (value === null ? "—" : format.money(value, currency ?? state?.currency ?? "")), [format, state?.currency]);
-  const sources = useMemo<Record<CostSource, string>>(() => ({ stock: t("Stock"), service: t("Service"), price_difference: t("Invoice price"), charge: t("Charge") }), [t]);
+  const sources = useMemo<Record<CostSource, string>>(() => ({ stock: t("Stock"), service: t("Service"), price_difference: t("Invoice price"), charge: t("Charge"), labour: t("Labour"),
+    petty_cash: t("Petty cash") }), [t]);
   const packageName = useCallback((name: string | null) => name ?? t("Not in a package"), [t]);
   const canManage = Boolean(state?.canManage);
   const needle = search.trim().toLocaleLowerCase();

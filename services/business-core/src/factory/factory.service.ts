@@ -12,8 +12,10 @@ import { ensurePurchasingSettings, needsNotIn, readNeeds, readOrderLines } from 
 import { OrdersService } from "../purchasing/orders.service";
 import { outstanding, readLocations, resolvePlace } from "../purchasing/receiving";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
+import { readWorkcenterRates } from "../project-core/labour-rates";
 import { readCalendar } from "../project-core/work-calendar";
 import { capacity, ensureFactorySettings, materialsShort, plain, readBatches, readToMake, readWorkcenters, readWorkOrderMaterials, readWorkOrders, type WorkOrderRow } from "./factory";
+import { setWorkcenterRate, workspaceDay } from "./workcenter-rates";
 
 type Db = PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -240,13 +242,15 @@ export class FactoryService {
         if (Dec.of(good).add(scrap).cmp(0) <= 0) throw new BadRequestException("Enter what was made or scrapped.");
         if (Dec.of(scrap).cmp(0) > 0 && !scrapReason) throw new BadRequestException("Say why it was scrapped.");
         if (Dec.of(good).cmp(order.left) > 0) throw new ConflictException(`Only ${plain(order.left)} ${order.unit} is still to make.`.replace("  ", " "));
+        // The hours it took, costed at the workcenter's hourly rate once approved; the workcenter is kept with the report.
+        const hours = body.hours === undefined || body.hours === null || body.hours === "" ? null : hoursWorked(body.hours);
         await client.query(`INSERT INTO factory_commands (workspace_id, command_id, entity_id, action, actor_id) VALUES ($1, $2, $3, 'report', $4)`, [workspaceId, recordId, orderId, user.userId]);
-        await client.query(`INSERT INTO work_order_reports (id, workspace_id, work_order_id, good, scrap, scrap_reason, note, reported_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [recordId, workspaceId, orderId, good, scrap, scrapReason, text(body.note, 1000), user.userId]);
+        await client.query(`INSERT INTO work_order_reports (id, workspace_id, work_order_id, good, scrap, scrap_reason, note, reported_by, hours, workcenter_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [recordId, workspaceId, orderId, good, scrap, scrapReason, text(body.note, 1000), user.userId, hours, order.workcenterId]);
         await set(`notes = notes`);
         notices.push({ code: "factory.report_waiting", users: (await this.holders(client, workspaceId, ["factory.approve"])).filter((id) => id !== user.userId),
           note: `${plain(good)} ${order.unit} made${Dec.of(scrap).cmp(0) > 0 ? `, ${plain(scrap)} scrapped` : ""}`.replace("  ", " "), key: `report:${recordId}` });
-        audit = { reportId: recordId, good, scrap, scrapReason };
+        audit = { reportId: recordId, good, scrap, scrapReason, hours };
       } else if (action === "decide_report") {
         await need("factory.approve", "You can't approve output.");
         const report = (await client.query<{ id: string; good: string; scrap: string; status: string; reportedBy: string }>(
@@ -366,11 +370,7 @@ export class FactoryService {
   }
 
   settings(actor: RequestActor, workspaceId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, [...VIEW, "workspace.settings.manage"], async (client, user) => ({
-      settings: await ensureFactorySettings(client, workspaceId),
-      workcenters: await readWorkcenters(client, workspaceId, true),
-      canManage: await this.access.hasPermission(client, workspaceId, user.userId, "workspace.settings.manage"),
-    }));
+    return this.access.withAnyPermission(actor, workspaceId, [...VIEW, "workspace.settings.manage"], async (client, user) => this.settingsView(client, workspaceId, user.userId));
   }
 
   saveSettings(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
@@ -381,11 +381,11 @@ export class FactoryService {
       await client.query(`UPDATE workspace_factory_settings SET require_drawing = $2, require_payment = $3, require_materials = $4, require_check = $5, version = version + 1, updated_by = $6,
         updated_at = now() WHERE workspace_id = $1`, [workspaceId, flag("requireDrawing"), flag("requirePayment"), flag("requireMaterials"), flag("requireCheck"), user.userId]);
       await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.settings_changed", entityType: "workspace", entityId: workspaceId, before: current, after: body });
-      return { settings: await ensureFactorySettings(client, workspaceId), workcenters: await readWorkcenters(client, workspaceId, true), canManage: true };
+      return this.settingsView(client, workspaceId, user.userId);
     });
   }
 
-  /** Adds or renames a workcenter, or stops using one (a workcenter with open work orders stays). */
+  /** Adds or renames a workcenter, sets its hourly rate from a date, or stops using it (a workcenter with open work orders stays). */
   saveWorkcenter(actor: RequestActor, workspaceId: string, body: Record<string, unknown>) {
     return this.access.withPermission(actor, workspaceId, "workspace.settings.manage", async (client, user) => {
       const id = uuid(body.id, "Workcenter");
@@ -393,6 +393,7 @@ export class FactoryService {
       if (!name) throw new BadRequestException("Name the workcenter.");
       const hours = body.hoursPerDay === null || body.hoursPerDay === undefined || body.hoursPerDay === "" ? null : amount(body.hoursPerDay, "Hours a day");
       if (hours !== null && (Dec.of(hours).cmp(0) <= 0 || Dec.of(hours).cmp(24) > 0)) throw new BadRequestException("Hours a day is from 0 to 24.");
+      const rate = body.hourlyRate === null || body.hourlyRate === undefined || body.hourlyRate === "" ? null : amount(body.hourlyRate, "Hourly rate");
       const active = body.active !== false;
       if (!active && (await client.query(`SELECT 1 FROM work_orders WHERE workspace_id = $1 AND workcenter_id = $2 AND status IN ('planned', 'released', 'in_production', 'on_hold') LIMIT 1`,
         [workspaceId, id])).rowCount) throw new ConflictException("Open work orders use this workcenter. Move them first.");
@@ -405,12 +406,26 @@ export class FactoryService {
         if ((error as { constraint?: string }).constraint === "workcenters_name_key") throw new ConflictException(`There's already a workcenter called ${name}.`);
         throw error;
       }
-      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.workcenter_saved", entityType: "workcenter", entityId: id, after: { name, hours, active } });
-      return { settings: await ensureFactorySettings(client, workspaceId), workcenters: await readWorkcenters(client, workspaceId, true), canManage: true };
+      const priced = rate === null ? null
+        : await setWorkcenterRate(client, workspaceId, id, { rate, from: optionalDate(body.rateFrom, "Rate from"), version: body.rateVersion }, user.userId);
+      await recordAudit(client, { workspaceId, actorUserId: user.userId, action: "factory.workcenter_saved", entityType: "workcenter", entityId: id, after: { name, hours, active, rate: priced } });
+      return this.settingsView(client, workspaceId, user.userId);
     });
   }
 
   // ---------- helpers ----------
+  /** Settings → Factory; the hourly rates only for people who set them or see costs. */
+  private async settingsView(client: Db, workspaceId: string, userId: string) {
+    const canManage = await this.access.hasPermission(client, workspaceId, userId, "workspace.settings.manage");
+    const canSeeRates = canManage || await this.access.hasPermission(client, workspaceId, userId, "commercial.costs.view");
+    const workspace = await workspaceDay(client, workspaceId);
+    return {
+      settings: await ensureFactorySettings(client, workspaceId), workcenters: await readWorkcenters(client, workspaceId, true), canManage, canSeeRates,
+      rates: canSeeRates ? (await readWorkcenterRates(client, workspaceId)).map(({ key, ...rate }) => ({ ...rate, workcenterId: key })) : [],
+      currency: workspace.currency, today: workspace.today,
+    };
+  }
+
   /** What has to hold before a work order is released, each with what's missing when it doesn't. */
   private async releaseChecks(client: Db, workspaceId: string, order: WorkOrderRow, settings: Awaited<ReturnType<typeof ensureFactorySettings>>) {
     const project = (await client.query<{ status: string; caseId: string; quoteId: string }>(
@@ -638,10 +653,11 @@ export class FactoryService {
       `SELECT wo.drawing_ref AS "drawingRef", wo.drawing_approved_at AS "drawingApprovedAt", approver.display_name AS "drawingApprovedByName", wo.hold_reason AS "holdReason",
               wo.close_reason AS "closeReason", wo.closed_at AS "closedAt", wo.released_at AS "releasedAt", wo.ready_at AS "readyAt"
          FROM work_orders wo LEFT JOIN users approver ON approver.id = wo.drawing_approved_by WHERE wo.workspace_id = $1 AND wo.id = $2`, [workspaceId, orderId])).rows[0];
-    const reports = (await client.query<{ id: string; good: string; scrap: string; scrapReason: string; note: string; status: string; reportedBy: string; reportedByName: string; reportedAt: string;
-      decidedByName: string | null; decisionNote: string }>(
-      `SELECT report.id, report.good::text AS good, report.scrap::text AS scrap, report.scrap_reason AS "scrapReason", report.note, report.status, report.reported_by AS "reportedBy",
-              reporter.display_name AS "reportedByName", report.reported_at AS "reportedAt", decider.display_name AS "decidedByName", report.decision_note AS "decisionNote"
+    const reports = (await client.query<{ id: string; good: string; scrap: string; scrapReason: string; note: string; hours: string | null; status: string; reportedBy: string;
+      reportedByName: string; reportedAt: string; decidedByName: string | null; decisionNote: string }>(
+      `SELECT report.id, report.good::text AS good, report.scrap::text AS scrap, report.scrap_reason AS "scrapReason", report.note, report.hours::text AS hours, report.status,
+              report.reported_by AS "reportedBy", reporter.display_name AS "reportedByName", report.reported_at AS "reportedAt", decider.display_name AS "decidedByName",
+              report.decision_note AS "decisionNote"
          FROM work_order_reports report JOIN users reporter ON reporter.id = report.reported_by LEFT JOIN users decider ON decider.id = report.decided_by
         WHERE report.workspace_id = $1 AND report.work_order_id = $2 ORDER BY report.reported_at`, [workspaceId, orderId])).rows;
     const checks = (await client.query<{ id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string }>(
@@ -764,6 +780,13 @@ function text(value: unknown, max: number) {
 function amount(value: unknown, label: string) {
   const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
   if (!NUMBER.test(raw)) throw new BadRequestException(`${label} must be a number with up to 4 decimals.`);
+  return raw;
+}
+
+/** The hours one report of output took: more than none, at most 1,000, to the hundredth. */
+function hoursWorked(value: unknown) {
+  const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d{1,4}(\.\d{1,2})?$/.test(raw) || Dec.of(raw).cmp(0) <= 0 || Dec.of(raw).cmp(1000) > 0) throw new BadRequestException("Hours are more than 0 and at most 1000, with up to 2 decimals.");
   return raw;
 }
 

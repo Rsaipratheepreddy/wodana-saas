@@ -41,6 +41,8 @@ import { AccountingService } from "../accounting/accounting.service";
 import { applyResult, claimPostings } from "../accounting/accounting-sync";
 import { processPayablesDue, processRetentionReleases } from "../purchasing/purchasing-reminders";
 import { PaymentRunsService } from "../purchasing/payment-runs.service";
+import { LabourRatesService } from "./labour-rates.service";
+import { PettyCashService } from "../petty-cash/petty-cash.service";
 
 // Opt-in with PROJECT_REPOSITORY_TEST_DATABASE_URL (local, migrated, superuser). Each test is rolled back.
 const databaseUrl = process.env.PROJECT_REPOSITORY_TEST_DATABASE_URL;
@@ -3523,6 +3525,240 @@ integration("projects core (plan §6.10)", () => {
       expect(advance.payment).toMatchObject({ orderNumber: order.order.number, unallocated: "5.0000" });
       expect((await payer.bill(actor, w.workspaceId, invoice)).canPay).toBe(false);
       expect((await payer.overview(actor, w.workspaceId)).runsRequired).toBe(true);
+    });
+  });
+
+  it("costs labour at the rate of its day: approved site reports by trade and factory hours by workcenter; a later rate never rewrites them and work with no rate isn't costed", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const scope = await core.scope(actor, w.workspaceId, projectId);
+      let detail = await core.get(actor, w.workspaceId, projectId);
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "save_package", id: scope.packages[0].id, name: "Kitchen joinery", supply: "make", version: detail.project.version });
+      detail = await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "site_supervisor", membershipId: w.designerMembership, version: detail.project.version });
+      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view", "commercial.costs.manage"]));
+      const labour = (state: Awaited<ReturnType<ProjectMoneyService["read"]>>, kind: string) => state.entries.filter((entry) => entry.source === "labour" && entry.description.startsWith(kind))
+        .map((entry) => [entry.on, entry.description, entry.amount, entry.packageName]).sort((a, b) => `${a[0]}${a[1]}`.localeCompare(`${b[0]}${b[1]}`));
+
+      // Day rates by trade, from a date, to the workspace currency's decimals; sent twice they're set once, and a stale version is refused.
+      const rates = new LabourRatesService(access(w.manager, all));
+      await expect(rates.command(actor, w.workspaceId, { action: "save", trade: "Carpenters", dayRate: "180.005", from: "2026-09-01", version: 0 })).rejects.toThrow(/more decimals than AED/);
+      const carpenters = { action: "save", trade: "  Carpenters ", dayRate: "180", from: "2026-09-01", version: 0 };
+      await rates.command(actor, w.workspaceId, carpenters);
+      let settings = await rates.command(actor, w.workspaceId, carpenters);
+      expect(settings.trades.map((trade) => [trade.name, trade.rates.map((rate) => [rate.from, rate.rate])])).toEqual([["Carpenters", [["2026-09-01", "180.0000"]]]]);
+      await expect(rates.command(actor, w.workspaceId, { ...carpenters, dayRate: "190" })).rejects.toThrow(/Someone else changed this rate/);
+
+      // The supervisor reports the site's days; the project manager approves them or sends them back.
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-labour-")) }));
+      const siteAs = (userId: string) => new SiteService({
+        asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT labour"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT labour"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT labour"); throw error; } },
+        hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => code === "projects.view" } as never, storage);
+      const supervisor = siteAs(w.designer), pm = siteAs(w.manager);
+      const png = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "site.png", mimetype: "image/png", size: 0 };
+      const report = async (reportDate: string, workforce: Array<{ trade: string; people: number }>, end: "approve" | "return" | "submit" | "draft") => {
+        const id = randomUUID();
+        let site = await supervisor.command(actor, w.workspaceId, projectId, { id, action: "save_report", reportDate, workforce });
+        if (end === "draft") return;
+        site = await supervisor.uploadPhoto(actor, w.workspaceId, projectId, id, randomUUID(), png);
+        site = await supervisor.command(actor, w.workspaceId, projectId, { action: "submit", reportId: id, version: site.reports.find((row) => row.id === id)!.version });
+        const version = site.reports.find((row) => row.id === id)!.version;
+        if (end === "approve") await pm.command(actor, w.workspaceId, projectId, { action: "approve", reportId: id, version });
+        if (end === "return") await pm.command(actor, w.workspaceId, projectId, { action: "return", reportId: id, note: "Wrong day", version });
+      };
+      await report("2026-09-22", [{ trade: "carpenters", people: 4 }, { trade: "Painters", people: 2 }], "approve");
+      await report("2026-09-23", [{ trade: "Carpenters", people: 3 }], "return");
+      await report("2026-09-24", [{ trade: "Carpenters", people: 5 }], "submit");
+      await report("2026-09-25", [{ trade: "Carpenters", people: 6 }], "draft");
+
+      // Only the approved day costs: four carpenters at 180. The painters have no rate, so they're counted as not costed — never as nothing.
+      let state = await money.read(actor, w.workspaceId, projectId);
+      expect(labour(state, "Site")).toEqual([["2026-09-22", "Site labour: carpenters, 4 people", "720.0000", null]]);
+      expect(state.entries.find((entry) => entry.source === "labour")?.reference).toBe("Dana Designer");
+      expect(state.uncosted).toBe(1);
+      expect((await rates.read(actor, w.workspaceId)).trades.map((trade) => [trade.name, trade.rates.length, trade.reports])).toEqual([["Carpenters", 1, 4], ["Painters", 0, 1]]);
+
+      // The day rate rises from October: September's days keep theirs, even one approved after the change.
+      await rates.command(actor, w.workspaceId, { action: "save", trade: "Carpenters", dayRate: "200", from: "2026-10-01", version: 0 });
+      await report("2026-09-26", [{ trade: "Carpenters", people: 2 }], "approve");
+      // Painters priced late, from the start of September, cost the day already approved.
+      await rates.command(actor, w.workspaceId, { action: "save", trade: "Painters", dayRate: "150.50", from: "2026-09-01", version: 0 });
+      state = await money.read(actor, w.workspaceId, projectId);
+      expect(labour(state, "Site")).toEqual([["2026-09-22", "Site labour: carpenters, 4 people", "720.0000", null], ["2026-09-22", "Site labour: Painters, 2 people", "301.0000", null],
+        ["2026-09-26", "Site labour: Carpenters, 2 people", "360.0000", null]]);
+      expect(state.uncosted).toBe(0);
+
+      // Factory hours: at the workcenter's hourly rate on the day they were reported, in the work order's package.
+      const maker = factoryAs(access, w.designer, [...all, "factory.view", "factory.manage", "factory.report", "factory.approve"]);
+      const checker = factoryAs(access, w.manager, ["factory.view", "factory.approve"]);
+      const joinery = randomUUID(), paint = randomUUID();
+      await expect(maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery", hoursPerDay: "8", hourlyRate: "45.555", rateFrom: "2026-01-01" })).rejects.toThrow(/more decimals than AED/);
+      await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery", hoursPerDay: "8", hourlyRate: "45.50", rateFrom: "2026-01-01" });
+      let factory = await maker.saveWorkcenter(actor, w.workspaceId, { id: paint, name: "Paint shop" });
+      expect(factory.rates.map((rate) => [rate.workcenterId, rate.from, rate.rate])).toEqual([[joinery, "2026-01-01", "45.5000"]]);
+      const current = await maker.settings(actor, w.workspaceId);
+      await maker.saveSettings(actor, w.workspaceId, { version: current.settings.version, requirePayment: false });
+      const cabinets = (await maker.state(actor, w.workspaceId)).toMake.find((line) => line.title === "Kitchen cabinets")!;
+      const running = async (id: string, quantity: string, workcenterId: string) => {
+        let order = await maker.plan(actor, w.workspaceId, { id, lineId: cabinets.lineId, quantity });
+        order = await maker.command(actor, w.workspaceId, id, { action: "approve_drawing", reference: "K-01", version: order.order.version });
+        order = await maker.command(actor, w.workspaceId, id, { action: "update", workcenterId, plannedStart: "2026-10-05", plannedEnd: "2026-10-16", version: order.order.version });
+        order = await maker.command(actor, w.workspaceId, id, { action: "release", version: order.order.version });
+        await maker.command(actor, w.workspaceId, id, { action: "start", version: order.order.version });
+      };
+      const first = randomUUID(), second = randomUUID();
+      await running(first, "3", joinery);
+      await running(second, "1.5", paint);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: randomUUID(), good: "1", hours: "0" })).rejects.toThrow(/more than 0/);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: randomUUID(), good: "1", hours: "1000.5" })).rejects.toThrow(/at most 1000/);
+      await expect(maker.command(actor, w.workspaceId, first, { action: "report", id: randomUUID(), good: "1", hours: "6.125" })).rejects.toThrow(/up to 2 decimals/);
+      const made = randomUUID(), refused = randomUUID(), untimed = randomUUID(), painted = randomUUID();
+      await maker.command(actor, w.workspaceId, first, { action: "report", id: made, good: "2", hours: "6.5" });
+      await maker.command(actor, w.workspaceId, first, { action: "report", id: refused, good: "0.5", hours: "3" });
+      let order = await maker.command(actor, w.workspaceId, first, { action: "report", id: untimed, good: "0.5" });
+      expect(Object.fromEntries(order.reports.map((row) => [row.id, row.hours]))).toEqual({ [made]: "6.50", [refused]: "3.00", [untimed]: null });
+      order = await checker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: made, decision: "approve", version: order.order.version });
+      order = await checker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: refused, decision: "refuse", note: "Counted twice", version: order.order.version });
+      await checker.command(actor, w.workspaceId, first, { action: "decide_report", reportId: untimed, decision: "approve", version: order.order.version });
+      order = await maker.command(actor, w.workspaceId, second, { action: "report", id: painted, good: "1", hours: "2" });
+      await checker.command(actor, w.workspaceId, second, { action: "decide_report", reportId: painted, decision: "approve", version: order.order.version });
+
+      // 6.5 hours at 45.50. The refused report costs nothing, output without hours adds no labour, and hours on a workcenter with no rate aren't costed.
+      const today = (await w.client.query<{ today: string }>("SELECT (now() AT TIME ZONE 'Asia/Dubai')::date::text AS today")).rows[0].today;
+      state = await money.read(actor, w.workspaceId, projectId);
+      expect(labour(state, "Factory")).toEqual([[today, "Factory labour: Joinery, 6.5 hours", "295.7500", "Kitchen joinery"]]);
+      expect(state.entries.find((entry) => entry.description.startsWith("Factory"))?.reference).toBe("WO-0001");
+      expect(state.uncosted).toBe(1);
+      // A new hourly rate from tomorrow leaves today's hours as they were; correcting that date again needs its version.
+      const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+      factory = await maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery", hoursPerDay: "8", hourlyRate: "60", rateFrom: tomorrow });
+      expect(factory.rates.map((rate) => [rate.from, rate.rate])).toEqual([["2026-01-01", "45.5000"], [tomorrow, "60.0000"]]);
+      await expect(maker.saveWorkcenter(actor, w.workspaceId, { id: joinery, name: "Joinery", hourlyRate: "65", rateFrom: tomorrow })).rejects.toThrow(/Someone else changed this workcenter's rate/);
+      state = await money.read(actor, w.workspaceId, projectId);
+      expect(labour(state, "Factory")).toEqual([[today, "Factory labour: Joinery, 6.5 hours", "295.7500", "Kitchen joinery"]]);
+
+      // Labour counts against budgets like any cost: site days are not in a package, factory hours are in their work order's.
+      state = await money.saveBudget(actor, w.workspaceId, projectId, { packageId: null, amount: "1000", version: 0 });
+      expect(state.packages.map((row) => [row.name, row.spent, row.over])).toEqual(expect.arrayContaining([["Kitchen joinery", "295.7500", false], [null, "1381.0000", true]]));
+      expect(await processProjectBudgets(w.client, w.workspaceId)).toEqual({ sent: 1 });
+    });
+  });
+
+  it("claims petty cash: approved by the project manager and never by who claimed it, rejected with why, a cost of its package once approved, and reimbursed once by the people who pay", async () => {
+    await world(async (w) => {
+      const { core, projectId, access, all } = await buying(w);
+      const detail = await core.get(actor, w.workspaceId, projectId);
+      await core.command(actor, w.workspaceId, projectId, { action: "set_member", role: "site_supervisor", membershipId: w.designerMembership, version: detail.project.version });
+      const kitchen = (await core.scope(actor, w.workspaceId, projectId)).packages[0];
+      // The people who pay: a third person holding payables.manage.
+      const finance = randomUUID(), financeMembership = randomUUID(), role = randomUUID();
+      await w.client.query("INSERT INTO users(id,primary_email,display_name) VALUES($1,$2,'Fatima Finance')", [finance, `${finance.slice(0, 8)}@example.com`]);
+      await w.client.query("INSERT INTO workspace_memberships(id,workspace_id,user_id,status) VALUES($1,$2,$3,'active')", [financeMembership, w.workspaceId, finance]);
+      await w.client.query("INSERT INTO roles (id, workspace_id, code, name) VALUES ($1, $2, 'finance', 'Finance')", [role, w.workspaceId]);
+      await w.client.query("INSERT INTO role_permissions (workspace_id, role_id, permission_id) SELECT $1, $2, id FROM permissions WHERE code IN ('payables.view', 'payables.manage')", [w.workspaceId, role]);
+      await w.client.query("INSERT INTO member_roles (workspace_id, membership_id, role_id) VALUES ($1, $2, $3)", [w.workspaceId, financeMembership, role]);
+      const storage = new BrandAssetStorageService(new ConfigService({ BRAND_ASSET_STORAGE_DIR: await mkdtemp(join(tmpdir(), "wodana-petty-")) }));
+      const cashAs = (userId: string, permissions: string[]) => {
+        const run = async (fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+          await w.client.query("SAVEPOINT petty"); try { const result = await fn(w.client, { userId }); await w.client.query("RELEASE SAVEPOINT petty"); return result; }
+          catch (error) { await w.client.query("ROLLBACK TO SAVEPOINT petty"); throw error; } };
+        return new PettyCashService({ asMember: async (_a: unknown, _w: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => run(fn),
+          withPermission: async (_a: unknown, _w: string, code: string, fn: (c: PoolClient, u: { userId: string }) => unknown) => {
+            if (!permissions.includes(code)) throw new Error("Not allowed");
+            return run(fn);
+          },
+          hasPermission: async (_c: unknown, _w: string, _u: string, code: string) => permissions.includes(code) } as never, storage);
+      };
+      const supervisor = cashAs(w.designer, ["projects.view"]), pm = cashAs(w.manager, ["projects.view"]), payer = cashAs(finance, ["payables.view", "payables.manage"]);
+      const command = (service: PettyCashService, action: string, input: Record<string, unknown>) => service.command(actor, w.workspaceId, projectId, { ...input, action, commandId: randomUUID() });
+      const claimOf = (state: { claims: Array<{ id: string; version: number }> }, id: string) => state.claims.find((claim) => claim.id === id)!;
+      const told = async (event: string) => (await w.client.query<{ id: string }>(
+        "SELECT recipient_id AS id FROM notifications WHERE workspace_id = $1 AND event_type = $2 AND channel = 'in_app'", [w.workspaceId, event])).rows.map((row) => row.id);
+
+      // A claim: exact to the workspace's currency, already spent, for a package of this project; saved once however often it's sent.
+      const taxi = randomUUID();
+      const claim = { id: taxi, spentOn: "2026-09-25", amount: "45.50", description: "Taxi to the tile supplier", category: "transport", packageId: kitchen.id };
+      await expect(command(supervisor, "save", { ...claim, amount: "45.505" })).rejects.toThrow(/more decimals than AED/);
+      await expect(command(supervisor, "save", { ...claim, spentOn: "2099-01-01" })).rejects.toThrow(/once it's spent/);
+      await expect(command(supervisor, "save", { ...claim, packageId: randomUUID() })).rejects.toThrow(/package of this project/);
+      await expect(command(supervisor, "save", { ...claim, category: "gifts" })).rejects.toThrow(/what kind of spending/);
+      const saving = { ...claim, action: "save", commandId: randomUUID() };
+      await supervisor.command(actor, w.workspaceId, projectId, saving);
+      let state = await supervisor.command(actor, w.workspaceId, projectId, saving);
+      expect(state.claims.map((row) => [row.reference, row.status, row.amount, row.currency, row.packageName])).toEqual([["PC-0001", "draft", "45.5000", "AED", kitchen.name]]);
+
+      // Submitted with its receipt (or why there's none); the project manager hears, and it no longer changes.
+      await expect(command(supervisor, "submit", { claimId: taxi, version: claimOf(state, taxi).version })).rejects.toThrow(/Attach the receipt, or say why there's none/);
+      const receipt = { buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#8a8a8a" } }).png().toBuffer(), originalname: "taxi.png", mimetype: "image/png", size: 0 };
+      state = await supervisor.uploadReceipt(actor, w.workspaceId, projectId, taxi, receipt);
+      await expect(pm.uploadReceipt(actor, w.workspaceId, projectId, taxi, { ...receipt, buffer: await sharp({ create: { width: 8, height: 8, channels: 3, background: "#101010" } }).png().toBuffer() }))
+        .rejects.toThrow(/Only who claimed it adds its receipt/);
+      state = await command(supervisor, "submit", { claimId: taxi, version: claimOf(state, taxi).version });
+      expect(await told("petty_cash.submitted")).toEqual([w.manager]);
+      await expect(command(supervisor, "save", { ...claim, version: claimOf(state, taxi).version })).rejects.toThrow(/submitted claim doesn't change/);
+
+      // Only the project manager decides, never on a stale version; an approval sent twice runs once. The claimant and the people who pay hear.
+      await expect(command(supervisor, "approve", { claimId: taxi, version: claimOf(state, taxi).version })).rejects.toThrow(/Only the project manager approves/);
+      await expect(command(pm, "approve", { claimId: taxi, version: claimOf(state, taxi).version - 1 })).rejects.toThrow(/changed elsewhere/);
+      const approving = { action: "approve", commandId: randomUUID(), claimId: taxi, version: claimOf(state, taxi).version };
+      await pm.command(actor, w.workspaceId, projectId, approving);
+      state = await pm.command(actor, w.workspaceId, projectId, approving);
+      expect(claimOf(state, taxi)).toMatchObject({ status: "approved", decidedByName: "Omar Manager" });
+      expect(await told("petty_cash.approved")).toEqual([w.designer]);
+      expect(await told("petty_cash.to_reimburse")).toEqual([finance]);
+
+      // Rejected only with why; the claimant hears.
+      const lunch = randomUUID();
+      state = await command(supervisor, "save", { id: lunch, spentOn: "2026-09-26", amount: "12", description: "Lunch for the fitters", category: "food", noReceiptReason: "Street stall, no bill" });
+      state = await command(supervisor, "submit", { claimId: lunch, version: claimOf(state, lunch).version });
+      await expect(command(pm, "reject", { claimId: lunch, version: claimOf(state, lunch).version })).rejects.toThrow(/Say why it's rejected/);
+      state = await command(pm, "reject", { claimId: lunch, version: claimOf(state, lunch).version, note: "Crew meals come from their allowance" });
+      expect(claimOf(state, lunch)).toMatchObject({ status: "rejected", decisionNote: "Crew meals come from their allowance" });
+      expect(await told("petty_cash.rejected")).toEqual([w.designer]);
+
+      // The manager's own claim is decided by someone else — the database refuses it too — and the team sees only their own claims.
+      const tiles = randomUUID();
+      state = await command(pm, "save", { id: tiles, spentOn: "2026-09-26", amount: "80", description: "Sample tiles", category: "materials", noReceiptReason: "Receipt lost" });
+      state = await command(pm, "submit", { claimId: tiles, version: claimOf(state, tiles).version });
+      await expect(command(pm, "approve", { claimId: tiles, version: claimOf(state, tiles).version })).rejects.toThrow(/Someone other than who claimed it decides/);
+      await w.client.query("SAVEPOINT own");
+      await expect(w.client.query("UPDATE petty_cash_claims SET status = 'approved', decided_by = claimed_by, decided_at = now() WHERE id = $1", [tiles])).rejects.toThrow(/check constraint/);
+      await w.client.query("ROLLBACK TO SAVEPOINT own");
+      await command(supervisor, "save", { id: randomUUID(), spentOn: "2026-09-26", amount: "5", description: "Screws", category: "tools" });
+      expect((await supervisor.state(actor, w.workspaceId, projectId)).claims.map((row) => [row.reference, row.status])).toEqual([["PC-0004", "draft"], ["PC-0002", "rejected"], ["PC-0001", "approved"]]);
+      expect((await pm.state(actor, w.workspaceId, projectId)).claims.map((row) => row.reference)).toEqual(["PC-0004", "PC-0003", "PC-0002", "PC-0001"]);
+
+      // Approved, it's a cost of its package; rejected, submitted and draft claims aren't.
+      const money = new ProjectMoneyService(access(w.manager, [...all, "commercial.costs.view"]));
+      let costs = await money.read(actor, w.workspaceId, projectId);
+      expect(costs.entries.filter((entry) => entry.source === "petty_cash").map((entry) => [entry.on, entry.description, entry.reference, entry.packageName, entry.amount]))
+        .toEqual([["2026-09-25", "Taxi to the tile supplier", "PC-0001", kitchen.name, "45.5000"]]);
+      expect(costs.packages.find((row) => row.id === kitchen.id)?.spent).toBe("45.5000");
+      expect(costs.spent).toBe("45.5000");
+
+      // The people who pay see it to reimburse and pay it once, with its reference; the claimant hears. It still costs once.
+      let owed = await payer.reimbursements(actor, w.workspaceId);
+      expect(owed.claims.map((row) => [row.reference, row.status, row.claimedByName])).toEqual([["PC-0001", "approved", "Dana Designer"]]);
+      await expect(cashAs(w.manager, ["payables.view"]).reimburse(actor, w.workspaceId, { commandId: randomUUID(), claimId: taxi, version: owed.claims[0].version })).rejects.toThrow(/Not allowed/);
+      await expect(supervisor.reimbursements(actor, w.workspaceId)).rejects.toThrow(/Not allowed/);
+      const paying = { commandId: randomUUID(), claimId: taxi, version: owed.claims[0].version, reference: "Cash box 12" };
+      await payer.reimburse(actor, w.workspaceId, paying);
+      owed = await payer.reimburse(actor, w.workspaceId, paying);
+      expect(owed.claims[0]).toMatchObject({ status: "reimbursed", reimbursedByName: "Fatima Finance", reimbursementReference: "Cash box 12" });
+      await expect(payer.reimburse(actor, w.workspaceId, { ...paying, commandId: randomUUID(), version: owed.claims[0].version })).rejects.toThrow(/already reimbursed/);
+      expect(await told("petty_cash.reimbursed")).toEqual([w.designer]);
+      costs = await money.read(actor, w.workspaceId, projectId);
+      expect(costs.spent).toBe("45.5000");
+
+      // The receipt: for the claimant, the project manager and the people who pay — nobody else.
+      for (const service of [supervisor, pm, payer]) expect((await service.receipt(actor, w.workspaceId, taxi)).contentType).toBe("image/png");
+      await expect(cashAs(finance, ["projects.view"]).receipt(actor, w.workspaceId, taxi)).rejects.toThrow(/Receipt not found/);
+
+      // Every new table is tenant-isolated.
+      const guarded = (await w.client.query<{ name: string }>(`SELECT relname AS name FROM pg_class WHERE relname = ANY($1::text[]) AND relrowsecurity AND relforcerowsecurity ORDER BY relname`,
+        [["workspace_labour_rates", "workcenter_rates", "petty_cash_claims", "petty_cash_commands"]])).rows.map((row) => row.name);
+      expect(guarded).toEqual(["petty_cash_claims", "petty_cash_commands", "workcenter_rates", "workspace_labour_rates"]);
     });
   });
 });

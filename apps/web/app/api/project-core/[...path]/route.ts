@@ -6,6 +6,7 @@ import { UUID, isSameOrigin, workspaceJsonResponse } from "@/lib/workspace/works
 function allowed(path: string[], method: string) {
   if (path.length === 1 && path[0] === "settings") return ["GET", "PUT"].includes(method);
   if (path.length === 1 && path[0] === "routes") return method === "POST";
+  if (path.length === 1 && path[0] === "labour-rates") return ["GET", "POST"].includes(method);
   if (path.length === 2 && path[0] === "work-templates" && /^[a-z_]{1,12}$/.test(path[1])) return method === "PUT";
   if (path.length === 3 && path[0] === "routes" && UUID.test(path[1]) && path[2] === "archive") return method === "POST";
   if (path.length === 1 && path[0] === "ready") return method === "GET";

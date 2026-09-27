@@ -16,6 +16,7 @@ import { ProjectHandover } from "../site/project-handover";
 import { ProjectWarranty } from "../site/project-warranty";
 import { ProjectMoney } from "./project-money";
 import { ProjectSite } from "../site/project-site";
+import { ProjectPettyCash } from "../petty-cash/project-petty-cash";
 import { ProjectScope } from "./project-scope";
 import { ProjectStages } from "./project-stages";
 import { ProjectTeam } from "./project-team";
@@ -127,6 +128,7 @@ export function ProjectPage({ workspaceId, projectId, section }: { workspaceId: 
       { id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> },
       ...(detail.canSeeMoney ? [{ id: "money", label: t("Money"), panel: <ProjectMoney workspaceId={workspaceId} projectId={projectId} /> }] : []),
       { id: "site", label: t("Site"), panel: <ProjectSite workspaceId={workspaceId} projectId={projectId} /> },
+      { id: "petty-cash", label: t("Petty cash"), panel: <ProjectPettyCash workspaceId={workspaceId} projectId={projectId} /> },
       { id: "handover", label: t("Handover"), panel: <ProjectHandover workspaceId={workspaceId} projectId={projectId} /> },
       { id: "warranty", label: t("Warranty"), panel: <ProjectWarranty workspaceId={workspaceId} projectId={projectId} /> },
       { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} /> },

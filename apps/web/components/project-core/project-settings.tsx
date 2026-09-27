@@ -10,9 +10,10 @@ import { projectApi } from "@/lib/project-core/client";
 import type { CheckKind, ProjectRole, ProjectRoute, RouteStage, SettingsState, StageCheck, TemplateTask, WorkTemplate } from "@/lib/project-core/types";
 import { useSupplyLabels } from "./project-scope";
 import { WarrantySettingsSection } from "../site/project-warranty";
+import { LabourRatesSection } from "./labour-rates";
 import styles from "./project-settings.module.css";
 
-type Tab = "start" | "roles" | "routes" | "work" | "warranty";
+type Tab = "start" | "roles" | "routes" | "work" | "warranty" | "labour";
 const LEAD = "project_manager";
 
 /**
@@ -43,7 +44,7 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
   return <SettingsPage title={t("Projects")}>
     <PillTabs ariaLabel={t("Project settings")} selectedKey={tab} onSelectionChange={(key) => setTab(key as Tab)}
       items={[{ id: "start", label: t("Starting a project") }, { id: "roles", label: t("Team roles") }, { id: "routes", label: t("Routes") }, { id: "work", label: t("Standard tasks") },
-        { id: "warranty", label: t("Warranty") }]} />
+        { id: "warranty", label: t("Warranty") }, { id: "labour", label: t("Labour rates") }]} />
     {error ? <InlineNotice tone="error" message={error} /> : null}
     {tab === "start" ? <StartRules key={data.settings.version} data={data} onSave={(input) => save(() => api.saveSettings(input))} /> : null}
     {tab === "roles" ? <Roles key={data.settings.version} data={data} onSave={(roles) => save(() => api.saveSettings({ version: data.settings.version, roles }))} /> : null}
@@ -64,6 +65,7 @@ export function ProjectSettingsPage({ workspaceId }: { workspaceId: string }) {
       </li>)}</ul>
     </SettingsSection> : null}
     {tab === "warranty" ? <WarrantySettingsSection workspaceId={workspaceId} supplies={supplies} /> : null}
+    {tab === "labour" ? <LabourRatesSection workspaceId={workspaceId} /> : null}
     {editingWork ? <WorkTemplateEditor template={editingWork} title={supplies[editingWork.supply]} roles={data.settings.roles} stages={routeStages(data.templates)}
       readOnly={!data.canManage} onClose={() => setEditingWork(null)}
       onSave={async (tasks) => { if (await save(() => api.saveWorkTemplate(editingWork.supply, { version: editingWork.version, tasks }))) setEditingWork(null); }} /> : null}

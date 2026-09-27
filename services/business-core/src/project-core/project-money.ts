@@ -5,12 +5,14 @@ import type { CommercialData } from "../commercial/commercial.types";
 import { paymentHasFinanceVerifiedReceipt } from "../commercial/finance-ledger";
 import { inWorkspaceCurrency } from "../inventory/stock";
 import { notifyUserInApp } from "../notifications/default-templates";
+import { claimNumber } from "../petty-cash/petty-cash";
 import { currencyDecimals } from "../purchasing/orders";
 import { orderUnitPrice } from "../purchasing/payables";
+import { labourCost, rateOn, readTradeRates, readWorkcenterRates, tradeKey } from "./labour-rates";
 
 type Db = Pick<PoolClient, "query">;
 
-export type CostSource = "stock" | "service" | "price_difference" | "charge";
+export type CostSource = "stock" | "service" | "price_difference" | "charge" | "labour" | "petty_cash";
 /** One cost the project carries, in the workspace's currency, from the record that caused it. */
 export type CostEntry = {
   key: string; on: string; source: CostSource; description: string; reference: string | null; packageId: string | null; packageName: string | null; amount: string;
@@ -44,8 +46,9 @@ const LINE_PACKAGE = `coalesce(scope.package_id,
 /**
  * Everything the project has cost so far, entry by entry: stock at its moving-average cost when it moved,
  * services and outside work as they were received at the order's price, the difference when a supplier's
- * approved invoice priced order lines differently, and approved charges not on an order. Amounts in other
- * currencies are converted at the rate of their day; `uncosted` counts entries with no cost or rate.
+ * approved invoice priced order lines differently, approved charges not on an order, labour (site and
+ * factory) at the rate of its day, and approved petty cash. Amounts in other currencies are converted at
+ * the rate of their day; `uncosted` counts entries with no cost, labour rate or exchange rate.
  */
 export async function readProjectCosts(db: Db, workspaceId: string, projectId: string) {
   const entries: CostEntry[] = [];
@@ -135,6 +138,61 @@ export async function readProjectCosts(db: Db, workspaceId: string, projectId: s
     entries.push({ key: `bill:${line.id}`, on: line.on, source: line.orderLineId ? "price_difference" : "charge",
       description: line.orderLineId ? `${line.description}: invoiced at a different price` : line.description, reference: `${line.supplier} ${line.number}`,
       packageId: line.packageId, packageName: line.packageName, amount: amount.round(places(home)).toFixed(4) });
+  }
+
+  // Site labour: the people per trade on each approved report, at the trade's day rate on the report's day.
+  // Site reports belong to the project, not to a package.
+  const tradeRates = await readTradeRates(db, workspaceId);
+  const crews = (await db.query<{ id: string; on: string; trade: string; people: number; author: string }>(
+    `SELECT workforce.id, report.report_date::text AS on, workforce.trade, workforce.people, author.display_name AS author
+       FROM site_report_workforce workforce
+       JOIN site_reports report ON report.workspace_id = workforce.workspace_id AND report.id = workforce.report_id AND report.status = 'approved'
+       JOIN users author ON author.id = report.author_id
+      WHERE workforce.workspace_id = $1 AND report.project_id = $2
+      ORDER BY report.report_date, workforce.id`, [workspaceId, projectId])).rows;
+  for (const crew of crews) {
+    const rate = rateOn(tradeRates, tradeKey(crew.trade), crew.on);
+    const amount = rate ? await convert(labourCost(crew.people, rate.rate, rate.currency), rate.currency, crew.on) : null;
+    if (amount === null) { uncosted += 1; continue; }
+    if (amount.isZero()) continue;
+    entries.push({ key: `labour:${crew.id}`, on: crew.on, source: "labour", description: `Site labour: ${crew.trade}, ${crew.people} ${crew.people === 1 ? "person" : "people"}`,
+      reference: crew.author, packageId: null, packageName: null, amount: amount.round(places(home)).toFixed(4) });
+  }
+
+  // Factory labour: the hours reported with approved output, at its workcenter's hourly rate on the day it was reported.
+  const workcenterRates = await readWorkcenterRates(db, workspaceId);
+  const hours = (await db.query<{ id: string; on: string; hours: string; workcenterId: string | null; workcenter: string | null; number: number; packageId: string | null;
+    packageName: string | null }>(
+    `SELECT report.id, (report.reported_at AT TIME ZONE coalesce(nullif(workspace.default_timezone, ''), 'UTC'))::date::text AS on, report.hours::text AS hours,
+            report.workcenter_id AS "workcenterId", center.name AS workcenter, wo.number, package.id AS "packageId", package.name AS "packageName"
+       FROM work_order_reports report
+       JOIN workspaces workspace ON workspace.id = report.workspace_id
+       JOIN work_orders wo ON wo.workspace_id = report.workspace_id AND wo.id = report.work_order_id
+       LEFT JOIN workcenters center ON center.workspace_id = report.workspace_id AND center.id = report.workcenter_id
+       LEFT JOIN project_packages package ON package.workspace_id = wo.workspace_id AND package.id = wo.package_id
+      WHERE report.workspace_id = $1 AND wo.project_id = $2 AND report.status = 'approved' AND report.hours IS NOT NULL
+      ORDER BY report.reported_at, report.id`, [workspaceId, projectId])).rows;
+  for (const row of hours) {
+    const rate = row.workcenterId ? rateOn(workcenterRates, row.workcenterId, row.on) : null;
+    const amount = rate ? await convert(labourCost(row.hours, rate.rate, rate.currency), rate.currency, row.on) : null;
+    if (amount === null) { uncosted += 1; continue; }
+    if (amount.isZero()) continue;
+    entries.push({ key: `labour:${row.id}`, on: row.on, source: "labour", description: `Factory labour: ${row.workcenter}, ${Dec.of(row.hours).toString()} hours`,
+      reference: `WO-${String(row.number).padStart(4, "0")}`, packageId: row.packageId, packageName: row.packageName, amount: amount.round(places(home)).toFixed(4) });
+  }
+
+  // Petty cash: claims once approved (and after they're reimbursed), on the day the money was spent.
+  const claims = (await db.query<{ id: string; on: string; number: number; description: string; amount: string; currency: string; packageId: string | null; packageName: string | null }>(
+    `SELECT claim.id, claim.spent_on::text AS on, claim.number, claim.description, claim.amount::text AS amount, claim.currency, package.id AS "packageId", package.name AS "packageName"
+       FROM petty_cash_claims claim
+       LEFT JOIN project_packages package ON package.workspace_id = claim.workspace_id AND package.id = claim.package_id
+      WHERE claim.workspace_id = $1 AND claim.project_id = $2 AND claim.status IN ('approved', 'reimbursed')
+      ORDER BY claim.spent_on, claim.id`, [workspaceId, projectId])).rows;
+  for (const claim of claims) {
+    const amount = await convert(Dec.of(claim.amount), claim.currency, claim.on);
+    if (amount === null) { uncosted += 1; continue; }
+    entries.push({ key: `petty_cash:${claim.id}`, on: claim.on, source: "petty_cash", description: claim.description, reference: claimNumber(claim.number),
+      packageId: claim.packageId, packageName: claim.packageName, amount: amount.round(places(home)).toFixed(4) });
   }
   entries.sort((a, b) => a.on.localeCompare(b.on) || a.key.localeCompare(b.key));
   return { currency: home, entries, uncosted, total: entries.reduce((sum, entry) => sum.add(entry.amount), Dec.ZERO).toFixed(4) };

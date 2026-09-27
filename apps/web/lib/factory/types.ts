@@ -3,6 +3,8 @@ import type { StockLocation } from "@/lib/purchasing/types";
 export type WorkOrderStatus = "planned" | "released" | "in_production" | "ready" | "on_hold" | "cancelled" | "short_closed";
 export type FactorySettings = { requireDrawing: boolean; requirePayment: boolean; requireMaterials: boolean; requireCheck: boolean; version: number };
 export type Workcenter = { id: string; name: string; hoursPerDay: string | null; active: boolean };
+/** A workcenter's hourly rate from a date: hours reported on a day cost the rate set from the latest date on or before it. */
+export type WorkcenterRate = { id: string; workcenterId: string; from: string; rate: string; currency: string; version: number };
 
 /** A scope line made in our factory: how much is on work orders and what's left to plan. */
 export type MakeLine = {
@@ -37,6 +39,8 @@ export type ReleaseCheck = { key: "running" | "scope" | "drawing" | "payment" | 
 export type OutputReport = {
   id: string; good: string; scrap: string; scrapReason: string; note: string; status: "pending" | "approved" | "refused"; reportedBy: string; reportedByName: string; reportedAt: string;
   decidedByName: string | null; decisionNote: string;
+  /** The hours it took, when reported: costed at the workcenter's hourly rate once approved. */
+  hours: string | null;
 };
 export type QualityCheck = { id: string; passed: string; failed: string; failReason: string; checkedByName: string; checkedAt: string };
 export type WorkOrderEvent = { id: string; kind: string; detail: Record<string, unknown>; byName: string; at: string };
@@ -62,4 +66,7 @@ export type WorkOrderState = FactoryRights & {
   dispatches: Array<{ id: string; number: number; status: "in_transit" | "received" | "cancelled"; sentOn: string; quantity: string; received: string | null; short: boolean }>;
   atFactory: string;
 };
-export type FactorySettingsState = { settings: FactorySettings; workcenters: Workcenter[]; canManage: boolean };
+/** Settings → Factory; hourly rates (oldest first) only for people who set them or see costs. */
+export type FactorySettingsState = {
+  settings: FactorySettings; workcenters: Workcenter[]; canManage: boolean; canSeeRates: boolean; rates: WorkcenterRate[]; currency: string; today: string;
+};

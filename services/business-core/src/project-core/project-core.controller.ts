@@ -6,6 +6,7 @@ import { RequestActor } from "../auth/actor";
 import { CurrentActor } from "../auth/current-actor.decorator";
 import { sendMedia } from "../gallery/gallery.controller";
 import { REFERENCE_MAX_BYTES, type ReferenceUpload } from "../workspaces/reference-upload";
+import { LabourRatesService } from "./labour-rates.service";
 import { ProjectCoreService } from "./project-core.service";
 import { ProjectMoneyService } from "./project-money.service";
 import { ProjectWorkService } from "./project-work.service";
@@ -15,7 +16,8 @@ import { ProjectWorkService } from "./project-work.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/project-core")
 export class ProjectCoreController {
-  constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService, private readonly money: ProjectMoneyService) {}
+  constructor(private readonly projects: ProjectCoreService, private readonly work: ProjectWorkService, private readonly money: ProjectMoneyService,
+    private readonly labourRates: LabourRatesService) {}
 
   @Get("settings")
   settings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.projects.settings(actor, workspaceId); }
@@ -26,6 +28,14 @@ export class ProjectCoreController {
   @Put("work-templates/:supply")
   saveWorkTemplate(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("supply") supply: string, @Body() input: Record<string, unknown>) {
     return this.projects.saveWorkTemplate(actor, workspaceId, supply, input ?? {});
+  }
+
+  @Get("labour-rates")
+  labourRatesState(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.labourRates.read(actor, workspaceId); }
+
+  @Post("labour-rates")
+  labourRatesCommand(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: Record<string, unknown>) {
+    return this.labourRates.command(actor, workspaceId, input ?? {});
   }
 
   @Post("routes")

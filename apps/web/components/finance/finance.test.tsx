@@ -7,6 +7,7 @@ import type { ClientInvoice, InvoiceState } from "@/lib/receivables/types";
 import type { FinanceSection } from "@/lib/payables/sections";
 import type { PurchasingSettings } from "@/lib/purchasing/types";
 import { PurchasingSettingsPage } from "../purchasing/purchasing-settings";
+import type { PettyCashClaim } from "@/lib/petty-cash/types";
 import { FinancePage } from "./finance-page";
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), query: "" }));
@@ -54,6 +55,14 @@ const runState = (patch: Partial<PaymentRun> = {}, rights: Partial<RunState> = {
     bankChangePending: false, bankChanged: false }],
   canManage: true, canApprove: true, canEdit: false, canApproveThis: false, canReturn: false, canPay: false, canDownload: false, canCancel: false, ...rights,
 });
+const claimToPay = (patch: Partial<PettyCashClaim> = {}): PettyCashClaim => ({
+  id: "c1", number: 1, reference: "PC-0001", projectId: "p1", projectReference: "PRJ-0007", projectName: "Villa 12", packageId: null, packageName: null, spentOn: "2026-09-25",
+  amount: "45.5000", currency: "AED", description: "Taxi to the tile supplier", category: "transport", receiptName: "taxi.png", noReceiptReason: "", status: "approved", claimedBy: "u2",
+  claimedByName: "Dana Designer", submittedAt: "2026-09-25T10:00:00Z", decidedByName: "Omar Manager", decidedAt: "2026-09-25T12:00:00Z", decisionNote: "", reimbursedByName: null,
+  reimbursedAt: null, reimbursementReference: "", version: 3, ...patch,
+});
+const paidBack = claimToPay({ id: "c2", number: 2, reference: "PC-0002", description: "Site parking", status: "reimbursed", reimbursedByName: "Fatima Finance",
+  reimbursedAt: "2026-09-26T10:00:00Z", reimbursementReference: "Cash box 11" });
 const mount = (respond: (url: string, body: Record<string, unknown> | undefined) => unknown) => {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     const value = respond(url, typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
@@ -401,5 +410,39 @@ describe("finance", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(posts(fetcher).at(-1)!.body).toMatchObject({ version: 4, paymentRunsRequired: true, invoiceTolerancePercent: "1" }));
     await waitFor(() => expect(screen.getByRole("switch", { name: "Pay through approved runs" })).toBeChecked());
+  });
+
+  it("lists approved petty cash to reimburse across projects, oldest decision first, and everything with All", async () => {
+    mount((url) => (url.includes("/api/petty-cash/state") ? { claims: [claimToPay({ id: "c3", reference: "PC-0003", description: "Parking", decidedAt: "2026-09-26T09:00:00Z" }), claimToPay(), paidBack],
+      canReimburse: true } : overview()));
+    page("petty-cash");
+    const table = await grid("Petty cash");
+    expect(within(table).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([expect.stringMatching(/Taxi to the tile supplier.*PC-0001.*PRJ-0007 · Villa 12.*Dana Designer/),
+      expect.stringContaining("PC-0003")]);
+    expect(table).not.toHaveTextContent("PC-0002");
+    await userEvent.click(within(screen.getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: "All" }));
+    expect(await grid("Petty cash")).toHaveTextContent(/PC-0002.*Reimbursed/);
+    await userEvent.click(within(await grid("Petty cash")).getByText("Taxi to the tile supplier"));
+    expect(nav.replace).toHaveBeenLastCalledWith("/workspace/finance/petty-cash?claim=c1", { scroll: false });
+  });
+
+  it("reimburses an approved claim once, with the payment's reference", async () => {
+    nav.query = "claim=c1";
+    let claims = [claimToPay(), paidBack];
+    const fetcher = mount((url, body) => {
+      if (!url.includes("/api/petty-cash/state")) return overview();
+      if (body) claims = claims.map((row) => (row.id === body.claimId ? { ...row, status: "reimbursed" as const, reimbursedByName: "Fatima Finance", reimbursedAt: "2026-09-27T12:00:00Z",
+        reimbursementReference: String(body.reference), version: 4 } : row));
+      return { claims, canReimburse: true };
+    });
+    page("petty-cash");
+    const sheet = await screen.findByRole("dialog", { name: "PC-0001 · Dana Designer" });
+    expect(within(sheet).getByRole("link", { name: "taxi.png" })).toHaveAttribute("href", expect.stringContaining("/api/petty-cash/claims/c1/receipt"));
+    await userEvent.type(within(sheet).getByRole("textbox", { name: "Reference" }), "Cash box 12");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Reimburse" }));
+    await waitFor(() => expect(posts(fetcher).at(-1)).toEqual({ url: expect.stringContaining("/api/petty-cash/state"),
+      body: { claimId: "c1", version: 3, reference: "Cash box 12", commandId: expect.any(String) } }));
+    expect(await within(sheet).findByText(/Fatima Finance · Cash box 12/)).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Reimburse" })).toBeNull();
   });
 });

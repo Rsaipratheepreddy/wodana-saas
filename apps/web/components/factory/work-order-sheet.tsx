@@ -118,7 +118,8 @@ export function WorkOrderSheet({ api, orderId, onChanged, onClose }: { api: Fact
         <ul className={styles.list}>{state.reports.map((report) => <li key={report.id}>
           <span className={styles.nameCell}>
             <span>{[Number(report.good) ? t("{quantity} made", { quantity: unit(report.good) }) : "",
-              Number(report.scrap) ? t("{quantity} scrapped: {reason}", { quantity: unit(report.scrap), reason: report.scrapReason }) : ""].filter(Boolean).join(" · ")}</span>
+              Number(report.scrap) ? t("{quantity} scrapped: {reason}", { quantity: unit(report.scrap), reason: report.scrapReason }) : "",
+              report.hours ? t("{hours} hours", { hours: quantityText(report.hours) }) : ""].filter(Boolean).join(" · ")}</span>
             <small>{[report.reportedByName, format.when(report.reportedAt), report.note,
               report.status === "approved" ? t("Approved by {name}", { name: report.decidedByName ?? "" }) : report.status === "refused" ? t("Refused by {name}: {note}", { name: report.decidedByName ?? "", note: report.decisionNote }) : ""]
               .filter(Boolean).join(" · ")}</small>
@@ -232,20 +233,23 @@ function ScheduleDialog({ state, onClose, onSave }: { state: WorkOrderState; onC
   </ControlledModalDialog>;
 }
 
-/** What was made and scrapped since the last report; never more good than is still to make. */
+/** What was made and scrapped since the last report, and the hours it took; never more good than is still to make. */
 function ReportDialog({ unit, left, onClose, onSave }: { unit: string; left: string; onClose: () => void; onSave: (input: Record<string, unknown>) => Promise<void> }) {
   const t = useT();
   const [good, setGood] = useState("");
   const [scrap, setScrap] = useState("");
+  const [hours, setHours] = useState("");
   const [scrapReason, setScrapReason] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const over = Number(good) > Number(left);
-  const valid = Number(good || 0) + Number(scrap || 0) > 0 && !over && (!Number(scrap) || scrapReason.trim());
+  // Hours are optional: more than none, at most 1,000 on one report, to the hundredth.
+  const badHours = Boolean(hours) && (!/^\d{1,4}(\.\d{1,2})?$/.test(hours) || Number(hours) <= 0 || Number(hours) > 1000);
+  const valid = Number(good || 0) + Number(scrap || 0) > 0 && !over && !badHours && (!Number(scrap) || scrapReason.trim());
   return <ControlledModalDialog isOpen size="md" title={t("Report output")} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
       <Button variant="primary" isLoading={busy} isDisabled={!valid} onPress={async () => {
-        setBusy(true); await onSave({ good: good || "0", scrap: scrap || "0", scrapReason: scrapReason.trim(), note: note.trim() }); setBusy(false);
+        setBusy(true); await onSave({ good: good || "0", scrap: scrap || "0", scrapReason: scrapReason.trim(), note: note.trim(), ...(hours ? { hours } : {}) }); setBusy(false);
       }}>{t("Report output")}</Button></div>}>
     <div className={styles.dialogBody}>
       <div className={styles.pair}>
@@ -254,6 +258,8 @@ function ReportDialog({ unit, left, onClose, onSave }: { unit: string; left: str
         <TextInput label={t("Scrapped")} inputMode="decimal" suffix={unit || undefined} value={scrap} onChange={(value) => setScrap(numeric(value))} />
       </div>
       {Number(scrap) ? <TextInput label={t("Why it was scrapped")} isRequired value={scrapReason} onChange={setScrapReason} /> : null}
+      <TextInput label={t("Hours worked")} inputMode="decimal" value={hours} onChange={(value) => setHours(numeric(value))}
+        isInvalid={badHours} errorMessage={badHours ? t("More than 0 and at most 1000, with up to 2 decimals.") : undefined} />
       <TextAreaField label={t("Note")} value={note} onChange={setNote} />
     </div>
   </ControlledModalDialog>;

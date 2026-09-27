@@ -15,12 +15,13 @@ import { ClientInvoices } from "./client-invoices";
 import { Bills } from "./bills";
 import { PaymentRuns } from "./payment-runs";
 import { Payments } from "./payments";
+import { PettyCash } from "./petty-cash";
 import { SuppliersOwed } from "./suppliers-owed";
 import styles from "./finance.module.css";
 
-const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "client-invoices": "invoice" };
+const OPEN_PARAM: Record<Exclude<FinanceSection, "suppliers" | "accounting">, string> = { bills: "bill", payments: "payment", runs: "run", "petty-cash": "claim", "client-invoices": "invoice" };
 
-/** Finance: suppliers' invoices to check and pay, payments and payment runs, what each supplier is owed, clients' tax invoices, and accounting postings. Records open in place. */
+/** Finance: suppliers' invoices to check and pay, payments and payment runs, what each supplier is owed, petty cash to reimburse, clients' tax invoices, and accounting postings. Records open in place. */
 export function FinancePage({ workspaceId, section, supplierId }: { workspaceId: string; section: FinanceSection; supplierId: string | null }) {
   const t = useT();
   const router = useRouter();
@@ -43,7 +44,7 @@ export function FinancePage({ workspaceId, section, supplierId }: { workspaceId:
   const held = state?.bills.filter((bill) => bill.status === "held").length ?? 0;
   const toApprove = state?.canApprove ? state.runs.filter((run) => run.status === "submitted").length : 0;
   // One primary action, for the tab it belongs to: a run on Payment runs, a supplier's invoice on the supplier tabs.
-  const action = !state?.canManage || section === "client-invoices" || section === "accounting" ? undefined : section === "runs"
+  const action = !state?.canManage || section === "petty-cash" || section === "client-invoices" || section === "accounting" ? undefined : section === "runs"
     ? <Button variant="primary" onPress={() => setPreparing(true)}>{t("New run")}</Button>
     : <Button variant="primary" onPress={() => setEntering(true)}>{t("Enter invoice")}</Button>;
   return <div className={styles.page}>
@@ -59,6 +60,7 @@ export function FinancePage({ workspaceId, section, supplierId }: { workspaceId:
       { id: "suppliers", label: t("Owed to suppliers"),
         panel: <SuppliersOwed api={api} state={state} error={error} openId={supplierId} onReload={() => void load()} onOpen={(id) => go("suppliers", id)} onOpenBill={(id) => go("bills", id)}
           onOpenPayment={(id) => go("payments", id)} /> },
+      { id: "petty-cash", label: t("Petty cash"), panel: <PettyCash workspaceId={workspaceId} openId={params.get("claim")} onOpen={(id) => go("petty-cash", id)} /> },
       { id: "client-invoices", label: t("Client invoices"),
         panel: <ClientInvoices api={receivables} openId={params.get("invoice")} onOpen={(id) => go("client-invoices", id)} /> },
       { id: "accounting", label: t("Accounting"), panel: <AccountingPostings api={accounting} /> },

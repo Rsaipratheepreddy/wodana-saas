@@ -55,7 +55,7 @@ export type ProjectDetail = {
   progress: number | null;
 };
 
-export type CostSource = "stock" | "service" | "price_difference" | "charge";
+export type CostSource = "stock" | "service" | "price_difference" | "charge" | "labour" | "petty_cash";
 /** One cost the project carries, in the workspace's currency, from the record that caused it. */
 export type CostEntry = { key: string; on: string; source: CostSource; description: string; reference: string | null; packageId: string | null; packageName: string | null; amount: string };
 /** A package's budget against what's spent and still committed; `id` null for costs not in a package. */
@@ -67,6 +67,11 @@ export type ProjectMoney = {
   spent: string; committed: string; forecast: string; budget: string | null; margin: string | null; available: string | null;
   packages: PackageMoney[]; entries: CostEntry[]; uncosted: number; canManage: boolean;
 };
+
+/** A trade's day rate from a date: a day on site costs the rate set from the latest date on or before it. */
+export type TradeRate = { id: string; key: string; trade: string; from: string; rate: string; currency: string; version: number; updatedByName: string; updatedAt: string };
+/** Settings → Projects → Labour rates: each trade with its rates (oldest first), including trades on site reports with none yet. */
+export type LabourRates = { currency: string; today: string; trades: Array<{ key: string; name: string; reports: number; rates: TradeRate[] }>; canManage: boolean };
 
 /** An order or price request never sent. */
 export type CloseOutDraft = { id: string; number: string; kind: "order" | "request" };

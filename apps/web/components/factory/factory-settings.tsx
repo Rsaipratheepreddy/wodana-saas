@@ -1,19 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, ControlledModalDialog, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
+import { parseDate } from "@internationalized/date";
+import { Button, ControlledModalDialog, DateField, EmptyState, InlineNotice, SettingsPage, SettingsRow, SettingsSection, Skeleton, Switch, TextInput } from "@/design-system";
 import { useT } from "@/lib/i18n/i18n-provider";
 import { factoryApi } from "@/lib/factory/client";
-import type { FactorySettings, FactorySettingsState, Workcenter } from "@/lib/factory/types";
+import type { FactorySettings, FactorySettingsState, Workcenter, WorkcenterRate } from "@/lib/factory/types";
+import { addExact } from "@/lib/purchasing/amounts";
+import { useProjectFormat } from "../project-core/format";
 import { quantityText } from "../purchasing/order-labels";
 import styles from "./factory.module.css";
 
 type Flag = "requireDrawing" | "requirePayment" | "requireMaterials" | "requireCheck";
-type Draft = { id: string; name: string; hours: string; active: boolean; isNew: boolean };
+type Draft = { id: string; name: string; hours: string; active: boolean; isNew: boolean; rate: string; rateFrom: string | null };
 
-/** Settings → Factory: what a work order needs before it's released, whether output is checked, and the workcenters. */
+/** A workcenter's rates, oldest first; the one in force on a day is set from the latest date on or before it. */
+const ratesOf = (rates: WorkcenterRate[], workcenterId: string) => rates.filter((rate) => rate.workcenterId === workcenterId);
+const rateOn = (rates: WorkcenterRate[], day: string) => rates.filter((rate) => rate.from <= day).at(-1) ?? null;
+
+/** Settings → Factory: what a work order needs before it's released, whether output is checked, and the workcenters with their hourly rates. */
 export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   const t = useT();
+  const format = useProjectFormat();
   const api = useMemo(() => factoryApi(workspaceId), [workspaceId]);
   const [data, setData] = useState<FactorySettingsState | null>(null);
   const [error, setError] = useState("");
@@ -32,7 +40,12 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
   const row = (key: Flag, label: string, hint: string) => <SettingsRow label={label} hint={hint}>
     <Switch aria-label={label} isDisabled={readOnly} isSelected={(data.settings as FactorySettings)[key]} onChange={(value) => void flip(key, value)} />
   </SettingsRow>;
-  const edit = (center: Workcenter) => setDraft({ id: center.id, name: center.name, hours: center.hoursPerDay ? quantityText(center.hoursPerDay) : "", active: center.active, isNew: false });
+  const hourly = (value: string) => t("{amount} an hour", { amount: format.money(value, data.currency) });
+  const edit = (center: Workcenter) => {
+    const current = rateOn(ratesOf(data.rates, center.id), data.today);
+    setDraft({ id: center.id, name: center.name, hours: center.hoursPerDay ? quantityText(center.hoursPerDay) : "", active: center.active, isNew: false,
+      rate: current ? quantityText(current.rate) : "", rateFrom: data.today });
+  };
   return <SettingsPage title={t("Factory")}>
     {error ? <InlineNotice tone="error" message={error} /> : null}
     <SettingsSection id="release" title={t("Before a work order is released")}>
@@ -45,27 +58,41 @@ export function FactorySettingsPage({ workspaceId }: { workspaceId: string }) {
     </SettingsSection>
     <SettingsSection id="workcenters" title={t("Workcenters")}>
       {!data.workcenters.length ? <EmptyState illustration={null} title={t("No workcenters yet")} description={t("Add where work is made, such as joinery or paint.")} />
-        : <ul className={styles.places}>{data.workcenters.map((center) => <li key={center.id}>
-          <span className={styles.nameCell}><span>{center.name}</span>
-            <small>{[center.hoursPerDay ? t("{hours} hours a day", { hours: quantityText(center.hoursPerDay) }) : "", center.active ? "" : t("Not in use")].filter(Boolean).join(" · ")}</small></span>
-          {data.canManage ? <Button size="compact" variant="quiet" onPress={() => edit(center)}>{t("Edit")}</Button> : null}
-        </li>)}</ul>}
-      {data.canManage ? <div className={styles.actions}><Button size="compact" onPress={() => setDraft({ id: crypto.randomUUID(), name: "", hours: "", active: true, isNew: true })}>{t("Add workcenter")}</Button></div> : null}
+        : <ul className={styles.places}>{data.workcenters.map((center) => {
+          const rates = ratesOf(data.rates, center.id);
+          const current = rateOn(rates, data.today), next = rates.find((rate) => rate.from > data.today);
+          return <li key={center.id}>
+            <span className={styles.nameCell}><span>{center.name}</span>
+              <small>{[center.hoursPerDay ? t("{hours} hours a day", { hours: quantityText(center.hoursPerDay) }) : "",
+                data.canSeeRates ? (current ? hourly(current.rate) : t("No hourly rate")) : "",
+                data.canSeeRates && next ? t("{amount} from {date}", { amount: hourly(next.rate), date: format.day(next.from) }) : "",
+                center.active ? "" : t("Not in use")].filter(Boolean).join(" · ")}</small></span>
+            {data.canManage ? <Button size="compact" variant="quiet" onPress={() => edit(center)}>{t("Edit")}</Button> : null}
+          </li>;
+        })}</ul>}
+      {data.canManage ? <div className={styles.actions}><Button size="compact" onPress={() => setDraft({ id: crypto.randomUUID(), name: "", hours: "", active: true, isNew: true, rate: "", rateFrom: data.today })}>
+        {t("Add workcenter")}</Button></div> : null}
     </SettingsSection>
-    {draft ? <WorkcenterDialog draft={draft} onClose={() => setDraft(null)} onSave={async (next) => {
-      setData(await api.saveWorkcenter({ id: next.id, name: next.name.trim(), hoursPerDay: next.hours || null, active: next.active })); setDraft(null);
+    {draft ? <WorkcenterDialog draft={draft} currency={data.currency} current={rateOn(ratesOf(data.rates, draft.id), data.today)} onClose={() => setDraft(null)} onSave={async (next) => {
+      // A rate saved from a date that already has one corrects it, checked against that rate's version.
+      const rateVersion = ratesOf(data.rates, next.id).find((rate) => rate.from === next.rateFrom)?.version ?? 0;
+      setData(await api.saveWorkcenter({ id: next.id, name: next.name.trim(), hoursPerDay: next.hours || null, active: next.active, hourlyRate: next.rate || null, rateFrom: next.rateFrom,
+        rateVersion }));
+      setDraft(null);
     }} /> : null}
   </SettingsPage>;
 }
 
-function WorkcenterDialog({ draft, onClose, onSave }: { draft: Draft; onClose: () => void; onSave: (draft: Draft) => Promise<void> }) {
+function WorkcenterDialog({ draft, currency, current, onClose, onSave }: { draft: Draft; currency: string; current: WorkcenterRate | null; onClose: () => void; onSave: (draft: Draft) => Promise<void> }) {
   const t = useT();
   const [value, setValue] = useState(draft);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // A new rate applies from a date (today unless said); the days before keep the rate they had.
+  const changed = Boolean(value.rate) && (!current || addExact(value.rate) !== addExact(current.rate));
   return <ControlledModalDialog isOpen size="md" title={draft.isNew ? t("Add workcenter") : draft.name} onOpenChange={(open) => { if (!open) onClose(); }}
     footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Cancel")}</Button>
-      <Button variant="primary" isLoading={busy} isDisabled={!value.name.trim()} onPress={async () => {
+      <Button variant="primary" isLoading={busy} isDisabled={!value.name.trim() || (Boolean(current) && !value.rate) || (changed && !value.rateFrom)} onPress={async () => {
         setBusy(true); setError("");
         try { await onSave(value); } catch (cause) { setError(cause instanceof Error ? cause.message : t("Could not save.")); setBusy(false); }
       }}>{t("Save")}</Button></div>}>
@@ -74,6 +101,11 @@ function WorkcenterDialog({ draft, onClose, onSave }: { draft: Draft; onClose: (
       <div className={styles.pair}>
         <TextInput label={t("Name")} isRequired value={value.name} onChange={(name) => setValue({ ...value, name })} />
         <TextInput label={t("Hours a day")} inputMode="decimal" value={value.hours} onChange={(hours) => setValue({ ...value, hours: hours.replace(/[^\d.]/g, "") })} />
+      </div>
+      <div className={styles.pair}>
+        <TextInput label={t("Hourly rate")} inputMode="decimal" suffix={currency} value={value.rate} onChange={(rate) => setValue({ ...value, rate: rate.replace(/[^\d.]/g, "") })} />
+        {changed ? <DateField label={t("From")} isRequired value={value.rateFrom ? parseDate(value.rateFrom) : null} onChange={(day) => setValue({ ...value, rateFrom: day ? day.toString() : null })} />
+          : <span />}
       </div>
       {!draft.isNew ? <Switch isSelected={value.active} onChange={(active) => setValue({ ...value, active })}>{t("In use")}</Switch> : null}
     </div>

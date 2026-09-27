@@ -3,7 +3,7 @@ import { FinancePage } from "@/components/finance/finance-page";
 import { FINANCE_SECTIONS, type FinanceSection } from "@/lib/payables/sections";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 
-/** Finance: supplier invoices (default), payments to suppliers, and what each supplier is owed. */
+/** Finance: supplier invoices (default), payments to suppliers, what each supplier is owed, and petty cash to reimburse. */
 export default async function Page({ params }: { params: Promise<{ section?: string[] }> }) {
   const { section } = await params;
   const profile = await getAuthenticatedProfile();
