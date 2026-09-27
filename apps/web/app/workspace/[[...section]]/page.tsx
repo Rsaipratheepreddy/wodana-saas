@@ -59,7 +59,8 @@ export default async function WorkspaceScreen({
       connections: connections && !connections.loadError ? connections.connections.some(item => item.status === "connected") : null,
     } : undefined;
     return <WorkspaceHome canManage={ownerAccess} workspaceId={membership.workspaceId} userId={profile.id}
-      workspaceName={membership.workspaceName} modules={available.map(module => module.id)} initialData={crmData} readiness={readiness} />;
+      workspaceName={membership.workspaceName} modules={available.map(module => module.id)} initialData={crmData} readiness={readiness}
+      firstName={profile.displayName?.trim().split(/\s+/)[0] || undefined} permissions={membership.allowedPermissions ?? undefined} />;
 
   }
   if (pathname === "/workspace/audit-log") redirect("/workspace/settings/audit-logs");
